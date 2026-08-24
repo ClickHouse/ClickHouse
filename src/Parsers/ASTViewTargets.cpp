@@ -1,17 +1,9 @@
 #include <Parsers/ASTViewTargets.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/ASTFromJSON.h>
 
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
-#include <base/EnumReflection.h>
-#include <Core/UUID.h>
-
-#include <unordered_set>
 
 
 namespace DB
@@ -20,23 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-    Keyword getKeyword(ViewTarget::Kind kind)
-    {
-        switch (kind)
-        {
-            case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
-            case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
-            case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
-            case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-            case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
-            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
-        }
-        UNREACHABLE();
-    }
+    extern const int LOGICAL_ERROR;
 }
 
 ViewTarget::~ViewTarget() = default;
@@ -46,6 +22,33 @@ ViewTarget & ViewTarget::operator=(const ViewTarget & other) = default;
 
 ViewTarget::ViewTarget(Kind kind_) : kind(kind_) {}
 
+std::string_view toString(ViewTarget::Kind kind)
+{
+    switch (kind)
+    {
+        case ViewTarget::To:      return "to";
+        case ViewTarget::Inner:   return "inner";
+        case ViewTarget::Data:    return "data";
+        case ViewTarget::Tags:    return "tags";
+        case ViewTarget::Metrics: return "metrics";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't support kind {}", __FUNCTION__, kind);
+}
+
+void parseFromString(ViewTarget::Kind & out, std::string_view str)
+{
+    for (auto kind : magic_enum::enum_values<ViewTarget::Kind>())
+    {
+        if (toString(kind) == str)
+        {
+            out = kind;
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: Unexpected string {}", __FUNCTION__, str);
+}
+
+
 std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
 {
     std::vector<ViewTarget::Kind> kinds;
@@ -54,6 +57,7 @@ std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
         kinds.push_back(target.kind);
     return kinds;
 }
+
 
 void ASTViewTargets::setTableID(ViewTarget::Kind kind, const StorageID & table_id_)
 {
@@ -135,8 +139,12 @@ bool ASTViewTargets::hasInnerUUIDs() const
     return false;
 }
 
-void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engine)
+void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
 {
+    auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(storage_def);
+    if (!new_inner_engine && storage_def)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to ASTStorage", storage_def->getID());
+
     for (auto & target : targets)
     {
         if (target.kind == kind)
@@ -177,36 +185,6 @@ std::vector<ASTStorage *> ASTViewTargets::getInnerEngines() const
     return res;
 }
 
-void ASTViewTargets::setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_columns)
-{
-    for (auto & target : targets)
-    {
-        if (target.kind == kind)
-        {
-            if (target.inner_columns == new_inner_columns)
-                return;
-            if (new_inner_columns)
-                setOrReplace(target.inner_columns, std::move(new_inner_columns));
-            else
-                reset(target.inner_columns);
-            return;
-        }
-    }
-
-    if (new_inner_columns)
-    {
-        auto & new_target = targets.emplace_back(kind);
-        set(new_target.inner_columns, std::move(new_inner_columns));
-    }
-}
-
-ASTColumns * ASTViewTargets::getInnerColumns(ViewTarget::Kind kind) const
-{
-    if (const auto * target = tryGetTarget(kind); target && target->inner_columns)
-        return target->inner_columns->as<ASTColumns>();
-    return nullptr;
-}
-
 const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
 {
     for (const auto & target : targets)
@@ -225,13 +203,6 @@ ASTPtr ASTViewTargets::clone() const
     {
         if (target.inner_engine)
             res->set(target.inner_engine, target.inner_engine->clone());
-        if (target.inner_columns)
-            res->set(target.inner_columns, target.inner_columns->clone());
-        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
-        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
-        /// dangles into the original's children.
-        if (target.table_ast)
-            res->set(target.table_ast, target.table_ast->clone());
     }
     return res;
 }
@@ -255,47 +226,71 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
 {
     if (target.table_id)
     {
-        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind)) << " "
-             << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
-             << backQuoteIfNeed(target.table_id.table_name);
+        auto keyword = getKeywordForTableID(target.kind);
+        if (!keyword)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
+        ostr <<  " " << toStringView(*keyword)
+               << " "
+               << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
+               << backQuoteIfNeed(target.table_id.table_name);
     }
 
     if (target.inner_uuid != UUIDHelpers::Nil)
     {
-        ostr << s.nl_or_ws;
-        /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER UUID".
-        if (target.kind != ViewTarget::Inner)
-            ostr << toStringView(getKeyword(target.kind)) << " ";
-        ostr << "INNER UUID " << quoteString(toString(target.inner_uuid));
-    }
-
-    if (target.inner_columns)
-    {
-        ostr << s.nl_or_ws;
-        if (target.kind != ViewTarget::Inner)
-            ostr << toStringView(getKeyword(target.kind)) << " ";
-        ostr << "INNER COLUMNS" << s.nl_or_ws << "(";
-        auto inner_frame = frame;
-        inner_frame.expression_list_always_start_on_new_line = true;
-        target.inner_columns->format(ostr, s, state, inner_frame);
-        if (!s.one_line)
-            ostr << "\n";
-        ostr << ")";
+        auto keyword = getKeywordForInnerUUID(target.kind);
+        if (!keyword)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
+        ostr << " " << toStringView(*keyword)
+               << " " << quoteString(toString(target.inner_uuid));
     }
 
     if (target.inner_engine)
     {
-        /// Skip both the "kind" and "INNER" prefixes for ViewTarget::To to produce just "ENGINE" (and not "TO INNER ENGINE").
-        if (target.kind != ViewTarget::To)
-        {
-            ostr << s.nl_or_ws;
-            /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER ENGINE".
-            if (target.kind != ViewTarget::Inner)
-                ostr << toStringView(getKeyword(target.kind)) << " ";
-            ostr << "INNER";
-        }
+        auto keyword = getKeywordForInnerStorage(target.kind);
+        if (!keyword)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
+        ostr << " " << toStringView(*keyword);
         target.inner_engine->format(ostr, s, state, frame);
     }
+}
+
+std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ViewTarget::Kind kind)
+{
+    switch (kind)
+    {
+        case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
+        case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+        case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+        case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+    }
+    UNREACHABLE();
+}
+
+std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ViewTarget::Kind kind)
+{
+    switch (kind)
+    {
+        case ViewTarget::To:      return std::nullopt;      /// ENGINE = MergeTree()
+        case ViewTarget::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
+        case ViewTarget::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
+        case ViewTarget::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
+        case ViewTarget::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
+    }
+    UNREACHABLE();
+}
+
+std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind kind)
+{
+    switch (kind)
+    {
+        case ViewTarget::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
+        case ViewTarget::Inner:   return std::nullopt;
+        case ViewTarget::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
+        case ViewTarget::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
+        case ViewTarget::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
+    }
+    UNREACHABLE();
 }
 
 void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
@@ -304,7 +299,6 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::in
     {
         f(nullptr, &target.table_ast);
         f(nullptr, &target.inner_engine);
-        f(nullptr, &target.inner_columns);
     }
 }
 
@@ -344,152 +338,4 @@ void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             target.table_ast.reset();
 }
-
-void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    auto arr = r.getArray("targets");
-    if (!arr)
-        return;
-    /// The SQL parser builds `targets` through setters (`setTableID`, `setInnerEngine`, `setInnerColumns`, ...) that
-    /// merge by `ViewTarget::Kind`, so it can never produce two targets of the same kind. JSON input could append
-    /// duplicates, which would make formatting (`tryGetTarget` sees only the first match) disagree with execution and
-    /// access checks (which iterate every entry in `targets`). Reject duplicates to match the parser-produced shape.
-    std::unordered_set<ViewTarget::Kind> seen_kinds;
-    for (unsigned int i = 0; i < arr->size(); ++i)
-    {
-        /// Each view target is a non-AST struct; count it against `max_ast_elements`.
-        countJSONDeserializationElement();
-        auto target_obj = arr->getObject(i);
-        if (!target_obj)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);
-        ViewTarget target;
-        /// Read scalar fields through `JSONObjectReader` so a wrong JSON scalar type is rejected with
-        /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a table name).
-        JSONObjectReader target_reader(*target_obj);
-        String kind_str = target_reader.getString("kind");
-        auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
-        if (!kind_opt)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
-        target.kind = *kind_opt;
-        if (!seen_kinds.insert(target.kind).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization; each kind may appear at most once", kind_str, i);
-        if (target_obj->has("table_name"))
-        {
-            /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
-            /// (`TO dst`) and names may contain dots, so do not reconstruct by splitting a full name.
-            const String database = target_reader.getString("table_database");
-            /// Unlike `inner_uuid` (emitted as `INNER UUID '...'`), `formatTarget` prints only `db.table` for a
-            /// `table_id` target, so a `table_uuid` would be dropped by `formatQueryFromJSON` while the JSON AST
-            /// still resolves the `StorageID` by `UUID`. Reject it at the boundary (fail closed) instead of hiding
-            /// semantic state behind a lossy round trip.
-            if (target_obj->has("table_uuid"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTViewTargets JSON must not carry a 'table_uuid': a `TO` target with a UUID cannot be "
-                    "formatted back to SQL faithfully during AST JSON deserialization");
-            target.table_id = StorageID(database, target_reader.getString("table_name"), UUIDHelpers::Nil);
-        }
-        if (target_obj->has("inner_uuid"))
-        {
-            String uuid_str = target_reader.getString("inner_uuid");
-            target.inner_uuid = parseFromString<UUID>(uuid_str);
-        }
-        if (target_obj->has("inner_engine"))
-        {
-            auto engine_obj = target_obj->getObject("inner_engine");
-            if (!engine_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
-            target.inner_engine = IAST::createFromJSON(*engine_obj);
-            if (!target.inner_engine->as<ASTStorage>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not a storage definition at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.inner_engine);
-        }
-        if (target_obj->has("inner_columns"))
-        {
-            auto columns_obj = target_obj->getObject("inner_columns");
-            if (!columns_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
-            target.inner_columns = IAST::createFromJSON(*columns_obj);
-            if (!target.inner_columns->as<ASTColumns>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not a columns definition at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.inner_columns);
-        }
-        if (target_obj->has("table_ast"))
-        {
-            auto table_ast_obj = target_obj->getObject("table_ast");
-            if (!table_ast_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
-            target.table_ast = IAST::createFromJSON(*table_ast_obj);
-            if (!target.table_ast->as<ASTTableIdentifier>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not a table identifier at index {} in 'targets' array during AST JSON deserialization", i);
-            children.push_back(target.table_ast);
-        }
-        targets.push_back(std::move(target));
-    }
-}
-
-void ASTViewTargets::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "ViewTargets");
-    if (!targets.empty())
-    {
-        w.writeKey("targets");
-        out << '[';
-        for (size_t i = 0; i < targets.size(); ++i)
-        {
-            if (i > 0)
-                out << ',';
-            const auto & target = targets[i];
-            out << '{';
-            out << "\"kind\":";
-            writeJSONString(toString(target.kind), out, w.getFormatSettings());
-            if (!target.table_id.empty())
-            {
-                /// Serialize the `StorageID` parts separately instead of `getFullTableName()`: the
-                /// latter throws for a database-less target (`TO dst`) and a `db.table` join is
-                /// ambiguous for identifiers that themselves contain dots.
-                out << ",\"table_database\":";
-                writeJSONString(target.table_id.database_name, out, w.getFormatSettings());
-                out << ",\"table_name\":";
-                writeJSONString(target.table_id.table_name, out, w.getFormatSettings());
-                if (target.table_id.uuid != UUIDHelpers::Nil)
-                {
-                    /// `formatTarget` prints only `db.table` for a `table_id` target, so a `table_uuid` would be dropped
-                    /// by `formatQueryFromJSON` while the JSON AST still resolves the target by UUID. `readJSON` rejects
-                    /// a `table_uuid` for exactly this reason (see the paired guard there), so emitting it here would
-                    /// produce JSON that cannot be read back. Fail closed at serialization instead, honouring the
-                    /// contract that `parseQueryToJSON` rejects unsupported shapes rather than emitting unreadable JSON.
-                    /// (Unlike `inner_uuid`, which is emitted as `INNER UUID '...'` and does round-trip.)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "A `TO` target with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
-                        "faithfully during AST JSON serialization");
-                }
-            }
-            if (target.inner_uuid != UUIDHelpers::Nil)
-            {
-                out << R"(,"inner_uuid":")";
-                writeUUIDText(target.inner_uuid, out);
-                out << '"';
-            }
-            if (target.inner_engine)
-            {
-                out << ",\"inner_engine\":";
-                target.inner_engine->writeJSON(out);
-            }
-            if (target.inner_columns)
-            {
-                out << ",\"inner_columns\":";
-                target.inner_columns->writeJSON(out);
-            }
-            if (target.table_ast)
-            {
-                out << ",\"table_ast\":";
-                target.table_ast->writeJSON(out);
-            }
-            out << '}';
-        }
-        out << ']';
-    }
-}
-
 }

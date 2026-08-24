@@ -10,20 +10,18 @@ if __name__ == "__main__":
     parser.add_argument("--gtest_filter", default="")
     args = parser.parse_args()
 
-    # Our static OpenSSL must ignore the image's system openssl.cnf.
-    os.environ["OPENSSL_CONF"] = "/dev/null"
-
+    # The CI Docker image installs an uninstrumented FIPS provider (`fips.so`) for OpenSSL.
+    # Sanitizers cannot track writes from uninstrumented shared libraries, causing false
+    # positives during OpenSSL global initialization (e.g. "use-of-uninitialized-value"
+    # in MSan). Disable FIPS provider loading for sanitizer builds.
     job_name = Info().job_name
+    if any(san in job_name for san in ("msan", "asan", "tsan", "ubsan")):
+        os.environ["OPENSSL_CONF"] = "/dev/null"
 
     # Note, LSan does not compatible with debugger
     if "asan" not in job_name:
-        # With gdb we will capture stacktrace in case of abnormal termination and timeout.
-        # The tests run sequentially in a single binary, so the timeout must cover the sum of
-        # all test durations: under TSan that sum has grown to 38-40 minutes on average, and a
-        # run on a slower machine regularly exceeded the previous 45-minute budget, blaming
-        # whichever test happened to be running at that moment. Keep several tens of minutes
-        # of headroom (the praktika job-level timeout is 5 hours).
-        command_launcher = "timeout -s INT -v 90m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
+        # With gdb we will capture stacktrace in case of abnormal termination and timeout (45 mins)
+        command_launcher = f"timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
     else:
         command_launcher = ""
 
@@ -45,7 +43,7 @@ if __name__ == "__main__":
 
         # Auto-detect available LLVM profdata tool
         llvm_profdata = None
-        for ver in ["22", "21", "20", "19", "18", "17", "16", ""]:
+        for ver in ["21", "20", "19", "18", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata = cmd

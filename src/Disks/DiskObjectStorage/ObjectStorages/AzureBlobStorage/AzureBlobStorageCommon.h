@@ -14,7 +14,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-#include <mutex>
 
 namespace DB
 {

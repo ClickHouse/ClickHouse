@@ -318,7 +318,10 @@ static bool containerExists(const ContainerClient & client)
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
 
-        /// A generic/unexpected server error shouldn't block startup — assume the container exists; real I/O fails later with a clear error.
+        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
+        /// as InternalServerError. A transient network error should not prevent the server
+        /// from starting — assume the container exists and let actual I/O operations fail
+        /// with a clear error later if it doesn't.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
         {
             LOG_WARNING(getLogger("AzureBlobStorageCommon"),
@@ -328,13 +331,6 @@ static bool containerExists(const ContainerClient & client)
         }
 
         throw;
-    }
-    catch (const Azure::Core::Http::TransportException & e)
-    {
-        /// Transport failure (DNS/connection/timeout) is retryable and shouldn't block startup — assume the container exists, like the 500 case above.
-        LOG_WARNING(getLogger("AzureBlobStorageCommon"),
-            "Transport error while checking container existence: {}. Assuming the container exists.", e.Message);
-        return true;
     }
 }
 
@@ -405,8 +401,6 @@ BlobClientOptions getClientOptions(
     retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
     retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
     retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
-    /// Add 403 to the SDK retry set — RBAC propagation returns a transient 403 the SDK won't otherwise retry.
-    retry_options.StatusCodes.insert(Azure::Core::Http::HttpStatusCode::Forbidden);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
@@ -637,14 +631,10 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
-    settings->use_native_copy = use_native_copy;
-
-    /// A configured endpoint takes priority over the backup setting, ...
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
     if (endpoint_settings)
         settings->use_native_copy = endpoint_settings->use_native_copy;
 
-    /// ... except that the backup setting can always veto native copy.
     if (!use_native_copy)
         settings->use_native_copy = false;
 
@@ -701,17 +691,15 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
-        /// Accept both the modern `<object_storage_type>azure</object_storage_type>` and the legacy
-        /// `<type>azure_blob_storage</type>` declaration forms. Without the latter, an endpoint
-        /// declared the legacy way is never loaded into the map, so its settings are silently lost.
-        String disk_type;
         if (config.has(config_prefix + "." + key + ".object_storage_type"))
-            disk_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-        else if (config.has(config_prefix + "." + key + ".type"))
-            disk_type = config.getString(config_prefix + "." + key + ".type");
-
-        if (disk_type == "azure" || disk_type == "azure_blob_storage")
         {
+            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
+            {
+                /// Then its not an azure config
+                continue;
+            }
+
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
@@ -726,7 +714,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                     if (!config.has(endpoint_path))
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
-                                        disk_type);
+                                        object_storage_type);
                     }
                 }
             }

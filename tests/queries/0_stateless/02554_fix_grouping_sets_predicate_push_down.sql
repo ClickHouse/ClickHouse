@@ -1,7 +1,5 @@
 -- Tags: no-object-storage
 
-SET enable_analyzer = 1;
-
 -- Specific value doesn't matter, we just need it to be fixed, because it is a part of `EXPLAIN PIPELINE` output.
 SET max_threads = 8;
 SET query_plan_optimize_prewhere = 1;
@@ -47,6 +45,27 @@ WHERE type_1 = 'all';
 
 SELECT '';
 SELECT '---Explain Pipeline---';
+EXPLAIN PIPELINE
+SELECT *
+FROM
+(
+    SELECT
+        day_,
+        if(type_1 = '', 'all', type_1) AS type_1
+    FROM
+    (
+        SELECT
+            day_,
+            type_1
+        FROM test_grouping_sets_predicate
+        WHERE day_ = '2023-01-05'
+        GROUP BY
+            GROUPING SETS (
+                (day_, type_1),
+                (day_))
+    ) AS t
+)
+WHERE type_1 = 'all' settings enable_analyzer=0, query_plan_merge_filters=1, enable_optimize_predicate_expression=1; -- CI may inject False for either; merge_filters=False: separate filters; enable_optimize_predicate_expression=False: predicate stays as single outer filter (× 8) instead of being pushed per-grouping-set branch (× 24)
 
 -- Query plan with analyzer has less Filter steps (which is more optimal)
 EXPLAIN PIPELINE
@@ -96,6 +115,26 @@ WHERE type_1 = 'all';
 
 SELECT '';
 SELECT '---Explain Pipeline---';
+EXPLAIN PIPELINE
+SELECT *
+FROM
+(
+    SELECT
+        day_,
+        if(type_1 = '', 'all', type_1) AS type_1
+    FROM
+    (
+        SELECT
+            day_,
+            type_1
+        FROM test_grouping_sets_predicate
+        GROUP BY
+            GROUPING SETS (
+                (day_, type_1),
+                (day_))
+    ) AS t
+)
+WHERE day_ = '2023-01-05' settings enable_analyzer=0, query_plan_merge_filters=1; -- CI may inject False; separate filters change pipeline structure
 
 -- Query plan with analyzer has less Filter steps (which is more optimal)
 EXPLAIN PIPELINE

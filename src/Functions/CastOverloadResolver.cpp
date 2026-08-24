@@ -32,61 +32,34 @@ namespace ErrorCodes
 /// us whether the conversion is accurate or not.
 /// This check walks Tuple elements recursively to also reject cases like
 /// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-/// Returns the first unsupported nested type, or nullptr when the target is supported.
-static DataTypePtr findUnsupportedTypeForAccurateCastOrNull(const DataTypePtr & type)
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : tuple_type->getElements())
-        {
-            if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(element))
-                return unsupported;
-        }
-        return nullptr;
+            validateNestedTypesForAccurateCastOrNull(element);
     }
-
-    if (type->isNullable())
-        return findUnsupportedTypeForAccurateCastOrNull(removeNullable(type));
-
-    if (!type->canBeInsideNullable() && !canContainNull(*type))
-        return type;
-
-    return nullptr;
-}
-
-bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
-{
-    /// The cast wraps its target in Nullable to report a failure, so a target that cannot itself be
-    /// inside Nullable is refused even when it can hold a NULL of its own.
-    if (!type->isNullable() && !type->canBeInsideNullable())
-        return false;
-
-    return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
-}
-
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
-{
-    if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(type))
+    else if (type->isNullable())
+    {
+        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
+    }
+    else if (!type->canBeInsideNullable() && !canContainNull(*type))
+    {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            unsupported->getName());
+            type->getName());
+    }
 }
 
-struct FunctionConvertSettings;
-using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
-
-FunctionConvertSettingsPtr createFunctionConvertSettings(
-    const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
-
 FunctionBasePtr createFunctionBaseCast(
-    const FunctionConvertSettingsPtr & settings,
+    ContextPtr context,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 /// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
 /// without an explicit time zone, return a copy of it with the given time zone substituted.
@@ -151,7 +124,7 @@ static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl final : public IFunctionOverloadResolver
+class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -175,12 +148,12 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : cast_type(cast_type_)
+        : WithContext(context_)
+        , cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , data_type_validation_settings(data_type_validation_settings_)
-        , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore))
     {
     }
 
@@ -212,20 +185,20 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate),
-            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
+            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            convert_settings,
+            getContext(),
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
             diagnostic,
-            cast_type);
+            cast_type,
+            FormatSettings::DateTimeOverflowBehavior::Ignore);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -269,10 +242,10 @@ protected:
         if (internal)
             return type;
 
-        /// Nullable(LowCardinality(T)) is not a valid type, so a LowCardinality target
-        /// carries NULL as LowCardinality(Nullable(T)) instead.
-        if (keep_nullable && canContainNull(*arguments.front().type))
-            return makeNullableOrLowCardinalityNullableSafe(type);
+        if (keep_nullable
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
+            && type->canBeInsideNullable())
+            return makeNullable(type);
 
         return type;
     }
@@ -287,9 +260,6 @@ private:
     std::optional<CastDiagnostic> diagnostic;
     bool keep_nullable;
     DataTypeValidationSettings data_type_validation_settings;
-    /// Snapshot taken while the constructing context is alive: the cast this resolver builds may
-    /// be executed after that context is gone (stored default or mutation expressions).
-    FunctionConvertSettingsPtr convert_settings;
 };
 
 
@@ -378,8 +348,8 @@ SELECT accurateCast(42, 'UInt16')
         )",
         R"(
 ┌─accurateCast(42, 'UInt16')─┐
-│                         42 │
-└────────────────────────────┘
+│                        42 │
+└───────────────────────────┘
         )"
     },
     {

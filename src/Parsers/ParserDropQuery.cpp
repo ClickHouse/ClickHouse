@@ -3,8 +3,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -200,107 +198,6 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_truncate.ignore(pos, expected))
         return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Truncate);
     return false;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementDrop(StatementFactory & factory)
-{
-    factory.registerStatement("DROP",
-    {
-        .description = R"(
-Deletes an existing entity. If the `IF EXISTS` clause is specified, the query does not return an error if the entity
-does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
-
-**Examples**
-
-**Drop a table**
-
-```sql title="Query"
-DROP TABLE IF EXISTS test SYNC;
-```
-
-**Drop a database**
-
-```sql title="Query"
-DROP DATABASE IF EXISTS test;
-```
-)",
-        .syntax = R"(
-DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
-DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
-DROP DICTIONARY [IF EXISTS] [db.]name [SYNC]
-DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
-DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
-DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
-DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
-)",
-        .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
-    });
-
-    factory.registerStatement("DETACH",
-    {
-        .description = R"(
-Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
-
-Detaching does not delete the data or the metadata of the entity. If the entity was not detached `PERMANENTLY`, on the
-next server launch the server reads the metadata and recalls the entity again. A permanently detached entity is not
-recalled automatically, but it can be attached back with `ATTACH`.
-
-**Examples**
-
-**Detach a table**
-
-```sql title="Query"
-DETACH TABLE test;
-```
-
-**Detach a table permanently**
-
-```sql title="Query"
-DETACH TABLE test PERMANENTLY;
-```
-)",
-        .syntax = R"(
-DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
-)",
-        .related = {"ATTACH", "DROP"},
-    });
-
-    factory.registerStatement("TRUNCATE",
-    {
-        .description = R"(
-Quickly removes all data from a table or from all tables of a database, while preserving their structure.
-
-**Examples**
-
-**Remove all rows of a table**
-
-```sql title="Query"
-TRUNCATE TABLE test;
-```
-
-**Remove all rows of all tables of a database**
-
-```sql title="Query"
-TRUNCATE ALL TABLES FROM test;
-```
-)",
-        .syntax = R"(
-TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
-TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
-TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
-)",
-        .related = {"DROP", "DELETE", "ALTER TABLE ... PARTITION"},
-    });
 }
 
 }

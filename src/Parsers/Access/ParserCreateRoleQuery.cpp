@@ -7,8 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -162,61 +160,4 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementRole(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROLE",
-    {
-        .description = R"(
-Creates new roles. A role is a set of privileges; a user assigned a role gets all the privileges of this role.
-
-**Examples**
-
-**Create a role and grant privileges to it**
-
-```sql title="Query"
-CREATE ROLE accountant;
-GRANT SELECT ON db.* TO accountant;
-```
-)",
-        .syntax = R"(
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [IN access_storage_type]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
-    });
-
-    factory.registerStatement("ALTER ROLE",
-    {
-        .description = R"(
-Changes roles: renames them and changes their settings and settings profiles.
-
-**Examples**
-
-**Change a setting of a role**
-
-```sql title="Query"
-ALTER ROLE accountant SETTINGS max_memory_usage = 100000000;
-```
-)",
-        .syntax = R"(
-ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
-    [ON CLUSTER cluster_name]
-    [DROP ALL PROFILES]
-    [DROP ALL SETTINGS]
-    [DROP PROFILES 'profile_name' [,...] ]
-    [DROP SETTINGS variable [,...] ]
-    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
-    });
-}
-
 }

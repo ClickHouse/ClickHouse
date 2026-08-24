@@ -9,8 +9,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -190,68 +188,4 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementSettingsProfile(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE SETTINGS PROFILE",
-    {
-        .description = R"(
-Creates a settings profile - a named set of settings with optional constraints, which can be assigned to users and
-roles.
-
-**Examples**
-
-**Create a settings profile and assign it to a user**
-
-```sql title="Query"
-CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin;
-```
-)",
-        .syntax = R"(
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
-    [ON CLUSTER cluster_name]
-    [IN access_storage_type]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
-    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER SETTINGS PROFILE", "CREATE USER", "CREATE ROLE", "SET", "DROP", "SHOW"},
-    });
-
-    factory.registerStatement("ALTER SETTINGS PROFILE",
-    {
-        .description = R"(
-Changes a settings profile: renames it, changes its settings and constraints, and the users and roles it is assigned
-to. A bare `SETTINGS` or `INHERIT` clause replaces all previously defined settings of the profile, whereas
-`ADD SETTINGS` and `MODIFY SETTINGS` change individual settings.
-
-**Examples**
-
-**Replace the settings of a profile**
-
-```sql title="Query"
-ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;
-```
-)",
-        .syntax = R"(
-ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
-    [ON CLUSTER cluster_name]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
-    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]]
-    [DROP SETTINGS variable [,...] ]
-    [ADD PROFILES 'profile_name' [,...] ]
-    [DROP PROFILES 'profile_name' [,...] ]
-    [DROP ALL PROFILES]
-    [DROP ALL SETTINGS]
-    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE SETTINGS PROFILE", "ALTER", "SET", "SHOW"},
-    });
-}
-
 }

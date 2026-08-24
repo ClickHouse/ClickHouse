@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -41,13 +40,7 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     auto column_needles = arguments[arg_needles].column;
-    if (!column_needles)
-        return {};
-
-    /// At plan time, constant columns coming from ActionsDAG nodes are normalized to size 0
-    /// (see ActionsDAG::addColumn). For non-const columns we can only extract a value when
-    /// there's at least one row.
-    if (!isColumnConst(*column_needles) && column_needles->empty())
+    if (!column_needles || column_needles->empty())
         return {};
 
     Field needles_field = (*column_needles)[0];
@@ -55,7 +48,7 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     TokensWithPosition search_tokens;
-    VectorWithMemoryTracking<String> tokens_array;
+    std::vector<String> tokens_array;
 
     if (needles_field.getType() == Field::Types::String)
     {
@@ -413,12 +406,13 @@ ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
     ColumnPtr col_input = arguments[arg_input].column;
 
-    if (tokenizer->isStateful())
+    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
     {
-        /// Stateful tokenizers mutate internal state during execution and cannot be shared across
-        /// threads; use a per-execution clone.
-        auto stateful_tokenizer = tokenizer->clone();
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, stateful_tokenizer.get(), search_tokens);
+        /// The sparse gram token extractor stores an internal state which modified during the execution.
+        /// This leads to an error while executing this function multi-threaded because that state is not protected.
+        /// To avoid this case, a clone of the sparse gram token extractor will be used.
+        auto sparse_grams_tokenizer = tokenizer->clone();
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
@@ -440,42 +434,40 @@ REGISTER_FUNCTION(HasAnyTokens)
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
-- the `needle` argument (if given as a [String](/reference/data-types/string))
+- the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
-If the `needle` argument is of type [Array(String)](/reference/data-types/array), each array element is treated as a token — no additional tokenization takes place.
-If the text index has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
-If the text index has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
+If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
 
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
 :::note
-When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
-hasAnyTokens(input, needles[, tokenizer])
+hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
     {
         "Basic usage with a string needle",
         R"(
-CREATE TABLE doc (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -483,9 +475,9 @@ CREATE TABLE doc (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
         )",
         R"(
 ┌─count()─┐
@@ -496,17 +488,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
+SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -517,17 +499,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -558,21 +530,6 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
         )",
         R"(
@@ -584,21 +541,6 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
         )",
         R"(
@@ -610,21 +552,6 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
         )",
         R"(
@@ -648,42 +575,40 @@ REGISTER_FUNCTION(HasAllTokens)
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
-- the `needle` argument (if given as a [String](/reference/data-types/string))
+- the `needle` argument (if given as a [String](../../sql-reference/data-types/string.md))
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
-If the `needle` argument is of type [Array(String)](/reference/data-types/array), each array element is treated as a token — no additional tokenization takes place.
-If the text index has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
-If the text index has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
+If the `needle` argument is of type [Array(String)](../../sql-reference/data-types/array.md), each array element is treated as a token — no additional tokenization takes place.
 
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
 :::note
-When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
-hasAllTokens(input, needles[, tokenizer])
+hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
-        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
+        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
     {
         "Basic usage with a string needle",
         R"(
-CREATE TABLE doc (
+CREATE TABLE table (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -691,9 +616,9 @@ CREATE TABLE doc (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
         )",
         R"(
 ┌─count()─┐
@@ -704,17 +629,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
+SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -725,17 +640,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-CREATE TABLE doc (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -749,9 +654,9 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', 
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
         )",
         R"(
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                            1 │
+└──────────────────────────────────────────────┘
         )"
     },
     {
@@ -777,21 +682,6 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
         )",
         R"(
@@ -803,21 +693,6 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
         )",
         R"(
@@ -829,21 +704,6 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
-CREATE TABLE log (
-    id UInt32,
-    tags Array(String),
-    attributes Map(String, String),
-    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
-    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO log VALUES
-    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
-    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
-
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
         )",
         R"(

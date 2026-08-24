@@ -15,7 +15,6 @@
 #include <vector>
 #include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
-#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -55,14 +54,14 @@ namespace DataLake
 {
 using namespace DataLake::Paimon;
 
-static String md5(const String & input)
+String md5(const String & input)
 {
     Poco::MD5Engine md5;
     md5.update(input);
     return DB::base64Encode(String(reinterpret_cast<const char *>(md5.digest().data()), md5.digestLength()));
 }
 
-static String bytesToHex(const String & bytes)
+String bytesToHex(const String & bytes)
 {
     const char hex_digits[] = "0123456789abcdef";
     DB::WriteBufferFromOwnString hex_str;
@@ -129,7 +128,7 @@ void PaimonRestCatalog::loadConfig()
     }
 }
 
-String PaimonRestCatalog::createAuthHeaders(
+void PaimonRestCatalog::createAuthHeaders(
     DB::HTTPHeaderEntries & current_headers,
     const String & resource_path,
     const std::unordered_map<String, String> & query_params,
@@ -138,13 +137,12 @@ String PaimonRestCatalog::createAuthHeaders(
 {
     if (!token.has_value())
     {
-        return "";
+        return;
     }
     if (token->token_provider == "bearer")
     {
-        /// The bearer token is applied by `create` (it fills the `Authorization` header), so it is
-        /// returned rather than spliced into `current_headers` here.
-        return token->bearer_token;
+        current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bearer_token));
+        return;
     }
     else if (token->token_provider == "dlf")
     {
@@ -260,9 +258,7 @@ String PaimonRestCatalog::createAuthHeaders(
         {
             current_headers.emplace_back(entry.first, entry.second);
         }
-        /// The `dlf` provider signs the request with its own `Authorization` header (added above), so
-        /// there is no bearer token for `create`.
-        return "";
+        return;
     }
     throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown token provider: {}", token->token_provider);
 }
@@ -283,8 +279,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
-        validateBearerToken(context, bearer_token);
+        createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
+
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
@@ -303,7 +299,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             .withHeaders(request_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .createWithBearerToken(bearer_token);
+            .create(credentials);
     };
 
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);
@@ -431,40 +427,13 @@ bool PaimonRestCatalog::empty() const
     return tables.empty();
 }
 
-CatalogTables PaimonRestCatalog::getTables() const
+DB::Names PaimonRestCatalog::getTables() const
 {
     DB::Strings databases;
     DB::Names tables;
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
-
-    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
-}
-
-DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
-{
-    /// Paimon REST databases are flat — they cannot contain nested namespaces.
-    DB::Strings databases;
-    forEachDatabase(databases, {}, {});
-    return databases;
-}
-
-CatalogTables PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    DB::Names tables;
-    forEachTables(namespace_name, tables, {});
-
-    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
+    return tables;
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const

@@ -88,7 +88,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -641,7 +641,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     KeysProvider && keys_object) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -957,7 +957,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index = 0;
+        ssize_t element_index;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1004,7 +1004,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index = 0;
+        ssize_t element_index;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1068,7 +1068,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
                     break;
 
                 ++total_blocks;
-                total_rows += block.rows(); // NOLINT(clang-analyzer-cplusplus.Move)
+                total_rows += block.rows();
 
                 Stopwatch watch_process;
                 resize(total_rows);
@@ -1225,7 +1225,6 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
-void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,
@@ -1294,77 +1293,12 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
-        }, false, true, Documentation{
-        .description = R"DOCS_MD(
-# hashed_array dictionary layout types
-
-## hashed_array {#hashed_array}
-
-The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
-
-The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
-
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(HASHED_ARRAY([SHARDS 1]))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <hashed_array>
-  </hashed_array>
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-## complex_key_hashed_array {#complex_key_hashed_array}
-
-This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to [hashed_array](#hashed_array).
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <complex_key_hashed_array />
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-)DOCS_MD",
-        .syntax = "LAYOUT(HASHED_ARRAY())",
-        .related = {"hashed"}});
+        }, false);
     factory.registerLayout("complex_key_hashed_array",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Complex);
-        }, true, true, Documentation{
-        .description = "Like `hashed_array`, but supports composite keys.",
-        .syntax = "LAYOUT(COMPLEX_KEY_HASHED_ARRAY())",
-        .related = {"hashed_array"}});
+        }, true);
 }
 
 }

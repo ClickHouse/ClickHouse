@@ -1,6 +1,6 @@
 """End-to-end tests for the Iceberg Table Engine (IcebergS3 / IcebergAzure).
 
-The Iceberg Table Engine provides an integration with existing
+The Iceberg Table Engine provides a read-only integration with existing
 Apache Iceberg tables.  Unlike the table functions, the engine requires a
 persistent `CREATE TABLE` statement and exposes engine-level SETTINGS for
 metadata resolution, schema evolution, and data caching.
@@ -384,7 +384,7 @@ def test_engine_primitive_types(node, manager, types_table):
 
 
 # ===================================================================
-# Writing through the engine
+# Read-only nature of the engine
 # ===================================================================
 
 
@@ -822,6 +822,8 @@ def test_engine_iceberg_metadata_table_uuid(node, manager, sales_table):
     We extract the actual table UUID from the metadata and verify that
     CREATE TABLE with the correct UUID reads data successfully.
     """
+    import json
+    import os
 
     # Load the iceberg table from the local catalog to get the UUID
     local_catalog = manager._catalog

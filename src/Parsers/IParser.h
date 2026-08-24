@@ -1,12 +1,12 @@
 #pragma once
 
+#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <memory>
 #include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/InlineVector.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -74,7 +74,7 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
   */
 struct Expected
 {
-    InlineVector<const char *, 7> variants;
+    absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
     bool enable_highlighting = false;
@@ -160,7 +160,7 @@ public:
               * The frequency is arbitrary, but not too large, not too small,
               * and a power of two to simplify the division.
               */
-#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG)
+#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG) || defined(OS_DARWIN)
             static constexpr uint32_t check_frequency = 128;
 #else
             static constexpr uint32_t check_frequency = 8192;

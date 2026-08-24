@@ -8,8 +8,6 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -209,63 +207,4 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementGrant(StatementFactory & factory)
-{
-    factory.registerStatement("GRANT",
-    {
-        .description = R"(
-Grants privileges to user accounts or roles, or assigns roles to user accounts or to other roles.
-
-`WITH GRANT OPTION` allows the grantee to grant the privilege further, `WITH ADMIN OPTION` allows the grantee to
-assign the role further, and `WITH REPLACE OPTION` replaces the old privileges or roles of the grantee instead of
-adding to them.
-
-**Examples**
-
-**Grant a privilege on a database**
-
-```sql title="Query"
-GRANT SELECT ON db.* TO accountant;
-```
-
-**Assign a role to a user**
-
-```sql title="Query"
-GRANT accountant TO john;
-```
-)",
-        .syntax = R"(
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
-)",
-        .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
-    });
-
-    factory.registerStatement("REVOKE",
-    {
-        .description = R"(
-Revokes privileges from users or roles, or removes the assignment of a role. `ADMIN OPTION FOR` revokes only the right
-to assign the role further, keeping the role itself assigned.
-
-**Examples**
-
-**Revoke a privilege**
-
-```sql title="Query"
-REVOKE SELECT ON db.* FROM accountant;
-```
-)",
-        .syntax = R"(
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
-REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
-)",
-        .related = {"GRANT", "CHECK GRANT", "SHOW"},
-    });
-}
-
 }

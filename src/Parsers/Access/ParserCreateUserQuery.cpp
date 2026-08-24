@@ -10,8 +10,6 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -19,10 +17,9 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <base/range.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 
 #include "config.h"
@@ -54,64 +51,16 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-            {
-                is_interval = false;
-                ParserStringAndSubstitution until_p;
-                return until_p.parse(pos, valid_until, expected);
-            }
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
 
-            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
-            /// at query execution time and stored in the VALID UNTIL form.
-            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
-            {
-                is_interval = true;
-                ParserExpression interval_p;
-                if (!interval_p.parse(pos, valid_until, expected))
-                    return false;
+            ParserStringAndSubstitution until_p;
 
-                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
-                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
-                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
-                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
-                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
-                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
-                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
-                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
-                /// at execution time.
-                if (const auto * maybe_in = valid_until->as<ASTFunction>();
-                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
-                {
-                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
-                    /// `IN memory` and `IN 'memory'` have to be given back.
-                    const auto & storage_ast = maybe_in->arguments->children[1];
-                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
-                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
-                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
-                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
-
-                    if (is_storage_name)
-                    {
-                        /// A short identifier, a string literal and the `IN` keyword are one token each.
-                        /// Verify the rewound position really points at `IN` before acting on it.
-                        IParserBase::Pos in_pos = pos;
-                        --in_pos;
-                        --in_pos;
-                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
-                        {
-                            valid_until = maybe_in->arguments->children[0];
-                            pos = in_pos;
-                        }
-                    }
-                }
-                return true;
-            }
-
-            return false;
+            return until_p.parse(pos, valid_until, expected);
         });
     }
 
@@ -305,9 +254,7 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            ASTPtr method_valid_until;
-            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
-                auth_data->setValidUntil(std::move(method_valid_until));
+            parseValidUntil(pos, expected, auth_data->valid_until);
 
             return true;
         });
@@ -369,9 +316,7 @@ namespace
                 authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
-                ASTPtr method_valid_until;
-                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
-                    authentication_methods.back()->setValidUntil(std::move(method_valid_until));
+                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
 
                 return true;
             }
@@ -649,7 +594,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
-    bool global_valid_until_is_interval = false;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -760,7 +704,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (auth_data.empty() && !global_valid_until)
         {
-            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
+            if (parseValidUntil(pos, expected, global_valid_until))
             {
                 continue;
             }
@@ -781,22 +725,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (alter_query_with_no_changes)
     {
         return false;
-    }
-
-    /// `VALID FOR <interval>` is resolved to an absolute deadline at query execution time and stored
-    /// (and shown) in the `VALID UNTIL` form. It therefore never appears in the on-disk (`ATTACH`)
-    /// representation, and it cannot be evaluated during attach anyway: there is no query context, and
-    /// re-resolving `now` on every startup would let the deadline drift forever. Reject it here with a
-    /// clear message instead of failing later, deep inside `deserializeAccessEntity`, while loading a
-    /// hand-written access definition.
-    if (attach_mode)
-    {
-        bool has_valid_for = global_valid_until_is_interval;
-        for (const auto & authentication_method : auth_data)
-            has_valid_for = has_valid_for || authentication_method->valid_until_is_interval;
-
-        if (has_valid_for)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR is not allowed in ATTACH USER queries; the deadline must be stored as an absolute VALID UNTIL value");
     }
 
     auto query = make_intrusive<ASTCreateUserQuery>();
@@ -821,7 +749,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);
-    query->global_valid_until_is_interval = global_valid_until_is_interval;
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -837,70 +764,4 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementUser(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE USER",
-    {
-        .description = R"(
-Creates user accounts. A user can be identified by a password, by a certificate, by an SSH key, or by an external
-authentication server, and can be restricted to a set of hosts, roles, settings and grantees.
-
-**Examples**
-
-**Create a user with a password**
-
-```sql title="Query"
-CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
-```
-)",
-        .syntax = R"(
-CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash | bcrypt_password | bcrypt_hash | ldap | kerberos | ssl_certificate | ssh_key | http | jwt | scram_sha256_password | scram_sha256_hash}] BY {'password' | 'hash'}} [,...]]
-    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
-    [IN access_storage_type]
-    [DEFAULT ROLE role [,...]]
-    [DEFAULT DATABASE database | NONE]
-    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
-    });
-
-    factory.registerStatement("ALTER USER",
-    {
-        .description = R"(
-Changes user accounts: renames them, changes their authentication methods, allowed hosts, default roles, default
-database, grantees and settings.
-
-**Examples**
-
-**Change the default roles of a user**
-
-```sql title="Query"
-ALTER USER user DEFAULT ROLE role1, role2;
-```
-)",
-        .syntax = R"(
-ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
-    [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {...} [,...]]
-    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
-    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-    [DEFAULT DATABASE database | NONE]
-    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] ... | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
-    });
-}
-
 }

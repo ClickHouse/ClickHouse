@@ -47,24 +47,10 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     return Range(min_value, true, max_value, true);
 }
 
-/// Returns true when a column's statistics description is expected to produce numeric
-/// min/max values. Either an explicit `MinMax` statistic is declared, or a `Basic`
-/// statistic on a numeric/temporal column (the only types for which `Basic` populates
-/// min/max). Used before part statistics are loaded to decide whether part pruning can
-/// be beneficial at all.
-bool statisticsHasMinMax(const ColumnStatisticsDescription & stats_desc)
-{
-    if (stats_desc.types_to_desc.contains(StatisticsType::MinMax))
-        return true;
-    if (stats_desc.types_to_desc.contains(StatisticsType::Basic))
-        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber();
-    return false;
-}
-
 } /// anonymous namespace
 
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
-    : filter_dag(&filter_node_, context_, /* boolean_context */ true)
+    : filter_dag(&filter_node_, context_)
     , context(context_)
 {
     if (!metadata_ || !filter_dag.dag)
@@ -77,7 +63,7 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     {
         if (const auto * col = columns.tryGet(name))
         {
-            if (statisticsHasMinMax(col->statistics))
+            if (col->statistics.types_to_desc.contains(StatisticsType::MinMax))
             {
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
@@ -97,11 +83,7 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     ActionsDAG actions_dag(columns);
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
 
-    /// Pruning estimates must not run a query pipeline: only state that is already computed may be
-    /// read here.
-    auto new_key_condition = std::make_unique<KeyCondition>(
-        filter_dag, context, column_names, expression,
-        /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
+    auto new_key_condition = std::make_unique<KeyCondition>(filter_dag, context, column_names, expression);
 
     if (new_key_condition->alwaysUnknownOrTrue())
     {
@@ -123,14 +105,11 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
-    /// Filter to estimates that actually carry numeric min/max values. Both `MinMax` and
-    /// `Basic` (on numeric/temporal types) populate `estimated_min`/`estimated_max`; for
-    /// other types (Array, Tuple, Map, ...) `Basic` leaves them as `nullopt`. Checking
-    /// `estimated_min.has_value()` is the authoritative gate regardless of statistic type.
+    /// Filter estimates with loaded MinMax statistics.
     Estimates minmax_estimates;
     for (const auto & [col_name, estimate] : estimates)
     {
-        if (estimate.estimated_min.has_value())
+        if (estimate.types.contains(StatisticsType::MinMax))
             minmax_estimates[col_name] = estimate;
     }
 

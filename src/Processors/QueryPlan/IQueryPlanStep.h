@@ -1,12 +1,9 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <span>
 #include <string_view>
 #include <variant>
 #include <list>
@@ -16,7 +13,7 @@ namespace DB
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
-using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -38,8 +35,6 @@ class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
-
-using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -79,7 +74,7 @@ public:
     struct Serialization;
     struct Deserialization;
 
-    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
 
@@ -140,54 +135,23 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
-    struct RemoveUnusedColumnsResult
+    enum class RemovedUnusedColumns
     {
-        /// Sentinel for kept_output_positions entries that were added
-        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
-        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
-
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
-
-        /// Required input positions per child (outer index = child_id).
-        /// Empty outside vector means no inputs were changed.
-        /// Empty inside vector means the step doesn't require any inputs from the child.
-        std::vector<std::vector<size_t>> required_input_positions;
-
-        /// Which original output positions survived, in order.
-        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
-        /// Maps new output position to the original output position.
-        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        std::vector<size_t> kept_output_positions;
+        None,
+        OutputOnly,
+        OutputAndInput
     };
 
-    /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
-    /// required_output_positions must be a sorted vector of indices into the step's current output header.
-    /// Each position uniquely identifies a column even when names are duplicated.
-    /// It is guaranteed that the output header of the step will contain all columns at those positions
-    /// and might contain some other columns too.
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
-
-    /// Different Steps have different stages of execution.
-    /// For example JoinStep has build and probe stages.
-    /// The group tag is used in EXPLAIN ANALYZE in order to track
-    /// correctly the time that a step spent doing work in a stage.
-    /// Each step knows its stages (see AggregatingStage,
-    /// JoinStage, SortingStage etc.). When adding new steps with stages
-    /// In order for EXPLAIN ANALYZE to track all the time for every step
-    /// redefine the methods below when adding a new step with several stages
-    /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual std::vector<size_t> getStepGroups() const { return {0}; }
-    virtual String getStepGroupName(size_t) const { return {}; }
-
-    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

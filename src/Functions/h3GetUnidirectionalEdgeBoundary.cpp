@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgeBoundary final : public IFunction
+class FunctionH3GetUnidirectionalEdgeBoundary : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgeBoundary";
@@ -118,8 +118,8 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
         {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of (latitude, longitude) pairs defining a unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `[]`.",
-        {"Array(Tuple(Float64, Float64))"}
+        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
+        {"Array(Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples = {
         {

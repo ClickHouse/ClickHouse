@@ -7,8 +7,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -88,37 +86,5 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementWith(StatementFactory & factory)
-{
-    factory.registerStatement("WITH",
-    {
-        .description = R"(
-Defines common table expressions (CTE), common scalar expressions and recursive queries, which can be referenced by
-the rest of the query. A `WITH RECURSIVE` clause allows the common table expression to reference itself.
-
-**Examples**
-
-**Define a common table expression**
-
-```sql title="Query"
-WITH t AS (SELECT number AS n FROM numbers(10))
-SELECT sum(n) FROM t;
-```
-)",
-        .syntax = R"(
-WITH <expression> AS <identifier>
-WITH <identifier> AS [MATERIALIZED] <subquery expression>
-WITH RECURSIVE <identifier> AS <subquery expression>
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "FROM", "CREATE VIEW"},
-    });
-}
 
 }

@@ -138,7 +138,7 @@ private:
 
     TableStatus getTableStatus(const ContextPtr & context) const;
 
-    bool isMetadataStringCompatible(
+    bool isMetadataStringEqual(
         const std::string & zk_metadata_string,
         const std::string & local_metadata_string,
         bool throw_on_error) const;

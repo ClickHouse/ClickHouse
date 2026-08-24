@@ -8,7 +8,7 @@
 namespace DB
 {
 
-static void assert_byte_equality(std::string_view lhs, const std::vector<uint8_t> & rhs)
+void assert_byte_equality(std::string_view lhs, const std::vector<uint8_t> & rhs)
 {
     std::vector<uint8_t> lhs_vector {lhs.data(), lhs.data() + lhs.size()};
     ASSERT_EQ(lhs_vector, rhs);

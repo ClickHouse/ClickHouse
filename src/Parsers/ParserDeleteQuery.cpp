@@ -4,8 +4,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserPartition.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -93,38 +91,6 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(query->settings_ast);
 
     return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementDelete(StatementFactory & factory)
-{
-    factory.registerStatement("DELETE",
-    {
-        .description = R"(
-Removes the rows matching the filter expression from a table. It is only available for tables of the `*MergeTree`
-family.
-
-It is called a lightweight `DELETE` to contrast it with `ALTER TABLE ... DELETE`: the rows are only marked as deleted
-and are filtered out from the results, whereas the data parts are rewritten later by merges or by
-`ALTER TABLE ... APPLY DELETED MASK`.
-
-**Examples**
-
-**Delete the rows matching a condition**
-
-```sql title="Query"
-DELETE FROM hits WHERE Title LIKE '%hello%';
-```
-)",
-        .syntax = R"(
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr
-)",
-        .related = {"ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY DELETED MASK", "UPDATE", "TRUNCATE"},
-    });
 }
 
 }

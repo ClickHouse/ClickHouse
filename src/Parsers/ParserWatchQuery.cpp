@@ -13,8 +13,6 @@ limitations under the License. */
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -76,33 +74,5 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementWatch(StatementFactory & factory)
-{
-    factory.registerStatement("WATCH",
-    {
-        .description = R"(
-Returns the successive results of a live view as they change. This statement is deprecated together with live views and
-will be removed in the future.
-
-**Examples**
-
-**Watch a live view**
-
-```sql title="Query"
-WATCH lv EVENTS LIMIT 1;
-```
-)",
-        .syntax = R"(
-WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
-)",
-        .related = {"CREATE VIEW", "SELECT"},
-    });
-}
 
 }
