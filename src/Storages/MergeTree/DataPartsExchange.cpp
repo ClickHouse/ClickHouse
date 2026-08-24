@@ -249,7 +249,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
     for (const auto & [name, _] : part->checksums.files)
     {
-        if (endsWith(name, ".proj"))
+        if (IDataPartProjectionStorage::isProjectionDirectoryName(name))
             continue;
 
         files_to_replicate.insert(name);
@@ -297,13 +297,13 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         {
             writeStringBinary(name, out);
             MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, out, client_protocol_version, from_remote_disk, false);
-            data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
+            data_checksums.addFile(IDataPartProjectionStorage::getDirectoryName(name), projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
-        else if (part->checksums.has(name + ".proj"))
+        else if (part->checksums.has(IDataPartProjectionStorage::getDirectoryName(name)))
         {
             // We don't send this projection, just add out checksum to bypass the following check
-            const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
-            data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
+            const auto & our_checksum = part->checksums.files.find(IDataPartProjectionStorage::getDirectoryName(name))->second;
+            data_checksums.addFile(IDataPartProjectionStorage::getDirectoryName(name), our_checksum.file_size, our_checksum.file_hash);
         }
     }
 
@@ -313,7 +313,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     /// data_checksums so that checkEqual below does not fail.
     for (const auto & [name, checksum] : part->checksums.files)
     {
-        if (name.ends_with(".proj") && !data_checksums.has(name))
+        if (IDataPartProjectionStorage::isProjectionDirectoryName(name) && !data_checksums.has(name))
             data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
     }
 
@@ -873,14 +873,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
             MergeTreeData::DataPart::Checksums projection_checksum;
 
-            auto projection_part_storage = part_storage_for_loading->getProjection(projection_name + ".proj");
+            auto projection_part_storage = part_storage_for_loading->getProjection(IDataPartProjectionStorage::getDirectoryName(projection_name));
             projection_part_storage->createDirectories();
 
             downloadBaseOrProjectionPartToDisk(
                 replica_path, projection_part_storage, in, output_buffer_getter, projection_checksum, throttler, sync);
 
             data_checksums.addFile(
-                projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
+                IDataPartProjectionStorage::getDirectoryName(projection_name), projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
 
         downloadBaseOrProjectionPartToDisk(
@@ -948,7 +948,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// not fail.
             for (const auto & [name, checksum] : new_data_part->checksums.files)
             {
-                if (name.ends_with(".proj") && !data_checksums.has(name))
+                if (IDataPartProjectionStorage::isProjectionDirectoryName(name) && !data_checksums.has(name))
                     data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
             }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);

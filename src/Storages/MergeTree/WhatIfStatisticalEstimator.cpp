@@ -41,7 +41,7 @@ bool tryEstimateWithStatistics(
 
     for (const auto & part : parts)
     {
-        auto stats = part.data_part->loadStatistics();
+        auto stats = part.data_part->getStatisticsStorage().load();
         if (!stats.empty())
         {
             builder.markDataPart(part.data_part);

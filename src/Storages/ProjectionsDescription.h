@@ -158,7 +158,8 @@ struct ProjectionDescription
     /// Only the query AST is used to compute the output block.
     Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
-    String getDirectoryName() const { return name + ".proj"; }
+    /// "<name>.proj"; see IDataPartProjectionStorage.
+    String getDirectoryName() const;
 };
 
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;

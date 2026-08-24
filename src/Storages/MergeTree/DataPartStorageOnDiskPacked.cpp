@@ -391,11 +391,9 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskPacked::readFileIfE
 void DataPartStorageOnDiskPacked::rename(
     std::string new_root_path,
     std::string new_part_dir,
-    LoggerPtr log,
-    bool remove_new_dir_if_exists,
-    bool fsync_part_dir)
+    const RenameParams & params)
 {
-    DataPartStorageOnDiskBase::rename(std::move(new_root_path), std::move(new_part_dir), log, remove_new_dir_if_exists, fsync_part_dir);
+    DataPartStorageOnDiskBase::rename(std::move(new_root_path), std::move(new_part_dir), params);
     /// The reader's index is path-independent and reads resolve the current path via readFile, so
     /// the relocation needs no reader refresh.
 }
@@ -616,8 +614,8 @@ bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) 
         return true;
 
     auto path = fs::path(file_name);
-    return path.extension() == ".proj"
-        || path.extension() == ".tmp_proj"
+    return path.extension() == IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX
+        || path.extension() == IDataPartProjectionStorage::TEMPORARY_PROJECTION_DIRECTORY_SUFFIX
         || (path.extension() == ".tmp" && files_written_separately.contains(path.stem()));
 }
 

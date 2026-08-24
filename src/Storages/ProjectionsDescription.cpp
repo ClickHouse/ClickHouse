@@ -1,4 +1,5 @@
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Access/AccessControl.h>
@@ -74,6 +75,12 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 }
+
+String ProjectionDescription::getDirectoryName() const
+{
+    return IDataPartProjectionStorage::getDirectoryName(name);
+}
+
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {

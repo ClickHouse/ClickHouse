@@ -24,7 +24,13 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -35,11 +41,17 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_load_statistics_throw[];
 }
 
 namespace
@@ -420,17 +432,18 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
     return description;
 }
 
-void DataPartStorageOnDiskBase::backup(
-    const MergeTreeDataPartChecksums & checksums,
-    const NameSet & files_without_checksums,
-    const String & path_in_backup,
-    const BackupSettings & backup_settings,
-    bool make_temporary_hard_links,
-    BackupEntries & backup_entries,
-    TemporaryFilesOnDisks * temp_dirs,
-    bool is_projection_part,
-    bool allow_backup_broken_projection) const
+void DataPartStorageOnDiskBase::backup(const BackupParams & params) const
 {
+    const auto & checksums = params.checksums;
+    const auto & files_without_checksums = params.files_without_checksums;
+    const auto & path_in_backup = params.path_in_backup;
+    const auto & backup_settings = params.backup_settings;
+    const bool make_temporary_hard_links = params.make_temporary_hard_links;
+    auto & backup_entries = params.backup_entries;
+    auto * temp_dirs = params.temp_dirs;
+    const bool is_projection_part = params.is_projection_part;
+    const bool allow_backup_broken_projection = params.allow_backup_broken_projection;
+
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
 
@@ -463,7 +476,7 @@ void DataPartStorageOnDiskBase::backup(
     auto files_to_backup = files_without_checksums;
     for (const auto & [name, _] : checksums.files)
     {
-        if (!name.ends_with(".proj"))
+        if (!IDataPartProjectionStorage::isProjectionDirectoryName(name))
             files_to_backup.insert(name);
     }
 
@@ -719,10 +732,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
 void DataPartStorageOnDiskBase::rename(
     std::string new_root_path,
     std::string new_part_dir,
-    LoggerPtr log,
-    bool remove_new_dir_if_exists,
-    bool fsync_part_dir)
+    const RenameParams & params)
 {
+    const auto & log = params.log;
+    const bool remove_new_dir_if_exists = params.remove_new_dir_if_exists;
+    const bool fsync_part_dir = params.fsync_part_dir;
+
     if (new_root_path.ends_with('/'))
         new_root_path.pop_back();
     if (new_part_dir.ends_with('/'))
@@ -798,13 +813,14 @@ void DataPartStorageOnDiskBase::rename(
     }
 }
 
-void DataPartStorageOnDiskBase::remove(
-    CanRemoveCallback && can_remove_callback,
-    const MergeTreeDataPartChecksums & checksums,
-    std::list<ProjectionChecksums> projections,
-    bool is_temp,
-    LoggerPtr log)
+void DataPartStorageOnDiskBase::remove(RemoveParams params)
 {
+    auto can_remove_callback = std::move(params.can_remove_callback);
+    const auto & checksums = params.checksums;
+    auto & projections = params.projections;
+    const bool is_temp = params.is_temp;
+    const auto & log = params.log;
+
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
     /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
@@ -918,7 +934,7 @@ void DataPartStorageOnDiskBase::remove(
 
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
-    std::string proj_suffix = ".proj";
+    std::string proj_suffix{IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX};
     for (const auto & projection : projections)
     {
         std::string proj_dir_name = projection.name + proj_suffix;
@@ -1014,7 +1030,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
     {
         NameSet names_to_remove = {"checksums.txt", "columns.txt"};
         for (const auto & [file, _] : checksums.files)
-            if (!endsWith(file, ".proj"))
+            if (!IDataPartProjectionStorage::isProjectionDirectoryName(file))
                 names_to_remove.emplace(file);
 
         names_to_remove = getActualFileNamesOnDisk(names_to_remove);
@@ -1366,6 +1382,227 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     /// nullptr, and the surviving packed index's size is latched at zero.
     if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&new_storage))
         disk_storage->seedSkipIndicesPackedReader(packed_index);
+}
+
+
+/// ===== Facets of the data part composition (declared in IDataPartStorage.h) =====
+
+DataPartProjectionStorage::DataPartProjectionStorage(
+    String projection_name_,
+    MutableDataPartStoragePtr storage_,
+    DataPartStoragePtr parent_storage_)
+    : projection_name(std::move(projection_name_))
+    , storage(std::move(storage_))
+    , parent_storage(std::move(parent_storage_))
+{
+    if (!storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has no storage", projection_name);
+    if (!parent_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has no parent storage", projection_name);
+}
+
+bool DataPartProjectionStorage::isTemporary() const
+{
+    return isTemporaryProjectionDirectoryName(storage->getPartDirectory());
+}
+
+bool DataPartIndexStorage::isInPackedArchive(const IMergeTreeIndex & index) const
+{
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
+    if (!disk_storage)
+        return false;
+
+    const String file_name = index.getFileName();
+
+    /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
+    /// member inside `skp_idx.packed` on an upgraded part is found.
+    for (const auto & substream : index.getAllSubstreamsInPart(part.checksums, file_name, &part.getDataPartStorage()))
+        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
+            return true;
+
+    return false;
+}
+
+bool DataPartIndexStorage::exists(const String & index_name, bool escape_index_filenames) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DataPartIndexStorage::exists");
+
+    auto file_name = getIndexFileName(index_name, escape_index_filenames);
+    return part.getStreamNameOrHashResolved(file_name, ".idx").has_value()
+        || part.getStreamNameOrHashResolved(file_name, ".idx2").has_value();
+}
+
+static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
+{
+    chassert(filename.starts_with(STATS_FILE_PREFIX));
+    chassert(filename.ends_with(STATS_FILE_SUFFIX));
+
+    size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
+    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
+
+    /// `<col>.null` subcolumn may appear in required_columns when
+    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
+    if (!required_columns.empty()
+        && !required_columns.contains(column_name)
+        && !required_columns.contains(column_name + ".null"))
+    {
+        return nullptr;
+    }
+
+    return all_columns.tryGet(column_name);
+}
+
+DataPartStatisticsStoragePacked::DataPartStatisticsStoragePacked(const IMergeTreeDataPart & part_) : part(part_)
+{
+}
+
+DataPartStatisticsStoragePacked::~DataPartStatisticsStoragePacked() = default;
+
+const PackedFilesReader & DataPartStatisticsStoragePacked::getReader() const
+{
+    std::lock_guard lock(reader_mutex);
+    if (reader)
+        return *reader;
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
+    if (!disk_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Packed statistics reader requires on-disk part storage");
+
+    const String packed_file = fs::path(part.getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+    reader = std::make_unique<PackedFilesReader>(
+        disk_storage->getDisk(),
+        packed_file,
+        part.storage.getContext()->getReadSettings());
+
+    return *reader;
+}
+
+ColumnsStatistics DataPartStatisticsStoragePacked::loadImpl(const NameSet & required_columns) const
+{
+    ColumnsStatistics result;
+    auto read_settings = part.storage.getContext()->getReadSettings();
+
+    const auto & packed_reader = getReader();
+
+    /// The reader holds only the index; resolve the archive's current location here so a part
+    /// that has since been renamed or moved still reads from the right place.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
+    if (!disk_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Packed statistics reader requires on-disk part storage");
+    const auto disk = disk_storage->getDisk();
+    const String packed_file = fs::path(part.getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+
+    for (const auto & filename : packed_reader.getFileNames())
+    {
+        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
+
+        const auto * column_desc = getColumnForStatisticsFile(filename, part.getColumnsDescription(), required_columns);
+        if (!column_desc)
+            continue;
+
+        size_t file_size = packed_reader.getFileSize(filename);
+        auto file_buf = packed_reader.readFile(disk, packed_file, filename, read_settings, file_size);
+        CompressedReadBuffer compressed_buf(*file_buf);
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in packed file {} of part {})",
+                column_desc->name,
+                filename,
+                ColumnsStatistics::FILENAME,
+                part.name);
+            throw;
+        }
+    }
+
+    return result;
+}
+
+ColumnsStatistics DataPartStatisticsStoragePacked::load() const
+{
+    auto component_guard = Coordination::setCurrentComponent("DataPartStatisticsStoragePacked::load");
+    return loadImpl({});
+}
+
+ColumnsStatistics DataPartStatisticsStoragePacked::load(const Names & required_columns) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DataPartStatisticsStoragePacked::load");
+    return loadImpl(NameSet(required_columns.begin(), required_columns.end()));
+}
+
+ColumnsStatistics DataPartStatisticsStorageWide::loadImpl(const NameSet & required_columns) const
+{
+    ColumnsStatistics result;
+    auto read_settings = part.storage.getContext()->getReadSettings();
+
+    for (const auto & [filename, checksum] : part.checksums.files)
+    {
+        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
+            continue;
+
+        const auto * column_desc = getColumnForStatisticsFile(filename, part.getColumnsDescription(), required_columns);
+        if (!column_desc)
+            continue;
+
+        auto file_buf = part.getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
+        CompressedReadBuffer compressed_buf(*file_buf);
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in part {})",
+                column_desc->name,
+                filename,
+                part.name);
+            throw;
+        }
+    }
+
+    return result;
+}
+
+ColumnsStatistics DataPartStatisticsStorageWide::load() const
+{
+    auto component_guard = Coordination::setCurrentComponent("DataPartStatisticsStorageWide::load");
+    return loadImpl({});
+}
+
+ColumnsStatistics DataPartStatisticsStorageWide::load(const Names & required_columns) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DataPartStatisticsStorageWide::load");
+    return loadImpl(NameSet(required_columns.begin(), required_columns.end()));
+}
+
+DataPartStatisticsStoragePtr createDataPartStatisticsStorage(const IMergeTreeDataPart & part)
+{
+    const bool has_packed_archive = part.checksums.has(String(ColumnsStatistics::FILENAME))
+        && dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage()) != nullptr;
+
+    if (has_packed_archive)
+        return std::make_unique<DataPartStatisticsStoragePacked>(part);
+    return std::make_unique<DataPartStatisticsStorageWide>(part);
 }
 
 }
