@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "Knowledgebase",
+      "group": "قاعدة المعرفة",
       "pages": [
         "ar/resources/support-center/home",
         {
-          "group": "Performance & optimization",
+          "group": "الأداء والتحسين",
           "pages": [
             "ar/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ar/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Data import & export",
+          "group": "استيراد البيانات وتصديرها",
           "pages": [
             "ar/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ar/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "Configuration & settings",
+          "group": "التهيئة والإعدادات",
           "pages": [
             "ar/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ar/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "Integrations & client libraries",
+          "group": "التكاملات ومكتبات العميل البرمجية",
           "pages": [
             "ar/resources/support-center/knowledge-base/integrations/node-js-example",
             "ar/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Troubleshooting & errors",
+          "group": "استكشاف الأخطاء وإصلاحها ورسائل الخطأ",
           "pages": [
             "ar/resources/support-center/troubleshooting/index",
             "ar/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Tables & schema",
+          "group": "الجداول والمخطط",
           "pages": [
             "ar/resources/support-center/knowledge-base/tables-schema/add-column",
             "ar/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "Queries & SQL",
+          "group": "الاستعلامات وSQL",
           "pages": [
             "ar/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ar/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "Materialized views & projections",
+          "group": "العروض المادية والإسقاطات",
           "pages": [
             "ar/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ar/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "Monitoring & debugging",
+          "group": "المراقبة وتصحيح الأخطاء",
           "pages": [
             "ar/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ar/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "Security & access control",
+          "group": "الأمان والتحكم بالوصول",
           "pages": [
             "ar/resources/support-center/knowledge-base/security/check-users-roles",
             "ar/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "Data management",
+          "group": "إدارة البيانات",
           "pages": [
             "ar/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ar/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,7 +173,7 @@
           ]
         },
         {
-          "group": "Setup & installation",
+          "group": "الإعداد والتثبيت",
           "pages": [
             "ar/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ar/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,11 +185,11 @@
           ]
         },
         {
-          "group": "General & FAQs",
+          "group": "عام والأسئلة الشائعة",
           "pages": [
             "ar/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "General",
+              "group": "عام",
               "pages": [
                 "ar/resources/support-center/knowledge-base/general-faqs/index",
                 "ar/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -211,7 +211,7 @@
               ]
             },
             {
-              "group": "Use cases",
+              "group": "حالات الاستخدام",
               "pages": [
                 "ar/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ar/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -221,7 +221,7 @@
               ]
             },
             {
-              "group": "Integration",
+              "group": "التكامل",
               "pages": [
                 "ar/resources/support-center/knowledge-base/integrations/index",
                 "ar/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -229,7 +229,7 @@
               ]
             },
             {
-              "group": "Operations",
+              "group": "العمليات",
               "pages": [
                 "ar/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "ar/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -241,7 +241,7 @@
           ]
         },
         {
-          "group": "Tips & tricks",
+          "group": "نصائح وحيل",
           "pages": [
             "ar/resources/support-center/tips-and-tricks/community-wisdom",
             "ar/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Support center"
+  "item": "مركز الدعم"
 }
