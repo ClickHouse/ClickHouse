@@ -193,13 +193,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// Historically intervalLengthSum silently ignored any parameters, so both intervalLengthSum(...)
-    /// calls and persisted types AggregateFunction(intervalLengthSum(...), ...) were accepted.
-    /// Parameters are non-semantic here and never touch the serialized state (serialize/deserialize
-    /// store only the segments). Preserve them so getParameters() matches the -Array wrapper, but
-    /// normalize them away in the state type so a parameterized state and a legacy parameterless
-    /// AggregateFunction(intervalLengthSum, ...) column stay Merge-/CAST-compatible and legacy
-    /// metadata keeps reparsing.
+    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
     DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;

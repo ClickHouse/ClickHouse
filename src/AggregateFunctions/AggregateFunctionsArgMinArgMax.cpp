@@ -145,13 +145,8 @@ public:
         return argument_types_[0];
     }
 
-    /// Historically argMin/argMax (and aliases) silently ignored any parameters, so both calls
-    /// like argMin('x', 1)(...) and persisted types AggregateFunction(argMin('x', 1), ...) were
-    /// accepted. Parameters are non-semantic here and never touch the serialized state
-    /// (serialize/deserialize store only the arg/value data). Preserve them so getParameters()
-    /// matches the -Array wrapper, but normalize them away in the state type so a parameterized
-    /// state and a legacy parameterless AggregateFunction(argMin, ...) column stay
-    /// Merge-/CAST-compatible and legacy metadata keeps reparsing.
+    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
     DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;

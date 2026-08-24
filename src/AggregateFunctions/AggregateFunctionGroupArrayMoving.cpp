@@ -102,18 +102,12 @@ public:
 
     String getName() const override { return Data::name; }
 
-    /// The window-size parameter accepts both Int64 and UInt64 (positive) values. Without type
-    /// suffixes the printed state type name (AggregateFunction(groupArrayMovingSum(42), ...))
-    /// would reparse the value as UInt64, so a state built from an Int64 parameter would not
-    /// round-trip losslessly through metadata. Print parameters with their types so 42::Int64
-    /// stays 42::Int64 in the type name.
+    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
+    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
     bool shouldPrintParametersWithTypes() const override { return true; }
 
-    /// The window-size parameter only affects finalization (insertResultInto), not the serialized
-    /// state (serialize/deserialize store just the accumulated values). Normalize to an empty
-    /// parameter list so a new parameterized state and a legacy parameterless state
-    /// (AggregateFunction(groupArrayMovingSum, ...)) share one representation and stay
-    /// Merge-/CAST-compatible.
+    /// The window size only affects finalization, not the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
     DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
