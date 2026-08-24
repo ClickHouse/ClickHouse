@@ -272,6 +272,33 @@ def test_metrics(started_cluster):
         f"{leader.name} did not increment MergeTreeLeaderElectionLeaseRenewals"
     )
 
+    # Failover leg: these are the counters operators use to diagnose lease churn, so
+    # exercise them through one real leadership change. Detaching the table on the
+    # leader stops its election (recording `MergeTreeLeaderElectionLost` on that node)
+    # and stops lease renewal, so the lease expires and the follower claims it
+    # (recording `MergeTreeLeaderElectionLeaseTakeovers` on the follower's node).
+    baseline_lost = {n.name: event(n, "MergeTreeLeaderElectionLost") for n in [node1, node2]}
+    baseline_takeovers = {
+        n.name: event(n, "MergeTreeLeaderElectionLeaseTakeovers") for n in [node1, node2]
+    }
+
+    leader.query(f"DETACH TABLE {table}")
+    assert event(leader, "MergeTreeLeaderElectionLost") - baseline_lost[leader.name] >= 1, (
+        f"{leader.name} did not increment MergeTreeLeaderElectionLost after losing leadership"
+    )
+
+    new_leader, _ = wait_for_leader([follower], table_name=table)
+    assert new_leader is follower
+    assert (
+        event(follower, "MergeTreeLeaderElectionLeaseTakeovers")
+        - baseline_takeovers[follower.name]
+        >= 1
+    ), f"{follower.name} did not increment MergeTreeLeaderElectionLeaseTakeovers after takeover"
+
+    # Re-attach on the old leader (it rejoins as a follower) so the drop-time gauge
+    # checks below cover both nodes again.
+    leader.query(f"ATTACH TABLE {table}")
+
     # Drop the table and verify the gauges return to their pre-test baseline.
     node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -858,6 +885,53 @@ def test_local_metadata_rejects_leader_election(started_cluster):
         "MergeTree with leader_election=1 on an S3 disk with local metadata "
         "should have been rejected at CREATE"
     )
+
+
+def test_mixed_policy_rejects_leader_election(started_cluster):
+    """
+    Regression: `leader_election` must validate **every** disk in the storage policy,
+    not only the first volume. A policy whose first volume is a valid shared
+    `plain_rewritable` `S3` disk but whose second volume is invalid (a local disk, or
+    an `S3` disk with `metadata_type = local`) could still strand parts on a
+    node-invisible disk via `TTL`-driven moves or a volume overflow, so it must be
+    rejected at create. A regression back to checking only the primary volume would
+    accept both policies below.
+    """
+    ensure_node_up(node1)
+    for policy, table, offending_disk, expected_word in [
+        ("s3_mixed_local_md", "test_mixed_local_md_rejected", "s3_local_md", "metadata"),
+        ("s3_mixed_local_disk", "test_mixed_local_disk_rejected", "default", "backend"),
+    ]:
+        rejected = False
+        try:
+            node1.query(
+                f"""
+                CREATE TABLE {table} (x UInt64)
+                ENGINE = MergeTree ORDER BY x
+                SETTINGS storage_policy = '{policy}', leader_election = 1
+                """
+            )
+        except Exception as e:
+            msg = str(e)
+            assert "leader_election" in msg and expected_word in msg, (
+                f"Expected rejection of policy `{policy}` mentioning `leader_election` "
+                f"and {expected_word}, got: {msg}"
+            )
+            assert f"'{offending_disk}'" in msg, (
+                f"Expected the rejection of policy `{policy}` to name the offending "
+                f"second-volume disk `{offending_disk}` (proving validation went past "
+                f"the first volume), got: {msg}"
+            )
+            rejected = True
+        finally:
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+        assert rejected, (
+            f"MergeTree with leader_election=1 on mixed policy `{policy}` (valid shared "
+            "first volume, invalid second volume) should have been rejected at CREATE"
+        )
 
 
 def test_follower_sees_leader_writes(started_cluster):

@@ -46,6 +46,29 @@
                     </main>
                 </volumes>
             </s3_local_md>
+            <!-- Mixed policies: a valid shared `plain_rewritable` S3 first volume plus an
+                 invalid second volume. Only used by the regression tests that verify
+                 `leader_election` validates every disk in the policy, not just the first. -->
+            <s3_mixed_local_md>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                    <second>
+                        <disk>s3_local_md</disk>
+                    </second>
+                </volumes>
+            </s3_mixed_local_md>
+            <s3_mixed_local_disk>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                    <second>
+                        <disk>default</disk>
+                    </second>
+                </volumes>
+            </s3_mixed_local_disk>
         </policies>
     </storage_configuration>
 </clickhouse>
