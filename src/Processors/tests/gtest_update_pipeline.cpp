@@ -650,7 +650,7 @@ TEST(Processors, UpdatePipelineFanInRemovalNoUseAfterFree)
         PullingPipelineExecutor executor(pipeline);
 
         Chunk chunk;
-        /// Drain to completion. The point is that execution finishes without an ASAN report;
+        /// Drain to completion. The point is that execution finishes without an ASan report;
         /// the exact number/content of chunks is not what we assert here.
         while (executor.pull(chunk))
         {
@@ -724,7 +724,7 @@ TEST(Processors, UpdatePipelineConcurrentRemovalDoesNotFreeQueuedEdges)
         }
     }
 
-    /// The assertion is the ASAN report; this only distinguishes "clean because the pipeline ran"
+    /// The assertion is the ASan report; this only distinguishes "clean because the pipeline ran"
     /// from "clean because nothing executed".
     EXPECT_GT(pulled, 0u);
 }
