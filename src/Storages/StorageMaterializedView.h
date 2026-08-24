@@ -15,6 +15,13 @@ namespace DB
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+enum class RefreshMode : uint8_t
+{
+    Replace,     /// Recompute the whole query and replace the target table.
+    Append,      /// Append the query result to the target.
+    Incremental, /// Append only the rows committed to the single source since the previous refresh.
+};
+
 class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {
 public:
@@ -163,8 +170,8 @@ private:
     /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
     /// must drop the temp table before rethrowing.
     std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-    prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
-        bool incremental, const CursorTreeNodePtr & stream_cursor) const;
+    prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
+        const CursorTreeNodePtr & stream_cursor) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
 

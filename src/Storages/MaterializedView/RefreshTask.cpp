@@ -1315,6 +1315,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         const bool incremental = refresh_incremental;
         if (incremental && !refresh_append)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH ... INCREMENTAL requires APPEND");
+        const RefreshMode refresh_mode = incremental ? RefreshMode::Incremental
+            : refresh_append ? RefreshMode::Append : RefreshMode::Replace;
 
         /// For incremental refresh, resume the source stream from the last persisted cursor and attach a
         /// holder that the reading source fills with the new cursor (read back after the query succeeds).
@@ -1352,7 +1354,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             QueryScope query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, table_to_drop, incremental, stream_cursor);
+            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, table_to_drop, stream_cursor);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.

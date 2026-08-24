@@ -144,7 +144,7 @@ namespace
 
         auto stream_settings = make_intrusive<ASTStreamSettings>();
         stream_settings->setSubscribeForUpdates(false);   /// BOUNDED: read the first safe snapshot and finish.
-        stream_settings->setUnordered(true);               /// UNORDERED: skip the commit-order sort.
+        stream_settings->setUnordered(true);              /// UNORDERED: skip the commit-order sort.
         if (stream_cursor)
             stream_settings->setCursor(stream_cursor);
 
@@ -687,9 +687,12 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 }
 
 std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
-    bool incremental, const CursorTreeNodePtr & stream_cursor) const
+StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
+    const CursorTreeNodePtr & stream_cursor) const
 {
+    const bool append = mode != RefreshMode::Replace;
+    const bool incremental = mode == RefreshMode::Incremental;
+
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
