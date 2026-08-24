@@ -767,7 +767,7 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
     const String processed = has_preprocessor ? preprocessor->processConstant(raw) : String{};
     const String & pattern = has_preprocessor ? processed : raw;
 
-    /// `nextInStringLike` tokenizes such a pattern differently than row-level matching and could prune a
+    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
     if (likePatternHasUnknownBackslashEscape(pattern))
         return tokens;

@@ -25,7 +25,8 @@ SELECT groupArray(id) FROM tab WHERE msg LIKE '% a\\b %' SETTINGS use_skip_index
 
 SELECT '-- LIKE with a trailing backslash';
 
-SELECT count() FROM tab WHERE msg LIKE 'abc\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM tab WHERE msg LIKE 'abc\\';                               -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM tab WHERE msg LIKE 'abc\\' SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 
 DROP TABLE tab;
 

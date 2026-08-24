@@ -483,8 +483,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     Field const_value = value_field;
 
-    /// `stringLikeToBloomFilter` tokenizes such a pattern differently than row-level matching
-    /// and could prune a granule holding matching rows.
+    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
+    /// granule holding matching rows.
     if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
         && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
         return false;
