@@ -208,17 +208,21 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     if (isFloat(correlated_base))
         return std::nullopt;
 
+    /// `Bool` is a custom-named `UInt8` and `IDataType::equals` does not distinguish them, so a
+    /// plain `UInt8` member would take the exact/equal-base paths and alias a value like `2`
+    /// into the `Bool` correlated column, breaking the value domain expressions and optimizers
+    /// assume; the cross-base cast is unfaithful too (`accurateCastOrNull` into `Bool` maps every
+    /// non-zero value to `true`). The custom name is load-bearing: reconstruction into `Bool`
+    /// requires a `Bool` member.
+    if (isBool(correlated_base) && !isBool(member_base))
+        return std::nullopt;
+
     if (member_type->equals(*correlated_type))
         return conversion;
 
     if (!member_base->equals(*correlated_base))
     {
         if (!isNativeNumber(member_base) || !isNativeNumber(correlated_base))
-            return std::nullopt;
-        /// Only the cast INTO `Bool` is unfaithful (`accurateCastOrNull` maps every non-zero value
-        /// to `true` instead of checking exactness); wrapper-only and exact `Bool` conversions
-        /// preserve the canonical 0/1 values and stay allowed.
-        if (isBool(correlated_base))
             return std::nullopt;
         auto supertype = tryGetLeastSupertype(DataTypes{member_base, correlated_base});
         if (!supertype)
@@ -600,7 +604,7 @@ QueryPlan decorrelateQueryPlan(
                 /// FixedString, ...) has comparison semantics that are not consistent with CAST, so it
                 /// is not recorded. Substitution is additionally restricted in `classifySubstitutionConversion`:
                 /// float correlated bases are never substituted (signed zero), and `Bool` correlated
-                /// bases only with an equal base (inexact `Bool` cast).
+                /// bases only from `Bool` members (the custom name is load-bearing).
                 auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
                 auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
                 bool equal_bases = lhs_base->equals(*rhs_base);

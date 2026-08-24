@@ -405,3 +405,14 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_28 AS i WHERE i.x = o.x) FROM t_outer_28 AS o);
 SELECT x, (SELECT count() FROM t_inner_28 AS i WHERE i.x = o.x) FROM t_outer_28 AS o ORDER BY x;
+
+SELECT '-- Case 29: guarded, outer Bool vs inner UInt8; Bool is a custom-named UInt8 and must not be reconstructed from a plain UInt8 member: the smuggled non-canonical 2 would reach expressions that are safe over the Bool domain (here intDiv(1, 2 - o.x) would throw)';
+CREATE TABLE t_outer_29 (x Bool) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_29 (u UInt8) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_29 VALUES (true), (false);
+INSERT INTO t_inner_29 VALUES (0), (1), (2);
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_29 AS o WHERE EXISTS (SELECT 1 FROM t_inner_29 AS i WHERE i.u = o.x AND intDiv(1, 2 - o.x) >= 0));
+SELECT x FROM t_outer_29 AS o WHERE EXISTS (SELECT 1 FROM t_inner_29 AS i WHERE i.u = o.x AND intDiv(1, 2 - o.x) >= 0) ORDER BY x;

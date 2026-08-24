@@ -107,3 +107,7 @@ plan: substituted=0
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 false	\N
 true	2
+-- Case 29: guarded, outer Bool vs inner UInt8; Bool is a custom-named UInt8 and must not be reconstructed from a plain UInt8 member: the smuggled non-canonical 2 would reach expressions that are safe over the Bool domain (here intDiv(1, 2 - o.x) would throw)
+plan: substituted=0
+false
+true
