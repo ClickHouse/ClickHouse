@@ -7,36 +7,36 @@
       "versionId": "b87b6761c38881ce9c49dfcde638d7f4622d33fca65436284fef96c67213cd5f",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-24T08:10:36.910Z",
+          "updatedAt": "2026-08-24T08:38:46.840Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-24T08:10:37.135Z",
+          "updatedAt": "2026-08-24T08:38:47.016Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-24T08:10:36.004Z",
+          "updatedAt": "2026-08-24T08:38:46.086Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-24T08:10:37.598Z",
+          "updatedAt": "2026-08-24T08:38:47.375Z",
           "fileName": "docs.json",
           "postProcessHash": "91bad66b682e18db1402c59de0d65a798c57b66af46952972fda881110cbf512"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-24T08:10:36.675Z",
+          "updatedAt": "2026-08-24T08:38:46.658Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-24T08:10:36.446Z",
+          "updatedAt": "2026-08-24T08:38:46.475Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-24T08:10:37.364Z",
+          "updatedAt": "2026-08-24T08:38:47.194Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-24T08:10:36.235Z",
+          "updatedAt": "2026-08-24T08:38:46.293Z",
           "fileName": "docs.json"
         }
       },
@@ -134445,47 +134445,47 @@
     },
     {
       "fileId": "132298a7e8b490722d82012f43ae7b31d581bc56f73264ea5349c661447ac1d5",
-      "versionId": "839b2533614d0c8a4fae34e5b34c7edd4e1490840ea2491f4ddcb6637c8321a6",
+      "versionId": "6ac25eb4e10e72cf1c9a0f8e8acb81e63cc1dc1e4a5f73a5316ba7c721d97b49",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
-          "fileName": "es/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "de71ea9d8a26529cb6c5e4e33e589abcb31983868c2a1b723f52aa99f85de680"
+        "ru": {
+          "updatedAt": "2026-08-24T08:38:50.643Z",
+          "fileName": "ru/integrations/clickpipes/networking/static-ips.mdx",
+          "postProcessHash": "0ffb6f0e187baedc9524a0fd627f687d27e814a63f7d03e9c399049143ce65e6"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.557Z",
+          "updatedAt": "2026-08-24T08:38:50.643Z",
           "fileName": "ja/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "8574cd024bc314a2112fa5fea519646824d99f56088bd9fb180ee1bd0021c949"
+          "postProcessHash": "f2656fd2e7fc5f27c2bf690af4e63683fa9032efc1e3b55d8551f53201fb56f7"
         },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.557Z",
-          "fileName": "ko/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "7c32b5b2a8eaaed2bab13d1fcb22508a4683edfd41b2707f5db6f1c352c2de58"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.557Z",
-          "fileName": "pt-BR/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "f3bc0faffb024b4aaef707a85e6e8742ba2e70c89813efc158a6639a8b289cf0"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.557Z",
-          "fileName": "ru/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "99dc5cd1be8fe5f3a5dd132950bc966f4f4611c5c8632eb0dda3fc8fd398865b"
+        "es": {
+          "updatedAt": "2026-08-24T08:38:50.644Z",
+          "fileName": "es/integrations/clickpipes/networking/static-ips.mdx",
+          "postProcessHash": "668aa3bd24d2e21d700b94d0ba765ec4e37443dc646612d10d0a0dd6205bc1d6"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.557Z",
+          "updatedAt": "2026-08-24T08:38:50.644Z",
           "fileName": "zh/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "60acc6018d4580a9665b87d7dd834020060ec9a459844c92b9bfc4a739e6f933"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.558Z",
-          "fileName": "ar/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "9bac092b3737a147b27852bff5b497c549954abd278b0a9912c4c44dc2522e7b"
+          "postProcessHash": "f15afed4190c397a7c636dce509f67ef8d40a2812f1860d8c23e161db08405f0"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.558Z",
+          "updatedAt": "2026-08-24T08:38:50.644Z",
           "fileName": "fr/integrations/clickpipes/networking/static-ips.mdx",
-          "postProcessHash": "774f7e6c6d32e269f110ea7101976fb4b73bbe2b4953a7a1121ffe01f2029733"
+          "postProcessHash": "547642115115d70947960367b2323b9a77deaa894073bce3ad857139cd2a2ed0"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T08:38:50.645Z",
+          "fileName": "pt-BR/integrations/clickpipes/networking/static-ips.mdx",
+          "postProcessHash": "3ca1beda77548efb1e7083436885231623075fa4084881377f652b10140f699a"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T08:38:50.645Z",
+          "fileName": "ar/integrations/clickpipes/networking/static-ips.mdx",
+          "postProcessHash": "7ff2aeab121c082648b250c34a31119dd143c7bc6e771f475acdffd0b8898cc1"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T08:38:50.645Z",
+          "fileName": "ko/integrations/clickpipes/networking/static-ips.mdx",
+          "postProcessHash": "b10c221fa3f294b7328a8bf1647e958b0d4ac7c87b8e8743457278f6efbb4ba2"
         }
       },
       "fileName": "integrations/clickpipes/networking/static-ips.mdx",
