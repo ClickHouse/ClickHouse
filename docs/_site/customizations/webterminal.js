@@ -246,11 +246,16 @@
   // Collapse to the tray but keep the iframe alive, preserving the session and its scrollback.
   function hideTerminal() {
     if (!terminalOpen) return;
+    var terminalHadFocus = document.activeElement === iframe;
     terminalOpen = false;
     panel.classList.remove(OPEN_CLASS);
     document.documentElement.classList.remove(PAGE_LOCK_CLASS);
     applyPanelGeometry();
     updateControls();
+    if (terminalHadFocus) {
+      iframe.blur();
+      toggle.focus();
+    }
     saveState();
   }
 
