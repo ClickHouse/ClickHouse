@@ -142,6 +142,12 @@ private:
     /// the min-rows gate. A seam: can later be driven by online per-block signals.
     bool shouldBuildParallel(size_t num_rows) const;
 
+    /// Total bytes held by the deduplication set. Includes the per-bucket string arenas of the
+    /// two-level parallel build, which live outside `SetVariants::string_pool` and so are invisible to
+    /// `SetVariants::getTotalByteCount`; without them a two-level string `DISTINCT` would undercount
+    /// and could slip past `max_bytes_in_distinct`.
+    size_t totalSetByteCount() const;
+
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
 

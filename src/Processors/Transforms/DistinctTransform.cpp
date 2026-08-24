@@ -214,6 +214,15 @@ bool DistinctTransform::shouldBuildParallel(size_t num_rows) const
     return pool != nullptr && num_rows > parallel_build_min_rows;
 }
 
+size_t DistinctTransform::totalSetByteCount() const
+{
+    size_t bytes = data ? data->getTotalByteCount() : 0;
+    for (const auto & arena : two_level_scratch.bucket_arenas)
+        if (arena)
+            bytes += arena->allocatedBytes();
+    return bytes;
+}
+
 template <typename Method>
 void DistinctTransform::buildFilter(
     Method & method,
@@ -360,13 +369,20 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                     const UInt32 row = rows_buf[j];
                     auto kh = state.getKeyHolder(row, unused_pool);
                     KeyType key = keyHolderGetKey(kh);
+                    bool inserted;
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        const char * persisted = bucket_arena->insert(key.data(), key.size());
-                        key = std::string_view(persisted, key.size());
+                        /// Persist into the per-bucket arena only when the key is actually inserted:
+                        /// `ArenaKeyHolder` copies on `keyHolderPersistKey` (called by `emplace` on
+                        /// insert) and discards otherwise, so a duplicate row adds no bytes and the
+                        /// arena stays proportional to the distinct keys, matching the serial path.
+                        ArenaKeyHolder key_holder{key, *bucket_arena};
+                        impl.emplace(key_holder, it, inserted, hash_buf[j]);
                     }
-                    bool inserted;
-                    impl.emplace(key, it, inserted, hash_buf[j]);
+                    else
+                    {
+                        impl.emplace(key, it, inserted, hash_buf[j]);
+                    }
                     filter[row] = inserted;
                 }
             }
@@ -663,7 +679,7 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Stop reading, but still emit the new rows from the current chunk (their keys are
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size, data ? data->getTotalByteCount() : 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(new_set_size, totalSetByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
     if (num_selected == num_rows)
