@@ -386,8 +386,10 @@ void generateManifestFile(
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_entry_v1_schema;
-    else if (version == 2 || version == 3)
+    else if (version == 2)
         schema_representation = manifest_entry_v2_schema;
+    else if (version == 3)
+        schema_representation = manifest_entry_v3_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
@@ -446,6 +448,10 @@ void generateManifestFile(
 
             setVersionedField(manifest, sequence_number, Iceberg::f_sequence_number);
             setVersionedField(manifest, file_sequence_number, Iceberg::f_file_sequence_number);
+        }
+        if (version > 2)
+        {
+            setVersionedField(manifest, new_snapshot->getValue<Int64>(Iceberg::f_first_row_id), Iceberg::f_first_row_id);
         }
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
@@ -629,9 +635,10 @@ void generateManifestList(
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_list_v1_schema;
-    else
+    else if (version == 2)
         schema_representation = manifest_list_v2_schema;
-
+    else if (version == 3)
+        schema_representation = manifest_list_v3_schema;
     auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -641,141 +648,7 @@ void generateManifestList(
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
-    {
-        avro::GenericDatum entry_datum(schema.root());
-        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
-
-        const Iceberg::FileContentType entry_content
-            = per_entry_content_types.empty() ? content_type : per_entry_content_types[entry_idx];
-
-        entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
-        entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
-        entry.field(Iceberg::f_partition_spec_id) = entry_partition_spec_ids.empty()
-            ? metadata->getValue<Int64>(Iceberg::f_default_spec_id)
-            : entry_partition_spec_ids[entry_idx];
-        if (version > 1)
-        {
-            entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
-            /// For a manifest rewrite, sequence_number is the sequence number of the snapshot
-            /// that first added the manifest (preserved for carried-forward manifests), and
-            /// min_sequence_number is the per-manifest minimum of the preserved original
-            /// sequence numbers.
-            const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-            entry.field(Iceberg::f_sequence_number) = manifest_rewrite
-                ? entry_counts[entry_idx].added_sequence_number.value_or(new_sequence_number)
-                : new_sequence_number;
-            entry.field(Iceberg::f_min_sequence_number)
-                = manifest_rewrite ? entry_counts[entry_idx].min_sequence_number : new_sequence_number;
-        }
-
-        /// For a manifest rewrite, preserve the id of the snapshot that first added the
-        /// manifest: a carried-forward manifest must not claim it was added by a later snapshot.
-        entry.field(Iceberg::f_added_snapshot_id) = manifest_rewrite && entry_counts[entry_idx].added_snapshot_id
-            ? *entry_counts[entry_idx].added_snapshot_id
-            : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-        auto summary = new_snapshot->getObject(Iceberg::f_summary);
-        if (manifest_rewrite)
-        {
-            /// The counts must agree per entry with the manifest's entry statuses: a manifest
-            /// whose entries are ADDED in this snapshot reports added_* counts, while a
-            /// carried-forward manifest (or a metadata-only rewrite that preserves lineage,
-            /// whose entries stay EXISTING) reports existing_* counts.
-            const auto & counts = entry_counts[entry_idx];
-            setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
-            setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
-            setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
-            setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-
-            /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
-            if (!entry_partition_summaries.empty())
-            {
-                auto & partitions_field = entry.field(Iceberg::f_partitions);
-                partitions_field.selectBranch(1);
-                auto & summaries = partitions_field.value<avro::GenericArray>();
-                auto summary_schema = summaries.schema()->leafAt(0);
-                for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
-                {
-                    avro::GenericDatum summary_datum(summary_schema);
-                    auto & summary_record = summary_datum.value<avro::GenericRecord>();
-                    const bool is_null = partition_value.isNull();
-                    summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
-                    if (!is_null)
-                    {
-                        if (isNaNPartitionValue(partition_value, partition_type))
-                        {
-                            /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
-                            auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
-                            contains_nan.selectBranch(1);
-                            contains_nan.value<bool>() = true;
-                        }
-                        else if (canDumpIcebergStats(partition_value, partition_type))
-                        {
-                            auto bound = dumpFieldToBytes(partition_value, partition_type);
-                            auto & lower = summary_record.field(Iceberg::f_lower_bound);
-                            lower.selectBranch(1);
-                            lower.value<std::vector<uint8_t>>() = bound;
-                            auto & upper = summary_record.field(Iceberg::f_upper_bound);
-                            upper.selectBranch(1);
-                            upper.value<std::vector<uint8_t>>() = bound;
-                        }
-                        /// else: a partition type whose bounds we cannot serialize (e.g. Decimal); leave the bounds null, matching the data-file statistics path.
-                    }
-                    summaries.value().push_back(summary_datum);
-                }
-            }
-
-            writer.write(entry_datum);
-            continue;
-        }
-
-        if (version == 1)
-        {
-            setVersionedField(entry, 1, Iceberg::f_added_files_count);
-            setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
-            if (summary->has(Iceberg::f_added_position_deletes))
-                setVersionedField(entry, summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
-            else
-                setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-        }
-        else
-        {
-            entry.field(Iceberg::f_added_files_count) = 1;
-            /// This manifest only contains newly added files; no pre-existing entries.
-            entry.field(Iceberg::f_existing_files_count) = 0;
-            entry.field(Iceberg::f_deleted_files_count) = 0;
-            if (summary->has(Iceberg::f_added_position_deletes))
-                entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-            else
-                entry.field(Iceberg::f_deleted_rows_count) = 0;
-        }
-
-        if (entry_content == Iceberg::FileContentType::DATA)
-        {
-            setVersionedField(
-                entry,
-                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
-                Iceberg::f_added_rows_count);
-        }
-        else
-        {
-            setVersionedField(
-                entry,
-                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
-                Iceberg::f_added_rows_count);
-        }
-        setVersionedField(
-            entry,
-            0,
-            Iceberg::f_existing_rows_count);
-        setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-
-        writer.write(entry_datum);
-    }
-
+    Int64 cum_rows = 0;
     /// Copy entries from the parent snapshot's manifest list: `use_previous_snapshots` copies all, `carry_forward_manifest_paths` copies only the listed manifests.
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
@@ -847,11 +720,151 @@ void generateManifestList(
                             add_field_to_datum(Iceberg::f_sequence_number);
                             add_field_to_datum(Iceberg::f_min_sequence_number);
                         }
+                        if (version > 2)
+                        {
+                            add_field_to_datum(Iceberg::f_first_row_id);
+                            cum_rows += old_entry.field(Iceberg::f_added_rows_count).value<Int64>();
+                        }
                         writer.write(new_datum);
                     });
                 break;
             }
         }
+    }
+
+    for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
+    {
+        avro::GenericDatum entry_datum(schema.root());
+        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
+
+        const Iceberg::FileContentType entry_content
+            = per_entry_content_types.empty() ? content_type : per_entry_content_types[entry_idx];
+
+        entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
+        entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
+        entry.field(Iceberg::f_partition_spec_id) = entry_partition_spec_ids.empty()
+            ? metadata->getValue<Int64>(Iceberg::f_default_spec_id)
+            : entry_partition_spec_ids[entry_idx];
+        if (version > 1)
+        {
+            entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
+            /// For a manifest rewrite, sequence_number is the sequence number of the snapshot
+            /// that first added the manifest (preserved for carried-forward manifests), and
+            /// min_sequence_number is the per-manifest minimum of the preserved original
+            /// sequence numbers.
+            const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            entry.field(Iceberg::f_sequence_number) = manifest_rewrite
+                ? entry_counts[entry_idx].added_sequence_number.value_or(new_sequence_number)
+                : new_sequence_number;
+            entry.field(Iceberg::f_min_sequence_number)
+                = manifest_rewrite ? entry_counts[entry_idx].min_sequence_number : new_sequence_number;
+        }
+
+        /// For a manifest rewrite, preserve the id of the snapshot that first added the
+        /// manifest: a carried-forward manifest must not claim it was added by a later snapshot.
+        entry.field(Iceberg::f_added_snapshot_id) = manifest_rewrite && entry_counts[entry_idx].added_snapshot_id
+            ? *entry_counts[entry_idx].added_snapshot_id
+            : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        auto summary = new_snapshot->getObject(Iceberg::f_summary);
+        if (manifest_rewrite)
+        {
+            /// The counts must agree per entry with the manifest's entry statuses: a manifest
+            /// whose entries are ADDED in this snapshot reports added_* counts, while a
+            /// carried-forward manifest (or a metadata-only rewrite that preserves lineage,
+            /// whose entries stay EXISTING) reports existing_* counts.
+            const auto & counts = entry_counts[entry_idx];
+            setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
+            setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
+            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
+            setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
+            setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
+            setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+            setVersionedField(entry, cum_rows, Iceberg::f_first_row_id);
+
+            /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
+            if (!entry_partition_summaries.empty())
+            {
+                auto & partitions_field = entry.field(Iceberg::f_partitions);
+                partitions_field.selectBranch(1);
+                auto & summaries = partitions_field.value<avro::GenericArray>();
+                auto summary_schema = summaries.schema()->leafAt(0);
+                for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
+                {
+                    avro::GenericDatum summary_datum(summary_schema);
+                    auto & summary_record = summary_datum.value<avro::GenericRecord>();
+                    const bool is_null = partition_value.isNull();
+                    summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
+                    if (!is_null)
+                    {
+                        if (isNaNPartitionValue(partition_value, partition_type))
+                        {
+                            /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
+                            auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
+                            contains_nan.selectBranch(1);
+                            contains_nan.value<bool>() = true;
+                        }
+                        else if (canDumpIcebergStats(partition_value, partition_type))
+                        {
+                            auto bound = dumpFieldToBytes(partition_value, partition_type);
+                            auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                            lower.selectBranch(1);
+                            lower.value<std::vector<uint8_t>>() = bound;
+                            auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                            upper.selectBranch(1);
+                            upper.value<std::vector<uint8_t>>() = bound;
+                        }
+                        /// else: a partition type whose bounds we cannot serialize (e.g. Decimal); leave the bounds null, matching the data-file statistics path.
+                    }
+                    summaries.value().push_back(summary_datum);
+                }
+            }
+
+            writer.write(entry_datum);
+            continue;
+        }
+
+        if (version == 1)
+        {
+            setVersionedField(entry, 1, Iceberg::f_added_files_count);
+            setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
+            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
+            if (summary->has(Iceberg::f_added_position_deletes))
+                setVersionedField(entry, summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
+            else
+                setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+        }
+        else
+        {
+            entry.field(Iceberg::f_added_files_count) = 1;
+            /// This manifest only contains newly added files; no pre-existing entries.
+            entry.field(Iceberg::f_existing_files_count) = 0;
+            entry.field(Iceberg::f_deleted_files_count) = 0;
+            if (summary->has(Iceberg::f_added_position_deletes))
+                entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+            else
+                entry.field(Iceberg::f_deleted_rows_count) = 0;
+        }
+        if (entry_content == Iceberg::FileContentType::DATA)
+        {
+            setVersionedField(
+                entry,
+                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
+                Iceberg::f_added_rows_count);
+        }
+        else
+        {
+            setVersionedField(
+                entry,
+                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
+                Iceberg::f_added_rows_count);
+        }
+        setVersionedField(
+            entry,
+            0,
+            Iceberg::f_existing_rows_count);
+        setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+
+        writer.write(entry_datum);
     }
 
     writer.close();
