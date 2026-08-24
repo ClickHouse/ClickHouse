@@ -18,6 +18,8 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
+    extern const SettingsBool allow_window_partitions_independently;
+    extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -33,6 +35,9 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -109,6 +114,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
@@ -188,6 +194,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_expression_into_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expression_into_join];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
+    enable_group_by_top_k_optimization
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
+    top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
@@ -220,6 +229,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
+    window_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_window_partitions_independently];
+    force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
@@ -250,6 +261,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+    serialize_query_plan = from[Setting::serialize_query_plan];
 
     /// make_distributed_plan is incompatible with parallel replicas, including the automatic
     /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
@@ -313,6 +325,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
+    max_block_size = from[Setting::max_block_size];
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];

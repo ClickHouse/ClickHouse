@@ -122,6 +122,7 @@ extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -975,17 +976,28 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
+                /// An `Alias` reports its target's metadata, so the empty column list belongs to the target.
+                const auto * alias = storage->as<StorageAlias>();
+                const StoragePtr alias_target = alias ? alias->tryGetTargetTable() : nullptr;
+                const IStorage * columns_owner = alias ? alias_target.get() : storage.get();
+
                 /// (Assuming that view has empty list of columns if it's parameterized.)
-                if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
+                const auto * view = columns_owner ? columns_owner->as<StorageView>() : nullptr;
+                if (view && view->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
-                else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+
+                if (alias && !alias_target)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
                         storage->getStorageID().getNameForLogs(),
                         storage_merge->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
+
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Table {} matched by the regexp of {} has no columns to read",
+                    storage->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
