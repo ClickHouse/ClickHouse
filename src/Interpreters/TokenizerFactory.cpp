@@ -216,6 +216,29 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(SplitByStringTokenizer::getName(), ITokenizer::Type::SplitByString, split_by_string_creator);
 
+    auto split_by_regexp_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = SplitByRegexpTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer requires a regular expression argument",
+                tokenizer_name);
+
+        auto regexp = castAs<String>(args[0], "regexp");
+        if (regexp.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
+                tokenizer_name);
+
+        return std::make_unique<SplitByRegexpTokenizer>(regexp);
+    };
+
+    factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);
+
     auto array_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         assertParamsCount(args.size(), 0, ArrayTokenizer::getExternalName());
