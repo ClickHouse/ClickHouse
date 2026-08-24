@@ -168,6 +168,98 @@ public:
         return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
     }
 
+    /// Cascades cross-group identity. Field audit of every member of `SortingStep`,
+    /// `ITransformingStep` and `IQueryPlanStep`. `supportsCascadesIdentity()` implies
+    /// `isSerializable()`, i.e. `type` is `Full` or `FinishSorting` and `scatter_partitions == 0`, so
+    /// reachability below is checked against the two branches `transformPipeline` then takes:
+    /// `fullSort` (`scatterByPartitionIfNeeded` + `fullSortStreams` + `addPerStreamLimitByIfNeeded` +
+    /// a final `MergingSortedTransform`) and the `FinishSorting` branch (`addPerStreamLimitByIfNeeded`
+    /// + `mergingSorted` + `finishSorting`).
+    ///
+    /// Own fields:
+    ///  - `type` - on the wire (`serialize`, flags bit 1 distinguishes `FinishSorting` from `Full`);
+    ///    the other two values are excluded by `isSerializable`.
+    ///  - `result_description` - on the wire (`serialize`, unconditionally).
+    ///  - `prefix_description` - on the wire for `FinishSorting`. For `Full` it is not written, and it
+    ///    is also not read: `fullSort` never looks at it, and the only setters
+    ///    (`convertToFinishSorting`, the `FinishSorting` constructor) leave `type != Full`.
+    ///  - `partition_by_description` - on the wire (`serialize`, unconditionally).
+    ///  - `scatter_partitions` - covered by the predicate: `isSerializable()` requires it to be 0.
+    ///  - `skip_scatter_by_partition` - **extras**. Not on the wire. `scatterByPartitionIfNeeded`
+    ///    returns immediately when set, so a partitioned full sort either reshuffles rows across
+    ///    streams by the partition hash or does not - a different pipeline over the same input.
+    ///  - `is_sorting_for_merge_join` - **extras**. Not on the wire. It is what
+    ///    `optimizeJoinByShards`, `useDataParallelAggregation`, `applyParallelReplicas` and
+    ///    `findParallelReplicasQuery` test to decide whether the sort may be resharded, parallelized
+    ///    or sent to replicas, so two sorts differing only here are not interchangeable for the
+    ///    optimizer.
+    ///  - `is_partial_top_n` - **extras**. Deliberately not serialized (the executed sort is the
+    ///    same), but load-bearing for identity: `Cascades/Cost.cpp` costs a partial top-N differently,
+    ///    and `TwoStageTopN` produces its partial stage by cloning the sort and flipping only this
+    ///    flag - without it in the identity the two stages would be judged equal and memo-wide
+    ///    deduplication would fold the rule's output into a self-cycle.
+    ///  - `limit` - on the wire (`serialize`, at query plan serialization version >= 8, which the
+    ///    identity encoding always uses).
+    ///  - `always_read_till_end` - **extras**. Not on the wire, and it is read on both serializable
+    ///    branches: it is passed to the final `MergingSortedTransform` in `fullSort` and in
+    ///    `mergingSorted`, where it decides whether exhausted-but-unneeded inputs are still drained.
+    ///    Only the `MergingSorted` constructor sets it, but nothing keeps that instance from being
+    ///    converted (`convertToFinishSorting`), so it is not derivable from `type`.
+    ///  - `use_buffering` - on the wire where it is read: `serialize` writes it in flags bit 2 for
+    ///    `FinishSorting`, and the only reader is `mergingSorted`, which the `Full` branch never
+    ///    calls. `enableBuffering` can set it on a `Full` sort, where it is inert.
+    ///  - `apply_virtual_row_conversions` - **extras**. On the wire for `FinishSorting` only (flags
+    ///    bit 4), yet `fullSort` reads it too, adding a `RemoveVirtualRowTransform` when no final
+    ///    merge is inserted. Included rather than argued away through `convertToScatteredFullSort`
+    ///    being the only route to a `Full` sort that has it set.
+    ///  - `threshold_tracker` - excluded: a runtime object shared with other steps by `optimizeTopK`
+    ///    (`setTopKThresholdTracker`) that only publishes a top-N pruning threshold; it has no stable
+    ///    value to encode, and the rows a sort produces do not depend on it.
+    ///  - `limit_by_columns`, `limit_by_group_length` - **extras**. Not on the wire. Set by
+    ///    `pushLimitByIntoSort`; when the hint is a sort prefix, `addPerStreamLimitByIfNeeded`
+    ///    installs a per-stream `LimitBySortedStreamTransform`, which drops rows.
+    ///  - `scatter_stage`, `sorting_stage`, `merge_streams`, `finalizing` - runtime instrumentation
+    ///    for `describePipeline`, excluded.
+    ///
+    /// `sort_settings` (`SortingStep::Settings`), field by field:
+    ///  - `max_block_size`, `size_limits` (all three members), `max_bytes_before_remerge`,
+    ///    `remerge_lowered_memory_bytes_ratio`, `max_bytes_ratio_before_external_sort`,
+    ///    `max_bytes_in_block_before_external_sort`, `min_free_disk_space`, `max_block_bytes`,
+    ///    `temporary_files_buffer_size`, `temporary_files_codec` - on the wire
+    ///    (`Settings::updatePlanSettings`).
+    ///  - `max_bytes_in_query_before_external_sort` - derived, excluded: both constructors compute it
+    ///    from `max_bytes_ratio_before_external_sort`, which is on the wire, and the available system
+    ///    memory, which is not a property of the step.
+    ///  - `read_in_order_use_buffering`, `read_in_order_use_virtual_row_per_block` - **extras**.
+    ///    `updatePlanSettings` writes neither (the deserializing constructor hardcodes
+    ///    `read_in_order_use_buffering = false`), and `mergingSorted` - the `FinishSorting` branch -
+    ///    reads both to decide whether to insert a `BufferChunksTransform` and whether virtual rows
+    ///    are used per block.
+    ///
+    /// Inherited:
+    ///  - `output_header` - covered by the identity encoding itself.
+    ///  - `input_headers` - derived, excluded: `updateOutputHeader` copies the input header to the
+    ///    output header, so the encoded output header is the input header.
+    ///  - `transform_traits`, `data_stream_traits` - derived, excluded: computed by `getTraits` from
+    ///    `limit` at construction; `updateLimit` recomputes `preserves_number_of_rows` from `limit`,
+    ///    which is on the wire.
+    ///  - `collect_processors` - derived, excluded: false exactly for the `MergingSorted`
+    ///    constructor, which `isSerializable` excludes.
+    ///  - `step_description`, `step_index`, `processors`, `dataflow_cache_updater` - display or
+    ///    runtime instrumentation only, excluded.
+    ///
+    /// `serialize` throws for a non-`Full`/`FinishSorting` type (excluded by `isSerializable`) and for
+    /// query plan serialization versions below 6, or below 8 with a non-zero `limit`; the identity
+    /// encoding always uses `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`, which is above both. The step
+    /// holds no `ActionsDAG`, so no correlated-expression guard is needed.
+    ///
+    /// `serializeSettings` can throw too, and `isSerializable()` does not cover it: the
+    /// `Settings(size_t max_block_size_)` constructor leaves `temporary_files_buffer_size` at 0, and
+    /// the plan setting of that name is a `NonZeroUInt64`, so assigning it throws `BAD_ARGUMENTS`.
+    /// `optimizeGroupByTopK` builds a real `Full` sort that way, so the predicate must exclude it.
+    bool supportsCascadesIdentity() const override { return isSerializable() && sort_settings.temporary_files_buffer_size != 0; }
+    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

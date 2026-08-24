@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
@@ -782,6 +783,52 @@ void SortingStep::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "A bounded sort in a distributed plan requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `SortingStep`. Unique within the step; never reused.
+enum SortingStepIdentityTag : UInt64
+{
+    SKIP_SCATTER_BY_PARTITION_TAG = 1,
+    IS_SORTING_FOR_MERGE_JOIN_TAG = 2,
+    IS_PARTIAL_TOP_N_TAG = 3,
+    ALWAYS_READ_TILL_END_TAG = 4,
+    APPLY_VIRTUAL_ROW_CONVERSIONS_TAG = 5,
+    LIMIT_BY_COLUMNS_TAG = 6,
+    LIMIT_BY_GROUP_LENGTH_TAG = 7,
+    READ_IN_ORDER_USE_BUFFERING_TAG = 8,
+    READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG = 9,
+};
+}
+
+void SortingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// `scatterByPartitionIfNeeded` returns immediately when set, so a partitioned full sort either
+    /// reshuffles rows across streams by the partition hash or does not.
+    extras.addBool(SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
+
+    /// Both flags only tell the optimizer what the sort is for, but that is what decides whether other
+    /// passes may reshard or reparallelize it, and `TwoStageTopN` builds its partial stage by flipping
+    /// only `is_partial_top_n` - the two stages must not be judged equal.
+    extras.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
+    extras.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
+
+    /// Passed to the final `MergingSortedTransform` on both serializable branches.
+    extras.addBool(ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+
+    /// On the wire only for `FinishSorting`, but `fullSort` reads it too (it adds a
+    /// `RemoveVirtualRowTransform` when no final merge is inserted).
+    extras.addBool(APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
+
+    /// `addPerStreamLimitByIfNeeded` installs a row-dropping per-stream `LimitBySortedStreamTransform`
+    /// when these describe a prefix of the stream sort order.
+    extras.addStrings(LIMIT_BY_COLUMNS_TAG, limit_by_columns);
+    extras.addVarUInt(LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
+
+    /// `Settings::updatePlanSettings` writes neither, and `mergingSorted` reads both.
+    extras.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sort_settings.read_in_order_use_buffering);
+    extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sort_settings.read_in_order_use_virtual_row_per_block);
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)

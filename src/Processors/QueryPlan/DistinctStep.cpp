@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -150,6 +151,31 @@ void DistinctStep::serialize(Serialization & ctx) const
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `DistinctStep`. Unique within the step; never reused.
+enum DistinctStepIdentityTag : UInt64
+{
+    LIMIT_HINT_TAG = 1,
+    DISTINCT_SORT_DESC_TAG = 2,
+    SKIP_STREAM_MERGING_TAG = 3,
+};
+}
+
+void DistinctStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// Both `DistinctTransform` and `DistinctSortedStreamTransform` stop once `limit_hint` distinct
+    /// rows were produced, so it changes the row count, not only the cost.
+    extras.addVarUInt(LIMIT_HINT_TAG, limit_hint);
+
+    /// Selects `DistinctSortedStreamTransform`, which is only correct for an input sorted this way,
+    /// and it is what `getSortDescription` reports to the optimizer.
+    extras.addSortDescription(DISTINCT_SORT_DESC_TAG, distinct_sort_desc);
+
+    /// Lets the final DISTINCT skip the resize to a single stream.
+    extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
 QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)

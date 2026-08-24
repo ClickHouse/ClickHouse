@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +27,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -1236,6 +1239,91 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `AggregatingStep`. Unique within the step; never reused.
+enum AggregatingStepIdentityTag : UInt64
+{
+    MERGE_THREADS_TAG = 1,
+    TEMPORARY_DATA_MERGE_THREADS_TAG = 2,
+    SKIP_MERGING_TAG = 3,
+    STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG = 4,
+    GROUP_BY_SORT_DESCRIPTION_TAG = 5,
+    ENABLE_SHARDING_AGGREGATOR_TAG = 6,
+    LIMIT_HINT_TAG = 7,
+    PARAMS_MAX_THREADS_TAG = 8,
+    PARAMS_MAX_BLOCK_SIZE_TAG = 9,
+    PARAMS_ONLY_MERGE_TAG = 10,
+    BUCKET_TOP_K_TAG = 11,
+    BUCKET_TOP_K_ASCENDING_TAG = 12,
+    BUCKET_TOP_K_COUNT_INDEX_TAG = 13,
+    PARAMS_TOP_K_TAG = 14,
+};
+
+String encodeTopKParams(const Aggregator::Params::TopKParams & top_k)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(top_k.k, payload);
+    writeVarUInt(top_k.key_columns, payload);
+    writeVarUInt(top_k.observation_rows, payload);
+    writeVarUInt(top_k.directions.size(), payload);
+    for (int direction : top_k.directions)
+        writeIntBinary(static_cast<Int32>(direction), payload);
+    writeVarUInt(top_k.nulls_directions.size(), payload);
+    for (int direction : top_k.nulls_directions)
+        writeIntBinary(static_cast<Int32>(direction), payload);
+    return payload.str();
+}
+}
+
+void AggregatingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// Not on the wire (`deserialize` passes 0 and `updateThreadsValues` re-derives both from session
+    /// settings): the parallelism of the merge stage of the physical plan.
+    extras.addVarUInt(MERGE_THREADS_TAG, merge_threads);
+    extras.addVarUInt(TEMPORARY_DATA_MERGE_THREADS_TAG, temporary_data_merge_threads);
+
+    /// Finalize each stream on its own instead of merging them - only correct for disjoint streams.
+    extras.addBool(SKIP_MERGING_TAG, skip_merging);
+
+    /// Suppresses the `resize` before the aggregation.
+    extras.addBool(STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG, storage_has_evenly_distributed_read);
+
+    /// Written by `serialize` only together with a non-empty `sort_description_for_merging`, which
+    /// `isSerializable` excludes; a free field otherwise.
+    extras.addSortDescription(GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+
+    /// Selects the shard-by-hash aggregation pipeline (`canUseShardedAggregation`).
+    extras.addBool(ENABLE_SHARDING_AGGREGATOR_TAG, enable_sharding_aggregator);
+
+    /// Truncates the aggregation result where it is read; a free field, set by
+    /// `optimizeLimitForAggregationInOrder`.
+    extras.addVarUInt(LIMIT_HINT_TAG, limit_hint);
+
+    /// `deserialize` passes 0; `transformPipeline` resizes to it and derives the shard count from it.
+    extras.addVarUInt(PARAMS_MAX_THREADS_TAG, params.max_threads);
+
+    /// `serializeSettings` writes only the step's own `max_block_size`; nothing keeps the two in sync,
+    /// and this one splits the aggregation result into chunks.
+    extras.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
+
+    /// Set by `requestOnlyMergeForAggregateProjection`; changes the step's header and the `Aggregator`
+    /// path that runs.
+    extras.addBool(PARAMS_ONLY_MERGE_TAG, params.only_merge);
+
+    /// `Aggregator::convertOneBucketToChunk` reads these on `final` (already on the wire), so two
+    /// aggregations differing only here produce different row counts.
+    extras.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    extras.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    extras.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+
+    /// The GROUP BY top-K heap keeps only `k` groups, so it changes the result.
+    if (params.top_k)
+        extras.addString(PARAMS_TOP_K_TAG, encodeTopKParams(*params.top_k));
+    else
+        extras.addAbsent(PARAMS_TOP_K_TAG);
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)

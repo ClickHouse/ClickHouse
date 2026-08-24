@@ -42,6 +42,8 @@
 #include <Interpreters/HashTablesStatistics.h>
 
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
@@ -53,6 +55,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -2159,6 +2162,120 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `JoinStepLogical`. Unique within the step; never reused.
+enum JoinStepLogicalIdentityTag : UInt64
+{
+    OPTIMIZED_TAG = 1,
+    DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG = 2,
+    RESULT_ROWS_ESTIMATION_TAG = 3,
+    IMPRECISE_ESTIMATE_TAG = 4,
+    RESULT_COLUMN_STATS_TAG = 5,
+    RIGHT_HASH_TABLE_CACHE_KEY_TAG = 6,
+    LEFT_ESTIMATED_ROWS_TAG = 7,
+    RIGHT_ESTIMATED_ROWS_TAG = 8,
+    TABLE_STATS_HINT_TAG = 9,
+    SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG = 10,
+    JOIN_ANALYZE_MODE_TAG = 11,
+    READ_IN_ORDER_USE_BUFFERING_TAG = 12,
+    READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG = 13,
+};
+
+/// Sorted by column name: the map's iteration order is not part of its value.
+String encodeColumnStats(const std::unordered_map<String, ColumnStats> & column_stats)
+{
+    std::vector<const std::pair<const String, ColumnStats> *> sorted;
+    sorted.reserve(column_stats.size());
+    for (const auto & entry : column_stats)
+        sorted.push_back(&entry);
+    std::ranges::sort(sorted, [](const auto * lhs, const auto * rhs) { return lhs->first < rhs->first; });
+
+    WriteBufferFromOwnString payload;
+    writeVarUInt(sorted.size(), payload);
+    for (const auto * entry : sorted)
+    {
+        writeStringBinary(entry->first, payload);
+        writeVarUInt(entry->second.num_distinct_values, payload);
+        writeFloatBinary(entry->second.avg_bytes, payload);
+    }
+    return payload.str();
+}
+
+String encodeRuntimeFilterDescriptors(const std::vector<std::pair<String, String>> & descriptors)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(descriptors.size(), payload);
+    for (const auto & [filter_name, key_name] : descriptors)
+    {
+        writeStringBinary(filter_name, payload);
+        writeStringBinary(key_name, payload);
+    }
+    return payload.str();
+}
+
+void addOptionalRows(CascadesIdentityExtras & extras, UInt64 tag, const std::optional<UInt64> & rows)
+{
+    if (rows)
+        extras.addVarUInt(tag, *rows);
+    else
+        extras.addAbsent(tag);
+}
+}
+
+bool JoinStepLogical::supportsCascadesIdentity() const
+{
+    return isSerializable()
+        && !hasCorrelatedExpressions()
+        /// Every `NonZeroUInt64` plan setting `serializeSettings` assigns; a zero throws there.
+        && join_settings.grace_hash_join_initial_buckets != 0
+        && join_settings.grace_hash_join_max_buckets != 0
+        && join_settings.temporary_files_buffer_size != 0
+        && sorting_settings.temporary_files_buffer_size != 0;
+}
+
+void JoinStepLogical::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// `optimizeJoin` refuses to reorder a join that is already optimized, and correlated-subquery
+    /// decorrelation relies on that to pin the layout of its result join (see `clone`).
+    extras.addBool(OPTIMIZED_TAG, optimized);
+
+    /// `filterPushDown` refuses to push a filter through a join that has it set.
+    extras.addBool(DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG, disjunctions_optimization_applied);
+
+    /// Read by the Cascades `StatisticsDerivation` (in preference to its own derivation) and reused by
+    /// `optimizeJoin` as the statistics of an already-optimized sub-join.
+    addOptionalRows(extras, RESULT_ROWS_ESTIMATION_TAG, result_rows_estimation);
+    extras.addBool(IMPRECISE_ESTIMATE_TAG, imprecise_estimate);
+    extras.addString(RESULT_COLUMN_STATS_TAG, encodeColumnStats(result_column_stats));
+
+    /// `buildPhysicalJoin` turns it into the `JoinAlgorithmParams` hash-table key and the
+    /// `StatsCollectingParams` key that seeds the right-side size estimate; `joinRuntimeFilter` reads
+    /// it too.
+    extras.addVarUInt(RIGHT_HASH_TABLE_CACHE_KEY_TAG, right_hash_table_cache_key);
+
+    /// The right side's estimate becomes `JoinAlgorithmParams::rhs_size_estimation`, which picks the
+    /// join algorithm; the left side's is read by `joinRuntimeFilter`.
+    addOptionalRows(extras, LEFT_ESTIMATED_ROWS_TAG, left_relation.estimated_rows);
+    addOptionalRows(extras, RIGHT_ESTIMATED_ROWS_TAG, right_relation.estimated_rows);
+
+    /// `optimizeJoin` passes it to the query-graph builder, which replaces the relation estimates.
+    extras.addString(TABLE_STATS_HINT_TAG, table_stats_hint);
+
+    /// Set by `joinRuntimeFilter`; makes `HashJoin` publish shared runtime filters that prune rows.
+    extras.addString(
+        SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG, encodeRuntimeFilterDescriptors(join_operator.shared_runtime_filter_descriptors));
+
+    /// Not covered by `JoinSettings::updatePlanSettings`; `MergeJoinTransform` and `MatchedRowsStats`
+    /// branch on it.
+    extras.addVarUInt(JOIN_ANALYZE_MODE_TAG, static_cast<UInt64>(join_settings.join_analyze_mode));
+
+    /// Not covered by `SortingStep::Settings::updatePlanSettings`; handed to the sorting steps the
+    /// physical join builds.
+    extras.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sorting_settings.read_in_order_use_buffering);
+    extras.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sorting_settings.read_in_order_use_virtual_row_per_block);
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)

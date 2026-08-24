@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -181,6 +182,24 @@ void LimitByStep::serialize(Serialization & ctx) const
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `LimitByStep`. Unique within the step; never reused.
+enum LimitByStepIdentityTag : UInt64
+{
+    SORTED_COLUMNS_DESCR_TAG = 1,
+    SKIP_STREAM_MERGING_TAG = 2,
+};
+}
+
+void LimitByStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// Both decide whether `transformPipeline` may run one transform per stream instead of resizing
+    /// to a single stream, and which of the two LIMIT BY transforms it instantiates.
+    extras.addSortDescription(SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
+    extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)

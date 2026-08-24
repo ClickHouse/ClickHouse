@@ -36,6 +36,46 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
+    /// Cascades cross-group identity. Field audit of every member of `DistinctStep`,
+    /// `ITransformingStep` and `IQueryPlanStep`. Reachability is checked against the transforms
+    /// `transformPipeline` builds - `DistinctTransform` (hash set over all `columns`) and
+    /// `DistinctSortedStreamTransform` (range-based, needs the stream sorted by a prefix).
+    ///
+    /// Own fields:
+    ///  - `columns` - on the wire (`serialize`).
+    ///  - `set_size_limits` - on the wire: `serializeSettings` writes all three of `max_rows`,
+    ///    `max_bytes` and `overflow_mode`, which is every member of `SizeLimits`.
+    ///  - `pre_distinct` - covered by the identity encoding itself: it selects
+    ///    `getSerializationName()` (`"PreDistinct"` vs `"Distinct"`), which the encoding writes first.
+    ///    It is not a `serialize` payload but a per-name `deserialize` entry point.
+    ///  - `limit_hint` - **extras**. `serialize` deliberately skips it ("Let's not serialize
+    ///    limit_hint"). Both transforms take it and stop consuming once that many distinct rows were
+    ///    produced, so a step with a hint can emit fewer rows than one without.
+    ///  - `distinct_sort_desc` - **extras**. Not on the wire (`applyOrder` installs it after
+    ///    construction). Non-empty switches `transformPipeline` to `DistinctSortedStreamTransform`,
+    ///    which deduplicates by ranges of the sorted prefix and is only correct for an input actually
+    ///    sorted that way. It is also this step's `getSortDescription`, i.e. what the optimizer
+    ///    believes about the output order.
+    ///  - `skip_stream_merging` - **extras**. Not on the wire. It encodes the assumption that the
+    ///    input streams hold disjoint DISTINCT key sets, so the final DISTINCT skips
+    ///    `pipeline.resize(1)`; substituting a step that does not make that assumption changes which
+    ///    rows survive.
+    ///
+    /// Inherited:
+    ///  - `output_header` - covered by the identity encoding itself.
+    ///  - `input_headers` - derived, excluded: `updateOutputHeader` copies the input header to the
+    ///    output header, so the encoded output header is the input header.
+    ///  - `transform_traits`, `data_stream_traits` - derived, excluded: computed by `getTraits` from
+    ///    `pre_distinct` at construction, never mutated.
+    ///  - `collect_processors` - derived, excluded: always default for this step.
+    ///  - `step_description`, `step_index`, `processors`, `dataflow_cache_updater` - display or
+    ///    runtime instrumentation only, excluded.
+    ///
+    /// `isSerializable()` is unconditionally `true` and `serialize` writes only strings, so it cannot
+    /// throw for any instance.
+    bool supportsCascadesIdentity() const override { return isSerializable(); }
+    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx, bool pre_distinct_);
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);

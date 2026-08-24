@@ -127,6 +127,119 @@ public:
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
 
+    /// Cascades cross-group identity. Field audit of every member of `AggregatingStep`,
+    /// `ITransformingStep` and `IQueryPlanStep`. The identity encoding always serializes with
+    /// `for_cache_key = false`, so `final` and the hash-table statistics key ARE on the wire and are
+    /// not re-added below. `supportsCascadesIdentity()` implies `isSerializable()`, i.e.
+    /// `sort_description_for_merging` is empty and `explicit_sorting_required_for_aggregation_in_order`
+    /// is false, so `transformPipeline` cannot take the aggregation-in-order branch.
+    ///
+    /// Own fields:
+    ///  - `params` - see below.
+    ///  - `grouping_sets_params` - on the wire (`serialize` writes each set's `used_keys`;
+    ///    `missing_keys` is recomputed at deserialize from `keys` minus `used_keys`).
+    ///  - `final` - on the wire (`serialize`, flags bit 1, because `for_cache_key` is false).
+    ///  - `max_block_size`, `aggregation_in_order_max_block_bytes` - on the wire (`serializeSettings`).
+    ///  - `merge_threads`, `temporary_data_merge_threads` - **extras**. Not on the wire: `deserialize`
+    ///    passes 0 for both and `updateThreadsValues` re-derives them from session settings.
+    ///    `transformPipeline` resizes the merge stage to `merge_threads` and hands both to
+    ///    `AggregatingTransform`, so they are the parallelism of the physical plan; the Cascades
+    ///    `AggregationImplementations` rule also copies them into the `MergingAggregatedStep` it
+    ///    builds.
+    ///  - `skip_merging` - **extras**. Not on the wire. It makes `transformPipeline` finalize each
+    ///    stream on its own instead of merging them (and `adaptiveAggregatorRejectionReason` rejects
+    ///    the adaptive path for it), which is only correct for input streams with disjoint keys.
+    ///  - `storage_has_evenly_distributed_read` - **extras**. Not on the wire (`deserialize` passes
+    ///    `false`). It suppresses the `resize` before the aggregation, so it changes the stream layout.
+    ///  - `group_by_use_nulls` - on the wire (`serialize`, flags bit 4).
+    ///  - `sort_description_for_merging` - covered by the predicate: `isSerializable()` requires it to
+    ///    be empty (and `serialize` writes flags bit 32 from it).
+    ///  - `group_by_sort_description` - **extras**. `serialize` writes it only together with a
+    ///    non-empty `sort_description_for_merging`, so for a serializable instance it is not on the
+    ///    wire. Every current reader (`getSortDescription`, the in-order transforms,
+    ///    `optimizeLimitForAggregationInOrder`) is gated on the step being in-order, but nothing ties
+    ///    the field to that: the constructors and `applyOrder` set the two descriptions
+    ///    independently, so it is encoded rather than argued away.
+    ///  - `should_produce_results_in_order_of_bucket_number` - on the wire (`serializeSettings`).
+    ///  - `memory_bound_merging_of_aggregation_results_enabled` - on the wire (`serializeSettings`).
+    ///  - `explicit_sorting_required_for_aggregation_in_order` - covered by the predicate:
+    ///    `isSerializable()` requires it to be false (and `serialize` writes flags bit 64 from it).
+    ///  - `enable_sharding_aggregator` - **extras**. Not on the wire (`deserialize` passes `false`).
+    ///    `canUseShardedAggregation` returns false without it, so it selects the shard-by-hash
+    ///    aggregation pipeline.
+    ///  - `limit_hint` - **extras**. Not on the wire. Like `group_by_sort_description` its readers
+    ///    (`AggregatingInOrderTransform`, `FinishAggregatingInOrderTransform`,
+    ///    `optimizeLimitForAggregationInOrder`) sit on the in-order path, and it is a free field that
+    ///    `setLimitHint` writes independently; it truncates the result where it is read, so it is
+    ///    encoded rather than argued away.
+    ///  - `aggregating_in_order`, `aggregating_sorted`, `finalizing`, `scatter`, `aggregating` -
+    ///    runtime instrumentation for `describePipeline`, excluded.
+    ///
+    /// `params` (`Aggregator::Params`), field by field:
+    ///  - `keys`, `aggregates` - on the wire (`serialize`).
+    ///  - `keys_size`, `aggregates_size` - derived, excluded: always equal `keys.size()` /
+    ///    `aggregates.size()`.
+    ///  - `overflow_row` - on the wire (`serialize`, flags bit 2).
+    ///  - `max_rows_to_group_by`, `group_by_overflow_mode`, `group_by_two_level_threshold`,
+    ///    `group_by_two_level_threshold_bytes`, `max_bytes_before_external_group_by`,
+    ///    `empty_result_for_aggregation_by_empty_set`, `min_free_disk_space`,
+    ///    `compile_aggregate_expressions`, `min_count_to_compile_aggregate_expression`,
+    ///    `enable_prefetch`, `optimize_group_by_constant_keys`,
+    ///    `min_hit_rate_to_use_consecutive_keys_optimization`,
+    ///    `enable_producing_buckets_out_of_order_in_aggregation`, `enable_parallel_single_level_merge`,
+    ///    `serialize_string_with_zero_byte` - on the wire (`serializeSettings`). Unlike in
+    ///    `MergingAggregatedStep`, this step runs `Aggregator::executeOnBlock`, so all of them are also
+    ///    reachable - but they need no extra tag.
+    ///  - `enable_adaptive_aggregator`, `adaptive_aggregator_freeze_threshold` - on the wire: their
+    ///    `serializeSettings` branch requires version >= 7 and the identity encoding always uses
+    ///    `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` (9).
+    ///  - `enable_packed_string_keys` - on the wire: at version >= 5 (always, see above)
+    ///    `serializeSettings` writes the name exactly when the value is `false`, so present-vs-absent
+    ///    distinguishes the two values.
+    ///  - `stats_collecting_params` - on the wire (`serialize`'s flags bit 16 plus the key, since
+    ///    `for_cache_key` is false; `serializeSettings` for the thresholds).
+    ///  - `tmp_data_scope` - excluded: a runtime resource, taken from the global context at
+    ///    deserialize; it is not a property of the plan.
+    ///  - `max_threads` (`params.max_threads`) - **extras**. Not on the wire (`deserialize` passes 0,
+    ///    `updateThreadsValues` re-resolves it from the session). `transformPipeline` resizes to it,
+    ///    derives the shard count from it and `adaptiveAggregatorRejectionReason` tests it.
+    ///  - `max_block_size` (`params.max_block_size`) - **extras**. `serializeSettings` writes only the
+    ///    step's own `max_block_size`, and `deserialize` seeds both from that one value; nothing
+    ///    enforces that the two stay equal, and `params.max_block_size` is what splits the
+    ///    aggregation result into chunks.
+    ///  - `only_merge` - **extras**. Not on the wire (`deserialize` passes `false`).
+    ///    `requestOnlyMergeForAggregateProjection` sets it when an aggregate projection makes this step
+    ///    a pure merge; it changes both the step's header (`Params::getHeader`) and which `Aggregator`
+    ///    path runs, and `adaptiveAggregatorRejectionReason` tests it.
+    ///  - `bucket_top_k`, `bucket_top_k_ascending`, `bucket_top_k_count_index` - **extras**.
+    ///    Deliberately kept out of the plan serialization, but `Aggregator::convertOneBucketToChunk`
+    ///    reads them on `final`, so two aggregations differing only here produce different row counts.
+    ///  - `top_k` - **extras**. Not on the wire; set by `applyTopKOptimization`.
+    ///    `Aggregator::executeOnBlock` / `executeOnBlockSmall` / `executeImplUntilAdaptiveFreeze` rank
+    ///    the keys in a heap of size `k` and drop the rest, so it changes the result.
+    ///  - `aggregation_in_order` - excluded: it only picks `method_chosen_for_in_order`, read solely by
+    ///    `executeOnBlockSmall` (`AggregatingInOrderTransform`), which a serializable instance never
+    ///    reaches; `transformPipeline` sets it itself on the in-order branch.
+    ///
+    /// Inherited:
+    ///  - `output_header` - covered by the identity encoding itself.
+    ///  - `input_headers` - derived, excluded: `Params::getHeader` drops every input column that is
+    ///    not a key or an aggregate argument, and the transforms resolve columns by name from the live
+    ///    pipeline header, not from this recorded one. (`serializeSettings` reads the input header to
+    ///    decide whether the packed-string-keys name must go on the wire, which only makes the wire
+    ///    bytes more specific, never less.)
+    ///  - `transform_traits`, `data_stream_traits` - derived, excluded: computed by `getTraits` at
+    ///    construction from fields that are on the wire.
+    ///  - `collect_processors` - derived, excluded: always default for this step.
+    ///  - `step_description`, `step_index`, `processors`, `dataflow_cache_updater` - display or
+    ///    runtime instrumentation only, excluded.
+    ///
+    /// `serialize` throws only for the in-order flags below query plan serialization version 2, and
+    /// the identity encoding always uses version 9. `hasCorrelatedExpressions()` is `false` by
+    /// construction (the step holds no `ActionsDAG`), so no extra guard is needed.
+    bool supportsCascadesIdentity() const override { return isSerializable(); }
+    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
