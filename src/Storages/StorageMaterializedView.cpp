@@ -143,6 +143,34 @@ namespace
         return *table_expr;
     }
 
+    size_t countTableExpressions(const IAST & ast)
+    {
+        size_t count = ast.as<ASTTableExpression>() ? 1 : 0;
+        for (const auto & child : ast.children)
+            count += countTableExpressions(*child);
+        return count;
+    }
+
+    void validateIncrementalDefinition(const ASTPtr & select_with_union, const ContextPtr & context)
+    {
+        auto & source_table_expr = getIncrementalSourceTableExpression(select_with_union);
+
+        /// The cursor advances only on the source, so any other table (a JOIN or a subquery) would silently diverge from a full refresh.
+        if (countTableExpressions(*select_with_union) != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
+
+        /// The source engine must support STREAM, otherwise every refresh would re-scan and re-append the whole source.
+        const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            return;
+        auto source = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(identifier->getTableId()), context);
+        if (source && !source->supportsStreaming())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}, which does not support streaming",
+                source->getStorageID().getNameForLogs(), source->getName());
+    }
+
     /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
     /// SELECT, so each refresh reads only the safe snapshot committed since `stream_cursor` (null on the first refresh).
     void injectIncrementalStreamModifier(const ASTPtr & select_with_union, const CursorTreeNodePtr & stream_cursor)
@@ -217,8 +245,8 @@ StorageMaterializedView::StorageMaterializedView(
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
-    if (query.refresh_strategy && query.refresh_strategy->incremental)
-        getIncrementalSourceTableExpression(select.select_query);
+    if (query.refresh_strategy && query.refresh_strategy->incremental && mode < LoadingStrictnessLevel::SECONDARY_CREATE)
+        validateIncrementalDefinition(select.select_query, mv_db_context);
 
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())
@@ -891,7 +919,7 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     for (const auto & command : commands)
     {
@@ -905,7 +933,15 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         if (command.isCommentAlter())
             continue;
         if (command.type == AlterCommand::MODIFY_QUERY)
+        {
+            const auto metadata = IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
+            /// The incremental cursor is keyed to the current source, so changing the query would leave it stale.
+            if (refresh_strategy && refresh_strategy->incremental)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "MODIFY QUERY is not supported for incremental refreshable materialized views");
             continue;
+        }
         if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
         {
             refresher->checkAlterIsPossible(*command.refresh->as<ASTRefreshStrategy>());
