@@ -160,11 +160,18 @@ private:
     struct TwoLevelScratch
     {
         /// Phase-A partition buffers, indexed `[worker * NUM_BUCKETS + bucket]`: each worker stores the
-        /// row id and cached hash of its own rows (private, so no prefix-sum pass). The key is re-derived
-        /// from the row at emplace time, keeping these key-type independent. Outer vectors sized once;
-        /// inner arrays `clear()`-ed (capacity kept) per chunk.
+        /// row id and cached hash of its own rows (private, so no prefix-sum pass). Outer vectors sized
+        /// once; inner arrays `clear()`-ed (capacity kept) per chunk.
         std::vector<PaddedPODArray<UInt32>> local_rows;
         std::vector<PaddedPODArray<UInt64>> local_hashes;
+
+        /// Phase-A key bytes, `sizeof(KeyType)` per row, for the trivially-copyable (non-string) key
+        /// families. Phase B reads them back instead of calling `getKeyHolder` again. This matters for
+        /// the `hashed` carrier, whose key is `hash128` over every key column: without the cache that
+        /// wide hash would run twice per row (once to bucket, once to emplace). Stored type-erased so
+        /// the same buffers serve every key type across chunks; read back with `memcpy` (the byte offset
+        /// is not aligned for `UInt128`/`UInt256`). Left empty for the string families.
+        std::vector<PaddedPODArray<char>> local_keys;
 
         /// One arena per bucket for the string-key build, so each bucket persists its keys without
         /// contending on `SetVariants::string_pool`. Lazily built in phase B; single-writer per bucket,

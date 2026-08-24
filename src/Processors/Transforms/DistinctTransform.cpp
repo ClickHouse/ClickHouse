@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <vector>
 
 namespace CurrentMetrics
@@ -297,17 +298,24 @@ void DistinctTransform::buildTwoLevelParallelFilter(
     if (num_workers == 0 || rows == 0)
         return;
 
+    /// The key cache is only populated for the trivially-copyable key families; string keys re-derive
+    /// their (cheap) view in phase B and persist it through a per-bucket arena.
+    constexpr bool cache_keys = !std::is_same_v<KeyType, std::string_view>;
+
     auto & scratch = two_level_scratch;
     const size_t num_slots = num_workers * NUM_BUCKETS;
     if (scratch.local_rows.size() < num_slots)
     {
         scratch.local_rows.resize(num_slots);
         scratch.local_hashes.resize(num_slots);
+        scratch.local_keys.resize(num_slots);
     }
     for (size_t s = 0; s < num_slots; ++s)
     {
         scratch.local_rows[s].clear();
         scratch.local_hashes[s].clear();
+        if constexpr (cache_keys)
+            scratch.local_keys[s].clear();
     }
 
     const auto worker_range = [rows, num_workers](size_t w)
@@ -326,14 +334,21 @@ void DistinctTransform::buildTwoLevelParallelFilter(
             Arena unused_pool;
             PaddedPODArray<UInt32> * rows_buf = &scratch.local_rows[w * NUM_BUCKETS];
             PaddedPODArray<UInt64> * hash_buf = &scratch.local_hashes[w * NUM_BUCKETS];
+            PaddedPODArray<char> * keys_buf = &scratch.local_keys[w * NUM_BUCKETS];
             const auto [lo, hi] = worker_range(w);
             for (size_t i = lo; i < hi; ++i)
             {
                 auto kh = state.getKeyHolder(i, unused_pool);
-                const auto h = method.data.hash(keyHolderGetKey(kh));
+                const auto & key = keyHolderGetKey(kh);
+                const auto h = method.data.hash(key);
                 const auto b = method.data.getBucketFromHash(h);
                 rows_buf[b].push_back(static_cast<UInt32>(i));
                 hash_buf[b].push_back(h);
+                if constexpr (cache_keys)
+                {
+                    const char * key_bytes = reinterpret_cast<const char *>(&key);
+                    keys_buf[b].insert(key_bytes, key_bytes + sizeof(KeyType));
+                }
             }
         });
 
@@ -354,12 +369,13 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                 bucket_arena = arena_ptr.get();
             }
 
-            typename Method::State state(columns, key_sizes, nullptr);
-            Arena unused_pool;
+            [[maybe_unused]] typename Method::State state(columns, key_sizes, nullptr);
+            [[maybe_unused]] Arena unused_pool;
             for (size_t w = 0; w < num_workers; ++w)
             {
                 const auto & rows_buf = scratch.local_rows[w * NUM_BUCKETS + bucket];
                 const auto & hash_buf = scratch.local_hashes[w * NUM_BUCKETS + bucket];
+                [[maybe_unused]] const auto & keys_buf = scratch.local_keys[w * NUM_BUCKETS + bucket];
                 const size_t n = rows_buf.size();
                 for (size_t j = 0; j < n; ++j)
                 {
@@ -367,20 +383,25 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                         impl.prefetchByHash(hash_buf[j + prefetch_dist]);
 
                     const UInt32 row = rows_buf[j];
-                    auto kh = state.getKeyHolder(row, unused_pool);
-                    KeyType key = keyHolderGetKey(kh);
                     bool inserted;
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        /// Persist into the per-bucket arena only when the key is actually inserted:
-                        /// `ArenaKeyHolder` copies on `keyHolderPersistKey` (called by `emplace` on
-                        /// insert) and discards otherwise, so a duplicate row adds no bytes and the
-                        /// arena stays proportional to the distinct keys, matching the serial path.
+                        /// The string view is cheap to re-derive; persist it into the per-bucket arena
+                        /// only when the key is actually inserted. `ArenaKeyHolder` copies on
+                        /// `keyHolderPersistKey` (called by `emplace` on insert) and discards otherwise,
+                        /// so a duplicate row adds no bytes and the arena stays proportional to the
+                        /// distinct keys, matching the serial path.
+                        auto kh = state.getKeyHolder(row, unused_pool);
+                        KeyType key = keyHolderGetKey(kh);
                         ArenaKeyHolder key_holder{key, *bucket_arena};
                         impl.emplace(key_holder, it, inserted, hash_buf[j]);
                     }
                     else
                     {
+                        /// Reuse the key computed in phase A instead of re-deriving it, so the `hashed`
+                        /// carrier does not run its `hash128` over every key column a second time.
+                        KeyType key;
+                        memcpy(&key, keys_buf.data() + j * sizeof(KeyType), sizeof(KeyType));
                         impl.emplace(key, it, inserted, hash_buf[j]);
                     }
                     filter[row] = inserted;
