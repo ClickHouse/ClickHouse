@@ -1286,7 +1286,8 @@ void StorageObjectStorageQueue::commit(
                 settings[Setting::keeper_max_retries].value,
                 zk_retry.getLastKeeperErrorMessage());
         }
-        else
+        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+        if (code.value() != Coordination::Error::ZOK)
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
             /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
@@ -1301,56 +1302,15 @@ void StorageObjectStorageQueue::commit(
                 {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
             if (try_num > 1)
             {
-                if (zk_retry.isRetry())
-                {
-                    LOG_TRACE(
-                        log, "Failed to commit processed files at try {}/{}, will retry",
-                        try_num, toString(settings[Setting::keeper_max_retries].value));
-                }
-                ++try_num;
-                fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-                });
-                fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-                });
-
-                auto zk_client = getZooKeeper();
-                code = zk_client->tryMulti(requests, responses);
-
-                fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-                    if (code == Coordination::Error::ZOK)
-                        throw zkutil::KeeperException::fromMessage(
-                            Coordination::Error::ZCONNECTIONLOSS,
-                            "Simulated connection loss after successful commit");
-                });
-            };
-
-        if (!code.has_value())
-            {
-                throw Exception(
-                    ErrorCodes::KEEPER_EXCEPTION,
-                    "Failed to commit files with {} retries, last error message: {}",
-                    settings[Setting::keeper_max_retries].value,
-                    zk_retry.getLastKeeperErrorMessage());
+                /// We had at least one hardware error retry, so the first attempt may have succeeded
+                /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+                /// before we received the response. Mark all metadata objects so their destructors
+                /// check ownership before removing the processing node instead of asserting.
+                for (auto & source : sources)
+                    source->setUncertainCommit();
             }
-
-            chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-            if (code.value() != Coordination::Error::ZOK)
-            {
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-                if (try_num > 1)
-                {
-                    /// We had at least one hardware error retry, so the first attempt may have succeeded
-                    /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
-                    /// before we received the response. Mark all metadata objects so their destructors
-                    /// check ownership before removing the processing node instead of asserting.
-                    for (auto & source : sources)
-                        source->setUncertainCommit();
-                }
-                throw zkutil::KeeperMultiException(code.value(), requests, responses);
-            }
-    }
+            throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
