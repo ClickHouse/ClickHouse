@@ -23,7 +23,17 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
 # Drop the elements streams of both columns, keeping their recorded file sizes in sync, and leave the
 # sizes streams alone.
 ELEMENT_FILES=$(find "${WORKING_DIR}" \( -name 'a.bin' -o -name 'm%2Ekeys.bin' -o -name 'm%2Evalues.bin' \))
+if [ "$(echo "${ELEMENT_FILES}" | wc -w)" -ne 3 ]
+then
+    echo "expected the three element files of table t under ${WORKING_DIR}, found: ${ELEMENT_FILES}" >&2
+    exit 1
+fi
 SIZES_FILE=$(dirname "$(echo "${ELEMENT_FILES}" | head -n 1)")/sizes.json
+if [ ! -f "${SIZES_FILE}" ]
+then
+    echo "${SIZES_FILE} does not exist" >&2
+    exit 1
+fi
 
 for ELEMENT_FILE in ${ELEMENT_FILES}; do
     : > "${ELEMENT_FILE}"

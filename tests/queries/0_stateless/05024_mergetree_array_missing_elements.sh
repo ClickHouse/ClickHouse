@@ -37,9 +37,17 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
 
 # Empty the elements file of `a`, keeping its sizes file: the column is not recorded as partially
 # read, so nothing refills it. The checksums are recalculated on the next load.
-PART_DIR=$(dirname "$(find "${WORKING_DIR}" -name 'a.bin' | head -n 1)")
-: > "${PART_DIR}/a.bin"
-rm -f "${PART_DIR}/checksums.txt"
+# `path` from `system.parts` ends with a slash.
+PART_DIR=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.parts WHERE table = 'corrupted' AND active")
+if [ ! -f "${PART_DIR}a.bin" ]
+then
+    echo "no a.bin in the active part of table corrupted, parts:" >&2
+    ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT name, part_type, active, path FROM system.parts WHERE table = 'corrupted'" >&2
+    find "${WORKING_DIR}" -type f >&2
+    exit 1
+fi
+: > "${PART_DIR}a.bin"
+rm -f "${PART_DIR}checksums.txt"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
 
