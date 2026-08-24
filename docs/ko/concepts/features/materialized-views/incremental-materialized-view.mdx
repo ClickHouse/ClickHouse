@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## 병렬 처리와 순차 처리
 </div>
 
-이전 예시에서 보았듯이, 하나의 테이블은 여러 Materialized View의 source로 사용할 수 있습니다. 이들의 실행 순서는 설정 [`parallel_view_processing`](/ko/reference/settings/session-settings#parallel_view_processing)에 따라 달라집니다.
+이전 예시에서 보았듯이, 하나의 테이블은 여러 Materialized View의 source로 사용할 수 있습니다. 이들의 실행 순서는 설정 [`parallel_view_processing`](/ko/reference/settings/session-settings/parallel#parallel_view_processing)에 따라 달라집니다.
 
 기본적으로 이 설정값은 `0`(`false`)이며, 이 경우 Materialized View는 `uuid` 순서에 따라 순차적으로 실행됩니다.
 

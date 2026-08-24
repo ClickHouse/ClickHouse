@@ -615,22 +615,23 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTripsAtVersion7)
     EXPECT_EQ(out_again.str(), payload);
 }
 
-TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresVersion7)
+TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchangesVersion)
 {
+    constexpr UInt64 pre_exchanges_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES - 1;
     auto with_topology = makeBuildStep(/*with_topology=*/true);
     QueryPlanSerializationSettings settings;
-    with_topology.serializeSettings(settings, /*version=*/6);
+    with_topology.serializeSettings(settings, pre_exchanges_version);
     WriteBufferFromOwnString out;
     SerializedSetsRegistry serialize_registry;
     IQueryPlanStep::Serialization serialization{
         .out = out,
         .registry = serialize_registry,
-        .version = 6,
+        .version = pre_exchanges_version,
     };
     try
     {
         with_topology.serialize(serialization);
-        FAIL() << "serializing filter exchanges at version 6 should throw";
+        FAIL() << "serializing filter exchanges below the runtime-filter-exchanges version should throw";
     }
     catch (const Exception & e)
     {
@@ -639,16 +640,16 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresVersion7)
 
     auto without_topology = makeBuildStep(/*with_topology=*/false);
     ASSERT_FALSE(without_topology.hasFilterExchanges());
-    auto restored_ptr = roundTripBuildStep(without_topology, /*version=*/6);
+    auto restored_ptr = roundTripBuildStep(without_topology, pre_exchanges_version);
     auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
     ASSERT_NE(restored, nullptr);
     EXPECT_FALSE(restored->hasFilterExchanges());
     EXPECT_TRUE(restored->getFilterKey().empty());
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
-    /// `join_runtime_filter_exact_bytes_limit` is a version-7 setting name; a version-6 stream
-    /// omits it and the reader falls back to the constructor floor (the bloom filter size is the
-    /// default when the setting is absent, and the limit defaults to the bloom size).
+    /// `join_runtime_filter_exact_bytes_limit` is a version-10 setting name; a stream below that
+    /// version omits it and the reader falls back to the constructor floor (the bloom filter size
+    /// is the default when the setting is absent, and the limit defaults to the bloom size).
     auto expected_geometry = makeGeometry();
     expected_geometry.exact_bytes_limit = restored->getGeometry().exact_bytes_limit;
     EXPECT_EQ(restored->getGeometry().exact_bytes_limit, 512 * 1024);

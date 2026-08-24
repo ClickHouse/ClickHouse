@@ -12,6 +12,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
+#include <base/insertAtEnd.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
@@ -263,7 +266,7 @@ namespace
         if (!ParserList::parseUtil(pos, expected, parse_interval_with_limits, false))
             return false;
 
-        all_limits = std::move(res_all_limits);
+        insertAtEnd(all_limits, std::move(res_all_limits));
         return true;
     }
 
@@ -405,4 +408,67 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     return true;
 }
+}
+
+namespace DB
+{
+
+void registerStatementQuota(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE QUOTA",
+    {
+        .description = R"(
+Creates a quota, which limits the resource consumption of users and roles over a time interval, for example the number
+of queries, the number of read rows, or the execution time.
+
+**Examples**
+
+**Limit the number of queries of the current user**
+
+```sql title="Query"
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+)",
+        .syntax = R"(
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)",
+        .parent = "CREATE",
+        .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER QUOTA",
+    {
+        .description = R"(
+Changes a quota: renames it, changes its key, its intervals and limits, and the roles and users it applies to.
+
+**Examples**
+
+**Change the limits of a quota**
+
+```sql title="Query"
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+)",
+        .syntax = R"(
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)",
+        .parent = "ALTER",
+        .related = {"CREATE QUOTA", "ALTER", "SHOW"},
+    });
+}
+
 }

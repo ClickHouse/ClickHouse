@@ -95,19 +95,19 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
-        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
         {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},
         {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy."},
-        {"initial_user", low_cardinality_string, "Name of the user who ran the initial query (for distributed query execution)."},
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
-        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
-        {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
-        {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Initial query starting time (for distributed query execution)."},
-        {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Initial query starting time with microseconds precision (for distributed query execution)."},
+        {"initial_user", low_cardinality_string, "Name of the user who ran the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
+        {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
+        {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query in the same query chain."},
+        {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query in the same query chain, with microsecond precision."},
         {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
@@ -397,7 +397,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.getClientHostName().data(), client_info.getClientHostName().size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_agent.data(), client_info.client_agent.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);

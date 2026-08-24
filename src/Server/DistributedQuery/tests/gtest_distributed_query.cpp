@@ -596,7 +596,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     context->setSetting("distributed_plan_execute_locally", true);
 
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context);
+        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true);
 
     auto header = std::make_shared<const Block>();
     const ExchangeStreamId stream_id("test_exchange", 0, 0);
@@ -629,33 +630,40 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     EXPECT_EQ(total_rows, 7u);
 }
 
-/// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears;
+/// v1 only when every producer port matches the destination worker's exchange port (a v1
+/// consumer dials producers on its own port); v2 as soon as any producer differs;
 /// v3 only when the task carries runtime filter receive descriptors.
 TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
 {
-    const UInt64 server_exchange_port = 9000;
+    const UInt64 destination_exchange_port = 9000;
     DistributedQueryTask task;
 
     ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s1"] = {"host1", 9000};
     sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, server_exchange_port), UInt64(2));
+    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(2));
+
+    /// Producers agreeing among themselves is not enough: a destination whose own port
+    /// differs from the producers' port must still get a version-2 task.
+    ExchangeStreamSources uniform_sources;
+    uniform_sources.stream_hosts["s1"] = {"host1", 9000};
+    EXPECT_EQ(chooseTaskSerializationVersion(task, uniform_sources, /*destination_exchange_port=*/9224), UInt64(2));
 }
 
 TEST(DistributedTaskSerializationVersion, ChoosesV3WhenTaskHasRuntimeFilterDescriptors)
 {
-    const UInt64 server_exchange_port = 9000;
+    const UInt64 destination_exchange_port = 9000;
     ExchangeStreamSources sources;
     sources.stream_hosts["s1"] = {"host1", 9000};
 
     DistributedQueryTask task;
     task.runtime_filter_descriptors.emplace_back();
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, server_exchange_port), UInt64(3));
+    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(3));
 }
 
 namespace DB::ErrorCodes

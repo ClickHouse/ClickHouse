@@ -14,7 +14,7 @@ static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 
 /// First query-plan serialization version that knows `join_runtime_filter_exact_bytes_limit` and
 /// `BuildRuntimeFilterStep` filter-exchange topology. Gates writing the setting in `serializeSettings`.
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES = 7;
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES = 10;
 
 /// Sizing + self-disable knobs. Partials only merge if geometry matches; the receiver
 /// checks arrived state against the plan.
