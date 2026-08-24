@@ -45,6 +45,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -67,16 +69,20 @@ namespace
 /// Helper to record literal token positions in the map stored in Expected.
 /// The char* pointers reference the original query string buffer.
 ///
+/// The only place `has_token_info` is set, which is what lets a consumer tell a recorded
+/// literal from a synthesized one sitting at a recorded literal's freed address.
+///
 /// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)`,
 /// the parser may reuse memory addresses due to make_shared's small object optimization.
 /// The final composite literal may get the same address as an earlier element.
 /// We want the token info for the final literal, so insert_or_assign overwrites earlier entries.
-inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
+inline void recordLiteralTokens(ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
 {
     if (expected.literal_token_map)
     {
         --end;
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
+        literal->setHasTokenInfo(true);
     }
 }
 
@@ -1428,7 +1434,9 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
+    /// The buffer is sized for the worst case; a binary literal whose length is not a multiple of
+    /// eight can write fewer bytes than that, and the unwritten tail is uninitialized memory.
+    return makeStringLiteral(pos, node, String(res_begin, res_pos - res_begin), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2794,6 +2802,78 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementColumnsTransformers(StatementFactory & factory)
+{
+    factory.registerStatement("APPLY modifier",
+    {
+        .description = R"(
+Invokes a function for each column returned by the expression it is applied to, which is usually the asterisk or a
+columns matcher.
+
+**Examples**
+
+**Apply a function to every column**
+
+```sql title="Query"
+SELECT * APPLY(max) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> APPLY(<func>) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
+    factory.registerStatement("EXCEPT modifier",
+    {
+        .description = R"(
+Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the
+output.
+
+**Examples**
+
+**Exclude a column from the result**
+
+```sql title="Query"
+SELECT * EXCEPT (i) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+    });
+
+    factory.registerStatement("REPLACE modifier",
+    {
+        .description = R"(
+Specifies one or more expression aliases. Each alias must match a column name of the `SELECT *` statement, and the
+matching column is replaced by the expression in the output column list. The modifier does not change the names or the
+order of the columns, but it can change the values and their types.
+
+**Examples**
+
+**Replace the expression of a column**
+
+```sql title="Query"
+SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+    });
 }
 
 }

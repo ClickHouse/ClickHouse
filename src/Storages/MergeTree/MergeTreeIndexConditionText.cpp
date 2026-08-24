@@ -39,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -899,6 +900,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
+    bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
         has_index_column = true;
@@ -906,11 +908,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
@@ -934,6 +938,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
+                candidate_for_exact_mode = false;
             }
         }
     }
@@ -1174,10 +1179,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
+            SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
@@ -1186,6 +1192,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
+
+        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
+        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
+        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
+        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
+        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
+        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
+        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
 
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
@@ -1271,10 +1289,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
+                const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -1300,10 +1320,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto patterns = stringLikeToPatterns(value_field, true);
         if (patterns.size() == 1)
         {
+            const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;

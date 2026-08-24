@@ -79,8 +79,8 @@ REGISTER_FUNCTION(TimeSeriesStoreTags)
 {
     FunctionDocumentation::Description description = R"(
 Stores in the query context a mapping between a specified identifier of a time series and a set of tags.
-Functions [timeSeriesIdToTags()](/sql-reference/functions/time-series-functions#timeSeriesIdToTags)
-and [timeSeriesIdToGroup()](/sql-reference/functions/time-series-functions#timeSeriesIdToGroup)
+Functions [timeSeriesIdToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesIdToTags)
+and [timeSeriesIdToGroup()](/reference/functions/regular-functions/time-series-functions#timeSeriesIdToGroup)
 can be used to access this mapping later during the query execution.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, ...)";
