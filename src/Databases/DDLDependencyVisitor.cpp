@@ -131,6 +131,7 @@ namespace
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
                     else if (target.kind == ViewTarget::Kind::Samples
+                        || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
                         || target.kind == ViewTarget::Kind::Metrics)
                     {
