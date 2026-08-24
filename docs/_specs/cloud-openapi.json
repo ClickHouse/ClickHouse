@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1065866",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1066254",
       "email": "support@clickhouse.com"
     }
   },
@@ -372,7 +372,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
+        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -459,18 +459,16 @@
             }
           }
         },
+        "deprecated": true,
         "tags": [
           "Prometheus"
-        ],
-        "x-mint": {
-          "content": "Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted."
-        }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/prometheus/discovery": {
       "get": {
         "summary": "List Prometheus scrape targets",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
         "operationId": "organizationPrometheusDiscoveryGet",
         "parameters": [
           {
@@ -23978,7 +23976,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required.",
+            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required. The role names `clickpipes` and `clickpipes_system` are reserved for internal use and cannot be assigned.",
             "items": {
               "type": "string"
             }
