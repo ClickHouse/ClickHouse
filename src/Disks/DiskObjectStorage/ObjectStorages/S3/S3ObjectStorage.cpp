@@ -650,8 +650,8 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    const auto source_info = S3::getObjectInfo(
-        *current_client, uri.bucket, object_from.remote_path, /*version_id=*/ {}, /*with_metadata=*/ false,
+    const auto source_info = S3::getObjectInfoWithOptionalTags(
+        *current_client, uri.bucket, object_from.remote_path, /*with_metadata=*/ false,
         /*with_tags=*/ !write_settings.object_storage_write_if_none_match.empty());
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);

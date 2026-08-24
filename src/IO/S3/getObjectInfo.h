@@ -51,6 +51,16 @@ ObjectInfo getObjectInfo(
     bool with_metadata = false,
     bool with_tags = false);
 
+/// Like getObjectInfo() with metadata, except that tags are best-effort: reading them needs
+/// GetObjectTagging, which a least-privilege deployment that only ever copied objects may not grant.
+ObjectInfo getObjectInfoWithOptionalTags(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    bool with_metadata,
+    bool with_tags,
+    const String & version_id = {});
+
 ObjectAttributes getObjectTags(
     const S3::Client & client,
     const String & bucket,

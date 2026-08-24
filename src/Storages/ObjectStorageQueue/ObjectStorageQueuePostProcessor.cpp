@@ -524,11 +524,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         if (!copied)
                         {
                             const String src_bucket = s3_storage->getObjectsNamespace();
-                            const auto source_info = S3::getObjectInfo(
+                            const auto source_info = S3::getObjectInfoWithOptionalTags(
                                 *src_client,
                                 src_bucket,
                                 object_from.remote_path,
-                                /*version_id=*/ {},
                                 /*with_metadata=*/ true,
                                 /*with_tags=*/ !move_if_none_match.empty());
                             /// See moveWithinBucket(): lets a later attempt recognize its own committed
