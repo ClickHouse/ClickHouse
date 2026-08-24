@@ -161,6 +161,8 @@ private:
     PaddedPODArray<UInt32> output_postings_array;
     /// Reusable buffer for row ids of one posting list block read from a source.
     PaddedPODArray<UInt32> row_ids_buffer;
+    /// Reusable buffer for position entries of one token read from a source.
+    PODArray<RoaringishEntry> position_entries_buffer;
     /// Positions accumulated for the current token (phrase query support).
     PaddedPODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.

@@ -438,6 +438,13 @@ void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPosting
         }
         else
         {
+            /// Flush the array first to keep at most one of the output containers non-empty.
+            if (!output_postings_array.empty())
+            {
+                appendPostingsToBitmap(output_postings_array);
+                output_postings_array.clear();
+            }
+
             auto posting = serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
             output_postings_bitmap |= *posting;
         }
@@ -450,18 +457,18 @@ void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostin
     auto * data_buffer = stream->getDataBuffer();
     stream->seekToMark({token_info.position_offset, 0});
 
-    PODArray<RoaringishEntry> position_entries;
-    TextIndexPositionCodec::decode(*data_buffer, position_entries);
+    position_entries_buffer.clear();
+    TextIndexPositionCodec::decode(*data_buffer, position_entries_buffer);
 
     /// Adjust doc_ids if merging parts with offset remapping.
     if (merged_part_offsets)
     {
         size_t part_index = segments[source_num].part_index;
-        for (auto & entry : position_entries)
+        for (auto & entry : position_entries_buffer)
             entry = entry.withDocId(adjustPartOffset(part_index, entry.doc_id));
     }
 
-    output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+    output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());
 }
 
 void MergeTextIndexesTask::flushPostingList()
@@ -481,20 +488,13 @@ void MergeTextIndexesTask::flushPostingList()
     }
     else
     {
-        if (!output_postings_array.empty())
-        {
-            appendPostingsToBitmap(output_postings_array);
-            output_postings_array.clear();
-        }
+        /// The array is flushed into the bitmap whenever the bitmap becomes non-empty.
+        chassert(output_postings_array.empty());
+        /// The bitmap is populated only when the cardinality exceeds MAX_CARDINALITY_FOR_RAW_POSTINGS, so never embedded here.
+        chassert(!(token_info.header & PostingsSerialization::Flags::EmbeddedPostings));
 
         PostingListBuilder builder(&output_postings_bitmap);
         token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
-
-        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        {
-            token_info.embedded_postings.resize(output_postings_bitmap.cardinality());
-            output_postings_bitmap.toUint32Array(token_info.embedded_postings.data());
-        }
     }
 
     /// Serialize position data if positions are enabled.
