@@ -238,7 +238,7 @@
     updateControls();
     saveState();
     requestAnimationFrame(function () {
-      postToTerminal({type: 'webterminal-refit'});
+      postToTerminal({type: 'webterminal-refit', focus: focusTerminal});
       if (focusTerminal && iframe) iframe.focus();
     });
   }

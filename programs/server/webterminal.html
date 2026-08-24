@@ -394,7 +394,8 @@
             // otherwise fitAddon may compute a tiny column count from stale dimensions.
             requestAnimationFrame(function() {
                 fitAddon.fit();
-                term.focus();
+                if (e.data.focus !== false)
+                    term.focus();
             });
         }
     });
