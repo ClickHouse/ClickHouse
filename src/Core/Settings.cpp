@@ -1964,6 +1964,27 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, enable_group_by_top_k_optimization, true, R"(
+Enable TopK filtering optimization during aggregation in `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` queries, and in `GROUP BY keys LIMIT K` queries without `ORDER BY` (any `K` groups are a valid result there, so a sort over all keys is synthesized).
+
+When enabled, the aggregator maintains a bounded heap of the top `K` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`, and when the heap ranks the full `GROUP BY` key it also prunes evicted groups out of the intermediate hash table, bounding its size by the `LIMIT` instead of the number of distinct keys. When the `ORDER BY` covers only a proper prefix of the `GROUP BY` keys, the ranking cannot identify a full group, so only row skipping applies: the hash table keeps every admitted group and can still grow with the cardinality of the remaining key columns.
+
+The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
+
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
+
+The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
+
+This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 
@@ -1977,6 +1998,8 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
+
+This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index).
@@ -6296,6 +6319,12 @@ Force the use of optimization when it is applicable, but heuristics decided not 
 )", 0) \
     DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
+)", 0) \
+    DECLARE(Bool, allow_creating_set_partitions_independently, true, R"(
+Enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression of the subquery's `MergeTree` table is a deterministic function of the subquery output columns. Each partition is read through a separate stream and deduplicated independently, so the single set-filling transform only hashes unique rows. Not applied with `FINAL`, parallel replicas, or `GLOBAL IN`. The optimization requests the per-partition read itself only when the data has more than one partition and the largest partition holds at most twice the rows of the average partition (see [force_creating_set_partitions_independently](#force_creating_set_partitions_independently) to bypass the skew check); when the streams are already partition-disjoint because another per-partition feature split them (for example per-partition `LIMIT BY`), the pre-deduplication is applied regardless, since the read layout is already fixed. While the set is being built, the per-stream deduplication tables together hold roughly one extra copy of the unique keys.
+)", 0) \
+    DECLARE(Bool, force_creating_set_partitions_independently, false, R"(
+Force per-partition pre-deduplication for `IN (subquery)` set building when it is applicable, but the partition-skew check (largest partition more than twice the average) decided not to use it. Only bypasses the skew check of [allow_creating_set_partitions_independently](#allow_creating_set_partitions_independently); the remaining conditions still apply.
 )", 0) \
     DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
