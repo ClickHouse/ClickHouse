@@ -13,6 +13,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -53,6 +54,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
@@ -117,6 +119,7 @@ extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -812,12 +815,51 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         selected_tables.resize(child_plans->size());
 }
 
+/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
+/// all references to one CTE - including the ones a child plan resolves by name to
+/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
+static MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
+{
+    MaterializedCTESet result;
+    if (!node)
+        return result;
+
+    traverseQueryTree(node, Everything{},
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * table_node = current_node->as<TableNode>())
+            {
+                if (auto cte = table_node->getMaterializedCTE())
+                    result.insert(std::move(cte));
+            }
+        });
+
+    return result;
+}
+
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
         return {};
 
     std::vector<ChildPlan> res;
+
+    /// Materialized CTEs the outer query references. Each child plan below is optimized
+    /// on its own, and `resolveMaterializingCTEs` claims a CTE globally
+    /// (`MaterializedCTE::is_materialization_planned`): the first child plan to be
+    /// optimized would move the CTE's plan into *its* tree and leave every other
+    /// `DelayedMaterializingCTEsStep` for that CTE - in the sibling children and in the
+    /// outer plan - degenerate. The writer would then sit in one child's pipeline while
+    /// the readers sit in another, with no `DelayedPortsProcessor` between them, and
+    /// `ReadFromMemoryStorageStep` would (rightly) report a missing gate.
+    ///
+    /// So the children must not claim these: strip their steps and let the outer plan,
+    /// whose `MaterializingCTEsStep` sits above the whole merge, own the materialization
+    /// and gate every child. This mirrors what `DelayedCreatingSetsStep::makePlansForSets`
+    /// does with pre-built IN-subquery plans. A CTE defined *inside* one child (a `View`
+    /// with its own `WITH ... AS MATERIALIZED`) is not in this set, so that child keeps
+    /// owning it - it is the only reader.
+    const auto outer_materialized_ctes = collectMaterializedCTEsFromQueryTree(query_info.query_tree);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier = std::min(
@@ -918,17 +960,28 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
+                /// An `Alias` reports its target's metadata, so the empty column list belongs to the target.
+                const auto * alias = storage->as<StorageAlias>();
+                const StoragePtr alias_target = alias ? alias->tryGetTargetTable() : nullptr;
+                const IStorage * columns_owner = alias ? alias_target.get() : storage.get();
+
                 /// (Assuming that view has empty list of columns if it's parameterized.)
-                if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
+                const auto * view = columns_owner ? columns_owner->as<StorageView>() : nullptr;
+                if (view && view->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
-                else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+
+                if (alias && !alias_target)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
                         storage->getStorageID().getNameForLogs(),
                         storage_merge->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
+
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Table {} matched by the regexp of {} has no columns to read",
+                    storage->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
@@ -1140,6 +1193,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                     child.plan.addStep(std::move(filter_step));
                 }
+
+                removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
 
                 child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
             }

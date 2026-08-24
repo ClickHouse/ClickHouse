@@ -1262,6 +1262,68 @@ def test_conversion_functions():
         [["1970-01-01 00:03:00.000", 1]],
     )
 
+    # scalar() of an empty vector is NaN.
+    do_query_test(
+        "scalar(clamp(vector(1), 1, -1))",
+        180,
+        '{"resultType": "scalar", "result": [180, "NaN"]}',
+        [["1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(vector(1), 1, -1)))[40:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
+    # scalar() over a vector which turns out to be empty at runtime (not at conversion time)
+    # is NaN at each time step too.
+    do_query_test(
+        "vector(scalar(nonexistent_metric))[50:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "NaN"], [150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(nonexistent_metric, 0, 1)))[50:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "NaN"], [150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
+    # A NaN produced by scalar() of an empty vector is a PromQL-valid quantile() parameter,
+    # and quantile(NaN, ...) must return NaN instead of failing the query.
+    do_query_test(
+        "quantile(scalar(clamp(vector(1), 1, -1)), vector(2))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
     do_query_test(
         "vector(scalar(vector(time())))[40:10]",
         180,
@@ -2082,6 +2144,249 @@ def test_math_functions():
                 "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',-inf),('1970-01-01 00:05:00.000',-0.5493061443340548),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5493061443340548),('1970-01-01 00:10:00.000',inf),('1970-01-01 00:11:40.000',nan)]",
             ]
         ],
+    )
+
+
+def test_clamp():
+    do_query_test(
+        "clamp(vector(5), 0, 1)",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "1"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 1]],
+    )
+
+    do_query_test(
+        "clamp(deltas, -1, 1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-1"], [200, "-1"], [300, "-0.5"], [400, "0"], [500, "0.5"], [600, "1"], [700, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-1),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',-0.5),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',1)]",
+            ]
+        ],
+    )
+
+    # clamp() with min > max returns an empty vector.
+    do_query_test(
+        "clamp(deltas, 1, -1)",
+        700,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # clamp() with min == max clamps every value to that bound.
+    do_query_test(
+        "clamp(deltas, 1, 1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "1"], [200, "1"], [300, "1"], [400, "1"], [500, "1"], [600, "1"], [700, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',1),('1970-01-01 00:05:00.000',1),('1970-01-01 00:06:40.000',1),('1970-01-01 00:08:20.000',1),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',1)]",
+            ]
+        ],
+    )
+
+    # A NaN bound makes every value NaN.
+    do_query_test(
+        "clamp(deltas, NaN, 1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "NaN"], [300, "NaN"], [400, "NaN"], [500, "NaN"], [600, "NaN"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',nan),('1970-01-01 00:05:00.000',nan),('1970-01-01 00:06:40.000',nan),('1970-01-01 00:08:20.000',nan),('1970-01-01 00:10:00.000',nan),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
+    )
+
+    # NaN values are kept as is.
+    do_query_test(
+        "clamp(deltas * NaN, -1, 1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "NaN"], [300, "NaN"], [400, "NaN"], [500, "NaN"], [600, "NaN"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',nan),('1970-01-01 00:05:00.000',nan),('1970-01-01 00:06:40.000',nan),('1970-01-01 00:08:20.000',nan),('1970-01-01 00:10:00.000',nan),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
+    )
+
+    # Non-constant bounds.
+    do_query_test(
+        "clamp(deltas, time() * 0 - 1, 1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-1"], [200, "-1"], [300, "-0.5"], [400, "0"], [500, "0.5"], [600, "1"], [700, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-1),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',-0.5),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',1)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "clamp(deltas, time() * 0 + 1, -1)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": []}',
+        "",
+    )
+
+    # Non-constant bounds with max < min must return an empty vector even if the vector argument
+    # is backed by a scalar (i.e. it isn't stored as a vector grid).
+    do_query_test(
+        "clamp(vector(5), time() * 0 + 1, -1)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        "clamp(vector(5), time() * 0, time() * 0 + 10)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "5"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 5]],
+    )
+
+    # scalar() of an empty vector is NaN, so a bound evaluating to an empty scalar makes
+    # every value NaN instead of making the result empty.
+    do_query_test(
+        "clamp(vector(5), scalar(clamp(vector(1), 1, -1)), 10)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp(vector(5), 0, scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    # An empty vector argument (as opposed to an empty scalar bound) still makes the result empty.
+    do_query_test(
+        "clamp(clamp(vector(1), 1, -1), 0, 10)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        "clamp_min(deltas, 0)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "0"], [200, "0"], [300, "0"], [400, "0"], [500, "0.5"], [600, "1"], [700, "2"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:05:00.000',0),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',2)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "clamp_max(deltas, 0)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-2"], [200, "-1"], [300, "-0.5"], [400, "0"], [500, "0"], [600, "0"], [700, "0"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',-0.5),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0),('1970-01-01 00:10:00.000',0),('1970-01-01 00:11:40.000',0)]",
+            ]
+        ],
+    )
+
+    # clamp_min() and clamp_max() with a bound evaluating to an empty scalar make every value NaN too.
+    do_query_test(
+        "clamp_min(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp_max(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+
+def test_round():
+    # Ties are rounded up: round(2.5) == 3, round(-2.5) == -2.
+    do_query_test(
+        "round(vector(2.5))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "3"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 3]],
+    )
+
+    do_query_test(
+        "round(vector(-2.5))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-2"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", -2]],
+    )
+
+    do_query_test(
+        "round(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-2"], [200, "-1"], [300, "0"], [400, "0"], [500, "1"], [600, "1"], [700, "2"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',0),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',1),('1970-01-01 00:10:00.000',1),('1970-01-01 00:11:40.000',2)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "round(deltas, 2)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-2"], [200, "0"], [300, "0"], [400, "0"], [500, "0"], [600, "2"], [700, "2"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',0),('1970-01-01 00:05:00.000',0),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0),('1970-01-01 00:10:00.000',2),('1970-01-01 00:11:40.000',2)]",
+            ]
+        ],
+    )
+
+    # Fractional to_nearest.
+    do_query_test(
+        "round(deltas, 0.4)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-2"], [200, "-0.8"], [300, "-0.4"], [400, "0"], [500, "0.4"], [600, "1.2"], [700, "2"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',-0.8),('1970-01-01 00:05:00.000',-0.4),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.4),('1970-01-01 00:10:00.000',1.2),('1970-01-01 00:11:40.000',2)]",
+            ]
+        ],
+    )
+
+    # round(v, 0) makes every value NaN.
+    do_query_test(
+        "round(deltas, 0)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "NaN"], [300, "NaN"], [400, "NaN"], [500, "NaN"], [600, "NaN"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',nan),('1970-01-01 00:05:00.000',nan),('1970-01-01 00:06:40.000',nan),('1970-01-01 00:08:20.000',nan),('1970-01-01 00:10:00.000',nan),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
+    )
+
+    # scalar() of an empty vector is NaN, so a `to_nearest` argument evaluating to an empty scalar
+    # makes every value NaN instead of making the result empty.
+    do_query_test(
+        "round(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
     )
 
 
@@ -3437,6 +3742,13 @@ def test_binary_operators_on_vectors_without_tags():
     )
 
     do_query_test(
+        "vector(1) + on() vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "3"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 3]],
+    )
+
+    do_query_test(
         "sum(vector(5)) + on() sum(vector(7))",
         180,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "12"]}]}',
@@ -3464,6 +3776,13 @@ def test_binary_operators_on_vectors_without_tags():
         [["[('a','b')]", "1970-01-01 00:03:00.000", 1]],
     )
 
+    do_query_test(
+        'label_join(vector(1), "a", "-", "b", "c")',
+        180,
+        '{"resultType": "vector", "result": [{"metric": {"a": "-"}, "value": [180, "1"]}]}',
+        [["[('a','-')]", "1970-01-01 00:03:00.000", 1]],
+    )
+
     # Range queries evaluate time-dependent tag-less vectors as scalar grids,
     # exercising the StoreMethod::SCALAR_GRID conversion paths.
     do_range_query_test(
@@ -3489,6 +3808,20 @@ def test_binary_operators_on_vectors_without_tags():
         [
             [
                 "[('a','b')]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        'label_join(vector(time()), "a", "-", "b", "c")',
+        150,
+        180,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"a": "-"}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[('a','-')]",
                 "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
             ]
         ],
