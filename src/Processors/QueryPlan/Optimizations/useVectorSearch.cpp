@@ -417,10 +417,24 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         auto search_column = vector_search_parameters.value().column;
         /// The name of the search column extracted from the `ORDER BY` clause is sometimes the plain column name
         /// (the qualifier is stripped when the distance function reads an `INPUT` node directly), while the nodes of
-        /// the DAGs checked below keep the qualified name, e.g. `__table1.vec`. Match both forms.
-        auto is_search_column = [&search_column](const String & name)
+        /// the DAGs checked below keep the qualified name, e.g. `__table1.vec`. Recover the exact name among the
+        /// DAG inputs from the distance function's argument and match both forms exactly - a suffix match would
+        /// conflate an unrelated dotted column such as `n.vec` with a search column `vec`.
+        String search_column_input_name = search_column;
+        if (const auto * sort_output_node = expression.tryFindInOutputs(sort_column))
         {
-            return name == search_column || (name.contains('.') && name.ends_with("." + search_column));
+            for (const auto * child : sort_output_node->children)
+            {
+                const auto * maybe_input = child;
+                if (maybe_input->type == ActionsDAG::ActionType::ALIAS)
+                    maybe_input = maybe_input->children.at(0);
+                if (maybe_input->type == ActionsDAG::ActionType::INPUT)
+                    search_column_input_name = maybe_input->result_name;
+            }
+        }
+        auto is_search_column = [&search_column, &search_column_input_name](const String & name)
+        {
+            return name == search_column || name == search_column_input_name;
         };
 
         /// Remove the distance-sort output from a copy of the projection DAG before checking
