@@ -3,6 +3,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -76,6 +78,35 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_undrop.ignore(pos, expected))
         return parseUndropQuery(pos, node, expected);
     return false;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementUndrop(StatementFactory & factory)
+{
+    factory.registerStatement("UNDROP",
+    {
+        .description = R"(
+Cancels the dropping of a table. A table of an `Atomic` database can be recovered during the period set by the server
+setting `database_atomic_delay_before_drop_table_sec` after `DROP TABLE` was issued. The tables which can still be
+recovered are listed in `system.dropped_tables`.
+
+**Examples**
+
+**Recover a dropped table**
+
+```sql title="Query"
+UNDROP TABLE tab;
+```
+)",
+        .syntax = R"(
+UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
+)",
+        .related = {"DROP", "DETACH", "ATTACH"},
+    });
 }
 
 }
