@@ -1945,6 +1945,14 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
             if (!materialized_cte->hasPlanOrBuilt())
             {
                 auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
+                /// A by-name reference carries no subquery, but a standalone pipeline still needs a
+                /// gate for it, and the handle alone is enough to build one. The writer stays with
+                /// whoever holds the subquery.
+                if (!cte_subquery && select_query_options.force_materialize_cte)
+                {
+                    ctes.push_back(materialized_cte);
+                    continue;
+                }
                 if (!cte_subquery)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "CTE '{}' does not have query tree, but was not planned yet",

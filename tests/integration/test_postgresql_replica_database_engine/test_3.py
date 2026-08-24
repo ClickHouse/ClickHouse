@@ -262,6 +262,336 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         order_by="id",
     )
 
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tupdated\n"
+    )
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET other = 'first update' WHERE id = 1")
+    cursor.execute(f"UPDATE {table} SET other = 'second update' WHERE id = 1")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tsecond update\n"
+    )
+
+    # When the replica identity changes, PostgreSQL sends its old value in a
+    # separate key tuple. The unchanged TOAST value must be looked up with that
+    # old key and then written with the new key.
+    pg_manager.execute(f"UPDATE {table} SET id = 2, other = 'new key' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "2\t30000\tnew key\n"
+    )
+
+
+def test_toast_in_replica_identity(started_cluster):
+    table = "test_toast_in_replica_identity"
+    other_table = "test_toast_in_replica_identity_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (bad_value text NOT NULL, id text PRIMARY KEY, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
+    )
+    # `EXTERNAL` disables compression, so the key is stored out of line and an
+    # update that leaves it alone sends it as an unchanged TOAST value. The value
+    # is still short enough to fit into the primary key index.
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN id SET STORAGE EXTERNAL")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (bad_value Decimal(10, 2), id String, other String))",
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (bad_value, id, other) VALUES ('10.5', repeat('k', 2500), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # PostgreSQL sends the replica identity itself as a value, even with
+    # `STORAGE EXTERNAL`. The malformed decimal is a defaultable conversion
+    # error before the unchanged TOAST value in the new tuple; the update and a
+    # subsequent update to another replicated table must both keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET bad_value = '1abc', other = 'updated'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT length(id), bad_value, other FROM test_database.{table}")
+        == "2500\t0\tupdated\n"
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}")
+        == "updated\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_restore_with_defaulted_replica_identity_skips_table(started_cluster):
+    table = "test_toast_defaulted_replica_identity"
+    other_table = "test_toast_defaulted_replica_identity_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id text PRIMARY KEY, toast_value text, other text)''',
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        '''CREATE TABLE "{}" (id integer PRIMARY KEY, other text)''',
+    )
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
+    )
+
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('0', repeat('a', 30000), 'zero')")
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # A live row whose replica identity cannot be converted must not be committed
+    # under the default key `0`. Otherwise a later update of the real `0` row
+    # could restore this row's unchanged TOAST value from the poisoned entry.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('not-a-number', repeat('b', 30000), 'invalid')")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
+
+    pg_manager.execute(f"UPDATE {table} SET other = 'must not replicate' WHERE id = '0'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'still updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT other FROM test_database.{other_table}") == "still updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_restore_with_missing_source_row_skips_table(started_cluster):
+    table = "test_toast_missing_source_row"
+    other_table = "test_toast_missing_source_row_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id text PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} VALUES ('1', repeat('a', 30000), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "initial\n"
+    )
+
+    # The replica identity is a PostgreSQL `text` column mapped to `UInt8`, so the
+    # two distinct PostgreSQL keys '1' and '01' become the same key in the nested
+    # table. Deleting '01' therefore deletes the nested row that backs the row
+    # still present in PostgreSQL under the key '1', which is the out-of-sync
+    # shape this branch has to survive.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('01', 'shadow value', 'shadow')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "shadow\n"
+    )
+    pg_manager.execute(f"DELETE FROM {table} WHERE id = '01'")
+    assert_eq_with_retry(instance, f"SELECT count() FROM test_database.{table}", "0\n")
+
+    # The row is gone from the nested table, so the unchanged `TOAST` value of
+    # this update cannot be restored from anywhere. Only this table may be
+    # skipped, the other replicated table has to keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = '1'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    )
+    assert_logs_contain_with_retry(
+        instance,
+        f"Table {table} is skipped from replication because an unchanged TOAST value cannot be restored",
+    )
+    assert instance.query(f"SELECT count() FROM test_database.{table}") == "0\n"
+
+    pg_manager.drop_materialized_db()
+
+
+def test_toast_in_changed_composite_replica_identity(started_cluster):
+    table = "test_toast_in_changed_composite_replica_identity"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id integer, toast_key text, other text, PRIMARY KEY (id, toast_key))''',
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_key SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (id, toast_key, other) "
+        "VALUES (1, repeat('k', 2500), 'initial')"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # Changing one primary-key component sends the old `K` tuple. Its toasted
+    # component is available there, even though the new tuple marks it `u`.
+    pg_manager.execute(
+        f"UPDATE {table} SET id = 2, other = 'updated' WHERE id = 1"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "2\t2500\tupdated\n"
+    )
+
+    # Both updates are buffered before the transaction is flushed. The second
+    # update must find the first row using its restored TOAST key, rather than
+    # the temporary default value used while parsing the new tuple.
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET id = 3, other = 'first update' WHERE id = 2")
+    cursor.execute(f"UPDATE {table} SET id = 4, other = 'second update' WHERE id = 3")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "4\t2500\tsecond update\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
 
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
