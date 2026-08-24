@@ -18,8 +18,8 @@
 --     MergeTree, and the replica-side plan replaces the local pipeline this test needs.
 --   * `max_block_size` and `max_threads` are pinned because the fan-out and the queue depth
 --     depend on them; the randomized values can drop the shard count below the point where
---     any queue reaches the cap. Keys 0..3 land on 4 distinct shards at `max_threads = 4`
---     (crc32 of the key, then `(h * num_shards) >> 32`), so every shard is fed.
+--     any queue reaches the cap. At `max_threads = 4` the four keys reach only shards 0 and
+--     3, so two of the four queues stay empty - that skew is what the cap has to survive.
 --   * `max_insert_threads` is pinned because the fixture's cost, not its content, depends on
 --     it, and this test is re-run many times concurrently by the flaky check.
 
