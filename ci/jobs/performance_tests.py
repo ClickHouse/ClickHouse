@@ -13,6 +13,7 @@ from threading import Thread
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.perf import ci_logs_export
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -470,6 +471,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     CONFIGURE = "configure"
     RESTART = "restart"
     TEST = "queries"
+    EXPORT_LOGS = "export_logs"
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
@@ -1686,6 +1688,45 @@ def main():
         ]
         results.append(Result.from_commands_run(name="Tests", command=commands))
         res = results[-1].is_ok()
+
+    if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
+        # Export the system log tables of both servers to the CI Logs cluster.
+        # Strictly after the Tests stage, so that the export does not affect
+        # the performance comparison, and before the Report stage, which stops
+        # the servers (compare.sh::get_profiles). Runs even if the tests
+        # failed - the logs are the most valuable then. Best effort: must
+        # never fail the job.
+        def export_logs():
+            try:
+                if not ci_logs_export.setup_credentials_env():
+                    return True
+                check_start_time = get_check_start_time()
+                for node_name, server in (("left", leftCH), ("right", rightCH)):
+                    # Each server reports the commit of its own build, so that
+                    # commit_sha distinguishes the reference and the patched rows
+                    server_sha = server.ask(
+                        "SELECT value FROM system.build_options WHERE name='GIT_HASH'"
+                    ).strip()
+                    ci_logs_export.export_system_logs_from_server(
+                        port=server.port,
+                        node_name=node_name,
+                        repo=info.repo_name,
+                        pr_number=info.pr_number,
+                        commit_sha=server_sha,
+                        check_start_time=check_start_time,
+                        check_name=info.job_name,
+                        instance_type=info.instance_type,
+                        instance_id=info.instance_id,
+                    )
+            except Exception:
+                traceback.print_exc()
+            return True
+
+        results.append(
+            Result.from_commands_run(
+                name="Export system logs", command=export_logs, with_info=True
+            )
+        )
 
     # TODO: refactor to use native Praktika report from Result and remove
     if res and JobStages.REPORT in stages:
