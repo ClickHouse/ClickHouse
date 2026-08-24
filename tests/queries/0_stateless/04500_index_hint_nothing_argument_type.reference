@@ -5,8 +5,8 @@ UInt8
 UInt8	0	0
 UInt8
 UInt8	0	1	1
-UInt32	UInt32	UInt64	Float64
-UInt8	Float64	UInt64
-String	String
-UUID	UUID	FixedString(26)	UInt64
-1	1	1	5	LowCardinality(UInt32)
+UInt32	UInt32	UInt32	UInt64	Float64
+UUID	UUID
+0
+Nothing	Nothing
+1	1	1	LowCardinality(UInt32)

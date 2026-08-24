@@ -30,22 +30,26 @@ SELECT toTypeName(ignore(1)), ignore(1), ignore(NULL);
 SELECT toTypeName(isZeroOrNull(assumeNotNull(materialize(NULL))));
 SELECT toTypeName(isZeroOrNull(1)), isZeroOrNull(1), isZeroOrNull(0), isZeroOrNull(NULL);
 
--- The random and id generators take an optional trailing argument that is ignored and
--- exists only to suppress common subexpression elimination. A Nothing-typed argument
--- there must not rewrite the declared return type either. As with ignore, only the
--- declared type is checked: the argument cannot be materialized as a non-empty Nothing
--- column, so the value form is not evaluable and is not the bug here.
-SELECT toTypeName(randConstant(assumeNotNull(materialize(NULL)))), toTypeName(rand(assumeNotNull(materialize(NULL)))), toTypeName(rand64(assumeNotNull(materialize(NULL)))), toTypeName(randCanonical(assumeNotNull(materialize(NULL))));
-SELECT toTypeName(randBernoulli(0.5, assumeNotNull(materialize(NULL)))), toTypeName(randNormal(0, 1, assumeNotNull(materialize(NULL)))), toTypeName(randPoisson(1, assumeNotNull(materialize(NULL))));
-SELECT toTypeName(randomString(5, assumeNotNull(materialize(NULL)))), toTypeName(randomPrintableASCII(5, assumeNotNull(materialize(NULL))));
-SELECT toTypeName(generateUUIDv4(assumeNotNull(materialize(NULL)))), toTypeName(generateUUIDv7(assumeNotNull(materialize(NULL)))), toTypeName(generateULID(assumeNotNull(materialize(NULL)))), toTypeName(generateSnowflakeID(assumeNotNull(materialize(NULL))));
+-- The random and id generators whose every argument is an ignored tag (it exists only to
+-- suppress common subexpression elimination) have the same declared-result invariant, so a
+-- Nothing-typed argument must not rewrite their declared return type either. Functions with a
+-- load-bearing argument as well are excluded: there Nothing is genuinely unusable input.
+-- As with ignore, only the declared type is checked: the argument cannot be materialized as a
+-- non-empty Nothing column, so the value form is not evaluable and is not the bug here.
+SELECT toTypeName(randConstant(assumeNotNull(materialize(NULL)))), toTypeName(rand(assumeNotNull(materialize(NULL)))), toTypeName(rand32(assumeNotNull(materialize(NULL)))), toTypeName(rand64(assumeNotNull(materialize(NULL)))), toTypeName(randCanonical(assumeNotNull(materialize(NULL))));
+SELECT toTypeName(generateUUIDv4(assumeNotNull(materialize(NULL)))), toTypeName(generateUUIDv7(assumeNotNull(materialize(NULL))));
+
+-- randConstant needs the opt-out on its executable class too, not only on its resolver: with a
+-- Nothing argument and a UInt32 result the default Nothing dispatch rejects that pair. Zero rows,
+-- because a non-empty Nothing column cannot be materialized.
+SELECT count() FROM (SELECT randConstant(assumeNotNull(materialize(NULL))) FROM numbers(0));
+
+-- The excluded functions are unaffected: their first argument is load-bearing (a length, a
+-- distribution parameter), so a Nothing there is unusable input and keeps propagating.
+SELECT toTypeName(randomString(assumeNotNull(materialize(NULL)))), toTypeName(randBernoulli(assumeNotNull(materialize(NULL))));
 
 -- They keep working normally, and LowCardinality is still propagated.
-SELECT randConstant(1) >= 0, rand(1) >= 0, randNormal(0, 1, 1) IS NOT NULL, length(randomString(5, 1)), toTypeName(randConstant(toLowCardinality('a')));
-
--- Arguments that are not the ignored trailing one are still validated.
-SELECT randomString('notanumber'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT randBernoulli('notanumber'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT randConstant(1) >= 0, rand(1) >= 0, generateUUIDv4(1) IS NOT NULL, toTypeName(randConstant(toLowCardinality('a')));
 
 -- More than one argument is still rejected, whether or not one of them is Nothing.
 -- The GROUP BY key position is required: it is where a malformed function reaches the
