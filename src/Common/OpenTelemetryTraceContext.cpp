@@ -194,7 +194,7 @@ SpanHolder::SpanHolder(
 SpanHolder::SpanHolder(
     std::string_view _operation_name,
     SpanKind _kind,
-    std::vector<SpanAttribute> _attributes,
+    SpanAttributes _attributes,
     bool create_trace_if_not_exists)
     : SpanHolder(_operation_name, _kind, create_trace_if_not_exists)
 {

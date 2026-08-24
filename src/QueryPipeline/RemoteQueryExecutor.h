@@ -395,7 +395,7 @@ private:
 
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
     /// covering it (the read context fiber span or the synchronous sendQuery span).
-    std::vector<OpenTelemetry::SpanAttribute> getFragmentSpanAttributes() const;
+    OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

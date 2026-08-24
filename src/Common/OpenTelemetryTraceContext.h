@@ -69,6 +69,8 @@ public:
     }
 };
 
+using SpanAttributes = std::vector<SpanAttribute>;
+
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
 enum class SpanKind : uint8_t
 {
@@ -110,7 +112,7 @@ struct Span
     SpanKind kind = SpanKind::INTERNAL;
     SpanStatus status_code = SpanStatus::UNSET;
     String status_message = {};
-    std::vector<SpanAttribute> attributes = {};
+    SpanAttributes attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
@@ -249,7 +251,7 @@ struct SpanHolder : public Span
 
     SpanHolder(std::string_view _operation_name,
                SpanKind _kind,
-               std::vector<SpanAttribute> _attributes,
+               SpanAttributes _attributes,
                bool create_trace_if_not_exists = false);
 
     ~SpanHolder();

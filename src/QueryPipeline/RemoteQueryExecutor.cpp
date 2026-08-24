@@ -449,10 +449,10 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
-std::vector<OpenTelemetry::SpanAttribute> RemoteQueryExecutor::getFragmentSpanAttributes() const
+OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() const
 {
     /// Keys follow the conventions of the spans of `DistributedSink`.
-    std::vector<OpenTelemetry::SpanAttribute> attributes;
+    OpenTelemetry::SpanAttributes attributes;
     if (!shard_scope.cluster.empty())
         attributes.emplace_back("clickhouse.cluster", shard_scope.cluster);
     if (shard_scope.shard_num != 0)
@@ -613,7 +613,7 @@ int RemoteQueryExecutor::sendQueryAsync()
             /*suspend_when_query_sent*/ true,
             read_packet_type_separately,
             OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
-                                                             : std::vector<OpenTelemetry::SpanAttribute>{});
+                                                             : OpenTelemetry::SpanAttributes{});
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -707,7 +707,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             /*suspend_when_query_sent*/ false,
             read_packet_type_separately,
             OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
-                                                             : std::vector<OpenTelemetry::SpanAttribute>{});
+                                                             : OpenTelemetry::SpanAttributes{});
     }
 
     while (true)

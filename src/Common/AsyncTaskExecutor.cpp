@@ -9,7 +9,7 @@ namespace DB
 AsyncTaskExecutor::AsyncTaskExecutor(
     std::unique_ptr<AsyncTask> task_,
     String operation_name_,
-    std::vector<OpenTelemetry::SpanAttribute> initial_span_attributes_)
+    OpenTelemetry::SpanAttributes initial_span_attributes_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())

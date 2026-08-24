@@ -27,7 +27,7 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     RemoteQueryExecutor & executor_,
     bool suspend_when_query_sent_,
     bool read_packet_type_separately_,
-    std::vector<OpenTelemetry::SpanAttribute> initial_span_attributes_)
+    OpenTelemetry::SpanAttributes initial_span_attributes_)
     : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutor::execute", std::move(initial_span_attributes_))
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
