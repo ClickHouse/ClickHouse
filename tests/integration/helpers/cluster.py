@@ -167,6 +167,11 @@ INTEGRATION_NODE_EXPECTED_STATUSES = {
 # own budget must not be able to spend that on a description of why it failed.
 CONTAINER_DESCRIBE_TIMEOUT = 5.0
 
+# Request timeout for the inspect that asserts a compose action took effect. Wider than the
+# describe above because this call decides whether a test passes: expiring early would fail
+# a run that a slow-but-working daemon would have completed.
+CONTAINER_STATE_CHECK_TIMEOUT = 30.0
+
 NET_LOCK_PATH = "/tmp/docker_net.lock"
 try:
     os.remove(NET_LOCK_PATH)
@@ -4884,7 +4889,8 @@ class ClickHouseCluster:
             try:
                 # Fetched after the action: a handle caches its state, so a handle taken
                 # earlier would report the status from before the action.
-                state = self.docker_client.containers.get(container).attrs["State"]
+                with self.bounded_docker_requests(CONTAINER_STATE_CHECK_TIMEOUT):
+                    state = self.docker_client.containers.get(container).attrs["State"]
             except Exception as ex:
                 raise Exception(
                     f"Cannot inspect {integration} node {node} after {action}: "

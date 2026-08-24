@@ -23,6 +23,7 @@ import pytest  # pylint:disable=import-error; for style check
 from helpers import cluster
 from helpers.cluster import (
     CONTAINER_DESCRIBE_TIMEOUT,
+    CONTAINER_STATE_CHECK_TIMEOUT,
     INTEGRATION_NODE_EXPECTED_STATUSES,
     ClickHouseCluster,
 )
@@ -94,6 +95,7 @@ class _Stub:
 
     check_integration_nodes_state = ClickHouseCluster.check_integration_nodes_state
     process_integration_nodes = ClickHouseCluster.process_integration_nodes
+    bounded_docker_requests = ClickHouseCluster.bounded_docker_requests
     get_instance_docker_id = ClickHouseCluster.get_instance_docker_id
 
     def __init__(self, statuses, project="stubproject"):
@@ -193,6 +195,58 @@ def test_only_the_requested_nodes_are_checked():
     with pytest.raises(Exception) as excinfo:
         requested.check_integration_nodes_state("zookeeper", ["zoo1"], "start")
     assert "zoo1" in str(excinfo.value)
+
+
+def test_every_checking_fetch_is_bounded_below_the_shared_client_timeout():
+    """The check runs on the main path, so an unresponsive daemon would hold it for the
+    shared client's timeout once per node, and three of those outlive the per-test timeout
+    that would otherwise report the failure."""
+    assert CONTAINER_STATE_CHECK_TIMEOUT < SHARED_CLIENT_TIMEOUT
+
+    stub = _Stub({"zoo1": "running", "zoo2": "running", "zoo3": "running"})
+    stub.check_integration_nodes_state("zookeeper", ["zoo1", "zoo2", "zoo3"], "start")
+
+    # Per node, not once for the loop: a bound taken outside it would leave every node
+    # after the first waiting on whatever the previous iteration restored.
+    assert stub.docker_client.fetch_timeouts == [CONTAINER_STATE_CHECK_TIMEOUT] * 3
+
+
+def test_the_checking_bound_is_wider_than_the_describing_one():
+    """The two calls are bounded for opposite reasons: this one decides whether a test
+    passes, so expiring early would fail a run a slow daemon would have completed, while
+    describing only shapes the text of a failure that already happened."""
+    assert CONTAINER_STATE_CHECK_TIMEOUT > CONTAINER_DESCRIBE_TIMEOUT
+
+
+def test_the_shared_client_timeout_is_restored_after_checking():
+    """The client is shared with every other caller, so a lowered timeout that outlived the
+    check would silently shorten unrelated calls, including image pulls."""
+    passing = _Stub({"zoo1": "running"})
+    passing.check_integration_nodes_state("zookeeper", ["zoo1"], "start")
+    assert passing.docker_client.api.timeout == SHARED_CLIENT_TIMEOUT
+
+    # Restored on both failing paths: a node in the wrong state, and one that cannot be
+    # inspected at all, which is the path that raises from inside the bound.
+    wrong_state = _Stub({"zoo1": "exited"})
+    with pytest.raises(Exception):
+        wrong_state.check_integration_nodes_state("zookeeper", ["zoo1"], "start")
+    assert wrong_state.docker_client.api.timeout == SHARED_CLIENT_TIMEOUT
+
+    vanished = _Stub({})
+    with pytest.raises(Exception):
+        vanished.check_integration_nodes_state("zookeeper", ["zoo1"], "start")
+    assert vanished.docker_client.api.timeout == SHARED_CLIENT_TIMEOUT
+
+
+def test_a_client_without_a_request_layer_is_checked_anyway():
+    """Negative control on the bound itself: it must not become the thing that breaks the
+    check. A stub client carrying no `api` is still compared against its status."""
+    stub = _Stub({"zoo1": "exited"})
+    del stub.docker_client.api
+
+    with pytest.raises(Exception) as excinfo:
+        stub.check_integration_nodes_state("zookeeper", ["zoo1"], "start")
+    assert "exited" in str(excinfo.value)
 
 
 def test_each_action_accepts_only_the_statuses_declared_for_it():
