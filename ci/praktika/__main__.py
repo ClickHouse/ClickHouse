@@ -1,9 +1,11 @@
 import argparse
 import datetime
+import fcntl
 import os
 import shlex
 import sys
 import textwrap
+from pathlib import Path
 
 from .html_prepare import Html
 from .settings import Settings
@@ -342,6 +344,21 @@ def main():
                 only=args.only,
             )
     elif args.command == "run":
+        # At most one run at a time may write into a given temp directory: job.log,
+        # environment.json and result_<job>.json are shared per directory. Workflow
+        # discovery below already writes environment.json, so the lock precedes it.
+        temp_dir = Path(Settings.TEMP_DIR).resolve()
+        os.makedirs(temp_dir, exist_ok=True)
+        lock_file = open(temp_dir / ".praktika.lock", "a")
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            # Only contention; any other OSError must surface with its own errno.
+            Utils.exit_with_error(
+                f"Another praktika run is using [{temp_dir}]. "
+                "Wait for it to finish, or run from a separate checkout."
+            )
+
         from .mangle import _get_workflows
         from .runner import Runner
 
