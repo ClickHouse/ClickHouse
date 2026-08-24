@@ -297,6 +297,16 @@ FROM
         (SELECT kurtSampMerge(s) FROM (SELECT kurtSampState(v) AS s FROM (SELECT number, toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000)) GROUP BY cityHash64(number, 99) % 97)) AS r2
 );
 
+-- The batch kernels split the rows into a fixed number of partial accumulators, and which rows land
+-- in which partial must not change: floating point addition is not associative, so a different split
+-- returns different low-order digits. The plain kernel is compared against the -If kernel under a
+-- condition true for every row, which sums the same rows in the same order through separate code.
+-- Both aggregates share one SELECT over one source, so both always see the same blocks. Unlike the
+-- exact blocks above, these values leave the sums inexact, which is what lets the comparison see a
+-- changed split at all.
+SELECT 'grouping f64 exact', varSamp(v) = varSampIf(v, c), skewSamp(v) = skewSampIf(v, c), kurtSamp(v) = kurtSampIf(v, c), varSamp(u) = varSampIf(u, c), countIf(c) = 70000
+FROM (SELECT toFloat64(cityHash64(number, 1) % 1000000) / 3 AS v, toUInt64(cityHash64(number, 5)) AS u, number >= 0 AS c FROM numbers(70000));
+
 SELECT 'f32 approx', abs(d0 - r0) <= 1e-3 * greatest(abs(d0), abs(r0), 1e-30), abs(d1 - r1) <= 1e-3 * greatest(abs(d1), abs(r1), 1e-30)
 FROM
 (
