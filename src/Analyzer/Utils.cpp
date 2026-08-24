@@ -1285,18 +1285,14 @@ bool walkOrdinaryFunctions(const QueryTreeNodePtr & node, KeepFunction && keep_f
     return true;
 }
 
-bool isDeterministicInScopeOfQueryTree(const QueryTreeNodePtr & node)
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
 {
     return walkOrdinaryFunctions(
         node,
-        [](const FunctionBasePtr & function_base) { return function_base->isDeterministicInScopeOfQuery(); });
-}
-
-bool isStatelessInQueryTree(const QueryTreeNodePtr & node)
-{
-    return walkOrdinaryFunctions(
-        node,
-        [](const FunctionBasePtr & function_base) { return !function_base->isStateful(); });
+        [](const FunctionBasePtr & function_base)
+        {
+            return function_base->isDeterministicInScopeOfQuery() && !function_base->isStateful();
+        });
 }
 
 void filterConjunctions(
@@ -1375,24 +1371,14 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         context);
 }
 
-void removeExpressionsThatAreNotDeterministicInScopeOfQuery(
+void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
     const ContextPtr & context)
 {
     if (!expression)
         return;
 
-    filterConjunctions(expression, isDeterministicInScopeOfQueryTree, context);
-}
-
-void removeExpressionsThatAreStateful(
-    QueryTreeNodePtr & expression,
-    const ContextPtr & context)
-{
-    if (!expression)
-        return;
-
-    filterConjunctions(expression, isStatelessInQueryTree, context);
+    filterConjunctions(expression, isSafeToDuplicateInQueryTree, context);
 }
 
 namespace

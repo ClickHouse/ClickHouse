@@ -236,18 +236,12 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
-/** Remove conjuncts that are not deterministic in the current query (`rand`, and similar).
-  * Nested `and` is flattened the same way as `removeExpressionsThatDoNotDependOnTableIdentifiers`.
+/** Remove conjuncts that are unsafe to copy into another query tree (non-deterministic in this
+  * query, or stateful). Nested `and` is flattened the same way as
+  * `removeExpressionsThatDoNotDependOnTableIdentifiers`. Window and aggregate functions are also
+  * dropped. JOIN filter pushdown refuses stateful predicates via `ActionsDAG::hasStatefulFunctions`.
   */
-void removeExpressionsThatAreNotDeterministicInScopeOfQuery(
-    QueryTreeNodePtr & expression,
-    const ContextPtr & context);
-
-/** Remove conjuncts that call stateful functions (`aiEmbed`, `timeSeriesStoreTags`, and similar).
-  * Those can report `isDeterministicInScopeOfQuery` while still having side effects; JOIN filter
-  * pushdown refuses them via `ActionsDAG::hasStatefulFunctions`.
-  */
-void removeExpressionsThatAreStateful(
+void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
     const ContextPtr & context);
 

@@ -240,10 +240,7 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-/// Same restrictions as JOIN filter pushdown (`filterPushDown.cpp`):
-/// do not prefilter the null-producing side of an outer JOIN, the right side of
-/// an `ASOF JOIN` (nearest-match would change), or either side of a `PASTE JOIN`
-/// (positional alignment).
+/// Same restrictions as JOIN filter pushdown (`canPrefilterJoinSide`).
 bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
 {
     std::vector<QueryTreeNodePtr> stack = {join_tree};
@@ -259,13 +256,9 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
             const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get());
             const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get());
 
-            if (isPaste(join->getKind()) && (table_on_left || table_on_right))
+            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
                 return false;
-            if (join->getStrictness() == JoinStrictness::Asof && table_on_right)
-                return false;
-            if (isRightOrFull(join->getKind()) && table_on_left)
-                return false;
-            if (isLeftOrFull(join->getKind()) && table_on_right)
+            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
                 return false;
             stack.push_back(join->getLeftTableExpression());
             stack.push_back(join->getRightTableExpression());
@@ -1601,8 +1594,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             {
                 auto cloned = predicate->clone();
                 removeExpressionsThatDoNotDependOnTableIdentifiers(cloned, original_table_expression, query_context);
-                removeExpressionsThatAreNotDeterministicInScopeOfQuery(cloned, query_context);
-                removeExpressionsThatAreStateful(cloned, query_context);
+                removeExpressionsThatAreUnsafeToDuplicate(cloned, query_context);
                 return cloned;
             };
 

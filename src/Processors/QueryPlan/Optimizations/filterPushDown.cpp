@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Joins.h>
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
@@ -497,15 +498,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     const auto & left_stream_input_header = child->getInputHeaders().front();
     const auto & right_stream_input_header = child->getInputHeaders().back();
 
-    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
-        return 0;
-    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
-        return 0;
+    JoinKind kind = JoinKind::Inner;
+    JoinStrictness strictness = JoinStrictness::Unspecified;
+    const bool have_join_kind = table_join_ptr || logical_join;
+    if (table_join_ptr)
+    {
+        kind = table_join_ptr->kind();
+        strictness = table_join_ptr->strictness();
+    }
+    else if (logical_join)
+    {
+        kind = logical_join->getJoinOperator().kind;
+        strictness = logical_join->getJoinOperator().strictness;
+    }
 
-    /// PASTE JOIN aligns rows from both sides by position, and pushing filters
-    /// to either side may change relative alignment
-    if ((table_join_ptr && table_join_ptr->kind() == JoinKind::Paste)
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
+    /// `FULL` / `PASTE` cannot prefilter either side (`canPrefilterJoinSide`).
+    if (have_join_kind
+        && !canPrefilterJoinSide(kind, strictness, JoinTableSide::Left)
+        && !canPrefilterJoinSide(kind, strictness, JoinTableSide::Right))
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
@@ -648,29 +658,25 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     bool left_stream_filter_push_down_input_columns_available = true;
     bool right_stream_filter_push_down_input_columns_available = true;
 
-    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Left)
-        right_stream_filter_push_down_input_columns_available = false;
-    else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
-        left_stream_filter_push_down_input_columns_available = false;
+    if (have_join_kind)
+    {
+        left_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Left);
+        right_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Right);
+    }
 
-    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left)
-        right_stream_filter_push_down_input_columns_available = false;
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
-        left_stream_filter_push_down_input_columns_available = false;
-
-    /** We disable push down to right table in cases:
-      * 1. Right side is already filled. Example: JOIN with Dictionary.
-      * 2. ASOF Right join is not supported.
+    /** We disable push down to the right table when the right side is already filled.
+      * Example: JOIN with Dictionary. `ASOF` is handled by `canPrefilterJoinSide`.
       */
-    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
     if (logical_join)
     {
         bool has_logical_lookup = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
-        allow_push_down_to_right = !has_logical_lookup && logical_join->getJoinOperator().strictness != JoinStrictness::Asof;
+        if (has_logical_lookup)
+            right_stream_filter_push_down_input_columns_available = false;
     }
-
-    if (!allow_push_down_to_right)
+    else if (!(join && join->allowPushDownToRight()))
+    {
         right_stream_filter_push_down_input_columns_available = false;
+    }
 
     Names equivalent_columns_to_push_down;
 
@@ -893,7 +899,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             JoinKind::Left);
     }
 
-    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
+    if (join_filter_push_down_actions.right_stream_filter_to_push_down && right_stream_filter_push_down_input_columns_available)
     {
         if (logical_join)
         {
