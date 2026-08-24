@@ -70,10 +70,14 @@ SELECT 'join executed with its sides swapped';
 -- `query_plan_join_swap_table` lets the optimizer execute the join the other way around, building the
 -- hash table from the left table instead of the right one. That reverses the kind of the join it runs,
 -- and the reported kind is the executed one, so a RIGHT JOIN of the query text is reported as LEFT.
+--
+-- The swap is decided by the join order optimizer, which `query_plan_optimize_join_order_limit = 0`
+-- turns off entirely. With it off, `query_plan_join_swap_table` is never read and the join runs with
+-- the sides of the query text, so the limit has to be pinned here for the swap to be forced at all.
 SELECT count() FROM t1 RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null
-SETTINGS log_comment = '04891_join_count_swap_a_right_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1;
+SETTINGS log_comment = '04891_join_count_swap_a_right_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1, query_plan_optimize_join_order_limit = 10;
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a FORMAT Null
-SETTINGS log_comment = '04891_join_count_swap_b_left_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1;
+SETTINGS log_comment = '04891_join_count_swap_b_left_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1, query_plan_optimize_join_order_limit = 10;
 -- The same RIGHT JOIN without the swap, which reports the kind of the query text.
 SELECT count() FROM t1 RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null
 SETTINGS log_comment = '04891_join_count_swap_c_right_not_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 0;
