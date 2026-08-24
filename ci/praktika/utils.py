@@ -564,6 +564,33 @@ class Utils:
             return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
     @staticmethod
+    def memory_limit() -> int:
+        """
+        Returns the memory cgroup limit in bytes, or the physical memory if unlimited.
+        """
+        physical = Utils.physical_memory()
+        cgroup = Path("/proc/self/cgroup")
+        if not cgroup.is_file():
+            return physical
+        for line in cgroup.read_text().splitlines():
+            # CI passes --cgroupns=host, so only this file names the job's own cgroup.
+            _, controllers, path = line.split(":", 2)
+            if not controllers:
+                limit_file = Path("/sys/fs/cgroup", path.lstrip("/"), "memory.max")
+            elif "memory" in controllers.split(","):
+                limit_file = Path(
+                    "/sys/fs/cgroup/memory", path.lstrip("/"), "memory.limit_in_bytes"
+                )
+            else:
+                continue
+            if not limit_file.is_file():
+                continue
+            value = limit_file.read_text().strip()
+            if value.isdigit():
+                return min(int(value), physical)
+        return physical
+
+    @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):
         stdout_lines = stdout.splitlines() if stdout else []
         stderr_lines = stderr.splitlines() if stderr else []
