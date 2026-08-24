@@ -54,6 +54,24 @@ RELOADABLE_TWO_SHARDS = """<clickhouse>
 </clickhouse>
 """
 
+RELOADABLE_ONE_SHARD_TWO_REPLICAS = """<clickhouse>
+    <remote_servers>
+        <reloadable>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </reloadable>
+    </remote_servers>
+</clickhouse>
+"""
+
 RELOADABLE_NODE2_ONLY = """<clickhouse>
     <remote_servers>
         <reloadable>
@@ -362,6 +380,52 @@ def test_cycle_formed_by_config_reload(started_cluster):
         node1.query("SYSTEM RELOAD CONFIG")
         node1.query("DROP DATABASE IF EXISTS cyc_b")
         node1.query("DROP DATABASE cyc_a")
+
+
+def test_cycle_with_healthy_remote_replica_lists_no_tables(started_cluster):
+    # A live local cycle whose shard also has a healthy remote replica. The listing of a database
+    # of the cycle must stay empty instead of being completed from the remote replica, and
+    # `EXISTS TABLE` must not fall back to it either: resolving the same names refuses the
+    # remote-replica fallback with `INFINITE_LOOP`, so a completed listing would show table names
+    # that can be neither described nor read.
+    for name in ("leak_a", "leak_b"):
+        node2.query(f"CREATE DATABASE {name}")
+        node2.query(f"CREATE TABLE {name}.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+
+    try:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_NODE2_ONLY)
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # No shard of `reloadable` is local now, so completing the chain is allowed.
+        create_cluster_database(
+            node1, "CREATE DATABASE leak_a ENGINE = Cluster('reloadable', 'leak_b')"
+        )
+        create_cluster_database(
+            node1, "CREATE DATABASE leak_b ENGINE = Cluster('reloadable', 'leak_a')"
+        )
+
+        # The reload turns one replica of the shard local, making the cycle live, while node2
+        # stays a healthy remote replica of the same shard that does serve both database names.
+        node1.replace_config(
+            RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD_TWO_REPLICAS
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # A whole-server scan is unaffected.
+        node1.query("SELECT name FROM system.tables FORMAT Null")
+
+        for name in ("leak_a", "leak_b"):
+            assert node1.query(f"SHOW TABLES FROM {name}") == ""
+            assert node1.query(f"EXISTS TABLE {name}.t") == "0\n"
+            assert "INFINITE_LOOP" in node1.query_and_get_error(
+                f"SELECT * FROM {name}.t"
+            )
+    finally:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+        for name in ("leak_a", "leak_b"):
+            node1.query(f"DROP DATABASE IF EXISTS {name}")
+            node2.query(f"DROP DATABASE IF EXISTS {name}")
 
 
 def test_missing_cluster(started_cluster):

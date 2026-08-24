@@ -315,6 +315,11 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             LocalTraversalGuard guard(this);
             if (guard.reentered)
             {
+                /// The cycle is marked so that the outer frames of the same chain do not complete
+                /// the listing from the remote replicas of their shards (see below): a database of
+                /// the cycle must not list a table name that its own resolution then refuses with
+                /// `INFINITE_LOOP`.
+                guard.markCycle();
                 LOG_WARNING(
                     log,
                     "A chain of `{}` databases containing {} refers to itself; it lists no tables until the cycle is removed",
@@ -367,6 +372,15 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                             return Strings{*only_table};
                         return {};
                     }
+
+                    /// The name is not on the local replica. A database of a detected local proxy
+                    /// cycle stops here instead of falling through to the remote replicas of its
+                    /// shard below: its resolution refuses the same fallback (see
+                    /// `fetchTableStructure`), so `EXISTS TABLE` must not report a name that cannot
+                    /// be described or read. The check runs while the traversal guard is alive,
+                    /// because leaving its scope unwinds the cycle bookkeeping.
+                    if (LocalTraversalGuard::isInDetectedCycle(this))
+                        return {};
                 }
                 else
                 {
@@ -393,7 +407,13 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                     /// and read. Only a name that the local replica does not have at all is taken from the
                     /// fallback: a name it has but hides from the caller stays hidden, exactly like in the
                     /// `only_table` branch above.
-                    if (!clusters.remote_only_cluster)
+                    ///
+                    /// A database of a detected local proxy cycle keeps its empty local answer instead:
+                    /// its resolution refuses the same remote-replica fallback (see `fetchTableStructure`),
+                    /// so completing the listing would show table names that cannot be described or read.
+                    /// Only the databases of the cycle itself are affected; an outer database that merely
+                    /// chains into the cycle still falls back to the remote replicas of its own shard.
+                    if (!clusters.remote_only_cluster || LocalTraversalGuard::isInDetectedCycle(this))
                         return tables;
 
                     Strings remote_tables;
