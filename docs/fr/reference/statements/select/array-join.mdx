@@ -10,6 +10,10 @@ Pour les tables qui contiennent une colonne de type Array, il est courant de pro
 
 Son nom vient du fait qu&#39;on peut la considérer comme l&#39;exécution d&#39;un `JOIN` avec un tableau ou une structure de données imbriquée. L&#39;objectif est similaire à celui de la fonction [arrayJoin](/fr/reference/functions/regular-functions/array-join), mais la fonctionnalité de la clause est plus large.
 
+<Note>
+  PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL` ne sont pas pris en charge. Utilisez plutôt `ARRAY JOIN`. Le nom `unnest` (depuis la version 26.5) est un alias d’appel de fonction de `arrayJoin` (`SELECT unnest(arr)`), et non une fonction de table.
+</Note>
+
 Syntaxe :
 
 ```sql

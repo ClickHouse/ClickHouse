@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 이 이름은 배열 또는 중첩 데이터 구조에 대해 `JOIN`을 수행하는 것으로 볼 수 있다는 데서 유래했습니다. 의도는 [arrayJoin](/ko/reference/functions/regular-functions/array-join) 함수와 비슷하지만, 절의 기능이 더 넓습니다.
 
+<Note>
+  PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, `LATERAL`은 지원되지 않습니다. 대신 `ARRAY JOIN`을 사용하십시오. `unnest` 이름(버전 26.5부터)은 테이블 함수가 아니라 `arrayJoin`의 함수 호출 별칭입니다(`SELECT unnest(arr)`).
+</Note>
+
 구문:
 
 ```sql

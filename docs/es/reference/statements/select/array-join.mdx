@@ -10,6 +10,10 @@ Es una operación habitual en las tablas que contienen una columna de tipo Array
 
 Su nombre proviene de que puede interpretarse como la ejecución de un `JOIN` con un array o una estructura de datos anidada. Su propósito es similar al de la función [arrayJoin](/es/reference/functions/regular-functions/array-join), pero la funcionalidad de la cláusula es más amplia.
 
+<Note>
+  PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` y `LATERAL` no son compatibles. Use `ARRAY JOIN` en su lugar. El nombre `unnest` (desde la versión 26.5) es un alias de llamada de función de `arrayJoin` (`SELECT unnest(arr)`), no una función de tabla.
+</Note>
+
 Sintaxis:
 
 ```sql

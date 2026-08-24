@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 この名前は、配列またはネストされたデータ構造に対して `JOIN` を実行するものと見なせることに由来します。意図としては [arrayJoin](/ja/reference/functions/regular-functions/array-join) 関数に似ていますが、句の機能のほうがより広範です。
 
+<Note>
+  PostgreSQL の `FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL` はサポートされていません。代わりに `ARRAY JOIN` を使用してください。`unnest` という名前 (バージョン 26.5 以降) は `arrayJoin` (`SELECT unnest(arr)`) の関数呼び出し別名であり、テーブル関数ではありません。
+</Note>
+
 構文:
 
 ```sql

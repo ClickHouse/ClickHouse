@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 Seu nome vem do fato de que ela pode ser vista como a execução de um `JOIN` com um array ou uma estrutura de dados aninhada. A ideia é semelhante à da função [arrayJoin](/pt-BR/reference/functions/regular-functions/array-join), mas a funcionalidade da cláusula é mais ampla.
 
+<Note>
+  `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` e `LATERAL` do PostgreSQL não são compatíveis. Use `ARRAY JOIN` em vez disso. O nome `unnest` (desde a versão 26.5) é um alias de chamada de função de `arrayJoin` (`SELECT unnest(arr)`), não uma função de tabela.
+</Note>
+
 Sintaxe:
 
 ```sql

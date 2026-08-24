@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 它之所以得名，是因为可以将其视为对数组或嵌套数据结构执行 `JOIN`。其用途与 [arrayJoin](/zh/reference/functions/regular-functions/array-join) 函数类似，但子句的功能更为广泛。
 
+<Note>
+  不支持 PostgreSQL `FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`。请改用 `ARRAY JOIN`。`unnest` 名称 (自 26.5 版本起) 是 `arrayJoin` 的函数调用别名 (`SELECT unnest(arr)`) ，而非表函数。
+</Note>
+
 语法：
 
 ```sql

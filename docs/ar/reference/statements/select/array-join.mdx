@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 تأتي هذه التسمية من أنه يمكن النظر إليها على أنها تنفيذ `JOIN` مع مصفوفة أو بنية بيانات متداخلة. والغرض منها مشابه للدالة [arrayJoin](/ar/reference/functions/regular-functions/array-join)، لكن وظيفة العبارة أوسع.
 
+<Note>
+  لا يدعم PostgreSQL `FROM unnest(...)` و`CROSS JOIN UNNEST(...)` و`LATERAL`. استخدم `ARRAY JOIN` بدلًا من ذلك. الاسم `unnest` (منذ الإصدار 26.5) هو اسم مستعار لاستدعاء الدالة `arrayJoin` (`SELECT unnest(arr)`)، وليس دالة جدول.
+</Note>
+
 الصياغة:
 
 ```sql

@@ -10,6 +10,10 @@ doc_type: 'reference'
 
 Название связано с тем, что его можно рассматривать как выполнение `JOIN` с массивом или вложенной структурой данных. По назначению оно похоже на функцию [arrayJoin](/ru/reference/functions/regular-functions/array-join), но возможности предложения шире.
 
+<Note>
+  PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` и `LATERAL` не поддерживаются. Используйте вместо них `ARRAY JOIN`. Имя `unnest` (начиная с версии 26.5) является псевдонимом вызова функции `arrayJoin` (`SELECT unnest(arr)`), а не табличной функцией.
+</Note>
+
 Синтаксис:
 
 ```sql
