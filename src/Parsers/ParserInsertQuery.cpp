@@ -16,6 +16,8 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -659,6 +661,46 @@ bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         || ParserAsterisk().parse(pos, node, expected)
         || ParserQualifiedColumnsMatcher().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected);
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementInsert(StatementFactory & factory)
+{
+    factory.registerStatement("INSERT INTO",
+    {
+        .description = R"(
+Inserts data into a table. The data can be given inline with a `VALUES` clause, in an arbitrary input format, or be the
+result of a `SELECT` query or of a table function.
+
+The list of the columns to insert into can be specified explicitly, or with a column matcher such as `*` and the
+`APPLY`, `EXCEPT` and `REPLACE` modifiers. The columns which are not listed are filled with their default values.
+
+**Examples**
+
+**Insert literal values**
+
+```sql title="Query"
+INSERT INTO test VALUES (1, 'a'), (2, 'b');
+```
+
+**Insert the result of a query**
+
+```sql title="Query"
+INSERT INTO test SELECT number, toString(number) FROM numbers(10);
+```
+)",
+        .syntax = R"(
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
+)",
+        .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},
+    });
 }
 
 }
