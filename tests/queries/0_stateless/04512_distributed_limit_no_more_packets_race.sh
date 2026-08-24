@@ -21,6 +21,23 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FP_RECV="remote_query_executor_receive_packet_pause"
 FP_DRAIN="remote_query_executor_finish_drain_pause"
 
+# A previous run of this test (or of `04893_hard_cancel_aborts_remote_drain`, which shares these
+# failpoints and additionally arms `remote_query_executor_drain_packet_pause`) may have been killed
+# by the harness before its `cleanup` trap ran, leaving a failpoint armed. A leftover armed
+# `remote_query_executor_drain_packet_pause` is fatal here: this test's drain loop would pause on
+# it and this test never disables it, so the query would hang. Start from a clean slate.
+for fp in "$FP_RECV" "$FP_DRAIN" "remote_query_executor_drain_packet_pause"; do
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp" 2>/dev/null ||:
+done
+# A leftover query of such a killed run could also still be alive and would consume the pauses of
+# the failpoints armed below (they are PAUSEABLE_ONCE, so the first thread through takes the
+# pause), breaking the synchronization. Wait for any such query to finish before arming.
+$CLICKHOUSE_CLIENT --query "
+    KILL QUERY WHERE user = currentUser()
+        AND (query_id LIKE '04512_distributed_limit_no_more_packets_race%'
+             OR query_id LIKE '04893_hard_cancel_aborts_remote_drain%')
+    SYNC FORMAT Null" 2>/dev/null ||:
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV" 2>/dev/null ||:
