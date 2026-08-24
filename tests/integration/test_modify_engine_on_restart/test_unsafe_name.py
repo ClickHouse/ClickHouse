@@ -113,20 +113,20 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
     q(f"INSERT INTO `{GHOST}` VALUES (7)")
     q(f"INSERT INTO `{GHOST}` VALUES (8)")
     planted = len(active_part_paths(GHOST))
-    # Arming assertion: with no part to plant onto, the file count reads 0 in every arm and T1c
-    # discriminates nothing.
+    # Arming assertion: with no part to plant onto, the file count reads 0 in every arm and the
+    # transaction-metadata assertion below discriminates nothing.
     assert planted > 0
     plant_txn_version_files(GHOST)
     assert count_txn_version_files(GHOST) == planted
     q(f"DETACH TABLE `{GHOST}`")
 
-    # T1: the conversion must be refused. Without the check it succeeds and the table takes a path
+    # The conversion must be refused. Without the check it succeeds and the table takes a path
     # under the victim's own subtree.
     assert "BAD_ARGUMENTS" in ch1.query_and_get_error(
         f"ATTACH TABLE `{GHOST}` AS REPLICATED", database=database_name
     )
 
-    # T1b: the rejection ran before the metadata rewrite, so a plain ATTACH brings the table back as
+    # The rejection ran before the metadata rewrite, so a plain ATTACH brings the table back as
     # the MergeTree it always was. A rejection sited after the rewrite reports ReplicatedMergeTree.
     q(f"ATTACH TABLE `{GHOST}`")
     assert (
@@ -136,13 +136,13 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
         == "MergeTree"
     )
 
-    # T1c: it also ran before the table's transaction metadata was removed. That removal is
+    # It also ran before the table's transaction metadata was removed. That removal is
     # irreversible, so the file count is what pins the check ahead of `clearTransactionMetadata`; the
     # row count below is a plain no-regression line.
     assert count_txn_version_files(GHOST) == planted
     assert q(f"SELECT count() FROM `{GHOST}`").strip() == "2"
 
-    # T1d: the victim is untouched, and still accepts a metadata ALTER. A planted ghost replica
+    # The victim is untouched, and still accepts a metadata ALTER. A planted ghost replica
     # leaves this failing with a Keeper error over the ghost's missing log_pointer.
     assert victim_total_replicas() == "1"
     assert (
@@ -153,7 +153,7 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
     )
     q(f"ALTER TABLE `{VICTIM}` ADD COLUMN B UInt64 SETTINGS alter_sync = 2")
 
-    # T3 (control): a path-safe name converts fine under the very same configuration, so the
+    # Control: a path-safe name converts fine under the very same configuration, so the
     # rejection above is about the name and not about the config or the conversion route.
     q("CREATE TABLE safe_name ( A Int64 ) ENGINE = MergeTree ORDER BY A")
     q("INSERT INTO safe_name VALUES (1), (2)")
@@ -167,7 +167,7 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
     )
     assert q("SELECT count() FROM safe_name").strip() == "2"
 
-    # T4 (control): the reverse direction mints no Keeper path, so an unsafe name must not block it.
+    # Control: the reverse direction mints no Keeper path, so an unsafe name must not block it.
     # The table has to be replicated already AND unsafely named, which conversion cannot produce, so
     # it is created directly with an explicit path outside the victim's subtree.
     q(
@@ -199,7 +199,7 @@ def test_convert_flag_rejects_unsafe_name(started_cluster):
     # the recovery start below there is provably no server to answer one.
     table_data_path = get_table_path(ch1, GHOST, database_name)
 
-    # T2: the flag-file route refuses the same conversion, and because it runs during startup the
+    # The flag-file route refuses the same conversion, and because it runs during startup the
     # server does not come up. That is the behaviour the sibling `checkReplicaPathExists` already
     # has on this route (see test_zk_path_exists.py), and the recovery is the same: delete the flag.
     ch1.stop_clickhouse()
