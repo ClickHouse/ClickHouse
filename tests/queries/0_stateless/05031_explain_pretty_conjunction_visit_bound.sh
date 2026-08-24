@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-sanitizers, no-flaky-check
+# Random settings limits: min_bytes_for_full_part_storage=(0, 0)
+#
+# A wide part written into one packed file costs time in the number of columns, and these tables
+# are thousands of columns wide. The clamp holds packed storage off, which is also its default.
 #
 # The walk over a conjunction stops after a bound on visits as well as on stored atoms per class, so
 # a query holding one class only still terminates. Crossing that bound with runtime filters takes one

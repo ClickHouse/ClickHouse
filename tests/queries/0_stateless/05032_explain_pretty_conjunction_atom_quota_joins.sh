@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-tsan, no-msan, no-flaky-check
+# Random settings limits: min_bytes_for_full_part_storage=(0, 0)
+#
+# A wide part written into one packed file costs time in the number of columns, and these tables
+# are thousands of columns wide. The clamp holds packed storage off, which is also its default.
 #
 # Crossing the per-class atom quota with runtime filters takes one join key per filter, so the joins
 # are generated here rather than written out. One runtime filter per join key is also one nested plan
