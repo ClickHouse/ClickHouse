@@ -29,6 +29,7 @@
         body {
             background: #000;
             overflow: hidden;
+            overscroll-behavior: contain;
             height: 100vh;
             width: 100vw;
         }
@@ -36,25 +37,27 @@
         #terminal-container {
             height: 100%;
             width: 100%;
+            overscroll-behavior: contain;
         }
 
         /* Dark themed scrollbar */
         .xterm-viewport::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         .xterm-viewport::-webkit-scrollbar-track {
-            background: #1e1e1e;
+            background: #000;
         }
         .xterm-viewport::-webkit-scrollbar-thumb {
-            background: #555;
-            border-radius: 4px;
+            background: #333;
+            border-radius: 999px;
         }
         .xterm-viewport::-webkit-scrollbar-thumb:hover {
-            background: #777;
+            background: #555;
         }
         .xterm-viewport {
             scrollbar-width: thin;
-            scrollbar-color: #555 #1e1e1e;
+            scrollbar-color: #333 #000;
+            overscroll-behavior: contain;
         }
     </style>
 </head>

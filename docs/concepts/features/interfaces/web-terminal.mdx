@@ -53,11 +53,11 @@ The [`/play`](/concepts/features/interfaces/http) Web SQL UI embeds the web term
 
 ## Integration with the documentation website {#docs-integration}
 
-This documentation website embeds the same terminal as a panel that drops down from the top of the page, connected to the [ClickHouse playground](https://play.clickhouse.com) as the read-only `play` user, so that the examples on any page can be tried out without leaving it. Open it with the terminal icon at the left of the top navigation, or with the `~` key. The panel covers the navigation bar while it is open, so it closes with the `~` key, with `Escape`, with the close button in its top-right corner, or by dragging its bottom edge all the way up; that bottom edge also resizes it. Ending the session — `exit` or `Ctrl+D` — closes the panel too.
+This documentation website embeds the same terminal in a narrow developer tray along the bottom of the page, connected to the [ClickHouse playground](https://play.clickhouse.com) as the read-only `play` user, so that the examples on any page can be tried out without leaving it. The fixed tray reserves matching space at the end of the page so it does not obscure footer controls. While the terminal is open, the documentation page is locked and its scrollbar is hidden. Scrolling over the terminal is contained within its scrollback and does not move the documentation page behind it. Click the "ClickHouse terminal" bar or press the `~` key to open the padded panel above the bar. Click the bar again, use its chevron, press `~` or `Escape`, or drag the panel's top edge down to collapse it; that top edge also resizes it. Ending the session — `exit` or `Ctrl+D` — collapses the panel too.
 
 Closing the panel keeps the session and its scrollback: reopening the terminal returns to the same prompt. The session lives in the page, so it survives navigation between documentation pages, but not a reload of the browser tab — after a reload the panel comes back with a new session.
 
-The panel is part of the desktop layout of the website, and is not available on narrow viewports where the top navigation is collapsed.
+The terminal tray is part of the desktop layout of the website and is not available on narrow viewports.
 
 ## Security considerations {#security}
 

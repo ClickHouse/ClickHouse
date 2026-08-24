@@ -1,9 +1,9 @@
 (function () {
   'use strict';
 
-  // A drop-down ("Quake style") web terminal, matching the one on clickhouse.com and in the
-  // `/play` Web SQL UI. It embeds the ClickHouse web terminal (`/webterminal`) of the public
-  // playground in an iframe that slides down from the top of the page.
+  // A bottom-docked web terminal, inspired by the developer tray on `docs.stripe.com`. A thin
+  // bar is always visible on desktop; opening it reveals the ClickHouse web terminal above the
+  // bar without navigating away from the documentation page.
   //
   // `user=play` selects the playground's read-only demo user, which has no password, so the
   // terminal connects without prompting for credentials. This is the same endpoint that the
@@ -12,39 +12,47 @@
   var TERMINAL_ORIGIN = 'https://play.clickhouse.com';
 
   var PANEL_ID = 'ch-webterminal-panel';
+  var VIEWPORT_ID = 'ch-webterminal-viewport';
   var IFRAME_ID = 'ch-webterminal-iframe';
   var RESIZER_ID = 'ch-webterminal-resizer';
-  var CLOSE_ID = 'ch-webterminal-close';
+  var TRAY_ID = 'ch-webterminal-tray';
+  var TOGGLE_ID = 'ch-webterminal-toggle';
+  var ACTION_ID = 'ch-webterminal-action';
+  var SPACER_ID = 'ch-webterminal-spacer';
   var OVERLAY_ID = 'ch-webterminal-overlay';
-  var ICON_ID = 'ch-webterminal-icon';
   var STYLE_ID = 'ch-webterminal-styles';
-  var ACTIVE_CLASS = 'ch-webterminal-active';
+  var OPEN_CLASS = 'ch-webterminal-open';
+  var PAGE_LOCK_CLASS = 'ch-webterminal-page-locked';
   var STATE_KEY = 'ch-webterminal-height';
 
-  // Fraction of the viewport height the panel takes when it is opened for the first time, and
-  // the height below which a resize drag closes the panel instead of leaving a sliver on screen.
+  var BAR_HEIGHT = 32;
   var DEFAULT_HEIGHT_RATIO = 0.4;
-  var MIN_HEIGHT = 60;
-  // Kept below the panel's own height so the terminal never covers the whole viewport.
-  var BOTTOM_MARGIN = 40;
-  // Tailwind's `lg` breakpoint, below which the theme hides the desktop tab bar — the same check
-  // `tab-nav.js` makes. The icon lives in that bar, so the terminal is a desktop-only feature.
+  var MIN_TERMINAL_HEIGHT = 120;
+  var TOP_MARGIN = 40;
+  // Keep the tray aligned with the desktop docs experience. On narrow viewports the terminal
+  // would cover too much of the page and there is no room for its full label.
   var DESKTOP_MIN_WIDTH = 1024;
 
   var panel = null;
+  var viewport = null;
   var iframe = null;
   var resizer = null;
+  var toggle = null;
+  var action = null;
   var terminalOpen = false;
-  // Remembered while the panel is closed so reopening restores the height the user dragged to.
-  var panelHeight = null;
+  // Height of the terminal viewport, excluding the tray.
+  var terminalHeight = null;
   // True while the panel is being restored after a reload rather than opened by the reader.
   var restoringPanel = false;
 
-  // Same glyph as the terminal icon in `/play` (`programs/server/play.html`).
   var terminalSvg = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
-    + '<rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '<line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<rect x="2" y="3" width="20" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>'
+    + '<path d="M6.5 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<line x1="12.5" y1="15" x2="17.5" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'
+    + '</svg>';
+
+  var chevronSvg = '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
+    + '<path d="M5.5 12.5L10 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
     + '</svg>';
 
   function injectStyles() {
@@ -52,63 +60,75 @@
     var style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = ''
-      // Panel: full width, dropping down from the very top of the page over everything else,
-      // including the navigation bar, the way the terminal on clickhouse.com does.
-      + '#' + PANEL_ID + ' { position: fixed; top: 0; left: 0; right: 0; display: none;'
-      + ' background: #000; z-index: 2147483646; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }'
-      + '#' + PANEL_ID + '.ch-webterminal-open { display: block; }'
-      + '#' + IFRAME_ID + ' { display: block; width: 100%; height: 100%; border: none; }'
-      // Close button: the navigation bar with the terminal icon is behind the panel while it is
-      // open, so the panel carries its own way out for the pointer. Dim until hovered, to keep
-      // it from competing with the terminal's own output.
-      + '#' + CLOSE_ID + ' { position: absolute; top: 6px; right: 10px; width: 22px; height: 22px;'
-      + ' display: flex; align-items: center; justify-content: center; padding: 0; border: none;'
-      + ' border-radius: 4px; background: rgba(255, 255, 255, 0.06); color: #d4d4d4; opacity: 0.45;'
-      + ' cursor: pointer; line-height: 1; transition: opacity 0.15s, background-color 0.15s; }'
-      + '#' + CLOSE_ID + ':hover { opacity: 1; background: rgba(255, 255, 255, 0.16); }'
-      + '#' + CLOSE_ID + ' svg { width: 12px; height: 12px; }'
-      // Drag handle along the bottom edge of the panel.
-      + '#' + RESIZER_ID + ' { position: absolute; left: 0; right: 0; bottom: 0; height: 8px;'
-      + ' cursor: row-resize; user-select: none; border-bottom: 1px solid #3a3a3a;'
-      + ' background: linear-gradient(to top, #000, #2b2b2b); }'
-      + '#' + RESIZER_ID + ':hover, #' + RESIZER_ID + '.ch-webterminal-dragging'
-      + ' { background: linear-gradient(to top, #000, #4d4d4d); }'
-      // Navbar icon: sized and coloured like the neighbouring nav tabs.
-      + '#' + ICON_ID + ' { display: flex; align-items: center; color: #4b5563; text-decoration: none;'
-      + ' transition: color 0.15s; }'
-      + '#' + ICON_ID + ' svg { width: 17px; height: 17px; }'
-      + '#' + ICON_ID + ':hover { color: #1f2937; }'
-      + '.dark #' + ICON_ID + ' { color: #9ca3af; }'
-      + '.dark #' + ICON_ID + ':hover { color: #d1d5db; }'
-      + '#' + ICON_ID + '.' + ACTIVE_CLASS + ' { color: #1c1c1c; }'
-      + '.dark #' + ICON_ID + '.' + ACTIVE_CLASS + ' { color: #fdff75; }';
+      + '#' + PANEL_ID + ' { position: fixed; left: 0; right: 0; bottom: 0; height: ' + BAR_HEIGHT + 'px;'
+      + ' display: flex; flex-direction: column; background: #0d0d0d; color: #f3f4f6;'
+      + ' z-index: 2147483646; box-shadow: 0 -1px 0 #2a2a2a; transition: height 180ms ease; }'
+      + 'html.' + PAGE_LOCK_CLASS + ', html.' + PAGE_LOCK_CLASS + ' body { overflow: hidden !important; }'
+      // The spacer puts the fixed tray into the page's layout. At the end of the document the
+      // footer can scroll completely above the tray instead of ending underneath it.
+      + '#' + SPACER_ID + ' { display: block; width: 100%; height: ' + BAR_HEIGHT + 'px;'
+      + ' flex: 0 0 ' + BAR_HEIGHT + 'px; pointer-events: none; }'
+      // Mintlify pins the desktop navigation sidebar to the viewport bottom. Its language picker
+      // lives on that edge, so shorten the sidebar by the tray height instead of covering it.
+      + '#sidebar { bottom: ' + BAR_HEIGHT + 'px !important; }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' { box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.35); }'
+      + '#' + VIEWPORT_ID + ' { flex: 1 1 auto; min-height: 0; overflow: hidden; background: #000;'
+      + ' box-sizing: border-box; overscroll-behavior: contain; }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + VIEWPORT_ID + ' { padding: 8px 0 0 10px; }'
+      // Keep the embedded terminal's native scrollbar just outside the clipped viewport. The
+      // docs dock scrolls through wheel, trackpad and keyboard input without showing two adjacent
+      // vertical scrollbars; the standalone web terminal retains its own scrollbar.
+      + '#' + IFRAME_ID + ' { display: block; width: calc(100% + 8px); max-width: none; height: 100%; border: none; background: #000;'
+      + ' overscroll-behavior: contain; }'
+      + '#' + RESIZER_ID + ' { position: absolute; top: -4px; left: 0; right: 0; height: 8px;'
+      + ' cursor: row-resize; user-select: none; opacity: 0; transition: opacity 120ms; }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + RESIZER_ID + ':hover,'
+      + ' #' + PANEL_ID + '.' + OPEN_CLASS + ' #' + RESIZER_ID + '.ch-webterminal-dragging { opacity: 1;'
+      + ' background: linear-gradient(to bottom, transparent 3px, #faff69 3px, #faff69 5px, transparent 5px); }'
+      + '#' + TRAY_ID + ' { flex: 0 0 ' + BAR_HEIGHT + 'px; height: ' + BAR_HEIGHT + 'px; display: flex;'
+      + ' align-items: stretch; justify-content: space-between; border-top: 1px solid #2a2a2a;'
+      + ' background: #151515; color: #f3f4f6; font: 500 12px/1 Inter, ui-sans-serif, system-ui, sans-serif; }'
+      + '#' + TOGGLE_ID + ', #' + ACTION_ID + ' { appearance: none; border: 0; margin: 0; color: inherit;'
+      + ' background: transparent; cursor: pointer; }'
+      + '#' + TOGGLE_ID + ' { display: flex; align-items: center; gap: 6px; min-width: 152px; padding: 0 10px 0 26px;'
+      + ' border-right: 1px solid transparent; text-align: left; }'
+      + '#' + TOGGLE_ID + ':hover { background: #202020; }'
+      + '#' + TOGGLE_ID + ':focus-visible, #' + ACTION_ID + ':focus-visible { outline: 2px solid #faff69; outline-offset: -3px; }'
+      + '#' + TOGGLE_ID + ' svg { width: 14px; height: 14px; color: #faff69; }'
+      + '#' + TOGGLE_ID + ' .ch-webterminal-label { white-space: nowrap; }'
+      + '#' + TOGGLE_ID + ' .ch-webterminal-shortcut { margin-left: 2px; padding: 1px 4px; border: 1px solid #404040;'
+      + ' border-radius: 3px; color: #a9adb7; font: 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }'
+      + '#' + ACTION_ID + ' { display: flex; align-items: center; justify-content: center; width: ' + BAR_HEIGHT + 'px;'
+      + ' border-left: 1px solid #2a2a2a; color: #a9adb7; }'
+      + '#' + ACTION_ID + ':hover { color: #fff; background: #202020; }'
+      + '#' + ACTION_ID + ' svg { width: 16px; height: 16px; transition: transform 180ms ease; }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + ACTION_ID + ' svg { transform: rotate(180deg); }'
+      + '@media (max-width: ' + (DESKTOP_MIN_WIDTH - 1) + 'px) { #' + PANEL_ID + ', #' + SPACER_ID + ' { display: none; }'
+      + ' #sidebar { bottom: 0 !important; } }'
+      + '@media (prefers-reduced-motion: reduce) { #' + PANEL_ID + ', #' + ACTION_ID + ' svg { transition: none; } }';
     document.head.appendChild(style);
   }
 
-  function maxPanelHeight() {
-    return Math.max(MIN_HEIGHT, window.innerHeight - BOTTOM_MARGIN);
+  function maxTerminalHeight() {
+    return Math.max(MIN_TERMINAL_HEIGHT, window.innerHeight - BAR_HEIGHT - TOP_MARGIN);
   }
 
   function applyPanelGeometry() {
     if (!panel) return;
-    panel.style.height = Math.min(panelHeight, maxPanelHeight()) + 'px';
+    var visibleTerminalHeight = terminalOpen ? Math.min(terminalHeight, maxTerminalHeight()) : 0;
+    panel.style.height = (visibleTerminalHeight + BAR_HEIGHT) + 'px';
   }
 
   function postToTerminal(message) {
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage(message, TERMINAL_ORIGIN);
-    }
+    if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage(message, TERMINAL_ORIGIN);
   }
 
-  // Client-side navigation keeps the page — and with it the terminal session — alive, but some
-  // links (the top-level tabs, and every link that leaves the docs) reload the page. Remember
-  // that the terminal was open, and at which height, so it comes back after such a reload. The
-  // session itself cannot survive a reload: the WebSocket dies with the page, so the restored
-  // terminal is a new session. `sessionStorage` scopes this to the tab it was opened in and
-  // throws when storage is unavailable, in which case the terminal simply does not persist.
+  // Client-side navigation keeps the page — and with it the terminal session — alive. Remember
+  // whether the tray was open for full-page navigation and reloads. The WebSocket cannot survive
+  // a reload, so a restored tray starts a new session.
   function saveState() {
     try {
-      if (terminalOpen) sessionStorage.setItem(STATE_KEY, String(panelHeight));
+      if (terminalOpen) sessionStorage.setItem(STATE_KEY, String(terminalHeight));
       else sessionStorage.removeItem(STATE_KEY);
     } catch (e) { /* storage unavailable */ }
   }
@@ -122,116 +142,145 @@
     }
   }
 
-  function createPanel() {
-    if (panel) return;
-
-    injectStyles();
-    panel = document.createElement('div');
-    panel.id = PANEL_ID;
-
+  function ensureIframe() {
+    if (iframe) return;
     iframe = document.createElement('iframe');
     iframe.id = IFRAME_ID;
     iframe.title = 'ClickHouse web terminal';
     iframe.src = TERMINAL_URL;
-    // The terminal learns the embedding origin from this handshake, which is what lets it post
-    // `webterminal-escape` and `webterminal-closed` back to us. It only accepts the handshake
-    // from `clickhouse.com` and `clickhouse.cloud` origins, so on preview deployments and on
-    // localhost the terminal still works but cannot notify us when it is closed from inside.
     iframe.addEventListener('load', function () {
       postToTerminal({type: 'webterminal-hello'});
-      // The terminal focuses itself as soon as it loads. For a panel restored after a reload
-      // that would silently redirect the reader's keystrokes — and the space bar they scroll
-      // the page with — into a terminal they did not just ask for, so hand focus back.
+      // The terminal focuses itself when it loads. A tray restored after a reload should not
+      // redirect the reader's first keystrokes into a session they did not just open.
       if (restoringPanel && document.activeElement === iframe) iframe.blur();
     });
-    panel.appendChild(iframe);
+    viewport.appendChild(iframe);
+  }
 
-    var close = document.createElement('button');
-    close.id = CLOSE_ID;
-    close.type = 'button';
-    close.title = 'Close the terminal (~)';
-    close.setAttribute('aria-label', 'Close the terminal');
-    close.innerHTML = '<svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"'
-      + ' focusable="false"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6"'
-      + ' stroke-linecap="round"/></svg>';
-    close.addEventListener('click', hideTerminal);
-    panel.appendChild(close);
+  function createPanel() {
+    if (panel) return;
+    injectStyles();
+
+    var spacer = document.createElement('div');
+    spacer.id = SPACER_ID;
+    spacer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(spacer);
+
+    panel = document.createElement('section');
+    panel.id = PANEL_ID;
+    panel.setAttribute('aria-label', 'ClickHouse web terminal');
+
+    viewport = document.createElement('div');
+    viewport.id = VIEWPORT_ID;
+    // Wheel events normally stay inside the cross-origin iframe. If the browser retargets one
+    // to the host after the terminal reaches the end of its scrollback, consume it here instead
+    // of letting the documentation page move behind the panel.
+    viewport.addEventListener('wheel', function (e) {
+      if (!terminalOpen) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, {passive: false});
+    panel.appendChild(viewport);
 
     resizer = document.createElement('div');
     resizer.id = RESIZER_ID;
+    resizer.setAttribute('role', 'separator');
+    resizer.setAttribute('aria-label', 'Resize web terminal');
+    resizer.setAttribute('aria-orientation', 'horizontal');
     resizer.addEventListener('pointerdown', startResize);
-    // Prevent the page from scrolling while the handle is dragged on a touch screen.
     resizer.addEventListener('touchstart', function (e) { e.preventDefault(); });
     panel.appendChild(resizer);
 
+    var tray = document.createElement('div');
+    tray.id = TRAY_ID;
+
+    toggle = document.createElement('button');
+    toggle.id = TOGGLE_ID;
+    toggle.type = 'button';
+    toggle.title = 'Toggle the web terminal (~)';
+    toggle.setAttribute('aria-controls', VIEWPORT_ID);
+    toggle.innerHTML = terminalSvg
+      + '<span class="ch-webterminal-label">ClickHouse terminal</span>'
+      + '<span class="ch-webterminal-shortcut">~</span>';
+    toggle.addEventListener('click', toggleTerminal);
+    tray.appendChild(toggle);
+
+    action = document.createElement('button');
+    action.id = ACTION_ID;
+    action.type = 'button';
+    action.innerHTML = chevronSvg;
+    action.addEventListener('click', toggleTerminal);
+    tray.appendChild(action);
+
+    panel.appendChild(tray);
     document.body.appendChild(panel);
+    updateControls();
   }
 
-  // `focusTerminal` is false when the panel is restored after a reload: taking the keyboard away
-  // from the page the reader just landed on would be rude, and it would also swallow their first
-  // keystrokes into a terminal they did not just ask for.
+  function updateControls() {
+    if (!toggle || !action) return;
+    toggle.setAttribute('aria-expanded', terminalOpen ? 'true' : 'false');
+    action.setAttribute('aria-label', terminalOpen ? 'Collapse web terminal' : 'Open web terminal');
+    action.title = terminalOpen ? 'Collapse the web terminal' : 'Open the web terminal';
+  }
+
+  // `focusTerminal` is false when restoring after a reload so the page keeps the keyboard.
   function openTerminal(focusTerminal) {
-    if (terminalOpen) return;
+    if (terminalOpen || window.innerWidth < DESKTOP_MIN_WIDTH) return;
     restoringPanel = !focusTerminal;
-    createPanel();
+    ensureIframe();
     terminalOpen = true;
-    if (panelHeight === null) panelHeight = Math.round(window.innerHeight * DEFAULT_HEIGHT_RATIO);
+    if (terminalHeight === null) terminalHeight = Math.round(window.innerHeight * DEFAULT_HEIGHT_RATIO);
+    terminalHeight = Math.max(MIN_TERMINAL_HEIGHT, Math.min(terminalHeight, maxTerminalHeight()));
+    panel.classList.add(OPEN_CLASS);
+    document.documentElement.classList.add(PAGE_LOCK_CLASS);
     applyPanelGeometry();
-    panel.classList.add('ch-webterminal-open');
-    updateIconState();
+    updateControls();
     saveState();
-    // The terminal sizes itself to its container; ask it to refit now that the panel is visible,
-    // because while the panel was hidden the iframe had no usable dimensions to measure.
     requestAnimationFrame(function () {
       postToTerminal({type: 'webterminal-refit'});
       if (focusTerminal && iframe) iframe.focus();
     });
   }
 
-  // Hide the panel but keep the iframe alive, so the session and the scrollback survive
-  // closing and reopening the terminal.
+  // Collapse to the tray but keep the iframe alive, preserving the session and its scrollback.
   function hideTerminal() {
     if (!terminalOpen) return;
     terminalOpen = false;
-    panel.classList.remove('ch-webterminal-open');
-    updateIconState();
+    panel.classList.remove(OPEN_CLASS);
+    document.documentElement.classList.remove(PAGE_LOCK_CLASS);
+    applyPanelGeometry();
+    updateControls();
     saveState();
   }
 
-  // Drop the session entirely: used when the terminal itself reports that it disconnected.
   function closeTerminal() {
     hideTerminal();
-    if (panel) {
-      panel.remove();
-      panel = null;
+    if (iframe) {
+      iframe.remove();
       iframe = null;
-      resizer = null;
     }
   }
 
   function toggleTerminal() {
     if (terminalOpen) hideTerminal();
-    // Do not open a panel that the narrow layout gives no way to close: there the tab bar that
-    // holds the icon is hidden, and a keyboard shortcut would be the only way back out.
-    else if (window.innerWidth >= DESKTOP_MIN_WIDTH) openTerminal(true);
+    else openTerminal(true);
   }
 
-  // ── Resizing ──────────────────────────────────────────────────────────────
+  // Resizing a bottom-docked panel is the inverse of a top drop-down: dragging its upper edge
+  // upward makes it taller, and dragging down until only the tray remains collapses it.
   var drag = {active: false, startY: 0, startHeight: 0};
 
   function startResize(e) {
-    if (e.button !== 0) return;
+    if (!terminalOpen || e.button !== 0) return;
     drag.active = true;
     drag.startY = e.clientY;
-    drag.startHeight = panel.offsetHeight;
+    drag.startHeight = terminalHeight;
     resizer.classList.add('ch-webterminal-dragging');
 
-    // The iframe swallows pointer events, so cover the page with a transparent overlay for the
-    // duration of the drag; without it the pointer "sticks" as soon as it enters the terminal.
     var overlay = document.createElement('div');
     overlay.id = OVERLAY_ID;
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;'
-      + 'z-index:2147483647;cursor:row-resize;';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:row-resize;';
     document.body.appendChild(overlay);
 
     document.addEventListener('pointermove', moveResize);
@@ -241,17 +290,14 @@
 
   function moveResize(e) {
     if (!drag.active) return;
-    var newHeight = drag.startHeight + (e.clientY - drag.startY);
-    if (newHeight < MIN_HEIGHT) {
-      // Dragging the handle up to the top closes the terminal. Restore the height the panel had
-      // when the drag started, so that reopening it does not bring back the barely visible
-      // sliver the pointer passed through on its way up.
-      panelHeight = drag.startHeight;
+    var newHeight = drag.startHeight + (drag.startY - e.clientY);
+    if (newHeight < MIN_TERMINAL_HEIGHT) {
+      terminalHeight = drag.startHeight;
       stopResize();
       hideTerminal();
       return;
     }
-    panelHeight = Math.min(newHeight, maxPanelHeight());
+    terminalHeight = Math.min(newHeight, maxTerminalHeight());
     applyPanelGeometry();
   }
 
@@ -261,70 +307,11 @@
     var overlay = document.getElementById(OVERLAY_ID);
     if (overlay) overlay.remove();
     saveState();
-
     document.removeEventListener('pointermove', moveResize);
     document.removeEventListener('pointerup', stopResize);
     document.removeEventListener('pointercancel', stopResize);
   }
 
-  // ── Navbar icon ───────────────────────────────────────────────────────────
-  function updateIconState() {
-    var icon = document.getElementById(ICON_ID);
-    if (!icon) return;
-    icon.classList.toggle(ACTIVE_CLASS, terminalOpen);
-    icon.setAttribute('aria-expanded', terminalOpen ? 'true' : 'false');
-  }
-
-  // The theme renders one `.nav-tabs` element per layout variant and lays out only the active
-  // one, so pick the container that is actually on screen. Returns null on narrow viewports,
-  // where the desktop tab bar is hidden altogether and the terminal has no place to live.
-  function tabsContainer() {
-    var candidates = document.querySelectorAll('.nav-tabs');
-    for (var i = 0; i < candidates.length; i++) {
-      if (candidates[i].getClientRects().length) return candidates[i];
-    }
-    return null;
-  }
-
-  // Placed as the first item of the top navigation, before the "Home" tab. Rendered as an anchor
-  // so that a middle-click or Ctrl/Shift+click opens the terminal in a new browser tab natively,
-  // the way the terminal icon in `/play` behaves.
-  function injectIcon() {
-    var tabs = tabsContainer();
-    if (!tabs) return;
-
-    var existing = document.getElementById(ICON_ID);
-    if (existing) {
-      // Re-parent the icon when the theme switches to another tab bar, for example when the
-      // viewport grows past the mobile breakpoint and a different `.nav-tabs` takes over.
-      if (existing.parentElement !== tabs) tabs.insertBefore(existing, tabs.firstChild);
-      return;
-    }
-
-    injectStyles();
-
-    var icon = document.createElement('a');
-    icon.id = ICON_ID;
-    icon.className = 'nav-tabs-item';
-    icon.href = TERMINAL_URL;
-    icon.title = 'Web terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab';
-    icon.setAttribute('aria-label', 'Web terminal');
-    icon.setAttribute('aria-expanded', terminalOpen ? 'true' : 'false');
-    icon.innerHTML = terminalSvg;
-
-    icon.addEventListener('click', function (e) {
-      // Let the browser handle modifier clicks natively: they open the terminal in a new tab.
-      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleTerminal();
-    });
-
-    tabs.insertBefore(icon, tabs.firstChild);
-    updateIconState();
-  }
-
-  // ── Keyboard ──────────────────────────────────────────────────────────────
   function isTyping(target) {
     if (!target) return false;
     var tag = target.tagName;
@@ -338,73 +325,34 @@
       toggleTerminal();
       return;
     }
-    // Escape closes the terminal, but only when nothing else on the page owns the keyboard:
-    // the search modal and other overlays put focus into their own controls and close on Escape
-    // themselves. Escape pressed inside the terminal is handled by the terminal, which reports
-    // it back through a `webterminal-escape` message.
     if (e.key === 'Escape' && terminalOpen && !isTyping(e.target)
         && (document.activeElement === null || document.activeElement === document.body)) {
       hideTerminal();
     }
   }
 
-  // ── Messages from the terminal ────────────────────────────────────────────
   function onMessage(e) {
-    if (!iframe || e.source !== iframe.contentWindow) return;
-    if (e.origin !== TERMINAL_ORIGIN) return;
-    if (!e.data) return;
-
-    if (e.data.type === 'webterminal-escape') {
-      hideTerminal();
-    } else if (e.data.type === 'webterminal-closed') {
-      // The session ended (for example, the user typed `exit`); drop the iframe so that
-      // reopening the terminal starts a fresh session.
-      closeTerminal();
-    }
+    if (!iframe || e.source !== iframe.contentWindow || e.origin !== TERMINAL_ORIGIN || !e.data) return;
+    if (e.data.type === 'webterminal-escape') hideTerminal();
+    else if (e.data.type === 'webterminal-closed') closeTerminal();
   }
 
-  // ── Init ──────────────────────────────────────────────────────────────────
   function init() {
-    injectIcon();
-
-    // Mintlify re-renders the navbar on client-side navigation, which drops the injected icon;
-    // re-add it whenever that happens. Debounced with a frame so a burst of React updates costs
-    // a single pass. The panel is appended to `<body>`, outside the React tree, so it and the
-    // terminal session survive navigation untouched.
-    var scheduled = false;
-    var observer = new MutationObserver(function () {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(function () {
-        scheduled = false;
-        injectIcon();
-      });
-    });
-    observer.observe(document.documentElement, {childList: true, subtree: true});
-
+    createPanel();
     document.addEventListener('keydown', onKeyDown);
     window.addEventListener('message', onMessage);
     window.addEventListener('resize', function () {
-      if (!terminalOpen) return;
-      // Narrowing the window past the breakpoint takes the tab bar, and with it the icon that
-      // closes the terminal, off the screen. Close the panel instead of leaving it stranded on
-      // top of the page; the session stays alive, so widening the window and clicking the icon
-      // again returns to it.
       if (window.innerWidth < DESKTOP_MIN_WIDTH) hideTerminal();
       else applyPanelGeometry();
     });
 
-    // Reopen the terminal if it was open before a page reload.
     var restored = savedHeight();
     if (restored !== null && window.innerWidth >= DESKTOP_MIN_WIDTH) {
-      panelHeight = restored;
+      terminalHeight = restored;
       openTerminal(false);
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
