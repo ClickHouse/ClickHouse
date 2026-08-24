@@ -333,7 +333,7 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
 
         /// `fill_description` stays empty - the writer sends no bounds, and nothing in a deserialized fragment
         /// builds a `FillingTransform` from them. The flag is here for the plan optimizations that consult it.
-        desc.with_fill = (flags & 8) != 0;
+        desc.with_fill = (flags & 8);
     }
 }
 
