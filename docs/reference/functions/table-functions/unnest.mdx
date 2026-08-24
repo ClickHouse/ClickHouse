@@ -1,0 +1,97 @@
+---
+description: 'The `unnest` table function explodes an array into a table with one row per element.'
+sidebarTitle: 'unnest'
+slug: /sql-reference/table-functions/unnest
+title: 'unnest'
+doc_type: 'reference'
+---
+
+The `unnest` table function explodes an array into a table with one row per element. The result has a single column named `unnest` whose type is the array element type.
+
+The name is case-insensitive.
+
+`SELECT unnest(arr)` in the select list is the [`arrayJoin`](/reference/functions/regular-functions/array-join) function alias. `FROM unnest(...)` is this table function.
+
+## Syntax {#syntax}
+
+```sql
+unnest(array)
+```
+
+## Arguments {#arguments}
+
+- `array` — A constant [`Array`](/reference/data-types/array) or `Nullable(Array)`. Nested arrays are exploded one level: `unnest([[1, 2], [3]])` returns two rows of type `Array`.
+
+Empty arrays and `NULL` produce zero rows. The column type is still the element type.
+
+## Returned value {#returned-value}
+
+A table with one `unnest` column.
+
+## Examples {#examples}
+
+```sql
+SELECT * FROM unnest([1, 2, 3]);
+```
+
+```response
+┌─unnest─┐
+│      1 │
+│      2 │
+│      3 │
+└────────┘
+```
+
+Empty array:
+
+```sql
+SELECT count() FROM unnest(CAST([] AS Array(UInt8)));
+```
+
+```response
+┌─count()─┐
+│       0 │
+└─────────┘
+```
+
+Nested arrays:
+
+```sql
+SELECT * FROM unnest([[1, 2], [3]]);
+```
+
+```response
+┌─unnest─┐
+│ [1,2]  │
+│ [3]    │
+└────────┘
+```
+
+## CROSS JOIN unnest {#cross-join-unnest}
+
+`FROM t CROSS JOIN unnest(t.arr)` is the PostgreSQL `LATERAL` shape. ClickHouse rewrites it to [`ARRAY JOIN`](/reference/statements/select/array-join) `t.arr AS unnest`, so the original array column is kept. Empty arrays drop rows, same as `ARRAY JOIN`.
+
+`ARRAY JOIN` remains the native ClickHouse form.
+
+```sql
+SELECT id, unnest, arr
+FROM
+(
+    SELECT 1 AS id, [10, 20] AS arr
+) AS t
+CROSS JOIN unnest(t.arr);
+```
+
+```response
+┌─id─┬─unnest─┬─arr────┐
+│  1 │     10 │ [10,20] │
+│  1 │     20 │ [10,20] │
+└────┴────────┴─────────┘
+```
+
+This rewrite requires the analyzer (enabled by default).
+
+## Related content {#related-content}
+
+- [`ARRAY JOIN` clause](/reference/statements/select/array-join)
+- [`arrayJoin` function](/reference/functions/regular-functions/array-join)
