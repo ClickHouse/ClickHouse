@@ -828,12 +828,14 @@ def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
     # Upload the same key with identical bytes again.
     put_s3_file_content(started_cluster, file_key, file_data)
 
-    # Ingest the second upload.
+    # Ingest the second upload. A refused move leaves the source in place, so `tracked_file_ttl_sec`
+    # keeps evicting its record and the file is ingested and re-collides once per cycle from here on;
+    # only the lower bounds are stable.
     for _ in range(100):
-        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 2:
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) >= 2:
             break
         time.sleep(0.1)
-    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 2
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) >= 2
 
     # The second move must be refused as a collision and leave the new source intact.
     for _ in range(100):
@@ -846,7 +848,7 @@ def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
 
     assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
     assert count_minio_objects(started_cluster, bucket, files_path) == 1
-    assert move_collisions() == collisions_before + 1
+    assert move_collisions() >= collisions_before + 1
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
