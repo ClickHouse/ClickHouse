@@ -36,6 +36,8 @@
   var terminalOpen = false;
   // Remembered while the panel is closed so reopening restores the height the user dragged to.
   var panelHeight = null;
+  // True while the panel is being restored after a reload rather than opened by the reader.
+  var restoringPanel = false;
 
   // Same glyph as the terminal icon in `/play` (`programs/server/play.html`).
   var terminalSvg = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
@@ -141,6 +143,10 @@
     // localhost the terminal still works but cannot notify us when it is closed from inside.
     iframe.addEventListener('load', function () {
       postToTerminal({type: 'webterminal-hello'});
+      // The terminal focuses itself as soon as it loads. For a panel restored after a reload
+      // that would silently redirect the reader's keystrokes — and the space bar they scroll
+      // the page with — into a terminal they did not just ask for, so hand focus back.
+      if (restoringPanel && document.activeElement === iframe) iframe.blur();
     });
     panel.appendChild(iframe);
 
@@ -159,6 +165,7 @@
   // keystrokes into a terminal they did not just ask for.
   function openTerminal(focusTerminal) {
     if (terminalOpen) return;
+    restoringPanel = !focusTerminal;
     createPanel();
     terminalOpen = true;
     if (panelHeight === null) panelHeight = Math.round(window.innerHeight * DEFAULT_HEIGHT_RATIO);
