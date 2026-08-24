@@ -1,0 +1,395 @@
+"""Export of system log tables (system.query_log, system.text_log, ...) from the
+ClickHouse servers started by integration tests to the CI Logs cluster.
+
+This is the integration-tests counterpart of
+ci/jobs/scripts/functional_tests/setup_log_cluster.sh, which does the same for
+functional tests, stress tests and fuzzers. For every eligible server instance,
+after the cluster is started:
+
+  - a remote destination table `<table>_<hash>` is created on the CI Logs
+    cluster for every `system.*_log` table (the hash covers the structure, so
+    servers of different versions can export into the same cluster);
+  - a Distributed table `system.<table>_sender` pointing to the destination
+    table and a materialized view `system.<table>_watcher` are created locally,
+    so every flushed log block is forwarded to the CI Logs cluster.
+
+The destination tables are augmented with extra columns describing the CI job
+(repo, commit, check name, ...) plus two integration-test specific columns:
+`test_name` (the test module, e.g. `test_storage_s3`) and `node_name` (the name
+of the instance within the cluster, e.g. `node1`).
+
+The export is enabled by the CLICKHOUSE_CI_LOGS_HOST environment variable (set
+by ci/jobs/integration_test_job.py in CI). It is best effort: any failure is
+logged and never fails the tests themselves.
+
+Security note: the credentials must never be materialized in files that can be
+collected as CI artifacts (everything under the instance directories is).
+The remote cluster config therefore references them with `from_env` (and hides
+them in the preprocessed config), and the values are passed into the containers
+through the docker compose process environment.
+"""
+
+import json
+import logging
+import os
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+# Extra columns added to every exported table, and the values for them.
+# Keep in sync with EXTRA_COLUMNS in
+# ci/jobs/scripts/functional_tests/setup_log_cluster.sh: the same columns give
+# the same structure hash, so functional and integration tests share the
+# destination tables.
+EXTRA_COLUMNS = (
+    "repo LowCardinality(String), pull_request_number UInt32, commit_sha String, "
+    "check_start_time DateTime('UTC'), check_name LowCardinality(String), "
+    "test_name LowCardinality(String), node_name LowCardinality(String), "
+    "instance_type LowCardinality(String), instance_id String, "
+    "INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), "
+    "INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "
+    "INDEX ix_test (test_name) TYPE set(100), "
+)
+EXTRA_ORDER_BY_COLUMNS = "check_name, test_name"
+
+# Used when the CI job did not provide the values (e.g. a manual local run with
+# the credentials exported by hand).
+DEFAULT_EXTRA_COLUMNS_EXPRESSION = (
+    "toLowCardinality('') AS repo, CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, "
+    "now() AS check_start_time, toLowCardinality('') AS check_name, "
+    "toLowCardinality('') AS instance_type, '' AS instance_id"
+)
+
+# The name is chosen to sort after the test-provided configs, so that the
+# cluster definition survives test configs which merge `remote_servers` with
+# `replace="replace"` (config.d files are merged in the alphabetical order).
+CLUSTER_CONFIG_NAME = "zzz_system_logs_export.xml"
+
+CLUSTER_CONFIG_TEMPLATE = """<clickhouse>
+    <remote_servers>
+        <{cluster}>
+            <shard>
+                <replica>
+                    <secure>{secure}</secure>
+                    <host from_env="CLICKHOUSE_CI_LOGS_HOST" hide_in_preprocessed="1"/>
+                    <port>{port}</port>
+                    <user from_env="CLICKHOUSE_CI_LOGS_USER" hide_in_preprocessed="1"/>
+                    <password from_env="CLICKHOUSE_CI_LOGS_PASSWORD" hide_in_preprocessed="1"/>
+                </replica>
+            </shard>
+        </{cluster}>
+    </remote_servers>
+</clickhouse>
+"""
+
+# Returns one row per system log table: its name, the structure hash of the
+# destination table, and the multi-line CREATE statement. The hash expression
+# is equivalent to the one in setup_log_cluster.sh (an array of N copies of the
+# extra columns definition, and an array of (name, type) ordered by position),
+# and formatQuery output is identical to SHOW CREATE TABLE output.
+LOG_TABLES_QUERY = """
+SELECT
+    t.name AS table,
+    toString(c.h) AS hash,
+    formatQuery(t.create_table_query) AS statement
+FROM system.tables AS t
+INNER JOIN
+(
+    SELECT
+        table,
+        sipHash64(
+            arrayResize(CAST([] AS Array(String)), toUInt64(count()), {extra_columns:String}),
+            arrayMap(x -> (tupleElement(x, 2), tupleElement(x, 3)),
+                arraySort(x -> tupleElement(x, 1), groupArray((position, name, type))))
+        ) AS h
+    FROM system.columns
+    WHERE database = 'system' AND endsWith(table, '_log')
+    GROUP BY table
+) AS c ON c.table = t.name
+WHERE t.database = 'system' AND endsWith(t.name, '_log')
+ORDER BY table
+FORMAT JSONEachRow
+"""
+
+
+def is_enabled():
+    return bool(os.environ.get("CLICKHOUSE_CI_LOGS_HOST"))
+
+
+def _cluster_name():
+    name = os.environ.get("CLICKHOUSE_CI_LOGS_CLUSTER", "system_logs_export")
+    assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name), name
+    return name
+
+
+def _cache_dir():
+    return Path(
+        os.environ.get(
+            "CLICKHOUSE_CI_LOGS_CACHE_DIR",
+            os.path.join(tempfile.gettempdir(), "clickhouse_ci_logs_export"),
+        )
+    )
+
+
+def write_instance_config(config_d_dir):
+    """Add the CI Logs cluster to the instance config. The credentials are not
+    written to the file: they are taken from the container environment, see
+    docker_compose_environment_section."""
+    # The variables referenced with from_env must exist in the container even
+    # if empty, otherwise the server refuses to start.
+    os.environ.setdefault("CLICKHOUSE_CI_LOGS_USER", "ci")
+    os.environ.setdefault("CLICKHOUSE_CI_LOGS_PASSWORD", "")
+    config = CLUSTER_CONFIG_TEMPLATE.format(
+        cluster=_cluster_name(),
+        secure=1 if os.environ.get("CLICKHOUSE_CI_LOGS_SECURE", "1") != "0" else 0,
+        port=int(os.environ.get("CLICKHOUSE_CI_LOGS_PORT", "9440")),
+    )
+    with open(os.path.join(config_d_dir, CLUSTER_CONFIG_NAME), "w") as f:
+        f.write(config)
+
+
+def docker_compose_environment_section():
+    """An `environment:` section for the instance service in the docker compose
+    file. The variables are listed without values: docker compose takes them
+    from its own process environment, so the credentials never appear in the
+    compose file (which is collected as a CI artifact)."""
+    return "environment:\n            - CLICKHOUSE_CI_LOGS_HOST\n            - CLICKHOUSE_CI_LOGS_USER\n            - CLICKHOUSE_CI_LOGS_PASSWORD"
+
+
+def _escape_sql_string(value):
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _extra_columns_expression(test_name, node_name):
+    base = os.environ.get("EXTRA_COLUMNS_EXPRESSION", DEFAULT_EXTRA_COLUMNS_EXPRESSION)
+    return f"{base}, toLowCardinality('{_escape_sql_string(test_name)}') AS test_name, toLowCardinality('{_escape_sql_string(node_name)}') AS node_name"
+
+
+def _adapt_create_statement(table, hash_value, statement):
+    """Transform the local CREATE TABLE statement into the statement for the
+    destination table on the CI Logs cluster. The transformations mirror
+    setup_log_cluster.sh: add the extra columns, prepend the extra ORDER BY
+    columns, rename the table, drop TTL/SETTINGS/COMMENT."""
+    result = []
+    for line in statement.split("\n"):
+        if re.fullmatch(r"CREATE TABLE system\.\w+_log", line):
+            line = f"CREATE TABLE IF NOT EXISTS {table}_{hash_value}"
+        elif line == "(":
+            line = "(" + EXTRA_COLUMNS
+        elif line.startswith(("TTL ", "SETTINGS ", "COMMENT ")):
+            continue
+        else:
+            match = re.fullmatch(r"ORDER BY (?:([^(].*)|\((.*)\))", line)
+            if match:
+                order_by = match.group(1) or match.group(2)
+                line = f"ORDER BY ({EXTRA_ORDER_BY_COLUMNS}, {order_by})"
+        result.append(line)
+    result.append("SETTINGS use_const_adaptive_granularity = 1")
+    return "\n".join(result)
+
+
+def _run_remote_query(client_bin_path, sql, timeout=90):
+    """Run a query on the CI Logs cluster. The password is passed through the
+    environment so that it appears neither in logs nor in the process list."""
+    command = [client_bin_path]
+    if os.path.basename(client_bin_path) == "clickhouse":
+        command.append("client")
+    command += [
+        "--host",
+        os.environ["CLICKHOUSE_CI_LOGS_HOST"],
+        "--port",
+        os.environ.get("CLICKHOUSE_CI_LOGS_PORT", "9440"),
+        "--user",
+        os.environ.get("CLICKHOUSE_CI_LOGS_USER", "ci"),
+        "--receive_timeout",
+        "45",
+        "--send_timeout",
+        "45",
+        # The destination database may be Replicated
+        "--database_replicated_initial_query_timeout_sec",
+        "10",
+        "--distributed_ddl_task_timeout",
+        "30",
+        "--distributed_ddl_output_mode",
+        "throw_only_active",
+    ]
+    if os.environ.get("CLICKHOUSE_CI_LOGS_SECURE", "1") != "0":
+        command.append("--secure")
+    env = os.environ.copy()
+    env["CLICKHOUSE_PASSWORD"] = os.environ.get("CLICKHOUSE_CI_LOGS_PASSWORD", "")
+    result = subprocess.run(
+        command,
+        input=sql,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Query on the CI Logs cluster failed with code {result.returncode}: {result.stderr}")
+    return result.stdout
+
+
+def _ensure_remote_tables(client_bin_path, tables):
+    """Create the destination tables on the CI Logs cluster.
+
+    The set of destination tables is the same for all servers of the job (the
+    hash depends only on the table structure), so the result of each creation
+    is cached on disk and shared between all tests and pytest-xdist workers of
+    the job: only the first test that needs a table pays for the WAN round
+    trip. Returns the set of tables which exist on the CI Logs cluster.
+
+    A failure to connect at all disables the export for the rest of the job
+    (the marker file is checked on every call), so that a broken or unreachable
+    CI Logs cluster does not slow down every test."""
+    cache_dir = _cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    disabled_marker = cache_dir / "disabled"
+    if disabled_marker.exists():
+        logging.info(
+            "CI logs export: disabled earlier in this job: %s",
+            disabled_marker.read_text(),
+        )
+        return set()
+
+    if not (cache_dir / "connected").exists():
+        try:
+            _run_remote_query(client_bin_path, "SELECT 1 FORMAT Null", timeout=60)
+        except Exception as e:
+            reason = f"cannot connect to the CI Logs cluster: {e}"
+            logging.warning("CI logs export: %s", reason)
+            disabled_marker.write_text(reason)
+            return set()
+        (cache_dir / "connected").touch()
+
+    created = set()
+    for table, hash_value, statement in tables:
+        ok_marker = cache_dir / f"ok_{table}_{hash_value}"
+        failed_marker = cache_dir / f"failed_{table}_{hash_value}"
+        if ok_marker.exists():
+            created.add(table)
+            continue
+        if failed_marker.exists():
+            continue
+        try:
+            _run_remote_query(client_bin_path, statement)
+        except Exception:
+            logging.warning(
+                "CI logs export: failed to create the destination table for %s (will not be retried in this job):\n%s",
+                table,
+                statement,
+                exc_info=True,
+            )
+            failed_marker.touch()
+            continue
+        ok_marker.touch()
+        created.add(table)
+    return created
+
+
+def setup_for_instance(cluster, instance):
+    """Create the sender tables and the watcher materialized views on a started
+    instance. Best effort: never raises."""
+    try:
+        _setup_for_instance(cluster, instance)
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to set up the export for instance %s",
+            instance.name,
+            exc_info=True,
+        )
+
+
+def _setup_for_instance(cluster, instance):
+    disabled_marker = _cache_dir() / "disabled"
+    if disabled_marker.exists():
+        logging.info(
+            "CI logs export: disabled earlier in this job: %s",
+            disabled_marker.read_text(),
+        )
+        return
+
+    test_name = os.path.basename(cluster.base_dir)
+    expression = _extra_columns_expression(test_name, instance.name)
+
+    # Materialize all configured system log tables before reading their structure
+    instance.query("SYSTEM FLUSH LOGS", timeout=120)
+
+    tables = []
+    output = instance.query(
+        LOG_TABLES_QUERY,
+        settings={"param_extra_columns": EXTRA_COLUMNS},
+        timeout=120,
+    )
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        tables.append(
+            (
+                row["table"],
+                row["hash"],
+                _adapt_create_statement(row["table"], row["hash"], row["statement"]),
+            )
+        )
+
+    exportable = _ensure_remote_tables(cluster.client_bin_path, tables)
+    if not exportable:
+        return
+
+    cluster_name = _cluster_name()
+    active = []
+    for table, hash_value, _ in tables:
+        if table not in exportable:
+            continue
+        try:
+            instance.query(
+                f"""
+                CREATE TABLE IF NOT EXISTS system.{table}_sender
+                ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
+                SETTINGS flush_on_detach = 0
+                EMPTY AS SELECT {expression}, * FROM system.{table};
+
+                CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
+                TO system.{table}_sender
+                AS SELECT {expression}, * FROM system.{table};
+                """,
+                timeout=60,
+            )
+        except Exception:
+            logging.warning(
+                "CI logs export: failed to create the sender/watcher for %s on %s",
+                table,
+                instance.name,
+                exc_info=True,
+            )
+            continue
+        active.append(table)
+
+    instance.ci_logs_export_tables = active
+    logging.info(
+        "CI logs export: enabled on %s/%s for tables: %s",
+        test_name,
+        instance.name,
+        ", ".join(active),
+    )
+
+
+def flush_before_shutdown(instance):
+    """Flush the logs and the pending Distributed sends, so that the data
+    accumulated since the last flush is not lost with the container.
+    Best effort: never raises."""
+    tables = getattr(instance, "ci_logs_export_tables", None)
+    if not tables:
+        return
+    try:
+        statements = "SYSTEM FLUSH LOGS;\n" + "\n".join(f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender;" for table in tables)
+        instance.query(statements, timeout=120)
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to flush the logs on shutdown of %s",
+            instance.name,
+            exc_info=True,
+        )

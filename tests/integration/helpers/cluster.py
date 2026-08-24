@@ -60,7 +60,7 @@ from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from . import pytest_xdist_logging_to_separate_files
+from . import ci_logs_export, pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
 from .hdfs_api import HDFSApi
 from .config_cluster import (
@@ -577,7 +577,11 @@ class ClickHouseCluster:
         with_dolor=False,
     ):
         for param in list(os.environ.keys()):
-            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+            # The logs are collected as CI artifacts, do not expose secrets
+            if re.search(r"PASSWORD|SECRET|TOKEN|ACCESS_KEY", param, re.IGNORECASE):
+                logging.debug("ENV %40s [MASKED]" % param)
+            else:
+                logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
@@ -4353,6 +4357,10 @@ class ClickHouseCluster:
                     instance.ip_address, command=self.client_bin_path
                 )
 
+            for instance in self.instances.values():
+                if instance.ci_logs_export_enabled:
+                    ci_logs_export.setup_for_instance(self, instance)
+
             self.is_up = True
             self.save_logs()
 
@@ -4389,6 +4397,10 @@ class ClickHouseCluster:
         failure_logs = []
 
         if self.up_called:
+            if self.is_up:
+                for instance in self.instances.values():
+                    ci_logs_export.flush_before_shutdown(instance)
+
             if kill:
                 try:
                     # NOTE: no --timeout, rely on stop_grace_period
@@ -4893,6 +4905,7 @@ services:
         user: '{user}'
         env_file:
             - {env_file}
+        {ci_logs_env}
         security_opt:
             - label:disable
             - seccomp:unconfined
@@ -5152,6 +5165,21 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+
+        # Export of the system log tables to the CI Logs cluster, see
+        # helpers/ci_logs_export.py. Only for servers that run the binary under
+        # test: instances running an old release image (or restarting into one
+        # via with_installed_binary) may not support the configs and the DDL
+        # that the export needs.
+        self.ci_logs_export_enabled = (
+            ci_logs_export.is_enabled()
+            and not cluster.with_dolor
+            and not with_installed_binary
+            and image == "clickhouse/integration-test"
+            and tag == DOCKER_BASE_TAG
+            and config_root_name == "clickhouse"
+            and main_config_name == "config.xml"
+        )
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -6378,6 +6406,9 @@ class ClickHouseInstance:
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
+        if self.ci_logs_export_enabled:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
@@ -6627,6 +6658,10 @@ class ClickHouseInstance:
 
         is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
 
+        ci_logs_env = ""
+        if self.ci_logs_export_enabled:
+            ci_logs_env = ci_logs_export.docker_compose_environment_section()
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -6662,6 +6697,7 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    ci_logs_env=ci_logs_env,
                     privileged="true" if is_priv else "false",
                     dev_mount=(
                         "- /dev:/dev" if is_priv else ""

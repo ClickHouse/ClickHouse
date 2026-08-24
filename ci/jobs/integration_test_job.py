@@ -16,6 +16,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -830,6 +831,56 @@ def is_empty_best_effort_skip(
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
+def setup_ci_logs_export_env(info: Info, check_start_time: float) -> None:
+    """
+    Enable the export of system log tables to the CI Logs cluster for the
+    ClickHouse servers started by the integration tests, see
+    tests/integration/helpers/ci_logs_export.py. The credentials are passed to
+    pytest (and further into the server containers) through the process
+    environment only: they must never be materialized in files, since the
+    instance directories are collected as CI artifacts. Best effort: if the
+    credentials cannot be fetched, the tests run without the export.
+    """
+    try:
+        host, password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
+    except Exception as e:
+        print(
+            f"WARNING: Failed to fetch the CI Logs cluster credentials, the tests will run without logs export: {e}"
+        )
+        return
+    if not host or not password:
+        print(
+            "WARNING: Empty CI Logs cluster credentials, the tests will run without logs export"
+        )
+        return
+    os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
+    os.environ["CLICKHOUSE_CI_LOGS_USER"] = "ci"
+    os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
+    # Values for the extra columns of the destination tables. test_name and
+    # node_name are appended per server by the test framework.
+    os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
+        f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, "
+        f"'{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, "
+        f"toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, "
+        f"'{info.instance_id}' AS instance_id"
+    )
+    print("Export of system logs to the CI Logs cluster is enabled")
+
+
 def main():
     sw = Utils.Stopwatch()
     info = Info()
@@ -1162,6 +1213,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
         parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
         sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+
+    if not info.is_local_run:
+        setup_ci_logs_export_env(info, sw.start_time)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
