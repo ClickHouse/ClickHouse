@@ -4,7 +4,6 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
@@ -41,11 +40,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("temp_path",   unique_temp_file_path);
 
-    auto write_body_callback = [&task_serializer] (std::ostream & os)
+    auto write_body_callback = [&task_serializer] (WriteBuffer & out)
     {
-        WriteBufferFromOStream buf(os);
-        task_serializer(buf);
-        buf.finalize();
+        task_serializer(out);
     };
 
     auto in = BuilderRWBufferFromHTTP(uri)

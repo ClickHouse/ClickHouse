@@ -40,7 +40,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
-    std::function<void(std::ostream &)> out_stream_callaback)
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback)
 {
     validateBearerToken(context, bearer_token);
 
@@ -70,7 +70,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
-    std::function<void(std::ostream &)> out_stream_callaback)
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback)
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
     {

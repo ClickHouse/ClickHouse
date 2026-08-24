@@ -248,6 +248,50 @@ namespace Net
 
         std::ostream & sendRequest(HTTPRequest & request) { return sendRequest(request, nullptr, nullptr); }
 
+        enum class BodyEncoding
+        {
+            NoBody, /// There is no message body at all.
+            ContentLength, /// The body is exactly `content_length` bytes long.
+            Chunked, /// The body uses chunked transfer encoding.
+            UntilEOF, /// The body ends when the connection is closed.
+        };
+
+        struct BodyInfo
+        {
+            BodyEncoding encoding = BodyEncoding::NoBody;
+            Poco::UInt64 content_length = 0;
+        };
+
+        virtual BodyInfo sendRequestHeaders(HTTPRequest & request, uint64_t * connect_time, uint64_t * first_byte_time);
+        /// Sends the request line and the headers of the given request to the server
+        /// without creating any `std::iostream`, and returns how the request body has
+        /// to be framed by the caller.
+        ///
+        /// This is the iostream-free counterpart of `sendRequest`: the caller writes the
+        /// body itself with `writeAllRaw`, applying the returned framing. The session
+        /// adjusts the request's `Host`, `Connection` and proxy headers exactly as
+        /// `sendRequest` does.
+        ///
+        /// The caller has to report the completion of the body with
+        /// `setRequestBodyComplete`, so that connection reuse can tell a fully sent
+        /// request from an interrupted one.
+
+        BodyInfo sendRequestHeaders(HTTPRequest & request) { return sendRequestHeaders(request, nullptr, nullptr); }
+
+        BodyInfo onResponseHeadersReceived(const HTTPResponse & response);
+        /// Performs the keep-alive bookkeeping that follows the parsing of a response
+        /// header, and returns how the response body is framed.
+        ///
+        /// This is the iostream-free counterpart of the second half of `receiveResponse`,
+        /// for callers that parse the response header themselves. The caller has to
+        /// report the completion of the body with `setResponseBodyComplete`.
+
+        bool isRequestBodyComplete() const { return _requestBodyComplete; }
+        void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
+
+        bool isResponseBodyComplete() const { return _responseBodyComplete; }
+        void setResponseBodyComplete(bool value) { _responseBodyComplete = value; }
+
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous
         /// HTTP request.
@@ -380,6 +424,8 @@ namespace Net
         bool _mustReconnect;
         bool _expectResponseBody;
         bool _responseReceived;
+        bool _requestBodyComplete = true;
+        bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;
 

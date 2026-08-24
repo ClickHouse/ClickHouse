@@ -7,6 +7,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -126,7 +127,7 @@ void CatBoostLibraryBridgeHelper::removeModel()
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(http_timeouts)
                    .withOutCallback(
-                       [this](std::ostream & os)
+                       [this](WriteBuffer & os)
                        {
                            os << "model_path=" << escapeForFileName(*model_path);
                        })
@@ -163,7 +164,7 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(http_timeouts)
                    .withOutCallback(
-                        [this](std::ostream & os)
+                        [this](WriteBuffer & os)
                         {
                            os << "library_path=" << escapeForFileName(*library_path) << "&";
                            os << "model_path=" << escapeForFileName(*model_path);
@@ -191,7 +192,7 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(http_timeouts)
                    .withOutCallback(
-                       [this, serialized = string_write_buf.str()](std::ostream & os)
+                       [this, serialized = string_write_buf.str()](WriteBuffer & os)
                        {
                            os << "model_path=" << escapeForFileName(*model_path) << "&";
                            os << "data=" << escapeForFileName(serialized);
