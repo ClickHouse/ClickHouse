@@ -66,6 +66,7 @@ void TopKAggregationHeapBase::init(
     heap_indices.clear();
     heap_indices.reserve(reserve_hint);
     boundary_row = invalid_row;
+    boundary_is_shared = shared_cache_column != nullptr;
     key_arena.reset();
     findLowCardinalityColumns();
 
@@ -102,6 +103,7 @@ void TopKAggregationHeapBase::init(
     heap_indices.clear();
     heap_indices.reserve(reserve_hint);
     boundary_row = invalid_row;
+    boundary_is_shared = shared_cache_column != nullptr;
     key_arena.reset();
     findLowCardinalityColumns();
     typed_key_type = TypeIndex::Nothing;
@@ -126,6 +128,8 @@ void TopKAggregationHeapBase::freezeBase()
     heap_column = nullptr;
     heap_indices = {};
     boundary_row = invalid_row;
+    boundary_is_shared = false;
+    shared_cache_column = nullptr;
     key_arena.reset();
     skip_bitmap = {};
     evicted_rows = {};
@@ -141,11 +145,11 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
     const UInt8 * result = nullptr;
     dispatchNumericKeyType(typed_key_type, [&]<typename T>()
     {
-        chassert(boundary_row != invalid_row);
+        chassert(hasBoundary());
         skip_bitmap.resize(end);
         const auto * src = reinterpret_cast<const T *>(source_typed_data);
-        const auto & heap_data = assert_cast<const ColumnVector<T> &>(*heap_column).getData();
-        const T boundary = heap_data[boundary_row];
+        const auto & boundary_data = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData();
+        const T boundary = boundary_data[boundaryRow()];
         const int direction = directions[0];
         const int nulls_direction = nulls_directions[0];
         for (size_t i = begin; i < end; ++i)
@@ -158,6 +162,75 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
 void TopKAggregationHeapBase::initBoundary()
 {
     withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
+    publishBoundary();
+    updateBoundaryChoice();
+}
+
+int TopKAggregationHeapBase::compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const
+{
+    if (!is_composite)
+        return directions[0] * lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[0]);
+
+    const auto & lhs_tuple = assert_cast<const ColumnTuple &>(lhs);
+    const auto & rhs_tuple = assert_cast<const ColumnTuple &>(rhs);
+    for (size_t i = 0; i < directions.size(); ++i)
+    {
+        const int cmp = lhs_tuple.getColumn(i).compareAt(lhs_row, rhs_row, rhs_tuple.getColumn(i), nulls_directions[i]);
+        if (cmp != 0)
+            return directions[i] * cmp;
+    }
+    return 0;
+}
+
+void TopKAggregationHeapBase::publishBoundary()
+{
+    if (!shared_boundary)
+        return;
+
+    std::lock_guard lock(shared_boundary->mutex);
+
+    if (shared_boundary->key && compareRanked(*heap_column, boundary_row, *shared_boundary->key, 0) >= 0)
+        return;
+
+    auto key = heap_column->cloneEmpty();
+    key->insertFrom(*heap_column, boundary_row);
+    shared_boundary->key = std::move(key);
+    shared_boundary->version.fetch_add(1, std::memory_order_release);
+}
+
+void TopKAggregationHeapBase::refreshSharedBoundary()
+{
+    if (!shared_boundary || frozen)
+        return;
+
+    if (shared_boundary->version.load(std::memory_order_acquire) == shared_version_seen)
+        return;
+
+    {
+        std::lock_guard lock(shared_boundary->mutex);
+        chassert(shared_boundary->key);
+        shared_cache_column = shared_boundary->key->cloneResized(1);
+        shared_version_seen = shared_boundary->version.load(std::memory_order_relaxed);
+    }
+
+    updateBoundaryChoice();
+}
+
+void TopKAggregationHeapBase::updateBoundaryChoice()
+{
+    if (!shared_cache_column)
+    {
+        boundary_is_shared = false;
+        return;
+    }
+
+    if (boundary_row == invalid_row)
+    {
+        boundary_is_shared = true;
+        return;
+    }
+
+    boundary_is_shared = compareRanked(*shared_cache_column, 0, *heap_column, boundary_row) < 0;
 }
 
 void TopKAggregationHeapBase::trimToK()
@@ -181,6 +254,9 @@ void TopKAggregationHeapBase::trimToK()
     });
 
     evicted_keys += evicted_rows.size();
+
+    publishBoundary();
+    updateBoundaryChoice();
 
     if (heap_indices.size() > next_trim_size)   /// a boundary tie-set blocked the trim
     {

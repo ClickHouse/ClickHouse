@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -21,6 +23,22 @@
 
 namespace DB
 {
+
+/** The tightest skip boundary any aggregation thread has published, shared by all
+  * per-thread top-K sets of one `Aggregator`. A set at capacity K with boundary B proves
+  * K distinct groups strictly better than any key worse than B - globally, not just for
+  * the publishing thread - so every thread may skip against it (the same argument that
+  * makes per-replica skipping sound). Publications only ever tighten the boundary.
+  *
+  * Publish and refresh are off the hot path (a trim, a block start), so a mutex around
+  * the key plus a version counter for the cheap no-change check is enough.
+  */
+struct SharedTopKBoundary
+{
+    std::mutex mutex;
+    std::atomic<UInt64> version{0};
+    MutableColumnPtr key;   /// single row, same structure as the tracking column; null until the first publication
+};
 
 /** The part of `TopKAggregationHeap` that does not depend on the hash-table key type.
   *
@@ -64,15 +82,23 @@ struct TopKAggregationHeapBase
 
     bool shouldFreeze() const;
 
+    /// A skip boundary exists once the local set has filled to K, or earlier if another
+    /// thread has published a shared boundary this thread can borrow.
+    bool hasBoundary() const { return boundary_is_shared || boundary_row != invalid_row; }
+
+    /// Re-reads the shared boundary if another thread has tightened it since the last
+    /// refresh; one atomic load when nothing changed. Called once per block.
+    void refreshSharedBoundary();
+
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
     /// anything the numeric dispatch rejects), hence inline.
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
-        chassert(boundary_row != invalid_row);
+        chassert(hasBoundary());
         if (is_composite)
-            return sourceAboveHeapComposite(source_columns, source_row, boundary_row);
-        return sourceAboveHeap(*source_columns[0], source_row, boundary_row);
+            return sourceAboveBoundaryComposite(source_columns, source_row);
+        return sourceAboveBoundary(*source_columns[0], source_row);
     }
 
     /// The innermost check of the aggregation loop, hence inline.
@@ -98,9 +124,18 @@ protected:
 
     /// The tracked set.
     std::vector<size_t> heap_indices;       /// row indices into `heap_column`, in no particular order
-    size_t boundary_row = invalid_row;      /// `heap_column` row of the worst kept key, i.e. the skip boundary; fixed between trims
+    size_t boundary_row = invalid_row;      /// `heap_column` row of the worst kept key, i.e. the local skip boundary; fixed between trims
     std::unique_ptr<Arena> key_arena;       /// owned bytes of pointer-bearing keys (`emplaceKey` may return a pointer into the source block); rebuilt from survivors at every trim
     size_t k = 0;                           /// the query's `LIMIT K`; trims shrink the set back to it
+
+    /// The cross-thread boundary. The skip paths compare against `boundaryColumn()[boundaryRow()]`,
+    /// which is the tighter of the local boundary and the shared one. Skipping against a foreign
+    /// boundary is sound (K globally better groups exist), but local trims and evictions keep
+    /// ranking against the local set only.
+    SharedTopKBoundary * shared_boundary = nullptr; /// one per `Aggregator`; null when the sharing is disabled
+    UInt64 shared_version_seen = 0;         /// last `SharedTopKBoundary::version` copied into `shared_cache_column`
+    MutableColumnPtr shared_cache_column;   /// single-row local copy of the shared boundary key; null until first refresh
+    bool boundary_is_shared = false;        /// the effective boundary is `shared_cache_column[0]`, not `heap_column[boundary_row]`
 
     /// Ranking configuration.
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
@@ -277,11 +312,24 @@ private:
     template <typename T>
     ALWAYS_INLINE bool shouldSkipNumeric(const void * source_data, size_t source_row) const
     {
-        chassert(boundary_row != invalid_row);
+        chassert(hasBoundary());
         const auto * src = reinterpret_cast<const T *>(source_data);
-        const auto & heap_data = assert_cast<const ColumnVector<T> &>(*heap_column).getData();
-        return directions[0] * CompareHelper<T>::compare(src[source_row], heap_data[boundary_row], nulls_directions[0]) > 0;
+        const auto & boundary_data = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData();
+        return directions[0] * CompareHelper<T>::compare(src[source_row], boundary_data[boundaryRow()], nulls_directions[0]) > 0;
     }
+
+    /// The effective skip boundary: the shared one when it is strictly tighter than the local.
+    const IColumn & boundaryColumn() const { return boundary_is_shared ? *shared_cache_column : *heap_column; }
+    size_t boundaryRow() const { return boundary_is_shared ? 0 : boundary_row; }
+
+    /// Offers the local boundary to `shared_boundary`; replaces it only when strictly better.
+    void publishBoundary();
+
+    /// Recomputes `boundary_is_shared` after either boundary moved.
+    void updateBoundaryChoice();
+
+    /// Ranked comparison of two single-key rows (composite-aware); negative when `lhs` is better.
+    int compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const;
 
     void setK(size_t query_k);
 
@@ -300,18 +348,19 @@ private:
     /// Sets `boundary_row` to the worst key once the set first reaches `k`; runs once per heap.
     void initBoundary();
 
-    bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
+    bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
     {
-        const int cmp = compareColumns(source_column, source_row, *heap_column, heap_row, 0);
+        const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
         return directions[0] * cmp > 0;
     }
 
-    bool sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const
+    bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
-        const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
+        const auto & tuple = assert_cast<const ColumnTuple &>(boundaryColumn());
+        const size_t boundary_idx = boundaryRow();
         for (size_t i = 0; i < source_columns.size(); ++i)
         {
-            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), heap_row, i);
+            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
             if (cmp != 0)
                 return directions[i] * cmp > 0;
         }
@@ -349,10 +398,13 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t query_k,
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
-        UInt64 observation_rows)
+        UInt64 observation_rows,
+        SharedTopKBoundary * shared)
     {
         if (heap_column)
             return;
+
+        shared_boundary = shared;
 
         const size_t reserve_hint
             = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, observation_rows);
