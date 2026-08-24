@@ -256,26 +256,23 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 {
     bool collect_filters = false;
 
-    /// The settings may be set only in a subquery, so look at every scope, not just the top-level one.
+    /// `table_nodes` also holds the nested query and union scopes, and the settings may be set only in one
+    /// of them, so the top-level context alone is not enough to tell whether the estimation will run.
     bool parallel_replicas_estimation_enabled = false;
-    QueryTreeNodes scopes_to_process{query_tree};
-    while (!scopes_to_process.empty() && !parallel_replicas_estimation_enabled)
+    for (const auto & scope : table_nodes)
     {
-        auto node = scopes_to_process.back();
-        scopes_to_process.pop_back();
-
-        for (const auto & child : node->getChildren())
-            if (child)
-                scopes_to_process.push_back(child);
-
-        const auto * scope_query = node->as<QueryNode>();
-        const auto * scope_union = node->as<UnionNode>();
+        const auto * scope_query = scope->as<QueryNode>();
+        const auto * scope_union = scope->as<UnionNode>();
         if (!scope_query && !scope_union)
             continue;
 
         const auto & scope_context = scope_query ? scope_query->getContext() : scope_union->getContext();
-        parallel_replicas_estimation_enabled = scope_context->canUseParallelReplicasOnInitiator()
-            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+        if (scope_context->canUseParallelReplicasOnInitiator()
+            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+        {
+            parallel_replicas_estimation_enabled = true;
+            break;
+        }
     }
 
     auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
