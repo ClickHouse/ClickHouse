@@ -43,7 +43,12 @@ These automatically generated SQL Console users have the `default` role.
 <Note>
 Access to SQL console and access to the underlying ClickHouse data are separate permissions. Cloud roles determine whether a user can open SQL console. Database roles determine which databases, tables, columns, or rows the user can access.
 
-To configure which users can open SQL console, see [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles). To review the permissions included in predefined Cloud roles, see [Console roles and permissions](/products/cloud/reference/security/console-roles).
+To configure which users can open SQL console:
+
+- For organizations that have migrated to custom roles, see [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles).
+- For organizations that have not migrated to custom roles, see [Configure legacy SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments).
+
+To review the permissions included in predefined Cloud roles, see [Console roles and permissions](/products/cloud/reference/security/console-roles).
 </Note>
 
 There are two roles available for SQL console: `sql_console_admin` with identical permissions to `default_role` and `sql_console_read_only` with read-only permissions. 

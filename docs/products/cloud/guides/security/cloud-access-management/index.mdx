@@ -23,37 +23,38 @@ ClickHouse Cloud access is controlled at multiple levels. A user may need access
 Service and console permissions determine whether a user can open features such as SQL console. Database permissions determine what the user can query or modify after opening them.
 </Info>
 
-System and custom Cloud roles can grant organization and service permissions. Custom Cloud roles can also include database permissions for selected services. For SQL console passwordless authentication, ClickHouse Cloud creates a corresponding database role with the `cloud:` prefix. You can instead manage database users and roles directly, or use JWT authentication for applications and workloads. Choose the guide for your task below.
+System and custom Cloud roles can grant organization and service permissions. For supported services, custom Cloud roles can also include database permissions. See [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) for current availability and requirements. For services that do not support this option, you can [manage database permissions directly with SQL](/products/cloud/guides/security/cloud-access-management/common-access-management-queries). Applications and workloads can instead use JWT authentication. Choose the guide for your task below.
 
 ## Accounts and Cloud access {#accounts-and-cloud-access}
 
-| Task | Guide |
+| Page | Description |
 |---|---|
-| Update your password, multi-factor authentication, or personal account | [Manage my account](/products/cloud/guides/security/cloud-access-management/manage-my-account) |
-| Invite users or change their organization and service access | [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) |
-| Create a reusable role with organization, service, or database permissions | [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) |
-| View the permissions included in predefined roles | [Console roles and permissions](/products/cloud/reference/security/console-roles) |
+| [Manage my account](/products/cloud/guides/security/cloud-access-management/manage-my-account) | Update your password, multi-factor authentication, or personal account. |
+| [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) | Invite users or change their organization and service access. |
+| [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) | Create reusable roles for organization and service permissions. |
+| [Console roles and permissions](/products/cloud/reference/security/console-roles) | Review the permissions included in predefined roles. |
 
 ## Database access {#database-access}
 
-| Task | Guide |
+| Page | Description |
 |---|---|
-| Control which databases, tables, columns, or rows a SQL console user can access | [Manage database permissions](/products/cloud/guides/security/cloud-access-management/common-access-management-queries) |
-| Create a database user who signs in with credentials | [Manage database users](/products/cloud/guides/security/cloud-access-management/manage-database-users) |
-| Create a non-human database identity for an application or workload | [Manage database service accounts](/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts) |
-| Configure token-based authentication for an application or workload | [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) |
+| [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) | For supported services, include database permissions in Cloud-managed roles. See the guide for current availability. |
+| [Manage database permissions](/products/cloud/guides/security/cloud-access-management/common-access-management-queries) | Manage database roles directly with SQL and control which databases, tables, columns, or rows a SQL console user can access. |
+| [Manage database users](/products/cloud/guides/security/cloud-access-management/manage-database-users) | Create a database user who signs in with credentials. |
+| [Manage database service accounts](/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts) | Create a non-human database identity for an application or workload. |
+| [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) | Configure token-based authentication for an application or workload. |
 
 ## Identity providers {#identity-providers}
 
-| Task | Guide |
+| Page | Description |
 |---|---|
-| Configure single sign-on | [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) |
-| Provision users and groups from Okta | [SCIM provisioning with Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) |
-| Provision users and groups from Microsoft Entra ID | [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra) |
-| Remove an existing SAML configuration | [SAML SSO removal](/products/cloud/guides/security/saml-sso-removal) |
+| [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) | Configure single sign-on. |
+| [SCIM provisioning with Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) | Provision users and groups from Okta. |
+| [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra) | Provision users and groups from Microsoft Entra ID. |
+| [SAML SSO removal](/products/cloud/guides/security/saml-sso-removal) | Remove an existing SAML configuration. |
 
 ## Legacy access settings {#legacy-access-settings}
 
-| Task | Guide |
+| Page | Description |
 |---|---|
-| Configure SQL console access for an organization that has not migrated to custom roles | [Legacy SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) |
+| [Legacy SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) | Configure SQL console access for an organization that has not migrated to custom roles. |
