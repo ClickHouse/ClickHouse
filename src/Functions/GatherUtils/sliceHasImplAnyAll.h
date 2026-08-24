@@ -8,6 +8,8 @@
 
 #if defined(__AVX2__)
 #include <immintrin.h>
+#elif defined(__aarch64__)
+#include <arm_neon.h>
 #endif
 
 namespace DB::GatherUtils
@@ -555,6 +557,125 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
 }
 
+#elif defined(__aarch64__)
+
+/// AArch64/NEON counterpart of the x86 specialisations above.
+///
+/// The x86 code compares a whole vector of `second` against a whole vector of
+/// `first` and rotates one of them through every lane offset, which amortises
+/// the horizontal "have all lanes been found" test over LANES*LANES element
+/// compares. That shape is deliberately NOT copied here: it can only leave the
+/// inner scan once EVERY lane of the current `second` block has been found
+/// somewhere in `first`, i.e. at the maximum over LANES search depths instead of
+/// at each individual one, and for the array shapes this function actually sees
+/// the generic loop's per-element early exit (sliceHasImplAnyAllGenericImpl
+/// below, inner break included) is worth more than the amortisation. So the NEON
+/// path keeps the scalar loop's control flow - one needle at a time, leaving the
+/// moment it is found - and vectorises only the haystack scan, which is where
+/// all the work is.
+///
+/// Two cases deliberately stay on the scalar path:
+///  - null maps: a null slot in `first` holds an arbitrary value and must not
+///    match, which would need the null map widened to lane width;
+///  - short haystacks: one horizontal reduction costs several element compares,
+///    so the vector path has to be paid for. ClickHouse#108183 is the
+///    cautionary precedent - a NEON path entered unconditionally regressed
+///    short inputs.
+/// Both delegate to hasAllIntegralLoopRemainder, the same scalar loop the x86
+/// specialisations use for their own remainders, so their behaviour is
+/// bit-for-bit what it was before this block existed.
+
+template <typename IntType>
+inline ALWAYS_INLINE uint8x16_t neonEqualMask(const IntType * haystack, IntType needle)
+{
+    /// Equality is bit equality, so the signed intrinsic serves the unsigned
+    /// type of the same width just as well.
+    if constexpr (sizeof(IntType) == 1)
+        return vceqq_s8(
+            vld1q_s8(reinterpret_cast<const int8_t *>(haystack)), vdupq_n_s8(static_cast<int8_t>(needle)));
+    else if constexpr (sizeof(IntType) == 2)
+        return vreinterpretq_u8_u16(vceqq_s16(
+            vld1q_s16(reinterpret_cast<const int16_t *>(haystack)), vdupq_n_s16(static_cast<int16_t>(needle))));
+    else if constexpr (sizeof(IntType) == 4)
+        return vreinterpretq_u8_u32(vceqq_s32(
+            vld1q_s32(reinterpret_cast<const int32_t *>(haystack)), vdupq_n_s32(static_cast<int32_t>(needle))));
+    else
+        return vreinterpretq_u8_u64(vceqq_s64(
+            vld1q_s64(reinterpret_cast<const int64_t *>(haystack)), vdupq_n_s64(static_cast<int64_t>(needle))));
+}
+
+// NEON Int8/Int16/Int32/Int64 (and unsigned counterparts) specialization
+template <typename IntType>
+requires (std::is_integral_v<IntType> && sizeof(IntType) <= 8)
+NO_INLINE bool sliceHasImplAnyAllImplNeon(
+    const NumericArraySlice<IntType> & first,
+    const NumericArraySlice<IntType> & second,
+    const UInt8 * first_null_map,
+    const UInt8 * second_null_map)
+{
+    if (second.size == 0)
+        return true;
+
+    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
+        return false;
+
+    static constexpr size_t lanes = 16 / sizeof(IntType);
+    static constexpr size_t min_vector_haystack = lanes * 4 < 32 ? 32 : lanes * 4;
+
+    if (first_null_map != nullptr || second_null_map != nullptr || first.size < min_vector_haystack)
+        return hasAllIntegralLoopRemainder(0, first, second, first_null_map, second_null_map);
+
+    for (size_t j = 0; j < second.size; ++j)
+    {
+        const IntType needle = second.data[j];
+        bool found = false;
+        size_t i = 0;
+
+        /// Two vectors per horizontal reduction: in a search loop it is the
+        /// reduction, not the compare, that sits on the critical path.
+        for (; i + 2 * lanes <= first.size; i += 2 * lanes)
+        {
+            const uint8x16_t mask = vorrq_u8(
+                neonEqualMask(first.data + i, needle),
+                neonEqualMask(first.data + i + lanes, needle));
+            if (vmaxvq_u8(mask) != 0)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            for (; i + lanes <= first.size; i += lanes)
+            {
+                if (vmaxvq_u8(neonEqualMask(first.data + i, needle)) != 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found)
+        {
+            for (; i < first.size; ++i)
+            {
+                if (first.data[i] == needle)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
+
 #endif
 
 template <
@@ -634,6 +755,18 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
         else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
         {
             return sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
+        }
+    }
+#elif defined(__aarch64__)
+    if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
+    {
+        if constexpr (
+            std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>
+            || std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>
+            || std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>>
+            || std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
+        {
+            return sliceHasImplAnyAllImplNeon(first, second, first_null_map, second_null_map);
         }
     }
 #endif
