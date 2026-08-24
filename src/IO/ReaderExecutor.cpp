@@ -404,7 +404,6 @@ void ReaderExecutor::ensureResolved(size_t pos)
             stats.add(Stats::CacheGetRequests);
             PlanTier pt;
             pt.tier = cache->tier();
-            pt.populates = cache->populatesOnMiss();
             pt.cells = cache->resolve(piece.object, piece.object_offset, ByteRange{lo, piece.size});
             resolved.push_back(std::move(pt));
         }

@@ -55,11 +55,10 @@ CacheResolution miss(ByteRange range, bool with_writer = true, bool whole_segmen
     return c;
 }
 
-PlanTier tier(CacheTier t, bool populates, std::vector<CacheResolution> cells)
+PlanTier tier(CacheTier t, std::vector<CacheResolution> cells)
 {
     PlanTier pt;
     pt.tier = t;
-    pt.populates = populates;
     for (auto & c : cells)
         pt.cells.push_back(std::move(c));
     return pt;
@@ -85,7 +84,7 @@ TEST(ReadPlan, HitsServeFromReaderPerCell)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(3, tiers(tier(CacheTier::PageCache, true, std::move(c))));
+    plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     auto r0 = plan.runAt(0);
     EXPECT_NE(r0.reader, nullptr);
@@ -106,7 +105,7 @@ TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(4, tiers(tier(CacheTier::PageCache, true, std::move(c))));
+    plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     /// [0,2) is an uncommitted miss run; it coalesces and stops at the hit at 2.
     auto r = plan.runAt(0);
@@ -129,7 +128,7 @@ TEST(ReadPlan, CommittedWriterBecomesServable)
     auto * writer = static_cast<MockWriter *>(missed.writer.get());
     std::vector<CacheResolution> c;
     c.push_back(std::move(missed));
-    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));
+    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     EXPECT_TRUE(plan.runAt(0).isFetch());   /// nothing committed yet
 
@@ -155,8 +154,8 @@ TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
     ReadPlan plan;
     plan.reset(0);
     plan.extend(4, tiers(
-        tier(CacheTier::PageCache, true, std::move(page)),
-        tier(CacheTier::FilesystemCache, true, std::move(fs))));
+        tier(CacheTier::PageCache, std::move(page)),
+        tier(CacheTier::FilesystemCache, std::move(fs))));
 
     /// [0,2) miss on both tiers -> fetch, capped at the fs hit at 2.
     auto r = plan.runAt(0);
@@ -182,7 +181,7 @@ TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(3, tiers(tier(CacheTier::PageCache, true, std::move(c))));
+    plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     plan.retireBefore(2);
     EXPECT_EQ(plan.spanStart(), 2u);
@@ -197,12 +196,12 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
     std::vector<CacheResolution> first;
     first.push_back(hit({0, 1}));
     first.push_back(miss({1, 2}));   /// [1,3) overhangs the span end 2
-    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(first))));
+    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(first))));
     /// Next span [2,4): resolve re-returns the [1,3) segment; extend must drop the overlap.
     std::vector<CacheResolution> second;
     second.push_back(miss({1, 2}));   /// duplicate of the held overhang -> dropped
     second.push_back(hit({3, 1}));
-    plan.extend(4, tiers(tier(CacheTier::PageCache, true, std::move(second))));
+    plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(second))));
 
     EXPECT_EQ(plan.resolvedEnd(), 4u);
     /// [1,3) is one coalesced miss (not doubled); the hit at 3 caps it.
@@ -224,7 +223,7 @@ TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, true, std::move(c))));
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(c))));
 
     /// Virgin: the fetch extends left to the segment start (0), not `offset` (2).
     auto r = plan.runAt(2);
@@ -254,7 +253,7 @@ TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));   /// span_end = 2, cell to 4
+    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));   /// span_end = 2, cell to 4
 
     auto r = plan.runAt(0, /*max_fetch_ahead=*/1);
     EXPECT_TRUE(r.isFetch());
@@ -270,7 +269,7 @@ TEST(ReadPlan, ResetDiscardsAndReanchors)
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));
+    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     plan.reset(10);
     EXPECT_TRUE(plan.empty());
@@ -286,7 +285,7 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnRetire)
     c.push_back(miss({0, 4}));
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, true, std::move(c))));
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(c))));
 
     auto buf = std::make_shared<OwnedChainedBuffer>(2);
     ChainedBuffers held;

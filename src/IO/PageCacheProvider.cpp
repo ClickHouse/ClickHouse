@@ -189,7 +189,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
         else
         {
             r.kind = CacheResolution::Kind::Miss;
-            if (populatesOnMiss())
+            if (!bypass_if_missing)
                 r.writer = std::make_unique<PageCacheWriter>(
                     cache, file, inject_eviction, bypass_if_missing, block);
         }

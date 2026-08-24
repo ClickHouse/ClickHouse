@@ -10,12 +10,11 @@
 namespace DB
 {
 
-/// One tier's cells over the span, in offset order (a hit owns a reader, a populating miss a writer).
-/// `populates` mirrors `ICacheProvider::populatesOnMiss` - a bypass tier gives hits, never writers.
+/// One tier's cells over the span, in offset order: a hit owns a reader, a miss a writer - except a
+/// writer-less miss (bypass / detached / read-only tier), which is served from source, never populated.
 struct PlanTier
 {
     CacheTier tier{};
-    bool populates = false;
     VectorWithMemoryTracking<ICacheProvider::CacheResolution> cells;
 };
 

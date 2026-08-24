@@ -151,11 +151,6 @@ public:
 
     virtual CacheTier tier() const = 0;
 
-    /// Whether a miss on this tier populates the cache (write-through) or is bypassed (read-only;
-    /// writes do nothing). This drives promotion: a range served from a slower tier is written up only
-    /// into faster tiers that populate.
-    virtual bool populatesOnMiss() const { return true; }
-
     /// Whether the tier writes each segment WHOLE (first-writer-wins, never completed later) or
     /// appends it incrementally. The filesystem cache appends. A whole-segment tier is a fill target
     /// only when one connection covers the ENTIRE segment; an incremental tier stores whatever prefix

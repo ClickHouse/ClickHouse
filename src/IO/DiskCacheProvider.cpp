@@ -543,7 +543,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// the ask. The bypass side never fills, so a miss carries no fill geometry - it only tells
     /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
     /// read (a merge) never perturbs the cache.
-    if (!populatesOnMiss())
+    if (cache_settings.read_if_exists_otherwise_bypass)
     {
         auto got_holder = cache->get(
             resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,

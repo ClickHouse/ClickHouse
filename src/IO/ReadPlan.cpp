@@ -99,8 +99,6 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     size_t fetch_start = offset;
     for (const auto & tier : tiers)
     {
-        if (!tier.populates)
-            continue;
         const CacheResolution * cell = cellCovering(tier, offset);
         if (cell && cell->kind == CacheResolution::Kind::Miss && cell->writer)
             fetch_start = std::min(fetch_start, cell->writer->committed());
@@ -114,8 +112,6 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         grew = false;
         for (const auto & tier : tiers)
         {
-            if (!tier.populates)
-                continue;
             for (const auto & cell : tier.cells)
                 if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.writer->fillsWholeSegment()
                     && cell.range.offset < fetch_end && cell.range.end() > fetch_end)
@@ -135,8 +131,6 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
     VectorWithMemoryTracking<CacheWriter *> writers;
     for (const auto & tier : tiers)
     {
-        if (!tier.populates)
-            continue;
         for (const auto & cell : tier.cells)
             if (cell.kind == CacheResolution::Kind::Miss && cell.writer && overlaps(cell.range, range))
                 writers.push_back(cell.writer.get());

@@ -108,7 +108,6 @@ public:
 
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
-    bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
     /// Resolve `range` into hits (readers) and misses (writers when the tier populates). See the
     /// definition for the get / getOrSet split.
