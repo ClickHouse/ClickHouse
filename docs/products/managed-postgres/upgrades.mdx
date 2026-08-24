@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
@@ -28,13 +29,16 @@ For instances with [standbys](/products/managed-postgres/high-availability) enab
 
 ## Scheduled upgrades {#scheduled-upgrades}
 
-<EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" support={true}/>
+<ScalePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true"/>
 
 By default, maintenance is applied to your instance whenever a new release is ready.
-With **scheduled upgrades** you choose a two-hour UTC window, and optionally the days of
-the week, during which that maintenance may be applied, so the brief failover lands at
-the time that's least disruptive to your workload. Expected downtime is less than
-1 minute within the window.
+With **scheduled upgrades** you choose a two-hour UTC window during which that
+maintenance may be applied, so the brief failover lands at the time that's least
+disruptive to your workload. Expected downtime is less than 1 minute within the window.
+
+On the Enterprise plan you can also restrict upgrades to specific
+[days of the week](#days-of-the-week). On the Scale plan you choose the time period only,
+and upgrades may be applied on any day within it.
 
 ### Configure a schedule {#configure-a-schedule}
 
@@ -52,8 +56,8 @@ Select one of the twelve two-hour UTC windows from the **Time period (UTC)** lis
 period is required.
 </Step>
 <Step title="Optionally restrict the days" id="pick-days">
-Select one or more days under **Day(s) of the week**. Leave every day unselected to allow
-upgrades on any day within the time period.
+On the Enterprise plan, select one or more days under **Day(s) of the week**. Leave every
+day unselected to allow upgrades on any day within the time period.
 </Step>
 <Step title="Save" id="save">
 Select **Save**. The schedule takes effect immediately and is shown in the
@@ -84,6 +88,8 @@ Custom start times, custom window lengths, and more than one window per instance
 supported.
 
 ### Days of the week {#days-of-the-week}
+
+<EnterprisePlanFeatureBadge feature="Restricting upgrades to specific days of the week"/>
 
 Restricting the days is optional:
 
