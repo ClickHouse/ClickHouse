@@ -129,7 +129,6 @@ public:
 
     void addRightChunk(Chunk chunk)
     {
-        chassert(chunk.getChunkInfos().empty());
         const size_t rows = chunk.getNumRows();
         if (rows == 0)
             return;
@@ -148,7 +147,6 @@ public:
     void addLeftChunk(Chunk chunk)
     {
         chassert(left_columns.empty());
-        chassert(chunk.getChunkInfos().empty());
 
         if (chunk.getNumRows() == 0)
             return;
@@ -311,12 +309,8 @@ public:
 
         if (left_chunk.has_value())
         {
-            if (!left_chunk->getChunkInfos().empty())
+            if (left_chunk->getNumRows() == 0 && !left_chunk->getChunkInfos().empty())
             {
-                if (left_chunk->getNumRows() != 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams expects ChunkInfos only on empty chunks");
-
-                /// We must need to flush all data first to preserve metadata order in data output stream
                 enqueue(data.flushMatched());
                 forwardLeftInfos();
             }
