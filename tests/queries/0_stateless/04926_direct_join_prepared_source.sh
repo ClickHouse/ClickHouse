@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A right side that reads through ReadFromPreparedSource cannot be cloned, so the direct join
 # must decline it and report the same refusal as any other unsupported storage. The assertion is
 # on the message: both the refusal and the clone failure are NOT_IMPLEMENTED, so a bare
-# serverError annotation cannot tell them apart.
+# serverError annotation cannot tell them apart. The refusal is matched on the invariant part of
+# the wording rather than the whole sentence, which has already been reworded once.
 expect_refusal() {
     local label="$1"
     local query="$2"
@@ -16,7 +17,7 @@ expect_refusal() {
 
     if [[ "$out" == *"Cannot clone"* ]]; then
         echo "$label: clone failure"
-    elif [[ "$out" == *"Can't execute any of specified algorithms"* ]]; then
+    elif [[ "$out" == *"(NOT_IMPLEMENTED)"* && "$out" == *"storage type"* ]]; then
         echo "$label: graceful refusal"
     else
         echo "$label: unexpected: ${out//$'\n'/ }"
