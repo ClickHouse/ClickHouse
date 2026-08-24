@@ -69,7 +69,6 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     {
         array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
         array_join_actions->element_filter_column_name = element_filter_column_name;
-        array_join_actions->remove_element_filter_column = remove_element_filter_column;
     }
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
@@ -120,7 +119,12 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 
     if (element_filter)
+    {
         map.add("Element Filter Column", element_filter_column_name);
+        map.add("Removes Element Filter", remove_element_filter_column);
+        auto expression = std::make_shared<ExpressionActions>(element_filter->clone());
+        map.add("Element Filter Expression", expression->toTree());
+    }
 }
 
 void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
@@ -167,10 +171,7 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr ArrayJoinStep::clone() const
 {
-    auto cloned = std::make_unique<ArrayJoinStep>(input_headers.front(), array_join, is_unaligned, max_block_size, enable_lazy_columns_replication);
-    if (element_filter)
-        cloned->setElementFilter(element_filter->clone(), element_filter_column_name, remove_element_filter_column);
-    return cloned;
+    return std::make_unique<ArrayJoinStep>(*this);
 }
 
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)

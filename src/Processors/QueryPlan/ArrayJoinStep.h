@@ -15,6 +15,18 @@ class ArrayJoinStep : public ITransformingStep
 {
 public:
     ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
+
+    ArrayJoinStep(const ArrayJoinStep & other)
+        : ITransformingStep(other)
+        , array_join(other.array_join)
+        , is_unaligned(other.is_unaligned)
+        , max_block_size(other.max_block_size)
+        , enable_lazy_columns_replication(other.enable_lazy_columns_replication)
+        , element_filter(other.element_filter ? std::optional<ActionsDAG>(other.element_filter->clone()) : std::nullopt)
+        , element_filter_column_name(other.element_filter_column_name)
+        , remove_element_filter_column(other.remove_element_filter_column)
+    {}
+
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

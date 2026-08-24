@@ -8,14 +8,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static bool dagHasArrayJoin(const ActionsDAG & dag)
-{
-    for (const auto & node : dag.getNodes())
-        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-            return true;
-    return false;
-}
-
 /// Move a filter's element-only conjuncts into the ArrayJoinStep below it, so they run in element
 /// space before expansion. Runs after filterPushDown, which already pushed the non-element conjuncts down
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
@@ -32,11 +24,10 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     auto & expression = filter->getExpression();
     /// v1: never hoist a nested arrayJoin into element space
-    if (dagHasArrayJoin(expression))
+    if (expression.hasArrayJoin())
         return 0;
 
     const auto & joined_columns = array_join->getColumns();
-    Names available_inputs(joined_columns.begin(), joined_columns.end());
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
     /// The element filter runs on just the joined columns, so its inputs must be exactly those
@@ -55,7 +46,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
-        available_inputs,
+        joined_columns,
         all_inputs,
         /*allow_non_deterministic_functions=*/false);
     if (!split)

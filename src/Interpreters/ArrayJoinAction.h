@@ -45,7 +45,6 @@ public:
     /// Optional element-space filter: drops elements before expansion so they're never replicated
     ExpressionActionsPtr element_filter;
     String element_filter_column_name;
-    bool remove_element_filter_column = false;
 
     ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);

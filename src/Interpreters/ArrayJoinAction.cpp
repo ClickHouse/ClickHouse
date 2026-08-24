@@ -311,36 +311,6 @@ Block ArrayJoinResultIterator::next()
     return res;
 }
 
-namespace
-{
-
-/// Window-local source row of each surviving element - the passenger replication index
-template <typename T>
-ColumnPtr buildSurvivorIndexesImpl(const IColumn::Offsets & offsets, const IColumn::Filter & mask, size_t survivors, size_t window_rows)
-{
-    auto result = ColumnVector<T>::create();
-    auto & data = result->getData();
-    data.reserve_exact(survivors);
-    for (size_t row = 0; row != window_rows; ++row)
-        for (size_t pos = offsets[row - 1]; pos != offsets[row]; ++pos)
-            if (mask[pos])
-                data.push_back(static_cast<T>(row));
-    return result;
-}
-
-ColumnPtr buildSurvivorIndexes(const IColumn::Offsets & offsets, const IColumn::Filter & mask, size_t survivors, size_t window_rows)
-{
-    if (window_rows <= std::numeric_limits<UInt8>::max())
-        return buildSurvivorIndexesImpl<UInt8>(offsets, mask, survivors, window_rows);
-    if (window_rows <= std::numeric_limits<UInt16>::max())
-        return buildSurvivorIndexesImpl<UInt16>(offsets, mask, survivors, window_rows);
-    if (window_rows <= std::numeric_limits<UInt32>::max())
-        return buildSurvivorIndexesImpl<UInt32>(offsets, mask, survivors, window_rows);
-    return buildSurvivorIndexesImpl<UInt64>(offsets, mask, survivors, window_rows);
-}
-
-}
-
 Block ArrayJoinResultIterator::nextWithElementFilter()
 {
     const size_t max_block_size = array_join->max_block_size;
@@ -432,15 +402,24 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             continue;
         }
 
-        /// Per-row survivor counts, cumulative - offsets for the non-lazy replicate path
-        IColumn::Offsets new_offsets(window_rows);
-        size_t accumulated = 0;
-        for (size_t row = 0; row != window_rows; ++row)
+        /// Fast path: the filter dropped nothing, so this window expands exactly like the unfiltered next()
+        const bool all_survive = survivors == num_elements;
+
+        /// Per-row survivor counts, cumulative - offsets for the non-lazy replicate path. When everything
+        /// survives these equal win_offsets, so reuse those directly and skip the recount.
+        IColumn::Offsets new_offsets;
+        if (!all_survive)
         {
-            for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
-                accumulated += (mask[pos] != 0);
-            new_offsets[row] = accumulated;
+            new_offsets.resize(window_rows);
+            size_t accumulated = 0;
+            for (size_t row = 0; row != window_rows; ++row)
+            {
+                for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
+                    accumulated += (mask[pos] != 0);
+                new_offsets[row] = accumulated;
+            }
         }
+        const IColumn::Offsets & result_offsets = all_survive ? win_offsets : new_offsets;
 
         Block res;
         ColumnPtr indexes;
@@ -451,7 +430,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             if (columns.contains(current.name))
             {
                 const auto & element = element_block.getByName(current.name);
-                current.column = element.column->filter(mask, survivors);
+                current.column = all_survive ? element.column : element.column->filter(mask, survivors);
                 current.type = element.type;
             }
             else
@@ -460,11 +439,15 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
                 if (enable_lazy_columns_replication && isLazyReplicationUseful(cut_col))
                 {
                     if (!indexes)
-                        indexes = buildSurvivorIndexes(win_offsets, mask, survivors, window_rows);
+                    {
+                        indexes = convertOffsetsToIndexes(win_offsets);
+                        if (!all_survive)
+                            indexes = indexes->filter(mask, survivors);
+                    }
                     current.column = ColumnReplicated::create(cut_col, indexes);
                 }
                 else
-                    current.column = cut_col->replicate(new_offsets);
+                    current.column = cut_col->replicate(result_offsets);
             }
             res.insert(std::move(current));
         }
