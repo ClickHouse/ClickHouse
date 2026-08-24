@@ -6753,15 +6753,21 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     {
         /// Acquire the DDLGuard and locks before writing to ZooKeeper so the per-replica metadata nodes
-        /// and setTableStructure apply together. Non-blocking so a concurrent DROP doesn't hang us.
+        /// and setTableStructure apply together. On contention, shutdown or timeout return without
+        /// touching ZooKeeper: the entry stays in the queue and is retried without recording an exception.
         auto background_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
             shared_from_this(),
             (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations],
             [this] { return !shutdown_called && !partial_shutdown_called; });
+        if (!background_ddl_guard)
+        {
+            LOG_INFO(log, "Cannot acquire the DDL guard to apply metadata alter version {}, will retry", entry.alter_version);
+            return false;
+        }
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-        /// Refresh table_id: a rename could have slipped in while we were polling for the guard.
+        /// Refresh table_id: a rename could have slipped in while we were waiting for the guard.
         auto table_id = getStorageID();
         auto alter_context = getContext();
 

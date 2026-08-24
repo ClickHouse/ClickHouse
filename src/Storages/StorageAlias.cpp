@@ -253,11 +253,17 @@ void StorageAlias::alter(
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// ALTER through alias on a table in a Replicated database is not supported when the alias
+    /// and target are in different databases, because the DDL worker path is bypassed and the
+    /// metadata change would not be replicated. Check under the target's guard, so a concurrent
+    /// RENAME cannot move the target into a Replicated database after the check.
     auto target_storage_id = target_storage->getStorageID();
     if (getStorageID().database_name != target_storage_id.database_name)
     {
@@ -272,12 +278,6 @@ void StorageAlias::alter(
         }
     }
 
-    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
-    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
-    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
-    ddl_guard.reset();
-    auto target_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
-        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }

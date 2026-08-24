@@ -88,7 +88,6 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ABORTED;
 }
 
 namespace Setting
@@ -1195,7 +1194,8 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     return guard;
 }
 
-DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(
+    const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout)
 {
     if (database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
@@ -1205,11 +1205,11 @@ DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(const String & database, const Strin
         std::unique_lock lock(ddl_guards_mutex);
         auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
         DatabaseGuard & db_guard = db_guard_iter->second;
-        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database, /*try_lock=*/true);
+        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database, table_lock_timeout);
     }
 
     if (!guard->ownsTableLock())
-        return nullptr;
+        return guard;
 
     if (expected_database && expected_database != tryGetDatabase(database).get())
         throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
@@ -1222,30 +1222,45 @@ DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
     const Poco::Timespan & timeout,
     std::function<bool()> is_alive)
 {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    /// Wait in short chunks: each chunk blocks on the guard mutex and wakes up as soon as it is
+    /// released, the chunk boundary only re-checks `is_alive` and the rename check below.
+    static constexpr auto wait_chunk = std::chrono::milliseconds(50);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
     while (is_alive())
     {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (remaining <= std::chrono::milliseconds::zero())
+            return nullptr;
+
         StorageID before = storage->getStorageID();
-        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr);
-        if (guard)
+        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr, std::min(wait_chunk, remaining));
+        if (guard->ownsTableLock())
         {
-            /// Re-check StorageID: a RENAME could have moved the storage under us.
+            /// Re-check StorageID: a RENAME could have moved the storage while we were waiting.
             StorageID after = storage->getStorageID();
             if (after.database_name == before.database_name
                 && after.table_name == before.table_name
                 && after.uuid == before.uuid)
                 return guard;
-            guard.reset();
+            continue;
         }
-        if (std::chrono::steady_clock::now() >= deadline)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                "Failed to acquire a DDL guard for {} within {} ms",
-                storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
-        sleepForMilliseconds(50);
+
+        /// An exclusive database DDL is running, waiting it out on the table mutex is pointless.
+        if (guard->databaseLockBusy())
+            return nullptr;
     }
-    throw Exception(ErrorCodes::ABORTED,
-        "Cannot acquire a DDL guard for {}: operation cancelled",
-        storage->getStorageID().getNameForLogs());
+    return nullptr;
+}
+
+DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout)
+{
+    auto guard = tryGetDDLGuardForStorage(storage, timeout);
+    if (!guard)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot acquire the DDL guard for {} within {} ms: a concurrent DDL query is running",
+            storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
+    return guard;
 }
 
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
@@ -2347,16 +2362,17 @@ TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (Tempo
 }
 
 
-DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name, bool try_lock)
+DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name, std::optional<std::chrono::milliseconds> try_timeout)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
-    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    it = map.emplace(elem, Entry{std::make_unique<std::timed_mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
-    if (try_lock)
+    if (try_timeout)
     {
-        table_lock = std::unique_lock(*it->second.mutex, std::try_to_lock);
-        if (!table_lock.owns_lock())
+        table_lock = std::unique_lock(*it->second.mutex, std::defer_lock);
+        bool acquired = (*try_timeout == std::chrono::milliseconds::zero()) ? table_lock.try_lock() : table_lock.try_lock_for(*try_timeout);
+        if (!acquired)
             return;
     }
     else
@@ -2364,7 +2380,18 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
         table_lock = std::unique_lock(*it->second.mutex);
     }
     is_database_guard = elem.empty();
-    if (!is_database_guard)
+    if (!is_database_guard && try_timeout)
+    {
+        /// Single attempt: callers of the try variant handle contention themselves, never sleep or throw here.
+        if (!db_mutex.try_lock_shared())
+        {
+            database_lock_busy = true;
+            table_lock.unlock();
+            return;
+        }
+        db_mutex_held = true;
+    }
+    else if (!is_database_guard)
     {
         static constexpr int MAX_TRY = 10;
         static constexpr UInt64 INTERVAL_MS = 100;
