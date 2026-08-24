@@ -1,23 +1,29 @@
 -- Asserts that the top-K threshold merge engages (and prunes) exactly for the query shapes it
 -- serves, via its profile events. The plan shape and the merge path are pinned: no parallel
 -- replicas (the dataflow-statistics updater forces the ordinary merge on purpose), no plan
--- serialization (the parameter deliberately does not survive it), forced two-level states and
--- several threads (the threshold merge serves the two-level final merge).
+-- serialization (the parameter deliberately does not survive it), forced two-level states over
+-- a single deterministic scan stream (the threshold merge serves the two-level final merge,
+-- which still runs on several threads, one bucket per worker).
 
 SET max_threads = 4;
--- One scan stream, so the per-thread table layout does not depend on how the storage backend
--- splits the read into tasks (the s3/azure read pools split by part, and a stream that sees
--- fewer distinct keys than the freeze threshold survives the adaptive drain as a second table:
--- its head then keeps the summing threshold open on the tied tail values, the pop budget trips,
--- and the verdict sends every bucket to the ordinary merge - no pruning). The merge stage still
--- runs on `max_threads`, one bucket per worker.
+-- One scan stream, so the aggregation builds exactly one table and the merge layout does not
+-- depend on how the storage backend splits the read into tasks (the s3/azure read pools split
+-- by part, and a stream with few distinct keys would survive as a second table: its head then
+-- keeps the summing threshold open on the tied tail values, the pop budget trips, and the
+-- verdict sends every bucket to the ordinary merge - no pruning). The merge stage still runs
+-- on `max_threads`, one bucket per worker.
 SET max_streams_to_max_threads_ratio = 0.25;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
--- The summing bound of count/uniqExact serves a dominant per-thread table; the adaptive
--- aggregator with an early freeze drains the frozen tables into one, producing exactly that.
-SET enable_adaptive_aggregator = 1;
-SET adaptive_aggregator_freeze_threshold = 1024;
+-- Single-stream aggregation honors `group_by_two_level_threshold` only when the external
+-- aggregation is possible (its two-level table otherwise serves nothing but the spill), so pin
+-- a spill threshold that is enabled but can never trigger on this dataset - the CI settings
+-- randomization sets both external-group-by settings to 0 otherwise.
+SET max_bytes_before_external_group_by = 10737418240;
+SET max_bytes_ratio_before_external_group_by = 0;
+-- The adaptive aggregator stands down for a single-stream scan anyway; pin it off so the shape
+-- does not change if that rejection is ever lifted.
+SET enable_adaptive_aggregator = 0;
 SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
