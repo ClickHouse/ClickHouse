@@ -1186,6 +1186,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /** The `f | g` operator parses into `compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further (a lambda bound to the
+      * name `compose` in an enclosing scope still takes priority, as for any function name).
+      */
+    if (function_name == "compose" && !lambda_expression_untyped)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
@@ -2894,17 +2907,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            /// The `f | g` operator parses into `compose(f, g)`, which is not a function but a
-            /// rewrite to a lambda (see FunctionCompositionRewrite.h), applied where a function
-            /// argument can be a lambda. Everywhere else explain the operator instead of
-            /// reporting an unknown function.
-            if (function_name == "compose")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The function composition `f | g` can be used only where a function is expected: "
-                    "as an argument of a higher-order function such as arrayMap. "
-                    "For bitwise OR, use the function bitOr. In scope {}",
-                    scope.scope_node->formatASTForErrorMessage());
-
             VectorWithMemoryTracking<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)

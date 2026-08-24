@@ -204,6 +204,15 @@ void substituteIdentifier(QueryTreeNodePtr & node, const String & name, const Qu
             substituteIdentifier(lambda_node.getExpression(), name, replacement);
             return;
         }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            /// Placeholders inside a nested composition belong to its own operands: a nested
+            /// composition rebinds them like a shadowing lambda, so a placeholder-named
+            /// argument is never substituted into one. Any other name is an ordinary capture.
+            if (node->as<FunctionNode &>().getFunctionName() == "compose" && parsePlaceholderName(name))
+                return;
+            break;
+        }
         case QueryTreeNodeType::QUERY:
         case QueryTreeNodeType::UNION:
         {
