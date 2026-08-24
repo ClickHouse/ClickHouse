@@ -1263,6 +1263,7 @@ a.version-option:hover,
 
 .prose [data-callout-type] [data-component-part='callout-content'] {
   min-width: 0;
+  margin: 0 !important;
   padding-left: 0 !important;
   color: var(--callout-color) !important;
   font-size: 0.875rem !important;
@@ -1277,6 +1278,10 @@ a.version-option:hover,
 
 .prose [data-callout-type] [data-component-part='callout-content'] > p:first-child {
   margin-top: 0;
+}
+
+.prose [data-callout-type] [data-component-part='callout-content'] > p:last-child {
+  margin-bottom: 0;
 }
 
 .prose [data-callout-type] [data-component-part='callout-content'] a {
