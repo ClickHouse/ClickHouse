@@ -161,6 +161,23 @@ namespace
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
+/// Collapses runs of `/`, leaving `.` and `..` as written: redundant separators are the only
+/// part of a path's spelling that no filesystem lookup depends on. A `..` resolves against the
+/// target of a preceding symlink, not against that symlink's parent, so dropping one lexically
+/// can name a different file.
+std::string collapseRedundantSeparators(const std::string & path)
+{
+    std::string result;
+    result.reserve(path.size());
+    for (char c : path)
+    {
+        if (c == '/' && !result.empty() && result.back() == '/')
+            continue;
+        result.push_back(c);
+    }
+    return result;
+}
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -187,12 +204,15 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    /// The returned path is collapsed so that one file is named by one path whichever branch
+    /// matched it: the prefixes below can end up with a doubled separator, and
+    /// `fs::directory_iterator` preserves the spelling it is handed.
     auto add_matched_path = [&](const std::string & path, size_t bytes)
     {
         if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
         {
             total_bytes_to_read += bytes;
-            result.push_back(path);
+            result.push_back(collapseRedundantSeparators(path));
         }
     };
 
