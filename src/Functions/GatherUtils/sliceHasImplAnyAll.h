@@ -8,7 +8,7 @@
 
 #if defined(__AVX2__)
 #include <immintrin.h>
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
 
@@ -557,7 +557,7 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
 }
 
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 
 /// AArch64/NEON counterpart of the x86 specialisations above.
 ///
@@ -577,10 +577,9 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
 /// Two cases deliberately stay on the scalar path:
 ///  - null maps: a null slot in `first` holds an arbitrary value and must not
 ///    match, which would need the null map widened to lane width;
-///  - short haystacks: one horizontal reduction costs several element compares,
-///    so the vector path has to be paid for. ClickHouse#108183 is the
-///    cautionary precedent - a NEON path entered unconditionally regressed
-///    short inputs.
+///  - short haystacks: one horizontal reduction costs several element
+///    compares, so a vector scan only pays for itself once the haystack is
+///    long enough to amortise it.
 /// Both delegate to hasAllIntegralLoopRemainder, the same scalar loop the x86
 /// specialisations use for their own remainders, so their behaviour is
 /// bit-for-bit what it was before this block existed.
@@ -757,7 +756,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
             return sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
         }
     }
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) && defined(__ARM_NEON)
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
         if constexpr (
