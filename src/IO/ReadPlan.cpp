@@ -10,11 +10,6 @@ using CacheResolution = ICacheProvider::CacheResolution;
 namespace
 {
 
-bool overlaps(ByteRange a, ByteRange b)
-{
-    return a.offset < b.end() && b.offset < a.end();
-}
-
 /// The cell of `tier` whose range contains `off`, or null when `off` is past the tier's cells.
 const CacheResolution * cellCovering(const PlanTier & tier, size_t off)
 {
@@ -132,7 +127,7 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
     for (const auto & tier : tiers)
     {
         for (const auto & cell : tier.cells)
-            if (cell.kind == CacheResolution::Kind::Miss && cell.writer && overlaps(cell.range, range))
+            if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.range.overlaps(range))
                 writers.push_back(cell.writer.get());
     }
     return writers;
