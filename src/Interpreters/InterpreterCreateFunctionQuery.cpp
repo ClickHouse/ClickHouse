@@ -360,6 +360,16 @@ std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr cu
 
     if (!create_function_query->cluster.empty())
     {
+        if constexpr (std::is_same_v<ASTCreateWasmFunctionQuery, T>)
+        {
+            /// Validate the signature on the initiator before the `ON CLUSTER` dispatch below,
+            /// mirroring `tryExecuteWithDriver`. Without `ON CLUSTER` the same validation happens
+            /// in `UserDefinedWebAssemblyFunctionFactory::prepareFunction`. In particular, this
+            /// rejects tuple-element `DEFAULT` expressions, which are allowed only in column
+            /// declarations, before the query is fanned out to (possibly older) workers.
+            create_function_query->validateAndGetDefinition();
+        }
+
         if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because used-defined functions are replicated automatically");
 
