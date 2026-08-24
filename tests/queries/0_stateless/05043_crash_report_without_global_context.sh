@@ -46,8 +46,18 @@ trap cleanup EXIT
 # cannot lose a race for a predetermined number. The port file is published by rename, so reading it
 # never yields a partial number, and its presence means the socket is already accepting.
 #
-# The marker records that a request arrived here, which is what the report check downstream reads.
-python3 -c "
+# The two markers separate "the connection was opened" from "the whole report arrived". The report
+# is sent with chunked transfer encoding, whose body ends with a zero-length chunk that is written
+# only when the writer finalizes, downstream of everything the body is built from, so that chunk
+# means the report was written in full rather than abandoned part way through.
+#
+# The terminator is matched against the body rather than the whole request because the header block
+# ends in a digit followed by two CRLF pairs of its own, which matches the same bytes before any body
+# byte exists.
+#
+# This is killed at the end of the run, and a shell reports the death of its own background job on
+# its own stderr, which the runner reads as a failure, so a subshell keeps the job out of this one.
+( python3 -c "
 import os, socket, threading
 srv = socket.socket()
 srv.bind(('127.0.0.1', 0))
@@ -57,12 +67,23 @@ with open('$work/sink_port.tmp', 'w') as f:
 os.rename('$work/sink_port.tmp', '$work/sink_port')
 def serve(c):
     try:
-        c.settimeout(10)
+        # Outlasts a slow symbolization pass, so a read cannot decide the outcome instead.
+        c.settimeout(300)
+        data = b''
         while True:
             chunk = c.recv(65536)
-            if not chunk or b'\r\n\r\n' in chunk:
+            if not chunk:
                 break
-        open('$work/report_received', 'w').close()
+            data += chunk
+            if b'\r\n\r\n' not in data:
+                continue
+            if not os.path.exists('$work/request_started'):
+                open('$work/request_started', 'w').close()
+            # A chunk boundary can fall anywhere, so this reads the accumulated body, not the last
+            # read. The payload is a few KB.
+            if data.split(b'\r\n\r\n', 1)[1].endswith(b'0\r\n\r\n'):
+                open('$work/report_complete', 'w').close()
+                break
         c.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
     except OSError:
         pass
@@ -71,8 +92,8 @@ def serve(c):
 while True:
     c, _ = srv.accept()
     threading.Thread(target=serve, args=(c,), daemon=True).start()
-" >/dev/null 2>&1 &
-sink_pid=$!
+" >/dev/null 2>&1 & echo $! > "$work/sink_pid" ) 2>/dev/null
+sink_pid=$(cat "$work/sink_pid")
 
 for _ in {1..300}; do
     [ -f "$work/sink_port" ] && break
@@ -138,13 +159,12 @@ grep -q 'Initializing DateLUT' "$log" && { echo "the global context already exis
 
 kill -SEGV "$keeper_pid"
 
-# A handler that reaches the absent global context faults a second time and spends about 300s
-# waiting for a report that can no longer come, while a handler that tolerates it is gone in about a
-# second, so this deadline separates the two by an order of magnitude on either side. Termination is
-# the one part of the outcome every build reports, sanitizer or not.
-exited=0
-for _ in {1..300}; do
-    kill -0 "$keeper_pid" 2>/dev/null || { exited=1; break; }
+# Leaves on the marker when the report arrives, however slow symbolization was, and on the exit when
+# the handler faults instead and stops waiting for a report it can no longer send. The count only has
+# to exceed that wait, so it decides neither outcome; the checks below do.
+for _ in {1..4000}; do
+    [ -f "$work/report_complete" ] && break
+    kill -0 "$keeper_pid" 2>/dev/null || break
     sleep 0.1
 done
 kill -9 "$keeper_pid" 2>/dev/null
@@ -152,21 +172,24 @@ kill -9 "$keeper_pid" 2>/dev/null
 # already established whether it is gone.
 keeper_pid=""
 
-[ "$exited" = 1 ] \
-    && echo "keeper exited" \
-    || echo "keeper did not exit"
-
 # Says the handler ran, rather than merely that the signal was delivered.
 grep -qh 'Received signal' "$err" "$log" \
     && echo "crash handler ran" \
     || echo "crash handler did not run"
 
-# Says the handler got as far as the crash report, so the next check measures the report path
+# Says the handler got as far as opening the connection, so the next check measures the report path
 # instead of silently never reaching it. A sanitizer build stops inside the report it is about to
 # print, so the report it prints counts as having got here.
-{ [ -f "$work/report_received" ] || grep -qh 'ServerUUID.cpp.*member call on null pointer' "$err"; } \
+{ [ -f "$work/request_started" ] || grep -qh 'ServerUUID.cpp.*member call on null pointer' "$err"; } \
     && echo "crash report attempted" \
     || echo "crash report not attempted"
+
+# Says the report was written in full. The part under test sits between the connection above and the
+# finalize that terminates the body, so a report abandoned in between never gets here. A sanitizer
+# build stops there and prints the null dereference instead, which is its equivalent evidence.
+{ [ -f "$work/report_complete" ] || grep -qh 'ServerUUID.cpp.*member call on null pointer' "$err"; } \
+    && echo "crash report completed" \
+    || echo "crash report not completed"
 
 # Has to be absent rather than merely unseen, so check for it directly. Only a sanitizer build can
 # print it; on every other build the same access reads a wild address instead.
