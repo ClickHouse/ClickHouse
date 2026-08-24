@@ -1,5 +1,8 @@
 -- The function composition operator: `f | g` applies `f` and then `g`.
 
+-- The composition is resolved only in the analyzer.
+SET enable_analyzer = 1;
+
 SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]);
 SELECT arrayMap(compose(plus(_, 1), multiply(_, 2)), [1, 2, 3]);
 SELECT arrayMap(multiply(_1, _2) | plus(_, 2), [1, 2, 3], [4, 5, 6]);

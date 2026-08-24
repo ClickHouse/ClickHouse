@@ -1,5 +1,13 @@
+-- Tags: no-parallel
+-- Reason for no-parallel: this test creates a SQL UDF (`05039_linear`); concurrent
+-- runs in flaky check would race on `CREATE FUNCTION` and `DROP FUNCTION` for this
+-- global name.
+
 -- Argument placeholders in the lambda position of a higher-order function
 -- lift the expression to a lambda: partial application.
+
+-- The placeholders are resolved only in the analyzer.
+SET enable_analyzer = 1;
 
 SELECT arrayMap(plus(_1, _2), [1, 2, 3], [4, 5, 6]);
 SELECT arrayMap(plus(5, _), [1, 3, 5]);
@@ -39,4 +47,4 @@ SELECT arrayMap(plus(1, multiply(_, 2)), [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayMap(plus(5, _300), [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayMap(plus(_0, 1), [1]); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT arrayMap(plus(5, _3x), [1]); -- { serverError UNKNOWN_IDENTIFIER }
-SELECT arrayMap(plus(_1, _2), [1, 2, 3]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayMap(plus(_1, _2), [1, 2, 3]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
