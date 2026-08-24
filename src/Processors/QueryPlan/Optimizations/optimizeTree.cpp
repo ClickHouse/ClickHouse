@@ -95,9 +95,14 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.read_in_order_through_join,
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
+        optimization_settings.enable_group_by_top_k_optimization,
+        optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
+        optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
+        optimization_settings.serialize_query_plan,
     };
 
     while (!stack.empty())
@@ -221,9 +226,14 @@ void optimizeTreeSecondPass(
         optimization_settings.read_in_order_through_join,
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
+        optimization_settings.enable_group_by_top_k_optimization,
+        optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
+        optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
+        optimization_settings.serialize_query_plan,
     };
 
     Stack stack;
@@ -786,6 +796,14 @@ void optimizeTreeSecondPass(
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Run after every optimization that can rewrite aggregation, sorting, projections,
+    /// distributed fragments, or parallel replicas. This placement makes the pass a pure
+    /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    if (optimization_settings.enable_group_by_top_k_optimization)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
 }
 
 void addStepsToBuildSets(
