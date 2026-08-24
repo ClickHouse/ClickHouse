@@ -16,8 +16,6 @@ struct ColumnStats
     /// TODO: Support min max
     /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
-    /// Average uncompressed size of one value; 0 means unknown.
-    Float64 avg_bytes = 0;
 };
 
 struct RelationProfile
@@ -30,30 +28,12 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
-
-    /// Selectivity of a SQL boolean predicate under three-valued logic (TRUE / NULL / FALSE).
-    /// `true_sel` is the fraction of rows where the predicate is TRUE (the usual "selectivity").
-    /// `null_sel` is the fraction of rows where the predicate is NULL (input column is NULL).
-    /// The FALSE fraction is implicitly `1 - true_sel - null_sel`.
-    struct Selectivity
-    {
-        Float64 true_sel;
-        Float64 null_sel;
-
-        Selectivity() : true_sel(0), null_sel(0) {}
-        explicit Selectivity(Float64 true_sel_) : true_sel(true_sel_), null_sel(0) {}
-        Selectivity(Float64 true_sel_, Float64 null_sel_) : true_sel(true_sel_), null_sel(null_sel_) {}
-        Selectivity applyNot() const;
-        Selectivity applyOr(const Selectivity & other) const;
-        Selectivity applyAnd(const Selectivity & other) const;
-    };
 
     friend class ConditionSelectivityEstimatorBuilder;
 public:
@@ -62,14 +42,9 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -77,8 +52,6 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
-            FUNCTION_IS_NULL,
-            FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -96,21 +69,14 @@ public:
         /// column not in range (a, b) ...
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
-        /// columns checked with IS NULL predicate
-        std::unordered_set<String> null_check_columns;
-        /// columns checked with IS NOT NULL predicate
-        std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
-        Selectivity selectivity;
+        Float64 selectivity;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
-
-    UInt64 getTotalRows() const { return total_rows; }
-
 private:
     friend class ColumnStatistics;
 
@@ -118,7 +84,7 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
+        Float64 estimateRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
     };
 
@@ -127,10 +93,9 @@ private:
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
-    static constexpr Float64 default_cond_range_factor = 0.33;
+    static constexpr Float64 default_cond_range_factor = 0.5;
     static constexpr Float64 default_cond_equal_factor = 0.01;
-    static constexpr Float64 default_unknown_cond_factor = 0.33;
-    static constexpr Float64 default_like_factor = 0.1;
+    static constexpr Float64 default_unknown_cond_factor = 1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;

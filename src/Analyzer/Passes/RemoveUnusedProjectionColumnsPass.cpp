@@ -68,20 +68,6 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     const auto & projection_nodes = query_node.getProjection().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
-    /// If the query uses DISTINCT, all of its projection columns are
-    /// significant — `DISTINCT` deduplicates over the full row of selected
-    /// columns, so removing any of them changes the result.
-    /// The pass-level guard in `run` skips DISTINCT queries that are direct
-    /// FROM-children, but a DISTINCT query reached through a `UNION ALL`
-    /// is processed here (via the recursion above) and would otherwise
-    /// have its columns silently pruned.
-    if (query_node.isDistinct())
-    {
-        for (size_t i = 0; i < projection_nodes_size; ++i)
-            used_projection_columns_indexes.insert(i);
-        return;
-    }
-
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
         const auto & projection_node = projection_nodes[i];
@@ -107,7 +93,7 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         /// Initialize map with query and union nodes in the FROM clause
         if (auto * query_node = node_to_visit->as<QueryNode>())
         {
-            for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped()))
+            for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree()))
                 if (isQueryOrUnionNode(table_expression))
                     node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
         }

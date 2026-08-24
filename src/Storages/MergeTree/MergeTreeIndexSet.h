@@ -23,7 +23,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const Block & index_sample_block_,
         size_t max_rows_,
         MutableColumns && columns_,
-        Ranges && set_hyperrectangle_);
+        std::vector<Range> && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -39,7 +39,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     Block block;
     Serializations serializations;
-    Ranges set_hyperrectangle;
+    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -91,7 +91,7 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
-    Ranges set_hyperrectangle;
+    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -142,11 +142,7 @@ private:
         return actions == nullptr;
     }
 
-    /// Index key columns with the types they have in the index granule block. The type is needed
-    /// because `atomFromDAG` matches a query subexpression to a key column by name only, while
-    /// `ExpressionActions::execute` later binds the granule column by name too. A name that
-    /// matches under a different type would silently substitute a differently-typed column.
-    std::unordered_map<String, DataTypePtr> key_columns;
+    std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 
@@ -159,10 +155,9 @@ class MergeTreeIndexSet final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
-        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t max_rows_)
-        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+        : IMergeTreeIndex(index_)
         , max_rows(max_rows_)
     {}
 

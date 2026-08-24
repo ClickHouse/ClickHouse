@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 
