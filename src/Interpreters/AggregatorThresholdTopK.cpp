@@ -363,6 +363,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     memcpy(padded, key.data(), size);
                     return table.find(PackedStringRef::build(padded, size, PackedHash{}));
                 }
+                /// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage): the size is passed alongside
                 return table.find(PackedStringRef::build(key.data(), size, PackedHash{}));
             }
             else
