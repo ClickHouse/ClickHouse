@@ -10,12 +10,9 @@
 -- PODArray out-of-bounds). WITH FILL now runs only on the initiator over the merged stream, so the
 -- interpolate column is materialized once and the block stays rectangular.
 --
--- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
--- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
--- serialize_query_plan on globally; this exercises the shard read, not plan serialization.
 
 SELECT n, inter
 FROM remote('127.0.0.{1,2}', view(
     SELECT number AS inter, toFloat32(number / 10) AS n FROM numbers(10) WHERE 0))
 ORDER BY n WITH FILL FROM 0 TO 11.51 STEP 2 INTERPOLATE (inter AS 1023)
-SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
+SETTINGS prefer_localhost_replica = 0;

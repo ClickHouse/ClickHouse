@@ -22,11 +22,6 @@ INSERT INTO shard_1.t VALUES (20, 2), (40, 5);
 CREATE TABLE d (id UInt32, g UInt16)
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t, id);
 
--- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
--- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
--- serialize_query_plan on globally; this test exercises the shard read, not plan serialization.
-SET serialize_query_plan = 0;
-
 SELECT g, id FROM d ORDER BY g WITH FILL FROM 0 TO 6 INTERPOLATE (id AS id + 1);
 SELECT g, id FROM d ORDER BY g WITH FILL FROM 0 TO 6 INTERPOLATE (id AS id + 1)
 SETTINGS distributed_push_down_limit = 0;
