@@ -748,30 +748,42 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
+# One-line summary per connection whose check_reference="0" setup query failed there (the traceback goes to stderr).
+setup_error_on_connection = [None] * len(all_connections)
+
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both servers, to save time.
     create_queries = []
-    create_queries_check_reference = []
     for template, check_reference in create_query_templates:
-        expanded = substitute_parameters([template])
-        create_queries += expanded
-        create_queries_check_reference += [check_reference] * len(expanded)
+        create_queries += [
+            (q, check_reference) for q in substitute_parameters([template])
+        ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
     # after some errors.
-    for q in create_queries:
+    for q, _ in create_queries:
         if re.search("create temporary table", q, flags=re.IGNORECASE):
-            print(
-                f"Temporary tables are not allowed in performance tests: '{q}'",
-                file=sys.stderr,
-            )
+            print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
             sys.exit(1)
 
     def do_create(connection, index, queries):
-        for q in queries:
-            connection.execute(q)
-            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+        for q, check_reference in queries:
+            try:
+                connection.execute(q)
+                print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+            except Exception:
+                # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
+                if index != 0 or check_reference:
+                    raise
+
+                message = (
+                    'setup query failed on the reference server (check_reference="0"), '
+                    f"running the test on the new server only: {tsv_escape(q)[:200]}"
+                )
+                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                setup_error_on_connection[index] = message
+                break
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
@@ -847,8 +859,13 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    query_error_on_connection = [None] * len(all_connections)
+    # A connection whose check_reference="0" setup query failed starts out
+    # already failed for every query, so the partial ("backward-incompatible")
+    # machinery excludes it from the comparison.
+    query_error_on_connection = list(setup_error_on_connection)
     for conn_index, c in enumerate(all_connections):
+        if query_error_on_connection[conn_index]:
+            continue
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -1139,8 +1156,15 @@ reportStageEnd("run")
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
+        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
+        setup_failed = setup_error_on_connection[conn_index] is not None
         for q in drop_queries:
-            c.execute(q)
+            try:
+                c.execute(q)
+            except Exception:
+                if setup_failed:
+                    continue
+                raise
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")
