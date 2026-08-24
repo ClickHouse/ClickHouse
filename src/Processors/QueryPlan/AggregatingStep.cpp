@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -126,6 +127,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     return false;
 }
 
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;
@@ -210,6 +222,11 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
+{
+    params.top_k = std::move(top_k);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
