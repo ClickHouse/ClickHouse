@@ -13,6 +13,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -106,6 +108,19 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     /// time.  In particular, row-policy actions used below a `Merge` read must
     /// receive the scalar value rather than a set placeholder.
     ASTPtr expression_ast_for_analysis = expr_list_ast->clone();
+
+    /// Inline SQL UDFs before that, mirroring `TreeRewriter::normalize`, which expands them ahead of
+    /// `executeScalarSubqueries`.  The Analyzer inlines a SQL UDF only later, in
+    /// `QueryAnalyzer::resolveFunction`, so a scalar subquery hidden inside a UDF body would survive
+    /// the visitor below and reach the DAG as a plain `QueryNode`.  A row policy such as
+    /// `USING udf(x)` with `CREATE FUNCTION udf AS x -> x <= (SELECT max(v) FROM limits)` then filters
+    /// against an unevaluated subquery and silently returns too few rows when the table is read
+    /// through `Merge`.  Callers that store the expanded AST in table metadata (`IndexDescription`,
+    /// `ConstraintsDescription`) inline the UDFs themselves before calling here; the pass is
+    /// idempotent, and callers that receive the expression outside DDL have no other chance.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expression_ast_for_analysis, execution_context);
+
     Scalars scalars;
     Scalars local_scalars;
     ExecuteScalarSubqueriesMatcher::Data scalar_subquery_data{
