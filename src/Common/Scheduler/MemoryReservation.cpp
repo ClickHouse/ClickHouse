@@ -131,24 +131,32 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         // Make sure reservation size is always respected
         ResourceCost new_actual_size = std::max(memory_tracker->get(), reserved_size);
 
-        if (new_actual_size == actual_size)
+        // Decreases are approved asynchronously: an increase sized against the current allocated
+        // value would end short by the in-flight decrease, and the wait below would never finish.
+        // Size requests against the value the allocation will hold once the decrease is approved.
+        ResourceCost expected_allocated = allocated_size - enqueued_decrease;
+
+        // An unchanged tracker value alone does not imply there is nothing to do: a shortfall or
+        // excess may remain from an earlier sync, so skip only when fully in sync.
+        if (new_actual_size == actual_size && new_actual_size == expected_allocated)
             return;
 
         actual_size = new_actual_size;
 
-        if (!fail_reason && actual_size > allocated_size && !increase_enqueued)
+        if (!fail_reason && actual_size > expected_allocated && !increase_enqueued)
         {
             chassert(!removed);
-            pending_increase = actual_size - allocated_size;
+            pending_increase = actual_size - expected_allocated;
             increase_enqueued = true;
             enqueued_demand = pending_increase;
             demand_increment.add(enqueued_demand);
         }
-        else if (!fail_reason && actual_size < allocated_size && !decrease_enqueued)
+        else if (!fail_reason && actual_size < expected_allocated && !decrease_enqueued)
         {
             chassert(!removed);
-            pending_decrease = allocated_size - actual_size;
+            pending_decrease = expected_allocated - actual_size;
             decrease_enqueued = true;
+            enqueued_decrease = pending_decrease;
         }
     }
 
@@ -161,11 +169,12 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     {
         std::unique_lock lock(mutex);
         // Wait on increase to make sure memory is reserved when requested.
-        // Decrease is not waited for — it will be processed asynchronously.
-        if (actual_size > allocated_size)
+        // Decrease is not waited for, but counted as already gone: once approved,
+        // its capacity may be granted to another workload.
+        if (actual_size > allocated_size - enqueued_decrease)
         {
             auto increase_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationIncreaseMicroseconds);
-            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size - enqueued_decrease; });
         }
 
         metrics.apply();
@@ -225,6 +234,7 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
     allocated_size -= decrease.size;
     approved_increment.sub(decrease.size);
     decrease_enqueued = false;
+    enqueued_decrease = 0;
     if (decrease.removing_allocation)
     {
         // The queue cancels any pending increase as part of the removal path
