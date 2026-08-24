@@ -2,10 +2,9 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
-# Pins the refusal contract of Iceberg data compaction: in the open-source build
-# `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` rather than running a
-# rewrite it cannot publish. Data compaction is a private feature on Cloud, so only the
-# open-source outcome is pinned there; the setting gate is common to both builds.
+# Pins the outcome of Iceberg data compaction per build: `OPTIMIZE TABLE` on an Iceberg
+# table reports `NOT_IMPLEMENTED` where the rewrite cannot be published, and succeeds where
+# data compaction is implemented. The setting gate is common to both builds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +29,13 @@ out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 \
 if grep -qF 'Logical error' <<< "$out"; then
     echo "FAIL: logical error: $out"
 elif [ "$is_cloud" = 1 ]; then
-    echo "ok"
+    # Where data compaction is implemented the statement must succeed, not merely avoid a
+    # logical error.
+    if grep -qF 'Code:' <<< "$out"; then
+        echo "FAIL: expected OPTIMIZE to succeed where data compaction is implemented: $out"
+    else
+        echo "ok"
+    fi
 elif grep -qF NOT_IMPLEMENTED <<< "$out" \
     && grep -qF 'not yet supported for Iceberg data compaction' <<< "$out"; then
     echo "ok"
