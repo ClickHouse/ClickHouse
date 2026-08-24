@@ -1811,7 +1811,19 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             }
         }
 
-        if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+        using TTLClearIndexExecutionRole = ReplicatedMergeTreeMergeStrategyPicker::TTLClearIndexExecutionRole;
+        const auto ttl_clear_index_role = merge_strategy_picker.getTTLClearIndexExecutionRole(entry);
+        if (ttl_clear_index_role == TTLClearIndexExecutionRole::WaitForSource
+            && !merge_strategy_picker.isMergeFinishedByReplica(entry.source_replica, entry))
+        {
+            constexpr auto fmt_string
+                = "Not executing `TTLClearIndex` merge for part {}, waiting for source replica {} to produce it.";
+            out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, entry.source_replica);
+            return false;
+        }
+
+        if (ttl_clear_index_role == TTLClearIndexExecutionRole::NotApplicable
+            && merge_strategy_picker.shouldMergeOnSingleReplica(entry))
         {
             auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
 

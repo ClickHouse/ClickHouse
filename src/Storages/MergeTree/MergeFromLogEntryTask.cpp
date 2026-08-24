@@ -40,6 +40,7 @@ namespace MergeTreeSetting
 
 namespace FailPoints
 {
+    extern const char rmt_merge_task_pause_in_prepare[];
     extern const char rmt_merge_task_sleep_in_prepare[];
 }
 
@@ -79,6 +80,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_task_pause_in_prepare);
+
     fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
@@ -98,10 +101,25 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             {}, this->projections_merge_time);
     };
 
-    const bool is_ttl_clear_index_source
-        = entry.merge_type == MergeType::TTLClearIndex && entry.source_replica == storage.replica_name;
+    using TTLClearIndexExecutionRole = ReplicatedMergeTreeMergeStrategyPicker::TTLClearIndexExecutionRole;
+    const auto ttl_clear_index_role = storage.merge_strategy_picker.getTTLClearIndexExecutionRole(entry);
 
-    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part] && !is_ttl_clear_index_source)
+    if (ttl_clear_index_role == TTLClearIndexExecutionRole::WaitForSource)
+    {
+        LOG_INFO(
+            log,
+            "Will fetch part {} produced by `TTLClearIndex` source replica {}",
+            entry.new_part_name,
+            entry.source_replica);
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = part_log_writer,
+        };
+    }
+
+    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part]
+        && ttl_clear_index_role == TTLClearIndexExecutionRole::NotApplicable)
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry.new_part_name);
         return PrepareResult{
@@ -130,7 +148,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
 
-    if (!is_ttl_clear_index_source && storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    if (ttl_clear_index_role == TTLClearIndexExecutionRole::NotApplicable
+        && storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
         std::optional<String> replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         if (replica_to_execute_merge)

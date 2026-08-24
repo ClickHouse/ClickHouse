@@ -66,6 +66,31 @@ def create_table(node, replica):
     )
 
 
+def create_source_policy_table(table, zookeeper_path):
+    for node, replica in ((node1, "r1"), (node2, "r2")):
+        node.query(
+            f"""
+            CREATE TABLE {table}
+            (
+                d Date,
+                k UInt64,
+                v UInt64,
+                INDEX idx v TYPE minmax GRANULARITY 1
+            )
+            ENGINE = ReplicatedMergeTree('{zookeeper_path}', '{replica}')
+            ORDER BY k
+            TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+            SETTINGS
+                always_fetch_merged_part = 1,
+                execute_merges_on_single_replica_time_threshold = 600,
+                index_granularity = 2,
+                merge_with_ttl_timeout = 1,
+                min_bytes_for_wide_part = 0,
+                min_rows_for_wide_part = 0
+            """
+        )
+
+
 def test_alter_ttl_uses_explicit_materialization_for_missing_metadata(
     started_cluster,
 ):
@@ -348,3 +373,130 @@ def test_replicas_execute_ttl_clear_index_merge(started_cluster):
 
     node2.query("DROP TABLE ttl_clear_index SYNC")
     node1.query("DROP TABLE ttl_clear_index SYNC")
+
+
+def test_ttl_clear_index_prefers_source_over_single_replica_picker(started_cluster):
+    table = "ttl_clear_index_source_policy"
+    zookeeper_path = "/clickhouse/tables/ttl_clear_source_policy_c"
+    create_source_policy_table(table, zookeeper_path)
+
+    # The generic single-replica picker hashes this result part to r2. TTLClearIndex
+    # must instead use the source replica recorded in the log entry.
+    assert (
+        node1.query(f"SELECT cityHash64('{zookeeper_path}all_0_0_1') % 2")
+        == "1\n"
+    )
+
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node2.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} VALUES "
+        "('2000-01-01', 1, 1), ('2000-01-01', 2, 2)"
+    )
+    node2.query(f"SYSTEM SYNC REPLICA {table}")
+
+    source_merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    follower_merges_before = event_value(node2, "TTLClearIndexMetadataOnlyMerges")
+    follower_fetches_before = event_value(node2, "ReplicatedPartFetches")
+
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(
+            source_merges_before
+        ),
+        "1",
+        retry_count=60,
+    )
+
+    node2.query(f"SYSTEM START TTL MERGES {table}")
+    node2.query(f"SYSTEM SYNC REPLICA {table}")
+    assert (
+        event_value(node2, "TTLClearIndexMetadataOnlyMerges")
+        == follower_merges_before
+    )
+    assert event_value(node2, "ReplicatedPartFetches") > follower_fetches_before
+
+    for node in (node1, node2):
+        assert (
+            node.query(
+                "SELECT sum(secondary_indices_compressed_bytes) = 0 "
+                "FROM system.parts WHERE database = currentDatabase() "
+                f"AND table = '{table}' AND active"
+            )
+            == "1\n"
+        )
+
+    node2.query(f"DROP TABLE {table} SYNC")
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_ttl_clear_index_fails_over_when_source_is_inactive(started_cluster):
+    table = "ttl_clear_index_source_failover"
+    zookeeper_path = "/clickhouse/tables/ttl_clear_source_failover"
+    create_source_policy_table(table, zookeeper_path)
+
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node2.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} VALUES "
+        "('2000-01-01', 1, 1), ('2000-01-01', 2, 2)"
+    )
+    node2.query(f"SYSTEM SYNC REPLICA {table}")
+
+    follower_merges_before = event_value(node2, "TTLClearIndexMetadataOnlyMerges")
+    follower_fetches_before = event_value(node2, "ReplicatedPartFetches")
+
+    node1.query("SYSTEM ENABLE FAILPOINT rmt_merge_task_pause_in_prepare")
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    node1.query(
+        "SYSTEM WAIT FAILPOINT rmt_merge_task_pause_in_prepare PAUSE",
+        timeout=60,
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() > 0 FROM system.replication_queue "
+        f"WHERE table = '{table}' "
+        "AND positionCaseInsensitive(merge_type, 'clear') > 0",
+        "1",
+        retry_count=60,
+    )
+
+    node1.stop_clickhouse(kill=True)
+    assert_eq_with_retry(
+        node2,
+        "SELECT replica_is_active['r1'] FROM system.replicas "
+        f"WHERE database = currentDatabase() AND table = '{table}'",
+        "0",
+        retry_count=60,
+    )
+
+    node2.query(f"SYSTEM START TTL MERGES {table}")
+    assert_eq_with_retry(
+        node2,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(
+            follower_merges_before
+        ),
+        "1",
+        retry_count=60,
+    )
+    assert (
+        event_value(node2, "ReplicatedPartFetches") == follower_fetches_before
+    )
+
+    node1.start_clickhouse()
+    node1.query(f"SYSTEM SYNC REPLICA {table}")
+    for node in (node1, node2):
+        assert (
+            node.query(
+                "SELECT sum(secondary_indices_compressed_bytes) = 0 "
+                "FROM system.parts WHERE database = currentDatabase() "
+                f"AND table = '{table}' AND active"
+            )
+            == "1\n"
+        )
+
+    node2.query(f"DROP TABLE {table} SYNC")
+    node1.query(f"DROP TABLE {table} SYNC")
