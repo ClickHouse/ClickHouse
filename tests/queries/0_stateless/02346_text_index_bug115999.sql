@@ -44,15 +44,7 @@ WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'ta
    OR (hasAnyTokens(a.plain_text, ['fallback']) OR hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']))
 ORDER BY a.record_id;
 
-SELECT 'use_skip_indexes = 0';
-
-SELECT a.record_id
-FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
-WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'target')
-   OR (hasAnyTokens(a.plain_text, ['fallback']) OR hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']))
-ORDER BY a.record_id
-SETTINGS use_skip_indexes = 0;
-
+-- Row-level evaluation must agree, i.e. the fix must not depend on the direct read from the index.
 SELECT 'query_plan_direct_read_from_text_index = 0';
 
 SELECT a.record_id
@@ -61,6 +53,36 @@ WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'ta
    OR (hasAnyTokens(a.plain_text, ['fallback']) OR hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']))
 ORDER BY a.record_id
 SETTINGS query_plan_direct_read_from_text_index = 0;
+
+-- An unindexed column of the other join side that happens to share the indexed column's name must not be
+-- tokenized with this index's tokenizer. Both queries must agree (and return nothing).
+SELECT 'same column name on the other join side';
+
+CREATE TABLE t_115999_c (id UInt64, shingle_tokens Array(String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_115999_c VALUES (1, ['alpha beta gamma']);
+
+SELECT c.id
+FROM t_115999_a AS a INNER JOIN t_115999_c AS c ON a.record_id = c.id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma'])
+  AND (hasAnyTokens(c.shingle_tokens, ['alpha beta gamma']) OR a.record_id = 999)
+ORDER BY c.id;
+
+SELECT c.id
+FROM t_115999_a AS a INNER JOIN t_115999_c AS c ON a.record_id = c.id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma'])
+  AND (hasAnyTokens(c.shingle_tokens, ['alpha beta gamma']) OR a.record_id = 999)
+ORDER BY c.id
+SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_115999_c;
+
+SELECT 'without a JOIN';
+
+SELECT record_id
+FROM t_115999_a
+WHERE hasAnyTokens(shingle_tokens, ['alpha beta gamma'])
+   OR hasAnyTokens(shingle_tokens, ['delta epsilon zeta'])
+ORDER BY record_id;
 
 DROP TABLE t_115999_a;
 DROP TABLE t_115999_b;
