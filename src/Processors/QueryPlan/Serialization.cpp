@@ -73,8 +73,15 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     writeVarUInt(version, out);
 
-    SerializationFlags flags;
-    flags.version = version;
+    SerializationFlags flags{.version = version};
+    serialize(out, flags);
+}
+
+void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
+{
+    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION, out);
+
+    SerializationFlags flags{.version = QUERY_PLAN_CACHE_SERIALIZATION_VERSION};
     serialize(out, flags);
 }
 
@@ -187,6 +194,22 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
+}
+
+QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context)
+{
+    UInt64 version = 0;
+    readVarUInt(version, in);
+
+    if (version > QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan cache serialization version {} is not supported. The last supported version is {}",
+            version, QUERY_PLAN_CACHE_SERIALIZATION_VERSION);
+
+    SerializationFlags flags;
+    flags.version = version;
+    /// Cache plans are produced and consumed locally by this server, so binary type decoding is trusted (unlimited).
+    return deserialize(in, context, flags, /*max_type_complexity=*/ 0);
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)

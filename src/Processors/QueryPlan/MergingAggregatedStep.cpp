@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -13,7 +14,7 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
+#include <Common/MemoryTrackerUtils.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ namespace QueryPlanSerializationSetting
 namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
 }
@@ -373,7 +375,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         keys,
         aggregates,
         overflow_row,
-        settings[Setting::max_threads],
+        getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],

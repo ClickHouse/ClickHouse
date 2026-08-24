@@ -27,9 +27,10 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
-#include <Storages/StorageMerge.h>
-#include <Planner/Utils.h>
 #include <Core/Settings.h>
+#include <Planner/Utils.h>
+#include <Storages/StorageMerge.h>
+#include <Common/MemoryTrackerUtils.h>
 
 #include <stack>
 
@@ -43,6 +44,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -122,7 +124,14 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const ContextPtr & context,
+    const String * bound_table_name,
+    const StoragePtr * bound_storage,
+    const StorageSnapshotPtr * bound_snapshot,
+    TableLockHolder * bound_table_lock)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -139,12 +148,29 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     if (reading_from_table)
     {
-        Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
-        auto table_node = resolveTable(identifier, context);
+        if (bound_storage)
+        {
+            if (reading_from_table->getTable() != *bound_table_name)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cached query plan references unexpected table {}",
+                    reading_from_table->getTable());
 
-        storage = table_node->getStorage();
-        snapshot = table_node->getStorageSnapshot();
+            storage = *bound_storage;
+            snapshot = *bound_snapshot;
+        }
+        else
+        {
+            Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
+            auto table_node = resolveTable(identifier, context);
+
+            storage = table_node->getStorage();
+            snapshot = table_node->getStorageSnapshot();
+        }
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
+        select_query_info.prewhere_info = reading_from_table->getPrewhereInfo();
+        select_query_info.row_level_filter = reading_from_table->getRowLevelFilter();
+        select_query_info.node_name_to_input_node_column = reading_from_table->getNodeNameToInputNodeColumn();
     }
     else
     {
@@ -205,7 +231,12 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (select_query_info.table_expression_modifiers)
         snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
 
-    auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    TableLockHolder table_lock;
+    if (reading_from_table && bound_storage && bound_table_lock)
+        table_lock = std::move(*bound_table_lock);
+
+    if (!table_lock)
+        table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
@@ -282,8 +313,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             mutable_context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
-            context->getSettingsRef()[Setting::max_threads]
-        );
+            getMaxThreadsForAvailableMemory(
+                context->getSettingsRef()[Setting::max_threads],
+                context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]));
 
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
@@ -320,6 +352,20 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
+    resolveStorages(context, {}, {}, {}, {});
+}
+
+void QueryPlan::resolveStorages(
+    const ContextPtr & context,
+    String bound_table_name,
+    StoragePtr bound_storage,
+    StorageSnapshotPtr bound_snapshot,
+    TableLockHolder bound_table_lock)
+{
+    const String * bound_table_name_ptr = bound_storage ? &bound_table_name : nullptr;
+    const StoragePtr * bound_storage_ptr = bound_storage ? &bound_storage : nullptr;
+    const StorageSnapshotPtr * bound_snapshot_ptr = bound_storage ? &bound_snapshot : nullptr;
+
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
@@ -337,7 +383,14 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(
+                *node,
+                nodes,
+                context,
+                bound_table_name_ptr,
+                bound_storage_ptr,
+                bound_snapshot_ptr,
+                &bound_table_lock));
     }
 }
 

@@ -964,6 +964,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        ch_contrib::lz4
         clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper
