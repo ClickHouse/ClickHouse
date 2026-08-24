@@ -64,6 +64,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool window_partitions_independently;
+    bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
