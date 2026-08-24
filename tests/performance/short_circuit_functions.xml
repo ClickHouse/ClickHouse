@@ -29,5 +29,5 @@
 
     <query>SELECT isValidUTF8(materialize(repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65535))) FROM numbers(30000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65535))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
 </test>
