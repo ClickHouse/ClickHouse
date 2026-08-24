@@ -72,12 +72,13 @@ SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
 DROP TABLE IF EXISTS test_116038_mixed;
 CREATE TABLE test_116038_mixed (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
--- The narrowing caps the sharder well below `max_threads`, and the exact width depends on how
--- many parts the reader sees, so the keys are chosen to work at any of them: key 4 routes to
--- shard 0 - the input the narrowed `ConcatProcessor` demands first - at every width from 4 to
--- 16, while key 0 never does, so the sparse shard is the demanded one while the heavy key fills
--- a sibling queue to the cap. Both keys landing on one shard lets the input finish before that
--- state is reached, and the arm degenerates into a plain query.
+-- The sharder is as wide as the streams the reader produces, which can be below `max_threads`
+-- and varies with what the statements above left in this database, so the keys are chosen to
+-- work at any width rather than at one: key 4 routes to shard 0 - the input the narrowed
+-- `ConcatProcessor` demands first - at every width from 4 to 16, while key 0 never does, so the
+-- sparse shard is the demanded one while the heavy key fills a sibling queue to the cap. Both
+-- keys landing on one shard lets the input finish before that state is reached, and the arm
+-- degenerates into a plain query. The narrowing itself is what builds the `Concat`.
 INSERT INTO test_116038_mixed SELECT if(number % 100 = 0, 4, 0) AS a, number AS b FROM numbers(2000000)
 SETTINGS max_insert_threads = 1;
 
@@ -85,9 +86,9 @@ SETTINGS max_insert_threads = 1;
 -- a sharder fanning out to more than one output, and the narrowed sequential `ConcatProcessor`
 -- that consumes them. Without the narrowing the query still returns the same sums, so the
 -- assertion is what keeps the arm from going vacuous. The fan-out is matched by shape rather
--- than by a fixed number because the width follows the part count, which the statements above
--- influence; the keys are chosen to hold at every width this can take.
-SELECT countIf(match(explain, 'BufferedShardByHashTransform × \\d+ 1 → [2-9]')) > 0
+-- than by a fixed number because the width follows how many streams the reader produces, which
+-- the statements above influence; the keys are chosen to hold at every width this can take.
+SELECT countIf(match(explain, 'BufferedShardByHashTransform × \\d+ 1 → ([2-9]|\\d\\d+)')) > 0
        AND countIf(match(explain, 'Concat \\d+ → 1')) > 0
 FROM (
     EXPLAIN PIPELINE
