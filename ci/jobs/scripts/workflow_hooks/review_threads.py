@@ -37,6 +37,15 @@ REVIEW_THREADS_STATUS_NAME = "Review Threads"
 KV_UNRESOLVED_COUNT = "unresolved_review_threads"
 KV_OVERRIDE = "unresolved_review_threads_override"
 KV_FORCE_ALL = "unresolved_review_threads_force_all"
+# Stored in `KV_FORCE_ALL` when the live-label read failed. The consumers in
+# `ci/praktika/native_jobs.py` treat it as `ci-force-all` only for the
+# stale-sensitive decisions (changed-file filtering and the CI cache lookup,
+# where trusting stale state could let old green results survive a
+# `ci-force-all` rerun), but not for the workflow filter hooks, whose bypass
+# would *widen* the workflow past a normal full PR run (opt-in jobs such as
+# `Build Toolchain (PGO, BOLT)`, ignored `do not test` / `ci-build` labels).
+# Also hard-coded in `ci/praktika/native_jobs.py` - keep them in sync.
+FORCE_ALL_UNKNOWN = "unknown"
 # This is written by the workflow filter after it has made the actual
 # limited/full decision. The config pre-hook cannot determine this by itself:
 # `ci-force-all` bypasses workflow filters altogether.
@@ -154,16 +163,19 @@ def store_gate_state(info):
         # There is no live label state to record. Leaving the kv data unset
         # would make `native_jobs.py` fall back to the event payload, which is
         # stale on re-runs and therefore misses a `ci-force-all` added after
-        # the original run - the workflow filter hooks, the changed-file
-        # filtering and the CI cache lookup would all stay enabled on a re-run
-        # that was meant to bypass them, letting old green results survive it.
-        # Fail toward doing more work: assume the label until proven otherwise.
+        # the original run - the changed-file filtering and the CI cache
+        # lookup would stay enabled on a re-run that was meant to bypass them,
+        # letting old green results survive it. Record the explicit "unknown"
+        # sentinel instead of impersonating the label: `native_jobs.py` then
+        # distrusts stale state (fail toward redoing work) without bypassing
+        # the workflow filter hooks, which would widen the workflow past a
+        # normal full PR run (opt-in jobs, ignored `do not test` / `ci-build`).
         print(
-            f"WARNING: failed to fetch the live PR labels [{e}] - assuming "
-            f"'{Labels.CI_FORCE_ALL}' so that no filtering or cached result is trusted"
+            f"WARNING: failed to fetch the live PR labels [{e}] - no filtering "
+            f"or cached result is trusted, as if '{Labels.CI_FORCE_ALL}' was set"
         )
         labels = None
-        info.store_kv_data(KV_FORCE_ALL, True)
+        info.store_kv_data(KV_FORCE_ALL, FORCE_ALL_UNKNOWN)
         info.store_kv_data(KV_OVERRIDE, False)
     else:
         override = review_threads_gate_bypassed(labels)

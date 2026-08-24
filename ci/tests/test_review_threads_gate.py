@@ -37,6 +37,7 @@ from ci.jobs.scripts.workflow_hooks import filter_job
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
+    FORCE_ALL_UNKNOWN,
     KV_FORCE_ALL,
     KV_OVERRIDE,
     KV_PIPELINE_LIMITED,
@@ -434,10 +435,38 @@ def test_gate_is_skipped_when_the_label_state_is_unknown(monkeypatch):
 
     assert info.get_kv_data(KV_UNRESOLVED_COUNT) is None
     # `ci-force-all` may have been added after the original run and is
-    # invisible here, so the stale event payload must not be consulted: assume
-    # the label instead of letting filters and cached results stay in effect.
-    assert info.get_kv_data(KV_FORCE_ALL) is True
+    # invisible here, so the stale event payload must not be consulted. But
+    # the state must not impersonate a real `ci-force-all` either - that would
+    # bypass the workflow filter hooks and *widen* the workflow (opt-in jobs,
+    # ignored `do not test` / `ci-build` labels). Record the explicit sentinel
+    # instead: only the stale-sensitive changed-file filtering and cache
+    # lookup treat it as forced.
+    assert info.get_kv_data(KV_FORCE_ALL) == FORCE_ALL_UNKNOWN
     assert info.get_kv_data(KV_OVERRIDE) is False
+
+
+def test_unknown_label_state_only_bypasses_the_stale_sensitive_checks():
+    """The "unknown" sentinel must not act as `ci-force-all` everywhere.
+
+    `native_jobs.py` resolves `force_all` in three places. The workflow filter
+    hooks must keep running on the sentinel (bypassing them widens the
+    workflow: opt-in jobs like `Build Toolchain (PGO, BOLT)` would start and
+    `do not test` / `ci-build` would be ignored), while the changed-file
+    filtering and the CI cache lookup must treat it as forced (trusting stale
+    state could let old green results survive a `ci-force-all` rerun).
+    """
+    native_jobs = (
+        Path(__file__).resolve().parents[2] / "ci/praktika/native_jobs.py"
+    ).read_text()
+    strict = "else force_all_kv is True\n"
+    stale_sensitive = f'else force_all_kv is True or force_all_kv == "{FORCE_ALL_UNKNOWN}"\n'
+    assert native_jobs.count(strict) == 1
+    assert native_jobs.count(stale_sensitive) == 2
+    # The strict resolution belongs to the workflow filter hooks pass, which
+    # runs before the changed-file filtering and the cache lookup.
+    assert native_jobs.index(strict) < native_jobs.index(stale_sensitive)
+    # No site is left with the old sentinel-agnostic resolution.
+    assert "else bool(force_all_kv)" not in native_jobs
 
 
 def _retry_marker_state(statuses, started_at, completed_at):
