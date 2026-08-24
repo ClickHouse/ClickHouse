@@ -131,9 +131,10 @@ client_compwords_positive = [
     "uniqCombined64ForEach",
     # system.keywords
     "CHANGEABLE_IN_READONLY",
-    # NOTE: The words below live in contexts the client truncates to
-    # suggestion_limit rows ordered by word, so tables held by concurrent tests can
-    # outrank them at the default bound. The argv passes an explicit larger limit.
+    # The words below come from contexts the client truncates to suggestion_limit rows
+    # ordered by word, so concurrent tests' tables can outrank them at the default bound.
+    # The bound itself is not asserted here: crowding system.completions past it would
+    # perturb every other test on the lane.
     # system.databases
     # NOTE: Do not use "system" here because the prefix "sys" (3 chars) is too
     # short and matches many completions, causing timeouts under TSan.
