@@ -214,7 +214,10 @@ public:
     ///    being the only route to a `Full` sort that has it set.
     ///  - `threshold_tracker` - excluded: a runtime object shared with other steps by `optimizeTopK`
     ///    (`setTopKThresholdTracker`) that only publishes a top-N pruning threshold; it has no stable
-    ///    value to encode, and the rows a sort produces do not depend on it.
+    ///    value to encode, and the rows a sort produces do not depend on it. Safe in the reader's
+    ///    direction too: deduping away a tracker-feeding sort just leaves the reader's tracker
+    ///    without updates (less pruning, never wrong rows), and a content-equal replacement sort
+    ///    publishes valid thresholds over the same input.
     ///  - `limit_by_columns`, `limit_by_group_length` - **extras**. Not on the wire. Set by
     ///    `pushLimitByIntoSort`; when the hint is a sort prefix, `addPerStreamLimitByIfNeeded`
     ///    installs a per-stream `LimitBySortedStreamTransform`, which drops rows.

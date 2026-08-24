@@ -107,6 +107,8 @@ public:
 private:
     /// Lazily computed by `getStepIdentity`; shared with shallow copies, which is safe because it
     /// records the step it was computed from and is dropped when that step no longer matches.
+    /// Mutated from a `const` getter with no synchronization - safe only because the Cascades
+    /// optimizer runs single-threaded.
     mutable std::shared_ptr<const StepIdentity> step_identity;
 };
 

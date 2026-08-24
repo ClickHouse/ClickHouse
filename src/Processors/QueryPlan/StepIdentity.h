@@ -25,6 +25,9 @@ struct SerializedSetsRegistry;
 /// therefore defined only over two live steps re-encoded at compare time, which is what
 /// `cascadesIdentityEncodingsEqual` does; a cached hash can go stale and only ever lose a merge.
 /// Do not cache the encoded bytes and compare them against a step encoded at another time.
+/// Same reason a fingerprint taken at insertion into a memo-wide index goes stale as lazy analysis
+/// state populates: such an index must store the insertion-time hash alongside the expression, and
+/// must never look up or remove an expression by recomputing its current fingerprint.
 class CascadesIdentityExtras
 {
 public:

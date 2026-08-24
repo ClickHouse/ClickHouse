@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -791,6 +793,22 @@ TEST(CascadesStepIdentity, PreDistinctAndDistinctAreUnequal)
     EXPECT_FALSE(a->globallyEqualTo(*b));
 }
 
+/// `applyOrder` installs `distinct_sort_desc` after construction; it is not on the wire but it
+/// switches `transformPipeline` to the range-based `DistinctSortedStreamTransform`.
+TEST(CascadesStepIdentity, DistinctStepSortDescriptionIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false);
+    auto b_step = std::make_unique<DistinctStep>(header, SizeLimits{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false);
+    b_step->applyOrder(makeSortDescription());
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
 /// LimitByStep
 
 TEST(CascadesStepIdentity, LimitByStepClonesAreEqual)
@@ -958,8 +976,10 @@ struct MergeTreeReadFixture
     StorageSnapshotPtr storage_snapshot;
     MergeTreeSettingsPtr data_settings;
     RangesInDataPartsPtr parts;
+    String relative_data_path;
 
     explicit MergeTreeReadFixture(const String & table_name)
+        : relative_data_path("store/test_cascades_step_identity_" + table_name + "/")
     {
         MainThreadStatus::getInstance();
         tryRegisterFunctions();
@@ -993,7 +1013,7 @@ struct MergeTreeReadFixture
         auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
         storage = std::make_shared<StorageMergeTree>(
             StorageID("test_cascades_identity", table_name),
-            "store/test_cascades_step_identity_" + table_name + "/",
+            relative_data_path,
             metadata,
             LoadingStrictnessLevel::ATTACH,
             context,
@@ -1009,7 +1029,16 @@ struct MergeTreeReadFixture
         parts = std::make_shared<RangesInDataParts>();
     }
 
-    ~MergeTreeReadFixture() { storage->flushAndShutdown(); }
+    ~MergeTreeReadFixture()
+    {
+        /// Capture the on-disk paths before shutdown, then remove them: `StorageMergeTree` never
+        /// deletes its own directory, so a bare `flushAndShutdown` leaves `relative_data_path` behind
+        /// on every run.
+        const auto data_paths = storage->getDataPaths();
+        storage->flushAndShutdown();
+        for (const auto & path : data_paths)
+            std::filesystem::remove_all(path);
+    }
 
     /// `table_expression_modifiers` must be present: with no modifiers and no query tree `isFinal()`
     /// falls back to the (absent) select AST. Note that every call allocates its own `PreparedSets`,

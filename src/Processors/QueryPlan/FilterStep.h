@@ -81,7 +81,10 @@ public:
     ///
     /// `isSerializable()` is unconditionally `true`, but a correlated `PLACEHOLDER` node makes
     /// `actions_dag.serialize` throw ("Unknown node type"), so the predicate also requires
-    /// `!hasCorrelatedExpressions()` to keep the invariant true by construction.
+    /// `!hasCorrelatedExpressions()`. That check is not exhaustive: `hasCorrelatedColumns` is
+    /// non-recursive, so a `PLACEHOLDER` inside a `FunctionCapture` sub-DAG escapes it, and
+    /// `serialize` has other throw paths (duplicate nodes, unexpected constant columns) shared with
+    /// the distributed wire path - pre-existing gaps, to be tracked upstream.
     bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 
