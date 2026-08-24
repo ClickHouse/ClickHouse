@@ -195,11 +195,11 @@ void ReadPlan::retireBefore(size_t offset)
     for (auto & tier : tiers)
     {
         auto & cells = tier.cells;
-        size_t keep = 0;
-        while (keep < cells.size() && cells[keep].range.end() <= offset)
-            ++keep;
-        if (keep > 0)
-            cells.erase(cells.begin(), cells.begin() + keep);   /// releases the pinned readers/writers
+        /// Cells are offset-ordered, so the consumed ones (ending at or before `offset`) are a leading
+        /// run: erase it, releasing the pinned readers/writers.
+        auto first_live = std::find_if(cells.begin(), cells.end(),
+            [&](const CacheResolution & c) { return c.range.end() > offset; });
+        cells.erase(cells.begin(), first_live);
     }
     /// Free the memory hold the cursor has passed; keep what is still ahead.
     if (!memory.empty())
