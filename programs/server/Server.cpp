@@ -899,9 +899,16 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 if (!fs::exists(governor_path))
                     continue;
 
-                String governor = readLine(governor_path.string());
-                if (governor != "performance")
-                    slow_governors.insert(governor);
+                try
+                {
+                    String governor = readLine(governor_path.string());
+                    if (governor != "performance")
+                        slow_governors.insert(governor);
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable CPU must not hide the governors of the others.
+                }
             }
         }
         if (!slow_governors.empty())
@@ -1132,8 +1139,15 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     readText(count, in);
                     return count;
                 };
-                corrected_errors += read_count("ce_count");
-                uncorrected_errors += read_count("ue_count");
+                try
+                {
+                    corrected_errors += read_count("ce_count");
+                    uncorrected_errors += read_count("ue_count");
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable controller must not hide the counts of the others.
+                }
             }
         }
         if (corrected_errors >= 100)
@@ -1199,10 +1213,17 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 auto throttle_path = entry.path() / "thermal_throttle" / "core_throttle_count";
                 if (!fs::exists(throttle_path))
                     continue;
-                ReadBufferFromFile in(throttle_path.string());
-                UInt64 count = 0;
-                readText(count, in);
-                throttle_events += count;
+                try
+                {
+                    ReadBufferFromFile in(throttle_path.string());
+                    UInt64 count = 0;
+                    readText(count, in);
+                    throttle_events += count;
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable core must not hide the throttling of the others.
+                }
             }
         }
         if (throttle_events > 0)
@@ -1331,9 +1352,9 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::DATA_PATH_ON_OVERLAY_FS,
                 PreformattedMessage::create(
-                    "The data directory {} is located on an overlay filesystem, typically the ephemeral layer of a container."
-                    " The data will be lost when the container is removed, and I/O performance is reduced."
-                    " Mount a volume for the data directory instead.", String(data_path)));
+                    "The data directory {} is located on an overlay filesystem, which reduces I/O performance."
+                    " If this is the writable layer of a container, the data will also be lost when the container is removed;"
+                    " mount a volume for the data directory instead.", String(data_path)));
 
         std::error_code ec;
         auto data_space = fs::space(canonical_data_path, ec);
