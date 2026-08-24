@@ -1521,17 +1521,9 @@ namespace
 
     void Call::close()
     {
-        /// A speculative read started by readQueryInfo() may still be in flight. Its completion
+        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
         /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
         /// owned by the responder, so both have to outlive it.
-        ///
-        /// The read cannot be quiesced any earlier than here: it is the only way for the client to
-        /// deliver the `cancel` flag while the query is running, and the client is not required to
-        /// half-close the request stream before it receives the final result. Waiting for it before
-        /// sending that result could therefore wait forever, and cancelling the call instead of
-        /// waiting would prevent the result from being delivered at all. Sending the final result
-        /// with a read in flight is safe: gRPC allows one outstanding operation per direction, and
-        /// once the status has been sent the pending read completes with `ok` set to false.
         if (reading_query_info.get())
         {
             /// If the call has not been finished, nothing would complete that read on its own.
