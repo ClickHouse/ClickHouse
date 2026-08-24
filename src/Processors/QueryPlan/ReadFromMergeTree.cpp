@@ -2186,6 +2186,10 @@ static NameSet getColumnsRequiredForMergingFinal(
             [[fallthrough]];
         case MergeTreeData::MergingParams::Summing:
             break;
+        case MergeTreeData::MergingParams::VersionedCoalescing: {
+            required_columns.insert(merging_params.version_column);
+            break;
+        }
         case MergeTreeData::MergingParams::VersionedCollapsing:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Collapsing: {

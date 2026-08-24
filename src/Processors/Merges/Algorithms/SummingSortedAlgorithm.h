@@ -30,7 +30,11 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
-        bool allow_tuple_element_aggregation);
+        bool allow_tuple_element_aggregation,
+        /// If non-empty, for every aggregated column the value of the row with the maximum
+        /// version is kept (later rows win ties) instead of the value of the last row.
+        /// Used by VersionedCoalescingMergeTree, requires aggregate_all_columns.
+        const String & version_column = {});
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
