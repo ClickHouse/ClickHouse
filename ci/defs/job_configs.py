@@ -111,7 +111,6 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -705,11 +704,8 @@ class JobConfigs:
     # subset as well. If test selection cannot be fetched, the job fails instead
     # of silently running a weaker unbatched fallback configuration.
     # The selection is computed from PR-local state (including failed tests
-    # from earlier jobs) that is not part of a repository digest. Reusing a
-    # cached result could therefore skip a different selection; keep these
-    # jobs uncached.
+    # from earlier jobs).
     selected_ft_job_config = common_ft_job_config.copy()
-    selected_ft_job_config.digest_config = None
     stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
@@ -1785,10 +1781,7 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
                 "./ci/jobs/parser_memory_check.py",
-                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
@@ -1830,15 +1823,7 @@ class JobConfigs:
     # Compares the PR's arm_release build profile (binary and per-object sizes,
     # per-symbol sizes, compile and link time down to individual functions and
     # template instantiations) against the latest master build, and posts a PR
-    # comment when the change is significant. The data comes from the CI logs
-    # cluster: the PR side is uploaded by the arm_release build post-hook
-    # (build_profile_hook.py), the master side by master workflow builds.
-    # No digest_config, i.e. not cacheable: the job's output is a PR comment
-    # about one concrete commit (it embeds the head sha and links this run's
-    # report). Reusing a cached result would leave that comment describing an
-    # older commit of the PR - including a change that the head has already
-    # reverted - so the comparison is redone for every head. The job is cheap:
-    # it only queries the CI logs cluster.
+    # comment when the change is significant.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1848,6 +1833,9 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         requires=["Build (arm_release)"],
         command="python3 ./ci/jobs/build_profile_diff_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_profile_diff_job.py"],
+        ),
         timeout=1800,
         enable_gh_auth=True,
         # Run on a red head too. This job is the only writer of the
@@ -1906,7 +1894,6 @@ class JobConfigs:
                 integration_test_jobs_required + integration_test_jobs_non_required
             )
         ],
-        run_unless_cancelled=True,
         command="python3 ./ci/jobs/promql_compliance_job.py",
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
