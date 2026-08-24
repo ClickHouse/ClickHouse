@@ -169,13 +169,19 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
 
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
 
-    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
-    auto group_id = memo.addGroup(group_expression);
+    /// Recurse before inserting this expression, so inputs are final groups by the time the
+    /// expression enters the memo (a future memo-wide index fingerprints inputs at insertion).
+    std::vector<GroupExpression::Input> inputs;
+    inputs.reserve(node.children.size());
     for (auto * child_node : node.children)
     {
         auto [input_group_id, pending_props] = addGroup(*child_node);
-        group_expression->inputs.push_back({input_group_id, pending_props});
+        inputs.push_back({input_group_id, pending_props});
     }
+
+    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
+    group_expression->inputs = std::move(inputs);
+    auto group_id = memo.addGroup(group_expression);
 
     /// Set statistics on the group (shared by all expressions in the group)
     auto group = memo.getGroup(group_id);

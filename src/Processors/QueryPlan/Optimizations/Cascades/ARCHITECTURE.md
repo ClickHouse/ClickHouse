@@ -682,6 +682,11 @@ Each operator becomes a group. `SortingStep` is stripped — the sort descriptio
 `[total_revenue DESC]` becomes a required property on Group #1's input link.
 `TwoStageAggregation` transformation creates an additional Group #12.
 
+`CascadesOptimizer::addGroup` assigns ids in post-order — it recurses into a step's
+children before inserting the step's own expression, so a child always gets a lower id
+than its parent and the root group gets the highest id. The ids below are numbered
+top-down purely for readability; the actual ids `addGroup` assigns run bottom-up.
+
 ```
 Group #0:  Expression (Project names)         -- root, required: {1 node}
 Group #1:  Expression (before ORDER BY)       -- required: {1 node, sorted [revenue DESC]}
