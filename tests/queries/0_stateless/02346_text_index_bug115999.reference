@@ -1,0 +1,9 @@
+default settings
+1
+2
+use_skip_indexes = 0
+1
+2
+query_plan_direct_read_from_text_index = 0
+1
+2
