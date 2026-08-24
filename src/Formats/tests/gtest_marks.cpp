@@ -79,11 +79,11 @@ size_t referenceDistinctMarksCapped(const PODArray<MarkInCompressedFile> & plain
 {
     size_t count = 0;
     MarkInCompressedFile last{UINT64_MAX, UINT64_MAX};
-    for (size_t i = 0; i < plain.size(); ++i)
+    for (const auto & m : plain)
     {
-        if (plain[i] != last)
+        if (m != last)
         {
-            last = plain[i];
+            last = m;
             if (count < MarksInCompressedFile::DISTINCT_MARKS_CAP)
                 ++count;
         }
