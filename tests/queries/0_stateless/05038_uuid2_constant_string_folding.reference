@@ -1,0 +1,21 @@
+replaceOne in the type-name argument
+x	UUID2
+replaceAll in the type-name argument
+x	UUID2
+upper in the type-name argument
+x	UUID2
+nested fold
+x	UUID2
+JSONExtract with a folded type name
+x	UUID2
+structureToProtobufSchema schema string
+1
+structureToCapnProtoSchema schema string
+1
+table-function structure string
+1
+UUID2
+an expression outside the whitelist is left alone
+x	UUID
+nothing is folded or rewritten under uuid_type_version = 1
+x	UUID

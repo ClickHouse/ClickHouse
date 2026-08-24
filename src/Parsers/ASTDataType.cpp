@@ -317,30 +317,108 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     return {};
 }
 
-/// Materialize the subset of constant expressions accepted as table-function structures before freezing their type.
-/// Table functions evaluate their arguments later, so a persisted `concat('id ', 'UUID')` must become a literal now.
-bool foldConstantStringExpression(ASTPtr & argument)
+/// Fold every argument of the function into a string, recursively. Fails when any argument is not a
+/// constant string expression this folder understands.
+bool foldFunctionArgumentsToStrings(ASTFunction & function, std::vector<String> & values)
 {
-    if (argument->as<ASTLiteral>())
-        return true;
-
-    auto * function = argument->as<ASTFunction>();
-    if (!function || !equalsCaseInsensitiveString(function->name, "concat") || !function->arguments)
-        return false;
-
-    String result;
-    for (auto & child : function->arguments->children)
+    values.clear();
+    values.reserve(function.arguments->children.size());
+    for (auto & child : function.arguments->children)
     {
         if (!foldConstantStringExpression(child))
             return false;
         const auto * literal = child->as<ASTLiteral>();
         if (literal->value.getType() != Field::Types::String)
             return false;
-        result += literal->value.safeGet<String>();
+        values.push_back(literal->value.safeGet<String>());
+    }
+    return true;
+}
+
+/// Mirrors `replaceOne` / `replaceAll`: non-overlapping occurrences are replaced left to right, and an
+/// empty pattern leaves the haystack unchanged (see `ReplaceStringImpl::vectorConstantConstant`).
+String replaceSubstring(const String & haystack, const String & needle, const String & replacement, bool replace_all)
+{
+    if (needle.empty())
+        return haystack;
+
+    String result;
+    size_t pos = 0;
+    while (true)
+    {
+        const size_t match = haystack.find(needle, pos);
+        if (match == String::npos)
+            break;
+        result.append(haystack, pos, match - pos);
+        result += replacement;
+        pos = match + needle.size();
+        if (!replace_all)
+            break;
+    }
+    result.append(haystack, pos, String::npos);
+    return result;
+}
+
+/** Materialize the subset of constant expressions accepted as type-name and structure carriers before freezing
+  * their type. The carriers are evaluated as constant expressions later, so a persisted `concat('id ', 'UUID')`
+  * must become a literal now.
+  *
+  * The fold is a whitelist of deterministic string functions whose byte-level runtime semantics are mirrored
+  * here exactly: this runs during query normalization, where the expression evaluator (and the `Context` it
+  * needs) is not available. An expression outside the whitelist is left alone, and the carrier is then not
+  * materialized - the same as for any other dynamically built type name, which the setting deliberately does
+  * not chase.
+  */
+bool foldConstantStringExpression(ASTPtr & argument)
+{
+    if (argument->as<ASTLiteral>())
+        return true;
+
+    auto * function = argument->as<ASTFunction>();
+    if (!function || !function->arguments || function->parameters)
+        return false;
+
+    const auto is = [&](std::string_view name) { return equalsCaseInsensitiveString(function->name, name); };
+
+    std::vector<String> values;
+
+    if (is("concat"))
+    {
+        if (!foldFunctionArgumentsToStrings(*function, values) || values.empty())
+            return false;
+        String result;
+        for (const auto & value : values)
+            result += value;
+        argument = make_intrusive<ASTLiteral>(Field(std::move(result)));
+        return true;
     }
 
-    argument = make_intrusive<ASTLiteral>(Field(std::move(result)));
-    return true;
+    if (is("replaceOne") || is("replaceAll") || is("replace"))
+    {
+        if (!foldFunctionArgumentsToStrings(*function, values) || values.size() != 3)
+            return false;
+        argument = make_intrusive<ASTLiteral>(Field(replaceSubstring(values[0], values[1], values[2], !is("replaceOne"))));
+        return true;
+    }
+
+    /// The ASCII-only case flips; `upperUTF8` / `lowerUTF8` are deliberately absent.
+    if (is("upper") || is("ucase") || is("lower") || is("lcase"))
+    {
+        if (!foldFunctionArgumentsToStrings(*function, values) || values.size() != 1)
+            return false;
+        const bool to_upper = is("upper") || is("ucase");
+        for (auto & c : values[0])
+        {
+            if (to_upper && c >= 'a' && c <= 'z')
+                c = static_cast<char>(c - 'a' + 'A');
+            else if (!to_upper && c >= 'A' && c <= 'Z')
+                c = static_cast<char>(c - 'A' + 'a');
+        }
+        argument = make_intrusive<ASTLiteral>(Field(std::move(values[0])));
+        return true;
+    }
+
+    return false;
 }
 
 /** Rewrite the schema string of a table function in a persisted definition.
@@ -361,16 +439,16 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
     if (!function.arguments)
         return false;
 
-    const auto & arguments = function.arguments->children;
+    auto & arguments = function.arguments->children;
     for (const auto & candidate : columns_list_arguments)
     {
         if (!equalsCaseInsensitiveString(function.name, candidate.function_name))
             continue;
         if (candidate.argument_index >= arguments.size())
             return false;
-        if (auto * literal = arguments[candidate.argument_index]->as<ASTLiteral>())
-            return substituteBareUUIDInColumnsListLiteral(*literal);
-        return false;
+        if (!foldConstantStringExpression(arguments[candidate.argument_index]))
+            return false;
+        return substituteBareUUIDInColumnsListLiteral(*arguments[candidate.argument_index]->as<ASTLiteral>());
     }
 
     return false;
