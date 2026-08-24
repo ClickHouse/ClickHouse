@@ -590,7 +590,7 @@ jobs:
       runner_type: ${{ inputs.runner_type }}
       build_sha: ${{ inputs.build_sha }}
       set_commit_status: true
-      job_name: cas_${{ matrix.SUITE }}
+      job_name: cas_s3_cache_${{ matrix.SUITE }}
       regression_args: --cas-s3-cache
     secrets: inherit
 
@@ -649,7 +649,7 @@ jobs:
       part: ${{ matrix.PART }}
       build_sha: ${{ inputs.build_sha }}
       set_commit_status: true
-      job_name: cas_aggregate_functions
+      job_name: cas_s3_cache_aggregate_functions
       regression_args: --cas-s3-cache
       extra_args: --only "part ${{ matrix.PART }}/*"
     secrets: inherit
@@ -717,7 +717,7 @@ jobs:
       part: ${{ matrix.PART }}
       build_sha: ${{ inputs.build_sha }}
       set_commit_status: true
-      job_name: cas_lightweight_delete
+      job_name: cas_s3_cache_lightweight_delete
       regression_args: --cas-s3-cache
       extra_args: ${{ matrix.FILTER }}
     secrets: inherit
@@ -787,7 +787,7 @@ jobs:
       part: ${{ matrix.PART }}
       build_sha: ${{ inputs.build_sha }}
       set_commit_status: true
-      job_name: cas_alter_${{ matrix.ONLY }}
+      job_name: cas_s3_cache_alter_${{ matrix.ONLY }}
       regression_args: --cas-s3-cache
       extra_args: --only "/alter/${{ matrix.ONLY }} partition/${{ matrix.PART && format('part {0}/', matrix.PART) || '' }}*"
     secrets: inherit
