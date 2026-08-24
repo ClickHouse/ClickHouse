@@ -21,8 +21,6 @@
 
 #include <Core/ProtocolDefines.h>
 
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryPlanCache.h>
