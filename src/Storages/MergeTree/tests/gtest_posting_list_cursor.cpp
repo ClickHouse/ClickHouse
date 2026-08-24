@@ -3697,7 +3697,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "gamma");
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "gamma");
     EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 13u);
 
     ReadBufferFromString in_with_positions(out_with_positions.str());
