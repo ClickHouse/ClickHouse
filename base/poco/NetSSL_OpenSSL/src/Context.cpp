@@ -318,7 +318,7 @@ void Context::init(const Params& params)
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyClientCallback);
 
 		// Only ':', ' ', ';' and ',' separate items in an OpenSSL cipher list, so a newline or
-		// tab is a lexing error rather than padding, and it makes the whole list unusable.
+		// tab is a lexing error rather than padding.
 		std::string cipherList = Poco::trim(params.cipherList);
 
 		// The reason code below only describes this call if the queue is empty on entry: the

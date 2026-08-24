@@ -266,14 +266,18 @@ def check_cipher_list_is_enforced(ssl_conf_file, allowed_cipher, excluded_cipher
     start_all_clickhouse()
     wait_for_raft_ssl_listener(nodes[0], log_anchors[nodes[0].name])
 
-    # The configured value keeps its surrounding whitespace all the way to OpenSSL,
-    # so this arm only means something if it is still padded here.
-    configured = nodes[0].query(
-        "SELECT value FROM system.server_settings "
+    # The configured value keeps its surrounding whitespace all the way to OpenSSL, so this
+    # arm only means something if it is still padded here. The bytes are compared as hex
+    # because a newline is rendered as a two-character escape sequence in TSV output, and
+    # because the client appends a record separator of its own.
+    configured_hex = nodes[0].query(
+        "SELECT hex(value) FROM system.server_settings "
         "WHERE name = 'openSSL.server.cipherList'"
     )
-    assert configured != configured.strip(), (
-        f"fixture is not armed: cipherList reached the server already trimmed: {configured!r}"
+    configured_hex = configured_hex.strip()
+    assert configured_hex.startswith("0A") and configured_hex.endswith("20"), (
+        "fixture is not armed: cipherList reached the server without the surrounding "
+        f"whitespace this arm needs: {configured_hex}"
     )
 
     assert offer_single_cipher(nodes[0], allowed_cipher)
