@@ -123,7 +123,7 @@ INSERT INTO tab VALUES (1, 'alpha beta'), (2, 'gamma 50%off delta'), (3, 'epsilo
 
 SELECT '-- no backslash';
 
-SELECT trimLeft(explain) AS explain FROM (
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE msg LIKE '% beta %'
 ) WHERE explain LIKE '%Granules: %/%';
 
@@ -132,7 +132,7 @@ SELECT '-- valid escape';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '% 50\\%off %';
 SELECT groupArray(id) FROM tab WHERE msg LIKE '% 50\\%off %' SETTINGS use_skip_indexes = 0;
 
-SELECT trimLeft(explain) AS explain FROM (
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE msg LIKE '% 50\\%off %'
 ) WHERE explain LIKE '%Granules: %/%';
 
