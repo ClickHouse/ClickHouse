@@ -1,4 +1,7 @@
--- Tags: no-fasttest, use-rocksdb
+-- Tags: no-fasttest, use-rocksdb, long
+-- long: one run of this file goes past the flaky check's 180s per-run budget under ASan
+-- with S3 storage and metadata in Keeper, where every statement pays an object-storage
+-- round trip. Untagged, that budget fails the check outright rather than reporting a flake.
 -- A subcolumn read through a `Merge` table must agree with the parent column that same table
 -- returns for the row. `Buffer` and `StorageView` carry the same wrapper defect and are
 -- deliberately NOT covered here: each needs a different mechanism and ships separately.
