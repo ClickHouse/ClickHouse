@@ -4938,6 +4938,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+أُضيف في: v26.8.0
+
+دالة توافقية لبروتوكول الاتصال PostgreSQL، وهي مماثلة لـ `pg_catalog.pg_get_userbyid`.
+يستخدمها عملاء PostgreSQL (مثل الأمر `\d` في `psql`) لعرض مالك الجدول.
+لا يتتبع ClickHouse ملكية الجداول، لذا تتجاهل الدالة الوسيطة وتُرجع اسم المستخدم الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
+**البنية**
+
+```sql
+pgGetUserById(oid)
+```
+
+**الأسماء المستعارة**: `pg_get_userbyid`
+
+**الوسيطات**
+
+* `oid` — معرّف كائن الدور. تُتجاهل القيمة. [`UInt32`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+يعيد اسم المستخدم الحالي. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+أُضيف في: v26.8.0
+
+دالة توافق مع بروتوكول الاتصال PostgreSQL، وهي نظير للدالة `pg_catalog.pg_table_is_visible`.
+تستخدمها عميل PostgreSQL (مثل الأمر `\d` في `psql`) لتصفية الجداول الظاهرة في مسار البحث.
+ونظرًا لأن العرض `pg_class` الذي يحاكيه ClickHouse لا يكشف إلا عن جداول قاعدة البيانات الحالية، وجميعها ظاهرة، فإن الدالة تُرجع دائمًا `1`.
+
+**الصياغة**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**الأسماء البديلة**: `pg_table_is_visible`
+
+**الوسيطات**
+
+* `oid` — معرّف كائن الجدول، كما هو معروض في طريقة العرض المحاكية `pg_class`. تُتجاهل القيمة. [`UInt32`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُرجع دائمًا `1`. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5567,6 +5651,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 أُضيف في: v22.6.0
 
 يعرض معلومات عن شهادة SSL الخاصة بالخادم الحالي إذا كانت مُهيّأة.
+تُعاد خريطة فارغة إذا لم تكن لدى الخادم شهادة، على سبيل المثال، عندما تُوفَّر الشهادة باستخدام ACME ولم تُصدر بعد.
 راجع [إعداد TLS](/ar/concepts/features/security/tls/configuring-tls) لمزيد من المعلومات حول كيفية إعداد ClickHouse لاستخدام شهادات OpenSSL للتحقق من الاتصالات.
 
 **الصيغة**
@@ -5575,7 +5660,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 showCertificate()
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * لا شيء.
 

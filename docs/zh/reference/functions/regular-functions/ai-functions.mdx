@@ -365,8 +365,10 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 使用 LLM 提供商根据给定文本评估自然语言条件，并返回适用于 `WHERE`、`PREWHERE` 和 `JOIN ... ON` 的布尔值 (`UInt8`) 。
 
-该函数要求模型仅以小写 `true` 或 `false` 作答。失败的请求 (当
-`ai_function_throw_on_error` 被禁用时) 和无法识别的响应都会映射为 `0`，因此会过滤掉该行。
+该函数要求模型仅以小写 `true` 或 `false` 作答。除 `true` 以外的任何完整响应
+(包括 `false` 和无法识别的文本) 都会映射为 `0`，因此会过滤掉该行。提供商标记为不完整的回复——被截断、经过内容过滤或需要进一步操作——则会被
+视为错误：启用 `ai_function_throw_on_error` (默认值) 时，查询会中止；禁用该设置时，
+该行会映射为 `0` 并被过滤掉。
 
 **Warning：** 请勿在未经审查的情况下信任 `aiFilter` 的结果。基于 LLM 的谓词可能不正确
 或不一致；仅应在可以接受假阳性和假阴性的场景中使用。
@@ -497,7 +499,8 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 由于 `aiRedact` 返回替换 PII 后的完整输入文本，输出长度大致与输入相同。
 请将 `max_tokens` (默认值为 `1024`) 设置为大于输入的标记数；因限制过低而被截断的回复
-将不完整。
+会被拒绝并返回 `AI_PROVIDER_RESPONSE_TRUNCATED` (或在禁用 `ai_function_throw_on_error`
+时返回列默认值) ，而不会返回部分脱敏的文本。
 
 **语法**
 
@@ -511,7 +514,7 @@ aiRedact(text, categories[, params])
 
 * `text` — 要脱敏的文本。[`String`](/zh/reference/data-types/string)
 * `categories` — 要脱敏的 PII 类别常量列表 (例如 `['name', 'ssn', 'credit_card']`) 。空数组会使用一组默认的常见类别 (姓名、电子邮件、电话号码、地址、信用卡、IP 地址) 。[`Array(String)`](/zh/reference/data-types/array)
-* `params` — 可选的常量 `Map(String, String)` 参数映射。函数专用键包括：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 、`max_tokens` (每次调用的最大输出标记数；默认值为 `1024`——由于 `aiRedact` 返回完整文本，应将其设为大于输入标记数的值，否则响应可能被截断而不完整) 、`replacement` (用于替换每个检测到的 PII span 的标记；默认值为 `[REDACTED]`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+* `params` — 可选的常量 `Map(String, String)` 参数映射。函数专用键包括：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 、`max_tokens` (每次调用的最大输出标记数；默认值为 `1024`——由于 `aiRedact` 返回完整文本，应将其设为大于输入标记数的值；因限制过低而被截断的回复会被拒绝，而不会返回仅部分脱敏的文本) 、`replacement` (用于替换每个检测到的 PII span 的标记；默认值为 `[REDACTED]`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
 
 **返回值**
 

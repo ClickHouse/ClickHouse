@@ -15,6 +15,8 @@ Introduzida em: v25.6.0
 
 Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula uma [previsão linear no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear), com um deslocamento de timestamp de previsão especificado, em uma grade temporal regular definida pelo timestamp inicial, pelo timestamp final e pelo passo. Para cada ponto da grade, são consideradas as amostras dentro da janela de tempo especificada para calcular `predict_linear`.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto, um valor NaN é usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Note>
   Esta função é experimental. Para habilitá-la, defina `allow_experimental_time_series_aggregate_functions=true`.
 </Note>

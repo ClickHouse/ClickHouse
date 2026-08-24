@@ -112,7 +112,7 @@ Até que todos os dados de todos os arquivos sejam processados, cada thread de i
 Go to ①. 
 ```
 
-O número dessas threads paralelas de inserção pode ser configurado pela setting [`max_insert_threads`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads). O valor padrão é `1` no ClickHouse open-source e 4 no [ClickHouse Cloud](https://clickhouse.com/cloud).
+O número dessas threads paralelas de inserção pode ser configurado pela SETTING [`max_insert_threads`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads). No ClickHouse de código aberto, o valor padrão desde a versão 26.8 é `0` (auto: o número de núcleos de CPU, reduzido sob pressão de memória). No [ClickHouse Cloud](https://clickhouse.com/cloud), o padrão é `1` para nós com 8 GiB de memória, `2` para nós com 16 GiB e `4` para nós maiores.
 
 Com um grande número de arquivos, o processamento paralelo por várias threads de inserção funciona bem. Ele pode saturar completamente tanto os núcleos de CPU disponíveis quanto a largura de banda da rede (para downloads paralelos de arquivos). Em cenários em que apenas alguns arquivos grandes serão carregados em uma tabela, o ClickHouse estabelece automaticamente um alto nível de paralelismo no processamento de dados e otimiza o uso da largura de banda da rede criando threads de leitura adicionais por thread de inserção para ler (baixar) em paralelo mais intervalos distintos dentro de arquivos grandes.
 

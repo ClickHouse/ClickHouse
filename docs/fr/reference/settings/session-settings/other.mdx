@@ -1803,6 +1803,16 @@ Valeurs possibles :
 * `0` - La chaîne restante ne sera pas incluse dans le dernier élément du tableau résultant.
 * `1` - La chaîne restante sera incluse dans le dernier élément du tableau résultant. Il s&#39;agit du comportement de la fonction [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark et de la méthode [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "Nouveau paramètre qui limite le coût de l'estimation de la sélectivité de `IN` avec un grand ensemble : au-delà de cette limite, l'estimateur utilise la taille de l'ensemble et sa plage englobante plutôt que les plages exactes. Avant la version 26.8, l'estimation n'était pas plafonnée ; la valeur précédente est donc 0 (aucune limite), et `compatibility` avec une version antérieure rétablit les plages exactes pour les ensembles de toute taille."}]}]} />
+
+La taille maximale de l&#39;ensemble situé à droite de l&#39;opérateur `IN` pour laquelle l&#39;estimateur de sélectivité détermine les plages exactes couvertes par l&#39;ensemble. Cette opération nécessite un `Field` par élément, un tri et une sonde de statistiques par élément, ce qui, pour un grand ensemble, représente la majeure partie de la planification de la requête. Au-delà de cette limite, l&#39;estimateur détermine plutôt la sélectivité à partir de la taille de l&#39;ensemble et de sa plage englobante, en un seul parcours linéaire de l&#39;ensemble, sans tri ni sondes de statistiques par élément. Zéro signifie qu&#39;il n&#39;y a pas de limite.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1838,6 +1848,18 @@ Délai d&#39;attente pour verrouiller le cache lors de la réservation d&#39;esp
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Autorise ou interdit les `INSERT` vides. Ce paramètre est activé par défaut (et déclenche une erreur en cas d&#39;insert vide). S&#39;applique uniquement aux `INSERT` effectués avec [`clickhouse-client`](/fr/concepts/features/interfaces/cli) ou via l&#39;[interface gRPC](/fr/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de lire dans la table d’échantillons récents d’une table TimeSeries lorsque l’intervalle de temps demandé est entièrement inclus dans sa fenêtre TTL."}]}]} />
+
+Lit dans la table d’échantillons récents d’une table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) plutôt que dans la table d’échantillons principale lorsque l’intervalle de temps demandé est entièrement inclus dans la fenêtre TTL de la table d’échantillons récents (voir le paramètre `recent_samples_ttl_seconds` du moteur de table TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

@@ -112,7 +112,7 @@ s3 等表函数支持通过 glob 模式指定一组待加载的文件名。当�
 Go to ①. 
 ```
 
-此类并行插入线程的数量可通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 设置进行配置。对于开源 ClickHouse，默认值为 `1`；对于 [ClickHouse Cloud](https://clickhouse.com/cloud)，默认值为 4。
+此类并行插入线程的数量可通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 设置进行配置。自 26.8 起，对于开源 ClickHouse，默认值为 `0` (自动：CPU 核心数量，在内存压力下会降低) 。对于 [ClickHouse Cloud](https://clickhouse.com/cloud)，内存为 8 GiB 的节点默认值为 `1`，16 GiB 的节点为 `2`，更大的节点为 `4`。
 
 当文件数量很多时，多个插入线程并行处理的效果很好。它可以充分利用可用的 CPU 核心和网络带宽 (用于并行下载文件) 。在只有少量大文件需要加载到表中的场景下，ClickHouse 会自动实现较高的数据处理并行度，并通过为每个插入线程额外派生读取线程，并行读取 (下载) 大文件中更多不同区间的数据，从而优化网络带宽利用率。
 

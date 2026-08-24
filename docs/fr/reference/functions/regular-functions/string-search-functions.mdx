@@ -488,13 +488,13 @@ Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité 
 hasAllTokens(input, needles[, tokenizer])
 ```
 
-**Alias** : `hasAllToken`
+**Alias** : `hasAllToken`
 
 **Arguments**
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -502,7 +502,7 @@ Renvoie 1 si toutes les aiguilles correspondent. 0 sinon. [`UInt8`](/fr/referenc
 
 **Exemples**
 
-**Utilisation de base avec une aiguille (needle) de type chaîne**
+**Utilisation de base avec une chaîne comme aiguille**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles[, tokenizer])
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -913,7 +913,8 @@ Vérifie si `input` contient tous les tokens de `phrase` dans un ordre consécut
 
 Avant la recherche, la fonction tokenise les arguments `input` et `phrase` à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
 Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place — sauf si un tokenizer est fourni comme troisième argument facultatif.
-L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` ou `icu`.
+L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` ou `icu`.
+Notez que `splitByRegexp` n&#39;est pas pris en charge pour `hasPhrase` lorsque l&#39;index de texte définit également un postprocessor.
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasPhrase` l&#39;applique à la fois à `input` et à `phrase` avant la tokenisation.
@@ -1538,7 +1539,7 @@ Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 
-Syntaxe d’opérateur alternative : `haystack REGEXP pattern`.
+Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
 
 **Syntaxe**
 
@@ -1593,6 +1594,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
 │                      1 │                        0 │
 └────────────────────────┴──────────────────────────┘
+```
+
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`match`](#match), mais effectue une correspondance sans tenir compte de la casse.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack ~* pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `1` si le motif correspond sans tenir compte de la casse, `0` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
+│                        1 │                          1 │
+└──────────────────────────┴────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -2892,6 +2935,90 @@ SELECT notLike('ClickHouse', '%SQL%');
 ┌─notLike('Cli⋯', '%SQL%')─┐
 │                        1 │
 └──────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`match`](#match), mais inverse le résultat : vérifie que la chaîne ne correspond pas au motif d’expression régulière.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack !~ pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `0` si le motif correspond, `1` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`matchCaseInsensitive`](#matchCaseInsensitive), mais inverse le résultat : vérifie que la chaîne ne correspond pas au motif d’expression régulière sans tenir compte de la casse.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack !~* pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `0` si le motif correspond sans tenir compte de la casse, `1` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
 ```
 
 <div id="position">

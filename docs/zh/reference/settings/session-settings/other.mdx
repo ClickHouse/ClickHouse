@@ -1793,6 +1793,16 @@ TCPHandler 收到查询后休眠的时长
 * `0` - 剩余字符串不会包含在结果数组的最后一个元素中。
 * `1` - 剩余字符串会包含在结果数组的最后一个元素中。这是 Spark 的 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 函数和 Python 的 [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) 方法的行为。
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "新增设置，用于限制估算大型集合 `IN` 选择性时的成本：超过此限制后，估算器会使用集合大小及其边界范围，而非精确范围。在 26.8 之前，估算没有上限，因此先前的值为 0（无限制）；与早期版本兼容时，`compatibility` 会恢复任意大小集合的精确范围。"}]}]} />
+
+`IN` 运算符右侧集合的最大大小。对于不超过该大小的集合，选择性估算器会推导出该集合覆盖的精确范围。推导这些范围需要为每个元素分配一个 `Field`、进行一次排序，并对每个元素执行一次统计信息探测；对于大型集合，这些操作会成为查询计划的主要开销。超过此限制后，估算器会改为根据集合大小及其边界范围推导选择性，只需对集合进行一次线性遍历，无需排序或逐元素执行统计信息探测。零表示无限制。
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1828,6 +1838,18 @@ TCPHandler 收到查询后休眠的时长
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许或禁止空 INSERT，默认启用 (空插入时会抛出错误) 。仅适用于通过 [`ClickHouse 客户端`](/zh/concepts/features/interfaces/cli) 或 [gRPC 接口](/zh/concepts/features/interfaces/grpc) 执行的 INSERT。
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：当请求的时间范围完全落在 TimeSeries 表近期样本表的 TTL 窗口内时，从该表读取数据。"}]}]} />
+
+当请求的整个时间范围完全落在近期样本表的生存时间 (TTL) 窗口内时，从 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表的近期样本表而非主样本表读取数据 (请参阅 TimeSeries 表引擎的 `recent_samples_ttl_seconds` 设置) 。
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

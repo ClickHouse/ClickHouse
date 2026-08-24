@@ -183,7 +183,7 @@ ClickHouse 支持 Iceberg 表的时间旅行功能，让您可以使用特定的
   ### 示例场景
 </div>
 
-以下所有场景均使用 Spark，因为 CH 目前尚不支持向 Iceberg 表写入数据。
+这些场景使用 Spark 来演示外部 Iceberg 写入器进行的 schema 变更。
 
 <div id="scenario-1">
   #### 场景 1：无新增快照时的 schema 变更
@@ -388,9 +388,9 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
   ## 写入 Iceberg 表
 </div>
 
-从 25.7 版本开始，ClickHouse 支持对用户的 Iceberg 表进行修改。
+从 25.7 版本开始，ClickHouse 支持修改位于可写存储后端上的 Iceberg 表。
 
-目前这还是一项 Experimental 功能，因此首先需要启用它：
+在修改或维护 Iceberg 表之前，请启用 [`allow_insert_into_iceberg` 设置](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg)。如下所述，某些操作还需要额外设置：
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -400,7 +400,7 @@ SET allow_insert_into_iceberg = 1;
   ### 创建表
 </div>
 
-要创建自己的空 Iceberg 表，请使用与读取时相同的命令，但需要显式指定 schema。
+要在可写 backend 上创建新的独立 Iceberg 表，请使用 Iceberg 表引擎，并显式指定 schema。
 写入支持 Iceberg 规范中的所有数据格式，例如 Parquet、Avro、ORC。
 
 <div id="example">
@@ -422,6 +422,8 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 <div id="writes-inserts">
   ### INSERT
 </div>
+
+<BetaBadge />
 
 创建新表后，您可以使用标准的 ClickHouse 语法插入数据。
 

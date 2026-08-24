@@ -1792,6 +1792,16 @@ TCPHandler에서 쿼리를 수신한 후 대기하는 시간입니다.
 * `0` - 남은 문자열은 결과 배열의 마지막 요소에 포함되지 않습니다.
 * `1` - 남은 문자열이 결과 배열의 마지막 요소에 포함됩니다. 이는 Spark의 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 함수와 Python의 [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) 메서드의 동작과 같습니다.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "대규모 Set이 포함된 `IN`의 선택도 추정 비용을 제한하는 새로운 설정입니다. 제한을 초과하면 추정기는 정확한 범위 대신 Set의 크기와 경계 범위를 사용합니다. 26.8 이전에는 추정에 제한이 없었으므로 이전 값은 0(제한 없음)이며, 이전 버전의 `compatibility`를 사용하면 크기에 관계없이 Set의 정확한 범위를 복원합니다."}]}]} />
+
+선택도 추정기가 Set이 포함하는 정확한 범위를 도출하는 `IN` 연산자 오른쪽 Set의 최대 크기입니다. 정확한 범위를 도출하려면 원소당 `Field` 하나, 정렬 1회, 원소당 통계 프로브 1회가 필요하므로 대규모 Set에서는 쿼리 계획 수립 비용의 대부분을 차지합니다. 이 제한을 초과하면 추정기는 정렬이나 원소별 통계 프로브 없이 Set을 한 번 선형으로 순회하여 Set의 크기와 경계 범위로 선택도를 도출합니다. 0은 제한이 없음을 의미합니다.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1827,6 +1837,18 @@ TCP가 keepalive probe 전송을 시작하기 전에 연결이 유휴 상태로 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 빈 INSERT를 허용하거나 금지합니다. 기본적으로 활성화되어 있으며, 빈 삽입이 발생하면 오류를 반환합니다. [`clickhouse-client`](/ko/concepts/features/interfaces/cli) 또는 [gRPC 인터페이스](/ko/concepts/features/interfaces/grpc)를 사용하는 INSERT에만 적용됩니다.
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "요청된 시간 범위가 TimeSeries 테이블의 최근 samples table TTL 범위 내에 있을 때 이 테이블에서 읽는 새로운 설정입니다."}]}]} />
+
+요청된 전체 시간 범위가 최근 samples table의 TTL 범위 내에 있으면 기본 samples table 대신 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블의 최근 samples table에서 읽습니다(TimeSeries 테이블 엔진의 `recent_samples_ttl_seconds` 설정 참조).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

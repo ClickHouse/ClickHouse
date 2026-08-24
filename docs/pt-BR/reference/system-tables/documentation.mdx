@@ -40,10 +40,13 @@ Os seguintes tipos de entidades são reunidos (o valor da coluna `type` é mostr
 * Métricas atuais (`Current Metric`)
 * Métricas assíncronas (`Asynchronous Metric`)
 * Tabelas de sistema (`System Table`)
+* Instruções SQL (`Statement`)
 
 No caso das configurações (de qualquer tipo), a documentação corresponde à descrição da configuração, juntamente com seu tipo e valor default; configurações obsoletas não são expostas. Ela também inclui o histórico das alterações do valor default da configuração entre versões do ClickHouse: a versão em que a configuração foi introduzida e cada alteração posterior de seu padrão, com o valor anterior, o novo valor e o motivo da alteração. Esses são os mesmos dados que dão suporte à configuração `compatibility` e a [`system.settings_changes`](/pt-BR/reference/system-tables/settings_changes), portanto abrangem as alterações registradas desde que esse mecanismo foi introduzido: uma configuração mais antiga cujo padrão nunca mudou não tem histórico, assim como as configurações do servidor, que não são abrangidas por `compatibility`. Uma alteração registrada sob um alias de uma configuração pertence ao histórico dessa configuração, da mesma forma que `compatibility` a aplica; portanto, o histórico de uma configuração que foi renomeada não é interrompido na renomeação; a exceção é um registro gravado sob um alias com o único objetivo de registrar esse alias, que pertence apenas ao histórico do alias. Um alias contém o histórico de seu próprio nome: todos os registros gravados sob ele, além do registro que o cadastrou como alias, que o arquivo de histórico às vezes grava sob outro nome da mesma configuração.
 
 No caso das tabelas de sistema, a documentação é o comentário da tabela junto com a lista de suas colunas (o nome, o tipo e a descrição de cada uma).
+
+No caso das instruções SQL, a documentação é a mesma exposta por `system.statements`: ela também nomeia a instrução que a contém, se houver; por exemplo, a cláusula `WHERE` faz parte de `SELECT`.
 
 A coluna `source` contém o caminho do arquivo-fonte em que a documentação da entidade é definida, relativo à raiz do repositório. Para a maioria das entidades, ela é capturada automaticamente no local em que o objeto de documentação é construído (o local de registro do componente); para os tipos documentados, cada um, em um único arquivo-fonte (como configurações, eventos de perfil e métricas atuais), é esse arquivo.
 

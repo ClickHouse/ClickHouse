@@ -4938,6 +4938,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+Добавлена в версии v26.8.0
+
+Функция совместимости с протоколом PostgreSQL, аналог `pg_catalog.pg_get_userbyid`.
+Клиенты PostgreSQL (например, команда `\d` в `psql`) используют её для отображения владельца таблицы.
+ClickHouse не отслеживает владельцев таблиц, поэтому функция игнорирует аргумент и возвращает имя текущего пользователя.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты при одинаковых аргументах.
+</Note>
+
+**Синтаксис**
+
+```sql
+pgGetUserById(oid)
+```
+
+**Псевдонимы**: `pg_get_userbyid`
+
+**Аргументы**
+
+* `oid` — идентификатор объекта роли. Значение игнорируется. [`UInt32`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Возвращает имя текущего пользователя. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+Добавлено в: v26.8.0
+
+Функция совместимости с протоколом PostgreSQL, аналог `pg_catalog.pg_table_is_visible`.
+Клиенты PostgreSQL (например, команда `\d` в `psql`) используют её для фильтрации таблиц, видимых в пути поиска.
+Поскольку эмулируемое ClickHouse представление `pg_class` содержит только таблицы текущей базы данных, все они видимы, поэтому функция всегда возвращает `1`.
+
+**Синтаксис**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**Псевдонимы**: `pg_table_is_visible`
+
+**Аргументы**
+
+* `oid` — идентификатор объекта таблицы, предоставляемый эмулируемым представлением `pg_class`. Значение игнорируется. [`UInt32`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Всегда возвращает `1`. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5567,6 +5651,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 Добавленный в: v22.6.0
 
 Показывает информацию о текущем SSL-сертификате сервера, если он настроен.
+Возвращает пустой Map, если у сервера нет сертификата, например когда сертификат запрашивается через ACME, но ещё не выпущен.
 Подробнее о том, как настроить ClickHouse для использования сертификатов OpenSSL для проверки подключений, см. в разделе [Настройка TLS](/ru/concepts/features/security/tls/configuring-tls).
 
 **Синтаксис**

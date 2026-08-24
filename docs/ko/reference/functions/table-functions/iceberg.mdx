@@ -184,7 +184,7 @@ ClickHouse는 Iceberg 테이블에서 time travel을 지원하므로, 특정 타
   ### 예시 시나리오
 </div>
 
-아직 CH에서 Iceberg 테이블에 쓰기를 지원하지 않으므로, 모든 시나리오는 Spark를 사용해 작성되었습니다.
+이 시나리오에서는 외부 Iceberg writer가 수행한 스키마 변경를 설명하기 위해 Spark를 사용합니다.
 
 <div id="scenario-1">
   #### 시나리오 1: 새 스냅샷 없이 발생한 스키마 변경
@@ -389,9 +389,9 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
   ## Iceberg 테이블에 쓰기
 </div>
 
-25.7 버전부터 ClickHouse는 사용자의 Iceberg 테이블을 수정할 수 있도록 지원합니다.
+25.7 버전부터 ClickHouse는 쓰기 가능한 스토리지 백엔드의 Iceberg 테이블 수정을 지원합니다.
 
-현재는 실험적 기능이므로 먼저 활성화해야 합니다:
+Iceberg 테이블을 수정하거나 유지 관리하기 전에 [`allow_insert_into_iceberg` 설정](/ko/reference/settings/session-settings/allow#allow_insert_into_iceberg)을 활성화하십시오. 일부 작업에는 아래에 설명된 대로 추가 설정이 필요합니다:
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -401,7 +401,7 @@ SET allow_insert_into_iceberg = 1;
   ### Iceberg 테이블 생성
 </div>
 
-직접 빈 Iceberg 테이블을 생성하려면 읽기와 동일한 명령을 사용하되, 스키마(schema)를 명시적으로 지정하십시오.
+쓰기 가능한 백엔드에 새 독립형 Iceberg 테이블을 생성하려면 Iceberg 테이블 엔진을 사용하고 스키마(schema)를 명시적으로 지정하십시오.
 쓰기에서는 Parquet, Avro, ORC와 같은 Iceberg 사양의 모든 데이터 포맷을 지원합니다.
 
 <div id="example">
@@ -423,6 +423,8 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 <div id="writes-inserts">
   ### INSERT
 </div>
+
+<BetaBadge />
 
 새 테이블을 생성한 후에는 일반적인 ClickHouse 구문을 사용해 데이터를 삽입할 수 있습니다.
 

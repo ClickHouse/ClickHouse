@@ -112,7 +112,7 @@ ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니
 Go to ①. 
 ```
 
-이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads) 설정으로 구성할 수 있습니다. 기본값은 오픈소스 ClickHouse에서 `1`, [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 4입니다.
+이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads) 설정으로 구성할 수 있습니다. 오픈소스 ClickHouse에서는 26.8부터 기본값이 `0`입니다(자동: CPU 코어 수이며, 메모리 압박 상황에서는 감소). [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 메모리가 8GiB인 노드의 기본값은 `1`, 16GiB인 노드는 `2`, 더 큰 노드는 `4`입니다.
 
 파일 수가 많을 때는 여러 삽입 스레드를 통한 병렬 처리가 효과적입니다. 이 방식은 사용 가능한 CPU 코어와 네트워크 대역폭(병렬 파일 다운로드 시)까지 모두 충분히 활용할 수 있습니다. 반면 소수의 큰 파일만 테이블에 로드하는 시나리오에서는 ClickHouse가 자동으로 높은 수준의 데이터 처리 병렬성을 확보하고, 큰 파일의 서로 다른 범위를 병렬로 읽기(다운로드)할 수 있도록 각 삽입 스레드마다 추가 읽기 스레드를 생성해 네트워크 대역폭 사용도 최적화합니다.
 

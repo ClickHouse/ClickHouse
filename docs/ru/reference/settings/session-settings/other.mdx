@@ -1803,6 +1803,16 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `0` - Оставшаяся часть строки не будет включена в последний элемент результирующего массива.
 * `1` - Оставшаяся часть строки будет включена в последний элемент результирующего массива. Такое поведение соответствует функции [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) в Spark и методу [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) в Python.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "Новая настройка, ограничивающая затраты на оценку селективности `IN` с большим множеством: при превышении лимита оценщик использует размер множества и охватывающий его диапазон вместо точных диапазонов. До версии 26.8 оценка не ограничивалась, поэтому предыдущее значение — 0 (без ограничений), а `compatibility` с более ранней версией восстанавливает точные диапазоны для множеств любого размера."}]}]} />
+
+Максимальный размер множества в правой части оператора `IN`, для которого оценщик селективности определяет точные диапазоны, охватываемые множеством. Для этого требуется по одному `Field` на элемент, сортировка и одна проверка статистики на элемент, что при большом множестве становится основной частью планирования запроса. При превышении этого лимита оценщик вычисляет селективность по размеру множества и охватывающему его диапазону: выполняется один линейный проход по множеству без сортировки и проверок статистики для каждого элемента. Ноль означает отсутствие ограничений.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1838,6 +1848,18 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает или запрещает пустые INSERT-запросы; по умолчанию включена (при пустой вставке генерируется ошибка). Применяется только к INSERT-запросам, выполняемым через [`clickhouse-client`](/ru/concepts/features/interfaces/cli) или [gRPC-интерфейс](/ru/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка: читать из таблицы последних образцов таблицы TimeSeries, если запрошенный временной диапазон целиком укладывается в её окно TTL."}]}]} />
+
+Читать из таблицы последних образцов таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) вместо основной таблицы образцов, если весь запрошенный временной диапазон целиком укладывается в окно TTL таблицы последних образцов (см. настройку `recent_samples_ttl_seconds` движка таблицы TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

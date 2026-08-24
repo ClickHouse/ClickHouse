@@ -740,6 +740,8 @@ valor padrão. Esse é o mesmo comportamento de um índice escalar `NULL`.
 
 O operador `[n]` fornece a mesma funcionalidade.
 
+O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o n-ésimo elemento do vetor é reconstruído com a precisão total do tipo de elemento QBit, lendo apenas os planos de bits do grupo de stride que o contém.
+
 **Sintaxe**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Argumentos**
 
-* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
+* `arr` — O array em que pesquisar. [`Array(T)`](/pt-BR/reference/data-types/array) ou [`QBit`](/pt-BR/reference/data-types/qbit). - `n` — Posição do elemento a ser obtido ou um array de posições. As posições podem ser `Nullable`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Array((U)Int*)`](/pt-BR/reference/data-types/array).
 
 **Valor retornado**
 
@@ -3668,6 +3670,8 @@ Introduzido em: v1.1.0
 
 Retorna uma parte do array, incluindo elementos `NULL`.
 
+O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o resultado é um QBit nas dimensões selecionadas (uma projeção para um subconjunto de dimensões). Nesse caso, `offset` e `length` devem ser constantes, pois a dimensão de um QBit faz parte de seu tipo, e a fatia deve selecionar pelo menos uma dimensão. Uma fatia alinhada aos limites dos grupos de stride do QBit mantém o stride e reutiliza os fluxos de planos de bits armazenados sem cópia.
+
 **Sintaxe**
 
 ```sql
@@ -3676,7 +3680,7 @@ arraySlice(arr, offset [, length])
 
 **Argumentos**
 
-* `arr` — Array a ser fatiado. [`Array(T)`](/pt-BR/reference/data-types/array)
+* `arr` — Array a ser fatiado. [`Array(T)`](/pt-BR/reference/data-types/array) ou [`QBit`](/pt-BR/reference/data-types/qbit)
 * `offset` — Deslocamento a partir da borda do array. Um valor positivo indica um deslocamento à esquerda, e um valor negativo indica um recuo à direita. A numeração dos elementos do array começa em `1`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
 * `length` — O tamanho da fatia desejada. Se você especificar um valor negativo, a função retornará uma fatia aberta `[offset, array_length - length]`. Se você omitir o valor, a função retornará a fatia `[offset, the_end_of_array]`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
 

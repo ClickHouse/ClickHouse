@@ -112,7 +112,7 @@ Hasta que se procesen todos los datos de todos los archivos, cada hilo de inserc
 Go to ①. 
 ```
 
-La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). El valor predeterminado es `1` para ClickHouse de código abierto y 4 para [ClickHouse Cloud](https://clickhouse.com/cloud).
+La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). Para ClickHouse de código abierto, el valor predeterminado desde la versión 26.8 es `0` (auto: la cantidad de núcleos de CPU, reducida bajo presión de memoria). Para [ClickHouse Cloud](https://clickhouse.com/cloud), el valor predeterminado es `1` para nodos con 8 GiB de memoria, `2` para nodos con 16 GiB y `4` para nodos más grandes.
 
 Con una gran cantidad de archivos, el procesamiento en paralelo mediante varios hilos de inserción funciona bien. Puede saturar por completo tanto los núcleos de CPU disponibles como el ancho de banda de la red (para descargas paralelas de archivos). En escenarios en los que solo se van a cargar en una tabla unos pocos archivos grandes, ClickHouse establece automáticamente un alto grado de paralelismo en el procesamiento de datos y optimiza el uso del ancho de banda de red creando hilos de lectura adicionales por cada hilo de inserción para leer (descargar) en paralelo más rangos distintos dentro de archivos grandes.
 

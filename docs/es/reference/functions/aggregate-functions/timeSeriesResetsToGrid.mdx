@@ -15,6 +15,8 @@ Introducido en: v25.6.0
 
 Función de agregación que toma series temporales como pares de marcas de tiempo y valores, y calcula [reinicios similares a PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) a partir de estos datos sobre una cuadrícula temporal regular definida por la marca de tiempo de inicio, la marca de tiempo de fin y el paso. Para cada punto de la cuadrícula, las muestras para calcular `resets` se toman dentro de la ventana temporal especificada.
 
+Si varias muestras tienen la misma marca de tiempo, solo se utiliza una: la muestra con el valor más alto. Un valor NaN pierde frente a cualquier otro valor, por lo que solo se utiliza un valor NaN si todas las muestras con esta marca de tiempo son NaN.
+
 <Note>
   Esta función es experimental; actívala estableciendo `allow_experimental_time_series_aggregate_functions=true`.
 </Note>

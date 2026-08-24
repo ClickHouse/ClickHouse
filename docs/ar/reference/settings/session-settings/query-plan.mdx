@@ -235,6 +235,8 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يحدّد قيمة الحد الأقصى التي تسمح بتقييم خطة الاستعلام لتحسين TopK باستخدام فهرس التخطي minmax والتصفية بالعتبة الديناميكية. إذا كانت القيمة صفرًا، فلا يوجد حد.
 
+يتحكم هذا الإعداد أيضًا في سلوك [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
+
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
 </div>
@@ -418,6 +420,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم خطة الاستعلام لتحسين التجسيد الكسول.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet محلية باستخدام دالة الجدول `file` ومحرك الجدول `File`."}]}]} />
+
+استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet المحلية باستخدام دالة الجدول `file` ومحرك الجدول `File`: في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير المطلوبة للفرز والتصفية إلا للصفوف `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
@@ -455,6 +467,26 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 * 0 - تعطيل
 * 1 - تمكين
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لدفع الدالات المُقلِّصة للحجم (`length`, `lengthUTF8`, `empty`, `notEmpty`) إلى ما بعد خطوتَي `Sorting` و`Filter`، بحيث تُستبدل الوسيطة العريضة بالنتيجة ذات الحجم الثابت. previous_value=false، لذا فإن `compatibility` مع الإصدارات السابقة لـ 26.8 يستعيد السلوك السابق (من دون دفع لأسفل)."}]}]} />
+
+يُفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام ينقل الدالات المُقلِّصة للحجم (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+إلى أسفل خطة التنفيذ، بعد خطوتَي `Sorting` و`Filter`. تحل النتيجة ذات الحجم الثابت محل
+وسيطة `String` / `FixedString` العريضة، لذا لا تعود الوسيطة تمر عبر هاتين الخطوتين.
+لا تُطبّق إعادة الكتابة إلا إذا لم يكن عمود الوسيطة مطلوبًا بعد الخطوة التي يُدفع إليها.
+
+لا يسري هذا الإعداد إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) تساوي 1.
+
+القيم الممكنة:
+
+* 0 - تعطيل
+* 1 - تفعيل
 
 <div id="query_plan_push_limit_by_into_sort">
   ## query_plan_push_limit_by_into_sort

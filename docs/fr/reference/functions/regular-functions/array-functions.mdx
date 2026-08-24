@@ -740,6 +740,8 @@ Les indices négatifs sont pris en charge. Dans ce cas, l&#39;élément correspo
 
 L&#39;opérateur `[n]` fournit la même fonctionnalité.
 
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le n-ième élément du vecteur est reconstruit avec la précision complète du type d&#39;élément QBit, en ne lisant que les plans de bits du groupe de stride auquel il appartient.
+
 **Syntaxe**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Arguments**
 
-* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
+* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
 
 **Valeur renvoyée**
 
@@ -3666,7 +3668,9 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 Introduit dans : v1.1.0
 
-Renvoie une portion du tableau, en incluant les éléments `NULL`.
+Renvoie un secteur du tableau, en incluant les éléments `NULL`.
+
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
 
 **Syntaxe**
 
@@ -3676,13 +3680,13 @@ arraySlice(arr, offset [, length])
 
 **Arguments**
 
-* `arr` — Tableau à découper. [`Array(T)`](/fr/reference/data-types/array)
+* `arr` — Tableau à découper. [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit)
 * `offset` — Décalage à partir du bord du tableau. Une valeur positive indique un décalage à gauche, et une valeur négative un retrait à droite. La numérotation des éléments du tableau commence à `1`. [`(U)Int*`](/fr/reference/data-types/int-uint)
-* `length` — Longueur de la tranche demandée. Si vous spécifiez une valeur négative, la fonction renvoie une tranche ouverte `[offset, array_length - length]`. Si vous omettez cette valeur, la fonction renvoie la tranche `[offset, the_end_of_array]`. [`(U)Int*`](/fr/reference/data-types/int-uint)
+* `length` — Longueur du secteur demandé. Si vous spécifiez une valeur négative, la fonction renvoie un secteur ouvert `[offset, array_length - length]`. Si vous omettez cette valeur, la fonction renvoie le secteur `[offset, the_end_of_array]`. [`(U)Int*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Renvoie une tranche du tableau contenant `length` éléments à partir de l’`offset` spécifié [`Array(T)`](/fr/reference/data-types/array)
+Renvoie un secteur du tableau contenant `length` éléments à partir de l’`offset` spécifié [`Array(T)`](/fr/reference/data-types/array)
 
 **Exemples**
 

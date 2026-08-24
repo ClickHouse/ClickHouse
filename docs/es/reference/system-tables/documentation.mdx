@@ -38,10 +38,13 @@ Se recopilan los siguientes tipos de entidades (el valor de la columna `type` se
 * Métricas actuales (`Current Metric`)
 * Métricas asincrónicas (`Asynchronous Metric`)
 * Tablas del sistema (`System Table`)
+* Sentencias SQL (`Statement`)
 
 En el caso de los SETTINGS (de cualquier tipo), la documentación es la descripción del SETTING, junto con su tipo y su valor predeterminado; los SETTINGS obsoletos no se exponen. También contiene el historial de los cambios en el valor predeterminado del SETTING entre las versiones de ClickHouse: la versión en la que se introdujo el SETTING y cada cambio posterior de su valor predeterminado, con el valor anterior, el valor nuevo y el motivo del cambio. Son los mismos datos que sirven de base para el SETTING `compatibility` y [`system.settings_changes`](/es/reference/system-tables/settings_changes), por lo que cubren los cambios registrados desde que se introdujo ese mecanismo: un SETTING antiguo cuyo valor predeterminado nunca cambió no tiene historial, ni tampoco los SETTINGS del servidor, que `compatibility` no cubre. Un cambio registrado bajo un alias de un SETTING pertenece al historial de ese SETTING, del mismo modo que lo aplica `compatibility`, por lo que el historial de un SETTING que se renombró no se interrumpe en el cambio de nombre; la excepción es un registro escrito bajo un alias con el único propósito de registrar ese alias, que pertenece únicamente al historial del alias. Un alias contiene el historial de su propio nombre: cada registro escrito bajo él, además del registro que lo registró como alias, que el archivo de historial a veces escribe bajo otro nombre del mismo SETTING.
 
 En el caso de las tablas del sistema, la documentación es el comentario de la tabla junto con la lista de sus columnas (el nombre, el tipo y la descripción de cada una).
+
+Para las sentencias SQL, la documentación es la misma que expone `system.statements`: también nombra la sentencia contenedora, si la hay; por ejemplo, la cláusula `WHERE` forma parte de `SELECT`.
 
 La columna `source` contiene la ruta del archivo fuente donde se define la documentación de la entidad, relativa a la raíz del repositorio. Para la mayoría de las entidades, se captura automáticamente en el lugar donde se construye el objeto de documentación (el punto de registro del componente); para los tipos que se documentan cada uno en un único archivo fuente (como los SETTINGS, los eventos de perfil y las métricas actuales), ese archivo es el que se usa.
 

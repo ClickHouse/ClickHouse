@@ -197,12 +197,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "default_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "default_database", path: "/default#default_database", default: "default" },
         { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
         { name: "default_profile", path: "/default#default_profile", default: "default" },
-        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" },
+        { name: "default_session_user", path: "/default#default_session_user", default: "default" }
       ],
       children: []
     },
@@ -1053,7 +1054,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 3,
       settings: [
         { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "120" },
         { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []

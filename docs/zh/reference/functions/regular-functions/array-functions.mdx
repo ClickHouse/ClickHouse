@@ -738,6 +738,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 运算符 `[n]` 提供相同的功能。
 
+第一个参数也可以是 [QBit](/zh/reference/data-types/qbit)：以 QBit 元素类型的完整精度重建第 n 个向量元素时，只会读取包含该元素的 stride group 的位平面。
+
 **语法**
 
 ```sql
@@ -746,7 +748,7 @@ arrayElement(arr, n)
 
 **参数**
 
-* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array)。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
+* `arr` — 要搜索的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)。 - `n` — 要获取的元素位置，或位置数组。位置可以为 Nullable。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Array((U)Int*)`](/zh/reference/data-types/array)。
 
 **返回值**
 
@@ -3652,6 +3654,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 返回数组的一个切片，其中包含 `NULL` 元素。
 
+第一个参数也可以是 [QBit](/zh/reference/data-types/qbit)：结果为所选维度上的 QBit (即投影到维度子集) 。在这种情况下，`offset` 和 `length` 必须是常量，因为 QBit 的维度是其类型的一部分，且切片必须至少选择一个维度。与 QBit 的 stride 分组边界对齐的切片会保留 stride，并复用存储的比特平面流，无需复制。
+
 **语法**
 
 ```sql
@@ -3660,7 +3664,7 @@ arraySlice(arr, offset [, length])
 
 **参数**
 
-* `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array)
+* `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
 * `offset` — 相对于数组边界的偏移量。正值表示从左侧开始偏移，负值表示从右侧开始偏移。数组元素从 `1` 开始编号。[`(U)Int*`](/zh/reference/data-types/int-uint)
 * `length` — 所需切片的长度。如果指定负值，函数返回一个开区间切片 `[offset, array_length - length]`。如果省略该值，函数返回切片 `[offset, the_end_of_array]`。[`(U)Int*`](/zh/reference/data-types/int-uint)
 

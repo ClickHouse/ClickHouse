@@ -739,6 +739,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 演算子 `[n]` でも同じ機能を使用できます。
 
+第 1 引数には [QBit](/ja/reference/data-types/qbit) も指定できます。n 番目のベクトル要素は、QBit 要素型の完全な精度で再構築され、その要素を含むストライドグループのビットプレーンのみが読み取られます。
+
 **構文**
 
 ```sql
@@ -747,7 +749,7 @@ arrayElement(arr, n)
 
 **引数**
 
-* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
+* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
 
 **戻り値**
 
@@ -3662,6 +3664,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 配列の一部を返します。`NULL` 要素も含まれます。
 
+最初の引数には [QBit](/ja/reference/data-types/qbit) も指定できます。この場合、結果は選択した次元上の QBit (次元の部分集合への射影) になります。QBit の次元はその型の一部であり、スライスでは少なくとも 1 つの次元を選択する必要があるため、この場合の `offset` と `length` は定数でなければなりません。QBit の stride-group 境界に揃ったスライスでは、ストライドが維持され、コピーを行わずに保存済みのビットプレーンストリームが再利用されます。
+
 **構文**
 
 ```sql
@@ -3670,7 +3674,7 @@ arraySlice(arr, offset [, length])
 
 **引数**
 
-* `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
 * `offset` — 配列の端からの位置。正の値は左側からのオフセット、負の値は右側からのインデントを示します。配列要素の番号は `1` から始まります。[`(U)Int*`](/ja/reference/data-types/int-uint)
 * `length` — 必要なスライスの長さ。負の値を指定すると、関数は開区間のスライス `[offset, array_length - length]` を返します。値を省略すると、関数はスライス `[offset, the_end_of_array]` を返します。[`(U)Int*`](/ja/reference/data-types/int-uint)
 

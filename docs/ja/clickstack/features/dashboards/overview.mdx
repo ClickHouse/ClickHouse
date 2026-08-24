@@ -200,13 +200,54 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 
 各タイルには、値の表示方法を制御するための **Display Settings** ドロワーがあります。タイルエディタで **Display Settings** をクリックすると開けます。利用できるオプションは、可視化の種類によって異なります。
 
-Number タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
+<div id="number-tile-color">
+  #### 数値タイルの色
+</div>
 
-Number タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
+数値タイルでは、厳選されたチャートパレットから静的な**色**を選択できます。数値タイルを選択した状態で**表示設定**を開き、**色**コントロール (アクセシビリティ用のラベルは**数値タイルの色**) から色見本を選択します。選択を解除すると、デフォルトのテキスト色が使用されます。
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された Number タイルの Display Settings ドロワー" size="lg" />
+色は生の16進数値ではなくパレットトークンとして保存されるため、ライト、ダーク、IDE の各テーマでも同じタイルが適切に表示されます。
 
-Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
+**カテゴリトークン** (複数系列用の色相) :
+
+| トークン               | ラベル  |
+| ------------------ | ---- |
+| `chart-blue`       | 青    |
+| `chart-orange`     | オレンジ |
+| `chart-red`        | 赤    |
+| `chart-cyan`       | シアン  |
+| `chart-green`      | 緑    |
+| `chart-pink`       | ピンク  |
+| `chart-purple`     | 紫    |
+| `chart-light-blue` | 水色   |
+| `chart-brown`      | 茶色   |
+| `chart-gray`       | 灰色   |
+
+**セマンティックトークン** (ステータス向け) :
+
+| トークン            | ラベル |
+| --------------- | --- |
+| `chart-success` | 成功  |
+| `chart-warning` | 警告  |
+| `chart-error`   | エラー |
+
+数値がステータスを表す場合は、セマンティックトークンを使用します (例: エラー数には `chart-error`、正常率には `chart-success`) 。ステータスを示さずに関連する KPI タイルを視覚的に区別したい場合は、カテゴリトークンを使用します。
+
+古い設定では、従来の数値トークン (`chart-1` ～ `chart-10`) が保存されている場合があります。ClickStack はダッシュボードの読み込み時に、これらを上記の色相名付きトークンにマッピングします。
+
+同じパレットは、同じドロワー内で任意に設定できる**カラールール**にも使用されます。カラールールは表示値に対して順番に評価される条件で、最後に一致したルールが優先されます。どのルールにも一致しない場合は、静的な色が適用され、それもない場合はデフォルトのテキスト色が使用されます。
+
+<div id="number-tile-background-chart">
+  #### 数値タイルの Background chart
+</div>
+
+数値タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
+
+数値タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された 数値タイルの Display Settings ドロワー" size="lg" />
+
+Background chart は、query-builder の 数値タイルに適用されます。Raw SQL の 数値タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
 
 Table タイルでは **Alternate Row Background** を使って行を交互に色分けできるため、列数の多いテーブルでも確認しやすくなります。これは既定ではオフです。
 
@@ -215,6 +256,46 @@ Table タイルを選択した状態で **Display Settings** を開き、**Alter
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Alternate Row Background がオンになったテーブルタイルの Display Settings ドロワー" size="lg" />
 
 テーブルタイルでは、スクロールしてもヘッダー行とデータの間の区切り線が維持されるため、カラム見出しを見分けやすくなります。
+
+<div id="api-number-tile-color">
+  #### Dashboards API: 数値タイルの色
+</div>
+
+外部 API (`POST` / `PUT` `/api/v2/dashboards`) を使用してダッシュボードを作成または更新する場合は、builder の数値タイル config の `color` にパレットトークンを設定します。生の 16 進数値は使用できません。
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` には、上記のカテゴリ別およびセマンティックのリストにある任意の token (例: `chart-blue` または `chart-success`) を指定できます。任意の `backgroundChart.color` で、同じ token enum を使用してスパークラインの色を上書きできます。認証とベース URL については、[ClickStack API リファレンス](/ja/use-cases/observability/clickstack/api-reference)を参照してください。
 
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索

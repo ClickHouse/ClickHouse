@@ -184,7 +184,7 @@ ENGINE = IcebergS3(
   ### أمثلة على السيناريوهات
 </div>
 
-جميع السيناريوهات مكتوبة باستخدام Spark لأن CH لا يدعم الكتابة إلى جداول Iceberg بعد.
+تستخدم هذه السيناريوهات Spark لتوضيح تغييرات المخطط التي أجراها كاتب Iceberg خارجي.
 
 <div id="scenario-1">
   #### السيناريو 1: تغييرات المخطط من دون لقطات جديدة
@@ -389,9 +389,9 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
   ## الكتابة في جدول Iceberg
 </div>
 
-بدءًا من الإصدار 25.7، يدعم ClickHouse تعديل جداول Iceberg الخاصة بالمستخدم.
+بدءًا من الإصدار 25.7، يدعم ClickHouse تعديل جداول Iceberg على الواجهات الخلفية للتخزين القابلة للكتابة.
 
-حاليًا، هذه ميزة تجريبية، لذا عليك أولًا تمكينها:
+قبل تعديل جدول Iceberg أو صيانته، فعّل [إعداد `allow_insert_into_iceberg`](/ar/reference/settings/session-settings/allow#allow_insert_into_iceberg). تتطلب بعض العمليات إعدادات إضافية، كما هو موضح أدناه:
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -401,7 +401,7 @@ SET allow_insert_into_iceberg = 1;
   ### إنشاء جدول
 </div>
 
-لإنشاء جدول Iceberg فارغ خاص بك، استخدم الأوامر نفسها المستخدَمة للقراءة، ولكن حدِّد المخطط صراحةً.
+لإنشاء جدول Iceberg مستقل جديد على واجهة خلفية قابلة للكتابة، استخدم محرك جدول Iceberg وحدِّد المخطط صراحةً.
 تدعم عمليات الكتابة جميع تنسيقات البيانات وفقًا لمواصفة Iceberg، مثل Parquet وAvro وORC.
 
 <div id="example">
@@ -423,6 +423,8 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 <div id="writes-inserts">
   ### INSERT
 </div>
+
+<BetaBadge />
 
 بعد إنشاء جدول جديد، يمكنك إدراج البيانات باستخدام صيغة ClickHouse المعتادة.
 

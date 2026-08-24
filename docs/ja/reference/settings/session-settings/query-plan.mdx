@@ -233,7 +233,9 @@ JOIN の遅延索引最適化でクエリプランを使用できる上限値を
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "新しい設定"}]}]} />
 
-minmax スキップ索引と動的しきい値フィルタリングを使用した TopK 最適化のクエリプラン評価を可能にする最大リミット値を制御します。0 の場合、制限はありません。
+minmax スキップ索引と動的しきい値フィルタリングを使用した TopK 最適化のクエリプラン評価を可能にする最大制限値を制御します。0 の場合、制限はありません。
+
+この設定は、[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の動作も制御します。
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,6 +420,16 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 遅延マテリアライゼーションの最適化でクエリプランを使用します。
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`file` テーブル関数および `File` テーブルエンジンでローカル Parquet ファイルを読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+
+`file` テーブル関数および `File` テーブルエンジンを使用してローカル Parquet ファイルを読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートとフィルタリングに不要なカラムは、`LIMIT` 後に残る `n` 行に対してのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
@@ -455,6 +467,26 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 * 0 - 無効
 * 1 - 有効
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "データ量を削減する関数（`length`、`lengthUTF8`、`empty`、`notEmpty`）を `Sorting` および `Filter` ステップの下にプッシュダウンし、wide 引数カラムを固定サイズの結果に置き換えるための新しい設定。previous_value=false のため、26.8 より前のバージョンとの `互換性設定` により、従来の動作（プッシュダウンなし）が復元されます。"}]}]} />
+
+データ量を削減する関数 (`length`、`lengthUTF8`、`empty`、`notEmpty`) を実行計画内の
+`Sorting` および `Filter` ステップの下へ移動する、クエリプランレベルの最適化を切り替えます。固定サイズの結果で
+wide `String` / `FixedString` の引数を置き換えるため、これらのステップで引数を保持する必要がなくなります。
+この書き換えは、プッシュダウン先のステップより上で引数カラムが不要な場合にのみ適用されます。
+
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効化
+* 1 - 有効化
 
 <div id="query_plan_push_limit_by_into_sort">
   ## query_plan_push_limit_by_into_sort

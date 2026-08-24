@@ -366,7 +366,7 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 LLM 프로바이더를 사용하여 지정된 텍스트에 자연어 조건을 적용하고, `WHERE`, `PREWHERE`, `JOIN ... ON`에 사용할 수 있는 Boolean(`UInt8`) 값을 반환합니다.
 
-이 FUNCTION은 모델이 소문자 `true` 또는 `false`로만 응답하도록 요청합니다. 실패한 request(`ai_function_throw_on_error`가 비활성화된 경우)와 인식할 수 없는 응답은 `0`으로 매핑되므로 해당 행은 필터링됩니다.
+이 FUNCTION은 모델이 소문자 `true` 또는 `false`로만 응답하도록 요청합니다. `true` 이외의 모든 완전한 응답(`false` 및 인식할 수 없는 텍스트 포함)은 `0`으로 매핑되므로 해당 행은 필터링됩니다. 잘렸거나, 콘텐츠 필터링되었거나, 추가 조치가 필요한 것으로 프로바이더가 알린 불완전한 응답은 오류로 처리됩니다. `ai_function_throw_on_error`가 활성화된 경우(기본값) 쿼리가 중단되며, 비활성화된 경우 해당 행은 `0`으로 매핑되어 필터링됩니다.
 
 **Warning:** 면밀히 검토하지 않은 `aiFilter` 결과를 신뢰하지 마십시오. LLM 기반 프레디케이트는 부정확하거나 일관되지 않을 수 있으므로 false positive와 false negative를 허용할 수 있는 경우에만 사용하십시오.
 
@@ -493,8 +493,9 @@ LLM 프로바이더를 사용하여 지정된 텍스트에서 개인 식별 정�
 입력과 바이트 단위로 동일하지 않습니다.
 
 `aiRedact`는 PII가 대체된 전체 입력 텍스트를 반환하므로 출력 길이는 입력과 거의 같습니다.
-`max_tokens`(기본값 `1024`)는 입력의 토큰 길이보다 크게 설정하십시오. 제한값이 너무 낮아 응답이 잘리면
-불완전해집니다.
+`max_tokens`(기본값 `1024`)는 입력의 토큰 길이보다 크게 설정하십시오. 제한값이 너무 낮아 잘린 응답은
+부분적으로 마스킹된 텍스트를 반환하는 대신 `AI_PROVIDER_RESPONSE_TRUNCATED`로 거부되며(`ai_function_throw_on_error`가
+비활성화된 경우에는 컬럼 기본값을 반환합니다).
 
 **구문**
 
@@ -508,7 +509,7 @@ aiRedact(text, categories[, params])
 
 * `text` — 마스킹할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `categories` — 마스킹할 PII 카테고리의 상수 목록입니다(예: `['name', 'ssn', 'credit_card']`). 빈 배열을 지정하면 일반적인 카테고리(이름, 이메일, 전화번호, 주소, 신용카드, IP 주소)의 기본 집합이 사용됩니다. [`Array(String)`](/ko/reference/data-types/array)
-* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024` — `aiRedact`는 전체 텍스트를 반환하므로 입력 토큰 수보다 크게 설정해야 합니다. 그렇지 않으면 응답이 잘리거나 불완전할 수 있습니다), `replacement`(감지된 각 PII 스팬을 대체할 토큰, 기본값 `[REDACTED]`). 공통 매개변수인 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024` — `aiRedact`는 전체 텍스트를 반환하므로 입력 토큰 수보다 크게 설정해야 합니다. 제한값이 너무 낮아 응답이 잘리면 부분적으로 마스킹된 텍스트를 반환하는 대신 거부됩니다), `replacement`(감지된 각 PII 스팬을 대체할 토큰, 기본값 `[REDACTED]`). 공통 매개변수인 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 

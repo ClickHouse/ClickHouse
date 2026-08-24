@@ -1800,6 +1800,16 @@ TCPHandler でクエリを受信した後のスリープ時間
 * `0` - 残りの文字列は、結果配列の最後の要素に含まれません。
 * `1` - 残りの文字列は、結果配列の最後の要素に含まれます。これは、Spark の [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 関数および Python の [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) メソッドと同じ動作です。
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "大きな集合に対する `IN` の選択性推定コストを抑えるための新しい設定。制限を超えると、推定器は正確な範囲ではなく、集合のサイズとその境界範囲を使用します。26.8 より前は推定に上限がなかったため、以前の値は 0（制限なし）です。以前のバージョンとの `compatibility` により、任意のサイズの集合について正確な範囲が復元されます。"}]}]} />
+
+選択性推定器が集合でカバーされる正確な範囲を導出する対象となる、`IN` 演算子の右辺の集合の最大サイズ。これらの範囲の導出には、要素ごとに `Field` 1 つ、ソート、および統計プローブ 1 回が必要となるため、大きな集合ではクエリプランニングの大半を占めます。この制限を超えると、推定器は代わりに集合のサイズとその境界範囲から選択性を導出します。これはソートや要素ごとの統計プローブを必要とせず、集合を 1 回線形走査するだけで済みます。0 は制限なしを意味します。
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1835,6 +1845,18 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 空の INSERT を許可または禁止します。デフォルトで有効になっており、空の INSERT ではエラーが発生します。[`clickhouse-client`](/ja/concepts/features/interfaces/cli) を使用する INSERT、または [gRPC インターフェイス](/ja/concepts/features/interfaces/grpc) を使用する INSERT にのみ適用されます。
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "要求された時間範囲が TimeSeries テーブルの最近の Samples テーブルの有効期限 (TTL) ウィンドウ内に収まる場合に、そのテーブルから読み取るための新しい設定。"}]}]} />
+
+要求された時間範囲全体が最近の Samples テーブルの有効期限 (TTL) ウィンドウ内に収まる場合、メインの Samples テーブルではなく、[TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルの最近の Samples テーブルから読み取ります (TimeSeries テーブルエンジンの `recent_samples_ttl_seconds` 設定を参照) 。
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

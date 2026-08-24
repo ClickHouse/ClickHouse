@@ -740,6 +740,8 @@ Se admiten índices negativos. En este caso, se selecciona el elemento correspon
 
 El operador `[n]` proporciona la misma funcionalidad.
 
+El primer argumento también puede ser un [QBit](/es/reference/data-types/qbit): el n-ésimo elemento del vector se reconstruye con la precisión completa del tipo de elemento de QBit, leyendo solo los planos de bits del grupo de stride que lo contiene.
+
 **Sintaxis**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Argumentos**
 
-* `arr` — El array en el que se busca. [`Array(T)`](/es/reference/data-types/array). - `n` — Posición del elemento que se quiere obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array).
+* `arr` — El array en el que se busca. [`Array(T)`](/es/reference/data-types/array) o [`QBit`](/es/reference/data-types/qbit). - `n` — Posición del elemento que se quiere obtener o un array de posiciones. Las posiciones pueden ser Nullable. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Array((U)Int*)`](/es/reference/data-types/array).
 
 **Valor devuelto**
 
@@ -3668,6 +3670,8 @@ Introducido en: v1.1.0
 
 Devuelve una porción del array, incluidos los elementos `NULL`.
 
+El primer argumento también puede ser un [QBit](/es/reference/data-types/qbit): el resultado es un QBit sobre las dimensiones seleccionadas (una proyección a un subconjunto de dimensiones). En ese caso, `offset` y `length` deben ser constantes, porque la dimensión de un QBit forma parte de su tipo y el segmento debe seleccionar al menos una dimensión. Un segmento alineado con los límites de los grupos de stride de QBit conserva el stride y reutiliza los flujos de planos de bits almacenados sin copiarlos.
+
 **Sintaxis**
 
 ```sql
@@ -3676,7 +3680,7 @@ arraySlice(arr, offset [, length])
 
 **Argumentos**
 
-* `arr` — Array que se va a segmentar. [`Array(T)`](/es/reference/data-types/array)
+* `arr` — Array que se va a segmentar. [`Array(T)`](/es/reference/data-types/array) o [`QBit`](/es/reference/data-types/qbit)
 * `offset` — Desplazamiento desde el borde del array. Un valor positivo indica un desplazamiento desde la izquierda y un valor negativo indica un desplazamiento desde la derecha. La numeración de los elementos del array comienza en `1`. [`(U)Int*`](/es/reference/data-types/int-uint)
 * `length` — La longitud del segmento requerido. Si especifica un valor negativo, la función devuelve un segmento abierto `[offset, array_length - length]`. Si omite el valor, la función devuelve el segmento `[offset, the_end_of_array]`. [`(U)Int*`](/es/reference/data-types/int-uint)
 

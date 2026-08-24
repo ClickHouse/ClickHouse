@@ -1803,6 +1803,16 @@ Valores possíveis:
 * `0` - A parte restante da string não será incluída no último elemento do array de resultado.
 * `1` - A parte restante da string será incluída no último elemento do array de resultado. Esse é o comportamento da função [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) do Spark e do método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) do Python.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "Nova configuração para limitar o custo de estimar a seletividade de `IN` com um conjunto grande: acima do limite, o estimador usa o tamanho do conjunto e seu intervalo delimitador em vez dos intervalos exatos. Antes da versão 26.8, a estimativa não tinha limite; portanto, o valor anterior é 0 (sem limite), e a `compatibility` com uma versão anterior restaura os intervalos exatos para conjuntos de qualquer tamanho."}]}]} />
+
+O tamanho máximo do conjunto no lado direito do operador `IN` para o qual o estimador de seletividade determina os intervalos exatos abrangidos pelo conjunto. Essa determinação requer um `Field` por elemento, uma ordenação e uma sondagem de estatísticas por elemento, o que, em conjuntos grandes, domina o planejamento da consulta. Acima desse limite, o estimador determina a seletividade a partir do tamanho do conjunto e de seu intervalo delimitador, em uma única passagem linear pelo conjunto, sem ordenação nem sondagens de estatísticas por elemento. Zero significa sem limite.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1838,6 +1848,18 @@ Tempo de espera para bloquear o cache ao reservar espaço para dados temporário
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite ou proíbe INSERTs vazios; ativado por padrão (gera um erro ao fazer um INSERT vazio). Aplica-se apenas a INSERTs usando [`clickhouse-client`](/pt-BR/concepts/features/interfaces/cli) ou a [interface gRPC](/pt-BR/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ler da tabela de amostras recentes de uma tabela TimeSeries quando o intervalo de tempo solicitado estiver inteiramente dentro da janela de TTL dela."}]}]} />
+
+Leia da tabela de amostras recentes de uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series), em vez da tabela principal de amostras, quando todo o intervalo de tempo solicitado estiver dentro da janela de TTL da tabela de amostras recentes (consulte a configuração `recent_samples_ttl_seconds` do motor de tabela TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

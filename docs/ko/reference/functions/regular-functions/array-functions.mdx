@@ -739,6 +739,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 연산자 `[n]`도 동일한 기능을 제공합니다.
 
+첫 번째 인수는 [QBit](/ko/reference/data-types/qbit)일 수도 있습니다. 해당 원소를 포함하는 스트라이드 그룹의 비트 평면만 읽어 QBit 원소 타입의 전체 정밀도로 n번째 벡터 원소를 재구성합니다.
+
 **구문**
 
 ```sql
@@ -747,7 +749,7 @@ arrayElement(arr, n)
 
 **인수**
 
-* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
+* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
 
 **반환 값**
 
@@ -3659,6 +3661,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 `NULL` 요소를 포함한 배열의 슬라이스를 반환합니다.
 
+첫 번째 인수는 [QBit](/ko/reference/data-types/qbit)일 수도 있습니다. 이 경우 결과는 선택한 차원에 대한 QBit(차원 부분 집합으로의 프로젝션)입니다. QBit의 차원은 타입의 일부이고 슬라이스는 최소 1개의 차원을 선택해야 하므로 `offset`과 `length`는 상수여야 합니다. QBit의 stride 그룹 경계에 맞춰 정렬된 슬라이스는 stride를 유지하며, 복사 없이 저장된 bit-plane 스트림을 재사용합니다.
+
 **구문**
 
 ```sql
@@ -3667,7 +3671,7 @@ arraySlice(arr, offset [, length])
 
 **인수**
 
-* `arr` — 슬라이스할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `arr` — 슬라이스할 배열입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit)
 * `offset` — 배열의 끝에서부터의 오프셋입니다. 양수 값은 왼쪽부터의 오프셋을, 음수 값은 오른쪽부터의 들여쓰기를 나타냅니다. 배열 항목의 번호는 `1`부터 시작합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 * `length` — 필요한 슬라이스의 길이입니다. 음수 값을 지정하면 함수는 끝이 열린 슬라이스 `[offset, array_length - length]`를 반환합니다. 값을 생략하면 함수는 슬라이스 `[offset, the_end_of_array]`를 반환합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 

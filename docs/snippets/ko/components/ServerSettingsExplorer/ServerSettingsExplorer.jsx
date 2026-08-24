@@ -1,5 +1,6 @@
 const ServerSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을 유지하지 않은 상태로 평가합니다. 지연 상태는 생성된 데이터를 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
+  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을 유지하지 않은 상태로 평가합니다.
+  // Lazy state는 생성된 데이터를 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -195,12 +196,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "default_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "default_database", path: "/default#default_database", default: "default" },
         { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
         { name: "default_profile", path: "/default#default_profile", default: "default" },
-        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" },
+        { name: "default_session_user", path: "/default#default_session_user", default: "default" }
       ],
       children: []
     },
@@ -1051,7 +1053,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 3,
       settings: [
         { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "120" },
         { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []
@@ -1488,11 +1490,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
+    const 설정 = entry.설정.filter((설정) => matchesSearch(설정.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
+    const count = 설정.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, settings, children }
+    return { ...entry, count, 설정, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -1529,8 +1531,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
+    const items = [...entry.설정.map((설정) => ({ type: "설정", value: 설정 })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const countLabel = `${entry.count} ${entry.count === 1 ? "설정" : "설정"}`
 
     return (
       <div key={key} className="min-w-max">

@@ -740,7 +740,9 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 يوفّر العامل `[n]` الوظيفة نفسها.
 
-**صيغة**
+يمكن أن تكون الوسيطة الأولى أيضًا [QBit](/ar/reference/data-types/qbit): يُعاد بناء عنصر المتجه رقم n بالدقة الكاملة لنوع عنصر QBit، مع قراءة مستويات البت الخاصة بمجموعة stride التي تحتويه فقط.
+
+**الصيغة**
 
 ```sql
 arrayElement(arr, n)
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **وسيطات الدالة**
 
-* `arr` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array). - `n` — موضع العنصر المراد الحصول عليه، أو مصفوفة من المواضع. يمكن أن تكون المواضع قابلة لأن تكون NULL. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
+* `arr` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array) أو [`QBit`](/ar/reference/data-types/qbit). - `n` — موضع العنصر المراد الحصول عليه، أو مصفوفة من المواضع. يمكن أن تكون المواضع قابلة لأن تكون NULL. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
 
 **القيمة المُعادة**
 
@@ -3667,6 +3669,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 يعيد جزءًا من المصفوفة، مع تضمين عناصر `NULL`.
 
+قد تكون الوسيطة الأولى أيضًا [QBit](/ar/reference/data-types/qbit): تكون النتيجة QBit على الأبعاد المحددة (إسقاطًا على مجموعة فرعية من الأبعاد). في هذه الحالة، يجب أن يكون `offset` و`length` ثابتين، لأن بُعد QBit جزء من نوعه، ويجب أن تحدد الشريحة بُعدًا واحدًا على الأقل. تحتفظ الشريحة المحاذاة لحدود مجموعات stride في QBit بالـ stride وتعيد استخدام تدفقات مستويات البت المخزنة دون نسخ.
+
 **الصياغة**
 
 ```sql
@@ -3675,7 +3679,7 @@ arraySlice(arr, offset [, length])
 
 **الوسيطات**
 
-* `arr` — المصفوفة المطلوب أخذ شريحة منها. [`Array(T)`](/ar/reference/data-types/array)
+* `arr` — المصفوفة المطلوب أخذ شريحة منها. [`Array(T)`](/ar/reference/data-types/array) أو [`QBit`](/ar/reference/data-types/qbit)
 * `offset` — الإزاحة من طرف المصفوفة. تشير القيمة الموجبة إلى إزاحة من اليسار، وتشير القيمة السالبة إلى إزاحة من اليمين. يبدأ ترقيم عناصر المصفوفة من `1`. [`(U)Int*`](/ar/reference/data-types/int-uint)
 * `length` — طول الشريحة المطلوبة. إذا حددت قيمة سالبة، فستُرجع الدالة شريحة مفتوحة `[offset, array_length - length]`. وإذا حذفت القيمة، فستُرجع الدالة الشريحة `[offset, the_end_of_array]`. [`(U)Int*`](/ar/reference/data-types/int-uint)
 

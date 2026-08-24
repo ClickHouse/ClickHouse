@@ -184,7 +184,7 @@ Nota: No puede especificar a la vez los parámetros `iceberg_timestamp_ms` e `ic
   ### Escenarios de ejemplo
 </div>
 
-Todos los escenarios están escritos en Spark porque CH todavía no admite la escritura en tablas de Iceberg.
+Estos escenarios usan Spark para ilustrar cambios de esquema realizados por un escritor externo de Iceberg.
 
 <div id="scenario-1">
   #### Escenario 1: Cambios de esquema sin nuevas instantáneas
@@ -389,9 +389,9 @@ La función de tabla `iceberg` ahora es un alias de `icebergS3`.
   ## Escrituras en tablas Iceberg
 </div>
 
-A partir de la versión 25.7, ClickHouse admite modificaciones en las tablas Iceberg del usuario.
+A partir de la versión 25.7, ClickHouse admite modificaciones en tablas Iceberg en backends de almacenamiento que permiten escritura.
 
-Actualmente, esta es una función experimental, por lo que primero debe habilitarla:
+Antes de modificar o realizar tareas de mantenimiento en una tabla Iceberg, habilite la [`configuración allow_insert_into_iceberg`](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg). Algunas operaciones requieren configuraciones adicionales, como se indica a continuación:
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -401,7 +401,7 @@ SET allow_insert_into_iceberg = 1;
   ### Crear una tabla
 </div>
 
-Para crear tu propia tabla Iceberg vacía, usa los mismos comandos que para la lectura, pero especifica el esquema de forma explícita.
+Para crear una nueva tabla Iceberg standalone en un backend con permisos de escritura, usa un motor de tabla Iceberg y especifica el esquema de forma explícita.
 Las operaciones de escritura admiten todos los formatos de datos de la especificación de Iceberg, como Parquet, Avro y ORC.
 
 <div id="example">
@@ -423,6 +423,8 @@ Si desea comprimir el archivo metadata.json, especifique el nombre del códec en
 <div id="writes-inserts">
   ### INSERT
 </div>
+
+<BetaBadge />
 
 Después de crear una tabla nueva, puede insertar datos con la sintaxis habitual de ClickHouse.
 
