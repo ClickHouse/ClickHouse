@@ -1,0 +1,160 @@
+---
+noindex: true
+title: "Arquitectura del clickhouse-operator"
+sidebarTitle: "Arquitectura"
+description: "Este documento explica la arquitectura y los mecanismos internos del clickhouse-operator, que gestiona el ciclo de vida de los clústeres de ClickHouse que se ejecutan en"
+---
+
+Este documento explica la arquitectura y los mecanismos internos del clickhouse-operator, que gestiona el ciclo de vida de los clústeres de ClickHouse que se ejecutan en Kubernetes.
+
+<div id="operator-overview">
+  ## Descripción general del operador
+</div>
+
+El clickhouse-operator es responsable del aprovisionamiento y la reconciliación de los recursos personalizados `ClickHouseCluster` registrados y de todo el ciclo de vida del clúster. Sus responsabilidades incluyen:
+
+* **Desplegar y finalizar** componentes de servidor y Keeper
+* **Controlar el estado del clúster** (en ejecución, deteniéndose, etc.)
+* **Procesar solicitudes de copia de seguridad**
+* **Limpiar PVC** (PersistentVolumeClaims) después de una reducción de escala o de la eliminación de una réplica
+* **Escalar horizontalmente** el clúster agregando o eliminando réplicas
+
+El operador supervisa los cambios en los recursos personalizados `ClickHouseCluster` y reconcilia el estado real del clúster para que coincida con el estado deseado declarado en el CR.
+
+<div id="instance-lifecycle">
+  ## Ciclo de vida de la instancia
+</div>
+
+Una instancia de ClickHouse pasa por un conjunto definido de estados, desde su creación hasta su terminación. El diagrama siguiente ilustra estas transiciones:
+
+<Frame caption="Ciclo de vida de la instancia">
+  ![Ciclo de vida de la instancia](/images/instance-lifecycle.png)
+</Frame>
+
+Comprender este ciclo de vida es importante para diagnosticar por qué un clúster puede estar en un estado inesperado o para planificar operaciones como el escalado o las actualizaciones.
+
+<div id="one-clickhousecluster-per-namespace">
+  ## Un ClickHouseCluster por espacio de nombres
+</div>
+
+El operador asume que existe exactamente un recurso personalizado `ClickHouseCluster` por espacio de nombres de Kubernetes. Desplegar varias instancias de `ClickHouseCluster` en el mismo espacio de nombres provocará conflictos de reconciliación, ya que el operador no puede distinguir qué recursos pertenecen a cada clúster.
+
+El gráfico de Helm `onprem-clickhouse-cluster` lo garantiza a nivel del servidor de la API de Kubernetes mediante la creación de una `ResourceQuota` que limita el espacio de nombres a un solo `ClickHouseCluster`:
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+spec:
+  hard:
+    count/clickhouseclusters.clickhouse.com: "1"
+```
+
+Esta cuota está habilitada de forma predeterminada (`resourceQuota.enabled: true` en los valores de Helm). No la deshabilite. De lo contrario, el clúster quedará en un estado degradado, ya que el Operator no puede reconciliarlo.
+
+Si necesita ejecutar varios clústeres de ClickHouse, despliegue cada uno en su propio espacio de nombres.
+
+<div id="statefulset-architecture-multists">
+  ## Arquitectura de StatefulSet (MultiSTS)
+</div>
+
+El operador usa un modelo de **MultiStatefulSet (MultiSTS)** en el que **cada réplica está gestionada por su propio StatefulSet dedicado** (un StatefulSet por cada pod de Kubernetes del servidor de ClickHouse). Este diseño proporciona un control más preciso sobre cada réplica, lo cual es fundamental para operaciones como la reducción de escala, en las que es necesario eliminar réplicas concretas sin afectar a las demás.
+
+<Frame caption="Arquitectura de MultiSTS">
+  ![Arquitectura de MultiSTS](/images/multists-layout.png)
+</Frame>
+
+MultiSTS desacopla las réplicas de la identidad basada en ordinales, lo que permite al operador gestionar cada réplica de forma independiente.
+
+<div id="replicastatemap">
+  ## ReplicaStateMap
+</div>
+
+Dado que las réplicas de MultiSTS no pueden basarse en índices ordinales como una forma determinista de comprender la antigüedad o el ciclo de vida de un pod de Kubernetes, el operador realiza un seguimiento del estado de cada StatefulSet en un mapa almacenado en el campo `.status.replicaStateMap` del CR.
+
+Un ejemplo de ReplicaStateMap tiene este aspecto:
+
+```yaml
+replicaStateMap:
+  c-navy-wl-64-server-5hvvzxe:
+    createdAt: "2023-08-03T13:25:40Z"
+    isBackupPod: true
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-fvnytjb:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-un85gpo:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+```
+
+<div id="replica-states">
+  ### Estados de las réplicas
+</div>
+
+Cada réplica puede estar en uno de los siguientes estados:
+
+| Estado              | Descripción                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pending**         | La réplica se ha registrado en el mapa, pero aún no ha alcanzado un estado de ejecución saludable. Una vez añadida, el operador trabaja para llevarla al estado Ready. |
+| **Ready**           | La réplica está en ejecución y en buen estado.                                                                                                                         |
+| **Stopped**         | La réplica se ha detenido intencionadamente.                                                                                                                           |
+| **Condemned**       | La réplica se ha marcado para su eliminación durante una operación de reducción de escala.                                                                             |
+| **Dropped**         | La réplica se ha eliminado por completo.                                                                                                                               |
+| **VolumeRestoring** | El volumen persistente de la réplica se está restaurando desde una copia de seguridad.                                                                                 |
+| **VolumeRestored**  | El volumen persistente de la réplica se ha restaurado y está listo para usarse.                                                                                        |
+
+<div id="backup-pod-designation">
+  ### Designación del pod de respaldo
+</div>
+
+En cada momento, exactamente una réplica se designa como **pod de respaldo** (`isBackupPod: true`). Esta es la réplica en la que se ejecutan las operaciones de copia de seguridad. El operador evita marcar la réplica de copia de seguridad como Condemned durante la reducción de escala para no interrumpir las operaciones de copia de seguridad, aunque el código gestiona este caso extremo de forma preventiva si llega a producirse.
+
+> **Advertencia:** El seguimiento del estado en ReplicaStateMap es solo para la gestión interna del estado del operador y no debe ser utilizado por componentes externos.
+
+<div id="parallel-vs-rolling-reconciliation">
+  ## Reconciliación en paralelo vs. reconciliación progresiva
+</div>
+
+El operador utiliza dos estrategias de reconciliación diferentes según la naturaleza del cambio:
+
+* La **reconciliación en paralelo** se utiliza cuando el único cambio en la especificación del StatefulSet es un cambio en el número de réplicas. En este caso, todos los StatefulSets pueden actualizarse simultáneamente, ya que no hay cambios disruptivos en los pods existentes.
+
+* La **reconciliación progresiva** se utiliza para todos los demás cambios en la especificación (actualizaciones de configuración, cambios de imagen, ajustes de recursos, etc.). En ese caso, entra en acción un bucle de actualización secundario que reconcilia los StatefulSets uno por uno, respetando la configuración `maxUnavailable` del PodDisruptionBudget para garantizar que el clúster nunca supere el nivel de interrupción permitido durante el despliegue.
+
+<div id="horizontal-scaling">
+  ## Escalado horizontal
+</div>
+
+<div id="scale-out">
+  ### Ampliación
+</div>
+
+Ampliar horizontalmente en modo MultiSTS es sencillo. Cuando se añade un nuevo nombre de réplica a `ReplicaStateMap`, el operador crea el `StatefulSet` correspondiente y lo reconcilia. Los ciclos de reconciliación posteriores garantizan que la nueva réplica creada se ponga al día con el resto del clúster.
+
+<div id="scale-in">
+  ### Reducción de escala
+</div>
+
+La reducción de escala es considerablemente más compleja porque una réplica que se va a eliminar puede seguir recibiendo tráfico o contener datos que deben sincronizarse. El operador sigue un proceso de varios pasos para eliminar las réplicas de forma segura.
+
+<div id="condemned-replicas">
+  #### Réplicas en estado Condemned
+</div>
+
+Cuando la cantidad real de réplicas supera la cantidad deseada, las réplicas sobrantes se marcan como **Condemned**. Su estado pasa de Ready a Condemned en el ReplicaStateMap, lo que le indica al operador qué réplicas deben eliminarse de forma segura.
+
+<div id="scale-in-flow">
+  #### Flujo de la reducción de escala
+</div>
+
+El proceso de reducción de escala sigue estos pasos:
+
+1. **Eliminar la clave de topología** -- La réplica marcada para eliminación se excluye de los cálculos de sesgo de `TopologySpreadConstraint`, de modo que deje de afectar las decisiones de planificación de pods.
+2. **Esperar a que todos los StatefulSets estén Ready** -- Si algún StatefulSet no está en estado Ready, la reducción de escala se pospone y la reconciliación se vuelve a poner en cola.
+3. **Ejecutar [`SYSTEM SYNC REPLICA ... LIGHTWEIGHT`](https://clickhouse.com/docs/sql-reference/statements/system#sync-replica)** -- Garantiza que todos los datos de la réplica marcada para eliminación estén sincronizados antes de quitarla. Se ejecuta en el pod de respaldo.
+4. **Eliminar los StatefulSets marcados para eliminación** -- Se eliminan los StatefulSets y sus entradas se quitan de `ReplicaStateMap`.
+5. **Ejecutar [`SYSTEM DROP REPLICA`](https://clickhouse.com/docs/sql-reference/statements/system#drop-replica)** -- Elimina los metadatos de la réplica eliminada de ClickHouse Keeper en las réplicas restantes que están en estado Ready.
+6. **Etiquetar los PVC para su limpieza** -- Los PVC que pertenecen a los StatefulSets eliminados se etiquetan con `clickhouse.com/delete-pvc`. Esto se conoce como &quot;PVC leaking&quot; y, a partir de este punto, termina la responsabilidad del operator. El componente PersistentVolumeClaimCleaner se encarga de gestionar la eliminación real de los PVC.

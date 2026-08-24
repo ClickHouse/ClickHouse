@@ -36,50 +36,50 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="选择数据源类型" size="lg" border />
 
-4. 填写表单，为 ClickPipe 提供名称、描述 (可选) 、IAM 角色 或凭证，以及其他连接详细信息。
+4. 填写表单，为 ClickPipe 提供名称、描述 (可选) 、IAM role 或凭据，以及其他连接信息。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="填写连接详细信息" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="填写连接信息" size="lg" border />
 
-5. 选择 Kinesis Stream 和起始偏移量。UI 会显示所选源中的一个样本文档 (Kafka topic 等) 。你还可以为 Kinesis 数据流启用 Enhanced Fan-out，以提升 ClickPipe 的性能和稳定性 (有关 Enhanced Fan-out 的更多信息，请参见[此处](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. 选择 Kinesis Stream 和起始偏移量。UI 将显示所选来源 (Kafka topic 等) 中的一个样本文档。你还可以为 Kinesis 数据流 启用 Enhanced Fan-out，以提升 ClickPipe 的性能和稳定性 (有关 Enhanced Fan-out 的更多信息，请参见[此处](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="设置数据格式和 topic" size="lg" border />
 
-6. 在下一步中，你可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。按照界面上的说明修改表名、schema 和设置。你可以在顶部的样本表中实时预览这些更改。
+6. 在下一步中，你可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。按照界面提示修改表名、schema 和设置。你可以在顶部的样本表中实时预览这些更改。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="设置表、schema 和设置" size="lg" border />
 
-你还可以使用提供的控件自定义高级设置
+你也可以使用提供的控件自定义高级设置
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="设置高级控件" size="lg" border />
 
-7. 或者，你也可以选择将数据摄取到现有的 ClickHouse 表中。在这种情况下，UI 会允许你将源中的字段映射到所选目标表中的 ClickHouse 字段。
+7. 或者，你也可以选择将数据摄取到现有的 ClickHouse 表中。在这种情况下，UI 将允许你把来源中的字段映射到所选目标表中的 ClickHouse 字段。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="使用现有表" size="lg" border />
 
 8. 最后，你可以为内部 ClickPipes 用户配置权限。
 
-**Permissions：** ClickPipes 会创建一个专用用户，用于将数据写入目标表。你可以为该内部用户选择一个角色，可使用自定义角色或预定义角色之一：
+**权限：** ClickPipes 将创建一个专用用户，用于将数据写入目标表。你可以通过自定义角色或某个预定义角色为该内部用户分配角色：
 
-* `Full access`：对集群具有完全访问权限。如果你在目标表中使用 materialized view 或字典，这可能会很有用。
-  * `Only destination table`：仅具有目标表的 `INSERT` 权限。
+* `Full access`：拥有对 cluster 的完全访问权限。如果你在目标表中使用了 materialized view 或字典，这可能会很有用。
+  * `Only destination table`：仅对目标表具有 `INSERT` 权限。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" border />
 
-9. 点击“Complete Setup”后，系统将注册你的 ClickPipe，你将能够在摘要表中看到它。
+9. 点击“Complete Setup”后，系统将注册你的 ClickPipe，你将能在汇总表中看到它。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="移除通知" size="lg" border />
 
-摘要表提供了相关控件，可显示源中的样本数据或 ClickHouse 中目标表的数据
+汇总表提供了用于显示来源或 ClickHouse 中目标表样本数据的控件
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="查看目标端" size="lg" border />
 
-以及用于移除 ClickPipe 并显示摄取作业摘要的控件。
+以及用于删除 ClickPipe 和显示摄取 job 摘要的控件。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="查看概览" size="lg" border />
 
-10. **恭喜！** 你已成功设置第一个 ClickPipe。如果这是一个流式 ClickPipe，它将持续运行，实时从远程数据源摄取数据。否则，它会摄取该批次的数据并完成。
+10. **恭喜！** 你已成功设置了第一个 ClickPipe。如果这是一个流式 ClickPipe，它将持续运行，并从远程数据源实时摄取数据。否则，它会摄取该批次后结束。
 
 <div id="supported-data-formats">
   ## 支持的数据格式
@@ -223,4 +223,4 @@ ClickPipe 会自动重启该消费者并继续处理消息。
   ## 身份验证
 </div>
 
-要访问Amazon Kinesis 数据流，您可以使用 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。如需进一步了解如何设置 IAM 角色，您可以[参阅本指南](/zh/integrations/clickpipes/kinesis/auth)，了解如何设置可与 ClickHouse Cloud 配合使用的角色。
+要访问 Amazon Kinesis 流，您可以使用 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。有关如何设置 IAM 角色的更多信息，您可以[参阅本指南](/zh/integrations/clickpipes/kinesis/auth)，了解如何设置可与 ClickHouse Cloud 配合使用的角色。

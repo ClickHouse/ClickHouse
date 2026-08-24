@@ -23,22 +23,22 @@ ClickHouse는 `count`에 대해 다음 구문을 지원합니다.
 **세부 정보**
 
 ClickHouse는 `COUNT(DISTINCT ...)` 구문을 지원합니다.
-이 구문의 동작은 [`count_distinct_implementation`](/ko/reference/settings/session-settings/count-distinct#count_distinct_implementation) 설정에 따라 달라집니다.
+이 구문의 동작은 [`count_distinct_implementation`](/ko/reference/settings/session-settings#count_distinct_implementation) 설정에 따라 달라집니다.
 이 설정은 연산 수행에 어떤 [uniq*](/ko/reference/functions/aggregate-functions/uniq) 함수를 사용할지 결정합니다.
 기본값은 [uniqExact](/ko/reference/functions/aggregate-functions/uniqExact) 함수입니다.
 
 `SELECT count() FROM table` 쿼리는 기본적으로 MergeTree의 메타데이터를 사용해 최적화됩니다.
-행 수준 보안을 사용해야 한다면 [`optimize_trivial_count_query`](/ko/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) 설정으로 이 최적화를 비활성화하십시오.
+행 수준 보안을 사용해야 한다면 [`optimize_trivial_count_query`](/ko/reference/settings/session-settings#optimize_trivial_count_query) 설정으로 이 최적화를 비활성화하십시오.
 
-반면 `SELECT count(nullable_column) FROM table` 쿼리는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다.
+반면 `SELECT count(nullable_column) FROM table` 쿼리는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다.
 `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [`null`](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다.
 `SELECT count(n) FROM table` 쿼리는 `SELECT sum(NOT n.null) FROM table`로 변환됩니다.
 
 <Tip>
   **COUNT(DISTINCT expr) 성능 개선**
 
-  `COUNT(DISTINCT expr)` 쿼리가 느리다면 병렬화 향상에 도움이 되므로 [`GROUP BY`](/ko/reference/statements/select/group-by) 절을 추가하는 것을 고려하십시오.
-  또한 `COUNT(DISTINCT target_col)`에 사용하는 대상 컬럼에 인덱스를 생성하기 위해 [projection](/ko/reference/statements/alter/projection)을 사용할 수도 있습니다.
+  `COUNT(DISTINCT expr)` 쿼리가 느리다면 병렬화가 향상되므로 [`GROUP BY`](/ko/reference/statements/select/group-by) 절을 추가하는 것을 고려하십시오.
+  또한 `COUNT(DISTINCT target_col)`에 사용하는 대상 컬럼에 인덱스를 만들기 위해 [projection](/ko/reference/statements/alter/projection)을 사용할 수도 있습니다.
 </Tip>
 
 **구문**
@@ -72,7 +72,7 @@ SELECT count() FROM t
 **COUNT(DISTINCT) 예시**
 
 ```sql title=Query
--- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
+-- 이 예시는 `count_distinct_implementation` 설정 값에 따라 `count(DISTINCT num)`이 `uniqExact` 함수로 수행됨을 보여줍니다.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

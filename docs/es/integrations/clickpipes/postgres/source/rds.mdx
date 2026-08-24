@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versiones compatibles de Postgres
@@ -98,17 +97,7 @@ Conéctese a su instancia de RDS Postgres como usuario administrador y ejecute l
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambio se transmitirán a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que tenga la intención de replicar todas las tablas, ya que incluir tablas innecesarias incrementa el tráfico de WAL desde Postgres hacia ClickPipes y reduce la eficiencia general de la replicación.
-
-<div id="iam-authentication">
-  ### Uso de autenticación con IAM (opcional)
-</div>
-
-<IAMAuthentication engine="postgres" service="rds">
-  <Note>
-    La autenticación con IAM para la replicación requiere que el parámetro `rds.iam_auth_for_replication` esté configurado en `1`. Esta función es compatible a partir de PostgreSQL 11; en versiones anteriores, solo puede ejecutar ClickPipes en modo `Initial Load Only`.
-  </Note>
-</IAMAuthentication>
+La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados a partir de las tablas especificadas y posteriormente se usará para ingestar el flujo de replicación.
 
 <div id="configure-network-access">
   ## Configurar el acceso de red
@@ -118,7 +107,7 @@ La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambi
   ### Control de acceso basado en IP
 </div>
 
-Si desea restringir el tráfico a su instancia de RDS, añada las [IPs NAT estáticas documentadas](/es/integrations/clickpipes/networking/static-ips) a las `reglas de entrada` del grupo de seguridad de su RDS.
+Si desea restringir el tráfico a su instancia de RDS, añada las [IPs NAT estáticas documentadas](/es/integrations/clickpipes/home#list-of-static-ips) a las `reglas de entrada` del grupo de seguridad de su RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="¿Dónde encontrar el grupo de seguridad en RDS Postgres?" size="lg" border />
 

@@ -186,24 +186,24 @@ Vérifiez :
 
    * Si vous exécutez ClickHouse dans Docker sur un réseau IPv6, assurez-vous que `network=host` est défini.
 
-2. Paramètres de l’endpoint.
-   * Vérifiez les paramètres [listen&#95;host](/fr/reference/settings/server-settings/settings/listen#listen_host) et [tcp&#95;port](/fr/reference/settings/server-settings/settings/tcp-port#tcp_port).
-   * Par défaut, le serveur ClickHouse n’accepte que les connexions localhost.
+2. Paramètres de l&#39;endpoint.
+   * Vérifiez les paramètres [listen&#95;host](/fr/reference/settings/server-settings/settings#listen_host) et [tcp&#95;port](/fr/reference/settings/server-settings/settings#tcp_port).
+   * Par défaut, le serveur ClickHouse n&#39;accepte que les connexions localhost.
 
 3. Paramètres du protocole HTTP :
 
-   * Vérifiez les paramètres du protocole pour l’API HTTP.
+   * Vérifiez les paramètres du protocole pour l&#39;API HTTP.
 
 4. Paramètres de connexion sécurisée.
 
    * Vérifiez :
-     * Le paramètre [tcp&#95;port&#95;secure](/fr/reference/settings/server-settings/settings/tcp-port#tcp_port_secure).
-     * Les paramètres des [certificats SSL](/fr/reference/settings/server-settings/settings/other#openssl).
+     * Le paramètre [tcp&#95;port&#95;secure](/fr/reference/settings/server-settings/settings#tcp_port_secure).
+     * Les paramètres des [certificats SSL](/fr/reference/settings/server-settings/settings#openssl).
    * Utilisez les paramètres appropriés lors de la connexion. Par exemple, utilisez le paramètre `port_secure` avec `clickhouse_client`.
 
 5. Paramètres utilisateur :
 
-   * Il se peut que vous utilisiez un nom d’utilisateur ou un mot de passe incorrect.
+   * Il se peut que vous utilisiez un nom d&#39;utilisateur ou un mot de passe incorrect.
 
 <div id="query-processing">
   ## Traitement des requêtes

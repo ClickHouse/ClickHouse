@@ -48,7 +48,7 @@ doc_type: 'reference'
 
 ClickHouse は、レプリカのメタ情報を保存するために [ClickHouse Keeper](/ja/guides/oss/deployment-and-scaling/keeper/index) を使用します。ZooKeeper バージョン 3.4.5 以降を使用することもできますが、ClickHouse Keeper を推奨します。
 
-レプリケーションを使用するには、サーバー設定の [zookeeper](/ja/reference/settings/server-settings/settings/zookeeper#zookeeper) セクションでパラメーターを設定します。
+レプリケーションを使用するには、サーバー設定の [zookeeper](/ja/reference/settings/server-settings/settings#zookeeper) セクションでパラメーターを設定します。
 
 <Note>
   セキュリティ設定を軽視しないでください。ClickHouse は、ZooKeeper セキュリティサブシステムの `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) をサポートしています。
@@ -114,21 +114,21 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 設定ファイルで ZooKeeper が設定されていない場合、レプリケートテーブルを作成できず、既存のレプリケートテーブルは読み取り専用になります。
 
-ZooKeeper は `SELECT` クエリでは使用されません。レプリケーションは `SELECT` のパフォーマンスに影響しないためで、クエリは非レプリケートテーブルと同じ速度で実行されます。分散レプリケートテーブルに対してクエリを実行する際の ClickHouse の動作は、設定 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) と [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries) によって制御されます。
+ZooKeeper は `SELECT` クエリでは使用されません。レプリケーションは `SELECT` のパフォーマンスに影響しないためで、クエリは非レプリケートテーブルと同じ速度で実行されます。分散レプリケートテーブルに対してクエリを実行する際の ClickHouse の動作は、設定 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings#max_replica_delay_for_distributed_queries) と [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries) によって制御されます。
 
 各 `INSERT` クエリごとに、複数のトランザクションを通じて ZooKeeper におよそ 10 個のエントリが追加されます。 (より正確には、これは挿入されるデータブロックごとです。`INSERT` クエリには 1 つのブロック、または `max_insert_block_size = 1048576` 行ごとに 1 つのブロックが含まれます。) このため、`INSERT` のレイテンシは非レプリケートテーブルと比べてわずかに長くなります。ただし、データは 1 秒あたり 1 回を超えない `INSERT` をバッチで行うという推奨事項に従えば、問題にはなりません。1 つの ZooKeeper クラスターで調整される ClickHouse クラスター全体では、合計で毎秒数百件の `INSERT` を処理できます。データ挿入のスループット (1 秒あたりの行数) は、非レプリケートデータの場合と同程度に高くなります。
 
 非常に大規模なクラスターでは、分片ごとに異なる ZooKeeper クラスターを使用できます。ただし、私たちの経験では、約 300 台のサーバーを持つ本番クラスターでも、これが必要になったことはありません。
 
-レプリケーションは非同期かつマルチマスターです。`INSERT` クエリ (および `ALTER`) は、利用可能な任意のサーバーに送信できます。データはクエリを実行したサーバーに挿入され、その後ほかのサーバーへコピーされます。非同期であるため、直前に挿入されたデータがほかのレプリカに反映されるまでには多少の遅延があります。一部のレプリカが利用できない場合は、それらが利用可能になった時点でデータが書き込まれます。レプリカが利用可能であれば、レイテンシは圧縮済みデータブロックをネットワーク経由で転送するのにかかる時間です。レプリケートテーブルのバックグラウンドタスクを実行するスレッド数は、[background&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size) 設定で指定できます。
+レプリケーションは非同期かつマルチマスターです。`INSERT` クエリ (および `ALTER`) は、利用可能な任意のサーバーに送信できます。データはクエリを実行したサーバーに挿入され、その後ほかのサーバーへコピーされます。非同期であるため、直前に挿入されたデータがほかのレプリカに反映されるまでには多少の遅延があります。一部のレプリカが利用できない場合は、それらが利用可能になった時点でデータが書き込まれます。レプリカが利用可能であれば、レイテンシは圧縮済みデータブロックをネットワーク経由で転送するのにかかる時間です。レプリケートテーブルのバックグラウンドタスクを実行するスレッド数は、[background&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_schedule_pool_size) 設定で指定できます。
 
-`ReplicatedMergeTree` エンジンは、レプリケーションの fetches 用に別のスレッドプールを使用します。このプールのサイズは [background&#95;fetches&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_fetches_pool_size) 設定で制限されており、サーバーの再起動によって調整できます。
+`ReplicatedMergeTree` エンジンは、レプリケーションの fetches 用に別のスレッドプールを使用します。このプールのサイズは [background&#95;fetches&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_fetches_pool_size) 設定で制限されており、サーバーの再起動によって調整できます。
 
 デフォルトでは、INSERT クエリは 1 つのレプリカからのデータ書き込み確認だけを待機します。データが 1 つのレプリカにしか正常に書き込まれず、そのレプリカを持つサーバーが失われた場合、保存されたデータも失われます。複数のレプリカからデータ書き込み確認を得るには、`insert_quorum` オプションを使用します。
 
 各データブロックはアトミックに書き込まれます。INSERT クエリは、最大 `max_insert_block_size = 1048576` 行までのブロックに分割されます。つまり、`INSERT` クエリの行数が 1048576 未満であれば、そのクエリはアトミックに実行されます。
 
-データブロックは重複排除されます。同じデータブロック (同じサイズで、同じ行を同じ順序で含むデータブロック) を複数回書き込んでも、そのブロックが書き込まれるのは 1 回だけです。これは、ネットワーク障害時にクライアントアプリケーションがデータが DB に書き込まれたかどうか分からなくても、`INSERT` クエリをそのまま再実行できるようにするためです。同一データの `INSERT` がどのレプリカに送信されたかは関係ありません。`INSERT` は冪等です。重複排除のパラメータは、[merge&#95;tree](/ja/reference/settings/server-settings/settings/merge#merge_tree) サーバー設定で制御されます。
+データブロックは重複排除されます。同じデータブロック (同じサイズで、同じ行を同じ順序で含むデータブロック) を複数回書き込んでも、そのブロックが書き込まれるのは 1 回だけです。これは、ネットワーク障害時にクライアントアプリケーションがデータが DB に書き込まれたかどうか分からなくても、`INSERT` クエリをそのまま再実行できるようにするためです。同一データの `INSERT` がどのレプリカに送信されたかは関係ありません。`INSERT` は冪等です。重複排除のパラメータは、[merge&#95;tree](/ja/reference/settings/server-settings/settings#merge_tree) サーバー設定で制御されます。
 
 レプリケーション中にネットワーク経由で転送されるのは、挿入元のデータだけです。その後のデータ変換 (マージ) は、すべてのレプリカで同じ方法で調整・実行されます。これによりネットワーク使用量が最小限に抑えられるため、レプリカが異なる datacenter にある場合でも、レプリケーションは有効に機能します。 (異なる datacenter 間でデータを複製することが、レプリケーションの主な目的である点に注意してください。)
 
@@ -187,7 +187,7 @@ SAMPLE BY intHash32(UserID);
   ```
 </details>
 
-この例が示すように、これらのパラメーターには `{}` で囲まれた置換を含めることができます。置換される値は、設定ファイルの [マクロ](/ja/reference/settings/server-settings/settings/other#macros) セクションから取得されます。
+この例が示すように、これらのパラメーターには `{}` で囲まれた置換を含めることができます。置換される値は、設定ファイルの [マクロ](/ja/reference/settings/server-settings/settings#macros) セクションから取得されます。
 
 例:
 
@@ -344,12 +344,12 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
   ## ClickHouse Keeper クラスター内のメタデータが失われた、または破損した場合の復旧
 </div>
 
-ClickHouse Keeper 内のデータが失われた、または破損した場合は、前述のとおり、データを非レプリケートテーブルに移動することで保存できます。
+ClickHouse Keeper 内のデータが失われた、または破損した場合は、前述のとおり、データをレプリケーションされていないテーブルに移動することで保存できます。
 
 **関連項目**
 
-* [background&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size)
-* [background&#95;fetches&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_fetches_pool_size)
-* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ja/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold)
-* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ja/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
-* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ja/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+* [background&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ja/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ja/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ja/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)

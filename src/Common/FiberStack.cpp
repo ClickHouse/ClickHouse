@@ -2,12 +2,9 @@
 #include <base/MemorySanitizer.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/memory.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -40,20 +37,6 @@ namespace DB::ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-namespace ProfileEvents
-{
-    extern const Event FiberStackAllocs;
-    extern const Event FiberStackAllocBytes;
-    extern const Event FiberStackAllocNanoseconds;
-    extern const Event FiberStackFreeNanoseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric FiberStacks;
-    extern const Metric FiberStackBytes;
-}
-
 
 FiberStack::FiberStack(size_t stack_size_)
     : stack_size(stack_size_)
@@ -63,8 +46,6 @@ FiberStack::FiberStack(size_t stack_size_)
 
 boost::context::stack_context FiberStack::allocate() const
 {
-    Stopwatch watch;
-
     size_t num_pages = 1 + (stack_size - 1) / page_size;
 
     if constexpr (guardPagesEnabled())
@@ -98,20 +79,11 @@ boost::context::stack_context FiberStack::allocate() const
 #if defined(BOOST_USE_VALGRIND)
     sctx.valgrind_stack_id = VALGRIND_STACK_REGISTER(sctx.sp, data);
 #endif
-
-    ProfileEvents::increment(ProfileEvents::FiberStackAllocs);
-    ProfileEvents::increment(ProfileEvents::FiberStackAllocBytes, num_bytes);
-    ProfileEvents::increment(ProfileEvents::FiberStackAllocNanoseconds, watch.elapsedNanoseconds());
-    CurrentMetrics::add(CurrentMetrics::FiberStacks);
-    CurrentMetrics::add(CurrentMetrics::FiberStackBytes, num_bytes);
-
     return sctx;
 }
 
 void FiberStack::deallocate(boost::context::stack_context & sctx) const
 {
-    Stopwatch watch;
-
 #if defined(BOOST_USE_VALGRIND)
     VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);
 #endif
@@ -121,8 +93,4 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
         memoryGuardRemove(data, page_size);
 
     ::free(data);
-
-    CurrentMetrics::sub(CurrentMetrics::FiberStacks);
-    CurrentMetrics::sub(CurrentMetrics::FiberStackBytes, sctx.size);
-    ProfileEvents::increment(ProfileEvents::FiberStackFreeNanoseconds, watch.elapsedNanoseconds());
 }

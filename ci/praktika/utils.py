@@ -322,7 +322,6 @@ class Shell:
         timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
-        on_retry=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -421,26 +420,18 @@ class Shell:
                         print("No retryable errors found, stopping retries")
                     break
 
-                matched = next(
-                    (
-                        err
-                        for err in retry_errors
-                        if any(err in line for line in err_output)
-                    ),
-                    "",
-                )
                 if verbose:
+                    matched = next(
+                        (
+                            err
+                            for err in retry_errors
+                            if any(err in line for line in err_output)
+                        ),
+                        "",
+                    )
                     print(
                         f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
-                if on_retry and retry < retries - 1:
-                    # Only where another attempt actually follows: the last iteration
-                    # matches too, but nothing is retried after it. Never lets a
-                    # reporting failure fail the command the retry is rescuing.
-                    try:
-                        on_retry(matched, retry + 1, retries - 1)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"WARNING: on_retry callback failed, ex [{e}]")
             except Exception as e:
                 if verbose:
                     if retries == 1:

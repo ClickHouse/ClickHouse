@@ -1,0 +1,250 @@
+---
+noindex: true
+title: "ClickHouse 用の FIPS 準拠証明書を生成する"
+sidebarTitle: "FIPS 証明書を設定する"
+description: "ClickHouse Private の server、Keeper、client コンポーネントに必要な TLS 証明書を生成します。"
+---
+
+ClickHouse Private の server、Keeper、client コンポーネントに必要な TLS 証明書を生成します。以下のスクリプトは、FIPS が有効化された Red Hat UBI8 コンテナー内で OpenSSL を実行し、FIPS 140-2 準拠を確実にします。
+
+組織に既存の PKI 運用プロセスがある場合は、代わりにそれを使用できます。ただし、生成される証明書が以下の SAN 要件と秘密鍵名に一致していることを確認してください。
+
+> これらの証明書の目的、検証モード、ローテーション時の動作などの背景については、[ClickHouse Private における PKI と mTLS](/ja/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private) を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* `registry.access.redhat.com/ubi8/ubi` にアクセスできる状態で Docker がインストールされていること
+* クラスター名を決めていること (このガイドでは `default-xx-01` を使用します)
+
+<div id="clickhouse-private-requirements">
+  ## ClickHouse Private の要件
+</div>
+
+共通のCAで署名された3組の証明書が必要です。
+
+| 証明書    | SANパターン                                                                                                                                         | Secretのキー名                 |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Server | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.cluster.local`, `c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.cluster.local` | `server.crt`, `server.key` |
+| Keeper | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.cluster.local`                                                                      | `keeper.crt`, `keeper.key` |
+| Client | SAN は不要 (serverからのアウトバウンド接続)                                                                                                                      | `client.crt`, `client.key` |
+
+* FIPS準拠のため、RSA 3072ビット以上のキーサイズが必要です
+* Kubernetesクラスターで `.cluster.local` 以外のドメインを使用している場合は、SAN内の `.cluster.local` を置き換えてください
+* ClickHouseクラスターごとに、固有の証明書セット (CAを除く) を作成する必要があります
+
+<div id="generate-the-certificates">
+  ## 証明書を生成する
+</div>
+
+> **警告:** 以下で生成する証明書の有効期限は **365 日** です (CA は 3650 日です) 。`-days` の値は、セキュリティ要件に合わせて変更してください。
+
+スクリプト先頭の変数を更新してから、実行します。
+
+```text expandable
+# update the variables below as needed:
+
+CLUSTER_NAME=default-xx-01
+KUBERNETES_DOMAIN=cluster.local
+COUNTRY=US
+STATE=YourState
+CITY=YourCity
+ORG=YourOrganization
+ORG_UNIT=YourOrganizationalUnit
+CN=YourRootCA
+
+docker run -it --rm \
+  -v $(pwd):/certs \
+  registry.access.redhat.com/ubi8/ubi \
+  /bin/bash -c "
+    set -e
+
+    # Install required packages
+    dnf -y install openssl crypto-policies-scripts
+
+    # Enable FIPS mode
+    fips-mode-setup --enable
+
+    # Create directory structure in the mounted volume
+    mkdir -p /certs/{ca,server,keeper,client}
+
+    # Generate CA certificate
+    cd /certs/ca
+    openssl genrsa -out ca.key 3072
+
+    cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+    openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+    # Generate server certificate
+    cd /certs/server
+
+    cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out server.key 3072
+    openssl req -new -key server.key -out server.csr -config server.cnf
+    openssl x509 -req -days 365 -in server.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+    # Generate keeper certificate
+    cd /certs/keeper
+
+    cat > keeper.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-keeper
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out keeper.key 3072
+    openssl req -new -key keeper.key -out keeper.csr -config keeper.cnf
+    openssl x509 -req -days 365 -in keeper.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out keeper.crt -extensions v3_req -extfile keeper.cnf
+
+    # Generate client certificate
+    cd /certs/client
+
+    cat > client.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-client
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth
+EOF
+
+    openssl genrsa -out client.key 3072
+    openssl req -new -key client.key -out client.csr -config client.cnf
+    openssl x509 -req -days 365 -in client.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out client.crt -extensions v3_req -extfile client.cnf
+
+    # Fix permissions
+    chmod -R 755 /certs
+
+    # Verify FIPS compliance
+    echo 'Verifying FIPS compliance of generated certificates:'
+    openssl version
+    openssl rsa -in /certs/server/server.key -text -noout | grep 'Private-Key'
+    openssl x509 -in /certs/server/server.crt -text -noout | grep 'Signature Algorithm'
+
+    # Show success message
+    echo 'FIPS-compliant certificates have been generated successfully!'
+  "
+```
+
+実行すると、現在のディレクトリに次のファイルが作成されます。
+
+| ディレクトリ    | ファイル                       |
+| --------- | -------------------------- |
+| `ca/`     | `ca.crt`, `ca.key`         |
+| `server/` | `server.crt`, `server.key` |
+| `keeper/` | `keeper.crt`, `keeper.key` |
+| `client/` | `client.crt`, `client.key` |
+
+<div id="create-kubernetes-secrets">
+  ## Kubernetes Secret を作成する
+</div>
+
+Kubernetes Secret は、ClickHouse クラスターを実行するネームスペース (`ns-<cluster_name>`) と同じネームスペースに作成する必要があります。Secret 名やキー名は変更しないでください。
+
+```ini
+CERT_DIR=.
+CLUSTER_NAME=default-xx-01
+
+# Ensure the namespace exists
+kubectl create namespace ns-${CLUSTER_NAME} --dry-run=client -o yaml | kubectl apply -f -
+
+# Server secret (includes client cert for outbound connections)
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=server.crt="$CERT_DIR/server/server.crt" \
+  --from-file=server.key="$CERT_DIR/server/server.key" \
+  --from-file=client.crt="$CERT_DIR/client/client.crt" \
+  --from-file=client.key="$CERT_DIR/client/client.key"
+
+# Keeper secret
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=keeper.crt="$CERT_DIR/keeper/keeper.crt" \
+  --from-file=keeper.key="$CERT_DIR/keeper/keeper.key"
+```
+
+<div id="using-your-own-ca">
+  ## 独自のCAを使用する
+</div>
+
+既存の証明機関がある場合は、スクリプト内のCA生成手順をスキップしてください。署名用にCA証明書をDockerコンテナーにマウントし、このガイドで `ca.crt` ファイルに言及している箇所では常にそれを使用してください (上記のKubernetes Secretを含む) 。証明書一式は、各ClickHouseクラスターごとに個別に作成する必要があります (CAを除く) 。

@@ -1,12 +1,12 @@
 ---
-description: '데이터베이스 객체의 메타데이터에 대해 거의 표준화된 DBMS 비종속적 VIEW를 제공하는 system 데이터베이스입니다.'
+description: '데이터베이스 객체의 메타데이터에 대해 거의 표준화된 DBMS 비종속적 뷰를 제공하는 system 데이터베이스입니다.'
 keywords: ['system 데이터베이스', 'information_schema']
 slug: /operations/system-tables/information_schema
 title: 'INFORMATION_SCHEMA'
 doc_type: '참고'
 ---
 
-`INFORMATION_SCHEMA`(또는 `information_schema`)는 데이터베이스 객체의 메타데이터에 대해 (어느 정도) 표준화된 [DBMS 비종속적 VIEW](https://en.wikipedia.org/wiki/Information_schema)를 제공하는 system 데이터베이스입니다. `INFORMATION_SCHEMA`의 VIEW는 일반적으로 일반 시스템 테이블보다 기능이 다소 제한적이지만, 도구에서 DBMS 전반에 걸쳐 기본 정보를 얻는 데 사용할 수 있습니다. `INFORMATION_SCHEMA`의 VIEW 구조와 내용은 하위 호환성을 유지하는 방식으로 발전하도록 설계되어 있습니다. 즉, 새로운 기능만 추가되고 기존 기능은 변경되거나 제거되지 않습니다. 내부 구현 측면에서 `INFORMATION_SCHEMA`의 VIEW는 일반적으로 [system.columns](/ko/reference/system-tables/columns), [system.databases](/ko/reference/system-tables/databases), [system.tables](/ko/reference/system-tables/tables)와 같은 일반 시스템 테이블에 매핑됩니다.
+`INFORMATION_SCHEMA`(또는 `information_schema`)는 데이터베이스 객체의 메타데이터에 대해 (어느 정도) 표준화된 [DBMS 비종속적 뷰](https://en.wikipedia.org/wiki/Information_schema)를 제공하는 system 데이터베이스입니다. `INFORMATION_SCHEMA`의 뷰는 일반적으로 일반 시스템 테이블보다 기능이 다소 제한적이지만, 도구에서 DBMS 전반에 걸쳐 기본 정보를 얻는 데 사용할 수 있습니다. `INFORMATION_SCHEMA`의 뷰 구조와 내용은 하위 호환성을 유지하는 방식으로 발전하도록 설계되어 있습니다. 즉, 새로운 기능만 추가되고 기존 기능은 변경되거나 제거되지 않습니다. 내부 구현 측면에서 `INFORMATION_SCHEMA`의 뷰는 일반적으로 [system.columns](/ko/reference/system-tables/columns), [system.databases](/ko/reference/system-tables/databases), [system.tables](/ko/reference/system-tables/tables)와 같은 일반 시스템 테이블에 매핑됩니다.
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -17,7 +17,6 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
-│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -38,7 +37,6 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA`에는 다음 VIEW가 포함되어 있습니다:
 
 * [COLUMNS](#columns)
-* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -381,19 +379,3 @@ referenced_column_name:        ᴺᵁᴸᴸ
 </div>
 
 테이블 인덱스에 대한 정보를 제공합니다. 현재는 빈 결과(행 없음)만 반환하며, Tableau Online과 같은 타사 도구와의 호환성을 유지하는 데 필요한 최소한의 수준만 제공합니다.
-
-<div id="collations">
-  ## COLLATIONS
-</div>
-
-사용 가능한 콜레이션 정보를 제공합니다. [system.collations](/ko/reference/system-tables/collations)의 콜레이션과 MySQL 호환성을 위한 2개의 행을 포함합니다. `utf8mb4_0900_ai_ci`는 MySQL 프로토콜이 핸드셰이크, `SCHEMATA.DEFAULT_COLLATION_NAME`, `TABLES.TABLE_COLLATION`에서 알리는 콜레이션이며, `binary`는 MySQL 프로토콜이 결과 집합 메타데이터의 숫자형 및 기타 비문자열 컬럼에 지정하는 의사 콜레이션입니다. 따라서 알린 콜레이션을 따라 이 뷰를 조회하는 MySQL 지원 클라이언트도 해당 항목을 찾을 수 있습니다.
-
-컬럼:
-
-* `collation_name` ([String](/ko/reference/data-types/string)) — 콜레이션의 이름입니다.
-* `character_set_name` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 연결된 문자 집합입니다(`utf8mb4_0900_ai_ci`의 경우 `utf8mb4`, `binary`의 경우 `binary`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
-* `id` ([Nullable](/ko/reference/data-types/nullable)([UInt64](/ko/reference/data-types/int-uint))) — MySQL 콜레이션 ID입니다(`utf8mb4_0900_ai_ci`의 경우 `255`, `binary`의 경우 `63`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
-* `is_default` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 콜레이션이 해당 문자 집합의 기본값인지 여부입니다(MySQL 호환성 행 2개 모두 `Yes`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
-* `is_compiled` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 콜레이션이 서버에 컴파일되어 있는지 여부입니다(MySQL 호환성 행 2개 모두 `Yes`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
-* `sortlen` ([Nullable](/ko/reference/data-types/nullable)([UInt64](/ko/reference/data-types/int-uint))) — 최소 정렬 길이입니다(`utf8mb4_0900_ai_ci`의 경우 `0`, `binary`의 경우 `1`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
-* `pad_attribute` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 패딩 속성으로, `NO PAD` 또는 `PAD SPACE`입니다(MySQL 호환성 행 2개 모두 `NO PAD`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.

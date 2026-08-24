@@ -165,7 +165,7 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
 
 Предложение `FORMAT` должно быть указано в конце запроса, если предложение `SELECT` содержит табличную функцию [input()](/ru/reference/functions/table-functions/input).
 
-Чтобы вставить значение по умолчанию вместо `NULL` в столбец с типом данных, не допускающим `NULL`, включите настройку [insert&#95;null&#95;as&#95;default](/ru/reference/settings/session-settings/insert#insert_null_as_default).
+Чтобы вставить значение по умолчанию вместо `NULL` в столбец с типом данных, не допускающим `NULL`, включите настройку [insert&#95;null&#95;as&#95;default](/ru/reference/settings/session-settings#insert_null_as_default).
 
 `INSERT` также поддерживает CTE (общее табличное выражение). Например, следующие два оператора эквивалентны:
 
@@ -306,7 +306,7 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### Асинхронные вставки
 </div>
 
-Можно асинхронно вставлять данные небольшими, но частыми порциями. Данные из таких вставок объединяются в батчи, а затем безопасно вставляются в таблицу. Чтобы использовать асинхронные вставки, включите настройку [`async_insert`](/ru/reference/settings/session-settings/async-insert#async_insert).
+Можно асинхронно вставлять данные небольшими, но частыми порциями. Данные из таких вставок объединяются в батчи, а затем безопасно вставляются в таблицу. Чтобы использовать асинхронные вставки, включите настройку [`async_insert`](/ru/reference/settings/session-settings#async_insert).
 
 Использование `async_insert` или [`Buffer` движка таблицы](/ru/reference/engines/table-engines/special/buffer) приводит к дополнительной буферизации.
 
@@ -314,13 +314,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### Крупные или длительные вставки
 </div>
 
-При вставке больших объёмов данных ClickHouse оптимизирует производительность записи с помощью процесса, называемого «squashing». Небольшие блоки вставляемых данных в памяти сливаются и объединяются в более крупные блоки перед записью на диск. Squashing уменьшает накладные расходы, связанные с каждой операцией записи. В ходе этого процесса данные становятся доступными для запросов после того, как ClickHouse завершит запись каждых [`max_insert_block_size`](/ru/reference/settings/session-settings/max-insert#max_insert_block_size) строк.
+При вставке больших объёмов данных ClickHouse оптимизирует производительность записи с помощью процесса, называемого «squashing». Небольшие блоки вставляемых данных в памяти сливаются и объединяются в более крупные блоки перед записью на диск. Squashing уменьшает накладные расходы, связанные с каждой операцией записи. В ходе этого процесса данные становятся доступными для запросов после того, как ClickHouse завершит запись каждых [`max_insert_block_size`](/ru/reference/settings/session-settings#max_insert_block_size) строк.
 
 **См. также**
 
-* [async&#95;insert](/ru/reference/settings/session-settings/async-insert#async_insert)
-* [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert)
-* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert_timeout)
-* [async&#95;insert&#95;max&#95;data&#95;size](/ru/reference/settings/session-settings/async-insert#async_insert_max_data_size)
-* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ru/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)
-* `async_insert_stale_timeout_ms`
+* [async&#95;insert](/ru/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ru/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ru/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ru/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ru/reference/settings/session-settings#async_insert_max_data_size)

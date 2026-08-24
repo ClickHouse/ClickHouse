@@ -17,7 +17,7 @@ Vector는 Kafka에서 데이터를 읽고 이벤트를 ClickHouse로 전송할 �
 
 ClickHouse와 함께 Vector를 사용하는 [시작하기](/ko/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) 가이드는 로그 사용 사례와 파일에서 이벤트를 읽는 방법에 중점을 둡니다. 여기서는 Kafka 토픽에 저장된 이벤트가 포함된 [GitHub 샘플 데이터셋](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)을 사용합니다.
 
-Vector는 푸시 또는 풀 모델을 통해 데이터를 가져오기 위해 [sources](https://vector.dev/docs/introduction/concepts/#sources)를 사용합니다. 반면 [Sinks](https://vector.dev/docs/introduction/concepts/#sinks)는 이벤트의 대상을 제공합니다. 따라서 여기서는 Kafka 소스와 ClickHouse 싱크를 사용합니다. Kafka는 싱크로 지원되지만 ClickHouse 소스는 제공되지 않습니다. 따라서 ClickHouse에서 Kafka로 데이터를 전송하려는 경우 Vector는 적합하지 않습니다.
+Vector는 푸시 또는 풀 모델을 통해 데이터를 가져오기 위해 [sources](https://vector.dev/docs/about/concepts/#sources)를 사용합니다. 반면 [Sinks](https://vector.dev/docs/about/concepts/#sinks)는 이벤트의 대상을 제공합니다. 따라서 여기서는 Kafka 소스와 ClickHouse 싱크를 사용합니다. Kafka는 싱크로 지원되지만 ClickHouse 소스는 제공되지 않습니다. 따라서 ClickHouse에서 Kafka로 데이터를 전송하려는 경우 Vector는 적합하지 않습니다.
 
 Vector는 데이터 [변환](https://vector.dev/docs/reference/configuration/transforms/)도 지원합니다. 하지만 이는 이 가이드의 범위를 벗어납니다. 데이터셋에 이 기능이 필요하면 Vector 문서를 참조하십시오.
 

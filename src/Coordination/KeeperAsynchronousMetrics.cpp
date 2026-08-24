@@ -50,8 +50,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t session_with_watches = 0;
     size_t paths_watched = 0;
     size_t is_exceeding_mem_soft_limit = 0;
-    UInt64 last_leader_election_time_ms = 0;
-    UInt64 last_leader_unavailable_time_ms = 0;
 
     if (keeper_dispatcher.isServerActive())
     {
@@ -82,10 +80,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         {
             followers = keeper_info.follower_count;
             synced_followers = keeper_info.synced_follower_count;
-            if (keeper_info.last_leader_election_time_ms)
-                last_leader_election_time_ms = *keeper_info.last_leader_election_time_ms;
-            if (keeper_info.last_leader_unavailable_time_ms)
-                last_leader_unavailable_time_ms = *keeper_info.last_leader_unavailable_time_ms;
         }
     }
 
@@ -94,8 +88,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
     new_values["KeeperIsExceedingMemorySoftLimitHit"] = { is_exceeding_mem_soft_limit, "1 if ClickHouse Keeper is exceeding the memory soft limit, 0 otherwise." };
-    new_values["KeeperLastLeaderElectionTime"] = { last_leader_election_time_ms, "Duration in milliseconds of the most recent locally observed no-leader window that ended when this ClickHouse Keeper instance became leader. Leadership transfers that do not expose a sampled no-leader state are not recorded. `0` if this instance is not the active leader or has no recorded completed window." };
-    new_values["KeeperLastLeaderUnavailableTime"] = { last_leader_unavailable_time_ms, "Duration in milliseconds of the most recent locally observed no-leader window completed by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed no-leader window." };
 
     new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
     new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };
@@ -127,8 +119,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperLatestLogsCacheEntries"] = {keeper_log_info.latest_logs_cache_entries, "Number of entries stored in the in-memory cache for latest logs"};
     new_values["KeeperLatestLogsCacheSize"] = {keeper_log_info.latest_logs_cache_size, "Total size of in-memory cache for latest logs"};
 
-    new_values["KeeperCommitLogsCacheEntries"] = {keeper_log_info.commit_logs_cache_entries, "Number of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};
-    new_values["KeeperCommitLogsCacheSize"] = {keeper_log_info.commit_logs_cache_size, "Total size of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};
+    new_values["KeeperCommitLogsCacheEntries"] = {keeper_log_info.commit_logs_cache_entries, "Number of entries stored in the in-memory cache for next logs to be committed"};
+    new_values["KeeperCommitLogsCacheSize"] = {keeper_log_info.commit_logs_cache_size, "Total size of in-memory cache for next logs to be committed"};
 
     auto & keeper_connection_stats = keeper_dispatcher.getKeeperConnectionStats();
 

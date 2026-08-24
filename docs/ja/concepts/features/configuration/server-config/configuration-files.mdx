@@ -16,7 +16,7 @@ ClickHouse server は、XML または YAML 構文の設定ファイルで構成�
 ほとんどのインストール形態では、ClickHouse server は `/etc/clickhouse-server/config.xml` をデフォルトの設定ファイルとして使用して動作しますが、server の起動時にコマンドラインオプション `--config-file` または `-C` を使って、設定ファイルの場所を手動で指定することもできます。
 追加の設定ファイルは、メインの設定ファイルからの相対ディレクトリである `config.d/` に配置できます。たとえば、`/etc/clickhouse-server/config.d/` ディレクトリです。
 このディレクトリ内のファイルとメイン設定は、ClickHouse server に設定が適用される前の前処理段階でマージされます。
-設定フラグメントは完全パスの辞書式順序でマージされます。標準の `config.d/` ディレクトリ内のファイルでは、これはファイル名順と同等です。従来の `conf.d/` ディレクトリもマージされます。`conf.d` は `config.d` より前にソートされるため、両方のディレクトリが存在する場合は、そのすべてのフラグメントが最初に処理されます。
+設定ファイルはアルファベット順にマージされます。
 更新を容易にし、モジュール化を進めるため、デフォルトの `config.xml` ファイルは変更せず、追加のカスタマイズは `config.d/` に配置するのがベストプラクティスです。
 ClickHouse Keeper の設定は `/etc/clickhouse-keeper/keeper_config.xml` にあります。
 同様に、Keeper 用の追加設定ファイルは `/etc/clickhouse-keeper/keeper_config.d/` に配置する必要があります。
@@ -174,22 +174,18 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 
 設定の一部をファイルの内容で置き換えることもできます。これには次の 2 つの方法があります。
 
-* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。置換用ファイルのパスは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings/other#include_from) 要素で設定します。デフォルトのパスはないため、指定されている場合にのみ置換が読み取られます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings/other#macros) の設定) 。
+* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。デフォルトでは、置換用ファイルのパスは `/etc/metrika.xml` です。これは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings#include_from) 要素で変更できます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings#macros) の設定) 。
 * *要素の置換*: 置換で要素全体を置き換えたい場合は、要素名として `include` を使用します。要素名 `include` は、`from_zk = "/path/to/node"` 属性と組み合わせて使用できます。この場合、要素の値は `/path/to/node` にある ZooKeeper ノードの内容で置き換えられます。これは、XML サブツリー全体を ZooKeeper ノードとして保存した場合にも機能し、その内容全体がソース要素に挿入されます。
-
-<Note>
-  バージョン 26.8 で変更: それ以前のバージョンでは、`include_from` が指定されていない場合でも、ファイル `/etc/metrika.xml` が存在すれば暗黙的に使用されていました。このファイルに依存している場合は、そのパスを `include_from` に明示的に指定してください。`include_from` は各設定ファイルから個別に読み取られることに注意してください。メインサーバー設定とは別に読み込まれるファイル、つまりユーザー&#39;設定 (たとえば、メインファイルに含まれていない場合の `users.xml`) と XML Dictionary 設定には、それぞれ独自の `include_from` 要素が必要です。メインサーバー設定でのみ指定しても、それらには適用されません。
-</Note>
 
 その例を以下に示します。
 
 ```xml
 <clickhouse>
-    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <!-- `/profiles-in-zookeeper` ZKパスで見つかったXMLサブツリーを`<profiles>`要素に追加します。 -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <!-- `/users-in-zookeeper` ZKパスで見つかったサブツリーで`include`要素を置き換えます。 -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -203,7 +199,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 </div>
 
 対称暗号化を使用して、設定要素 (たとえば平文のパスワードや秘密鍵) を暗号化できます。
-そのためには、まず [暗号化コーデック](/ja/reference/statements/create/table/codec#encryption-codecs) を設定し、次に暗号化する要素に、暗号化コーデック名を値に持つ属性 `encrypted_by` を追加します。
+そのためには、まず [暗号化コーデック](/ja/reference/statements/create/table#encryption-codecs) を設定し、次に暗号化する要素に、暗号化コーデック名を値に持つ属性 `encrypted_by` を追加します。
 
 `from_zk`、`from_env`、`incl` 属性や `include` 要素とは異なり、前処理済みファイルでは置換 (つまり、暗号化された値の復号) は行われません。
 復号は、サーバープロセスの実行時にのみ行われます。
@@ -294,7 +290,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 </clickhouse>
 ```
 
-値を暗号化するには、 (例) プログラム `encrypt_decrypt` を使用できます:
+値の暗号化には、 (例) プログラム `encrypt_decrypt` を使用できます：
 
 ```bash
 ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
@@ -305,7 +301,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 暗号化された設定要素を使用していても、前処理済みの設定ファイルには暗号化された要素がそのまま表示されます。
-これが ClickHouse のデプロイメントで問題になる場合は、対処方法が 2 つあります。前処理済みファイルの権限を 600 に設定するか、属性 `hide_in_preprocessed` を使用してください。
+これが ClickHouse のデプロイメントで問題になる場合は、対処方法が 2 つあります。前処理済みファイルの権限を 600 に設定するか、attribute `hide_in_preprocessed` を使用してください。
 
 例:
 
@@ -329,7 +325,6 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ユーザー設定は、`config.xml` および `config.d/` と同様に、複数のファイルに分割できます。
 ディレクトリ名は、`users_config` 設定値から `.xml` 接尾辞を除き、`.d` を連結した名前になります。
 デフォルトでは `users_config` は `users.xml` のため、`users.d` ディレクトリが使用されます。
-ユーザー設定フラグメントは、完全パスの辞書式順序でマージされます。標準の `users.d/` ディレクトリ内のファイルでは、これはファイル名順と同等です。レガシーの `conf.d/` ディレクトリもマージされます。`conf.d` は `users.d` より先にソートされるため、両方のディレクトリが存在する場合は、そのすべてのフラグメントが先に処理されます。
 
 なお、設定ファイルはまず設定項目を考慮して[マージ](#merging)され、その後で include が処理されます。
 

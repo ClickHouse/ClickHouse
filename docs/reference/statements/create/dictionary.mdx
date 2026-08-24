@@ -6,8 +6,8 @@ title: 'CREATE DICTIONARY'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { CloudSupportedBadge } from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 A dictionary is a mapping (`key -> attributes`) that is convenient for various types of reference lists.
 ClickHouse supports special functions for working with dictionaries that can be used in queries. It is easier and more efficient to use dictionaries with functions than a `JOIN` with reference tables.
@@ -71,7 +71,7 @@ The dictionary configuration file has the following format:
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
-    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
+    <include_from>/etc/metrika.xml</include_from>
 
     <dictionary>
         <!-- Dictionary configuration. -->

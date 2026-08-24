@@ -1,0 +1,350 @@
+---
+noindex: true
+title: "Infrastructure Requirements Reference"
+sidebarTitle: "Infrastructure requirements"
+description: "This document consolidates infrastructure prerequisites, node specifications, networking, storage, and IAM requirements across all supported ClickHouse"
+---
+
+This document consolidates infrastructure prerequisites, node specifications, networking, storage, and IAM requirements across all supported ClickHouse Private deployment platforms.
+
+------------------------------------------------------------------------
+
+## Prerequisites by Platform
+
+### AWS (EKS)
+
+| Requirement | Details |
+|----|----|
+| AWS CLI | Installed and configured |
+| `kubectl` | Installed |
+| `helm` | v3.x installed |
+| `skopeo` | Recommended for copying container images (retains all architectures) |
+| EKS cluster IAM role | Created via AWS console "Create recommended role" with default permissions |
+| Node IAM roles | Created via AWS console "Create recommended role" with default permissions |
+| OIDC provider | Created for the EKS cluster |
+
+### GCP (GKE)
+
+| Requirement | Details |
+|----|----|
+| GCP Project | Billing enabled |
+| `gcloud` CLI | Installed and authenticated |
+| `kubectl` | Installed |
+| `helm` | v3.x installed |
+| `skopeo` | Installed (for copying container images) |
+| AWS credentials | Read access to ClickHouse ECR (for image copying) |
+| Bastion host | In the VPC for accessing the private cluster |
+| Deployer service account | With appropriate permissions (see [IAM / Service Account Requirements](#iam-service-account-requirements)) |
+| **(FIPS only)** Red Hat UBI8 image | Pulled via GKE for certificate generation |
+
+### Bare Metal (RKE2)
+
+| Requirement | Details |
+|----|----|
+| Terraform | v1.13.2+ |
+| Ansible | With `lablabs.rke2` role and `kubernetes.core` collection |
+| `kubectl` | Installed |
+| `helm` | v3.x installed |
+| AWS IAM credentials | Access key and secret key for ECR and S3/MinIO |
+| RKE2 | v1.33.5+rke2r1 (deployed via Ansible) |
+| OS | Rocky Linux 9.6 (or compatible) |
+| MinIO | Operator and tenant for S3-compatible object storage |
+
+------------------------------------------------------------------------
+
+## Node Group Specifications
+
+### AWS (EKS)
+
+#### Keeper Node Group
+
+| Property | Value |
+|----|----|
+| AMI (x86) | `AL2023_x86_64` |
+| AMI (arm64) | `AL2023_ARM_64` |
+| Disk size | 20 GB |
+| Recommended instance type | `m7g.2xlarge` |
+| Min nodes (no autoscaling) | 3 per ClickHouse cluster |
+| Kubernetes label (x86) | `clickhouseGroup: keeper` |
+| Kubernetes label (arm64) | `clickhouseGroup: keeper-arm64` |
+| Taint | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| Taint (arm64 only) | `clickhouse.com/arch: arm64, NoSchedule` |
+| Recommended resources | CPU: 4, Memory: 16Gi |
+
+#### Server Node Group
+
+| Property | Value |
+|----|----|
+| AMI (x86) | `AL2023_x86_64` |
+| AMI (arm64) | `AL2023_ARM_64` |
+| Disk size | 20 GB |
+| Recommended instance type | `m7gd.16xlarge` (strongly recommended "d" series with NVMe SSD) |
+| Min nodes (no autoscaling) | Equal to desired number of ClickHouse replicas |
+| Kubernetes label (x86) | `clickhouseGroup: server` |
+| Kubernetes label (arm64) | `clickhouseGroup: server-arm64` |
+| Taint | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| Taint (arm64 only) | `clickhouse.com/arch: arm64, NoSchedule` |
+| Recommended resources | CPU: 64, Memory: 256Gi |
+| Launch template | Custom template required for NVMe SSD RAID setup (see source doc) |
+
+#### Operator Node Group (x86)
+
+| Property | Value |
+|----|----|
+| AMI | `AL2023_x86_64` |
+| Disk size | 20 GB |
+| Minimum instance size | xlarge |
+| Instance type | Any x86-compatible type |
+| Notes | Can be an existing node group if already x86-compatible with minimum xlarge |
+
+**All AWS nodes require [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) for authentication.**
+
+For keeper and server node groups, **create one node group per AZ** if you wish to support cluster autoscaler across AZs.
+
+Autoscaler tags (if using cluster-autoscaler): - `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+### GCP (GKE)
+
+#### Keeper Node Pool
+
+| Property              | Value                                            |
+|-----------------------|--------------------------------------------------|
+| Machine type (dev)    | `n2-standard-4`                                  |
+| Machine type (prod)   | `n2-standard-8`                                  |
+| Disk type             | `pd-ssd`                                         |
+| Disk size             | 20 GB                                            |
+| Node label            | `clickhouseGroup=keeper`                         |
+| Taint                 | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| Autoscaling           | min 1, max 3                                     |
+| Workload metadata     | `GKE_METADATA` (for Workload Identity)           |
+| Recommended resources | CPU: 2, Memory: 8Gi                              |
+
+#### Server Node Pool
+
+| Property | Value |
+|----|----|
+| Machine type (dev) | `n2-standard-8` |
+| Machine type (prod) | `n2-standard-64` |
+| Disk type | `pd-standard` + local SSD |
+| Disk size | 20 GB |
+| Local SSD count | 1 |
+| Node label | `clickhouseGroup=server` |
+| Taint | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| Autoscaling | min 1, max 10 |
+| Workload metadata | `GKE_METADATA` (for Workload Identity) |
+| Recommended resources | CPU: 4, Memory: 16Gi (dev); CPU: 64, Memory: 256Gi (prod) |
+| SSD mount path | `/mnt/disks/ssd0` (via DaemonSet; GKE COS has read-only root) |
+
+#### Default Node Pool
+
+| Property     | Value           |
+|--------------|-----------------|
+| Machine type | `n2-standard-4` |
+| Disk type    | `pd-standard`   |
+| Disk size    | 50 GB           |
+| Nodes        | 1               |
+
+### Bare Metal (RKE2)
+
+#### Node Layout
+
+| Role | Hostnames (example) | Labels | Notes |
+|----|----|----|----|
+| Control plane + etcd (servers) | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | 3 nodes across AZs |
+| Agent (workers) | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | 3 nodes across AZs |
+
+#### Resource Configuration
+
+| Component | CPU | Memory | Storage                                |
+|-----------|-----|--------|----------------------------------------|
+| Server    | 64  | 128Gi  | 300Gi (local NVMe via `local-nvme-sc`) |
+| Keeper    | 4   | 16Gi   | 30Gi (local NVMe via `local-nvme-sc`)  |
+
+Each node has 2x 838 GiB NVMe Instance Storage drives.
+
+------------------------------------------------------------------------
+
+## Networking Requirements
+
+### AWS
+
+| Component       | Specification                                  |
+|-----------------|------------------------------------------------|
+| VPC CIDR        | `10.20.0.0/16` (example)                       |
+| IPv6            | Not used                                       |
+| Tenancy         | Default                                        |
+| Minimum AZs     | 3 (for HA)                                     |
+| Public subnets  | 3 (one per AZ, `/20` each)                     |
+| Private subnets | 3 (one per AZ, `/18` each)                     |
+| NAT gateways    | 1 per AZ                                       |
+| VPC endpoints   | S3 gateway                                     |
+| DNS hostnames   | Enabled                                        |
+| DNS resolution  | Enabled                                        |
+| CNI             | IPv4 required (e.g., Amazon VPC CNI with IRSA) |
+
+Example subnet layout (us-west-2):
+
+| Type    | AZ         | CIDR             |
+|---------|------------|------------------|
+| Public  | us-west-2a | `10.20.192.0/20` |
+| Public  | us-west-2b | `10.20.208.0/20` |
+| Public  | us-west-2c | `10.20.224.0/20` |
+| Private | us-west-2a | `10.20.0.0/18`   |
+| Private | us-west-2b | `10.20.64.0/18`  |
+| Private | us-west-2c | `10.20.128.0/18` |
+
+### GCP
+
+| Component | Specification |
+|----|----|
+| VPC mode | Custom subnet |
+| GKE subnet range | `10.1.0.0/24` (example) |
+| Pod secondary range | `10.244.0.0/14` (must be on `/14` boundary; 3rd octet divisible by 4) |
+| Service secondary range | `10.252.0.0/20` (must be on `/20` boundary) |
+| Master IPv4 CIDR | `172.16.0.0/28` |
+| Private nodes | Enabled (internal IPs only) |
+| Private endpoint | Enabled (no public API; FedRAMP) |
+| Master authorized networks | GKE subnet + bastion subnet |
+| Cloud NAT | Required for outbound internet access from private nodes |
+| Private Google Access | Enabled on subnet |
+
+### Bare Metal
+
+| Component             | Specification                     |
+|-----------------------|-----------------------------------|
+| VPC CIDR              | Per Terraform configuration       |
+| Kubernetes networking | RKE2 built-in CNI                 |
+| AZ simulation         | Topology labels per node          |
+| Ingress               | Via port-forward or load balancer |
+
+------------------------------------------------------------------------
+
+## Storage Requirements
+
+### AWS
+
+| Resource | Details |
+|----|----|
+| S3 bucket | Standard class, encryption enabled, same region as EKS cluster |
+| S3 bucket scope | One per ClickHouse cluster, or shared with unique `keyPrefix` per cluster |
+| EBS CSI driver | Required; install via Helm with IRSA |
+| StorageClass | `gp3-encrypted` (provided by Helm chart) or custom |
+| NVMe cache | "d" series instances (e.g., `m7gd.*`); mounted via EC2 launch template RAID script at `/nvme/disk` |
+| Cache sizing | `bytesPerGiRAM * pod_memory_limit` (e.g., 11.3Gi \* 250Gi = 2825Gi) |
+| VolumeSnapshot CRDs | Required by operator |
+
+### GCP
+
+| Resource | Details |
+|----|----|
+| GCS bucket | Standard class, uniform bucket-level access, same region as GKE cluster |
+| GCS S3-compatible endpoint | `https://storage.googleapis.com` |
+| GCS region setting | `auto` |
+| StorageClass | `premium-rwo` (GKE built-in) or custom via Helm chart with `pd.csi.storage.gke.io` provisioner |
+| Topology key | `topology.gke.io/zone` (not `topology.kubernetes.io/zone`) |
+| Local SSD cache | Mounted at `/mnt/disks/ssd0` via DaemonSet (GKE COS has read-only root) |
+| VolumeSnapshot CRDs | Required by operator |
+
+### Bare Metal
+
+| Resource | Details |
+|----|----|
+| Object storage | MinIO (S3-compatible) with DirectPV for NVMe drives |
+| StorageClass | `local-nvme-sc` using `rancher.io/local-path` provisioner |
+| NVMe drives | Discovered and initialized via DirectPV; mounted at `/nvme/disk` |
+| Local storage driver | Rancher local-path-provisioner v0.0.32 |
+
+------------------------------------------------------------------------
+
+## IAM / Service Account Requirements {#iam-service-account-requirements}
+
+### AWS
+
+#### ECR Pull Role
+
+- **Role name:** `ClickHouseAirgapECRPullRole`
+- **Purpose:** Pull images from ClickHouse private ECR
+- **Permissions:** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+- **Action:** Provide the role ARN to the ClickHouse team
+
+#### ClickHouse Server/Keeper S3 Role
+
+- **One role per provisioned ClickHouse cluster**
+- **Naming convention:** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+- `$NAME`: cluster name (e.g., `default-xx-01`)
+- `$REGION`: shortened region (e.g., `uw2` for `us-west-2`)
+- `$ORDINAL`: reserved, set to `00`
+- Example: `CH-S3-default-xx-01-uw2-00-Role`
+- **Permissions:** `s3:*`, `s3:ListBucket` on the bucket resource
+- **Trust policy:** IRSA via `sts:AssumeRoleWithWebIdentity` with EKS cluster's OIDC provider
+
+#### EBS CSI Driver Role
+
+- **Example name:** `ClickHouse_EksEbsCsiDriverRole`
+- **Managed policy:** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+- **Trust policy:** IRSA with EKS cluster's OIDC provider
+
+### GCP
+
+#### Deployer Service Account
+
+| Role | Purpose |
+|----|----|
+| `roles/compute.networkAdmin` | Create/manage VPC, subnets, NAT, routers |
+| `roles/container.admin` | Create/manage GKE clusters and node pools |
+| `roles/storage.admin` | Create/manage GCS buckets |
+| `roles/iam.serviceAccountAdmin` | Create/manage service accounts |
+| `roles/iam.serviceAccountUser` | Use service accounts for workload identity |
+| `roles/iam.workloadIdentityUser` | Configure workload identity bindings |
+| `roles/artifactregistry.admin` | Create/manage Artifact Registry repos |
+| `roles/resourcemanager.projectIamAdmin` | Manage IAM policies on the project |
+
+#### ClickHouse Workload Identity Service Account
+
+- **GCP SA:** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+- **K8s SA (manual):** `clickhouse` in namespace `ns-$CLUSTER_NAME`
+- **K8s SA (helm-created):** `ch-$CLUSTER_NAME-sa` in namespace `ns-$CLUSTER_NAME`
+- **K8s SA annotation:** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+- **IAM binding member:** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+- **Bucket permissions:** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+- **Artifact Registry permissions:** `roles/artifactregistry.reader`
+
+### Bare Metal
+
+- **AWS credentials:** Access key and secret key for ECR image pulls
+- **MinIO credentials:** Separate access key and secret key for S3-compatible storage
+- **Image pull secrets:** `all-icr-io` docker-registry secret in `clickhouse-operator-system` and cluster namespaces
+- **Service account:** `default` (no IRSA; credentials passed via environment variables)
+
+------------------------------------------------------------------------
+
+## Cluster Naming Conventions
+
+The naming convention for ClickHouse clusters is consistent across all platforms:
+
+``` text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| Component     | Description                           | Example   |
+|---------------|---------------------------------------|-----------|
+| `$DESCRIPTOR` | Descriptive name (letters only)       | `default` |
+| `$LETTERS`    | Reserved; any two letters             | `xx`      |
+| `$ORDINAL`    | Incrementing ordinal starting at `01` | `01`      |
+
+**Example name:** `default-xx-01`
+
+The cluster name must be **unique within the target Kubernetes cluster** and is used in: - Kubernetes namespace: `ns-$CLUSTER_NAME` - Kubernetes resources: prefixed with `c-$CLUSTER_NAME` - IAM role names (AWS): `CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - S3/GCS key prefixes: `ch-s3-<uuid>` (unique per cluster)
+
+------------------------------------------------------------------------
+
+## Required Kubernetes Components
+
+| Component | AWS | GCP | Bare Metal |
+|----|----|----|----|
+| CNI (IPv4) | Amazon VPC CNI (recommended) | GKE built-in | RKE2 built-in |
+| CSI driver | aws-ebs-csi-driver | GKE built-in (pd.csi.storage.gke.io) | Rancher local-path-provisioner |
+| DNS | CoreDNS | GKE built-in | RKE2 built-in |
+| VolumeSnapshot CRDs | Required | Required | Not specified |
+| Autoscaler | Cluster Autoscaler (recommended) | GKE node pool autoscaling | N/A |
+| Cert manager | Not required (unless FIPS) | Required for FIPS | Required (cert-manager + trust-manager) |

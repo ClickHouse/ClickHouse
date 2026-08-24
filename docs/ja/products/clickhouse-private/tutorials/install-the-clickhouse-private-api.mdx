@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "ClickHouse Private API をインストールする"
+sidebarTitle: "管理 API をインストールする"
+description: "このチュートリアルでは、バックアップや垂直スケーリングなどの一般的な管理操作をサポートする、オプションの独立コンポーネントである ClickHouse Private API のインストール手順を説明します"
+---
+
+このチュートリアルでは、バックアップや垂直スケーリングなどの一般的な管理操作をサポートする、オプションの独立コンポーネントである ClickHouse Private API のインストール手順を説明します。
+
+***
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+開始する前に、以下を確認してください。
+
+* ClickHouse Operator がインストールされていること ([tutorials/deploy-aws.md](/ja/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)、Phase 8 を参照)
+* 少なくとも 1 つの ClickHouse クラスターがデプロイされていること ([tutorials/deploy-aws.md](/ja/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)、Phase 9 を参照)
+* ClickHouse のプライベート ECR リポジトリにアクセスできること
+* 対象の ECR リポジトリが AWS アカウント内に作成されていること:
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## Step 1: コンテナーイメージをコピーする
+
+    skopeo を使用して、Private API のイメージと Helm チャートを ECR にコピーします。
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # 提供元の ECR にログイン
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # 対象の AWS リポジトリにログイン
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # 各イメージを対象の ECR にコピーします。必ず --all フラグを含めてください
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    `1.165.1` は、ClickHouse から提供されたバージョンタグに置き換えてください。
+
+    ***
+  </Step>
+
+  <Step>
+    ## Step 2: Helm でインストールする
+
+    Private API は専用のネームスペースにインストールされます。
+
+    ```text
+    # 必要に応じて ECR_HOST を更新
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # API の Helm チャートのバージョンを使用
+    API_HELM_VERSION=1.165.1
+
+    # API のイメージタグを設定
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## Step 3: 認証を設定する
+
+    デフォルトでは、基本認証は無効になっています。本番環境では、Helm の values を設定して有効にしてください。
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- 任意のユーザー名
+    * `api.basicAuth.password` -- 安全なパスワード
+
+    ユーザー名とパスワードは安全に保管し、組織のセキュリティポリシーに従って定期的にローテーションしてください。
+
+    ***
+  </Step>
+
+  <Step>
+    ## Step 4: インストールを確認する
+
+    ### ポッドを確認する
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    想定される出力:
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### ポートフォワードしてテストする
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    ヘルスエンドポイントをテストします。
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    認証が有効な場合:
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## 設定オプション
+</div>
+
+以下の主要な設定オプションは、Helm の values で指定できます。
+
+| Helm Value                   | 説明                                  | デフォルト      |
+| ---------------------------- | ----------------------------------- | ---------- |
+| `image.repository`           | Private API イメージ用の ECR リポジトリ        | --         |
+| `image.tag`                  | デプロイするイメージタグ                        | --         |
+| `api.port`                   | API が待ち受けるポート                       | `8080`     |
+| `api.basicAuth.enabled`      | HTTP 基本認証を有効にする                     | `false`    |
+| `api.basicAuth.username`     | 基本認証のユーザー名                          | `admin`    |
+| `api.basicAuth.password`     | 基本認証のパスワード                          | `changeme` |
+| `serviceAccount.enabled`     | API 用のサービスアカウントを作成する                | `true`     |
+| `serviceAccount.annotations` | サービスアカウントの annotations (例: IRSA 用)  | `{}`       |
+
+設定オプションの完全な一覧については、Helm チャートの values ファイルを参照してください。
+
+***
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* **[API 経由でバックアップを管理する](/ja/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — バックアップの作成、一覧表示、スケジュール設定、復元を行う
+* **[クラスターをスケールする](/ja/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — CPU とメモリを垂直スケーリングする
+* **[パスワードをリセットする](/ja/products/clickhouse-private/guides/reset-user-passwords)** — ClickHouse の `default` ユーザーのパスワードをリセットする

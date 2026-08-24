@@ -28,7 +28,9 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
 </div>
 
 <Steps>
-  <Step title="创建表" id="create-table">
+  <Step>
+    ### 创建表
+
     创建 `hackernews` 表，用于存储帖子、其嵌入向量及相关属性：
 
     ```sql
@@ -59,7 +61,9 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     如[文档](/zh/reference/engines/table-engines/mergetree-family/annindexes)中所述的、结合后过滤/前过滤的向量相似性搜索
   </Step>
 
-  <Step title="加载数据" id="load-table">
+  <Step>
+    ### 加载数据
+
     要从 `Parquet` 文件中加载数据集，请运行以下 SQL 语句：
 
     ```sql
@@ -69,7 +73,9 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     向表中插入 2874 万行数据需要几分钟时间。
   </Step>
 
-  <Step title="构建向量相似度索引" id="build-vector-similarity-index">
+  <Step>
+    ### 构建向量相似度索引
+
     运行以下 SQL，在 `hackernews` 表的 `vector` 列上定义并构建向量相似度索引：
 
     ```sql
@@ -86,7 +92,9 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     对于完整的 2874 万数据集，构建并保存索引甚至可能需要几分钟到几小时，具体取决于可用的 CPU 核心数量和存储带宽。
   </Step>
 
-  <Step title="执行 ANN 搜索" id="perform-ann-search">
+  <Step>
+    ### 执行 ANN 搜索
+
     向量相似度索引构建完成后，向量搜索查询会自动使用该索引：
 
     ```sql title="Query"
@@ -100,7 +108,9 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     首次将向量索引加载到内存中可能需要几秒到几分钟。
   </Step>
 
-  <Step title="为搜索查询生成嵌入向量" id="generating-embeddings-for-search-query">
+  <Step>
+    ### 为搜索查询生成嵌入向量
+
     [Sentence Transformers](https://www.sbert.net/) 提供本地化、易于使用的嵌入模型，用于捕捉句子和段落的语义。
 
     此 HackerNews 数据集包含由 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 模型生成的向量嵌入。
@@ -120,12 +130,12 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # Take the search query from user
+        # 从用户获取搜索查询
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Run the model and obtain search vector
+        # 运行模型并获取搜索向量
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
@@ -136,23 +146,22 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
-
     ```
 
     以下展示了运行上述 Python 脚本及相似度搜索结果的示例
     (每条结果仅打印前 20 个帖子各自的前 100 个字符) ：
 
     ```text
-    Initializing...
+    正在初始化...
 
-    Enter a search query :
+    请输入搜索查询：
     Are OLAP cubes useful
 
-    Generating the embedding for  "Are OLAP cubes useful"
+    正在为"Are OLAP cubes useful"生成嵌入向量
 
-    Querying ClickHouse...
+    正在查询 ClickHouse...
 
-    Results :
+    结果：
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -222,7 +231,7 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     4. 使用 `LangChain` 和 OpenAI `gpt-3.5-turbo` Chat API 对第 3 步中检索到的内容进行**总结**。
        第 3 步中检索到的帖子/评论会作为 *上下文* 传递给 Chat API，是 Generative AI 的关键一环。
 
-    下面首先列出运行摘要应用程序的示例，随后是该应用程序的完整代码。运行此应用程序需要在环境变量 `OPENAI_API_KEY` 中设置 OpenAI API 密钥。OpenAI API 密钥可在 https://platform.openai.com 注册后获取。
+    下面首先列出运行摘要应用程序的示例，随后是该应用程序的完整代码。运行此应用程序需要在环境变量 `OPENAI_API_KEY` 中设置 OpenAI API key。OpenAI API key 可在 https://platform.openai.com 注册后获取。
 
     该应用程序展示了一个 Generative AI 用例，适用于多个企业领域，例如：
     客户情感分析、技术支持自动化、用户对话挖掘、法律文件、医疗记录、
@@ -283,12 +292,12 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # Take the search query from user
+        # 从用户获取搜索查询
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Run the model and obtain search or reference vector
+        # 运行模型并获取搜索向量或参考向量
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -296,7 +305,7 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # Just join all the search results
+        # 拼接所有搜索结果
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]

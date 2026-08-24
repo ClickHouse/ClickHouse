@@ -316,9 +316,8 @@ public:
 
     ~TimeoutReadBufferFromFileDescriptor() override
     {
-        /// Do not touch stdout_fd/stderr_fd here: they are owned by the ShellCommand, which may
-        /// already have closed them (`ShellCommand::wait` closes the streams), and the numbers may
-        /// be recycled by another thread. An fcntl on them would corrupt an unrelated descriptor.
+        tryMakeFdBlocking(stdout_fd);
+        tryMakeFdBlocking(stderr_fd);
 
         // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
@@ -415,13 +414,14 @@ public:
         }
     }
 
-    /// Restore blocking mode before the command is returned to the process pool.
-    /// Safe only while the fd is provably open (the send-data task calls this right
-    /// before closing/returning); the destructor must not do it, see
-    /// ~TimeoutReadBufferFromFileDescriptor.
     void reset() const
     {
         makeFdBlocking(fd);
+    }
+
+    ~TimeoutWriteBufferFromFileDescriptor() override
+    {
+        tryMakeFdBlocking(fd);
     }
 
 private:
