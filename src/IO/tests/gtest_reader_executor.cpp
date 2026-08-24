@@ -115,17 +115,19 @@ struct MockCacheState
     void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
 };
 
-/// A minimal in-memory FILE-LEVEL cache (like the page cache): block-aligned, whole-block writes,
-/// hit only when fully resident. Retains data and records write ranges so a test can assert the
-/// executor wrote a block straddling an object boundary.
+/// A minimal in-memory FILE-LEVEL cache. Two disciplines: whole-block (like the page cache, the
+/// default - a block is a hit only when fully resident and `write` is all-or-nothing) or `incremental`
+/// (like the filesystem cache - a block's committed prefix grows and `write` appends from the frontier).
+/// Retains data and records write ranges so a test can assert what was fetched and cached.
 class MockFileCacheProvider : public ICacheProvider
 {
 public:
-    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_, bool bypass_ = false)
-        : block_size(block_size_), state(std::move(state_)), bypass(bypass_) {}
+    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_,
+                          bool bypass_ = false, bool incremental_ = false)
+        : block_size(block_size_), state(std::move(state_)), bypass(bypass_), incremental(incremental_) {}
 
-    CacheTier tier() const override { return CacheTier::PageCache; }
-    bool fillsWholeSegment() const override { return true; }
+    CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
+    bool fillsWholeSegment() const override { return !incremental; }
     String name() const override { return "MockFileCache"; }
 
     /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
@@ -155,7 +157,7 @@ public:
                 /// miss writer-less - served from source, never filled.
                 const bool block_detached = state->detached.subtract(block).empty();
                 if (!bypass && !block_detached)
-                    r.writer = std::make_unique<Writer>(block, state);
+                    r.writer = std::make_unique<Writer>(block, state, incremental);
             }
             out.push_back(std::move(r));
             pos += block.size;
@@ -189,12 +191,19 @@ private:
     class Writer : public CacheWriter
     {
     public:
-        Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
+        Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_, bool incremental_)
+            : r(r_), state(std::move(s_)), incremental(incremental_) {}
         ByteRange range() const override { return r; }
-        bool fillsWholeSegment() const override { return true; }   /// this mock is a whole-block cache
+        bool fillsWholeSegment() const override { return !incremental; }
         size_t committed() const override
         {
-            /// Committed at resolve time (`resident`) or filled since (`late_committed`): whole block.
+            if (incremental)
+            {
+                /// The contiguous resident prefix from the block start (grows as partials land).
+                auto uncovered = state->resident.subtract(r);
+                return uncovered.empty() ? r.end() : uncovered.front().offset;
+            }
+            /// Whole-block: committed at resolve time (`resident`) or filled since (`late_committed`).
             const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
             return done ? r.end() : r.offset;
         }
@@ -223,6 +232,24 @@ private:
             /// `committed()` does not advance and the caller must keep the bytes in memory.
             if (state->reject.subtract(r).empty())
                 return 0;
+            if (incremental)
+            {
+                /// Append the contiguous run of `data` from the committed frontier (like the fs cache).
+                const size_t lo = committed();
+                if (lo >= r.end())
+                    return 0;
+                const ByteRange want{lo, r.end() - lo};
+                size_t hi = r.end();
+                if (auto g = data.gaps(want); !g.empty())
+                    hi = g.front().offset;   /// first byte `data` does not cover from the frontier
+                if (hi <= lo)
+                    return 0;
+                const ByteRange wrote{lo, hi - lo};
+                data.copyTo(state->store.data() + lo, wrote);
+                state->resident.add(wrote);
+                state->writes.push_back(wrote);
+                return hi - lo;
+            }
             /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
             for (const auto & fr : state->concurrent_download.subtract(r))
@@ -240,11 +267,13 @@ private:
     private:
         ByteRange r;
         std::shared_ptr<MockCacheState> state;
+        bool incremental;
     };
 
     size_t block_size;
     std::shared_ptr<MockCacheState> state;
     bool bypass;
+    bool incremental;
 };
 
 /// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
@@ -954,6 +983,99 @@ TEST_F(ReaderExecutorTest, StackedTiersRefetchFasterHitToFillSlower)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 100u)
         << "expected the C-case whole-file read (faster hit re-read to fill the slower tier)";
     EXPECT_TRUE(slow->resident.subtract(ByteRange{0, 100}).empty()) << "slower tier not populated";
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionReusedThroughPageCache)
+{
+    /// Case A: one whole-segment (page) cache tier, cold forward scan with a long connection. Each
+    /// segment is fetched via `readSource`; successive FETCHes are contiguous-forward, so one long
+    /// connection is opened and reused across the cache path.
+    constexpr size_t size = 1024 * 1024;
+    constexpr size_t win = 128 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto state = std::make_shared<MockCacheState>(size);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/win, state));   /// whole-segment
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = win, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = win,
+        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit, .cache_chain = std::move(chain)});
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u)
+        << "the long connection was not reused across the cache FETCHes";
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, size}).empty()) << "the file was not fully cached";
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionReusedThroughFilesystemCache)
+{
+    /// Case B: one incremental (filesystem) cache tier, cold forward scan with a long connection.
+    /// Window-capped FETCHes are contiguous-forward, so the connection is reused just like case A.
+    constexpr size_t size = 1024 * 1024;
+    constexpr size_t win = 128 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto state = std::make_shared<MockCacheState>(size);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(
+        /*block_size=*/size, state, /*bypass=*/false, /*incremental=*/true));   /// one incremental segment
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = win, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = win,
+        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit, .cache_chain = std::move(chain)});
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u)
+        << "the long connection was not reused across the cache FETCHes";
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, size}).empty()) << "the file was not fully cached";
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionCorrectAcrossStackedTiers)
+{
+    /// Case C (stacked page + filesystem, long connection enabled): the faster tier holds [0, half), the
+    /// slower tier misses everything. C only needs to be CORRECT here - the data is right - though not
+    /// perfect: filling the slower tier re-reads [0, half) from source (a gather path would avoid it), so
+    /// the whole file is read from source though half was already cached. (Whether the fill opens a long
+    /// connection or a one-shot depends on the fetch pattern; C does not require the efficient path.)
+    constexpr size_t size = 512 * 1024;
+    constexpr size_t half = size / 2;
+    StoredObjects objects{makeFile("a.bin", size)};
+
+    auto fast = std::make_shared<MockCacheState>(size);   /// page: [0, half) resident
+    fast->resident.add(ByteRange{0, half});
+    for (size_t i = 0; i < half; ++i)
+        fast->store[i] = static_cast<char>(patternByte(i));
+    auto slow = std::make_shared<MockCacheState>(size);   /// fs: all miss
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/half, fast));                    /// page
+    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/size, slow, false, true));       /// fs
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 64 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 64 * 1024,
+        .max_tail_for_drain = size, .long_connection_limit = limit, .cache_chain = std::move(chain)});
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    /// Correct but not perfect: the faster tier's [0, half) is re-read to fill the slower tier.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size)
+        << "expected the C-case whole-file read despite the faster-tier hit";
+    EXPECT_TRUE(slow->resident.subtract(ByteRange{0, size}).empty()) << "slower tier not fully populated";
 }
 
 TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
