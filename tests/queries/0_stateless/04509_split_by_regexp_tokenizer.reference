@@ -75,7 +75,51 @@ SELECT tokens('Built with C# and React', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
 -- Result type and constness
 SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 ['a','b','c']	Array(String)	1
+-- extract = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
+SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
+['hello','world']
+-- No capture groups: falls back to the whole match (std::regex_iterator semantics)
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
+['1','22','333']
+-- Contrast with extract = 0 (separator mode) on the same pattern: the text *between* matches
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 0);
+['a','b','c']
+-- A match whose capture group did not participate is skipped: only the 'foo' branch has a group,
+-- so 'bar' matches contribute no token
+SELECT tokens('foo bar foo bar', 'splitByRegexp', '(foo)|bar', 1);
+['foo','foo']
+-- A match whose capture group matched the empty string is skipped the same way
+SELECT tokens('ac abc adc', 'splitByRegexp', 'a(b*)c', 1);
+['b']
+-- Scanning resumes after the *whole* match, not just after the captured span: if it resumed right
+-- after the group, the pattern would find a second, overlapping match starting inside the first one
+SELECT tokens('ababa', 'splitByRegexp', '(ab)a', 1);
+['ab']
+-- Only the first capture group is used; further groups merely constrain what matches
+SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
+['k','k2']
+-- A trivial literal pattern (no groups, served by a plain substring search rather than RE2) yields
+-- the matches themselves
+SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
+['abc','abc']
+-- A pattern that can only match the empty string yields no tokens, since an empty match is not
+-- treated as a match
+SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
+[]
+-- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
+SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
+['héllo','wörld']
+-- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character
+SELECT tokens('k:héllo', 'splitByRegexp', 'k:(\\w+)', 1);
+['h']
+-- Result type and constness with extract = 1
+SELECT tokens('tag:hello', 'splitByRegexp', 'tag:(\\w+)', 1) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+['hello']	Array(String)	1
 Column values: tokens should be non-constant
 1	['a','b','c']	0
 2	['foo','bar']	0
 3	['x','y','z']	0
+Column values with extract = 1: tokens should be non-constant
+1	['red','green']	0
+2	['blue']	0
+3	[]	0

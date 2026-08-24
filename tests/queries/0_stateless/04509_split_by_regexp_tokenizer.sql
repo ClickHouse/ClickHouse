@@ -1,6 +1,8 @@
 -- Detailed test of the `splitByRegexp` tokenizer through the `tokens` function.
 -- The regular expression plays the role of the separator; the tokens are the (non-empty) pieces of text
--- between successive matches.
+-- between successive matches. With the optional `extract` argument set to 1, this is reversed: `re`
+-- matches the tokens themselves (capture group 1 of each match, or the whole match if `re` has no
+-- capture groups), and everything outside the matches is discarded.
 
 SELECT 'Negative tests';
 -- The regular expression argument is mandatory
@@ -12,6 +14,13 @@ SELECT tokens('a', 'splitByRegexp', ['c']); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT tokens('a', 'splitByRegexp', materialize('c')); -- { serverError ILLEGAL_COLUMN }
 -- and must not be empty
 SELECT tokens('a', 'splitByRegexp', ''); -- { serverError BAD_ARGUMENTS }
+-- The `extract` argument must be 0 or 1
+SELECT tokens('a', 'splitByRegexp', 'a', 2); -- { serverError BAD_ARGUMENTS }
+-- and must be a const UInt8
+SELECT tokens('a', 'splitByRegexp', 'a', 'x'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'splitByRegexp', 'a', materialize(1)); -- { serverError ILLEGAL_COLUMN }
+-- Too many arguments
+SELECT tokens('a', 'splitByRegexp', 'a', 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- { echoOn }
 -- Simple literal separator
@@ -64,6 +73,35 @@ SELECT tokens('We use C++ for our backend systems', 'splitByRegexp', '[^\\p{L}\\
 SELECT tokens('Built with C# and React', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
 -- Result type and constness
 SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+
+-- extract = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
+SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
+-- No capture groups: falls back to the whole match (std::regex_iterator semantics)
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
+-- Contrast with extract = 0 (separator mode) on the same pattern: the text *between* matches
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 0);
+-- A match whose capture group did not participate is skipped: only the 'foo' branch has a group,
+-- so 'bar' matches contribute no token
+SELECT tokens('foo bar foo bar', 'splitByRegexp', '(foo)|bar', 1);
+-- A match whose capture group matched the empty string is skipped the same way
+SELECT tokens('ac abc adc', 'splitByRegexp', 'a(b*)c', 1);
+-- Scanning resumes after the *whole* match, not just after the captured span: if it resumed right
+-- after the group, the pattern would find a second, overlapping match starting inside the first one
+SELECT tokens('ababa', 'splitByRegexp', '(ab)a', 1);
+-- Only the first capture group is used; further groups merely constrain what matches
+SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
+-- A trivial literal pattern (no groups, served by a plain substring search rather than RE2) yields
+-- the matches themselves
+SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
+-- A pattern that can only match the empty string yields no tokens, since an empty match is not
+-- treated as a match
+SELECT tokens('abc', 'splitByRegexp', 'z*', 1);
+-- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
+SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
+-- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character
+SELECT tokens('k:héllo', 'splitByRegexp', 'k:(\\w+)', 1);
+-- Result type and constness with extract = 1
+SELECT tokens('tag:hello', 'splitByRegexp', 'tag:(\\w+)', 1) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 -- { echoOff }
 
 SELECT 'Column values: tokens should be non-constant';
@@ -76,5 +114,18 @@ CREATE TABLE tab (
 INSERT INTO tab (id, str) VALUES (1, 'a1b2c3'), (2, 'foo42bar'), (3, 'x,y,,z');
 
 SELECT id, tokens(str, 'splitByRegexp', '[0-9,]+') AS tokenized, isConstant(tokenized) FROM tab ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'Column values with extract = 1: tokens should be non-constant';
+
+CREATE TABLE tab (
+    id Int64,
+    str String
+) ENGINE = MergeTree() ORDER BY id;
+
+INSERT INTO tab (id, str) VALUES (1, 'tag:red tag:green'), (2, 'tag:blue'), (3, 'no tags here');
+
+SELECT id, tokens(str, 'splitByRegexp', 'tag:(\\w+)', 1) AS tokenized, isConstant(tokenized) FROM tab ORDER BY id;
 
 DROP TABLE tab;
