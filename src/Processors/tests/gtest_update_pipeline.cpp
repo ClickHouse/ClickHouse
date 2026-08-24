@@ -381,6 +381,123 @@ private:
     std::vector<std::weak_ptr<IProcessor>> batch_history;
 };
 
+/// Retires a whole fan-in of upstreams at once, so that a single `prepare` queues an edge per
+/// input slot. Every one of those edges points at a processor of the batch being retired, which
+/// widens the window in which a queued edge can be freed. Each chain ends in a processor that
+/// needs one more work() call before it reports Finished, so the batch is still unfinished when
+/// it is queued for removal and is therefore retired by a later, arbitrary frame.
+class WideFanInCyclingCoordinator final : public IProcessor
+{
+public:
+    WideFanInCyclingCoordinator(SharedHeader header_, size_t fan_in_, size_t total_batches_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+        , fan_in(fan_in_)
+        , total_batches(total_batches_)
+    {
+    }
+
+    String getName() const override { return "WideFanInCyclingCoordinator"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (inputs.empty() || std::ranges::all_of(inputs, [](const auto & input) { return input.isFinished(); }))
+            return Status::UpdatePipeline;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        for (auto & input : inputs)
+        {
+            if (input.hasData())
+            {
+                output.push(input.pull(/*set_not_needed=*/true));
+                return Status::PortFull;
+            }
+        }
+
+        for (auto & input : inputs)
+            if (!input.isFinished())
+                input.setNeeded();
+
+        return Status::NeedData;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (inputs.empty())
+        {
+            for (size_t i = 0; i < fan_in; ++i)
+                inputs.emplace_back(*header, this);
+        }
+        else
+        {
+            for (auto & input : inputs)
+                disconnect(input.getOutputPort(), input);
+
+            update.to_remove = std::move(current_batch);
+        }
+
+        if (batches_started == total_batches)
+        {
+            outputs.front().finish();
+            return update;
+        }
+
+        size_t slot = 0;
+        for (auto & input : inputs)
+        {
+            const bool early_close = (slot % 2) == 1;
+            auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(slot++));
+            current_batch.push_back(source);
+
+            ProcessorPtr tail = source;
+            for (size_t depth = 0; depth < 6; ++depth)
+            {
+                auto laggard = std::make_shared<DeferredFinishTransform>(header);
+                connect(tail->getOutputs().front(), laggard->getInputs().front());
+                tail = laggard;
+                current_batch.push_back(std::move(laggard));
+            }
+
+            if (early_close)
+            {
+                auto closer = std::make_shared<EarlyClosingTransform>(header);
+                connect(tail->getOutputs().front(), closer->getInputs().front());
+                tail = closer;
+                current_batch.push_back(std::move(closer));
+            }
+
+            connect(tail->getOutputs().front(), input);
+            input.reopen();
+            input.setNeeded();
+        }
+
+        update.to_add = current_batch;
+        batch_history.append_range(current_batch);
+        ++batches_started;
+
+        return update;
+    }
+
+    const std::vector<std::weak_ptr<IProcessor>> & batchHistory() const { return batch_history; }
+
+private:
+    const SharedHeader header;
+    const size_t fan_in;
+    const size_t total_batches;
+    size_t batches_started = 0;
+    Processors current_batch;
+    std::vector<std::weak_ptr<IProcessor>> batch_history;
+};
+
 }
 
 TEST(Processors, PortDisconnect)
@@ -571,6 +688,55 @@ TEST(Processors, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
     }
 
     EXPECT_EQ(coordinator->getInputs().size(), 1u);
+}
+
+/// `updateNode` keeps pending edge updates in a work list that outlives the gaps it makes in
+/// `nodes_mutex`, so a concurrent frame can retire a processor and free edges that are still
+/// queued elsewhere. Runs many coordinators over many threads, each retiring a wide fan-in of
+/// unfinished upstreams, so that removals land in frames other than the one holding the edges.
+TEST(Processors, UpdatePipelineConcurrentRemovalDoesNotFreeQueuedEdges)
+{
+    constexpr size_t num_streams = 4;
+    constexpr size_t fan_in = 16;
+    constexpr size_t total_batches = 40;
+    auto header = makeHeader();
+
+    Pipes pipes;
+    std::vector<std::shared_ptr<WideFanInCyclingCoordinator>> coordinators;
+    coordinators.reserve(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto coordinator = std::make_shared<WideFanInCyclingCoordinator>(header, fan_in, total_batches);
+        coordinators.push_back(coordinator);
+        pipes.emplace_back(std::move(coordinator));
+    }
+
+    auto united = Pipe::unitePipes(std::move(pipes));
+    united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
+
+    QueryPipeline pipeline(std::move(united));
+    pipeline.setNumThreads(16);
+
+    size_t pulled = 0;
+    {
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            if (!chunk)
+                continue;
+            ASSERT_EQ(chunk.getNumRows(), 1u);
+            ++pulled;
+        }
+    }
+
+    EXPECT_GT(pulled, 0u);
+
+    /// Retired batches are gone, i.e. removals were carried out rather than stranded.
+    for (const auto & coordinator : coordinators)
+        for (const auto & weak : coordinator->batchHistory())
+            EXPECT_TRUE(weak.expired());
 }
 
 TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)

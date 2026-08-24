@@ -53,6 +53,9 @@ public:
     /// Use std::list because new ports can be added to processor during execution.
     using Edges = std::list<Edge>;
 
+    /// Pending edge updates of a single `updateNode` frame.
+    using EdgeWorkList = boost::container::devector<Edge *>;
+
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
     enum class ExecStatus : uint8_t
@@ -203,6 +206,38 @@ private:
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
+
+    /// Publishes one `updateNode` frame's pending edge updates for as long as that frame runs.
+    /// A frame holds raw `Edge *` across gaps in `nodes_mutex`, so another frame can free those
+    /// edges in the meantime; being published lets the freeing frame drop the entries.
+    class EdgeWorkListGuard
+    {
+    public:
+        EdgeWorkListGuard(ExecutingGraph & graph_, EdgeWorkList & work_list_);
+        ~EdgeWorkListGuard();
+
+        EdgeWorkListGuard(const EdgeWorkListGuard &) = delete;
+        EdgeWorkListGuard & operator=(const EdgeWorkListGuard &) = delete;
+
+    private:
+        friend class ExecutingGraph;
+
+        ExecutingGraph & graph;
+        EdgeWorkList & work_list;
+        EdgeWorkListGuard * prev = nullptr;
+        EdgeWorkListGuard * next = nullptr;
+    };
+
+    /// Intrusive list of the published work lists, newest first. Intrusive so that entering
+    /// `updateNode` does not allocate.
+    EdgeWorkListGuard * active_edge_work_lists = nullptr;
+    std::mutex active_edge_work_lists_mutex;
+
+    /// Drop the given edges from every published work list. Callers must hold `nodes_mutex`
+    /// exclusively, which is what makes the in-place mutation of another frame's work list safe:
+    /// every other access to a work list happens under `nodes_mutex` too.
+    /// Lock order is `nodes_mutex` then `active_edge_work_lists_mutex`, never the reverse.
+    void scrubRemovedEdges(const std::unordered_set<const void *> & removed_edge_ids);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 

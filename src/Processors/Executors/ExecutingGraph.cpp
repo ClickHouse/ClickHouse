@@ -282,6 +282,41 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
     return UpdateNodeStatus::Done;
 }
 
+ExecutingGraph::EdgeWorkListGuard::EdgeWorkListGuard(ExecutingGraph & graph_, EdgeWorkList & work_list_)
+    : graph(graph_), work_list(work_list_)
+{
+    std::lock_guard guard(graph.active_edge_work_lists_mutex);
+    next = graph.active_edge_work_lists;
+    if (next)
+        next->prev = this;
+    graph.active_edge_work_lists = this;
+}
+
+ExecutingGraph::EdgeWorkListGuard::~EdgeWorkListGuard()
+{
+    std::lock_guard guard(graph.active_edge_work_lists_mutex);
+    if (prev)
+        prev->next = next;
+    else
+        graph.active_edge_work_lists = next;
+    if (next)
+        next->prev = prev;
+}
+
+void ExecutingGraph::scrubRemovedEdges(const std::unordered_set<const void *> & removed_edge_ids)
+{
+    if (removed_edge_ids.empty())
+        return;
+
+    std::lock_guard guard(active_edge_work_lists_mutex);
+
+    for (auto * entry = active_edge_work_lists; entry; entry = entry->next)
+    {
+        auto stale = std::ranges::remove_if(entry->work_list, [&](const void * edge) { return removed_edge_ids.contains(edge); });
+        entry->work_list.erase(stale.begin(), stale.end());
+    }
+}
+
 ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
 {
     RemoveGroupResult result;
@@ -302,6 +337,12 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
 
     for (auto & node : nodes)
         result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
+
+    /// The edges just freed may still be queued in a concurrent `updateNode` frame, which is
+    /// parked at a gap in `nodes_mutex` and cannot resume before this exclusive section ends.
+    /// Dropping them here, while no new edge can be allocated, keeps every published work list
+    /// free of dangling pointers without ever comparing a reused address.
+    scrubRemovedEdges(result.removed_edges);
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
@@ -402,9 +443,14 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
-    boost::container::devector<Edge *> updated_edges;
+    EdgeWorkList updated_edges;
     boost::container::devector<Node *> updated_processors;
     updated_processors.push_back(start_node);
+
+    /// Queued edges outlive the gaps this frame makes in `nodes_mutex`, so they must be visible to
+    /// whoever frees them. A `Node *` needs no such publication: a node cannot be removed before it
+    /// is `Finished`, and a `Finished` node is never queued.
+    EdgeWorkListGuard edge_work_list_guard(*this, updated_edges);
 
     std::shared_lock read_lock(nodes_mutex);
 
@@ -600,12 +646,6 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 read_lock.unlock();
 
                 RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
-
-                if (!remove_result.removed_edges.empty())
-                {
-                    auto removed_range = std::ranges::remove_if(updated_edges, [&](const void * edge) { return remove_result.removed_edges.contains(edge); });
-                    updated_edges.erase(removed_range.begin(), removed_range.end());
-                }
 
                 if (!remove_result.removed_nodes.empty())
                 {
