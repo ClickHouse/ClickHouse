@@ -367,6 +367,96 @@ private:
     Processors current_batch;
 };
 
+/// Retires a batch holding a still-unfinished transform, then lists that same transform again on
+/// the next call, so the repetition spans two `to_remove` lists instead of appearing within one.
+class RepeatingRemovalAcrossCallsCoordinator final : public IProcessor
+{
+public:
+    explicit RepeatingRemovalAcrossCallsCoordinator(SharedHeader header_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+    {
+    }
+
+    String getName() const override { return "RepeatingRemovalAcrossCallsCoordinator"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+            return Status::Finished;
+
+        /// The input was disconnected by the retiring call, so it must not be inspected before
+        /// the follow-up call has run.
+        if (!retired.empty())
+            return Status::UpdatePipeline;
+
+        if (inputs.empty() || inputs.back().isFinished())
+            return Status::UpdatePipeline;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        auto & input = inputs.back();
+        if (!input.hasData())
+        {
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        output.push(input.pull(/*set_not_needed=*/true));
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!retired.empty())
+        {
+            /// Follow-up call: re-list the transform that is still pending removal from the group
+            /// the previous call queued.
+            update.to_remove.push_back(retired.back());
+            retired.clear();
+            outputs.front().finish();
+            return update;
+        }
+
+        if (!inputs.empty())
+        {
+            disconnect(inputs.back().getOutputPort(), inputs.back());
+            /// The closer finished this processor's input while the transform behind it still owes
+            /// a work call, so the batch is unfinished when it is queued for removal and its group
+            /// stays pending.
+            retired = current_batch;
+            update.to_remove = std::move(current_batch);
+            return update;
+        }
+
+        inputs.emplace_back(*header, this);
+
+        auto source = std::make_shared<SingleValueSource>(header, 0);
+        auto laggard = std::make_shared<DeferredFinishTransform>(header);
+        auto closer = std::make_shared<EarlyClosingTransform>(header);
+        connect(source->getOutputs().front(), laggard->getInputs().front());
+        connect(laggard->getOutputs().front(), closer->getInputs().front());
+        current_batch = {source, closer, laggard};
+
+        connect(closer->getOutputs().front(), inputs.back());
+        inputs.back().reopen();
+        inputs.back().setNeeded();
+
+        update.to_add = current_batch;
+        return update;
+    }
+
+private:
+    const SharedHeader header;
+    Processors current_batch;
+    Processors retired;
+};
+
 /// Cycles source -> deferred-finish (-> early closer for the first batch) sub-pipelines, retiring each batch via to_remove.
 class BatchCyclingCoordinator final : public IProcessor
 {
@@ -767,10 +857,11 @@ TEST(Processors, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
 
 namespace
 {
+template <typename Coordinator>
 void runRepeatedRemoval()
 {
     auto header = makeHeader();
-    auto coordinator = std::make_shared<RepeatingRemovalCoordinator>(header);
+    auto coordinator = std::make_shared<Coordinator>(header);
     Pipe pipe(coordinator);
     QueryPipeline pipeline(std::move(pipe));
     PullingPipelineExecutor executor(pipeline);
@@ -788,7 +879,13 @@ void runRepeatedRemoval()
 TEST(ProcessorsDeathTest, UpdatePipelineRepeatedRemovalIsRejected)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-    EXPECT_DEATH(runRepeatedRemoval(), "listed more than once for removal");
+    EXPECT_DEATH(runRepeatedRemoval<RepeatingRemovalCoordinator>(), "listed more than once for removal");
+}
+
+TEST(ProcessorsDeathTest, UpdatePipelineRepeatedRemovalAcrossCallsIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(runRepeatedRemoval<RepeatingRemovalAcrossCallsCoordinator>(), "listed more than once for removal");
 }
 
 #else
@@ -797,7 +894,21 @@ TEST(Processors, UpdatePipelineRepeatedRemovalIsRejected)
 {
     try
     {
-        runRepeatedRemoval();
+        runRepeatedRemoval<RepeatingRemovalCoordinator>();
+        ASSERT_TRUE(false) << "Should have thrown.";
+    }
+    catch (Exception & e)
+    {
+        ASSERT_TRUE(e.displayText().find("listed more than once for removal") != std::string::npos)
+            << "Expected 'listed more than once for removal', got: " << e.displayText();
+    }
+}
+
+TEST(Processors, UpdatePipelineRepeatedRemovalAcrossCallsIsRejected)
+{
+    try
+    {
+        runRepeatedRemoval<RepeatingRemovalAcrossCallsCoordinator>();
         ASSERT_TRUE(false) << "Should have thrown.";
     }
     catch (Exception & e)
