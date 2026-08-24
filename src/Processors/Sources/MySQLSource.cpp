@@ -229,13 +229,13 @@ UInt64 parseMySQLBitValue(std::string_view value)
             "Value of a BIT field is {} bytes long, while at most {} bytes are expected",
             n, sizeof(UInt64));
 
-    UInt64 val = 0UL;
-    char * to = reinterpret_cast<char *>(&val);
-    memcpy(to, value.data(), n);
-
-    /// The value is transferred in the big-endian order.
-    if constexpr (std::endian::native == std::endian::little)
-        std::reverse(to, to + n);
+    /// The value is transferred in the big-endian order, most significant byte first. Assembling it
+    /// by shifting keeps the result independent of the endianness of the host: writing the bytes
+    /// into the object representation instead would left-align a value shorter than 8 bytes on a
+    /// big-endian host.
+    UInt64 val = 0;
+    for (char c : value)
+        val = (val << 8) | static_cast<UInt8>(c);
 
     return val;
 }
