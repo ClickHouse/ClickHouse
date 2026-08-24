@@ -38,3 +38,5 @@ Expression (Project names)
           Expression ((Before WINDOW + Change column names to column identifiers))
             ShuffleExchange
               ReadFromMergeTree (ParallelRead default.t_win)
+-- 7. the window sort keeps per-partition streams: the aggregation above skips merging
+1

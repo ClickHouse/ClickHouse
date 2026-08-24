@@ -63,5 +63,16 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT '-- 6. the window output order is reused: no new sort for a matching ORDER BY';
 EXPLAIN SELECT k, v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_win ORDER BY k, v;
 
+-- The sort below the window carries the partition keys, so each node's streams stay
+-- disjoint on `k`; the aggregation on `k` above the window then aggregates each stream
+-- on its own, without the merge phase.
+-- The outer query reads the plan text through `viewExplain`, which distributed Cascades
+-- planning rejects, so the outer level turns it off.
+SELECT '-- 7. the window sort keeps per-partition streams: the aggregation above skips merging';
+SELECT countIf(explain LIKE '%Skip merging: 1%') > 0 FROM (
+    EXPLAIN actions = 1 SELECT k, sum(s) FROM (SELECT k, sum(v) OVER (PARTITION BY k) AS s FROM t_win) GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_force_shuffle_aggregation = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
 DROP TABLE t_win;
 DROP TABLE t_wfloat;
