@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <array>
+#include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -42,6 +45,7 @@ public:
     std::string getName() const override { return "TimeSeries"; }
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
+    Int64 getRecentSamplesHorizon(Int64 fallback) const;
 
     /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
@@ -82,6 +86,9 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
+    void startup() override;
+    void shutdown(bool is_drop) override;
+
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -118,6 +125,11 @@ public:
 #endif
 
 private:
+    friend class TimeSeriesSink;
+
+    void updateRecentSamplesHorizon(Int64 timestamp);
+    void scheduleRecentSamplesMaintenance();
+
     /// Represents one of the target tables; `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
@@ -145,6 +157,13 @@ private:
 
     const std::vector<Target> targets;
     const bool has_inner_tables;
+
+    void maintainRecentSamples(bool throw_on_error = false);
+
+    mutable std::mutex recent_samples_horizon_mutex;
+    std::optional<Int64> recent_samples_horizon;
+    std::mutex recent_samples_maintenance_mutex;
+    BackgroundSchedulePoolTaskHolder recent_samples_maintenance_task;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

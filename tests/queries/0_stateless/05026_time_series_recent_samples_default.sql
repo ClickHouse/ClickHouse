@@ -17,7 +17,7 @@ SELECT '-- the default TTL of 4 days is pinned into the table definition at CREA
 
 SELECT create_table_query LIKE '%recent_samples_ttl_seconds = 345600%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_default';
 
-SELECT '-- the recent samples inner table gets the default 5-hour partitioning, the pinned TTL and ttl_only_drop_parts';
+SELECT '-- the recent samples inner table gets the default 5-hour partitioning without a wall-clock TTL';
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 

@@ -741,6 +741,16 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             *id_column, ts_timestamps, ts_values, ts_offsets,
             *samples_id_column, *timestamp_column, *value_column);
 
+        if (recent_samples_pipeline)
+        {
+            for (size_t row = 0; row != timestamp_column->size(); ++row)
+            {
+                Int64 timestamp = timestamp_column->getInt(row);
+                if (!recent_samples_horizon || timestamp > *recent_samples_horizon)
+                    recent_samples_horizon = timestamp;
+            }
+        }
+
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
@@ -842,6 +852,11 @@ void TimeSeriesSink::onFinish()
         recent_samples_pipeline->executor->finish();
     if (metrics_pipeline)
         metrics_pipeline->executor->finish();
+    if (recent_samples_horizon)
+    {
+        time_series_storage.updateRecentSamplesHorizon(*recent_samples_horizon);
+        time_series_storage.scheduleRecentSamplesMaintenance();
+    }
 }
 
 }

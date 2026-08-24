@@ -7,14 +7,13 @@ SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_recent;
 
--- TTL 10 days. Samples are inserted close to now(), so the background TTL cannot drop them during the test.
 CREATE TABLE ts_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
 
 SELECT '-- the recent samples inner table exists';
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
-SELECT '-- the recent samples inner table is partitioned by 5-hour buckets by default, has the TTL and ttl_only_drop_parts';
+SELECT '-- the recent samples inner table is partitioned by 5-hour buckets by default and has no wall-clock TTL';
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
@@ -74,7 +73,7 @@ SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND nam
 
 DROP TABLE ts_recent_custom;
 
-SELECT '-- the TTL of a user-declared recent samples engine is derived from the setting';
+SELECT '-- a wall-clock TTL on a user-declared recent samples engine is removed';
 
 DROP TABLE IF EXISTS ts_recent_declared;
 CREATE TABLE ts_recent_declared ENGINE = TimeSeries

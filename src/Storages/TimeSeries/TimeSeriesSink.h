@@ -8,6 +8,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -105,6 +106,7 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
+    std::optional<Int64> recent_samples_horizon;
 };
 
 }

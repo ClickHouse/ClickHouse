@@ -31,7 +31,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -798,22 +797,12 @@ namespace
         return storage;
     }
 
-    /// `recent_samples_ttl_seconds` is a correctness contract for the reader: the TTL always comes from it; non-TTL engines are rejected.
-    void applyRecentSamplesTTL(ASTStorage & storage, const TimeSeriesSettings & settings, const StorageID & table_id)
+    void removeRecentSamplesTTL(ASTStorage & storage, const StorageID & table_id)
     {
         if (!storage.engine || !storage.engine->name.ends_with("MergeTree"))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                "{}: The inner recent samples table requires a MergeTree-family engine to apply the TTL "
-                "defined by the `recent_samples_ttl_seconds` setting", table_id.getNameForLogs());
-
-        auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::DELETE, DataDestinationType::DELETE, "", /*if_exists=*/ false);
-        ttl_element->setTTL(makeASTOperator("plus",
-            makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-            makeASTFunction("toIntervalSecond",
-                make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
-        auto ttl_list = make_intrusive<ASTExpressionList>();
-        ttl_list->children.push_back(std::move(ttl_element));
-        storage.set(storage.ttl_table, ttl_list);
+                "{}: The inner recent samples table requires a MergeTree-family engine", table_id.getNameForLogs());
+        storage.reset(storage.ttl_table);
     }
 
     /// Whether the SETTINGS clause of an inner table's engine declaration contains the specified setting.
@@ -855,13 +844,6 @@ namespace
                     : TimeSeriesSetting::recent_samples_index_granularity)];
             if (index_granularity.isChanged() || !hasInnerEngineSetting(storage, "index_granularity"))
                 setInnerEngineSetting(storage, "index_granularity", Field(index_granularity.value));
-        }
-
-        /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
-        if (kind == ViewTarget::RecentSamples && engine_name.ends_with("MergeTree")
-            && !hasInnerEngineSetting(storage, "ttl_only_drop_parts"))
-        {
-            setInnerEngineSetting(storage, "ttl_only_drop_parts", Field(static_cast<UInt64>(1)));
         }
 
         /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags` Map) outside
@@ -1225,7 +1207,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
                 if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
                 {
-                    applyRecentSamplesTTL(*inner_engine, settings, table_id);
+                    removeRecentSamplesTTL(*inner_engine, table_id);
                     applyInnerEngineSettings(kind, *inner_engine, settings);
                 }
             }

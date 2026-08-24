@@ -36,6 +36,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <limits>
 
 
 namespace DB
@@ -815,22 +816,23 @@ void StorageTimeSeriesSelector::readImpl(
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
+    /// Prefer the recent samples table when the whole range fits in its retained window.
     auto samples_table_kind = ViewTarget::Samples;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
     if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
-        /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
         static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
-        Int64 now_seconds = std::time(nullptr);
-        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
-            * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
-        if ((config.min_time.value >= min_guaranteed_time)
+        Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
+        Int64 horizon = time_series_storage->getRecentSamplesHorizon(config.max_time.value);
+        Int128 min_guaranteed_time = static_cast<Int128>(horizon)
+            - static_cast<Int128>(recent_samples_ttl_seconds) * scale_multiplier
+            + static_cast<Int128>(safety_margin_seconds) * scale_multiplier;
+        if ((static_cast<Int128>(config.min_time.value) >= min_guaranteed_time)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
             samples_table_kind = ViewTarget::RecentSamples;
-            LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
+            LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples retained window: reading from the recent samples table",
                       quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
         }
     }

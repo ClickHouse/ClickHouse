@@ -2,6 +2,9 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
@@ -11,16 +14,26 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
@@ -28,6 +41,8 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <functional>
+#include <limits>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -37,6 +52,12 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_series_table;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
 namespace ErrorCodes
@@ -55,6 +76,33 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    void executeInternalQuery(
+        const String & query, const ContextMutablePtr & context, const std::function<void(const Block &)> & consume)
+    {
+        auto io = executeQuery(query, context, QueryFlags{.internal = true}).second;
+        try
+        {
+            if (io.pipeline.initialized() && io.pipeline.pulling())
+            {
+                PullingPipelineExecutor executor(io.pipeline);
+                Block block;
+                while (executor.pull(block))
+                    consume(block);
+            }
+            else if (io.pipeline.initialized() && io.pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
+            }
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
+        finishExecutedQuery(io, {});
+    }
+
     /// Normalizes the create query.
     boost::intrusive_ptr<const ASTCreateQuery> makeNormalizedCreateQuery(
         const ASTCreateQuery & query, const ContextPtr & local_context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
@@ -165,10 +213,189 @@ StorageTimeSeries::StorageTimeSeries(
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+
+    if (hasTarget(ViewTarget::RecentSamples))
+    {
+        recent_samples_maintenance_task = getContext()->getSchedulePool()->createTask(
+            getStorageID(), getStorageID().getFullTableName(), [this] { maintainRecentSamples(); });
+        recent_samples_maintenance_task->deactivate();
+    }
 }
 
 
 StorageTimeSeries::~StorageTimeSeries() = default;
+
+
+Int64 StorageTimeSeries::getRecentSamplesHorizon(Int64 fallback) const
+{
+    std::lock_guard lock(recent_samples_horizon_mutex);
+    return recent_samples_horizon.value_or(fallback);
+}
+
+
+void StorageTimeSeries::updateRecentSamplesHorizon(Int64 timestamp)
+{
+    std::lock_guard lock(recent_samples_horizon_mutex);
+    if (!recent_samples_horizon || *recent_samples_horizon < timestamp)
+        recent_samples_horizon = timestamp;
+}
+
+
+void StorageTimeSeries::scheduleRecentSamplesMaintenance()
+{
+    if (recent_samples_maintenance_task)
+        recent_samples_maintenance_task->schedule();
+}
+
+
+void StorageTimeSeries::startup()
+{
+    if (recent_samples_maintenance_task)
+    {
+        recent_samples_maintenance_task->activate();
+        recent_samples_maintenance_task->schedule();
+    }
+}
+
+
+void StorageTimeSeries::shutdown(bool)
+{
+    if (recent_samples_maintenance_task)
+        recent_samples_maintenance_task->deactivate();
+}
+
+
+void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
+{
+    std::lock_guard maintenance_lock(recent_samples_maintenance_mutex);
+    try
+    {
+        auto recent_samples = getTargetTable(ViewTarget::RecentSamples, getContext());
+        const auto recent_samples_id = recent_samples->getStorageID();
+        const String recent_samples_name = fmt::format(
+            "{}.{}", backQuoteIfNeed(recent_samples_id.database_name), backQuoteIfNeed(recent_samples_id.table_name));
+
+        auto make_maintenance_context = [&]
+        {
+            auto context = Context::createCopy(getContext());
+            context->makeQueryContext();
+            context->setCurrentQueryId("");
+            context->setQueryKindReplicatedDatabaseInternal();
+            context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+            return context;
+        };
+        auto context = make_maintenance_context();
+        auto select_max = [&](ViewTarget::Kind target_kind, std::string_view column_name) -> std::optional<Int64>
+        {
+            auto target_id = getTargetTable(target_kind, context)->getStorageID();
+            String target_name = fmt::format(
+                "{}.{}", backQuoteIfNeed(target_id.database_name), backQuoteIfNeed(target_id.table_name));
+            std::optional<Int64> result;
+            executeInternalQuery(
+                fmt::format("SELECT maxOrNull({}) AS max_timestamp FROM {}", backQuoteIfNeed(String{column_name}), target_name),
+                make_maintenance_context(),
+                [&](const Block & block)
+                {
+                    const auto & column = *block.getByName("max_timestamp").column;
+                    if (block.rows() && !column.isNullAt(0))
+                        result = column.getInt(0);
+                });
+            return result;
+        };
+
+        std::optional<Int64> stored_horizon;
+        if ((*getStorageSettings())[TimeSeriesSetting::store_min_time_and_max_time])
+            stored_horizon = select_max(ViewTarget::Tags, TimeSeriesColumnNames::MaxTime);
+        if (!stored_horizon)
+            stored_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
+
+        if (stored_horizon)
+            updateRecentSamplesHorizon(*stored_horizon);
+
+        if (!isInnerTable(ViewTarget::RecentSamples))
+            return;
+
+        auto metadata = recent_samples->getInMemoryMetadataPtr(context, false);
+        if (metadata->hasAnyTableTTL())
+        {
+            executeInternalQuery(
+                fmt::format("ALTER TABLE {} REMOVE TTL", recent_samples_name),
+                make_maintenance_context(),
+                [](const Block &) {});
+            metadata = recent_samples->getInMemoryMetadataPtr(context, false);
+        }
+
+        if (auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(recent_samples.get()))
+        {
+            StorageReplicatedMergeTree::ReplicatedStatus status;
+            replicated->getStatus(status, false);
+            if (!status.is_leader)
+            {
+                if (recent_samples_maintenance_task)
+                    recent_samples_maintenance_task->scheduleAfter(60000);
+                return;
+            }
+        }
+
+        std::vector<std::pair<String, Int64>> partition_maxima;
+        executeInternalQuery(
+            fmt::format(
+                "SELECT _partition_id, max({}) AS max_timestamp FROM {} GROUP BY _partition_id",
+                backQuoteIfNeed(TimeSeriesColumnNames::Timestamp),
+                recent_samples_name),
+            make_maintenance_context(),
+            [&](const Block & block)
+            {
+                const auto & max_timestamp = *block.getByName("max_timestamp").column;
+                for (size_t row = 0; row != block.rows(); ++row)
+                {
+                    if (max_timestamp.isNullAt(row))
+                        continue;
+                    partition_maxima.emplace_back(
+                        block.getByName("_partition_id").column->getDataAt(row), max_timestamp.getInt(row));
+                }
+            });
+
+        UInt32 timestamp_scale = tryGetDecimalScale(*metadata->columns.get(TimeSeriesColumnNames::Timestamp).type).value_or(0);
+        Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
+        UInt64 ttl_seconds = (*getStorageSettings())[TimeSeriesSetting::recent_samples_ttl_seconds].value;
+        if (ttl_seconds > static_cast<UInt64>(std::numeric_limits<Int64>::max() / scale_multiplier))
+            return;
+        Int64 ttl = static_cast<Int64>(ttl_seconds) * scale_multiplier;
+        Int64 horizon;
+        {
+            std::lock_guard lock(recent_samples_horizon_mutex);
+            if (!recent_samples_horizon)
+                return;
+            horizon = *recent_samples_horizon;
+        }
+        if (horizon < std::numeric_limits<Int64>::min() + ttl)
+            return;
+        Int64 cutoff = horizon - ttl;
+
+        for (const auto & [partition_id, partition_maximum] : partition_maxima)
+        {
+            if (partition_maximum < cutoff)
+            {
+                auto partition = make_intrusive<ASTPartition>();
+                partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+                PartitionCommand command;
+                command.type = PartitionCommand::DROP_PARTITION;
+                command.partition = std::move(partition);
+                recent_samples->alterPartition(metadata, {command}, make_maintenance_context());
+            }
+        }
+    }
+    catch (...)
+    {
+        if (recent_samples_maintenance_task)
+            recent_samples_maintenance_task->scheduleAfter(60000);
+        if (throw_on_error)
+            throw;
+        tryLogCurrentException("StorageTimeSeries", "Recent samples maintenance failed");
+    }
+}
 
 
 std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
@@ -370,6 +597,15 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                 ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true);
         }
     }
+    if (hasTarget(ViewTarget::RecentSamples))
+    {
+        {
+            std::lock_guard lock(recent_samples_horizon_mutex);
+            recent_samples_horizon.reset();
+        }
+        if (!isInnerTable(ViewTarget::RecentSamples))
+            scheduleRecentSamplesMaintenance();
+    }
 }
 
 
@@ -474,6 +710,9 @@ bool StorageTimeSeries::optimize(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
     }
+
+    if (hasTarget(ViewTarget::RecentSamples) && isInnerTable(ViewTarget::RecentSamples))
+        maintainRecentSamples(true);
 
     bool optimized = false;
     for (auto target_kind : getTargetKinds())
@@ -1141,7 +1380,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. TimeSeries drops inner recent-samples partitions whose maximum stored timestamp is older than this interval relative to the newest stored sample. An external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the retained window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
 
