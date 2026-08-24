@@ -55,6 +55,8 @@ CREATE TABLE t_float (f Float64, x UInt32) ENGINE = MergeTree ORDER BY f PARTITI
 INSERT INTO t_float SELECT 1e16 + intDiv(number, 100) AS f, number FROM numbers_mt(600);
 SELECT count() FROM (SELECT f + 1.0 AS k, count() FROM t_float GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
 SELECT count() FROM (SELECT f + 1.0 AS k, count() FROM t_float GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+-- the collapse the arm above depends on: fewer distinct sums than distinct addends
+SELECT uniqExact(f), uniqExact(f + 1.0) FROM t_float;
 DROP TABLE t_float;
 
 -- a constant of a narrower date type narrows the result: every multiple of 65536 maps to
@@ -66,6 +68,7 @@ SELECT count() FROM (SELECT x + toDate(0) AS k, count() FROM t_narrow GROUP BY k
 SELECT count() FROM (SELECT x + toDate(0) AS k, count() FROM t_narrow GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
 SELECT count() FROM (SELECT DISTINCT x + CAST(NULL, 'Nullable(UInt32)') AS k FROM t_narrow) SETTINGS force_distinct_partitions_independently = 1;
 SELECT count() FROM (SELECT DISTINCT x + CAST(NULL, 'Nullable(UInt32)') AS k FROM t_narrow) SETTINGS allow_distinct_partitions_independently = 0;
+SELECT uniqExact(x), uniqExact(x + toDate(0)) FROM t_narrow;
 DROP TABLE t_narrow;
 
 -- a Decimal constant rescales the varying operand: every multiple of 2^32 maps to one
@@ -75,6 +78,7 @@ CREATE TABLE t_decimal (x UInt64, v UInt32) ENGINE = MergeTree ORDER BY x PARTIT
 INSERT INTO t_decimal SELECT intDiv(number, 100) * 4294967296 AS x, number FROM numbers_mt(400);
 SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
 SELECT count() FROM (SELECT x + toDecimal32(0, 1) AS k, count() FROM t_decimal GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
+SELECT uniqExact(x), uniqExact(x + toDecimal32(0, 1)) FROM t_decimal;
 DROP TABLE t_decimal;
 
 -- two varying operands are not injective either: many pairs share one sum
@@ -117,6 +121,11 @@ DROP TABLE IF EXISTS t_int;
 CREATE TABLE t_int (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2) * 2 + 1;
 INSERT INTO t_int SELECT number FROM numbers_mt(32);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) + 1 AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+-- subtraction widens to a signed result, which is a different branch of the integer test
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) - 1 AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+-- the constant may be either operand, so both positions have to be recognized
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT 7 - intDiv(a, 2) AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT 1 + intDiv(a, 2) AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 DROP TABLE t_int;
 
 -- wide integers are exact, so the gate must not be narrowed to native widths
@@ -177,6 +186,61 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 DROP TABLE t_dec;
 
 -- ---------------------------------------------------------------------------
+-- Consumers that answered false for every plus and minus before, and now answer true for the
+-- integer case. Each arm is followed by a control on the same shape whose function is not
+-- injective, so the change is attributable to the operation and not to the fixture.
+-- ---------------------------------------------------------------------------
+
+-- ORDER BY truncation: an injective function of the grouping keys covers them, so the sort
+-- tail after it is redundant. Counting SORT nodes shows the tail dropped, and the row order
+-- is what truncation has to leave unchanged.
+DROP TABLE IF EXISTS t_ord;
+CREATE TABLE t_ord (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_ord SELECT number % 10, number FROM numbers(100);
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a + 1, m) WHERE explain ILIKE '%SORT id%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a, m) WHERE explain ILIKE '%SORT id%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY intDiv(a, 2), m) WHERE explain ILIKE '%SORT id%';
+SELECT groupArray(a) FROM (SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a + 1, m);
+DROP TABLE t_ord;
+
+-- OUTER to INNER conversion: the join keys have to cover the aggregation keys of the side
+-- whose unmatched rows the filter rejects. ANY strictness is what reaches this code path.
+-- Only the pretty plan prints the join kind, so these arms override the legacy default set
+-- above for themselves.
+DROP TABLE IF EXISTS t_jl;
+DROP TABLE IF EXISTS t_jr;
+CREATE TABLE t_jl (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_jr (y UInt32, v UInt32) ENGINE = MergeTree ORDER BY y;
+INSERT INTO t_jl SELECT number FROM numbers(20);
+INSERT INTO t_jr SELECT number, number * 10 FROM numbers(10);
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y + 1 WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = intDiv(r.y, 2) WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+SELECT count(), sum(x) FROM (SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y + 1 WHERE r.c > 0);
+DROP TABLE t_jl;
+DROP TABLE t_jr;
+
+-- Key-condition exactness: an equality atom over an injective key transform describes exactly
+-- the matching rows, so the range stays exact and the exact-count projection can serve the
+-- count. A relaxed atom loses it, which the projection's absence from the plan shows.
+DROP TABLE IF EXISTS t_kc_plus;
+DROP TABLE IF EXISTS t_kc_nested;
+DROP TABLE IF EXISTS t_kc_bare;
+CREATE TABLE t_kc_plus (a UInt64) ENGINE = MergeTree ORDER BY toString(intDiv(a, 2) + 1) SETTINGS index_granularity = 1;
+CREATE TABLE t_kc_nested (a UInt64) ENGINE = MergeTree ORDER BY toString(intDiv(intDiv(a, 2), 3)) SETTINGS index_granularity = 1;
+CREATE TABLE t_kc_bare (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_kc_plus SELECT number FROM numbers(64);
+INSERT INTO t_kc_nested SELECT number FROM numbers(64);
+INSERT INTO t_kc_bare SELECT number FROM numbers(64);
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_nested WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_bare WHERE a >= 8 AND a < 32 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT (SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 0) = (SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
+DROP TABLE t_kc_plus;
+DROP TABLE t_kc_nested;
+DROP TABLE t_kc_bare;
+
+-- ---------------------------------------------------------------------------
 -- A GROUP BY key that is now an injective function of constants unwraps to an empty key
 -- list, and the query must still aggregate.
 -- ---------------------------------------------------------------------------
@@ -194,11 +258,17 @@ DROP TABLE t_const_key;
 -- loop and its own direct call, so it gets its own arms. Dropping the merge step is only
 -- correct when the group key determines the shard: a key that collapses distinct shard-key
 -- values leaves each shard's partial groups unmerged, so the same key is returned twice.
--- The first arm counts merge steps (1 = kept, 0 = dropped), the second compares the answer
--- against the unoptimized one, and the integer arm is the control that the optimization
--- still fires where it is sound.
+-- Each view filters itself by shardNum() so the two shards hold the disjoint rows the
+-- declared key implies - a declared key alone does not redistribute rows on a read, and
+-- without the filter every shard holds every row and even a sound merge drop doubles the
+-- answer. The first arm of each pair counts merge steps (1 = kept, 0 = dropped) and the
+-- second compares the answer against the unoptimized one; the integer pair is the control
+-- that the optimization still fires where it is sound.
 -- ---------------------------------------------------------------------------
 
-SELECT count() FROM (EXPLAIN SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
-SELECT (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 0)) = (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1));
-SELECT count() FROM (EXPLAIN SELECT x + 1 AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(x)) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
+SELECT shardNum() AS s, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE toYYYYMMDD(toDate('2001-01-29') + (number % 3)) % 2 = (shardNum() - 1)), toUInt64(toYYYYMMDD(d))) GROUP BY s ORDER BY s;
+SELECT count() FROM (EXPLAIN SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE toYYYYMMDD(toDate('2001-01-29') + (number % 3)) % 2 = (shardNum() - 1)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
+SELECT (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE toYYYYMMDD(toDate('2001-01-29') + (number % 3)) % 2 = (shardNum() - 1)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 0)) = (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE toYYYYMMDD(toDate('2001-01-29') + (number % 3)) % 2 = (shardNum() - 1)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1));
+SELECT shardNum() AS s, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE number % 2 = (shardNum() - 1)), toUInt64(x)) GROUP BY s ORDER BY s;
+SELECT count() FROM (EXPLAIN SELECT x + 1 AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE number % 2 = (shardNum() - 1)), toUInt64(x)) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
+SELECT (SELECT count() FROM (SELECT x + 1 AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE number % 2 = (shardNum() - 1)), toUInt64(x)) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 0)) = (SELECT count() FROM (SELECT x + 1 AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30) WHERE number % 2 = (shardNum() - 1)), toUInt64(x)) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1));

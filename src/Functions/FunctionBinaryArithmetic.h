@@ -4090,7 +4090,9 @@ public:
         return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context, arguments[0].type, arguments[1].type));
     }
 
-    /// Must agree with `FunctionBinaryArithmeticWithConstants::isInjective` on the same arguments.
+    /// Agrees with `FunctionBinaryArithmeticWithConstants::isInjective` on two-argument calls. An
+    /// unresolved function has no operands of its own to fall back on, so it declines whenever it is
+    /// not given both arguments.
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
