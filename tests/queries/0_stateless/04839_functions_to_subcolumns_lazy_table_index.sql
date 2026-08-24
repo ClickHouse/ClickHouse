@@ -1,8 +1,8 @@
 -- Tags: no-replicated-database
 
--- The index guard of FunctionToSubcolumnsPass must see the real metadata of a table from a
--- database with lazy_load_tables = 1 (right after ATTACH the resolution-time metadata is the
--- StorageTableProxy stub without indices, and the rewrite used to defeat the text index).
+-- The storage snapshot of a table from a database with lazy_load_tables = 1 must carry the real
+-- metadata right after ATTACH (it used to be the StorageTableProxy stub without indices, so the
+-- FunctionToSubcolumnsPass rewrite silently defeated the text index).
 
 SET enable_full_text_index = 1;
 SET enable_analyzer = 1;

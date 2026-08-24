@@ -1150,9 +1150,7 @@ private:
                 all_key_columns.insert(makeColumnInSource(column_source, column_name));
         };
 
-        /// Use the storage's current metadata, not the resolution-time snapshot: for a table from a
-        /// database with lazy_load_tables it is the StorageTableProxy stub without keys and indices.
-        const auto metadata_snapshot = getStorageForColumnSource(column_source)->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+        const auto & metadata_snapshot = storage_snapshot->metadata;
         add_key_columns(metadata_snapshot->getColumnsRequiredForPrimaryKey());
         add_key_columns(metadata_snapshot->getColumnsRequiredForPartitionKey());
 

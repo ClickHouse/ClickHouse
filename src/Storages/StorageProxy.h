@@ -48,11 +48,12 @@ public:
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
+    /// Ignore base_metadata: before the nested table is materialized it is the proxy's stub
+    /// (columns only - no keys, no indices, no virtuals), while getNested() materializes anyway.
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr &, ContextPtr query_context) const override
     {
-        auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
-        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(nested_metadata->virtuals));
-        return std::make_shared<StorageSnapshot>(*this, std::move(new_metadata));
+        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
+        return std::make_shared<StorageSnapshot>(*this, nested_metadata);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
