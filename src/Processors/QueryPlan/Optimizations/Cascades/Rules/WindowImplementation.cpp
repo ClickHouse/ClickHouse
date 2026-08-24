@@ -92,11 +92,16 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
         auto single_node = std::make_shared<GroupExpression>(*expression);
         single_node->strategy = strategySingleton<WindowStrategy>();
         single_node->properties = ExpressionProperties{};    /// node_count=1 (default)
-        /// `WindowTransform` emits rows in input order, so the sorting required from the
-        /// input also holds for the output. With `streams_fan_out` the output is split into
-        /// several streams and only each stream keeps the order, so no sorting is promised.
+        /// `WindowTransform` emits rows in input order and within their stream, so the
+        /// sorting and the stream layout required from the input also hold for the output.
+        /// With `streams_fan_out` the output is split into fresh streams, so neither is
+        /// promised.
         if (!window_step->hasStreamsFanOut())
+        {
             single_node->properties.sorting = single_node->inputs[0].required_properties.sorting;
+            single_node->properties.stream_layout = single_node->inputs[0].required_properties.stream_layout;
+            single_node->properties.stream_disjoint_columns = single_node->inputs[0].required_properties.stream_disjoint_columns;
+        }
 
         addPhysicalToMemo(single_node, required_properties, memo, result);
     }
@@ -124,13 +129,19 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
         input_required.distribution.node_count = candidate_node_count;
         input_required.distribution.columns = partition_columns;
         input_required.sorting = window_step->getWindowDescription().full_sort_description;
+        /// Streams disjoint on the partition keys let each node run the window on several
+        /// streams at once: every partition lands whole in one stream.
+        input_required.setDisjointStreams(partition_columns);
         distributed->inputs[0].required_properties = input_required;
 
         distributed->properties = ExpressionProperties{};
-        /// The window moves no rows, so the output keeps the input distribution; without the
-        /// fan-out it also keeps the input order.
+        /// The window moves no rows and keeps them within their stream, so the output keeps
+        /// the input distribution and stream layout; without the fan-out it also keeps the
+        /// input order.
         distributed->properties.distribution = input_required.distribution;
         distributed->properties.sorting = input_required.sorting;
+        distributed->properties.stream_layout = input_required.stream_layout;
+        distributed->properties.stream_disjoint_columns = input_required.stream_disjoint_columns;
 
         addPhysicalToMemo(distributed, required_properties, memo, result);
     }
