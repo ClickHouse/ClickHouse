@@ -54,6 +54,14 @@ def started_cluster():
         # port that the readiness check uses.
         node1.wait_until_port_is_ready(9110, timeout=10)
         node_reject.wait_until_port_is_ready(9110, timeout=10)
+        # `SYSTEM RELOAD CONFIG` is the only reloader every test below relies on.
+        for node in (node1, node2, node_reject):
+            assert (
+                node.query(
+                    "SELECT value FROM system.server_settings WHERE name = 'config_reload_interval_ms'"
+                ).strip()
+                == "3600000"
+            )
         yield cluster
     finally:
         cluster.shutdown()

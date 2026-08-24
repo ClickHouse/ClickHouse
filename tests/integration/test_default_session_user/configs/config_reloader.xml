@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
-  <!-- 3.600.000ms = 1 hour to basically prevent automatic reloads happening.
-       A listener's restart decision compares the incoming config against the one recorded
-       by the previous reload, so a background reload landing between a test's config edit
-       and its explicit `SYSTEM RELOAD CONFIG` consumes the difference, and the explicit
-       reload then observes an unchanged config. -->
+  <!-- 3.600.000ms = 1 hour to basically prevent automatic reloads happening, so that
+       `SYSTEM RELOAD CONFIG` is the only reloader in this module's tests. -->
   <config_reload_interval_ms>3600000</config_reload_interval_ms>
 </clickhouse>
