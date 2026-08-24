@@ -368,6 +368,17 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    /// The ASOF `TOLERANCE` bound. Without this a serialized plan executed elsewhere, as on the
+    /// distributed paths, would deserialize into an ASOF JOIN with no bound at all and quietly
+    /// return matches further away than the query asked for.
+    writeBinary(asof_tolerance.has_value(), out);
+    if (asof_tolerance)
+        writeFieldBinary(*asof_tolerance, out);
+
+    writeBinary(asof_tolerance_interval_kind.has_value(), out);
+    if (asof_tolerance_interval_kind)
+        writeBinary(static_cast<UInt8>(asof_tolerance_interval_kind->kind), out);
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -402,9 +413,27 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     auto strictness = deserializeJoinStrictness(in);
     auto locality = deserializeJoinLocality(in);
 
+    bool has_tolerance = false;
+    readBinary(has_tolerance, in);
+    std::optional<Field> asof_tolerance;
+    if (has_tolerance)
+        asof_tolerance = readFieldBinary(in);
+
+    bool has_interval_kind = false;
+    readBinary(has_interval_kind, in);
+    std::optional<IntervalKind> asof_tolerance_interval_kind;
+    if (has_interval_kind)
+    {
+        UInt8 kind_value = 0;
+        readBinary(kind_value, in);
+        asof_tolerance_interval_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind_value));
+    }
+
     JoinOperator result(kind, strictness, locality);
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
+    result.asof_tolerance = std::move(asof_tolerance);
+    result.asof_tolerance_interval_kind = asof_tolerance_interval_kind;
 
     return result;
 }

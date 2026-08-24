@@ -12,7 +12,9 @@
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
 #include <Common/RadixSort.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
+#include <limits>
 #include <mutex>
 
 
@@ -48,6 +50,14 @@ void callWithType(TypeIndex type, F && f)
 
     UNREACHABLE();
 }
+
+/// The arithmetic type an ASOF key is compared as: the key itself, or for `Decimal` and
+/// `DateTime64` the integer they wrap.
+template <typename T>
+struct AsofKeyNativeType { using Type = T; };
+
+template <is_decimal T>
+struct AsofKeyNativeType<T> { using Type = typename T::NativeType; };
 
 template <typename TKey, ASOFJoinInequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
@@ -88,6 +98,63 @@ public:
 
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
+
+    explicit SortedLookupVector(const std::optional<Field> & tolerance_)
+    {
+        if (!tolerance_)
+            return;
+
+        /// The bound is compared against the ASOF key, so it is held in the key's own representation.
+        /// For a Decimal key (which is what `DateTime64` is) that means its underlying integer, so a
+        /// tolerance and a key of the same scale are directly comparable.
+        if constexpr (is_decimal<TKey>)
+            tolerance = TKey(applyVisitor(FieldVisitorConvertToNumber<typename TKey::NativeType>(), *tolerance_));
+        else
+            tolerance = applyVisitor(FieldVisitorConvertToNumber<TKey>(), *tolerance_);
+    }
+
+    /// The key's own arithmetic type. `DateTime64` and the `Decimal`s are class types wrapping an
+    /// integer, and the comparison below is on that integer. Selected through a specialisation
+    /// rather than `std::conditional_t`, which would name `TKey::NativeType` even for a plain
+    /// arithmetic key that has no such member.
+    using Native = typename AsofKeyNativeType<TKey>::Type;
+
+    static ALWAYS_INLINE Native toNative(TKey value)
+    {
+        if constexpr (is_decimal<TKey>)
+            return value.value;
+        else
+            return value;
+    }
+
+    /// Is the matched right-hand value close enough to the probe to be kept?
+    /// The ASOF inequality fixes which side the match lies on, so only that direction is measured.
+    ///
+    /// The bound is added to the endpoint rather than subtracting the two values, because the
+    /// subtraction can leave the type's range just as easily. Either way the shifted endpoint can go
+    /// past the maximum, which wraps for an unsigned key and is undefined for a signed one, so a
+    /// valid match near the top of the domain would be dropped: with a `UInt8` key, right value 250
+    /// and probe 255, a bound of 10 would compute 250 + 10 = 4 and reject the row. When the endpoint
+    /// cannot be shifted without leaving the range, every value on that side is within the bound.
+    ALWAYS_INLINE bool withinTolerance(TKey probe, TKey matched) const
+    {
+        const Native probe_value = toNative(probe);
+        const Native matched_value = toNative(matched);
+        const Native bound = toNative(*tolerance);
+
+        if constexpr (is_descending)
+        {
+            if (matched_value > std::numeric_limits<Native>::max() - bound)
+                return true;
+            return probe_value <= static_cast<Native>(matched_value + bound);
+        }
+        else
+        {
+            if (probe_value > std::numeric_limits<Native>::max() - bound)
+                return true;
+            return matched_value <= static_cast<Native>(probe_value + bound);
+        }
+    }
 
     void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override
     {
@@ -164,6 +231,12 @@ public:
         size_t pos = boundSearch(k);
         if (pos != entries.size())
         {
+            /// `TOLERANCE`: the match found is the closest one in the requested direction, so if it is
+            /// already further away than the bound then no other entry can be closer, and the probe has
+            /// no match at all. For a LEFT join that yields NULLs rather than dropping the left row.
+            if (tolerance.has_value() && !withinTolerance(k, entries[pos].value))
+                return nullptr;
+
             size_t row_ref_index = entries[pos].row_ref_index;
             return &row_refs[row_ref_index];
         }
@@ -172,6 +245,9 @@ public:
     }
 
 private:
+    /// `TOLERANCE` bound in the key's representation, empty when the query did not ask for one.
+    std::optional<TKey> tolerance;
+
     std::atomic<bool> sorted = false;
     mutable std::mutex lock;
     Entries entries;
@@ -343,7 +419,7 @@ void StoredColumnsIndex::resolveEmitColumns(
     }
 }
 
-AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality, const std::optional<Field> & tolerance)
 {
     AsofRowRefs result;
     auto call = [&](const auto & t)
@@ -352,16 +428,16 @@ AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
         switch (inequality)
         {
             case ASOFJoinInequality::LessOrEquals:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::LessOrEquals>>();
+                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::LessOrEquals>>(tolerance);
                 break;
             case ASOFJoinInequality::Less:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Less>>();
+                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Less>>(tolerance);
                 break;
             case ASOFJoinInequality::GreaterOrEquals:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::GreaterOrEquals>>();
+                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::GreaterOrEquals>>(tolerance);
                 break;
             case ASOFJoinInequality::Greater:
-                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Greater>>();
+                result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Greater>>(tolerance);
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ASOF Join order");

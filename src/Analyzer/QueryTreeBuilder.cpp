@@ -77,6 +77,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
@@ -1063,6 +1064,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             else if (table_join.on_expression)
                 join_expression = buildExpression(table_join.on_expression, context);
 
+            QueryTreeNodePtr tolerance_expression;
+            if (table_join.tolerance_expression)
+                tolerance_expression = buildExpression(table_join.tolerance_expression, context);
+
             const auto & settings = context->getSettingsRef();
             auto join_default_strictness = settings[Setting::join_default_strictness];
             auto any_join_distinct_right_table_keys = settings[Setting::any_join_distinct_right_table_keys];
@@ -1096,6 +1101,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }
+
+            /// Checked before the branch below, not inside it. `TOLERANCE` is accepted by the parser
+            /// after any join syntax, and the `CROSS`/comma branch builds a `CrossJoinNode` that has
+            /// nowhere to put the bound, so a rejection living only on the `JoinNode` path would let
+            /// `CROSS JOIN ... TOLERANCE 5` run as a plain cross join with the bound discarded.
+            if (tolerance_expression && result_join_strictness != JoinStrictness::Asof)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "TOLERANCE is only supported for ASOF JOIN, but the JOIN strictness is {}",
+                    toString(result_join_strictness));
 
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
@@ -1136,6 +1150,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     result_join_kind,
                     table_join.using_expression_list != nullptr);
                 join_node->as<JoinNode &>().setNatural(table_join.is_natural);
+                join_node->as<JoinNode &>().getTolerance() = std::move(tolerance_expression);
             }
 
             join_node->setOriginalAST(table_element.table_join);

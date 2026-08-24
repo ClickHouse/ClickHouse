@@ -136,6 +136,12 @@ ASTPtr JoinNode::toASTTableJoin() const
         }
     }
 
+    if (children[tolerance_child_index])
+    {
+        join_ast->tolerance_expression = children[tolerance_child_index]->toAST();
+        join_ast->children.push_back(join_ast->tolerance_expression);
+    }
+
     return join_ast;
 }
 
@@ -164,6 +170,12 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSION\n";
         getJoinExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasTolerance())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "TOLERANCE\n";
+        getTolerance()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
@@ -191,6 +203,7 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
         getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
+    clone->children[tolerance_child_index] = getTolerance();
     return clone;
 }
 

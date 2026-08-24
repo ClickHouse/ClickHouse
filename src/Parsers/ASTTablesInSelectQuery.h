@@ -85,6 +85,10 @@ struct ASTTableJoin : public IAST
     ASTPtr using_expression_list;
     ASTPtr on_expression;
 
+    /// Optional `TOLERANCE <expr>` for ASOF JOIN: the largest allowed difference between the
+    /// left and the matched right value of the ASOF column. Matches further apart are dropped.
+    ASTPtr tolerance_expression;
+
     using IAST::IAST;
     String getID(char) const override { return "TableJoin"; }
     ASTPtr clone() const override;

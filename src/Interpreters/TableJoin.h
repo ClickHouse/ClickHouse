@@ -186,6 +186,10 @@ private:
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
+    /// Optional `TOLERANCE` bound for ASOF JOIN, as a constant already cast to the ASOF key type.
+    /// A match is kept only when the distance between the left and right ASOF values is within it.
+    std::optional<Field> asof_tolerance = {};
+
     NamesAndTypesList columns_from_left_table;
     NamesAndTypesList result_columns_from_left_table;
 
@@ -448,6 +452,9 @@ public:
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
+
+    void setAsofTolerance(std::optional<Field> tolerance) { asof_tolerance = std::move(tolerance); }
+    const std::optional<Field> & getAsofTolerance() const { return asof_tolerance; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only

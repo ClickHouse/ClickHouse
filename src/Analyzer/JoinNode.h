@@ -133,6 +133,24 @@ public:
         return is_natural;
     }
 
+    /// Returns true if the join has a TOLERANCE bound (ASOF JOIN only)
+    bool hasTolerance() const
+    {
+        return children[tolerance_child_index] != nullptr;
+    }
+
+    /// Get the TOLERANCE expression
+    const QueryTreeNodePtr & getTolerance() const
+    {
+        return children[tolerance_child_index];
+    }
+
+    /// Get the TOLERANCE expression
+    QueryTreeNodePtr & getTolerance()
+    {
+        return children[tolerance_child_index];
+    }
+
     /// Set the natural join flag (used during analysis to inject a synthesized USING expression)
     void setNatural(bool value)
     {
@@ -211,7 +229,8 @@ private:
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;
     static constexpr size_t join_expression_child_index = 2;
-    static constexpr size_t children_size = join_expression_child_index + 1;
+    static constexpr size_t tolerance_child_index = 3;
+    static constexpr size_t children_size = tolerance_child_index + 1;
 };
 
 class CrossJoinNode;

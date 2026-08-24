@@ -70,6 +70,7 @@ ASTPtr ASTTableJoin::clone() const
 
     CLONE(using_expression_list);
     CLONE(on_expression);
+    CLONE(tolerance_expression);
 
     return res;
 }
@@ -78,6 +79,7 @@ void ASTTableJoin::forEachPointerToChild(std::function<void(IAST **, boost::intr
 {
     f(nullptr, &using_expression_list);
     f(nullptr, &on_expression);
+    f(nullptr, &tolerance_expression);
 }
 
 void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
@@ -285,6 +287,12 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
         frame.need_parens = !on_expression->tryGetAlias().empty();
         on_expression->format(ostr, settings, state, frame);
     }
+
+    if (tolerance_expression)
+    {
+        ostr << " TOLERANCE ";
+        tolerance_expression->format(ostr, settings, state, frame);
+    }
 }
 
 
@@ -378,6 +386,7 @@ void ASTTableJoin::writeJSON(WriteBuffer & out) const
         w.writeBool("is_natural", true);
     w.writeChild("using_expression_list", using_expression_list);
     w.writeChild("on_expression", on_expression);
+    w.writeChild("tolerance_expression", tolerance_expression);
 }
 
 void ASTArrayJoin::writeJSON(WriteBuffer & out) const
@@ -587,6 +596,13 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     {
         on_expression = child;
         children.push_back(on_expression);
+    }
+
+    child = r.readChild("tolerance_expression");
+    if (child)
+    {
+        tolerance_expression = child;
+        children.push_back(tolerance_expression);
     }
 
     /// A JOIN's `USING` and `ON` are mutually exclusive: the formatter emits `USING` and skips `ON` when both are present,

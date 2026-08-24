@@ -61,7 +61,7 @@ struct Inserter
 
         TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
-            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
+            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality(), join.getTableJoin().getAsofTolerance()));
         (*time_series_map)->insert(asof_column, stored_block_no, i);
         return emplace_result.isInserted();
     }
