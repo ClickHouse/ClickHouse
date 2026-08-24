@@ -29,3 +29,12 @@ GatherExchange
 -- 5. negative and positive zero form one partition, as in the single-node plan
 100000
 100000
+-- 6. the window output order is reused: no new sort for a matching ORDER BY
+Expression (Project names)
+  GatherExchange
+    Expression ((Before ORDER BY + Projection))
+      Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
+        Sorting
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_win)

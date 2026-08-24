@@ -58,5 +58,10 @@ SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_wfloat)
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_wfloat) ORDER BY c
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
+-- The per-node window runs without the stream fan-out, so its output keeps the sort order
+-- and a matching ORDER BY above needs no new sort, only the order-keeping gather.
+SELECT '-- 6. the window output order is reused: no new sort for a matching ORDER BY';
+EXPLAIN SELECT k, v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_win ORDER BY k, v;
+
 DROP TABLE t_win;
 DROP TABLE t_wfloat;

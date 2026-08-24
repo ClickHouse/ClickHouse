@@ -108,7 +108,14 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
     for (size_t candidate_node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))
     {
         auto distributed = std::make_shared<GroupExpression>(*expression);
-        auto new_step = window_step->clone();
+        /// The fan-out re-parallelizes one node's pipeline after the last window; here the
+        /// parallelism comes from the nodes, and the fan-out would only destroy the
+        /// output order.
+        auto new_step = std::make_unique<WindowStep>(
+            window_step->getInputHeaders().at(0),
+            window_step->getWindowDescription(),
+            window_step->getWindowFunctions(),
+            /*streams_fan_out_=*/false);
         new_step->setStepDescription(fmt::format("Partitioned {}", window_step->getStepDescription()), 200);
         distributed->plan_step = std::move(new_step);
         distributed->strategy = strategySingleton<WindowStrategy>();
@@ -120,10 +127,10 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
         distributed->inputs[0].required_properties = input_required;
 
         distributed->properties = ExpressionProperties{};
-        /// The window moves no rows, so the output keeps the input distribution.
+        /// The window moves no rows, so the output keeps the input distribution; without the
+        /// fan-out it also keeps the input order.
         distributed->properties.distribution = input_required.distribution;
-        if (!window_step->hasStreamsFanOut())
-            distributed->properties.sorting = input_required.sorting;
+        distributed->properties.sorting = input_required.sorting;
 
         addPhysicalToMemo(distributed, required_properties, memo, result);
     }
