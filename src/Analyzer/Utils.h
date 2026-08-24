@@ -229,7 +229,8 @@ bool hasUnknownColumn(
 /** Suppose we have a table x with columns a, c, d and
   * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
   * This method will remove the part y.b > 3 from it since it depends
-  * on unknown columns from a different table.
+  * on unknown columns from a different table. A non-function root such as
+  * `WHERE y.b` is dropped the same way.
   */
 void removeExpressionsThatDoNotDependOnTableIdentifiers(
     QueryTreeNodePtr & expression,

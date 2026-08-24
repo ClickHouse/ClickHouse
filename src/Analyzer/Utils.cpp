@@ -1302,7 +1302,11 @@ void filterConjunctions(
 {
     auto * function = expression->as<FunctionNode>();
     if (!function)
+    {
+        if (!keep(expression))
+            expression = {};
         return;
+    }
 
     if (function->getFunctionName() != "and")
     {
