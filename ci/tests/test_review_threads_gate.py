@@ -65,6 +65,7 @@ class FakeInfo:
         self.pr_body = ""
         self.pr_number = 12345
         self.repo_name = "ClickHouse/ClickHouse"
+        self.sha = "0000000000000000000000000000000000000000"
         self.notes = []
 
     def store_kv_data(self, key, value):
@@ -86,7 +87,7 @@ class FakeInfo:
 
 
 @pytest.fixture
-def fake_info():
+def fake_info(monkeypatch):
     saved_info = filter_job._info_cache
     saved_notes = filter_job._pipeline_note_labels
     info = FakeInfo(
@@ -98,6 +99,8 @@ def fake_info():
     )
     filter_job._info_cache = info
     filter_job._pipeline_note_labels = set()
+    # The empty-merge-commit check for `Code Review` queries the GitHub API.
+    monkeypatch.setattr(filter_job, "_is_empty_merge_commit", lambda sha: False)
     yield info
     filter_job._info_cache = saved_info
     filter_job._pipeline_note_labels = saved_notes
