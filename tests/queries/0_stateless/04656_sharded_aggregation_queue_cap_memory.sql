@@ -22,18 +22,30 @@
 --     3, so two of the four queues stay empty - that skew is what the cap has to survive.
 --   * `max_insert_threads` is pinned because the fixture's cost, not its content, depends on
 --     it, and this test is re-run many times concurrently by the flaky check.
+--   * `merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
+--     = 0` - splitting the mark ranges changes the order the shards are demanded in, and an
+--     unbounded queue then never builds, so the sharded query fits the budget whether or not it
+--     honours the cap. The setting is randomized over 0..1 and the collapse starts around 0.45.
+--   * `max_streams_to_max_threads_ratio = 1` for the same reason one step earlier: it scales the
+--     reader's stream count, and at 0.5 the two resulting copies also drain without building up.
+--   * `index_granularity_bytes = 0` in both fixtures, which also stops the runner randomizing it
+--     (a merge-tree setting named in the DDL is left alone). The randomized floor of 1024 bytes
+--     splits 1M rows into ~143k marks, and the reader then serves the part with a single stream,
+--     which turns the sharded plan off entirely and takes the whole test with it.
 
 DROP TABLE IF EXISTS test_116038;
 CREATE TABLE test_116038 (a UInt64, b String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO test_116038 SELECT number % 4 AS a, repeat(hex(cityHash64(number)), 8) AS b
 FROM numbers_mt(1000000) SETTINGS max_insert_threads = 1;
 
--- Precondition: the sharded transform is really in the pipeline at the width the skew is chosen
--- for, and no `ConcatProcessor` is involved - the cap bypass is reachable with a plain `Resize`
--- + `AggregatingTransform` consumer. The width is asserted, not just the presence: at a narrower
--- fan-out the four keys occupy every shard, no shard is left empty while demanded, and the arm
--- would pass without ever reaching the predicate.
+-- Precondition: the sharded transform is really in the pipeline at the shard count the skew is
+-- chosen for, and no `ConcatProcessor` is involved - the cap bypass is reachable with a plain
+-- `Resize` + `AggregatingTransform` consumer. The shard count is asserted, not just the presence:
+-- at a narrower fan-out the four keys occupy every shard, no shard is left empty while demanded,
+-- and the arm would pass without ever reaching the predicate. The copy count is matched too: it
+-- follows the reader's stream count, and at two copies the queues drain fast enough that the
+-- unbounded build-up never happens, so the memory oracle stops separating the two arms.
 SELECT countIf(explain LIKE '%BufferedShardByHashTransform × 4 1 → 4%') > 0,
        countIf(explain LIKE '%Concat%') = 0
 FROM (
@@ -42,7 +54,9 @@ FROM (
     FROM test_116038
     GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
-             max_rows_to_group_by = 0, enable_parallel_replicas = 0
+             max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+             merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+             max_streams_to_max_threads_ratio = 1
 );
 
 -- Control: the same aggregation without sharding fits the budget comfortably, so a failure
@@ -53,6 +67,8 @@ GROUP BY a
 ORDER BY a
 SETTINGS enable_sharding_aggregator = 0, max_threads = 4, max_block_size = 1024,
          max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+         merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+         max_streams_to_max_threads_ratio = 1,
          max_memory_usage = 100663296, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT a, uniqCombined(b) > 0, uniqCombined(concat(b, '1')) > 0, uniqCombined(concat(b, '2')) > 0
@@ -61,6 +77,8 @@ GROUP BY a
 ORDER BY a
 SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
          max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+         merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+         max_streams_to_max_threads_ratio = 1,
          max_memory_usage = 100663296, max_bytes_ratio_before_external_group_by = 0;
 
 -- The cap is honoured on evidence that a consumer is draining, so the case where that
@@ -68,10 +86,11 @@ SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
 -- one sparse key and one heavy key interleaved inside the same input blocks, under a
 -- sequentially-activated `ConcatProcessor` (produced by narrowing a `UNION ALL` with
 -- `max_streams_for_union_step`). This must complete rather than stall: an implementation that
--- tracks the drain evidence per processor rather than per port stalls here in 6 of 6 runs.
+-- carries the drain evidence over from an earlier scheduling round, instead of re-reading the
+-- ports every time, stalls here in 6 of 6 runs.
 DROP TABLE IF EXISTS test_116038_mixed;
 CREATE TABLE test_116038_mixed (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 -- The sharder is as wide as the streams the reader produces, which can be below `max_threads`
 -- and varies with what the statements above left in this database, so the keys are chosen to
 -- work at any width rather than at one: key 4 routes to shard 0 - the input the narrowed
@@ -103,6 +122,7 @@ FROM (
     SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
              max_streams_for_union_step = 1, max_block_size = 1000,
              max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+             merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
              merge_tree_min_rows_for_concurrent_read = 1,
              merge_tree_min_bytes_for_concurrent_read = 1,
              merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
@@ -123,6 +143,7 @@ SETTINGS enable_sharding_aggregator = 1,
          max_block_size = 1000,
          max_rows_to_group_by = 0,
          enable_parallel_replicas = 0,
+         merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
          merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
