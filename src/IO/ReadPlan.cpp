@@ -74,7 +74,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
             if (offset < committed)
             {
                 run.writer = cell->writer.get();
-                run.range = ByteRange{offset, std::min(committed, cell->range.end()) - offset};
+                run.range = ByteRange{offset, committed - offset};   /// committed() never exceeds range().end()
                 return run;
             }
         }

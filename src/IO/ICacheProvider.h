@@ -53,8 +53,9 @@ public:
     virtual ByteRange range() const = 0;
 
     /// The end of the committed prefix `[range().offset, committed())` (a segment fills append-only, so
-    /// what is committed is always one contiguous prefix). Equals `range().offset` when nothing is
-    /// committed. A snapshot: a background prefetch and the foreground read may grow it concurrently.
+    /// what is committed is always one contiguous prefix). Always within `[range().offset, range().end()]`:
+    /// `range().offset` when nothing is committed, `range().end()` when complete. A snapshot: a background
+    /// prefetch and the foreground read may grow it concurrently.
     virtual size_t committed() const = 0;
 
     bool complete() const { return committed() >= range().end(); }
