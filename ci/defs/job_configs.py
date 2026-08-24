@@ -538,6 +538,43 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
+    # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
+    # the host, so it is a CMake project of its own driven by its own script in its own image -
+    # not a `BuildTypes` entry in the `Build` matrix, which `binary-builder` and
+    # `build_clickhouse.py` serve. The two post hooks the other build jobs carry are left off for
+    # the same reason: neither the master-head binary nor the build profile has a counterpart here.
+    #
+    # Nothing else in CI compiles this module, so this job is also what notices when it stops
+    # compiling - which it did within a day of being merged, twice over.
+    wasm_parser_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_wasm_parser.py",
+        run_in_docker="clickhouse/wasm-builder",
+        timeout=2 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_wasm_parser.py",
+                "./utils/wasm-parser",
+                # The closure the project names is the parser and everything it reaches, which
+                # spans most of `src` and `base` and a dozen contrib libraries. Nothing narrower
+                # than the build digest's own source paths bounds it.
+                "./src",
+                "./base",
+                "./contrib/",
+                "./.gitmodules",
+            ],
+            with_git_submodules=True,
+        ),
+        needs_submodules=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.WASM_PARSER,
+            provides=[ArtifactNames.CH_WASM_PARSER],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -1796,6 +1833,12 @@ class JobConfigs:
     # comment when the change is significant. The data comes from the CI logs
     # cluster: the PR side is uploaded by the arm_release build post-hook
     # (build_profile_hook.py), the master side by master workflow builds.
+    # No digest_config, i.e. not cacheable: the job's output is a PR comment
+    # about one concrete commit (it embeds the head sha and links this run's
+    # report). Reusing a cached result would leave that comment describing an
+    # older commit of the PR - including a change that the head has already
+    # reverted - so the comparison is redone for every head. The job is cheap:
+    # it only queries the CI logs cluster.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1807,15 +1850,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         timeout=1800,
         enable_gh_auth=True,
-        # `requires` folds the build's digest in, so selection and result reuse
-        # both follow the source state. A file added to this job's own pipeline
-        # later is not covered automatically.
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/build_profile_diff_job.py",
-                "./ci/jobs/scripts/log_cluster.py",
-            ],
-        ),
         # Run on a red head too. This job is the only writer of the
         # `build-profile-diff` PR comment, so skipping it leaves the comment
         # posted for an older commit pinned to the PR, reading as if it
