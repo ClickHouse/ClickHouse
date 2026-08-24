@@ -26,8 +26,6 @@ public:
 
     MarkInCompressedFile getMark(size_t row_index, size_t column_index) const;
     size_t getNumColumns() const { return num_columns_in_mark; }
-    size_t getNumRows() const { return marks->getNumberOfMarks() / num_columns_in_mark; }
-    size_t getNumDistinctMarksCapped() const { return marks->getNumDistinctMarksCapped(); }
 
 private:
     const MarkCache::MappedPtr marks;

@@ -100,17 +100,6 @@ public:
 
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
-    /// Values above this are indistinguishable from each other in
-    /// `getNumDistinctMarksCapped`, so it can only answer questions about bounds
-    /// strictly below it.
-    static constexpr size_t DISTINCT_MARKS_CAP = 3;
-
-    /// Number of groups of consecutive equal marks in the array, saturating at
-    /// `DISTINCT_MARKS_CAP`. Counted over the whole array as stored, so for a
-    /// multi-column mark file this interleaves the columns and is not the count
-    /// for any single column.
-    size_t getNumDistinctMarksCapped() const { return num_distinct_marks_capped; }
-
     /// Streaming builder that compresses marks one block at a time,
     /// avoiding the need to materialize the full plain marks array.
     /// Callers can feed marks in arbitrary-sized chunks; the builder
@@ -142,10 +131,6 @@ public:
         size_t total_marks;
         size_t marks_flushed = 0;
         size_t packed_bits = 0;
-        /// Carried across `flushBlock` calls so a group of equal marks spanning a
-        /// block or chunk boundary is counted once.
-        size_t num_distinct_marks_capped = 0;
-        MarkInCompressedFile last_mark{UINT64_MAX, UINT64_MAX};
         PODArray<MarkInCompressedFile> pending;
         PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
         PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
@@ -155,12 +140,10 @@ private:
     /// Private constructor used by Builder::finish.
     MarksInCompressedFile(
         size_t num_marks_,
-        size_t num_distinct_marks_capped_,
         PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
         PODArray<UInt64, 4096, JemallocCacheAllocator> && packed_);
 
     size_t num_marks;
-    UInt8 num_distinct_marks_capped;
     PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
     PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
