@@ -59,6 +59,28 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
+    /// Cascades cross-group identity. Field audit of every member of `FilterStep`,
+    /// `ITransformingStep` and `IQueryPlanStep`:
+    ///  - on the wire (written by `serialize`): `actions_dag`, `filter_column_name`,
+    ///    `remove_filter_column`.
+    ///  - covered by the identity encoding itself: `output_header`.
+    ///  - extras: `prevent_input_removal` - not on the wire, and it blocks later input pruning,
+    ///    same as in `ExpressionStep`. `condition` - not on the wire; when set,
+    ///    `transformPipeline` wires `FilterTransform` to a `QueryConditionCache` and writes ranges
+    ///    keyed by `condition->first`/`condition->second` at runtime, so a step with `condition`
+    ///    set is not interchangeable with one without, or with a different hash/text.
+    ///  - derived: `input_headers` - `actions_dag` carries its own inputs' names and types like in
+    ///    `ExpressionStep`, and the pass-through columns are exactly the tail of `output_header`
+    ///    (see `FilterTransform::transformHeader`) once `filter_column_name` is optionally erased
+    ///    (already on the wire); only the input column order is not recoverable, and it does not
+    ///    constrain execution because `ExpressionActions` resolves columns by name.
+    ///    `transform_traits` and `data_stream_traits` - computed from `getTraits` at construction
+    ///    and never mutated. `collect_processors` - always default for this step.
+    ///  - display or runtime instrumentation only: `step_description`, `step_index`, `processors`,
+    ///    `dataflow_cache_updater`.
+    bool supportsCascadesIdentity() const override { return isSerializable(); }
+    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

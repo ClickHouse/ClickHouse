@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -417,6 +418,33 @@ void FilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_column_name, ctx.out);
 
     actions_dag.serialize(ctx.out, ctx.registry);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `FilterStep`. Unique within the step; never reused.
+enum FilterStepIdentityTag : UInt64
+{
+    PREVENT_INPUT_REMOVAL_TAG = 1,
+    CONDITION_HASH_TAG = 2,
+    CONDITION_TEXT_TAG = 3,
+};
+}
+
+void FilterStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
+
+    if (condition)
+    {
+        extras.addVarUInt(CONDITION_HASH_TAG, condition->first);
+        extras.addString(CONDITION_TEXT_TAG, condition->second);
+    }
+    else
+    {
+        extras.addAbsent(CONDITION_HASH_TAG);
+        extras.addAbsent(CONDITION_TEXT_TAG);
+    }
 }
 
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)

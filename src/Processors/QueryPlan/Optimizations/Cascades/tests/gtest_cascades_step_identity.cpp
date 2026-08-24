@@ -6,12 +6,17 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
 #include <Processors/QueryPlan/StepIdentity.h>
+#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 
@@ -44,6 +49,54 @@ ActionsDAG makeDag(UInt64 constant)
 GroupExpressionPtr exprWithExpressionStep(const SharedHeader & header, UInt64 constant)
 {
     return std::make_shared<GroupExpression>(std::make_unique<ExpressionStep>(header, makeDag(constant)));
+}
+
+/// Input `x` plus a constant UInt8 filter column `f`, so two DAGs differing only in `constant`
+/// produce the same output header and differ only in the serialized DAG payload.
+ActionsDAG makeFilterDag(UInt64 constant)
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    auto filter_type = std::make_shared<DataTypeUInt8>();
+    ActionsDAG dag(NamesAndTypesList{{"x", type}});
+    dag.getOutputs().push_back(&dag.addColumn(filter_type->createColumnConst(1, Field(static_cast<UInt8>(constant))), filter_type, "f"));
+    return dag;
+}
+
+SharedHeader makeAggregatedHeader()
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
+}
+
+/// Merge-only `Aggregator::Params` constructor - the same one `MergingAggregatedStep::deserialize`
+/// uses, so `only_merge` is always true.
+Aggregator::Params makeMergingAggregatedParams(size_t max_threads)
+{
+    return Aggregator::Params(
+        Names{"k"},
+        AggregateDescriptions{},
+        /*overflow_row=*/false,
+        max_threads,
+        /*max_block_size=*/65536,
+        /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        /*serialize_string_with_zero_byte=*/false,
+        /*enable_packed_string_keys=*/true);
+}
+
+std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(
+    size_t max_threads, size_t memory_efficient_merge_threads, bool final = true)
+{
+    return std::make_unique<MergingAggregatedStep>(
+        makeAggregatedHeader(),
+        makeMergingAggregatedParams(max_threads),
+        GroupingSetsParamsList{},
+        final,
+        /*memory_efficient_aggregation=*/false,
+        memory_efficient_merge_threads,
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*max_block_size=*/65536,
+        /*memory_bound_merging_max_block_bytes=*/0,
+        /*memory_bound_merging_of_aggregation_results_enabled=*/false);
 }
 
 }
@@ -148,8 +201,8 @@ TEST(CascadesStepIdentity, IndependentlyBuiltStepsShareFingerprint)
 TEST(CascadesStepIdentity, StepWithoutOptInComparesByPointer)
 {
     auto header = makeHeader();
-    auto a = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 10, 0));
-    auto b = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 10, 0));
+    auto a = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
+    auto b = std::make_shared<GroupExpression>(std::make_unique<OffsetStep>(header, 10));
 
     EXPECT_EQ(a->getStepIdentity(), nullptr);
     /// Equal-looking but distinct instances are not interchangeable without a field audit.
@@ -237,4 +290,149 @@ TEST(CascadesStepIdentity, MetricsCountEncodingPasses)
     /// One pass hashes `b`, then both steps are re-encoded to be compared byte for byte.
     EXPECT_EQ(CascadesIdentityMetrics::exact_reencodes.load(), 2u);
     EXPECT_EQ(CascadesIdentityMetrics::encoded_steps.load(), 4u);
+}
+
+/// FilterStep
+
+TEST(CascadesStepIdentity, FilterStepClonesAreEqual)
+{
+    auto header = makeHeader();
+    FilterStep step(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+
+    auto a = std::make_shared<GroupExpression>(step.clone());
+    auto b = std::make_shared<GroupExpression>(step.clone());
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_TRUE(a->globallyEqualTo(*b));
+}
+
+/// `prevent_input_removal` is not on the wire, but it blocks later input pruning, so the audit puts
+/// it in the extras: the two steps below are not interchangeable.
+TEST(CascadesStepIdentity, FilterStepPreventInputRemovalIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+    auto b_step = std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+    b_step->setPreventInputRemoval();
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// `condition` is not on the wire, but when set it makes `transformPipeline` write to the query
+/// condition cache at runtime under that hash/text, so the audit puts it in the extras too.
+TEST(CascadesStepIdentity, FilterStepConditionIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+    auto b_step = std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false);
+    b_step->setConditionForQueryConditionCache(42, "x > 0");
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+TEST(CascadesStepIdentity, FilterStepDifferentDagContentIsUnequal)
+{
+    auto header = makeHeader();
+    auto a = std::make_shared<GroupExpression>(
+        std::make_unique<FilterStep>(header, makeFilterDag(1), "f", /*remove_filter_column_=*/false));
+    auto b = std::make_shared<GroupExpression>(
+        std::make_unique<FilterStep>(header, makeFilterDag(2), "f", /*remove_filter_column_=*/false));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// LimitStep
+
+TEST(CascadesStepIdentity, LimitStepClonesAreEqual)
+{
+    auto header = makeHeader();
+    LimitStep step(header, 10, 0);
+
+    auto a = std::make_shared<GroupExpression>(step.clone());
+    auto b = std::make_shared<GroupExpression>(step.clone());
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_TRUE(a->globallyEqualTo(*b));
+}
+
+/// `is_shard_limit` is not on the wire, but `QueryPipeline::initRowsBeforeLimit` special-cases it
+/// when computing the user-visible `rows_before_limit_at_least`, so the audit puts it in the extras.
+TEST(CascadesStepIdentity, LimitStepIsShardLimitIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a_step = std::make_unique<LimitStep>(header, 10, 0);
+    auto b_step = std::make_unique<LimitStep>(header, 10, 0);
+    b_step->markAsShardLimit();
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+TEST(CascadesStepIdentity, LimitStepDifferentLimitIsUnequal)
+{
+    auto header = makeHeader();
+    auto a = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 10, 0));
+    auto b = std::make_shared<GroupExpression>(std::make_unique<LimitStep>(header, 20, 0));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// MergingAggregatedStep
+
+TEST(CascadesStepIdentity, MergingAggregatedStepClonesAreEqual)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto step = makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4);
+
+    auto a = std::make_shared<GroupExpression>(step->clone());
+    auto b = std::make_shared<GroupExpression>(step->clone());
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_TRUE(a->globallyEqualTo(*b));
+}
+
+/// `max_threads` is not on the wire - `deserialize` re-derives it from the session setting - but it
+/// controls how far `transformPipeline` resizes the pipeline, so the audit puts it in the extras.
+TEST(CascadesStepIdentity, MergingAggregatedStepMaxThreadsIsPartOfIdentity)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto a = std::make_shared<GroupExpression>(makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4));
+    auto b = std::make_shared<GroupExpression>(makeMergingAggregatedStep(/*max_threads=*/8, /*memory_efficient_merge_threads=*/4));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+TEST(CascadesStepIdentity, MergingAggregatedStepDifferentFinalFlagIsUnequal)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto a = std::make_shared<GroupExpression>(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true));
+    auto b = std::make_shared<GroupExpression>(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/false));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
 }

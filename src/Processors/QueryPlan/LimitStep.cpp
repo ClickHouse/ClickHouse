@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -121,6 +122,20 @@ void LimitStep::serialize(Serialization & ctx) const
 
     if (with_ties)
         serializeSortDescription(description, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `LimitStep`. Unique within the step; never reused.
+enum LimitStepIdentityTag : UInt64
+{
+    IS_SHARD_LIMIT_TAG = 1,
+};
+}
+
+void LimitStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    extras.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)

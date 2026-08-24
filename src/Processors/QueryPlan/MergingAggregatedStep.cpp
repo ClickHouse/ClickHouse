@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -303,6 +304,22 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `MergingAggregatedStep`. Unique within the step; never reused.
+enum MergingAggregatedStepIdentityTag : UInt64
+{
+    MAX_THREADS_TAG = 1,
+    MEMORY_EFFICIENT_MERGE_THREADS_TAG = 2,
+};
+}
+
+void MergingAggregatedStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    extras.addVarUInt(MAX_THREADS_TAG, max_threads);
+    extras.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
 }
 
 QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
