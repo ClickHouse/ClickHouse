@@ -152,7 +152,10 @@ private:
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
         /// in the query, possibly after the point of use - then it is not a table name.
         /// Collect the aliases before descending into the children.
-        auto enclosing_query_aliases = expression_aliases;
+        /// Like in `MarkTableIdentifiersVisitor`, only the aliases of the current select query
+        /// are considered: an alias is not visible inside a nested select query and vice versa.
+        auto enclosing_query_aliases = std::move(expression_aliases);
+        expression_aliases.clear();
         for (const auto & child : select.children)
             collectAliases(child);
 
@@ -161,7 +164,6 @@ private:
 
         visitChildren(select);
 
-        /// Aliases defined in this query are not visible in the enclosing query.
         expression_aliases = std::move(enclosing_query_aliases);
     }
 

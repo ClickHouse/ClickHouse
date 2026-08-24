@@ -30,3 +30,22 @@ WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects;
 INSERT INTO src VALUES ('foo'), ('baz');
 
 SELECT * FROM dest ORDER BY object;
+
+-- An alias from the enclosing query is not visible inside a nested select query
+-- (like in `MarkTableIdentifiersVisitor`): the right argument of IN there is still
+-- a table name and is qualified with the database.
+CREATE TABLE objects
+(
+    `s` String
+)
+ENGINE = MergeTree
+ORDER BY s;
+
+INSERT INTO objects VALUES ('foo');
+
+CREATE VIEW v1 AS SELECT 'foo' AS objects WHERE 'foo' IN (SELECT s FROM objects WHERE s IN objects);
+
+SELECT replaceAll(create_table_query, currentDatabase(), '[db]') FROM system.tables
+WHERE database = currentDatabase() AND name = 'v1';
+
+SELECT * FROM v1;
