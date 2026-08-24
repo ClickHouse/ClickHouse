@@ -169,7 +169,13 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
+
+    /// Look up the node of a processor that is about to be removed, and check it may be removed.
+    /// Changes nothing, so a throw here leaves the graph as it was.
+    Node * findNodeToRemove(const ProcessorPtr & processor);
+
+    /// Destroy a node found by findNodeToRemove, together with the edges it owns.
+    void eraseNode(Node * node);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -182,7 +188,13 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
+
+    /// Edges of `node` that point at one of `removed_nodes`, split the same way as node removal:
+    /// collectAffectedEdges only reads, eraseAffectedEdges is what destroys them.
+    static void collectAffectedEdges(
+        const Node & node, const std::unordered_set<const Node *> & removed_nodes, std::unordered_set<const void *> & removed_edge_ids);
+    static void eraseAffectedEdges(
+        Node & node, const std::unordered_set<const Node *> & removed_nodes, const std::unordered_set<const void *> & removed_edge_ids);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
@@ -207,9 +219,10 @@ private:
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
 
-    /// Publishes one `updateNode` frame's pending edge updates for as long as that frame runs.
-    /// A frame holds raw `Edge *` across gaps in `nodes_mutex`, so another frame can free those
-    /// edges in the meantime; being published lets the freeing frame drop the entries.
+    /// Publishes one `updateNode` frame's pending edge updates while that frame holds no
+    /// `nodes_mutex`, which is the only time another frame can free those edges; being published
+    /// is what lets the freeing frame drop the entries. Only edges need this: a node cannot be
+    /// removed before it is `Finished`, and a `Finished` node is never queued.
     class EdgeWorkListGuard
     {
     public:

@@ -71,7 +71,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
+ExecutingGraph::Node * ExecutingGraph::findNodeToRemove(const ProcessorPtr & processor)
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -84,15 +84,14 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}. Graph: {}", processor->getName(), dump(false));
 
-    std::unordered_set<const void *> removed_edges;
-    removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
-    removed_edges.insert_range(node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
+    return node;
+}
 
-    processors_map.erase(node_it);
+void ExecutingGraph::eraseNode(Node * node)
+{
+    processors_map.erase(node->processor());
     processors->erase(node->processor_iter);
     nodes.erase(node->self_iter);
-
-    return {node, std::move(removed_edges)};
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
@@ -152,41 +151,33 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+void ExecutingGraph::collectAffectedEdges(
+    const Node & node, const std::unordered_set<const Node *> & removed_nodes, std::unordered_set<const void *> & removed_edge_ids)
 {
-    std::unordered_set<const void *> removed_edge_ids;
-
-    for (auto it = node.back_edges.begin(); it != node.back_edges.end();)
+    auto collect = [&](const Edges & edges)
     {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.back_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
+        for (const auto & edge : edges)
+            if (removed_nodes.contains(edge.to))
+                removed_edge_ids.insert(edge.update_info.id);
+    };
 
-    for (auto it = node.direct_edges.begin(); it != node.direct_edges.end();)
-    {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.direct_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
+    collect(node.back_edges);
+    collect(node.direct_edges);
+}
+
+void ExecutingGraph::eraseAffectedEdges(
+    Node & node, const std::unordered_set<const Node *> & removed_nodes, const std::unordered_set<const void *> & removed_edge_ids)
+{
+    auto is_removed = [&](const Edge & edge) { return removed_nodes.contains(edge.to); };
+    const size_t erased = std::erase_if(node.back_edges, is_removed) + std::erase_if(node.direct_edges, is_removed);
 
     /// We need to remove cached updates for removed edges. This updates now contain stale pointers.
-    if (!removed_edge_ids.empty())
+    if (erased != 0)
     {
         auto is_stale = [&](void * id) { return removed_edge_ids.contains(id); };
         std::erase_if(node.post_updated_input_ports, is_stale);
         std::erase_if(node.post_updated_output_ports, is_stale);
     }
-
-    return removed_edge_ids;
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
@@ -321,28 +312,50 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
 {
     RemoveGroupResult result;
 
+    /// Identify everything that is about to go away while it is all still alive, so that the
+    /// destruction below runs after the work lists have been cleaned. Doing it the other way
+    /// round would leave a window in which an edge is freed but still published: the set
+    /// insertions here allocate, and an allocation may throw.
+    std::vector<Node *> nodes_to_erase;
+    nodes_to_erase.reserve(group.processors.size());
+
     {
         std::lock_guard guard(processors_mutex);
 
         for (const auto & removed_proc : group.processors)
         {
-            auto [removed_node, removed_edges] = removeNode(removed_proc);
+            auto * removed_node = findNodeToRemove(removed_proc);
+            nodes_to_erase.push_back(removed_node);
             result.removed_nodes.insert(removed_node);
-            result.removed_edges.insert_range(removed_edges);
+            result.removed_edges.insert_range(
+                removed_node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
+            result.removed_edges.insert_range(
+                removed_node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
         }
     }
 
-    for (const auto & removed_proc : group.processors)
-        removed_processors.erase(removed_proc);
+    for (const auto & node : nodes)
+        collectAffectedEdges(node, result.removed_nodes, result.removed_edges);
+
+    /// These edges may still be queued in a concurrent `updateNode` frame, which is parked at a
+    /// gap in `nodes_mutex` and cannot resume before this exclusive section ends. Dropping them
+    /// from every published work list before anything is destroyed is what keeps those frames
+    /// from dereferencing freed memory.
+    scrubRemovedEdges(result.removed_edges);
+
+    /// Nothing below may allocate into `result`: the edges are gone once this starts.
+    {
+        std::lock_guard guard(processors_mutex);
+
+        for (auto * removed_node : nodes_to_erase)
+            eraseNode(removed_node);
+    }
 
     for (auto & node : nodes)
-        result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
+        eraseAffectedEdges(node, result.removed_nodes, result.removed_edges);
 
-    /// The edges just freed may still be queued in a concurrent `updateNode` frame, which is
-    /// parked at a gap in `nodes_mutex` and cannot resume before this exclusive section ends.
-    /// Dropping them here, while no new edge can be allocated, keeps every published work list
-    /// free of dangling pointers without ever comparing a reused address.
-    scrubRemovedEdges(result.removed_edges);
+    for (const auto & removed_proc : group.processors)
+        removed_processors.erase(removed_proc);
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
@@ -446,11 +459,6 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
     EdgeWorkList updated_edges;
     boost::container::devector<Node *> updated_processors;
     updated_processors.push_back(start_node);
-
-    /// Queued edges outlive the gaps this frame makes in `nodes_mutex`, so they must be visible to
-    /// whoever frees them. A `Node *` needs no such publication: a node cannot be removed before it
-    /// is `Finished`, and a `Finished` node is never queued.
-    EdgeWorkListGuard edge_work_list_guard(*this, updated_edges);
 
     std::shared_lock read_lock(nodes_mutex);
 
@@ -618,6 +626,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
 
             if (need_update_pipeline)
             {
+                /// Constructed before the lock is dropped and destroyed after it is retaken, so the
+                /// queued edges are never unpublished while this frame holds no lock.
+                EdgeWorkListGuard edge_work_list_guard(*this, updated_edges);
+
                 // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
                 read_lock.unlock();
 
@@ -643,6 +655,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
             /// The peek under the shared lock is only a hint.
             if (!removed_processors.empty() && findGroupReadyForRemoval())
             {
+                /// Publication also covers this frame's own removals: `removeReadyGroups` below
+                /// scrubs every published list, including this one.
+                EdgeWorkListGuard edge_work_list_guard(*this, updated_edges);
+
                 read_lock.unlock();
 
                 RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);

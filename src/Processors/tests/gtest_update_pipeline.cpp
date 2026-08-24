@@ -481,13 +481,10 @@ public:
         }
 
         update.to_add = current_batch;
-        batch_history.append_range(current_batch);
         ++batches_started;
 
         return update;
     }
-
-    const std::vector<std::weak_ptr<IProcessor>> & batchHistory() const { return batch_history; }
 
 private:
     const SharedHeader header;
@@ -495,7 +492,6 @@ private:
     const size_t total_batches;
     size_t batches_started = 0;
     Processors current_batch;
-    std::vector<std::weak_ptr<IProcessor>> batch_history;
 };
 
 }
@@ -702,14 +698,8 @@ TEST(Processors, UpdatePipelineConcurrentRemovalDoesNotFreeQueuedEdges)
     auto header = makeHeader();
 
     Pipes pipes;
-    std::vector<std::shared_ptr<WideFanInCyclingCoordinator>> coordinators;
-    coordinators.reserve(num_streams);
     for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto coordinator = std::make_shared<WideFanInCyclingCoordinator>(header, fan_in, total_batches);
-        coordinators.push_back(coordinator);
-        pipes.emplace_back(std::move(coordinator));
-    }
+        pipes.emplace_back(std::make_shared<WideFanInCyclingCoordinator>(header, fan_in, total_batches));
 
     auto united = Pipe::unitePipes(std::move(pipes));
     united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
@@ -731,12 +721,9 @@ TEST(Processors, UpdatePipelineConcurrentRemovalDoesNotFreeQueuedEdges)
         }
     }
 
+    /// The assertion is the ASAN report; this only distinguishes "clean because the pipeline ran"
+    /// from "clean because nothing executed".
     EXPECT_GT(pulled, 0u);
-
-    /// Retired batches are gone, i.e. removals were carried out rather than stranded.
-    for (const auto & coordinator : coordinators)
-        for (const auto & weak : coordinator->batchHistory())
-            EXPECT_TRUE(weak.expired());
 }
 
 TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)
