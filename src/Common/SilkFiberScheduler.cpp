@@ -36,6 +36,13 @@ std::atomic<bool> fiber_scheduler_initialized = false;
 
 constinit FiberLocal<bool, FiberLocalSlot::INSIDE_SILK_FIBER> inside_silk_fiber;
 
+constexpr uint8_t CLICKHOUSE_FIBER_CATEGORY = 1;
+
+bool isClickHouseFiber() noexcept
+{
+    return silk::FiberScheduler::getCurrentFiberId().category == CLICKHOUSE_FIBER_CATEGORY;
+}
+
 struct FiberContext
 {
     FiberLocalStorage::Holder fiber_local_storage;
@@ -62,6 +69,9 @@ struct FiberContext
 
 void onFiberResume(silk::Fiber * fiber) noexcept
 {
+    if (!isClickHouseFiber())
+        return;
+
     auto * context = static_cast<FiberContext *>(silk::FiberScheduler::getFiberParameters(fiber));
     FiberLocalStorage::swap(*context->fiber_local_storage);
 
@@ -72,6 +82,9 @@ void onFiberResume(silk::Fiber * fiber) noexcept
 
 void onFiberSuspend(silk::Fiber * fiber) noexcept
 {
+    if (!isClickHouseFiber())
+        return;
+
     /// There can be a practically unbounded number of fibers.
     /// Each fiber gets a small buffer of untracked memory which it does not publish
     /// (see ServerSetting::per_cpu_untracked_memory_thread_buffer).
@@ -169,6 +182,7 @@ int spawn(std::function<int()> task, silk::FiberFuture & future)
     return silk::FiberScheduler::run(
         &FiberContext::main,
         FiberContext{ .fiber_local_storage = FiberLocalStorage::create(), .task = std::move(task) },
+        CLICKHOUSE_FIBER_CATEGORY,
         &future);
 }
 
