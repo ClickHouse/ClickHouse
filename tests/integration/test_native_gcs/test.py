@@ -393,7 +393,7 @@ def test_profile_events(started_cluster):
     # `sum(a)` rather than `count()`: with `optimize_trivial_count_query` a count is answered from
     # the part metadata and never reaches object storage.
     assert sum(range(10000)) == int(
-        node.query(f"SELECT sum(a) FROM gcs_events", query_id=read_id)
+        node.query("SELECT sum(a) FROM gcs_events", query_id=read_id)
     )
 
     node.query("SYSTEM FLUSH LOGS")
