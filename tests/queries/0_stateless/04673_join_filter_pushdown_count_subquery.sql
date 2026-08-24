@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas, no-random-settings
+-- no-parallel-replicas: EXPLAIN Prewhere differs with parallel replicas.
+-- no-random-settings: `optimize_move_to_prewhere` / `query_plan_optimize_prewhere` are randomized off.
+
 -- Left-only WHERE on `count()` of `SELECT * … JOIN` must still be pushed through
 -- the JOIN (and composed through identifier-rename expressions) so the left
 -- read can apply PREWHERE / index analysis.
@@ -30,6 +34,8 @@ SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET enable_join_runtime_filters = 0;
 SET join_use_nulls = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 SELECT count()
 FROM
