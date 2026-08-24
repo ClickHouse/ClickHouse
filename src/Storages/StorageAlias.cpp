@@ -68,7 +68,7 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isGrantedByStorage(ContextPtr query_context, AccessType access_type, const String & column_name) const
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)
         return false;
@@ -427,7 +427,7 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     bool has_select_access = false;
     for (const auto & column : storage_snapshot->metadata->getColumns())
     {
-        if (isGrantedByStorage(query_context, AccessType::SELECT, column.name))
+        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
         {
             has_select_access = true;
             break;
@@ -443,7 +443,7 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isGrantedByStorage(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();
@@ -452,7 +452,7 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isGrantedByStorage(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();

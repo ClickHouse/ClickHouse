@@ -36,7 +36,10 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
-    bool isGrantedByStorage(ContextPtr query_context, AccessType access_type, const String & column_name) const override;
+
+    /// Returns whether the current user has the specified access to the target table or column.
+    /// An empty `column_name` represents table-level access.
+    bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
 
     /// Read from target table
     void read(

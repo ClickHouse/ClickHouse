@@ -33,6 +33,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -557,8 +558,9 @@ protected:
 
                     for (auto & table : external_tables)
                     {
+                        const auto * alias = table.second->as<StorageAlias>();
                         const bool can_expose_metadata
-                            = table.second->isGrantedByStorage(context, AccessType::SHOW_TABLES, {});
+                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -731,7 +733,9 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
-                const bool can_expose_metadata = table && table->isGrantedByStorage(context, AccessType::SHOW_TABLES, {});
+                const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                const bool can_expose_metadata
+                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
 
                 TableLockHolder lock;
 

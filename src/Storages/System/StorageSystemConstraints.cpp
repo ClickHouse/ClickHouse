@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -84,7 +85,8 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            if (!table->isGrantedByStorage(context, AccessType::SHOW_TABLES, {}))
+            if (const auto * alias = table->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
                 return;
 
             const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

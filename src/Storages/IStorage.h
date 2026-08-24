@@ -19,7 +19,6 @@
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Access/Common/AccessType.h>
 
 #include <expected>
 #include <optional>
@@ -250,11 +249,6 @@ public:
     {
         return metadata.get();
     }
-
-    /// Returns true if storage-specific access requirements are satisfied.
-    /// An empty `column_name` represents table-level access.
-    /// No default argument is used because clang-tidy's `google-default-arguments` prohibits it on virtual methods.
-    virtual bool isGrantedByStorage(ContextPtr, AccessType, const String &) const { return true; }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

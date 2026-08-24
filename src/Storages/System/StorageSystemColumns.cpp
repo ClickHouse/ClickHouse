@@ -2,6 +2,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -147,6 +148,7 @@ protected:
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+            const auto * alias = storage->as<StorageAlias>();
 
             {
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
@@ -166,7 +168,7 @@ protected:
                 {
                     for (const auto & column : columns)
                     {
-                        if (storage->isGrantedByStorage(context, AccessType::SHOW_COLUMNS, column.name))
+                        if (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
                         {
                             can_expose_any_column_metadata = true;
                             break;
@@ -210,7 +212,7 @@ protected:
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
-                if (!storage->isGrantedByStorage(context, AccessType::SHOW_COLUMNS, column.name))
+                if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
                     continue;
 
                 size_t src_index = 0;
