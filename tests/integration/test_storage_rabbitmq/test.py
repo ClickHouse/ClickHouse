@@ -2268,6 +2268,70 @@ def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, u
         pytest.fail(f"Queue {queue} still exists after DROP TABLE.")
 
 
+def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db, unique):
+    # checkTableCanBeDropped() marks the table before the statement it guards can fail, and nothing
+    # ever unmarks it, so a table whose TRUNCATE threw stays marked while remaining fully alive. A
+    # later DETACH is not a drop, so it must leave the queue and its unconsumed messages alone.
+    table = f"{db}.rabbitmq_detach_keeps_queue"
+    queue = f"{unique}_rabbit_queue_detach_keeps"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{unique}_detach_keeps',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{queue}'
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(
+        exchange=f"{unique}_detach_keeps", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+
+    # Reading attaches the consumer, so the shutdown below takes the same path a drop would.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        if instance.query(f"SELECT * FROM {table} ORDER BY key", ignore_error=True) == "1\t2\n":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached before reading a message.")
+
+    assert channel.queue_declare(queue=queue, passive=True)
+
+    # RabbitMQ does not implement truncate, so this throws after the table was already marked.
+    error = instance.query_and_get_error(f"TRUNCATE TABLE {table}")
+    assert "NOT_IMPLEMENTED" in error, f"TRUNCATE failed for another reason: {error}"
+
+    # The table is still alive, so the mark it now carries must not turn this into a queue deletion.
+    instance.query(f"DETACH TABLE {table}")
+
+    # Both patterns are scoped to this table's own logger, so no other test can satisfy them. The
+    # refusal line is checked as well, so a delete that was attempted and refused cannot pass for
+    # one that was never attempted.
+    deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    failed_pattern = f"StorageRabbitMQ ({table}): Failed to delete queue {queue}"
+    assert not instance.grep_in_log(deleted_pattern), "DETACH TABLE deleted the queue"
+    assert not instance.grep_in_log(failed_pattern), "DETACH TABLE tried to delete the queue"
+
+    # A passive declare that 404s closes the channel, so ask on a channel nothing else has used.
+    check_channel = connection.channel()
+    assert check_channel.queue_declare(queue=queue, passive=True), (
+        f"Queue {queue} is gone after DETACH TABLE."
+    )
+
+    instance.query(f"ATTACH TABLE {table}")
+    instance.query(f"DROP TABLE {table}")
+
+
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

@@ -1013,7 +1013,7 @@ void StorageRabbitMQ::scheduleStreamingTasksImpl()
 }
 
 
-void StorageRabbitMQ::shutdown(bool)
+void StorageRabbitMQ::shutdown(bool is_drop)
 {
     /// Needed to make this method idempotent
     if (shutdown_called.exchange(true))
@@ -1063,7 +1063,10 @@ void StorageRabbitMQ::shutdown(bool)
             consumer->closeConnections();
         }
 
-        if (drop_table)
+        /// checkTableCanBeDropped() latches drop_table before the statement it guards can fail, and
+        /// nothing ever clears it, so the flag alone also marks a still-alive table whose TRUNCATE
+        /// or dependency check threw. Deleting the queues needs the shutdown to be a drop as well.
+        if (is_drop && drop_table)
         {
             waitForConsumerChannelsToClose(consumers_snapshot);
             cleanupRabbitMQ();
