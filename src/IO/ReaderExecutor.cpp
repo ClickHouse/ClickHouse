@@ -128,7 +128,7 @@ ReaderExecutor::ReaderExecutor(
     , cache_chain(std::move(options.cache_chain))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
-    , plan_look_ahead(std::max(options.plan_look_ahead, options.block_size))
+    , plan_look_ahead(options.plan_look_ahead)   /// `getReadSettings` enforces `>= block_size`
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);

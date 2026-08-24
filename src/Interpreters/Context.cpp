@@ -8606,6 +8606,12 @@ ReadSettings Context::getReadSettings() const
     if (res.reader_executor.plan_look_ahead < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_plan_look_ahead: must be at least {} bytes",
             res.reader_executor.plan_look_ahead, min_reader_executor_size);
+    /// Looking ahead less than one source block is meaningless, so reject the combination rather than
+    /// silently run at `block_size` and let the setting report a value the executor ignores.
+    if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
