@@ -18,8 +18,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -128,29 +131,56 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     return node;
 }
 
-/// Whether `step` (e.g. a JOIN) passes `column_names` through unchanged, just reordering/dropping rows.
-bool isColumnPreservingStep(const IQueryPlanStep & step, const NameSet & column_names)
+const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
 {
-    if (!step.hasOutputHeader())
-        return false;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
 
-    const auto & output_header = *step.getOutputHeader();
+/// Names that still denote the scan's indexed columns after `dag` renames them. An output reading an input
+/// of a tracked name keeps referring to the scan's column; anything computed (`lower(s) AS s`) does not.
+NameSet trackColumnsThroughDAG(const ActionsDAG & dag, const NameSet & tracked)
+{
+    NameSet result;
 
-    for (const auto & column_name : column_names)
+    for (const auto * output : dag.getOutputs())
     {
-        if (!output_header.has(column_name))
-            return false;
-
-        bool found_in_inputs = std::ranges::any_of(step.getInputHeaders(), [&](const auto & input_header)
-        {
-            return input_header->has(column_name);
-        });
-
-        if (!found_in_inputs)
-            return false;
+        const auto * node = removeAliases(output);
+        if (node->type == ActionsDAG::ActionType::INPUT && tracked.contains(node->result_name))
+            result.insert(output->result_name);
     }
 
-    return true;
+    return result;
+}
+
+/// Whether the haystack of `function_node` reads only columns in `tracked`. Above a JOIN, a same-named
+/// column of the other side must not be matched against this table's index.
+bool isHaystackTracked(const ActionsDAG::Node & function_node, const NameSet & tracked)
+{
+    if (function_node.children.empty())
+        return false;
+
+    bool found_input = false;
+    std::vector<const ActionsDAG::Node *> to_visit{function_node.children[0]};
+
+    while (!to_visit.empty())
+    {
+        const auto * node = removeAliases(to_visit.back());
+        to_visit.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (!tracked.contains(node->result_name))
+                return false;
+            found_input = true;
+        }
+
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+
+    return found_input;
 }
 
 String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
@@ -355,10 +385,11 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, NameSet tracked_columns_ = {})
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
+        , tracked_columns(std::move(tracked_columns_))
     {
     }
 
@@ -454,6 +485,9 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
+    /// Names denoting this scan's indexed columns in `actions_dag`. Empty means no restriction (the DAG
+    /// belongs to the scan itself, so every column is its own).
+    NameSet tracked_columns;
 
     struct SelectedCondition
     {
@@ -511,8 +545,9 @@ private:
             if (!search_query)
                 continue;
 
-            /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
-            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+            /// Also skip replaceToVirtualColumn (registers/reserves the virtual column) when this replacer isn't
+            /// allowed to use direct read: the same predicate may be analyzed again elsewhere for injection only.
+            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None || !direct_read_from_text_index)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -550,6 +585,9 @@ private:
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
+            return replacement;
+
+        if (!tracked_columns.empty() && !isHaystackTracked(function_node, tracked_columns))
             return replacement;
 
         auto selected_conditions = selectConditions(function_node, context);
@@ -859,9 +897,10 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     ActionsDAG & filter_dag,
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
-    bool direct_read_from_text_index)
+    bool direct_read_from_text_index,
+    const NameSet & tracked_columns = {})
 {
-    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
+    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, tracked_columns);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
     /// Even when no virtual columns are added (added_columns is empty),
@@ -980,14 +1019,17 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() < 2)
         return;
 
-    /// Column names used by isColumnPreservingStep to bound how far up the walk below may climb.
-    NameSet text_index_column_names;
-    for (const auto & [index_name, info] : text_index_read_infos)
-    {
-        auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition_template->generateUnsubstituted());
-        for (const auto & column : text_index_condition.getHeader())
-            text_index_column_names.insert(column.name);
-    }
+    /// Names that still read this scan's own columns at the level currently reached by the walk below. It is
+    /// re-mapped through every step crossed, so a step that renames a column (the planner's `__tableN.`
+    /// rename) keeps it tracked while one that recomputes it drops it. Seeded from the scan's columns rather
+    /// than the index header, because an expression index's header holds the expression (`lower(s)`) while
+    /// the DAG inputs a haystack reads are always base columns.
+    if (!read_from_merge_tree_step->hasOutputHeader())
+        return;
+
+    NameSet tracked_columns;
+    for (const auto & column : *read_from_merge_tree_step->getOutputHeader())
+        tracked_columns.insert(column.name);
 
     /// Reach a FilterStep past a JOIN (e.g. an OR-combined WHERE not pushed below it); only the step
     /// adjacent to the scan may get the virtual-column direct-read substitution.
@@ -995,27 +1037,53 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
     {
+        if (tracked_columns.empty())
+            break;
+
         QueryPlan::Node * node = it->node;
         auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
 
         if (!filter_step)
         {
-            if (isColumnPreservingStep(*node->step, text_index_column_names))
-                continue;
-            break;
+            if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
+            {
+                tracked_columns = trackColumnsThroughDAG(expression_step->getExpression(), tracked_columns);
+            }
+            /// A JOIN only drops, reorders and duplicates rows, so a name it still outputs is unchanged.
+            else if (typeid_cast<const JoinStep *>(node->step.get()) || typeid_cast<const JoinStepLogical *>(node->step.get()))
+            {
+                if (!node->step->hasOutputHeader())
+                    break;
+
+                const auto & output_header = *node->step->getOutputHeader();
+                std::erase_if(tracked_columns, [&](const auto & name) { return !output_header.has(name); });
+            }
+            else
+            {
+                break;
+            }
+
+            /// Direct read substitutes a per-granule column of this scan, so it is valid only for a filter
+            /// adjacent to it; crossing any other step (the `__tableN.` rename, a JOIN) invalidates it.
+            allow_direct_read = false;
+            continue;
         }
 
+        bool is_adjacent_to_scan = (it == stack.rbegin() + 1);
         ActionsDAG & filter_dag = filter_step->getExpression();
         const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-            *read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), allow_direct_read);
+            *read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), allow_direct_read, tracked_columns);
         allow_direct_read = false;
+        tracked_columns = trackColumnsThroughDAG(filter_dag, tracked_columns);
 
         if (!result_filter_node)
             continue;
 
         bool removes_filter_column = filter_step->removesFilterColumn();
         auto new_filter_column_name = result_filter_node->result_name;
-        node->step = std::make_unique<FilterStep>(filter_step->getInputHeaders().front(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+        /// Only the adjacent filter can have had its input header widened by a direct-read virtual column.
+        const auto & new_input_header = is_adjacent_to_scan ? read_from_merge_tree_step->getOutputHeader() : filter_step->getInputHeaders().front();
+        node->step = std::make_unique<FilterStep>(new_input_header, filter_dag.clone(), new_filter_column_name, removes_filter_column);
     }
 }
 
