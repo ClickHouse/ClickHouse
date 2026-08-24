@@ -315,7 +315,7 @@ pre {
 }
 
 :root[data-theme='dark'] .nav-dropdown-content {
-  background: var(--background);
+  background-color: var(--background);
 }
 
 .nav-dropdown-content[hidden] {
