@@ -462,6 +462,15 @@ public:
 
     bool hasTemporaryData() const;
 
+    /// The memory currently held by the aggregation state of every thread of this aggregator: not
+    /// only the arenas and the hash tables, but also everything the aggregate function states
+    /// allocate on their own (the hash tables of `uniq`, `uniqExact`, `topK`, the arrays of
+    /// `groupArray`, and so on), which the arenas do not see. This is the same measure the
+    /// aggregation itself uses to decide when to spill: the dedicated tracker the execute path
+    /// creates under the query, and the query-wide delta since the aggregation started when there
+    /// is none (the merge path, which starts from states it did not allocate).
+    Int64 getStateMemoryUsage() const;
+
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.

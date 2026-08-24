@@ -56,7 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_result_previews_min_rows", 0, 0, "New setting to limit the frequency of query result previews."},
             {"query_result_previews_min_bytes", 0, 0, "New setting to limit the frequency of query result previews."},
             {"query_result_previews_max_result_rows", 1000, 1000, "New setting to limit the size of the intermediate state for which query result previews are emitted."},
-            {"query_result_previews_max_result_bytes", 1048576, 1048576, "New setting to limit the size of the intermediate state for which query result previews are emitted."},
+            {"query_result_previews_max_result_bytes", 67108864, 67108864, "New setting to limit the size of the intermediate state for which query result previews are emitted."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_streaming_animation", false, false, "New setting controlling whether image output formats such as `PNG` write each frame of an animation as soon as the next value of `t` is seen, instead of buffering all the frames in memory."},

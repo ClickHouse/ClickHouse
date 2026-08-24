@@ -18,5 +18,9 @@ previews are deduplicated
 has previews
 previews carry their own window maximum
 {"packet":"data","data":"[0, 1]\n[1, 1]\n[2, 1]\n[3, 1]\n"}
+--- the state-size threshold in bytes stops previews
+has previews below the threshold
+no previews above the threshold
+identical
 --- without framing, previews are not emitted into the plain output
 identical

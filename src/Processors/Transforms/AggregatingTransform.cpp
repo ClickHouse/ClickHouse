@@ -1317,12 +1317,24 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
 
     const auto & preview_settings = control.settings;
 
+    /// The cost of a round is linear in the memory of the states it merges, so the threshold is
+    /// checked against what the aggregation really holds across all of its threads - the arenas,
+    /// the hash tables, and whatever the aggregate function states allocate on their own, which is
+    /// where a `uniq` or a `groupArray` keeps almost all of its data. The arenas alone see almost
+    /// none of it: for `SELECT AdvEngineID, count(), uniq(UserID), uniq(*) FROM hits GROUP BY ALL`
+    /// with 64 threads they hold 0.1 MiB while the states hold 106 MiB.
+    if (preview_settings.max_result_bytes
+        && params->aggregator.getStateMemoryUsage() > static_cast<Int64>(preview_settings.max_result_bytes))
+    {
+        /// Aggregation states never shrink, so previews are off for the rest of the query.
+        control.disable();
+        return;
+    }
+
     /// The states of every participant are merged into one private snapshot, which is then
     /// finalized into the preview chunk. Nothing is copied out of a participant: the merge only
     /// reads its states, and it happens under the participant's lock.
     AggregatedDataVariants snapshot;
-    UInt64 total_result_rows = 0;
-    UInt64 total_result_bytes = 0;
 
     for (size_t i = 0; i < many_data->variants.size(); ++i)
     {
@@ -1349,19 +1361,24 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
             return;
         }
 
-        total_result_rows += participant.sizeWithoutOverflowRow();
-        for (const auto & pool : participant.aggregates_pools)
-            total_result_bytes += pool->usedBytes();
-
-        if ((preview_settings.max_result_rows && total_result_rows > preview_settings.max_result_rows)
-            || (preview_settings.max_result_bytes && total_result_bytes > preview_settings.max_result_bytes))
+        /// The merged snapshot holds at least the keys of this participant, so a participant that
+        /// alone is over the threshold settles it before the merge does the work.
+        if (preview_settings.max_result_rows && participant.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
         {
-            /// Aggregation states never shrink, so previews are off for the rest of the query.
             control.disable();
             return;
         }
 
         params->aggregator.mergeIntoQueryResultPreviewSnapshot(participant, snapshot);
+
+        /// The threshold counts the rows of the preview - the keys of the merged snapshot - not
+        /// the keys of every participant added up, which would depend on `max_threads`.
+        if (preview_settings.max_result_rows && snapshot.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
+        {
+            /// Aggregation states never shrink, so previews are off for the rest of the query.
+            control.disable();
+            return;
+        }
     }
 
     control.startNextRound();

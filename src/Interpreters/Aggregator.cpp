@@ -2467,6 +2467,13 @@ bool Aggregator::hasTemporaryData() const
     return !tmp_files.empty();
 }
 
+Int64 Aggregator::getStateMemoryUsage() const
+{
+    if (memory_tracker)
+        return memory_tracker->get();
+    return getCurrentQueryMemoryUsage() - memory_usage_before_aggregation;
+}
+
 
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
