@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "네트워크",
           "pages": [
             "ko/products/bring-your-own-cloud/onboarding/network",
             "ko/products/bring-your-own-cloud/onboarding/network-aws",

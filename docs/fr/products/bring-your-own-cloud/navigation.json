@@ -17,7 +17,7 @@
       ]
     },
     {
-      "group": "Prise en main",
+      "group": "Onboarding",
       "pages": [
         "fr/products/bring-your-own-cloud/onboarding/standard",
         {
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "réseau",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/network",
             "fr/products/bring-your-own-cloud/onboarding/network-aws",

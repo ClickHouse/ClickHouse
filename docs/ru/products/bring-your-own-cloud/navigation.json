@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "Сеть",
           "pages": [
             "ru/products/bring-your-own-cloud/onboarding/network",
             "ru/products/bring-your-own-cloud/onboarding/network-aws",

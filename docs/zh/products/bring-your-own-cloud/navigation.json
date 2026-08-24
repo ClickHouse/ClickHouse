@@ -17,7 +17,7 @@
       ]
     },
     {
-      "group": "上手引导",
+      "group": "入门引导",
       "pages": [
         "zh/products/bring-your-own-cloud/onboarding/standard",
         {
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "网络",
           "pages": [
             "zh/products/bring-your-own-cloud/onboarding/network",
             "zh/products/bring-your-own-cloud/onboarding/network-aws",

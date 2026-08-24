@@ -1,5 +1,5 @@
 {
-  "group": "استخدم سحابتك الخاصة",
+  "group": "Bring Your Own Cloud",
   "pages": [
     {
       "group": "نظرة عامة",
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "group": "الإعداد",
+      "group": "الإعداد الأولي",
       "pages": [
         "ar/products/bring-your-own-cloud/onboarding/standard",
         {
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "الشبكة",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/network",
             "ar/products/bring-your-own-cloud/onboarding/network-aws",

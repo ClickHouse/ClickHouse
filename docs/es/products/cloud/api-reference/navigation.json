@@ -39,7 +39,7 @@
         ]
       },
       {
-        "group": "Gestión de roles",
+        "group": "Administración de roles",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",

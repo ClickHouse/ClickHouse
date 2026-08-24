@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "Red",
           "pages": [
             "es/products/bring-your-own-cloud/onboarding/network",
             "es/products/bring-your-own-cloud/onboarding/network-aws",

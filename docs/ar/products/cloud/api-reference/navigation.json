@@ -1,6 +1,6 @@
 [
   {
-    "group": "المنظمة",
+    "group": "المؤسسة",
     "pages": [
       {
         "group": "المؤسسة",
@@ -101,7 +101,7 @@
         ]
       },
       {
-        "group": "Backup",
+        "group": "نسخة احتياطية",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",

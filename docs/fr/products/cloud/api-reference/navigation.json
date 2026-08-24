@@ -101,7 +101,7 @@
         ]
       },
       {
-        "group": "Backup",
+        "group": "sauvegarde",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",

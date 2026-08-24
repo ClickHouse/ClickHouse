@@ -17,7 +17,7 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "Configuração inicial",
       "pages": [
         "pt-BR/products/bring-your-own-cloud/onboarding/standard",
         {
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "Rede",
           "pages": [
             "pt-BR/products/bring-your-own-cloud/onboarding/network",
             "pt-BR/products/bring-your-own-cloud/onboarding/network-aws",
