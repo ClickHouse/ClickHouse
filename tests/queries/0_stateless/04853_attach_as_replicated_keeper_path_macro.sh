@@ -39,6 +39,20 @@ ${CLIENT} -q "DROP TABLE \`c3/unsafe\`"
 #    CREATE, leaving nothing to re-substitute.
 #  * the DATABASE is renamed rather than the table, because RenamingRestrictions refuses to rename
 #    a table whose path carries an implicit macro.
+# Report the exemption from the client's exit status, not from a grep for one error code: the table
+# is registered in the catalog before `startup()` runs on both routes, so a failure there leaves the
+# table present and the count assertions below cannot see it.
+run_exempt() {
+    local label=$1 query=$2 out rc
+    out=$(${CLIENT} -q "$query" 2>&1)
+    rc=$?
+    if [ "$rc" = "0" ]; then
+        echo "$label OK"
+    else
+        echo "$label FAILED rc=$rc: $out"
+    fi
+}
+
 LEGACY_DB="${CLICKHOUSE_DATABASE}_legacy"
 ${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}/d\` SYNC"
 ${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}\` SYNC"
@@ -47,9 +61,9 @@ ${CLIENT} -q "CREATE TABLE \`${LEGACY_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeT
 ${CLIENT} -q "SELECT 'stored_macro_armed', create_table_query LIKE '%{default_path_test}%' FROM system.tables WHERE database = '${LEGACY_DB}' AND name = 't'"
 ${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}\` TO \`${LEGACY_DB}/d\`"
 ${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}/d\`.t"
-${CLIENT} -q "ATTACH TABLE \`${LEGACY_DB}/d\`.t" 2>&1 | grep -q -F 'BAD_ARGUMENTS' && echo 'short_attach REJECTED' || echo 'short_attach ATTACHED'
+run_exempt short_attach "ATTACH TABLE \`${LEGACY_DB}/d\`.t"
 ${CLIENT} -q "SELECT 'short_attach_count', count() FROM system.tables WHERE database = '${LEGACY_DB}/d' AND name = 't'"
-${CLIENT} -q "SYSTEM RESTART REPLICA \`${LEGACY_DB}/d\`.t" 2>&1 | grep -q -F 'BAD_ARGUMENTS' && echo 'restart_replica REJECTED' || echo 'restart_replica RESTARTED'
+run_exempt restart_replica "SYSTEM RESTART REPLICA \`${LEGACY_DB}/d\`.t"
 ${CLIENT} -q "SELECT 'restart_replica_count', count() FROM system.tables WHERE database = '${LEGACY_DB}/d' AND name = 't'"
 # Re-resolve the path under the original name before dropping: the stored path re-expands {database},
 # so under the new name the table points at a different znode tree than the CREATE made, and dropping
