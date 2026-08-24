@@ -77,7 +77,7 @@ INNER JOIN
     WHERE database = 'system' AND endsWith(table, '_log')
     GROUP BY table
 ) AS c ON c.table = t.name
-WHERE t.database = 'system' AND endsWith(t.name, '_log')
+WHERE t.database = 'system' AND endsWith(t.name, '_log') AND t.engine LIKE '%MergeTree'
 ORDER BY table
 FORMAT JSONEachRow
 """
@@ -192,9 +192,12 @@ def _adapt_create_statement(table, hash_value, statement):
     """Transform the local CREATE TABLE statement into the statement for the
     destination table on the CI Logs cluster. The transformations mirror
     setup_log_cluster.sh: add the extra columns, prepend the extra ORDER BY
-    columns, rename the table, drop TTL/SETTINGS/COMMENT."""
+    columns, rename the table, drop TTL/SETTINGS/COMMENT, strip per-column
+    comments (wide tables like system.metric_log expand into a CREATE larger
+    than the default max_query_size otherwise)."""
     result = []
     for line in statement.split("\n"):
+        line = re.sub(r" COMMENT '([^'\\]|\\.)*'", "", line)
         if re.fullmatch(r"CREATE TABLE system\.\w+_log", line):
             line = f"CREATE TABLE IF NOT EXISTS {table}_{hash_value}"
         elif line == "(":
