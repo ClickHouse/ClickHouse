@@ -5,6 +5,13 @@
 -- several threads (the threshold merge serves the two-level final merge).
 
 SET max_threads = 4;
+-- One scan stream, so the per-thread table layout does not depend on how the storage backend
+-- splits the read into tasks (the s3/azure read pools split by part, and a stream that sees
+-- fewer distinct keys than the freeze threshold survives the adaptive drain as a second table:
+-- its head then keeps the summing threshold open on the tied tail values, the pop budget trips,
+-- and the verdict sends every bucket to the ordinary merge - no pruning). The merge stage still
+-- runs on `max_threads`, one bucket per worker.
+SET max_streams_to_max_threads_ratio = 0.25;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
 -- The summing bound of count/uniqExact serves a dominant per-thread table; the adaptive
