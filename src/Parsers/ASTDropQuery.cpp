@@ -197,6 +197,15 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
         for (const auto & entry : child->children)
             if (!entry || !entry->as<ASTTableIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'database_and_tables' must be a table identifier during AST JSON deserialization");
+
+        /// `ParserDropQuery` allows a multi-entry target list only for DROP ("Only Support DROP
+        /// multiple tables currently"), yet `InterpreterDropQuery` would happily execute each entry,
+        /// so a JSON payload could perform a multi-table DETACH / TRUNCATE that SQL cannot express
+        /// (and whose formatted SQL does not parse back). Enforce the parser's cardinality rule.
+        if (child->children.size() > 1 && kind != Kind::Drop)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'database_and_tables' can have multiple entries only for DROP during AST JSON deserialization");
+
         database_and_tables = child;
         children.push_back(database_and_tables);
     }

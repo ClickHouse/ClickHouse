@@ -246,6 +246,14 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
         setCursor(buildCursorTree(map));
     }
 
+    /// The parser produces the three watermark fields only together, as one
+    /// `WATERMARK FOR <col> AS <expr> ...` clause, and `writeJSON` emits them together too. Orphaned
+    /// fields without 'watermark_column' would be silently dropped here, so the query would hash,
+    /// format, and execute as if no watermark existed - reject them as parser-impossible.
+    if (!r.has("watermark_column") && (r.has("watermark_expression") || r.has("watermark_idle_timeout_ms")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`StreamSettings` 'watermark_expression' and 'watermark_idle_timeout_ms' require 'watermark_column' during AST JSON deserialization");
+
     if (r.has("watermark_column"))
     {
         auto column = r.getString("watermark_column");

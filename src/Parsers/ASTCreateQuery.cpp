@@ -97,6 +97,20 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
+
+    /// A column-level PRIMARY KEY is a parser-intermediate bit in a CREATE column list:
+    /// `ParserTablePropertiesDeclarationList` transfers it into `primary_key_from_columns` (which
+    /// `ParserCreateQuery` then normalizes into the storage definition or rejects) and clears the
+    /// flag, so the final AST never carries it here. `InterpreterCreateQuery` ignores the flag while
+    /// `ASTColumnDeclaration::formatImpl` still prints `PRIMARY KEY`, so accepting it from JSON would
+    /// execute one definition and persist another. The flag stays legal in `ALTER` column commands,
+    /// where the declaration is not part of a `Columns` node.
+    if (columns)
+        for (const auto & element : columns->children)
+            if (element->as<ASTColumnDeclaration &>().primary_key_specifier)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
+
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);

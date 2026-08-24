@@ -628,6 +628,50 @@ TEST(TreeHashCompleteness, JSONRejectsPopulateAndEmptyTheParserCannotProduce)
     }
 }
 
+TEST(TreeHashCompleteness, JSONRejectsColumnPrimaryKeyMultiTargetDetachAndOrphanedWatermark)
+{
+    /// A column-level PRIMARY KEY never survives into a final CREATE column list: the parser
+    /// normalizes it into the storage definition (or rejects it for view shapes) and clears the
+    /// flag. Execution ignores the flag while formatting prints it, so a JSON payload carrying it
+    /// would execute one definition and persist another.
+    {
+        String json = serializeASTToJSON(*parse("CREATE TABLE t (a UInt8) ENGINE = Memory"));
+        const String key = R"("primary_key_specifier":false)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("primary_key_specifier":true)");
+        expectJSONRejected(json);
+    }
+
+    /// The SQL parser allows a multi-entry target list only for DROP, but the interpreter would
+    /// execute each entry, so JSON must not express a multi-table DETACH / TRUNCATE.
+    for (const String kind : {"Detach", "Truncate"})
+    {
+        String json = serializeASTToJSON(*parse("DROP TABLE t1, t2"));
+        const String key = R"("kind":"Drop")";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("kind":")" + kind + R"(")");
+        expectJSONRejected(json);
+    }
+
+    /// The single-target list form stays accepted for every kind.
+    EXPECT_EQ(hashOfJSONRoundTrip("DETACH TABLE t"), hashOf("DETACH TABLE t"));
+    EXPECT_EQ(hashOfJSONRoundTrip("TRUNCATE TABLE t"), hashOf("TRUNCATE TABLE t"));
+    EXPECT_EQ(hashOfJSONRoundTrip("DROP TABLE t1, t2"), hashOf("DROP TABLE t1, t2"));
+
+    /// The parser produces the watermark fields only together with the column; orphaned fields
+    /// would previously be dropped silently, hashing and executing as an unwatermarked stream.
+    {
+        String json = serializeASTToJSON(*parse("SELECT * FROM t STREAM WATERMARK FOR a AS a - 1 IDLE TIMEOUT INTERVAL 5 SECOND"));
+        const String key = R"("watermark_column":"a",)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.erase(pos, key.size());
+        expectJSONRejected(json);
+    }
+}
+
 TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)
 {
     /// `uuid` is a plain member of `ASTQueryWithTableAndOutput`, and the `database` / `table`
