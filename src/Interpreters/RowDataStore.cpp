@@ -2,6 +2,7 @@
 #include <Interpreters/RowDataStore.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
 #include <base/getL2CacheSize.h>
 #include <Common/Exception.h>
@@ -120,7 +121,7 @@ MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::option
 {
     MutableColumns columns(layout.size());
     for (size_t i = 0; i < layout.size(); ++i)
-        columns[i] = layout[i].sample_column->cloneEmpty();
+        columns[i] = layout[i].type->createColumn();
 
     const size_t count = row_store_ptrs.ptrs.size();
     if (count == 0)
@@ -129,44 +130,44 @@ MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::option
     for (size_t i = 0; i < layout.size(); ++i)
         columns[i]->reserve(count);
 
-    /// `row_store_ptrs` never holds defaults here, so no default value is ever inserted.
-    const DataTypePtr no_type;
-
     const size_t batch_size = batch_size_opt.value_or(count);
     for (size_t batch_start = 0; batch_start < count; batch_start += batch_size)
     {
         const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
         for (size_t i = 0; i < layout.size(); ++i)
-            columns[i]->fillFromRowStorePtrs(no_type, row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
+            columns[i]->fillFromRowStorePtrs(layout[i].type, row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
     }
     return columns;
 }
 
 }
 
-RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
+RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns, const DataTypes & types)
 {
+    if (columns.size() != types.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "RowDataStore got {} columns but {} types.", columns.size(), types.size());
+
     RowLayout layout;
     layout.reserve(columns.size());
 
     size_t offset = 0;
-    for (const auto & column : columns)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr sample_col = column->cloneEmpty();
+        const auto & column = columns[i];
 
         bool is_nullable = false;
-        const IColumn * check_col = sample_col.get();
+        const IColumn * check_col = column.get();
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(check_col))
         {
-            check_col = nullable->getNestedColumnPtr().get();
+            check_col = &nullable->getNestedColumn();
             is_nullable = true;
         }
 
         if (!check_col->isFixedAndContiguous())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous columns, but got {}.", sample_col->getFamilyName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous columns, but got {}.", column->getFamilyName());
 
-        size_t field_size = sample_col->sizeOfValueIfFixed();
-        layout.push_back(FieldLayout{sample_col, offset, field_size, is_nullable});
+        size_t field_size = column->sizeOfValueIfFixed();
+        layout.push_back(FieldLayout{types[i], offset, field_size, is_nullable});
         offset += field_size;
     }
     return layout;
@@ -178,7 +179,7 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 {
 }
 
-std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
+std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns, const DataTypes & types)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildRowStoreMicroseconds);
 
@@ -189,7 +190,7 @@ std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
     for (const auto & col : columns)
         materialized_columns.push_back(col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 
-    RowLayout layout = computeLayout(materialized_columns);
+    RowLayout layout = computeLayout(materialized_columns, types);
     auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
     if (!materialized_columns.empty() && !materialized_columns[0]->empty())
         row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());

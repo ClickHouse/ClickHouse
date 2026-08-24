@@ -84,19 +84,31 @@ Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sampl
     return filtered_block;
 }
 
-std::pair<Columns, Columns> extractRowStoreColumns(const Columns & columns, const ColumnAccessIndexes & access_indexes)
+struct RowStoreColumnsSplit
 {
+    /// Columns that go into the row store, with their types.
     Columns row_store_columns;
+    DataTypes row_store_types;
+    /// Columns that stay columnar.
     Columns remaining_columns;
-    for (size_t i = 0; i < columns.size(); ++i)
+};
+
+RowStoreColumnsSplit extractRowStoreColumns(const Block & block, const ColumnAccessIndexes & access_indexes)
+{
+    RowStoreColumnsSplit split;
+    for (size_t i = 0; i < block.columns(); ++i)
     {
+        const auto & column = block.getByPosition(i);
         if (access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
-            row_store_columns.push_back(columns[i]);
+        {
+            split.row_store_columns.push_back(column.column);
+            split.row_store_types.push_back(column.type);
+        }
         else
-            remaining_columns.push_back(columns[i]);
+            split.remaining_columns.push_back(column.column);
     }
 
-    return {row_store_columns, remaining_columns};
+    return split;
 }
 
 }
@@ -715,16 +727,19 @@ std::optional<ColumnAccessIndexes> HashJoin::initRowStore(const Block & block)
     /// Extract columns suitable for row store.
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     const auto & columns = block_to_save.getColumns();
+    const auto types = block_to_save.getDataTypes();
     ColumnAccessIndexes access_indexes;
     access_indexes.reserve(columns.size());
     Columns row_store_columns;
+    DataTypes row_store_types;
     size_t remaining_columns = 0;
-    for (const auto & column : columns)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (isRowStorageUseful(column))
+        if (isRowStorageUseful(columns[i]))
         {
             access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
-            row_store_columns.push_back(column);
+            row_store_columns.push_back(columns[i]);
+            row_store_types.push_back(types[i]);
         }
         else
             access_indexes.push_back({ColumnAccessIndex::Type::Columns, remaining_columns++});
@@ -738,7 +753,7 @@ std::optional<ColumnAccessIndexes> HashJoin::initRowStore(const Block & block)
     }
 
     /// Add each field's offset, size and nullability to the row store access indexes.
-    const RowDataStore::RowLayout layout = RowDataStore::computeLayout(row_store_columns);
+    const RowDataStore::RowLayout layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
     for (auto & access_index : access_indexes)
     {
         if (access_index.type != ColumnAccessIndex::Type::RowStore)
@@ -777,8 +792,8 @@ RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
     if (data->row_store_state != RowStoreState::Initialized)
         return nullptr;
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    auto [columns, _] = extractRowStoreColumns(block_to_save.getColumns(), data->column_access_indexes);
-    return RowDataStore::create(columns);
+    auto split = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+    return RowDataStore::create(split.row_store_columns, split.row_store_types);
 }
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
@@ -882,14 +897,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
 
-        Columns columns = block_to_save.getColumns();
+        Columns columns;
         if (data->row_store_state == RowStoreState::Initialized)
         {
-            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(columns, data->column_access_indexes);
-            columns = remaining_columns;
+            auto split = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+            columns = std::move(split.remaining_columns);
             if (!row_store)
-                row_store = RowDataStore::create(row_store_columns);
+                row_store = RowDataStore::create(split.row_store_columns, split.row_store_types);
         }
+        else
+            columns = block_to_save.getColumns();
 
         doDebugAsserts();
         data->columns.emplace_back(std::move(columns), std::move(selector), std::move(row_store));

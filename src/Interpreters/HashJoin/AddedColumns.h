@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
@@ -405,7 +406,7 @@ private:
             {
                 if (to_check.hasRowStore())
                 {
-                    auto sample_col = to_check.row_store->getFieldLayout(output_access_index.index).sample_column;
+                    auto sample_col = to_check.row_store->getFieldLayout(output_access_index.index).type->createColumn();
                     check(dst_idx, sample_col.get());
                 }
             }

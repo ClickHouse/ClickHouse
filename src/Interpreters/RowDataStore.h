@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Common/PODArray.h>
 
 #include <optional>
@@ -29,8 +30,7 @@ class RowDataStore
 public:
     struct FieldLayout
     {
-        /// Used for mapping back to source columns.
-        ColumnPtr sample_column;
+        DataTypePtr type;
         size_t offset;
         size_t size;
         bool is_nullable;
@@ -39,10 +39,10 @@ public:
     using RowLayout = std::vector<FieldLayout>;
 
     /// Compute the row-major layout for `columns` in input order.
-    static RowLayout computeLayout(const Columns & columns);
+    static RowLayout computeLayout(const Columns & columns, const DataTypes & types);
 
     /// Create the row-major buffer and fills it with rows from `columns` in input order.
-    static std::shared_ptr<RowDataStore> create(const Columns & columns);
+    static std::shared_ptr<RowDataStore> create(const Columns & columns, const DataTypes & types);
 
     /// Scatter rows from the row-major buffer into columns in layout order.
     MutableColumns scatterRows(size_t start, size_t length) const;

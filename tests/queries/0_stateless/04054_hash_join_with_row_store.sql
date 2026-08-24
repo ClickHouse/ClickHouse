@@ -125,6 +125,14 @@ SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_
 SELECT '--- Join with block splitting ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS max_joined_block_size_rows = 2, joined_block_split_single_row = 1;
 
+SELECT '--- Grace hash JOIN ---';
+CREATE TABLE grace_right (k UInt64, v1 Nullable(Int64), v2 UInt8, s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO grace_right SELECT number, if(number % 10 = 0, NULL, number), number % 251, toString(number) FROM numbers(20000);
+
+SELECT count(), countIf(r.v1 IS NULL), sum(r.v2), sum(length(r.s)) FROM (SELECT number % 20000 AS k FROM numbers(40000)) l INNER JOIN grace_right r ON l.k = r.k
+SETTINGS join_algorithm = 'grace_hash', max_bytes_in_join = 100000;
+
+DROP TABLE grace_right;
 DROP TABLE right_asof;
 DROP TABLE right;
 DROP TABLE left;
