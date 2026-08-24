@@ -1,6 +1,7 @@
 # Storage memory profiler
 
-`clickhouse-examples storage_memory_profiler` measures live jemalloc allocations while executing a stateful sequence of SQL files. Unlike `parser_memory_profiler`, which isolates AST allocations for individual queries, this profiler keeps one ClickHouse context alive and records a checkpoint after each storage scenario.
+`clickhouse-examples storage_memory_profiler` measures live jemalloc allocations while executing a stateful sequence of SQL files.
+Unlike `parser_memory_profiler`, which isolates AST allocations for individual queries, this profiler keeps one ClickHouse context alive and records a checkpoint after each storage scenario.
 
 Run it with a release build compiled with jemalloc profiling:
 
