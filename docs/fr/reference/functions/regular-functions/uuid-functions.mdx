@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Arguments**
 
 * `uuid` — Un UUID version 7. [`String`](/fr/reference/data-types/string)
-* `timezone` — Facultatif. [Nom du fuseau horaire](/fr/reference/settings/server-settings/settings#timezone) de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
+* `timezone` — Facultatif. [Nom du fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone) de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -343,16 +343,12 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 Introduit dans : v25.8.0
 
-Convertit une valeur [DateTime](/fr/reference/data-types/datetime) en [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) pour l’instant donné.
+Convertit une valeur [DateTime](/fr/reference/data-types/datetime) en [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) pour l’instant donné, tel que défini par la [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties de concurrence.
 
 <Note>
-  En septembre 2025, les UUID de version 7 sont encore à l’état de brouillon et leur structure pourrait évoluer à l’avenir.
-</Note>
-
-<Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -533,16 +529,12 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 Introduit dans : v24.5.0
 
-Génère un [UUID](/fr/reference/data-types/uuid) de [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+Génère un [UUID](/fr/reference/data-types/uuid) de [version 7](https://www.rfc-editor.org/rfc/rfc9562) tel que défini par la [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
-Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et les garanties en cas de génération concurrente.
-
-<Note>
-  En septembre 2025, les UUID de version 7 sont encore à l’état de projet, et leur structure pourrait évoluer à l’avenir.
-</Note>
+Voir la section [&quot;Génération des UUIDv7&quot;](#uuidv7-generation) pour plus de détails sur la structure des UUID, la gestion du compteur et la garantie de concurrence.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -605,7 +597,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/fr/reference/data-types/int-uint)
 * `epoch` — Facultatif. Époque du Snowflake ID, en millisecondes depuis 1970-01-01. La valeur par défaut est 0 (1970-01-01). Pour l&#39;époque de Twitter/X (2015-01-01), indiquez 1288834974657. [`UInt*`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
+* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -643,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/fr/reference/data-types/int-uint)
 * `epoch` — Facultatif. Époque du Snowflake ID en millisecondes depuis le 1970-01-01. La valeur par défaut est 0 (1970-01-01). Pour l’époque Twitter/X (2015-01-01), indiquez 1288834974657. [`UInt*`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
+* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
