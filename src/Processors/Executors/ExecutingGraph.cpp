@@ -325,8 +325,18 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
         for (const auto & removed_proc : group.processors)
         {
             auto * removed_node = findNodeToRemove(removed_proc);
+
+            /// `to_remove` is a set (`IProcessor::PipelineUpdate`), and every node collected here is
+            /// erased exactly once below. A repeated processor has to be rejected while the whole
+            /// group is still alive, because the erase loop cannot detect it any more.
+            if (!result.removed_nodes.insert(removed_node).second)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Processor {} is listed more than once for removal. Graph: {}",
+                    removed_proc->getName(),
+                    dump(false));
+
             nodes_to_erase.push_back(removed_node);
-            result.removed_nodes.insert(removed_node);
             result.removed_edges.insert_range(
                 removed_node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
             result.removed_edges.insert_range(

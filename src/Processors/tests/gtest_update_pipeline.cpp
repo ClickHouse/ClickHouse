@@ -451,12 +451,14 @@ public:
             return update;
         }
 
+        Processors next_batch;
+
         size_t slot = 0;
         for (auto & input : inputs)
         {
             const bool early_close = (slot % 2) == 1;
             auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(slot++));
-            current_batch.push_back(source);
+            next_batch.push_back(source);
 
             ProcessorPtr tail = source;
             for (size_t depth = 0; depth < 6; ++depth)
@@ -464,7 +466,7 @@ public:
                 auto laggard = std::make_shared<DeferredFinishTransform>(header);
                 connect(tail->getOutputs().front(), laggard->getInputs().front());
                 tail = laggard;
-                current_batch.push_back(std::move(laggard));
+                next_batch.push_back(std::move(laggard));
             }
 
             if (early_close)
@@ -472,7 +474,7 @@ public:
                 auto closer = std::make_shared<EarlyClosingTransform>(header);
                 connect(tail->getOutputs().front(), closer->getInputs().front());
                 tail = closer;
-                current_batch.push_back(std::move(closer));
+                next_batch.push_back(std::move(closer));
             }
 
             connect(tail->getOutputs().front(), input);
@@ -480,7 +482,8 @@ public:
             input.setNeeded();
         }
 
-        update.to_add = current_batch;
+        update.to_add = next_batch;
+        current_batch = std::move(next_batch);
         ++batches_started;
 
         return update;
