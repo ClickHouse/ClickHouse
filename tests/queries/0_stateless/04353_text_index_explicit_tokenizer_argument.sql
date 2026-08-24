@@ -257,8 +257,12 @@ SELECT 'hasPhrase ngrams', indexed, scanned FROM (
 ) WHERE indexed != scanned;
 
 -- A gram that spans a separator is not representable as a postprocessed token, and both forms must
--- agree on rejecting it rather than one of them answering from the index.
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e'); -- { serverError BAD_ARGUMENTS }
+-- agree on rejecting it, under either direct-read mode, rather than one of them answering from the
+-- index. Without the index the phrase is matched literally and does not occur.
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
