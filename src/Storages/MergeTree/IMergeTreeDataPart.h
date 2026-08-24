@@ -332,14 +332,14 @@ public:
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
-    /// However in some special cases Clickhouse can make a decision without asking keeper.
+    /// However in some special cases ClickHouse can make a decision without asking keeper.
     enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
-        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
+        /// is set when ClickHouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
         REMOVE_BLOBS,
-        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
+        /// is set when ClickHouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
         /// remove blobs even if the part is not temporary
         REMOVE_BLOBS_OF_NOT_TEMPORARY,
@@ -436,6 +436,12 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+
+        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
+        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
+        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
+        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
+        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);

@@ -99,7 +99,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) — это управляемая интеграционная платформа, которая делает ингестию данных из разнообразных источников такой же простой, как нажатие нескольких кнопок. Разработанный для самых требовательных рабочих нагрузок, ClickPipes обладает надёжной и масштабируемой архитектурой, обеспечивающей стабильную производительность и надёжность. ClickPipes можно использовать как для долгосрочного стриминга, так и для разовой загрузки данных.
+    [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая делает получение данных из разнообразных источников таким же простым, как нажатие нескольких кнопок. Разработанная для самых требовательных рабочих нагрузок, надежная и масштабируемая архитектура ClickPipes обеспечивает стабильную производительность и надежность. ClickPipes можно использовать как для долгосрочной потоковой передачи данных, так и для одноразовой загрузки данных.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="Выберите источник данных" border />
 
@@ -127,7 +127,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     PRIMARY KEY (user_id, timestamp)
     ```
 
-    В приведённом выше примере `my_first_table` — это таблица [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) с четырьмя столбцами:
+    В приведённом выше примере `my_first_table` — таблица [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) с четырьмя столбцами:
 
     * `user_id`:  32-битное беззнаковое целое число ([UInt32](/ru/reference/data-types/int-uint))
     * `message`: тип данных [String](/ru/reference/data-types/string), который заменяет такие типы, как `VARCHAR`, `BLOB`, `CLOB` и другие, используемые в других системах управления базами данных
@@ -163,13 +163,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Первичный ключ можно задать с помощью параметра `PRIMARY KEY`. Если таблица определена без указания `PRIMARY KEY`,
     ключом становится кортеж, указанный в предложении `ORDER BY`. Если указаны и `PRIMARY KEY`, и `ORDER BY`, первичный ключ должен быть подмножеством порядка сортировки.
 
-    Первичный ключ одновременно является ключом сортировки и представляет собой кортеж `(user_id, timestamp)`. Таким образом, данные, хранящиеся в каждом файле столбца, будут отсортированы сначала по `user_id`, затем по `timestamp`.
+    Первичный ключ одновременно является ключом сортировки и представляет собой кортеж `(user_id, timestamp)`.  Таким образом, данные, хранящиеся в каждом
+    файле столбца, будут отсортированы сначала по `user_id`, затем по `timestamp`.
 
-    Для более глубокого изучения основных концепций ClickHouse см. раздел [«Основные концепции»](/ru/concepts/core-concepts/index).
+    Для более глубокого изучения основных концепций ClickHouse см. раздел [&quot;Основные концепции&quot;](/ru/concepts/core-concepts/index).
 
     #### Вставка данных в таблицу
 
-    Вы можете использовать привычную команду [`INSERT INTO TABLE`](/ru/reference/statements/insert-into) в ClickHouse, однако важно понимать, что каждая вставка в таблицу [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) приводит к созданию нового **куска** данных в хранилище.
+    Вы можете использовать привычную команду [`INSERT INTO TABLE`](/ru/reference/statements/insert-into) в ClickHouse, однако важно понимать, что каждая вставка в таблицу [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) приводит к созданию **части** в хранилище.
 
     <Tip>
       **Рекомендация ClickHouse**
@@ -202,7 +203,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     ### Добавление данных с помощью клиента ClickHouse
 
-    Вы также можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**clickhouse client**](/ru/concepts/features/interfaces/cli). Нажмите `Connect` в левом меню, чтобы открыть соответствующий раздел. В диалоговом окне выберите `Native` из выпадающего списка:
+    Вы также можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**clickhouse client**](/ru/concepts/features/interfaces/cli). Нажмите `Connect` в левом меню, чтобы открыть эти сведения. В диалоговом окне выберите `Native` в раскрывающемся списке:
 
     <Image img="/images/_snippets/client_details.webp" size="md" alt="сведения о подключении клиента ClickHouse" border />
 
@@ -327,7 +328,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Что дальше?
 </div>
 
-* В [руководстве](/get-started/quickstarts/tutorial) вы выполните вставку 2 миллионов строк в таблицу и напишете несколько аналитических запросов
+* В [руководстве](/ru/get-started/quickstarts/tutorial) вы выполните вставку 2 миллионов строк в таблицу и напишете несколько аналитических запросов
 * У нас есть список [демонстрационных наборов данных](/ru/get-started/sample-datasets/index) с инструкциями по их загрузке
 * Посмотрите наше 12-минутное видео [«Начало работы с ClickHouse»](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
 * Если ваши данные поступают из внешнего источника, ознакомьтесь с нашей [подборкой руководств по интеграциям](/ru/integrations/home) для подключения к очередям сообщений, базам данных, конвейерам и не только

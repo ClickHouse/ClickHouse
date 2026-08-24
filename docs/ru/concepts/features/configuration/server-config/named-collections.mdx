@@ -104,6 +104,16 @@ url = 'https://connection.url/'
 
 Необязательный параметр конфигурации `update_timeout_ms` по умолчанию имеет значение `5000`.
 
+Проверить активный тип хранилища можно с помощью `system.server_settings` и `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Изменение типа хранилища требует перезапуска сервера; `SYSTEM RELOAD CONFIG` не изменяет активное backend-соединение.
+
 <div id="storing-named-collections-in-configuration-files">
   ## Хранение именованных коллекций в конфигурационных файлах
 </div>
