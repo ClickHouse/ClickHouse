@@ -42,7 +42,8 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    /// Column was dropped by a pending mutation (data in part is stale)
+    /// Column was dropped by a pending mutation (data in part is stale).
+    /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);

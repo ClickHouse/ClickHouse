@@ -192,7 +192,17 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
-        dropped_columns.emplace(command.column_name);
+        /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
+        /// record the drop under A, and erase the mapping of A to B.
+        auto dropped_column_name = command.column_name;
+        auto it = std::ranges::find(rename_map, command.column_name, &RenamePair::rename_to);
+        if (it != rename_map.end())
+        {
+            dropped_column_name = it->rename_from;
+            rename_map.erase(it);
+        }
+
+        dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
     {
