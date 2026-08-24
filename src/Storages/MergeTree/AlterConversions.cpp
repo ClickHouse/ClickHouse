@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -12,6 +11,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <ranges>
 
 namespace ProfileEvents
@@ -20,7 +21,6 @@ namespace ProfileEvents
     extern const Event PatchesAppliedInAllReadTasks;
     extern const Event PatchesMergeAppliedInAllReadTasks;
     extern const Event PatchesJoinAppliedInAllReadTasks;
-    extern const Event PatchesMergeOnKeyAppliedInAllReadTasks;
     extern const Event ReadTasksWithAppliedMutationsOnFly;
     extern const Event MutationsAppliedOnFlyInAllReadTasks;
 }
@@ -226,12 +226,9 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
 void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
 {
-    /// Columns of the key the patch was written with must not be reported as updated columns.
-    const auto & sorting_key_columns = patch_part.stored_sorting_key_columns;
-
     for (const auto & column : patch_part.part->getColumns())
     {
-        if (isPatchPartSystemColumn(column.name) || sorting_key_columns.contains(column.name))
+        if (isPatchPartSystemColumn(column.name))
             continue;
 
         String updated_column_name = column.name;
@@ -385,9 +382,22 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         }
     }
 
+    /// A mutation expression is evaluated with the sample factor its background materialization sees,
+    /// which is 1 (`createMergeTreeSequentialSource`), never the reading query's factor. Only the
+    /// expression's dependency is rebound; the column the step forwards to the query is unaffected.
+    const bool bind_sample_factor = metadata_snapshot->isVirtualColumn("_sample_factor");
+
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
+        if (bind_sample_factor)
+        {
+            DataTypePtr type = std::make_shared<DataTypeFloat64>();
+            auto column = type->createColumnConst(1, Field(1.0));
+            actions.dag.substituteInputForConsumersOnly(
+                "_sample_factor", ColumnWithTypeAndName{column->getPtr(), type, "_sample_factor"});
+        }
+
         /// For mutations before ALTER MODIFY we should not apply conversions
         /// because correctness of ALTER MODIFY may depend on the result of mutation.
         bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;
@@ -417,7 +427,6 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     size_t num_join = 0;
     size_t num_merge = 0;
-    size_t num_merge_on_key = 0;
 
     for (const auto & patch : patch_parts)
     {
@@ -431,9 +440,6 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         }
         else
         {
-            /// Columns of the key the patch was written with must not be reported as updated columns.
-            const auto & sorting_key_columns = patch.stored_sorting_key_columns;
-
             has_column_in_patch = std::ranges::any_of(read_columns, [&](const auto & column)
             {
                 if (isPatchPartSystemColumn(column.name))
@@ -444,21 +450,16 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
                 if (patch_conversions && patch_conversions->isColumnRenamed(name_in_storage))
                     name_in_storage = patch_conversions->getColumnOldName(name_in_storage);
 
-                if (sorting_key_columns.contains(name_in_storage))
-                    return false;
-
                 return patch.part->getColumnsDescription().hasPhysical(name_in_storage);
             });
         }
 
         if (has_column_in_patch)
         {
-            switch (patch.mode)
-            {
-                case PatchMode::Join:       ++num_join; break;
-                case PatchMode::Merge:      ++num_merge; break;
-                case PatchMode::MergeOnKey: ++num_merge_on_key; break;
-            }
+            if (patch.mode == PatchMode::Join)
+                ++num_join;
+            else
+                ++num_merge;
 
             patches_to_read.push_back(patch);
         }
@@ -470,7 +471,6 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         ProfileEvents::increment(ProfileEvents::PatchesAppliedInAllReadTasks, patches_to_read.size());
         ProfileEvents::increment(ProfileEvents::PatchesJoinAppliedInAllReadTasks, num_join);
         ProfileEvents::increment(ProfileEvents::PatchesMergeAppliedInAllReadTasks, num_merge);
-        ProfileEvents::increment(ProfileEvents::PatchesMergeOnKeyAppliedInAllReadTasks, num_merge_on_key);
     }
 
     return patches_to_read;
