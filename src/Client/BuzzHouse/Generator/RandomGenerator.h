@@ -41,7 +41,12 @@ private:
     std::uniform_int_distribution<uint32_t> dist4;
     std::uniform_int_distribution<uint32_t> date_years;
     std::uniform_int_distribution<uint32_t> datetime_years;
-    std::uniform_int_distribution<uint32_t> datetime64_years;
+    /// Absolute years, unlike the two above, because `Date32` starts at year 0. It spans
+    /// [0000, 9999], but the date LUT only covers [1900, 2299] and everything else takes the
+    /// cctz escape path, so draw from the two windows separately - a uniform draw over ten
+    /// millennia would leave the LUT range, which most queries actually use, at 4% of values.
+    std::uniform_int_distribution<uint32_t> date32_years;
+    std::uniform_int_distribution<uint32_t> date32_lut_years;
     std::uniform_int_distribution<uint32_t> months;
     std::uniform_int_distribution<uint32_t> hours;
     std::uniform_int_distribution<uint32_t> minutes;
@@ -140,7 +145,8 @@ public:
         , dist4(UINT32_C(1), UINT32_C(2))
         , date_years(0, 2149 - 1970)
         , datetime_years(0, 2106 - 1970)
-        , datetime64_years(0, 2299 - 1900)
+        , date32_years(0, 9999)
+        , date32_lut_years(1900, 2299)
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
