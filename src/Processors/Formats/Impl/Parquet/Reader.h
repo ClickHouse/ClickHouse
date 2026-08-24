@@ -342,6 +342,10 @@ struct Reader
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
@@ -461,6 +465,11 @@ struct Reader
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;

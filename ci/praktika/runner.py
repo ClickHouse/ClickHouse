@@ -13,6 +13,12 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
+    _IMAGE_PULL_RETRIES,
+    _IMAGE_PULL_RETRY_ERRORS,
+    _IMAGE_PULL_TIMEOUT_S,
+    Docker,
+)
 from .event import EventFeed
 from .gh import GH
 from .gh_auth import GHAuth
@@ -467,6 +473,23 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        if job.run_in_docker and not no_docker:
+            # Retry the pull `docker run` would otherwise do implicitly and only once.
+            # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
+            # a present image needs no registry. Non-fatal: local-only images have no pull.
+            if not Shell.check(f"docker image inspect {docker}", verbose=False):
+
+                def _warn_pull_retried(matched, attempt, attempts):
+                    # `env` is this frame's object and nothing dumps it after this
+                    # point, so the message survives. Info() would read a second
+                    # copy from disk, which a later stale dump can silently drop.
+                    env.add_workflow_warning(
+                        f"Job image pull failed with [{matched}] and was retried "
+                        f"({attempt}/{attempts}): {docker}"
+                    )
+
+                Docker.pull_image(docker, on_retry=_warn_pull_retried)
+
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the
         # whole VM even when the job itself runs inside Docker.
@@ -524,9 +547,6 @@ class Runner:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.
             host_metrics_collector.stop()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
 
         return exit_code
 
@@ -587,6 +607,20 @@ class Runner:
         return result
 
     @staticmethod
+    def _pipeline_status(result) -> str:
+        """The GH Actions `pipeline_status` output for a finished job.
+
+        These are GH Actions output values matched by workflow YAML conditions,
+        not Result.Status values - they must stay lowercase "success"/"failure".
+        A "failure" skips the job's whole transitive downstream closure.
+        `hook_html` decides whether to mark dependees `DROPPED` from the same
+        flag and must reach the same verdict as this function.
+        """
+        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+            return "failure"
+        return "success"
+
+    @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
         """Whether a providing artifact that matched no file may be skipped.
 
@@ -627,6 +661,12 @@ class Runner:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
+                # Every object uploaded to the artifact bucket must carry a
+                # "retention" tag: S3 lifecycle filters cannot match "objects
+                # without a tag", so untagged objects would be covered by no
+                # rule. Default to short retention; per-artifact tags (e.g.
+                # retention=long) override on the "retention" key.
+                default_tags = {"retention": "default"}
                 for artifact in providing_artifacts:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
@@ -656,11 +696,12 @@ class Runner:
                                     f"Artifact {artifact_path} not found"
                                 )
                             Shell.check(f"ls -l {artifact_path}", verbose=True)
+                            tags = {**default_tags, **(artifact.ext.get("tags") or {})}
                             for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    tags=tags,
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -679,7 +720,9 @@ class Runner:
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(
-                        s3_path=s3_path, local_path=artifact_report_file
+                        s3_path=s3_path,
+                        local_path=artifact_report_file,
+                        tags=default_tags,
                     )
                     result.set_link(link)
 
@@ -897,15 +940,7 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        # These are GH Actions output values matched by workflow YAML conditions,
-        # not Result.Status values — must stay lowercase "success"/"failure".
-        pipeline_status = "success"
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = "failure"
+        pipeline_status = self._pipeline_status(result)
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",
@@ -1150,6 +1185,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)

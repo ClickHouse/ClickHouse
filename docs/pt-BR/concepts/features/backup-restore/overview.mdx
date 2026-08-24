@@ -25,7 +25,7 @@ tabela errada ou de uma tabela no cluster errado, e bugs de software que resulta
 processamento incorreto de dados ou corrupção de dados.
 
 Em muitos casos, erros como esses afetam todas as réplicas. O ClickHouse tem salvaguardas
-integradas para evitar alguns tipos de erro; por exemplo, por [padrão](/pt-BR/reference/settings/session-settings#max_table_size_to_drop)
+integradas para evitar alguns tipos de erro; por exemplo, por [padrão](/pt-BR/reference/settings/session-settings/max#max_table_size_to_drop)
 você não pode simplesmente excluir tabelas com um motor da família `MergeTree` contendo mais de
 50 Gb de dados. No entanto, essas salvaguardas não cobrem todos os casos possíveis, e
 problemas ainda podem ocorrer.

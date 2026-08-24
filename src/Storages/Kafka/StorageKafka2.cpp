@@ -57,6 +57,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -206,17 +207,20 @@ StorageKafka2::StorageKafka2(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
 
-    const auto first_replica = createTableIfNotExists();
+    if (!getContext()->getMessageQueueDisableInsertion())
+    {
+        const auto first_replica = createTableIfNotExists();
 
-    if (!first_replica)
-        createReplica();
+        if (!first_replica)
+            createReplica();
+    }
 
-    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -395,9 +399,10 @@ void StorageKafka2::activateAndReschedule()
 
 void StorageKafka2::assertActive() const
 {
-    // TODO(antaljanosbenjamin): change LOGICAL_ERROR to something sensible
+    /// The table becomes inactive at any moment when the Keeper session expires and `partialShutdown` runs,
+    /// racing with direct reads and MV streaming, so this is an expected runtime condition, not a logical error.
     if (!is_active)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table is not active (replica path: {})", replica_path);
+        throw Exception(ErrorCodes::ABORTED, "Table is not active (replica path: {})", replica_path);
 }
 
 
@@ -573,6 +578,12 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
@@ -1085,7 +1096,8 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         {
             auto elapsed_ns = watch.elapsed();
 
-            if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
+            if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
                 return false;
         }
 
@@ -1435,8 +1447,8 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     /// schedules them so that Query A holds consumer 0 and waits for consumer 1 while Query B
     /// holds consumer 1 and waits for consumer 0, we get a deadlock. The timeout breaks it
     /// by failing one of the queries, allowing the other to proceed.
-    auto acquire_timeout = std::chrono::milliseconds(
-        (*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
+    auto acquire_timeout
+        = saturatedMilliseconds((*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
     auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
 
     /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock

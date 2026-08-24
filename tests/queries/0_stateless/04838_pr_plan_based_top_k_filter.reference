@@ -1,0 +1,84 @@
+--- ORDER BY b, a LIMIT 5, local ---
+0	0
+0	1000
+0	2000
+0	3000
+0	4000
+--- ORDER BY b, a LIMIT 5, plan_based = 1 ---
+0	0
+0	1000
+0	2000
+0	3000
+0	4000
+--- ORDER BY b DESC, a DESC LIMIT 5, local ---
+999	99999
+999	98999
+999	97999
+999	96999
+999	95999
+--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 1 ---
+999	99999
+999	98999
+999	97999
+999	96999
+999	95999
+--- deep OFFSET, local ---
+49	97049
+49	98049
+49	99049
+50	50
+50	1050
+--- deep OFFSET, plan_based = 1 ---
+49	97049
+49	98049
+49	99049
+50	50
+50	1050
+--- WHERE + ORDER BY b, a LIMIT 5, local ---
+0	0
+0	7000
+0	14000
+0	21000
+0	28000
+--- WHERE + ORDER BY b, a LIMIT 5, plan_based = 1 ---
+0	0
+0	7000
+0	14000
+0	21000
+0	28000
+--- use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1, plan_based = 1 ---
+0	0
+0	1000
+0	2000
+0	3000
+0	4000
+--- explain: Top-K kept in the plan ---
+1
+--- explain: read not distributed ---
+0
+--- explain: read distributed with use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0 ---
+1
+--- Top-K disabled, ORDER BY b, a LIMIT 5, local ---
+0	0
+0	1000
+0	2000
+0	3000
+0	4000
+--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 1 ---
+0	0
+0	1000
+0	2000
+0	3000
+0	4000
+--- Top-K disabled, deep OFFSET, local ---
+49	97049
+49	98049
+49	99049
+50	50
+50	1050
+--- Top-K disabled, deep OFFSET, plan_based = 1 ---
+49	97049
+49	98049
+49	99049
+50	50
+50	1050
