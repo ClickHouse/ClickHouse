@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SYNTAX_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into

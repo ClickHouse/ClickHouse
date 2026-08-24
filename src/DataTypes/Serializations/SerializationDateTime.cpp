@@ -49,10 +49,10 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
             readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
+            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
     }
 
@@ -69,10 +69,10 @@ inline bool tryReadText(
             res = tryReadDateTimeText(x, istr, time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
+            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
     }
 
