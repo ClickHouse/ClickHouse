@@ -600,6 +600,30 @@ struct HashMethodSerialized
         }
     }
 
+    /// Whether the key views this state hands out keep pointing at the same bytes for the whole
+    /// block, rather than at scratch the next row or the next chunk writes over. A caller that
+    /// remembers a view past the row it came from - the count kernel's run tracking - may only do
+    /// so when this holds. The layout is settled here if it has not been already, because the
+    /// answer depends on it.
+    bool keyViewsAreBlockStable()
+    requires prealloc
+    {
+        if (!layout_decided && !use_key_region)
+            prepareWholeBlock();
+
+        /// The whole block is laid out in a buffer of its own, and the chunk is the keys' home
+        /// when the cells hold nothing else. A chunk that is a reused buffer is not stable, and
+        /// neither is the row-at-a-time scratch.
+        return use_whole_block || (use_key_region && !use_chunk_scratch);
+    }
+
+    bool keyViewsAreBlockStable() const
+    requires(!prealloc)
+    {
+        /// Every key is serialized into the arena and stays there.
+        return true;
+    }
+
     /// Lay the whole block out at once, for a caller that never asked for the chunk. This is the
     /// layout the rows of a block get when they are visited in some order of the caller's own - the
     /// adaptive aggregator groups them by bucket, for one - which a chunk cannot serve.
