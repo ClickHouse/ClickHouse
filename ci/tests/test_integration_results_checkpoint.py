@@ -130,6 +130,11 @@ def _positive_timeout(call, constants):
     return None
 
 
+# The bound both production call sites promise. Kept here rather than imported, so
+# renaming or re-deriving either constant still has to face this number.
+_CONTRACTED_TIMEOUT_SEC = 1800
+
+
 _STATUS_ASSIGNING_METHODS = ("set_status", "set_error", "set_failed", "set_success")
 
 
@@ -227,6 +232,11 @@ def test_main_hands_the_checkpoint_its_collected_results():
             f"the checkpoint call at line {node.lineno} does not pass `is_local_run` as "
             f"`is_local_run` (binds {got}); the guard would then read another value"
         )
+        assert got.get("job_name") == "job_name", (
+            f"the checkpoint call at line {node.lineno} does not pass `job_name` as "
+            f"`job_name` (binds {got}); the helper reads it as the identity of the "
+            f"result file to update, so any other value writes the wrong report"
+        )
 
 
 def test_the_checkpoint_call_is_unconditional():
@@ -289,6 +299,20 @@ def test_every_archiving_call_site_is_bounded():
         "an overrun there would again discard the collected results"
     )
 
+    # The behavioural arms pass their own short timeouts, so only this can hold the
+    # production value. Any positive number keeps them green while a small one discards
+    # the healthy archives the bound exists to preserve.
+    wrong = {
+        node.lineno: _positive_timeout(node, constants)
+        for node in calls
+        if _positive_timeout(node, constants) != _CONTRACTED_TIMEOUT_SEC
+    }
+    assert wrong == {}, (
+        f"archiving call sites bounded at something other than "
+        f"{_CONTRACTED_TIMEOUT_SEC}s: {wrong}; healthy shards archive for up to 5747s "
+        f"against an 18000s job budget, so a shorter bound throws away good archives"
+    )
+
 
 def test_the_on_error_hook_is_bounded():
     """The on_error_hook's Shell.check must pass a timeout.
@@ -323,6 +347,17 @@ def test_the_on_error_hook_is_bounded():
     assert unbounded == [], (
         f"the on_error_hook is invoked without a positive timeout at lines {unbounded}: "
         "it runs before the result is uploaded, so an overrun costs the whole report"
+    )
+
+    wrong = {
+        node.lineno: _positive_timeout(node, constants)
+        for node in hook_calls
+        if _positive_timeout(node, constants) != _CONTRACTED_TIMEOUT_SEC
+    }
+    assert wrong == {}, (
+        f"the on_error_hook is bounded at something other than "
+        f"{_CONTRACTED_TIMEOUT_SEC}s: {wrong}; the hook archives every test instance "
+        f"directory, so a shorter bound loses the logs it exists to collect"
     )
 
 

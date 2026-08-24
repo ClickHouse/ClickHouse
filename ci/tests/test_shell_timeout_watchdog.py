@@ -291,6 +291,52 @@ def test_archive_publishes_a_complete_archive_despite_a_failing_tar_exit(tmp_pat
     )
 
 
+def test_archive_rc_one_from_an_internal_failure_is_not_published_unread(tmp_path):
+    """An rc of 1 must be judged by reading the archive back, not accepted on sight.
+
+    `Shell.run` reports an internal failure of its own as 1, the same value `tar` uses
+    for "some files differ", and it kills only the shell leader, so `tar` can still be
+    writing when that 1 is returned. A truncated staging archive must not be renamed
+    into place: the upload only checks that the file exists.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "payload.bin").write_bytes(b"z" * (4 * 1024 * 1024))
+    archive = tmp_path / "logs.tar.gz"
+
+    original_run = Shell.run
+    staged = []
+
+    def truncate_then_report_one(command, **kwargs):
+        if command.startswith("tar --warning="):
+            rc = original_run(command, **kwargs)
+            assert rc == 0, f"the staging tar itself failed ({rc}): arm proves nothing"
+            match = re.search(r"-czf (\S+)", command)
+            assert match, f"could not find the staging path in {command!r}"
+            path = Path(match.group(1))
+            assert path.exists(), f"the staging archive is missing at {path}"
+            # What a leader killed mid-write leaves behind: a real prefix of a real
+            # archive, which the upload's existence check would accept as the logs.
+            path.write_bytes(path.read_bytes()[: max(1, path.stat().st_size // 2)])
+            staged.append(path)
+            return 1
+        return original_run(command, **kwargs)
+
+    Shell.run = staticmethod(truncate_then_report_one)
+    try:
+        result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
+    finally:
+        Shell.run = original_run
+
+    assert staged, "the staging tar was never intercepted: this arm proves nothing"
+    assert result is None, (
+        f"a truncated archive was published on rc 1 ({result!r}); rc 1 can be an "
+        "internal Shell.run failure with tar still writing"
+    )
+    assert not archive.exists(), f"the truncated archive was renamed into {archive}"
+    assert not staged[0].exists(), f"the staging archive was left behind at {staged[0]}"
+
+
 def test_archive_skips_missing_inputs_without_raising(tmp_path):
     """A declared-but-absent input must be dropped, not raise.
 

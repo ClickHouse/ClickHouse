@@ -867,10 +867,10 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
         return f"{path}.enc"
 
-    # Return codes whose archive is accepted without further checking. `tar` exit 1
-    # is "some files differ", which a file appended to while being read produces, and
-    # every archive built here contains files the job is still writing.
-    TAR_UNCONDITIONALLY_OK_RETURN_CODES = (0, 1)
+    # Only a clean exit says the archive is whole. `Shell.run` reports an internal
+    # failure of its own as 1 too, and it kills only the shell leader, so on a 1 `tar`
+    # may still be writing.
+    TAR_UNCONDITIONALLY_OK_RETURN_CODES = (0,)
 
     @classmethod
     def _archive_reads_back(cls, archive, rc, timeout=None):
