@@ -1,12 +1,16 @@
-"""Pins the post-condition check ClickHouseCluster runs after a `docker compose` action.
+"""Pins the post-condition check, and the timeout diagnostic, around a ZooKeeper restart.
 
 `docker compose start zoo1 zoo2 zoo3` can exit 0, and even print `Started`, for a node it
 did not act on, so the harness compares the daemon's own view of every requested node
 against the requested state before logging success. Three properties make that comparison
 meaningful: it reads `State.Status` rather than `State.Running`, it reads the status after
-the action, and it checks the nodes it was asked about. None of them is observable from the
-suites that use the seam, because every one of those drives only the success path, so a
-check that silently became a no-op would keep them all green.
+the action, and it checks the nodes it was asked about. When a node is nevertheless left
+behind, the ZooKeeper waiter is what a reporter reads, so it has to name the node that
+blocked, its container state and the elapsed time instead of guessing at a cause.
+
+None of that is observable from the suites that use these seams, because every one of them
+drives only the success path: a check that silently became a no-op, or a diagnostic that
+lost the node it names, would keep them all green.
 
 The methods under test are the shipped ones, bound to a stub, so these assertions track
 helpers/cluster.py rather than a copy of it. No Docker and no cluster is needed.
@@ -44,9 +48,10 @@ class _FakeDocker:
     before an action keeps reporting the state from before it.
     """
 
-    def __init__(self, states, events):
+    def __init__(self, states, events, ips=None):
         self._states = states
         self._events = events
+        self._ips = ips or {}
         # The code under test reaches a fetch as `docker_client.containers.get(...)`.
         self.containers = self
 
@@ -57,7 +62,17 @@ class _FakeDocker:
         self._events.append(("inspect", container))
         if container not in self._states:
             raise RuntimeError(f"stub: no such container: {container}")
-        return types.SimpleNamespace(attrs={"State": self._states[container]})
+        ip = self._ips.get(container, "")
+        # get_instance_ip reads the first network's address, so the shape matters as much
+        # as the value. `None` stands for the empty map docker leaves behind on a container
+        # that is no longer attached to a network, where the lookup itself raises.
+        networks = {} if ip is None else {"stubnet": {"IPAddress": ip}}
+        return types.SimpleNamespace(
+            attrs={
+                "State": self._states[container],
+                "NetworkSettings": {"Networks": networks},
+            }
+        )
 
 
 class _Stub:
@@ -190,3 +205,185 @@ def test_each_action_accepts_only_the_statuses_declared_for_it():
     other = _Stub({"zoo1": "exited"})
     other.check_integration_nodes_state("zookeeper", ["zoo1"], "restart")
     assert other.events == []
+
+
+# --- the ZooKeeper waiter's timeout diagnostic --------------------------------------
+
+# Small enough to spell out in the assertions below, and the clock is faked, so the whole
+# budget elapses within one arm.
+TIMEOUT = 5.0
+
+
+class _FakeClock:
+    """Advances only when the code under test sleeps, so arms are exact and instant.
+
+    Reads are capped, so a loop that neither sleeps nor exits fails here rather than
+    running until pytest's own timeout.
+    """
+
+    _MAX_READS = 100000
+
+    def __init__(self):
+        self.now = 0.0
+        self.reads = 0
+
+    def time(self):
+        self.reads += 1
+        if self.reads > self._MAX_READS:
+            raise AssertionError(
+                f"clock read over {self._MAX_READS} times without advancing: "
+                "the waiter is spinning without sleeping or exiting"
+            )
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class _WaiterStub:
+    """Carries only the attributes the waiter and its diagnostic touch."""
+
+    wait_zookeeper_nodes_to_start = ClickHouseCluster.wait_zookeeper_nodes_to_start
+    describe_container_state = ClickHouseCluster.describe_container_state
+    get_instance_ip = ClickHouseCluster.get_instance_ip
+    get_instance_docker_id = ClickHouseCluster.get_instance_docker_id
+
+    def __init__(self, statuses, ips=None, unreachable=(), project="stubproject"):
+        # Names containers on no daemon, so nothing here is shared between arms.
+        self.project_name = project
+        self.events = []
+        self._unreachable = set(unreachable)
+        self.docker_client = _FakeDocker(
+            {self.container(name): _state(status) for name, status in statuses.items()},
+            self.events,
+            {self.container(name): ip for name, ip in (ips or {}).items()},
+        )
+
+    def container(self, name):
+        return self.get_instance_docker_id(name)
+
+    def contacted(self):
+        return [name for kind, name in self.events if kind == "kazoo"]
+
+    def get_kazoo_client(self, zoo_instance_name, timeout=30.0, retries=10):
+        # Matches the keywords the waiter passes; a mismatch would fail the bind instead
+        # of the assertion.
+        assert (timeout, retries) == (5.0, 1)
+        self.events.append(("kazoo", zoo_instance_name))
+        if zoo_instance_name in self._unreachable:
+            # What kazoo raises for a container with no address, which is the shape the
+            # reported CI failure took.
+            raise ValueError("bad hostname")
+        return types.SimpleNamespace(get_children=lambda path: [], stop=lambda: None)
+
+
+def _fake_clock(monkeypatch):
+    clock = _FakeClock()
+    monkeypatch.setattr(cluster, "time", clock)
+    return clock
+
+
+def test_the_timeout_reports_what_a_reporter_has_to_act_on(monkeypatch):
+    """A node compose left behind is unreachable for the whole budget. The message has to
+    carry the node, its container, the state it is in and how long was spent, because the
+    alternative is a reader guessing at host networking."""
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": "running", "zoo2": "running", "zoo3": ("exited", 137)},
+        ips={"zoo1": "172.16.0.2", "zoo2": "172.16.0.3", "zoo3": ""},
+        unreachable=["zoo3"],
+    )
+    with pytest.raises(Exception) as excinfo:
+        stub.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"], timeout=TIMEOUT)
+
+    message = str(excinfo.value)
+    for token in (
+        "zoo3",
+        stub.container("zoo3"),
+        "status exited",
+        "exit code 137",
+        # An address the daemon never assigned is the tell that the container is down.
+        "<empty>",
+        f"after {TIMEOUT:.1f}s of {TIMEOUT}s",
+    ):
+        assert token in message, message
+
+
+def test_the_named_node_is_the_one_that_blocked(monkeypatch):
+    """With a healthy node on either side of the failing one, the message must name the
+    middle node: neither the first of the request nor the last one tried."""
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": "running", "zoo2": ("exited", 137), "zoo3": "running"},
+        ips={"zoo1": "172.16.0.2", "zoo2": "", "zoo3": "172.16.0.4"},
+        unreachable=["zoo2"],
+    )
+    with pytest.raises(Exception) as excinfo:
+        stub.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"], timeout=TIMEOUT)
+
+    message = str(excinfo.value)
+    assert "zoo2" in message, message
+    assert "zoo1" not in message and "zoo3" not in message, message
+
+
+def test_only_the_requested_nodes_are_waited_for(monkeypatch):
+    """Several suites restart a subset and leave the rest down on purpose, so a node
+    outside the request is neither contacted nor blamed - even when it is the one that is
+    actually unreachable."""
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": ("exited", 137), "zoo2": "running", "zoo3": ("exited", 137)},
+        ips={"zoo1": "", "zoo2": "172.16.0.3", "zoo3": ""},
+        unreachable=["zoo1", "zoo3"],
+    )
+    with pytest.raises(Exception) as excinfo:
+        stub.wait_zookeeper_nodes_to_start(["zoo2", "zoo3"], timeout=TIMEOUT)
+
+    message = str(excinfo.value)
+    assert "zoo3" in message, message
+    assert "zoo1" not in message, message
+    assert "zoo1" not in stub.contacted(), stub.contacted()
+
+
+def test_a_vanished_container_is_described_rather_than_masked(monkeypatch):
+    """The diagnostic runs while a failure is already being reported, so a lookup of its
+    own that fails must not become the exception the reader sees. Both fail here."""
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub({}, unreachable=["zoo1"])
+    with pytest.raises(Exception) as excinfo:
+        stub.wait_zookeeper_nodes_to_start(["zoo1"], timeout=TIMEOUT)
+
+    message = str(excinfo.value)
+    assert "Cannot connect to ZooKeeper node zoo1" in message, message
+    assert "status unavailable" in message, message
+    assert "<unavailable:" in message, message
+
+
+def test_a_container_with_no_address_is_described_rather_than_masked(monkeypatch):
+    """The second lookup fails on its own: the container is still there to inspect, but it
+    is attached to no network, so reading its address raises."""
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": ("exited", 137)}, ips={"zoo1": None}, unreachable=["zoo1"]
+    )
+    with pytest.raises(Exception) as excinfo:
+        stub.wait_zookeeper_nodes_to_start(["zoo1"], timeout=TIMEOUT)
+
+    message = str(excinfo.value)
+    assert "Cannot connect to ZooKeeper node zoo1" in message, message
+    assert "status exited, exit code 137" in message, message
+    assert "<unavailable:" in message, message
+
+
+def test_reachable_nodes_return_without_spending_the_budget(monkeypatch):
+    """Negative control: without this arm every assertion above is satisfied by a waiter
+    that raises unconditionally."""
+    clock = _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": "running", "zoo2": "running", "zoo3": "running"},
+        ips={"zoo1": "172.16.0.2", "zoo2": "172.16.0.3", "zoo3": "172.16.0.4"},
+    )
+    stub.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"], timeout=TIMEOUT)
+
+    assert stub.contacted() == ["zoo1", "zoo2", "zoo3"]
+    assert clock.now == 0.0
