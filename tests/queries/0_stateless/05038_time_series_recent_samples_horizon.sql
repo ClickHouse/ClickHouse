@@ -17,7 +17,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon (metric_name, t
 
 SELECT engine_full NOT LIKE '% TTL %'
 FROM system.tables
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = '.inner.recentsamples.ts_recent_horizon';
+WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
 
 DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`
@@ -26,7 +26,7 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_h
 
 SELECT engine_full LIKE '% TTL %'
 FROM system.tables
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = '.inner.recentsamples.ts_recent_horizon';
+WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
 
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon;
 
@@ -34,7 +34,7 @@ OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon FINAL;
 
 SELECT engine_full NOT LIKE '% TTL %'
 FROM system.tables
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = '.inner.recentsamples.ts_recent_horizon';
+WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
 
 SELECT countIf(timestamp = toDateTime64('2000-01-01 00:00:00', 3))
 FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`;

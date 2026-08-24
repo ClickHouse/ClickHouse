@@ -363,7 +363,7 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
         if (ttl_seconds > static_cast<UInt64>(std::numeric_limits<Int64>::max() / scale_multiplier))
             return;
         Int64 ttl = static_cast<Int64>(ttl_seconds) * scale_multiplier;
-        Int64 horizon;
+        Int64 horizon = 0;
         {
             std::lock_guard lock(recent_samples_horizon_mutex);
             if (!recent_samples_horizon)
