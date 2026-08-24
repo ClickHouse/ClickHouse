@@ -115,6 +115,8 @@ set -euo pipefail
 # Advanced/testing:
 #   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list (lines of
 #   "<number>\t<title>") from a file instead of querying GitHub.
+#   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
+#   disk space maintained by worktree cleanup (default: 100).
 
 REPO="ClickHouse/ClickHouse"
 
@@ -151,6 +153,7 @@ SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-s
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 API_KEY_PROVIDED=0      # whether either custom-key option was supplied
+MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -194,6 +197,11 @@ done
 
 if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || (( WORKERS < 1 )); then
     echo "${S}Error: --workers must be a positive integer${R}" >&2
+    exit 1
+fi
+
+if ! [[ "$MIN_FREE_GB" =~ ^[0-9]+$ ]] || (( MIN_FREE_GB < 1 )); then
+    echo "${S}Error: CONTINUE_ALL_PRS_MIN_FREE_GB must be a positive integer${R}" >&2
     exit 1
 fi
 
@@ -890,6 +898,7 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
+CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
 declare -a WORKER_PIDS=()
 
 cleanup_worker_codex_auth()
@@ -1299,6 +1308,17 @@ run_continue_pr()
             [[ ! -d "$XDG_CONFIG_HOME/gh" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/gh")
             [[ ! -d "$XDG_CONFIG_HOME/git" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/git")
         fi
+        # `--ro-bind / /` keeps the outer checkout readable by absolute path,
+        # and its real Git configuration can carry authentication (a standard
+        # `actions/checkout` run stores an `http.*.extraheader` token there).
+        # Only the triage clone's own config is replaced with the sanitized
+        # copy above, so mask the worker's common and per-worktree config
+        # files too; the main repository shares the same common config.
+        local host_git_config host_worktree_config
+        host_git_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
+        host_worktree_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config.worktree) || return 1
+        [[ ! -e "$host_git_config" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$host_git_config")
+        [[ ! -e "$host_worktree_config" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$host_worktree_config")
         if [[ "$AGENT" == "codex" ]]; then
             if [[ "$CUSTOM_KEY" == 1 ]]; then
                 triage_agent_home="$codex_home"
@@ -1572,7 +1592,7 @@ ${system_prompt}"
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
-    local color ts log ec outcome status mark summary
+    local color ts log ec outcome status mark summary cleanup_failed=0
     local before_sha after pr_state pr_mergeable pr_review after_sha pushed
 
     color=$(pr_color_seq "$number")
@@ -1586,6 +1606,22 @@ process_pr()
         status="DRY-RUN (not processed)"
         summary="(dry run)"
     else
+        # Clean the reused worker before any per-PR work. Besides isolating
+        # PRs from each other's leftovers, this keeps the worktree safe for
+        # direct writes such as `recreate_validated_triage_merge`, which must
+        # not inherit untracked files from a previous failed PR.
+        log="$LOGDIR/pr-$number.log"
+        : > "$log"
+        if ! prepare_worktree_for_task "$wt" >> "$log" 2>&1; then
+            printf 'Worktree cleanup failed before starting PR #%s.\n' "$number" > "$log.last"
+            cat "$log.last" >> "$log"
+            ec=1
+            cleanup_failed=1
+            printf '%s\t%s\n' "$i" "$wt" >> "$CLEANUP_FAILURE_FILE"
+        else
+            ec=0
+        fi
+
         # PR head before the work, so we can tell whether the worker actually
         # pushed anything (a clean agent exit does NOT imply progress: the
         # /continue-pr-auto skill exits 0 when it finds nothing to do, or when it
@@ -1593,9 +1629,9 @@ process_pr()
         before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
             --jq '.headRefOid' 2>/dev/null || echo "")
 
-        log="$LOGDIR/pr-$number.log"
-        ec=0
-        run_continue_pr "$wt" "$number" "$log" || ec=$?
+        if (( ec == 0 )); then
+            run_continue_pr "$wt" "$number" "$log" || ec=$?
+        fi
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
@@ -1639,6 +1675,7 @@ process_pr()
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
     emit "$color" "            ^- $summary"
+    (( cleanup_failed == 0 ))
 }
 
 worker()
@@ -1668,7 +1705,10 @@ worker()
         [[ -z "$line" ]] && break
 
         IFS=$'\t' read -r number title <<< "$line"
-        process_pr "$i" "$wt" "$number" "$title" || true
+        # A cleanup failure makes this worktree unsafe for another assignment
+        # in the same round. Leave the remaining queue to healthy workers
+        # instead of reporting the same failure for every subsequent PR.
+        process_pr "$i" "$wt" "$number" "$title" || break
     done
 
     exec 9>&-
@@ -1830,6 +1870,7 @@ if [[ "$AGENT" == "codex" ]]; then
     fi
 fi
 banner "Effort:          ${EFFORT}"
+banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
 (( CUSTOM_KEY )) && banner "API key:         custom (…${API_KEY: -4})"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
@@ -1846,6 +1887,7 @@ done
 
 # Create worktrees up front (unless dry-running).
 if (( ! DRY_RUN )); then
+    cleanup_worktrees_if_disk_low
     for (( i = 0; i < WORKERS; i++ )); do
         ensure_worktree "${WT[i]}"
     done
@@ -1861,6 +1903,8 @@ status_start
 
 ROUND=0
 while true; do
+    cleanup_worktrees_if_disk_low
+    rm -f "$CLEANUP_FAILURE_FILE"
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0 0
     na_reset
@@ -1893,6 +1937,11 @@ while true; do
     set +m
     wait "${WORKER_PIDS[@]}" || true
     WORKER_PIDS=()
+
+    if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
+        banner "Worktree cleanup failed; stopping instead of retrying in another round"
+        exit 1
+    fi
 
     echo ""
     banner "===== Round ${ROUND} complete ====="

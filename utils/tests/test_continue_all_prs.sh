@@ -192,6 +192,45 @@ if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --dev /dev true 2>/de
     fi
 fi
 
+# `--ro-bind / /` keeps the outer checkout readable by absolute path, and a
+# standard `actions/checkout` run stores an `http.*.extraheader`
+# authentication token in its real Git configuration. The sandbox must mask
+# the worker's common and per-worktree config files, because only the triage
+# clone's own config is bind-replaced with a sanitized copy.
+grep -q -- '--ro-bind /dev/null "$host_git_config"' "$repo/utils/continue-all-prs.sh"
+grep -q -- '--ro-bind /dev/null "$host_worktree_config"' "$repo/utils/continue-all-prs.sh"
+
+if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --dev /dev true 2>/dev/null; then
+    host_checkout="$scratch/host-checkout"
+    host_worker="$scratch/host-worker"
+    git init -q "$host_checkout"
+    git -C "$host_checkout" config user.email test@example.com
+    git -C "$host_checkout" config user.name test
+    git -C "$host_checkout" commit -q --allow-empty -m 'Empty'
+    git -C "$host_checkout" worktree add -q --detach "$host_worker" HEAD
+    git -C "$host_checkout" config http.https://github.com/.extraheader 'Authorization: Basic SECRET_HOST_HEADER'
+    host_git_config=$(git -C "$host_worker" rev-parse --path-format=absolute --git-path config)
+    host_worktree_config=$(git -C "$host_worker" rev-parse --path-format=absolute --git-path config.worktree)
+    # Sanity check outside the sandbox: the worker resolves the shared common
+    # config, and the header is readable through it, so the assertions below
+    # are not vacuous.
+    grep -q SECRET_HOST_HEADER "$host_git_config"
+    host_mask_args=(--ro-bind /dev/null "$host_git_config")
+    [[ ! -e "$host_worktree_config" ]] || host_mask_args+=(--ro-bind /dev/null "$host_worktree_config")
+    if bwrap --ro-bind / / --dev /dev "${host_mask_args[@]}" \
+        sh -c "cat '$host_git_config' 2>/dev/null" | grep -q SECRET_HOST_HEADER; then
+        echo 'Expected the triage sandbox to mask the host checkout Git config' >&2
+        exit 1
+    fi
+    if bwrap --ro-bind / / --dev /dev "${host_mask_args[@]}" \
+        git -C "$host_checkout" config --get http.https://github.com/.extraheader 2>/dev/null \
+        | grep -q SECRET_HOST_HEADER; then
+        echo 'Expected the masked host config to hide the HTTP extra header from Git' >&2
+        exit 1
+    fi
+    git -C "$host_checkout" worktree remove --force "$host_worker"
+fi
+
 if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --unshare-pid --proc /proc --dev /dev true 2>/dev/null; then
     env CONTINUE_ALL_PRS_TEST_SECRET=SECRET_ENVIRON_TOKEN sleep 30 &
     secret_pid=$!
