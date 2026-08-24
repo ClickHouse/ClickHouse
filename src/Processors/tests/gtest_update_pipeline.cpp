@@ -415,8 +415,7 @@ public:
 
         if (!retired.empty())
         {
-            /// Follow-up call: re-list the transform that is still pending removal from the group
-            /// the previous call queued.
+            /// Re-lists a processor whose group is still pending from the previous call.
             update.to_remove.push_back(retired.back());
             retired.clear();
             outputs.front().finish();
@@ -426,9 +425,7 @@ public:
         if (!inputs.empty())
         {
             disconnect(inputs.back().getOutputPort(), inputs.back());
-            /// The closer finished this processor's input while the transform behind it still owes
-            /// a work call, so the batch is unfinished when it is queued for removal and its group
-            /// stays pending.
+            /// The laggard still owes a work call here, so the group stays pending.
             retired = current_batch;
             update.to_remove = std::move(current_batch);
             return update;
