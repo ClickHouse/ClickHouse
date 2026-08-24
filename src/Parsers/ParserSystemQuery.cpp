@@ -8,6 +8,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -1129,6 +1131,57 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     node = std::move(res);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementSystem(StatementFactory & factory)
+{
+    factory.registerStatement("SYSTEM",
+    {
+        .description = R"(
+Performs an administrative operation on the server: reloads the configuration, the users or the dictionaries, drops a
+cache, flushes the system logs, starts or stops a background activity, or manages `Distributed`, `MergeTree`,
+`ReplicatedMergeTree` and refreshable materialized view tables.
+
+**Examples**
+
+**Reload the configuration**
+
+```sql title="Query"
+SYSTEM RELOAD CONFIG;
+```
+
+**Flush the system logs**
+
+```sql title="Query"
+SYSTEM FLUSH LOGS;
+```
+)",
+        .syntax = R"(
+SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
+SYSTEM RELOAD [EMBEDDED] DICTIONARIES | DICTIONARY [db.]name
+SYSTEM UNLOAD DICTIONARIES | DICTIONARY [db.]name
+SYSTEM [CLEAR|DROP] ... CACHE [ON CLUSTER cluster_name]
+SYSTEM PREWARM MARK CACHE | PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+SYSTEM DROP REPLICA 'replica_name' [FROM TABLE|DATABASE|ZKPATH ...]
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] [FROM DATABASE|ZKPATH ...]
+SYSTEM FLUSH LOGS [table [, ...]]
+SYSTEM FLUSH DISTRIBUTED [db.]name
+SYSTEM SHUTDOWN | KILL
+SYSTEM INSTRUMENT ...
+SYSTEM START|STOP DISTRIBUTED SENDS | MERGES | TTL MERGES | MOVES | FETCHES | REPLICATED SENDS | REPLICATION QUEUES | PULLING REPLICATION LOG | LISTEN | VIEW | VIEWS
+SYSTEM SYNC REPLICA | DATABASE REPLICA | TRANSACTION LOG | FILE CACHE | FILESYSTEM CACHE
+SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
+SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
+SYSTEM UNFREEZE WITH NAME 'backup_name'
+SYSTEM FLUSH OBJECT STORAGE QUEUE
+)",
+        .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
+    });
 }
 
 }
