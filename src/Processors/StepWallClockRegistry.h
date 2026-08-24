@@ -17,6 +17,8 @@ public:
     void populateFromPlan(const QueryPlan & plan);
 
     StepWallClock * find(const IQueryPlanStep *, size_t group) const;
+
+    UInt64 getQueryStartNs() const { return query_start_ns; }
 private:
 
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;

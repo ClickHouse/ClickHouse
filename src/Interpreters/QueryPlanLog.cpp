@@ -19,7 +19,8 @@
 namespace DB
 {
 
-ColumnsDescription QueryPlanLogElement::getColumnsDescription() {
+ColumnsDescription QueryPlanLogElement::getColumnsDescription()
+{
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
     DataTypeEnum8::Values
     {

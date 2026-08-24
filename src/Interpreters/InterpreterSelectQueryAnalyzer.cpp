@@ -395,6 +395,9 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
     result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
+    if (auto plan_profiler = context->getPlanProfiler())
+        plan_profiler->instrumentPipeline(result.pipeline);
+
     return result;
 }
 
