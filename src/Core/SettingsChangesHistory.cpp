@@ -41,6 +41,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.9",
+        {
+            {"distinct_two_level_threshold", 1000000, 1000000, "New setting controlling when DistinctTransform converts its hash set to a two-level layout for parallel filter building."},
+            {"distinct_two_level_threshold_bytes", 50000000, 50000000, "New setting: byte-based threshold for converting the DistinctTransform hash set to a two-level layout, analogous to group_by_two_level_threshold_bytes."},
+            {"distinct_two_level_parallel_build_min_rows", 10000, 10000, "New setting: minimum chunk size for DistinctTransform to build the two-level filter in parallel across buckets."},
+        });
+
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
@@ -247,9 +254,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
-            {"distinct_two_level_threshold", 1000000, 1000000, "New setting controlling when DistinctTransform converts its hash set to a two-level layout for parallel filter building."},
-            {"distinct_two_level_threshold_bytes", 50000000, 50000000, "New setting: byte-based threshold for converting the DistinctTransform hash set to a two-level layout, analogous to group_by_two_level_threshold_bytes."},
-            {"distinct_two_level_parallel_build_min_rows", 10000, 10000, "New setting: minimum chunk size for DistinctTransform to build the two-level filter in parallel across buckets."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",

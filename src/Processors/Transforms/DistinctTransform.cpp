@@ -594,6 +594,8 @@ void DistinctTransform::transform(Chunk & chunk)
         M(key64) \
         M(key_string) \
         M(key_fixed_string) \
+        M(keys32) \
+        M(keys64) \
         M(keys128) \
         M(keys256) \
         M(nullable_keys128) \
