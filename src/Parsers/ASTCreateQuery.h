@@ -10,8 +10,6 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -36,8 +34,6 @@ public:
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     bool isExtendedStorageDefinition() const;
 
@@ -77,8 +73,6 @@ public:
     String getID(char) const override { return "Columns definition"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     bool empty() const
     {
@@ -140,9 +134,7 @@ public:
     bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
     bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
     bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
-    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
-    bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
-    bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
+    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...'
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
     bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
     bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -157,8 +149,6 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
@@ -192,8 +182,6 @@ public:
     bool hasInnerUUIDs() const;
     ASTStorage * getTargetInnerEngine(ViewTarget::Kind target_kind) const;
     void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
-    ASTColumns * getTargetInnerColumns(ViewTarget::Kind target_kind) const;
-    void setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast);
 
     bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
     bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }

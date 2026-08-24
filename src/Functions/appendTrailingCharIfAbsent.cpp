@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionAppendTrailingCharIfAbsent final : public IFunction
+class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";

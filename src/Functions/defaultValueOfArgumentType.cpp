@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -11,7 +10,7 @@ namespace
 {
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfArgumentType final : public IFunction
+class FunctionDefaultValueOfArgumentType : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";

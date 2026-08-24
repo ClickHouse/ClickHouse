@@ -1,12 +1,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -21,7 +19,7 @@ extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class FunctionFlipCoordinates final : public IFunction
+class FunctionFlipCoordinates : public IFunction
 {
 public:
     static constexpr auto name = "flipCoordinates";
@@ -32,14 +30,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    /// Handle the `Geometry` `Variant` here so its type name is preserved; the generic
-    /// `FunctionBaseVariantAdaptor` rebuilds a bare `Variant` and drops the custom name. Every other
-    /// `Variant` still goes through the adaptor, keeping its `variant_throw_on_type_mismatch` handling.
-    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
-    {
-        return type->getName() != "Geometry";
-    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -70,20 +60,7 @@ public:
 
         ColumnPtr result;
 
-        if (const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arg.type.get()))
-        {
-            /// Only `Geometry` is handled here; `build` sends every other `Variant` through
-            /// `FunctionBaseVariantAdaptor`, which calls this function per alternative.
-            if (arg.type->getName() != "Geometry")
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Expected Geometry",
-                    arg.type->getName(),
-                    getName());
-
-            result = executeForVariant(column, variant_type);
-        }
-        else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
+        if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
             result = executeForPoint(column);
         }
@@ -107,63 +84,6 @@ public:
     }
 
 private:
-    /// Flipping never moves a row between alternatives (a `Point` stays a `Point`), so the
-    /// discriminators, offsets and mapping are reused verbatim and the result keeps the input type.
-    ColumnPtr executeForVariant(const ColumnPtr & column, const DataTypeVariant * variant_type) const
-    {
-        const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get());
-        if (!column_variant)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
-
-        const auto & variant_types = variant_type->getVariants();
-        /// A `Variant` may declare at most `ColumnVariant::MAX_NESTED_COLUMNS` alternatives, which is
-        /// `Discriminator`'s maximum, so the count always fits a `Discriminator`.
-        const auto num_variants = static_cast<ColumnVariant::Discriminator>(column_variant->getNumVariants());
-
-        Columns new_variants;
-        new_variants.reserve(num_variants);
-
-        for (ColumnVariant::Discriminator local_discr = 0; local_discr < num_variants; ++local_discr)
-        {
-            const ColumnPtr & sub_column = column_variant->getVariantPtrByLocalDiscriminator(local_discr);
-            const DataTypePtr & sub_type = variant_types[column_variant->globalDiscriminatorByLocal(local_discr)];
-
-            /// `ColumnVariant` keeps an empty subcolumn for every declared alternative, even ones with
-            /// no rows in the current block. Such arms carry no data to flip, so push them unchanged.
-            if (sub_column->empty())
-            {
-                new_variants.push_back(sub_column);
-                continue;
-            }
-
-            ColumnPtr flipped;
-            if (checkAndGetDataType<DataTypeTuple>(sub_type.get()))
-            {
-                flipped = executeForPoint(sub_column);
-            }
-            else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(sub_type.get()))
-            {
-                flipped = executeForArray(sub_column, array_type);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal variant type {} of argument of function {}",
-                    sub_type->getName(),
-                    getName());
-            }
-
-            new_variants.push_back(std::move(flipped));
-        }
-
-        return ColumnVariant::create(
-            column_variant->getLocalDiscriminatorsPtr(),
-            column_variant->getOffsetsPtr(),
-            new_variants,
-            column_variant->getLocalToGlobalDiscriminatorsMapping());
-    }
-
     ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
@@ -236,15 +156,15 @@ REGISTER_FUNCTION(FlipCoordinates)
     FunctionDocumentation::Description description = R"(
 Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
 
-For a Point, it swaps the x and y coordinates. For complex geometries (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
 
-The function supports both individual geometry types (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
 )";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
+        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "MultiPoint", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",

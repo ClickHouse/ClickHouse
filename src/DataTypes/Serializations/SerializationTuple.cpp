@@ -7,7 +7,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Formats/JSONUtils.h>
-#include <Formats/ParseError.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -147,10 +146,6 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
-        /// Only a genuine parse failure means "this value did not parse"; other errors
-        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
-        /// failed parse and silently turned into a default/skip.
-        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -181,23 +176,6 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
         return true;
     });
-}
-
-void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    const size_t level = settings.hive_text.nesting_level;
-    const char separator = getHiveTextDelimiter(settings, level);
-
-    auto child_settings = settings;
-    child_settings.hive_text.nesting_level = level + 1;
-
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        if (i != 0)
-            writeChar(separator, ostr);
-
-        elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
-    }
 }
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -255,7 +233,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             }
             else
             {
-                bool ok = false;
+                bool ok;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                     ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
                 else
@@ -755,15 +733,6 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
             new_state->states.push_back(state ? state->clone() : nullptr);
 
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        for (const auto & state : states)
-        {
-            if (state)
-                callback(state);
-        }
     }
 };
 

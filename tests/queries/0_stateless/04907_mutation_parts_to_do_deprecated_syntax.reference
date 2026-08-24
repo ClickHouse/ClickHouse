@@ -1,5 +1,0 @@
-queue entries pending on r2	1
-r2 mutation done	0	parts to do	2
-r2 rows before mutation applies	[1]
-r1 rows	[100,100]
-r2 rows	[100,100]

@@ -5,7 +5,6 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -123,43 +122,13 @@ class  EngineIterator : public ffi::EngineIterator
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
-    explicit EngineIterator(EngineIteratorData & data_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    explicit EngineIterator(EngineIteratorData & data_)
     {
         data = &data_;
         get_next = &getNext;
     }
 
 private:
-    /// Name of the `Unknown` predicate handed to delta-kernel for a sub-expression we could not
-    /// translate. It must be a fixed ASCII literal: visit_predicate_unknown validates the name as
-    /// UTF-8 and reports failure for anything else, while a DAG node's result_name may hold
-    /// arbitrary bytes (e.g. a binary string literal appearing in the filter).
-    static constexpr std::string_view UNTRANSLATED_PREDICATE_NAME = "clickhouse_untranslated";
-
-    /// Represent "this node could not be translated" to delta-kernel.
-    ///
-    /// Returning nullptr instead would mean *the iterator is exhausted*, which truncates the
-    /// enclosing junction rather than dropping one child. That is only harmless in monotone
-    /// position: an empty conjunction normalizes to TRUE, so under NOT it becomes FALSE and every
-    /// data file gets skipped; a partially consumed conjunction under NOT yields a predicate
-    /// narrower than the truth. An explicit Unknown is "cannot decide" in the kernel's
-    /// three-valued logic and never skips a file on its own account, in any polarity.
-    static uintptr_t visitUntranslated(EngineIteratorData & iterator_data)
-    {
-        const std::string name{UNTRANSLATED_PREDICATE_NAME};
-        auto unknown = ffi::visit_predicate_unknown(iterator_data.state, KernelUtils::toDeltaString(name));
-        if (!unknown)
-        {
-            /// Unreachable with a compile-time ASCII name unless an invariant broke: 0 is the
-            /// kernel's reserved "no id" sentinel, and handing it on would reintroduce the very
-            /// truncation this function exists to prevent.
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "delta-kernel rejected the `{}` predicate name", name);
-        }
-        return unknown;
-    }
-
     static const void * getNext(void * data_)
     {
         auto * iterator_data = static_cast<EngineIteratorData *>(data_);
@@ -174,7 +143,6 @@ private:
             const auto * node = iterator_data->next();
             if (!node)
             {
-                /// Real exhaustion, which is what nullptr means to the kernel.
                 LOG_TEST(iterator_data->log(), "Iterator finished");
                 return nullptr;
             }
@@ -191,27 +159,13 @@ private:
             {
                 return reinterpret_cast<const void *>(result);
             }
-
-            LOG_TEST(iterator_data->log(), "Node could not be translated, visiting it as unknown");
         }
         catch (...)
         {
             iterator_data->setException(std::current_exception());
         }
 
-        /// Reached when the node was not translated, either because the visitor reported
-        /// failure or because it threw (the exception stays recorded on the shared predicate).
-        /// This function is invoked from Rust through an `extern "C"` pointer, so an exception
-        /// must not leave it.
-        try
-        {
-            return reinterpret_cast<const void *>(visitUntranslated(*iterator_data));
-        }
-        catch (...)
-        {
-            iterator_data->setException(std::current_exception());
-            return nullptr;
-        }
+        return nullptr;
     }
 
     static uintptr_t getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node);
@@ -421,14 +375,15 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
                     {
-                        auto column_name = column_node->result_type->getName();
-                        auto column_type = std::make_shared<DB::DataTypeString>();
-                        auto column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
+                        DB::ColumnWithTypeAndName column;
+                        column.name = column_node->result_type->getName();
+                        column.column = DB::DataTypeString().createColumnConst(0, column.name);
+                        column.type = std::make_shared<DB::DataTypeString>();
 
                         /// TODO: get rid of const_cast.
                         DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
 
-                        const auto * right_arg = &dag.addColumn(std::move(column), std::move(column_type), std::move(column_name));
+                        const auto * right_arg = &dag.addColumn(std::move(column));
                         const auto * left_arg = literal_node;
 
                         DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
@@ -454,7 +409,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    DB::Field value = literal_node->column->getField();
+                    DB::Field value;
+                    literal_node->column->get(0, value);
 
                     uintptr_t constant = visitLiteralValue(
                         value,
