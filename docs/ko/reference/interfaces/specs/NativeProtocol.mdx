@@ -84,6 +84,8 @@ TLS는 프로토콜 아래에 있는 전송 계층에서 동작합니다. TLS를
 
 인증은 핸드셰이크 과정에서 [`ClientHello`](#clienthello) 메시지를 통해 수행됩니다. `user` 및 `password` 필드는 평문 문자열로 전송되므로, 전송 계층 암호화(TLS)가 전송 중 자격 증명을 보호합니다.
 
+비어 있는 `user` 필드는 서버에서 구성한 기본 세션 사용자, 즉 `default_session_user` 서버 설정(기본값은 `default`)으로 해석되며, `protocols` 섹션에서 리스너별로 재정의될 수 있습니다. 서버의 기본 세션 사용자가 비어 있도록 구성되어 있거나 서버 버전이 26.8보다 이전인 경우, 비어 있는 `user` 필드는 예외와 함께 거부됩니다. `clickhouse-client`는 비어 있는 사용자 이름을 전송하지 않으며, 클라이언트 측에서 `default`로 대체합니다.
+
 SSH 챌린지-응답 인증은 프로토콜 버전 54466부터 지원됩니다 — 자세한 내용은 [SSH 챌린지-응답 인증](#ssh-authentication)을 참조하십시오.
 
 <div id="inter-server-secret">
@@ -465,20 +467,20 @@ sequenceDiagram
 이 표는 패킷 유형 코드 다음에 오는 각 패킷의 본문만 설명합니다.
 
 <div id="clienthello">
-  ### ClientHello (packet type 0)
+  ### ClientHello (패킷 유형 0)
 </div>
 
 클라이언트 → 서버. TCP connection이 열린 후 전송되는 첫 번째 메시지입니다.
 
-| # | 필드                   | 유형      | 역할 | 설명                                  |
-| - | -------------------- | ------- | -- | ----------------------------------- |
-| 1 | client&#95;name      | String  | 공통 | 클라이언트 식별자(예: `"clickhouse-client"`) |
-| 2 | version&#95;major    | VarUInt | 공통 | 클라이언트 major 버전                      |
-| 3 | version&#95;minor    | VarUInt | 공통 | 클라이언트 minor 버전                      |
-| 4 | protocol&#95;version | VarUInt | 공통 | 클라이언트가 지원하는 최대 프로토콜 버전              |
-| 5 | database             | String  | 공통 | 기본 데이터베이스 이름                        |
-| 6 | user                 | String  | 공통 | 인증에 사용할 username                    |
-| 7 | password             | String  | 공통 | 비밀번호(plaintext)                     |
+| # | 필드                   | 유형      | 역할 | 설명                                                                                                                                  |
+| - | -------------------- | ------- | -- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | client&#95;name      | String  | 공통 | 클라이언트 식별자(예: `"clickhouse-client"`)                                                                                                 |
+| 2 | version&#95;major    | VarUInt | 공통 | 클라이언트 메이저 버전                                                                                                                      |
+| 3 | version&#95;minor    | VarUInt | 공통 | 클라이언트 마이너 버전                                                                                                                      |
+| 4 | protocol&#95;version | VarUInt | 공통 | 클라이언트가 지원하는 최대 프로토콜 버전                                                                                                              |
+| 5 | database             | String  | 공통 | 기본 데이터베이스 이름                                                                                                                        |
+| 6 | user                 | String  | 공통 | 인증에 사용할 username입니다. 비어 있으면 서버의 기본 세션 사용자(`default_session_user` 서버 설정이며, 26.8 이전 서버에서는 거부됨)를 의미합니다. [인증](#authentication)을 참조하십시오. |
+| 7 | password             | String  | 공통 | 비밀번호(plaintext)                                                                                                                     |
 
 <div id="serverhello">
   ### ServerHello (패킷 유형 0)

@@ -30,15 +30,17 @@ Le point de terminaison `/webterminal` est activé par défaut et contrôlé par
   ## Authentification
 </div>
 
-Le terminal web authentifie l&#39;utilisateur en appliquant les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP, mais les identifiants sont échangés directement sur la connexion WebSocket établie plutôt que via la requête de mise à niveau HTTP. Une fois la négociation initiale WebSocket terminée, le navigateur envoie le premier message au format JSON :
+Le terminal web authentifie l&#39;utilisateur en appliquant les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP, mais les informations d’identification sont échangées directement sur la connexion WebSocket établie plutôt que via la requête de mise à niveau HTTP. Une fois la négociation initiale WebSocket terminée, le navigateur envoie le premier message au format JSON :
 
 ```json
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
-Cela évite de placer des identifiants dans les paramètres d’URL ou les en-têtes `Authorization` associés à la requête d’upgrade, où ils pourraient se retrouver dans l’historique du navigateur, les journaux d’accès du serveur et les logs du proxy inverse. Les paramètres d’URL, l’authentification HTTP Basic et les en-têtes `X-ClickHouse-User`/`X-ClickHouse-Key` de la requête d’upgrade ne sont délibérément **pas** pris en compte par `/webterminal`.
+Le champ `user` est facultatif : lorsqu’il est omis ou vide, le nom d’utilisateur est défini par le [paramètre du serveur](/fr/operations/server-configuration-parameters/settings) `default_session_user` (ou son remplacement par point de terminaison dans une configuration de [protocoles composables](/fr/operations/settings/composable-protocols)), à savoir `default` sauf configuration contraire. Si `default_session_user` est défini sur une chaîne vide, les connexions sans nom d’utilisateur sont interdites : un message `auth` dont le champ `user` est omis ou vide échoue à l’authentification, le serveur ferme le WebSocket avec le code `1008` et, lorsque la section `session_log` est activée dans la configuration du serveur, le refus est enregistré dans [`system.session_log`](/fr/operations/system-tables/session_log) en tant qu’événement `LoginFailure` avec un `user` vide.
 
-Des identifiants invalides entraînent la fermeture du WebSocket par le serveur avec le code `1008` ; l’UI du navigateur redemande les identifiants.
+Cela évite de placer des informations d’identification dans les paramètres d’URL ou les en-têtes `Authorization` associés à la requête d’upgrade, où ils pourraient se retrouver dans l’historique du navigateur, les journaux d’accès du serveur et les logs du proxy inverse. Les paramètres d’URL, l’authentification HTTP Basic et les en-têtes `X-ClickHouse-User`/`X-ClickHouse-Key` de la requête d’upgrade ne sont délibérément **pas** pris en compte par `/webterminal`.
+
+Des informations d’identification invalides entraînent la fermeture du WebSocket par le serveur avec le code `1008` ; l’UI du navigateur redemande les informations d’identification.
 
 <div id="session">
   ## À quoi ressemble la session

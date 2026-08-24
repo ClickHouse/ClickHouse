@@ -30,11 +30,13 @@ doc_type: 'reference'
   ## 認証
 </div>
 
-ウェブターミナルは、HTTPプロトコルと同じ `Session` およびアクセス制御のチェックでユーザーを認証しますが、credentials は HTTP のアップグレードリクエスト経由ではなく、確立済みの WebSocket connection 上でインバンドにやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザーは最初のメッセージを JSON として送信します。
+ウェブターミナルは、HTTPプロトコルと同じ `Session` およびアクセス制御のチェックでユーザーを認証しますが、認証情報 は HTTP のアップグレードリクエスト経由ではなく、確立済みの WebSocket connection 上でインバンドにやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザーは最初のメッセージを JSON として送信します。
 
 ```json
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
+
+`user` フィールドは任意です。省略されているか空の場合、ユーザー名には `default_session_user` [サーバー設定](/ja/operations/server-configuration-parameters/settings) (または [コンポーザブルプロトコル](/ja/operations/settings/composable-protocols) 構成内のエンドポイントごとのオーバーライド) が使用され、別途設定されていない限り `default` になります。`default_session_user` が空文字列に設定されている場合、ユーザー名なしの接続は禁止されます。`user` が省略されているか空の `auth` メッセージは認証に失敗し、サーバーはコード `1008` で WebSocket を閉じます。また、サーバー構成で `session_log` セクションが有効になっている場合、この拒否は空の `user` を持つ `LoginFailure` イベントとして [`system.session_log`](/ja/operations/system-tables/session_log) に記録されます。
 
 これにより、認証情報を URL のクエリパラメータや、アップグレードリクエストに付与された `Authorization` ヘッダーに含めずに済みます。こうした場所に含めると、認証情報がブラウザの履歴、サーバーのアクセスログ、リバースプロキシのログに残るおそれがあります。アップグレードリクエストの URL パラメータ、HTTP Basic、および `X-ClickHouse-User`/`X-ClickHouse-Key` ヘッダーは、`/webterminal` では意図的に **参照されません**。
 

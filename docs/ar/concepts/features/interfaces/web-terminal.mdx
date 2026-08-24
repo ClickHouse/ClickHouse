@@ -36,6 +36,8 @@ doc_type: 'reference'
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
+حقل `user` اختياري: عند حذفه أو تركه فارغًا، يُستخدم اسم المستخدم المحدد في إعداد الخادم `default_session_user` [إعداد الخادم](/ar/operations/server-configuration-parameters/settings) (أو تجاوزه الخاص بكل نقطة نهاية في تهيئة [البروتوكولات القابلة للتركيب](/ar/operations/settings/composable-protocols))، وهو `default` ما لم يُهيَّأ بخلاف ذلك. إذا ضُبط `default_session_user` على سلسلة فارغة، تُحظر الاتصالات التي لا تحتوي على اسم مستخدم: تفشل مصادقة رسالة `auth` التي يكون فيها `user` محذوفًا أو فارغًا، ويغلق الخادم اتصال WebSocket بالرمز `1008`، وعند تمكين قسم `session_log` في تهيئة الخادم، يُسجَّل الرفض في [`system.session_log`](/ar/operations/system-tables/session_log) بوصفه حدث `LoginFailure` مع `user` فارغ.
+
 يؤدي ذلك إلى تجنّب وضع بيانات الاعتماد في معلمات استعلام URL أو رؤوس `Authorization` المرفقة بطلب الترقية، إذ قد ينتهي بها المطاف في سجل التصفّح، وسجلات وصول الخادم، وسجلات الوكيل العكسي. ولا يعتمد `/webterminal` عمدًا على معلمات URL أو مصادقة HTTP Basic أو رؤوس `X-ClickHouse-User`/`X-ClickHouse-Key` في طلب الترقية.
 
 تؤدي بيانات الاعتماد غير الصالحة إلى أن يغلق الخادم اتصال WebSocket بالرمز `1008`؛ وتطلب واجهة المستخدم في المتصفح بيانات الاعتماد مرة أخرى.

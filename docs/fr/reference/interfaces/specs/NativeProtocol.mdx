@@ -84,6 +84,8 @@ TLS se situe à la couche de transport, en dessous du protocole. Lorsqu’il est
 
 L’authentification a lieu lors du handshake, dans le message [`ClientHello`](#clienthello). Les champs `user` et `password` sont transmis sous forme de chaînes en clair ; la protection des credentials en transit repose donc sur le chiffrement au niveau du transport (TLS).
 
+Un champ `user` vide est interprété par le serveur comme l’utilisateur de session par défaut configuré : le paramètre serveur `default_session_user` (dont la valeur par défaut est `default`), susceptible d’être remplacé pour chaque listener dans la section `protocols`. Si le serveur est configuré avec un utilisateur de session par défaut vide, ou s’il est antérieur à la version 26.8, un champ `user` vide est rejeté avec une exception. Notez que `clickhouse-client` n’envoie jamais de nom d’utilisateur vide : il remplace cette valeur par `default` côté client.
+
 L’authentification SSH par challenge-response est disponible à partir de la version 54466 du protocole — voir [Authentification SSH par challenge-response](#ssh-authentication).
 
 <div id="inter-server-secret">
@@ -468,17 +470,17 @@ Ces tableaux documentent uniquement le corps de chaque paquet, après le code de
   ### ClientHello (type de paquet 0)
 </div>
 
-Client → Server. Le premier message après l’établissement de la connexion TCP.
+Client → Serveur. Le premier message après l’établissement de la connexion TCP.
 
-| # | Champ                | Type    | Rôle      | Description                                                 |
-| - | -------------------- | ------- | --------- | ----------------------------------------------------------- |
-| 1 | client&#95;name      | String  | universel | Identifiant du client (p. ex., `"clickhouse-client"`)       |
-| 2 | version&#95;major    | VarUInt | universel | Version majeure du client                                   |
-| 3 | version&#95;minor    | VarUInt | universel | Version mineure du client                                   |
-| 4 | protocol&#95;version | VarUInt | universel | Version maximale du protocole prise en charge par le client |
-| 5 | database             | String  | universel | Nom de la base de données par défaut                        |
-| 6 | user                 | String  | universel | Nom d’utilisateur pour l’authentification                   |
-| 7 | password             | String  | universel | Mot de passe (en texte brut)                                |
+| # | Champ                | Type    | Rôle      | Description                                                                                                                                                                                                                                                          |
+| - | -------------------- | ------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | client&#95;name      | String  | universel | Identifiant du client (p. ex., `"clickhouse-client"`)                                                                                                                                                                                                                |
+| 2 | version&#95;major    | VarUInt | universel | Version majeure du client                                                                                                                                                                                                                                            |
+| 3 | version&#95;minor    | VarUInt | universel | Version mineure du client                                                                                                                                                                                                                                            |
+| 4 | protocol&#95;version | VarUInt | universel | Version maximale du protocole prise en charge par le client                                                                                                                                                                                                          |
+| 5 | database             | String  | universel | Nom de la base de données par défaut                                                                                                                                                                                                                                 |
+| 6 | user                 | String  | universel | Nom d’utilisateur pour l’authentification. Une valeur vide désigne l’utilisateur de session par défaut du serveur (le paramètre de serveur `default_session_user` ; rejeté par les serveurs antérieurs à la version 26.8). Voir [Authentification](#authentication). |
+| 7 | password             | String  | universel | Mot de passe (en texte brut)                                                                                                                                                                                                                                         |
 
 <div id="serverhello">
   ### ServerHello (type de paquet 0)

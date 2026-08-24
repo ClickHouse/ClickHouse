@@ -36,6 +36,8 @@ O terminal web autentica o usuário com as mesmas verificações de `Session` e 
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
+O campo `user` é opcional: quando omitido ou vazio, o nome de usuário usa como padrão a [configuração do servidor](/pt-BR/operations/server-configuration-parameters/settings) `default_session_user` (ou sua sobrescrita por endpoint em uma configuração de [protocolos componíveis](/pt-BR/operations/settings/composable-protocols)), que é `default`, salvo configuração em contrário. Se `default_session_user` for definido como uma string vazia, conexões sem nome de usuário serão proibidas: uma mensagem `auth` com `user` omitido ou vazio falha na autenticação, o servidor fecha o WebSocket com o código `1008` e, quando a seção `session_log` está habilitada na configuração do servidor, a recusa é registrada em [`system.session_log`](/pt-BR/operations/system-tables/session_log) como um evento `LoginFailure` com `user` vazio.
+
 Isso evita colocar credenciais em parâmetros de consulta da URL ou em cabeçalhos `Authorization` incluídos na solicitação de upgrade, onde elas poderiam acabar no histórico do navegador, nos logs de acesso do servidor e nos logs do proxy reverso. Os parâmetros de URL, o HTTP Basic e os cabeçalhos `X-ClickHouse-User`/`X-ClickHouse-Key` na solicitação de upgrade intencionalmente **não** são considerados pelo `/webterminal`.
 
 Credenciais inválidas fazem o servidor fechar o WebSocket com o código `1008`; a interface do navegador solicita as credenciais novamente.

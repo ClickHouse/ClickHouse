@@ -84,6 +84,8 @@ TLS opera en la capa de transporte, por debajo del protocolo. Cuando está habil
 
 La autenticación se realiza durante el handshake, en el mensaje [`ClientHello`](#clienthello). Los campos `user` y `password` se transmiten como cadenas de texto en claro, por lo que el cifrado a nivel de transporte (TLS) es lo que protege las credenciales durante el tránsito.
 
+El servidor interpreta un campo `user` vacío como el usuario de sesión predeterminado configurado: la configuración del servidor `default_session_user` (cuyo valor predeterminado es `default`), que puede sobrescribirse para cada listener en la sección `protocols`. Si el servidor está configurado con un usuario de sesión predeterminado vacío, o si es anterior a la versión 26.8, se rechaza un campo `user` vacío con una excepción. Ten en cuenta que `clickhouse-client` nunca envía un nombre de usuario vacío: sustituye `default` en el lado del client.
+
 La autenticación SSH de desafío-respuesta está disponible a partir de la versión 54466 del protocolo; consulta [Autenticación SSH de desafío-respuesta](#ssh-authentication).
 
 <div id="inter-server-secret">
@@ -470,15 +472,15 @@ Estas tablas documentan solo el body de cada paquete, después del código de ti
 
 Client → servidor. El primer mensaje tras abrirse la conexión TCP.
 
-| # | Campo                | Tipo    | Rol       | Descripción                                              |
-| - | -------------------- | ------- | --------- | -------------------------------------------------------- |
-| 1 | client&#95;name      | String  | universal | Identificador del client (p. ej., `"clickhouse-client"`) |
-| 2 | version&#95;major    | VarUInt | universal | Versión principal del client                             |
-| 3 | version&#95;minor    | VarUInt | universal | Versión secundaria del client                            |
-| 4 | protocol&#95;version | VarUInt | universal | Versión máxima del protocolo que admite el client        |
-| 5 | database             | String  | universal | Nombre de la base de datos predeterminada                |
-| 6 | user                 | String  | universal | Nombre de usuario para la autenticación                  |
-| 7 | password             | String  | universal | Contraseña (en texto no cifrado)                         |
+| # | Campo                | Tipo    | Rol       | Descripción                                                                                                                                                                                                                                                    |
+| - | -------------------- | ------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | client&#95;name      | String  | universal | Identificador del client (p. ej., `"clickhouse-client"`)                                                                                                                                                                                                       |
+| 2 | version&#95;major    | VarUInt | universal | Versión principal del client                                                                                                                                                                                                                                   |
+| 3 | version&#95;minor    | VarUInt | universal | Versión secundaria del client                                                                                                                                                                                                                                  |
+| 4 | protocol&#95;version | VarUInt | universal | Versión máxima del protocolo que admite el client                                                                                                                                                                                                              |
+| 5 | database             | String  | universal | Nombre de la base de datos predeterminada                                                                                                                                                                                                                      |
+| 6 | user                 | String  | universal | Nombre de usuario para la autenticación. Si está vacío, se usa el usuario de sesión predeterminado del servidor (la configuración del servidor `default_session_user`; rechazado por servidores anteriores a 26.8). Consulte [Autenticación](#authentication). |
+| 7 | password             | String  | universal | Contraseña (en texto no cifrado)                                                                                                                                                                                                                               |
 
 <div id="serverhello">
   ### ServerHello (tipo de paquete 0)

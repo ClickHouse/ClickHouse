@@ -237,6 +237,7 @@
             "zh/concepts/features/interfaces/web-sql",
             "zh/concepts/features/interfaces/web-ui-color-coding",
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
+            "zh/concepts/features/interfaces/web-ui-result-shaping",
             "zh/concepts/features/interfaces/web-terminal",
             {
               "group": "第三方客户端",

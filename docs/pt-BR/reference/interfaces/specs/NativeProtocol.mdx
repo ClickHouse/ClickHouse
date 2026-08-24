@@ -84,6 +84,8 @@ O TLS opera na camada de transporte, abaixo do protocolo. Quando está habilitad
 
 A autenticação ocorre durante o handshake, na mensagem [`ClientHello`](#clienthello). Os campos `user` e `password` são transmitidos como strings em texto simples, portanto a criptografia na camada de transporte (TLS) é a responsável por proteger as credenciais em trânsito.
 
+Um campo `user` vazio é interpretado pelo servidor como o usuário de sessão padrão configurado: a configuração de servidor `default_session_user` (cujo valor padrão é `default`), possivelmente substituída para cada listener na seção `protocols`. Se o servidor estiver configurado com um usuário de sessão padrão vazio ou for anterior à versão 26.8, um campo `user` vazio será rejeitado com uma exceção. Observe que `clickhouse-client` nunca envia um nome de usuário vazio: ele substitui `default` no lado do cliente.
+
 A autenticação SSH por challenge-response está disponível a partir da versão 54466 do protocolo — consulte [autenticação SSH por challenge-response](#ssh-authentication).
 
 <div id="inter-server-secret">
@@ -470,15 +472,15 @@ Estas tabelas documentam apenas o corpo de cada pacote, após o código do tipo 
 
 Cliente → servidor. A primeira mensagem após o estabelecimento da conexão TCP.
 
-| # | Campo                | Tipo    | Função    | Descrição                                                     |
-| - | -------------------- | ------- | --------- | ------------------------------------------------------------- |
-| 1 | client&#95;name      | String  | universal | Identificador do cliente (por exemplo, `"clickhouse-client"`) |
-| 2 | version&#95;major    | VarUInt | universal | Versão principal do cliente                                   |
-| 3 | version&#95;minor    | VarUInt | universal | Versão secundária do cliente                                  |
-| 4 | protocol&#95;version | VarUInt | universal | Versão máxima do protocolo compatível com o cliente           |
-| 5 | database             | String  | universal | nome do banco de dados padrão                                 |
-| 6 | user                 | String  | universal | Nome de usuário para autenticação                             |
-| 7 | password             | String  | universal | Senha (em texto simples)                                      |
+| # | Campo                | Tipo    | Função    | Descrição                                                                                                                                                                                                                                   |
+| - | -------------------- | ------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | client&#95;name      | String  | universal | Identificador do cliente (por exemplo, `"clickhouse-client"`)                                                                                                                                                                               |
+| 2 | version&#95;major    | VarUInt | universal | Versão principal do cliente                                                                                                                                                                                                                 |
+| 3 | version&#95;minor    | VarUInt | universal | Versão secundária do cliente                                                                                                                                                                                                                |
+| 4 | protocol&#95;version | VarUInt | universal | Versão máxima do protocolo compatível com o cliente                                                                                                                                                                                         |
+| 5 | database             | String  | universal | nome do banco de dados padrão                                                                                                                                                                                                               |
+| 6 | user                 | String  | universal | Nome de usuário para autenticação. Vazio significa o usuário de sessão padrão do servidor (a configuração de servidor `default_session_user`; rejeitado por servidores anteriores à versão 26.8). Consulte [Autenticação](#authentication). |
+| 7 | password             | String  | universal | Senha (em texto simples)                                                                                                                                                                                                                    |
 
 <div id="serverhello">
   ### ServerHello (tipo de pacote 0)

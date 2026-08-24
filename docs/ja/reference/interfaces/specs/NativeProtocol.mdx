@@ -84,6 +84,8 @@ TLS はプロトコルの下位にあるトランスポート層で動作しま�
 
 認証は、ハンドシェイク時の [`ClientHello`](#clienthello) メッセージで行われます。`user` フィールドと `password` フィールドは平文の文字列として送信されるため、転送中の認証情報を保護するのはトランスポート層の暗号化 (TLS) です。
 
+空の `user` フィールドは、サーバーで設定されているデフォルトのセッションユーザー、つまり `default_session_user` サーバー設定 (デフォルト値は `default`) として解釈されます。この値は、`protocols` セクションでリスナーごとにオーバーライドされる場合があります。サーバーのデフォルトのセッションユーザーが空に設定されている場合、またはサーバーのバージョンが 26.8 より前の場合、空の `user` フィールドは例外として拒否されます。`clickhouse-client` は空のユーザー名を送信しないことに注意してください。クライアント側で `default` に置き換えます。
+
 SSH チャレンジレスポンス認証は、プロトコルバージョン 54466 以降で利用できます。詳しくは、[SSH チャレンジレスポンス認証](#ssh-authentication) を参照してください。
 
 <div id="inter-server-secret">
@@ -470,15 +472,15 @@ sequenceDiagram
 
 クライアント → サーバー。TCP接続の確立後に送信される最初のメッセージです。
 
-| # | フィールド                | Type    | ロール       | 説明                                    |
-| - | -------------------- | ------- | --------- | ------------------------------------- |
-| 1 | client&#95;name      | String  | universal | クライアント識別子 (例: `"clickhouse-client"`)  |
-| 2 | version&#95;major    | VarUInt | universal | クライアントのメジャーバージョン                      |
-| 3 | version&#95;minor    | VarUInt | universal | クライアントのマイナーバージョン                      |
-| 4 | protocol&#95;version | VarUInt | universal | クライアントがサポートする最大のプロトコルバージョン            |
-| 5 | database             | String  | universal | デフォルトのデータベース名                         |
-| 6 | user                 | String  | universal | 認証用のユーザー名                             |
-| 7 | password             | String  | universal | パスワード (平文)                            |
+| # | フィールド                | Type    | ロール       | 説明                                                                                                                             |
+| - | -------------------- | ------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1 | client&#95;name      | String  | universal | クライアント識別子 (例: `"clickhouse-client"`)                                                                                           |
+| 2 | version&#95;major    | VarUInt | universal | クライアントのメジャーバージョン                                                                                                               |
+| 3 | version&#95;minor    | VarUInt | universal | クライアントのマイナーバージョン                                                                                                               |
+| 4 | protocol&#95;version | VarUInt | universal | クライアントがサポートする最大のプロトコルバージョン                                                                                                     |
+| 5 | database             | String  | universal | デフォルトのデータベース名                                                                                                                  |
+| 6 | user                 | String  | universal | 認証用のユーザー名。空の場合はサーバーのデフォルトセッションユーザー (`default_session_user` サーバー設定。26.8より前のサーバーでは拒否されます) を意味します。[認証](#authentication)を参照してください。 |
+| 7 | password             | String  | universal | パスワード (平文)                                                                                                                     |
 
 <div id="serverhello">
   ### ServerHello (パケットタイプ 0)

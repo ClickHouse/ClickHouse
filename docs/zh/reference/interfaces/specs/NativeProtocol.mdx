@@ -84,6 +84,8 @@ TLS 位于传输层，处于协议层之下。启用后，整个 TCP 数据流�
 
 身份验证在握手阶段进行，也就是在 [`ClientHello`](#clienthello) 消息中完成。`user` 和 `password` 字段会以明文字符串形式传输，因此需要依靠传输层加密 (TLS) 来保护传输中的凭据。
 
+服务器会将空的 `user` 字段解释为其配置的默认会话用户：即 `default_session_user` 服务器设置 (其默认值为 `default`) ，也可能在 `protocols` 部分中按 listener 被覆盖。如果服务器配置的默认会话用户为空，或者服务器版本早于 26.8，则会以异常拒绝空的 `user` 字段。请注意，`clickhouse-client` 从不发送空用户名：它会在客户端将其替换为 `default`。
+
 从协议版本 54466 开始，支持 SSH 质询-响应身份验证——请参阅 [SSH 质询-响应身份验证](#ssh-authentication)。
 
 <div id="inter-server-secret">
@@ -468,17 +470,17 @@ sequenceDiagram
   ### ClientHello (数据包类型 0)
 </div>
 
-客户端 → 服务端。TCP 连接建立后发送的第一条消息。
+客户端 → 服务器。TCP 连接建立后发送的第一条消息。
 
-| # | 字段                   | 类型      | 角色 | 描述                                 |
-| - | -------------------- | ------- | -- | ---------------------------------- |
-| 1 | client&#95;name      | String  | 通用 | 客户端标识符 (例如 `"clickhouse-client"`)  |
-| 2 | version&#95;major    | VarUInt | 通用 | 客户端主版本号                            |
-| 3 | version&#95;minor    | VarUInt | 通用 | 客户端次版本号                            |
-| 4 | protocol&#95;version | VarUInt | 通用 | 客户端支持的最高协议版本                       |
-| 5 | database             | String  | 通用 | 默认数据库名称                            |
-| 6 | user                 | String  | 通用 | 用于身份验证的用户名                         |
-| 7 | password             | String  | 通用 | 密码 (明文)                            |
+| # | 字段                   | 类型      | 角色 | 描述                                                                                                    |
+| - | -------------------- | ------- | -- | ----------------------------------------------------------------------------------------------------- |
+| 1 | client&#95;name      | String  | 通用 | 客户端标识符 (例如 `"clickhouse-client"`)                                                                     |
+| 2 | version&#95;major    | VarUInt | 通用 | 客户端主版本号                                                                                               |
+| 3 | version&#95;minor    | VarUInt | 通用 | 客户端次版本号                                                                                               |
+| 4 | protocol&#95;version | VarUInt | 通用 | 客户端支持的最高协议版本                                                                                          |
+| 5 | database             | String  | 通用 | 默认数据库名称                                                                                               |
+| 6 | user                 | String  | 通用 | 用于身份验证的用户名。留空表示服务器的默认会话用户 (`default_session_user` 服务器设置；低于 26.8 的服务器会拒绝) 。请参阅[身份验证](#authentication)。 |
+| 7 | password             | String  | 通用 | 密码 (明文)                                                                                               |
 
 <div id="serverhello">
   ### ServerHello (数据包类型 0)
