@@ -18,9 +18,11 @@ SET join_algorithm = 'hash';
 SET max_threads = 1;
 SET max_block_size = 4096;
 
+-- The build side is generated rather than read from a table: a storage read has memory costs of its
+-- own that vary with the disk backend (on s3 disks the read buffers alone broke these caps), and the
+-- caps are about the join.
 DROP TABLE IF EXISTS bnl_ret_build;
-CREATE TABLE bnl_ret_build (y UInt64, t String) ENGINE = MergeTree ORDER BY y;
-INSERT INTO bnl_ret_build SELECT number, repeat(toString(number % 10), 500) FROM numbers(60000);
+CREATE VIEW bnl_ret_build AS SELECT number AS y, repeat(toString(number % 10), 500) AS t FROM numbers(60000);
 
 SELECT 'spilled', count(), sum(cityHash64(r.t))
 FROM (SELECT number AS x FROM numbers(1)) l
