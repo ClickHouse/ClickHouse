@@ -177,35 +177,22 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
         ByteRange range() const override { return r; }
-        IntervalSet committed() const override
+        bool fillsWholeSegment() const override { return true; }
+        size_t committed() const override
         {
-            IntervalSet c;
-            if (state->resident.subtract(r).empty())  // whole block resident
-                c.add(r);
-            return c;
+            /// Whole-block: committed at resolve time (`resident`) or populated since (`late_committed`).
+            const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
+            return done ? r.end() : r.offset;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
-        Lead claimLeadRole(ByteRange range) override
+        Claim claimLeadRole() override
         {
-            Lead lead;
-            const size_t lo = std::max(range.offset, r.offset);
-            const size_t hi = std::min(range.end(), r.end());
-            lead.available = ByteRange{lo, 0};
-            if (lo >= hi)
-                return lead;
-            const ByteRange overlap{lo, hi - lo};
-            /// A block populated since `resolve` is reported as an available committed prefix; the
-            /// caller serves it from cache and there is nothing left to fill (no claim).
-            if (state->late_committed.subtract(overlap).empty())
-            {
-                lead.available = overlap;
-                return lead;
-            }
-            /// We hold the role over the free part (not led by a concurrent downloader); if the whole
-            /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
-            const bool held = !state->concurrent_download.subtract(overlap).empty();
-            lead.claim = makeClaim(held, /*release=*/nullptr);
-            return lead;
+            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no claim.
+            if (state->late_committed.subtract(r).empty())
+                return {};
+            /// We hold the role unless the whole block is being downloaded elsewhere (then hold nothing).
+            const bool held = !state->concurrent_download.subtract(r).empty();
+            return makeClaim(held, /*release=*/nullptr);
         }
         size_t write(ChainedBuffers data, const Claim & claim) override
         {

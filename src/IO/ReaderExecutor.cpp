@@ -418,11 +418,13 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         if (!miss_tier.writer)
             continue;  /// nothing will be populated here
         any_writer = true;
-        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
-        const ByteRange avail = lead.available;
-        if (avail.size && avail.offset <= window_offset && window_offset < avail.end())
-            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail.end(), miss_tier.range.end()))});
-        miss_tier.claim = std::move(lead.claim);
+        CacheWriter::Claim claim = miss_tier.writer->claimLeadRole();
+        /// A prefix cached since `resolve` (`committed()`) covering the head is served from that tier - no
+        /// source read; otherwise keep the claim for the fetch.
+        const size_t avail_end = miss_tier.writer->committed();
+        if (miss_tier.writer->range().offset <= window_offset && window_offset < avail_end)
+            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail_end, miss_tier.range.end()))});
+        miss_tier.claim = std::move(claim);
     }
 
     /// A range another thread is already downloading is fetched through below (its `write` lands 0).
