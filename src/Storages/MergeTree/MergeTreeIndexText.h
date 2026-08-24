@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -90,6 +91,7 @@ struct MergeTreeIndexTextParams
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     ASTPtr preprocessor;
     ASTPtr postprocessor;
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 using PostingList = roaring::Roaring;
@@ -167,7 +169,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_);
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_);
 
     enum Flags : UInt64
     {
@@ -198,7 +200,7 @@ private:
     const IPostingListCodec & resolveCodec(UInt64 header);
 
     PostingListCodecPtr posting_list_codec;
-    MergeTreeIndexVersion serialization_version;
+    MergeTreeTextIndexSerializationVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
@@ -294,16 +296,9 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexHeader
 {
-    enum class Version
-    {
-        Initial = 0,
-        WithCodec = 1,
-        WithPositions = 2,
-    };
-
-    MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
+    MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions and positions_codec are persisted for version >= WithPositions.
+    /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
@@ -327,7 +322,7 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
+    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -380,7 +375,7 @@ public:
     const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
-    MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
+    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
     UInt8 getPositionsCodec() const { return positions_codec; }
 
     static PostingListPtr readPostingsBlock(
@@ -416,7 +411,7 @@ private:
     /// Codec type used to serialize postings in this granule.
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
-    MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     /// Positions on-disk codec persisted in the header.
     UInt8 positions_codec = 0;
 };

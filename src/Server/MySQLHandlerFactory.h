@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Common/ProfileEvents.h>
@@ -7,6 +8,7 @@
 #include "config.h"
 
 #include <atomic>
+#include <optional>
 
 #if USE_SSL
 #    include <Common/Crypto/KeyPair.h>
@@ -32,12 +34,20 @@ private:
 
     bool secure_required = false;
 
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
+
     std::atomic<unsigned> last_connection_id = 0;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 public:
-    explicit MySQLHandlerFactory(IServer & server_, bool secure_required_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    explicit MySQLHandlerFactory(
+        IServer & server_,
+        bool secure_required_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
+        std::optional<String> default_session_user_ = {});
 
     void readRSAKeys();
 
