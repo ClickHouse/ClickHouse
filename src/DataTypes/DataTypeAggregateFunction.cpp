@@ -88,11 +88,6 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
-{
-    setVersion(function->getVersionFromRevision(revision), if_empty);
-}
-
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
