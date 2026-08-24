@@ -318,10 +318,7 @@ static bool containerExists(const ContainerClient & client)
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
 
-        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
-        /// as InternalServerError. A transient network error should not prevent the server
-        /// from starting — assume the container exists and let actual I/O operations fail
-        /// with a clear error later if it doesn't.
+        /// A generic/unexpected server error shouldn't block startup — assume the container exists; real I/O fails later with a clear error.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
         {
             LOG_WARNING(getLogger("AzureBlobStorageCommon"),
@@ -331,6 +328,13 @@ static bool containerExists(const ContainerClient & client)
         }
 
         throw;
+    }
+    catch (const Azure::Core::Http::TransportException & e)
+    {
+        /// Transport failure (DNS/connection/timeout) is retryable and shouldn't block startup — assume the container exists, like the 500 case above.
+        LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+            "Transport error while checking container existence: {}. Assuming the container exists.", e.Message);
+        return true;
     }
 }
 

@@ -102,19 +102,28 @@ struct LastElementCache<Value, false> : public LastElementCacheBase
     bool check(const Value & rhs) const { return value == rhs; }
 };
 
-template <typename Mapped>
+template <typename Mapped, typename Value>
 class EmplaceResultImpl
 {
+    using Key = std::decay_t<decltype(std::declval<Value>().first)>;
+
     Mapped & value;
     Mapped & cached_value;
     bool inserted;
+    Key key;
 
 public:
-    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_)
-            : value(value_), cached_value(cached_value_), inserted(inserted_) {}
+    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_, Key key_ = {})
+        : value(value_)
+        , cached_value(cached_value_)
+        , inserted(inserted_)
+        , key(std::move(key_))
+    {
+    }
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
+    const Key & getKey() const { return key; }
 
     void setMapped(const Mapped & mapped)
     {
@@ -123,14 +132,19 @@ public:
     }
 };
 
-template <>
-class EmplaceResultImpl<void>
+template <typename Value>
+class EmplaceResultImpl<void, Value>
 {
+    /// A set cell's value is the key itself.
+    using Key = std::decay_t<Value>;
+
     bool inserted;
+    Key key;
 
 public:
-    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
+    explicit EmplaceResultImpl(bool inserted_, Key key_ = {}) : inserted(inserted_), key(std::move(key_)) {}
     bool isInserted() const { return inserted; }
+    const Key & getKey() const { return key; }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -190,7 +204,7 @@ template <typename Derived, typename Value, typename Mapped, bool consecutive_ke
 class HashMethodBase
 {
 public:
-    using EmplaceResult = EmplaceResultImpl<Mapped>;
+    using EmplaceResult = EmplaceResultImpl<Mapped, Value>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
@@ -441,6 +455,7 @@ protected:
 
         typename Data::LookupResult it;
         bool inserted = false;
+        auto key = keyHolderGetKey(key_holder);
 
         if constexpr (compute_hash)
             data.emplace(key_holder, it, inserted);
@@ -481,9 +496,9 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), *cached, inserted);
+            return EmplaceResult(it->getMapped(), *cached, inserted, std::move(key));
         else
-            return EmplaceResult(inserted);
+            return EmplaceResult(inserted, std::move(key));
     }
 
     template <typename Data, typename Key>
