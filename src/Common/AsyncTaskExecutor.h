@@ -52,11 +52,14 @@ class AsyncTaskExecutor
 {
 public:
     /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task.
-    /// initial_span_attributes_ are added to that span
+    /// initial_span_attributes_ are added to that span.
+    /// A non-zero initial_span_start_time_us_ makes the span of the first task execution continue
+    /// a span the caller opened before the executor existed: the span gets this start time.
     AsyncTaskExecutor(
         std::unique_ptr<AsyncTask> task_,
         String operation_name_,
-        OpenTelemetry::SpanAttributes initial_span_attributes_ = {});
+        OpenTelemetry::SpanAttributes initial_span_attributes_ = {},
+        UInt64 initial_span_start_time_us_ = 0);
 
     /// Add an attribute to the span covering the current (and any future) execution of the task.
     /// Thread-safe: can be called both from inside the fiber and from other threads.
@@ -150,6 +153,10 @@ private:
     /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits
     /// restart() runs the task again under a new span that must get them too
     OpenTelemetry::SpanAttributes span_attributes;
+    /// Start time of a span handed over by the caller, adopted by the span of the first task
+    /// execution and consumed: a task rerun after restart() gets a fresh span. Only accessed
+    /// from inside the fiber routine after construction, so it needs no synchronization.
+    UInt64 initial_span_start_time_us = 0;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

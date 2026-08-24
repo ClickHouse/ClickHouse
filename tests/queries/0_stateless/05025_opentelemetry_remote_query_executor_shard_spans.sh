@@ -5,10 +5,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Every remote read of a distributed SELECT is covered by a per-shard
+# Every remote read of a distributed SELECT is covered by exactly one per-shard
 # `RemoteQueryExecutor::execute` span: the read context fiber on the asynchronous
 # paths, a span kept alive by the executor itself on the fully synchronous path.
-# The spans carry
+# When the query is sent synchronously but read asynchronously
+# (async_socket_for_remote = 1, async_query_sending_for_remote = 0), the span opened
+# at send time is handed over to the fiber, which continues it - the shard must not
+# get a separate send-side and read-side span. The spans carry
 # attributes identifying the fragment: `clickhouse.cluster`, `clickhouse.shard_num`,
 # `clickhouse.processed_stage`, `clickhouse.query_id`, `clickhouse.initial_query_id`
 # and, once the connections are established, `clickhouse.target_host`.
@@ -85,13 +88,14 @@ for async_settings in "1 1" "1 0" "0 0"; do
     ${CLICKHOUSE_CLIENT} -q "
         with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
         select
-            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') >= 2
+            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') = 2
                    and uniqExactIf(attribute['clickhouse.shard_num'], attribute['clickhouse.shard_num'] in ('1', '2')) = 2,
-               'fragment spans on both shards: OK', 'fragment spans on both shards: FAIL'),
+               'exactly one fragment span per shard: OK',
+               'exactly one fragment span per shard: FAIL, ' || toString(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards')) || ' spans'),
             if(countIf(attribute['clickhouse.initial_query_id'] = '$query_id'
                    and attribute['clickhouse.query_id'] != ''
-                   and attribute['clickhouse.processed_stage'] != '') >= 2
-                   and countIf(attribute['clickhouse.target_host'] != '') >= 2,
+                   and attribute['clickhouse.processed_stage'] != '') = 2
+                   and countIf(attribute['clickhouse.target_host'] != '') = 2,
                'fragment span attributes: OK', 'fragment span attributes: FAIL')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t

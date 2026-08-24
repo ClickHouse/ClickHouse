@@ -521,7 +521,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     /// span (`RemoteQueryExecutor::execute`) covers the whole fragment execution. On the synchronous
     /// path there is no fiber, so open a span here and keep it alive in a member until `EndOfStream`,
     /// an exception or a cancel: it must cover not only connection establishing and query sending
-    /// but also the synchronous packet reading done by later read() calls.
+    /// but also the synchronous packet reading done by later read() calls. If asynchronous reading
+    /// follows instead (async_socket_for_remote = 1 with synchronous sending), readAsync hands this
+    /// span over to the read context fiber, which continues it rather than finishing it.
     if (!read_context && OpenTelemetry::CurrentContext().isTraceEnabled())
     {
         const auto & trace_context = OpenTelemetry::CurrentContext();
@@ -651,12 +653,17 @@ int RemoteQueryExecutor::sendQueryAsync()
         return -1;
 
     if (!read_context)
+    {
+        /// The query was not sent yet, so the synchronous-path span cannot exist: the fiber
+        /// span of the read context is the only fragment span.
+        chassert(!sync_fragment_span);
         read_context = std::make_unique<ReadContext>(
             *this,
             /*suspend_when_query_sent*/ true,
             read_packet_type_separately,
             OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
                                                              : OpenTelemetry::SpanAttributes{});
+    }
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -745,18 +752,40 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
+        /// When the query was sent synchronously (async_query_sending_for_remote = 0) but the
+        /// reading is asynchronous, sendQueryUnlocked already opened the fragment span. Hand it
+        /// over to the read context: the fiber span continues it with the same start time and
+        /// attributes (including `clickhouse.target_host`), so the shard gets exactly one
+        /// `RemoteQueryExecutor::execute` span instead of a send-side and a read-side one.
+        OpenTelemetry::SpanAttributes initial_span_attributes;
+        UInt64 initial_span_start_time_us = 0;
+        if (OpenTelemetry::CurrentContext().isTraceEnabled())
+        {
+            if (sync_fragment_span)
+            {
+                initial_span_attributes = std::move(sync_fragment_span->attributes);
+                initial_span_start_time_us = sync_fragment_span->start_time_us;
+                sync_fragment_span.reset();
+                sync_fragment_span_log = {};
+            }
+            else
+            {
+                initial_span_attributes = getFragmentSpanAttributes();
+            }
+        }
+        else
+        {
+            /// No tracing context on this thread, so the fiber cannot continue the span:
+            /// close it at the send/read boundary instead of losing it.
+            finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+        }
+
         read_context = std::make_unique<ReadContext>(
             *this,
             /*suspend_when_query_sent*/ false,
             read_packet_type_separately,
-            OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
-                                                             : OpenTelemetry::SpanAttributes{});
-
-        /// When the query was sent synchronously (async_query_sending_for_remote = 0) but the
-        /// reading is asynchronous, the fiber span of the read context covers the execution
-        /// from here on: hand over, closing the synchronous-path span at the send/read boundary
-        /// instead of letting two spans cover the same reading.
-        finishSyncFragmentSpan(OpenTelemetry::SpanStatus::OK);
+            std::move(initial_span_attributes),
+            initial_span_start_time_us);
     }
 
     while (true)
