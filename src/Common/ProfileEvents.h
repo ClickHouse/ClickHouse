@@ -80,12 +80,23 @@ namespace ProfileEvents
         /// with the flip.
         std::atomic<uint32_t> cpus = 0;
         AlignedCounters counters_holder;
-        /// Used to propagate increments
+
+        /// Used to propagate increments.
+        /// Requires acquire-release:
+        /// 1. Thread A constructs Counters object and attaches Counters pointer
+        ///    (e.g. ProcessList::insert where the user's Counters is constructed right before calling setUserCounters).
+        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
+        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
+        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
         std::atomic<Counters *> parent = {};
+
         std::atomic<Count> prev_cpu_wait_microseconds = 0;
         std::atomic<Count> prev_cpu_virtual_time_microseconds = 0;
 
-        /// Lazily allocated on first setTraceProfileEvent()
+        /// Lazily allocated on first setTraceProfileEvent().
+        /// The thread which allocates a buffer and updates the should_trace_array pointer
+        /// should synchronize-with any thread that reads the pointer and reads from the buffer.
+        /// Therefore, should_trace_array requires acquire-release.
         std::atomic<std::atomic_bool *> should_trace_array = nullptr;
         std::unique_ptr<std::atomic_bool[]> should_trace_holder;
         std::atomic_bool trace_all_profile_events = false;

@@ -256,37 +256,6 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
 }
 
-Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-{
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #define compareAt doCompareAt
-#endif
-    Int64 res = compareAt(n, m, rhs, nan_direction_hint);
-
-    if (res < 0)
-    {
-        ++n;
-        while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
-        {
-            --res;
-            ++n;
-        }
-    }
-    else if (res > 0)
-    {
-        ++m;
-        while (m < rhs.size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
-        {
-            ++res;
-            ++m;
-        }
-    }
-    return res;
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #undef compareAt
-#endif
-}
-
 size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
 {
     /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
@@ -521,6 +490,24 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
             return false;
     }
     return true;
+}
+
+/// Compare once, then find the end of the run of lesser rows on the lesser side by galloping.
+/// Both sides are cast to the concrete column type (rhs must match by the compareAt contract),
+/// so the probes and the size calls devirtualize, and compareAt inlines when its definition is
+/// visible — hence the linear probe can be fairly long.
+template <typename Derived, typename Parent>
+Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    constexpr size_t linear_probe = 16;
+    const auto & lhs = static_cast<const Derived &>(*this);
+    const auto & rhs = assert_cast<const Derived &>(rhs_);
+
+    return compareTrackAtImpl(
+        lhs.compareAt(n, m, rhs, nan_direction_hint),
+        n, m, lhs.size(), rhs.size(), linear_probe,
+        [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; },
+        [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; });
 }
 
 template <typename Derived, typename Parent>

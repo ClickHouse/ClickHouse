@@ -36,6 +36,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsNonZeroUInt64 log_readahead_window_bytes;
     extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsUInt64 log_startup_read_max_streams;
+    extern const CoordinationSettingsNonZeroUInt64 log_startup_read_buffer_size;
 }
 
 namespace ErrorCodes
@@ -337,6 +339,8 @@ KeeperStateManager::KeeperStateManager(
               .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
               .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
               .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
+              .startup_read_max_streams = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_startup_read_max_streams],
+              .startup_read_buffer_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_startup_read_buffer_size],
           },
           FlushSettings
           {

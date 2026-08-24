@@ -13,6 +13,12 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
+    _IMAGE_PULL_RETRIES,
+    _IMAGE_PULL_RETRY_ERRORS,
+    _IMAGE_PULL_TIMEOUT_S,
+    Docker,
+)
 from .event import EventFeed
 from .gh import GH
 from .gh_auth import GHAuth
@@ -467,6 +473,23 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        if job.run_in_docker and not no_docker:
+            # Retry the pull `docker run` would otherwise do implicitly and only once.
+            # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
+            # a present image needs no registry. Non-fatal: local-only images have no pull.
+            if not Shell.check(f"docker image inspect {docker}", verbose=False):
+
+                def _warn_pull_retried(matched, attempt, attempts):
+                    # `env` is this frame's object and nothing dumps it after this
+                    # point, so the message survives. Info() would read a second
+                    # copy from disk, which a later stale dump can silently drop.
+                    env.add_workflow_warning(
+                        f"Job image pull failed with [{matched}] and was retried "
+                        f"({attempt}/{attempts}): {docker}"
+                    )
+
+                Docker.pull_image(docker, on_retry=_warn_pull_retried)
+
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the
         # whole VM even when the job itself runs inside Docker.
@@ -582,6 +605,20 @@ class Runner:
             print("NOTE: Job has force_success=True - overriding status to OK")
             result.set_status(Result.Status.OK)
         return result
+
+    @staticmethod
+    def _pipeline_status(result) -> str:
+        """The GH Actions `pipeline_status` output for a finished job.
+
+        These are GH Actions output values matched by workflow YAML conditions,
+        not Result.Status values - they must stay lowercase "success"/"failure".
+        A "failure" skips the job's whole transitive downstream closure.
+        `hook_html` decides whether to mark dependees `DROPPED` from the same
+        flag and must reach the same verdict as this function.
+        """
+        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+            return "failure"
+        return "success"
 
     @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
@@ -903,15 +940,7 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        # These are GH Actions output values matched by workflow YAML conditions,
-        # not Result.Status values — must stay lowercase "success"/"failure".
-        pipeline_status = "success"
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = "failure"
+        pipeline_status = self._pipeline_status(result)
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",

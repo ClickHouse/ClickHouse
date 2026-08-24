@@ -15,7 +15,9 @@
 
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
+#    include <Poco/TemporaryFile.h>
 #    include <arrow/io/file.h>
+#    include <parquet/column_reader.h>
 #    include <parquet/file_reader.h>
 #    include <parquet/page_index.h>
 #    include <parquet/thrift_internal.h>
@@ -106,6 +108,7 @@ void validatePageIndex(
                 *column_descr, column_index_buffer->data(), static_cast<uint32_t>(column_index_buffer->size()), properties);
             std::unique_ptr<parquet::OffsetIndex> offset_index
                 = parquet::OffsetIndex::Make(offset_index_buffer->data(), static_cast<uint32_t>(offset_index_buffer->size()), properties);
+            ASSERT_EQ(column_index->boundary_order(), parquet::BoundaryOrder::Unordered);
             // validate null pages
             if (validate_null_pages.has_value())
             {
@@ -167,6 +170,144 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
 
     output->finalize();
     write_buffer.finalize();
+}
+
+SourcePtr wideIntegerSource()
+{
+    DataTypes types{
+        std::make_shared<DataTypeUInt128>(),
+        std::make_shared<DataTypeUInt256>(),
+        std::make_shared<DataTypeInt128>(),
+        std::make_shared<DataTypeInt256>(),
+    };
+    Names names{"u128", "u256", "i128", "i256"};
+
+    Block header;
+    for (size_t i = 0; i < types.size(); ++i)
+        header.insert(ColumnWithTypeAndName(types[i], names[i]));
+
+    auto u128 = ColumnUInt128::create();
+    u128->insertValue(0);
+    u128->insertValue(1);
+    u128->insertValue(std::numeric_limits<UInt128>::max());
+
+    auto u256 = ColumnUInt256::create();
+    u256->insertValue(0);
+    u256->insertValue(1);
+    u256->insertValue(std::numeric_limits<UInt256>::max());
+
+    auto i128 = ColumnInt128::create();
+    i128->insertValue(std::numeric_limits<Int128>::min());
+    i128->insertValue(-1);
+    i128->insertValue(std::numeric_limits<Int128>::max());
+
+    auto i256 = ColumnInt256::create();
+    i256->insertValue(std::numeric_limits<Int256>::min());
+    i256->insertValue(-1);
+    i256->insertValue(std::numeric_limits<Int256>::max());
+
+    Columns columns;
+    columns.emplace_back(std::move(u128));
+    columns.emplace_back(std::move(u256));
+    columns.emplace_back(std::move(i128));
+    columns.emplace_back(std::move(i256));
+
+    Chunks chunks;
+    chunks.emplace_back(std::move(columns), 3);
+    return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks));
+}
+
+TEST(Parquet, WriteWideIntegersAsStandardDecimals)
+{
+    Poco::File("tmp").createDirectories();
+    Poco::TemporaryFile parquet_file("tmp");
+
+    FormatSettings format_settings;
+    format_settings.parquet.output_wide_integer_as_decimal = true;
+    format_settings.parquet.output_compression_method = FormatSettings::ParquetCompression::NONE;
+    format_settings.parquet.parallel_encoding = false;
+    format_settings.parquet.write_page_index = true;
+    format_settings.parquet.write_checksums = false;
+    format_settings.parquet.max_dictionary_size = 0;
+    writeParquet(wideIntegerSource(), format_settings, parquet_file.path());
+
+    const String zero128(17, '\0');
+    const String one128 = String(16, '\0') + String(1, '\x01');
+    const String unsigned_max128 = String(1, '\0') + String(16, '\xff');
+    const String signed_min128 = String("\xff\x80", 2) + String(15, '\0');
+    const String minus_one128(17, '\xff');
+    const String signed_max128 = String("\x00\x7f", 2) + String(15, '\xff');
+
+    const String zero256(33, '\0');
+    const String one256 = String(32, '\0') + String(1, '\x01');
+    const String unsigned_max256 = String(1, '\0') + String(32, '\xff');
+    const String signed_min256 = String("\xff\x80", 2) + String(31, '\0');
+    const String minus_one256(33, '\xff');
+    const String signed_max256 = String("\x00\x7f", 2) + String(31, '\xff');
+
+    struct ExpectedColumn
+    {
+        int width;
+        int precision;
+        std::vector<String> values;
+    };
+    const std::vector<ExpectedColumn> expected{
+        {17, 39, {zero128, one128, unsigned_max128}},
+        {33, 78, {zero256, one256, unsigned_max256}},
+        {17, 39, {signed_min128, minus_one128, signed_max128}},
+        {33, 77, {signed_min256, minus_one256, signed_max256}},
+    };
+
+    auto reader = parquet::ParquetFileReader::OpenFile(parquet_file.path());
+    auto metadata = reader->metadata();
+    ASSERT_EQ(metadata->num_row_groups(), 1);
+    ASSERT_EQ(metadata->schema()->num_columns(), expected.size());
+    auto row_group_reader = reader->RowGroup(0);
+
+    for (size_t column_idx = 0; column_idx < expected.size(); ++column_idx)
+    {
+        const auto & expected_column = expected[column_idx];
+        const auto * descriptor = metadata->schema()->Column(static_cast<int>(column_idx));
+        ASSERT_EQ(descriptor->physical_type(), parquet::Type::FIXED_LEN_BYTE_ARRAY);
+        ASSERT_EQ(descriptor->type_length(), expected_column.width);
+        ASSERT_EQ(descriptor->converted_type(), parquet::ConvertedType::DECIMAL);
+        ASSERT_EQ(descriptor->type_precision(), expected_column.precision);
+        ASSERT_EQ(descriptor->type_scale(), 0);
+        ASSERT_EQ(descriptor->column_order().get_order(), parquet::ColumnOrder::TYPE_DEFINED_ORDER);
+
+        const auto & logical_type = descriptor->logical_type();
+        ASSERT_TRUE(logical_type->is_decimal());
+        const auto * decimal_type = dynamic_cast<const parquet::DecimalLogicalType *>(logical_type.get());
+        ASSERT_NE(decimal_type, nullptr);
+        EXPECT_EQ(decimal_type->precision(), expected_column.precision);
+        EXPECT_EQ(decimal_type->scale(), 0);
+
+        auto column_metadata = metadata->RowGroup(0)->ColumnChunk(static_cast<int>(column_idx));
+        ASSERT_TRUE(column_metadata->is_stats_set());
+        auto statistics = column_metadata->statistics();
+        ASSERT_NE(statistics, nullptr);
+        EXPECT_EQ(statistics->EncodeMin(), expected_column.values.front());
+        EXPECT_EQ(statistics->EncodeMax(), expected_column.values.back());
+
+        auto column_reader = row_group_reader->Column(static_cast<int>(column_idx));
+        auto * fixed_reader = static_cast<parquet::FixedLenByteArrayReader *>(column_reader.get());
+        std::vector<parquet::FixedLenByteArray> values(expected_column.values.size());
+        int64_t values_read = 0;
+        EXPECT_EQ(
+            fixed_reader->ReadBatch(
+                static_cast<int64_t>(values.size()), nullptr, nullptr, values.data(), &values_read),
+            static_cast<int64_t>(values.size()));
+        ASSERT_EQ(values_read, values.size());
+        for (size_t value_idx = 0; value_idx < values.size(); ++value_idx)
+        {
+            const String encoded(
+                reinterpret_cast<const char *>(values[value_idx].ptr),
+                static_cast<size_t>(expected_column.width));
+            EXPECT_EQ(encoded, expected_column.values[value_idx]);
+        }
+    }
+
+    validatePageIndex(parquet_file.path());
 }
 
 TEST(Parquet, WriteParquetPageIndexParallel)
