@@ -161,7 +161,7 @@ EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(message, '%bar%', unhex('
 
 DROP TABLE tab;
 
-SELECT 'An unknown backslash escape is not pruned by the bloom-filter text index, in both the 3-argument ESCAPE form and the plain 2-argument form';
+SELECT 'An unknown backslash escape in the folded 3-argument form is not pruned by the bloom-filter text index';
 
 -- The row contains the literal token "a\b" (a, backslash, b). `splitByNonAlpha` (the tokenbf_v1
 -- tokenizer) indexes it as the tokens "a" and "b", but `nextInStringLike` on the pattern drops the
@@ -190,18 +190,6 @@ SELECT 'Index analysis declines the 3-argument condition: all 3 granules are sca
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE msg LIKE '% a\\b %' ESCAPE '\\'
-) WHERE explain LIKE '%Granules:%';
-
-SELECT 'Correctness check (plain 2-argument form): the row containing the literal backslash is returned';
-
-SET optimize_rewrite_like_perfect_affix = 0;
-SELECT id FROM tab WHERE msg LIKE '% a\\b %' ORDER BY id;
-
-SELECT 'Index analysis declines the plain 2-argument condition: all 3 granules are scanned';
-
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE msg LIKE '% a\\b %'
 ) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;

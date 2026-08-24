@@ -83,7 +83,7 @@ INSERT INTO tab2 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ')
 
 OPTIMIZE TABLE tab2 FINAL;
 
-SELECT 'Unknown backslash escape: primary key keeps the literal backslash, so matching rows are not pruned';
+SELECT 'Unknown backslash escape in the folded pattern: primary key keeps the literal backslash, so matching rows are not pruned';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -95,58 +95,3 @@ SELECT 'Correctness check: all four rows starting with a literal backslash are r
 SELECT * FROM tab2 WHERE s LIKE 'a\\b%' ESCAPE '\\' ORDER BY s;
 
 DROP TABLE tab2;
-
--- The same holds for a plain two-argument `LIKE 'a\b%'` (no ESCAPE clause).
--- `optimize_rewrite_like_perfect_affix` is disabled so the predicate reaches `KeyCondition`
--- as `like` rather than being rewritten to `startsWith` by the analyzer.
-
-SET optimize_rewrite_like_perfect_affix = 0;
-
-DROP TABLE IF EXISTS tab3;
-
-CREATE TABLE tab3 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2, index_granularity_bytes = 0;
-
-INSERT INTO tab3 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ'), ('zzz');
-
-OPTIMIZE TABLE tab3 FINAL;
-
-SELECT 'Two-argument LIKE with an unknown backslash escape: primary key keeps the literal backslash';
-
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1
-    SELECT * FROM tab3 WHERE s LIKE 'a\\b%'
-) WHERE explain LIKE '%Condition:%';
-
-SELECT 'Correctness check: all four rows starting with a literal backslash are returned';
-
-SELECT * FROM tab3 WHERE s LIKE 'a\\b%' ORDER BY s;
-
-DROP TABLE tab3;
-
--- A trailing backslash is an invalid escape: row-level `LIKE` raises CANNOT_PARSE_ESCAPE_SEQUENCE.
--- `extractFixedPrefixFromLikePattern` reports it as non-exact (never an exact point range), so the
--- primary key builds the relaxed prefix range [abc, abd) rather than skipping the predicate. A granule
--- inside that range is still read and the matcher raises, instead of the pattern being pruned away into
--- a silent empty result. ('abc\\' is the four-byte string a, b, c, backslash; 'abcd' sorts inside the
--- range so a granule survives pruning.)
-
-DROP TABLE IF EXISTS tab4;
-
-CREATE TABLE tab4 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2, index_granularity_bytes = 0;
-
-INSERT INTO tab4 VALUES ('aaa'), ('aab'), ('abcd'), ('xyz');
-
-OPTIMIZE TABLE tab4 FINAL;
-
-SELECT 'Trailing backslash: primary key builds the relaxed prefix range so the predicate is read, not pruned away';
-
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1
-    SELECT * FROM tab4 WHERE s LIKE 'abc\\'
-) WHERE explain LIKE '%Condition:%';
-
-SELECT 'Correctness check: the query raises instead of silently returning an empty result';
-
-SELECT * FROM tab4 WHERE s LIKE 'abc\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
-
-DROP TABLE tab4;

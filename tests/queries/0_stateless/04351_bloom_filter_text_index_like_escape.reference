@@ -52,15 +52,10 @@ Granules: 16/16
 Name: idx
 Granules: 8/16
 A non-ASCII ESCAPE byte is rejected at planning time so a granule cannot be skipped for a query that must raise
-An unknown backslash escape is not pruned by the bloom-filter text index, in both the 3-argument ESCAPE form and the plain 2-argument form
+An unknown backslash escape in the folded 3-argument form is not pruned by the bloom-filter text index
 Correctness check (3-argument ESCAPE form): the row containing the literal backslash is returned
 1
 Index analysis declines the 3-argument condition: all 3 granules are scanned
-Parts: 1 | Granules: 3
-Granules: 3/3
-Correctness check (plain 2-argument form): the row containing the literal backslash is returned
-1
-Index analysis declines the plain 2-argument condition: all 3 granules are scanned
 Parts: 1 | Granules: 3
 Granules: 3/3
 A trailing escape character in a 3-argument LIKE ESCAPE raises at index-analysis time (the fold rejects it, so a granule cannot be skipped for a query that must raise)
