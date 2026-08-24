@@ -1626,7 +1626,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
         });
 
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
