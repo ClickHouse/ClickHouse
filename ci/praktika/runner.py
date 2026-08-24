@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import sys
 import traceback
 from pathlib import Path
@@ -446,6 +447,18 @@ class Runner:
             )
             from_root = "root" in docker_settings
             settings = [s for s in docker_settings if s.startswith("-")]
+            # NOTE (strtgbb): FT/integration docker is not --network=host, so
+            # the runner /etc/hosts mapping for the web-disk proxy is invisible
+            # inside the container. Resolve on the host and pass --add-host.
+            # Skip if the name is not configured on this runner (e.g. CI Tests).
+            _proxy_host = "dockerhub-proxy.dockerhub-proxy-zone"
+            try:
+                _proxy_ip = socket.getaddrinfo(_proxy_host, None)[0][4][0]
+                settings.append(f"--add-host={_proxy_host}:{_proxy_ip}")
+            except OSError as e:
+                print(
+                    f"NOTE: skipping --add-host for {_proxy_host}: {e}"
+                )
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
