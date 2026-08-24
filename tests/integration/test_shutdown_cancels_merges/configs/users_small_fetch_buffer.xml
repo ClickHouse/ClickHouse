@@ -1,0 +1,11 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The receiver of a fetch blocks until a whole read buffer is received, and the
+                 shutdown cancellation is observed between the refills. Zero-copy metadata is tiny,
+                 so with the default 1 MiB buffer the whole transfer would be a single blocking
+                 read; a small buffer makes the cancellation observable mid-transfer. -->
+            <max_read_buffer_size_remote_fs>1024</max_read_buffer_size_remote_fs>
+        </default>
+    </profiles>
+</clickhouse>
