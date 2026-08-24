@@ -32,8 +32,7 @@ SELECT toTypeName(isZeroOrNull(1)), isZeroOrNull(1), isZeroOrNull(0), isZeroOrNu
 
 -- The random and id generators whose every argument is an ignored tag (it exists only to
 -- suppress common subexpression elimination) have the same declared-result invariant, so a
--- Nothing-typed argument must not rewrite their declared return type either. Functions with a
--- load-bearing argument as well are excluded: there Nothing is genuinely unusable input.
+-- Nothing-typed argument must not rewrite their declared return type either.
 -- As with ignore, only the declared type is checked: the argument cannot be materialized as a
 -- non-empty Nothing column, so the value form is not evaluable and is not the bug here.
 SELECT toTypeName(randConstant(assumeNotNull(materialize(NULL)))), toTypeName(rand(assumeNotNull(materialize(NULL)))), toTypeName(rand32(assumeNotNull(materialize(NULL)))), toTypeName(rand64(assumeNotNull(materialize(NULL)))), toTypeName(randCanonical(assumeNotNull(materialize(NULL))));
@@ -43,8 +42,8 @@ SELECT toTypeName(generateUUIDv4(assumeNotNull(materialize(NULL)))), toTypeName(
 -- non-empty Nothing column cannot be materialized.
 SELECT count() FROM (SELECT randConstant(assumeNotNull(materialize(NULL))) FROM numbers(0));
 
--- The excluded functions are unaffected: their first argument is load-bearing (a length, a
--- distribution parameter), so a Nothing there is unusable input and keeps propagating.
+-- A load-bearing argument (a length, a distribution parameter) still propagates Nothing, because
+-- there it is unusable input rather than an ignored tag.
 SELECT toTypeName(randomString(assumeNotNull(materialize(NULL)))), toTypeName(randBernoulli(assumeNotNull(materialize(NULL))));
 
 -- They keep working normally, and LowCardinality is still propagated.
