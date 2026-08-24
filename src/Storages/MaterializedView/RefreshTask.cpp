@@ -68,7 +68,6 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
-    extern const RefreshSettingsBool refresh_incremental;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -165,6 +164,7 @@ RefreshTask::RefreshTask(
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
+    , refresh_incremental(strategy.incremental)
     , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
@@ -472,6 +472,8 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Altering setting 'all_replicas' is not supported.");
     if (new_strategy.append != refresh_append)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing APPEND is not supported.");
+    if (new_strategy.incremental != refresh_incremental)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing INCREMENTAL is not supported.");
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
@@ -1310,9 +1312,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     {
         refresh_context = view->createRefreshContext(log_comment);
 
-        const bool incremental = refresh_settings[RefreshSetting::refresh_incremental];
+        const bool incremental = refresh_incremental;
         if (incremental && !refresh_append)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SETTINGS refresh_incremental = 1 requires APPEND");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH ... INCREMENTAL requires APPEND");
 
         /// For incremental refresh, resume the source stream from the last persisted cursor and attach a
         /// holder that the reading source fills with the new cursor (read back after the query succeeds).

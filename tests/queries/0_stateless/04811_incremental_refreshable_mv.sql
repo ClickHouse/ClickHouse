@@ -1,6 +1,6 @@
 -- Tags: atomic-database
 -- Incremental refreshable materialized view: each refresh appends only the rows committed to the source
--- since the previous refresh. `SETTINGS refresh_incremental = 1` makes the refresh inject
+-- since the previous refresh. `APPEND INCREMENTAL` makes the refresh inject
 -- `STREAM BOUNDED UNORDERED CURSOR {...}` onto the single source and persist the advanced cursor.
 
 DROP TABLE IF EXISTS incr_src;
@@ -20,7 +20,7 @@ CREATE TABLE incr_tgt (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
 -- REFRESH EVERY 10 YEAR + EMPTY: no automatic refresh; every refresh below is triggered manually.
 CREATE MATERIALIZED VIEW incr_mv
-    REFRESH EVERY 10 YEAR SETTINGS refresh_incremental = 1 APPEND
+    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
     TO incr_tgt EMPTY
     AS SELECT k, v FROM incr_src;
 

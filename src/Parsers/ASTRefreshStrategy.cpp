@@ -76,6 +76,8 @@ void ASTRefreshStrategy::formatImpl(
     }
     if (append)
         ostr << " APPEND";
+    if (incremental)
+        ostr << " INCREMENTAL";
 }
 
 void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
@@ -89,6 +91,8 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("dependencies", dependencies);
     if (append)
         w.writeBool("append", true);
+    if (incremental)
+        w.writeBool("incremental", true);
 }
 
 void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
@@ -127,6 +131,7 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
         set(dependencies, dependencies_child);
     }
     append = r.getBool("append");
+    incremental = r.getBool("incremental");
 
     /// Mirror `ParserRefreshStrategy`'s schedule-shape invariants. `REFRESH EVERY <interval>` always
     /// carries a period. `REFRESH AFTER <interval>` carries a period, but the `REFRESH DEPENDS ON ...`

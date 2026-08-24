@@ -115,7 +115,7 @@ public:
         AllDependenciesInfo last_success_dependencies;
 
         /// Serialized per-partition cursor of the last successfully processed snapshot, for incremental refresh
-        /// (`SETTINGS refresh_incremental = 1`). Empty when the view is not incremental or nothing has been processed yet.
+        /// (`REFRESH ... APPEND INCREMENTAL`). Empty when the view is not incremental or nothing has been processed yet.
         std::string cursor;
 
         /// Znode version. Not serialized.
@@ -348,6 +348,7 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     const bool refresh_append;
+    const bool refresh_incremental;
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
     const bool start_paused;

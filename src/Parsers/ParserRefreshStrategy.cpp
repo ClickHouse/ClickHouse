@@ -104,6 +104,9 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (ParserKeyword{Keyword::APPEND}.ignore(pos, expected))
         refresh->append = true;
 
+    if (ParserKeyword{Keyword::INCREMENTAL}.ignore(pos, expected))
+        refresh->incremental = true;
+
     node = refresh;
     return true;
 }

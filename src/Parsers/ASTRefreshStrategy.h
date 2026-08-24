@@ -27,6 +27,7 @@ public:
     ASTTimeInterval * spread = nullptr;
     RefreshScheduleKind schedule_kind{RefreshScheduleKind::UNKNOWN};
     bool append = false;
+    bool incremental = false;
 
     String getID(char) const override { return "Refresh strategy definition"; }
 
