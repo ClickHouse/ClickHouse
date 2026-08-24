@@ -292,4 +292,85 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
     ASSERT_EQ(*token_file, "/var/run/secrets/azure/tokens/azure-identity-token");
 }
 
+/// Missing tenant / client / token-file must fail here, not later inside object_store.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresConfiguration)
+{
+    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("AZURE_AUTHORITY_HOST"); // NOLINT(concurrency-mt-unsafe)
+
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    ASSERT_EQ(params.auth_method.index(), 3u);
+
+    try
+    {
+        (void)DeltaLake::getAzureBuilderOptions(params);
+        FAIL() << "expected NOT_IMPLEMENTED when workload identity env is missing";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+        EXPECT_NE(std::string(e.message()).find("AZURE_FEDERATED_TOKEN_FILE"), std::string::npos);
+    }
+}
+
+/// extra_credentials can supply tenant/client, but the projected token file is still required.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitIds)
+{
+    unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
+
+    const auto params = DB::getAzureConnectionParams(
+        "https://testaccount.blob.core.windows.net",
+        "testcontainer",
+        /*account_name*/ std::nullopt,
+        /*account_key*/ std::nullopt,
+        "22222222-2222-2222-2222-222222222222",
+        "11111111-1111-1111-1111-111111111111",
+        getContext().context);
+    ASSERT_EQ(params.auth_method.index(), 3u);
+
+    try
+    {
+        (void)DeltaLake::getAzureBuilderOptions(params);
+        FAIL() << "expected NOT_IMPLEMENTED when AZURE_FEDERATED_TOKEN_FILE is missing";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+        EXPECT_NE(std::string(e.message()).find("AZURE_FEDERATED_TOKEN_FILE"), std::string::npos);
+    }
+}
+
+/// Private-link hosts end with .blob.core.windows.net but are not the URL the builder
+/// derives from the account name, so azure_endpoint must still be forwarded.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForPrivateLinkHost)
+{
+    setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111", 1); // NOLINT(concurrency-mt-unsafe)
+    setenv("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222", 1); // NOLINT(concurrency-mt-unsafe)
+    setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token", 1); // NOLINT(concurrency-mt-unsafe)
+    SCOPE_EXIT({
+        unsetenv("AZURE_TENANT_ID"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("AZURE_CLIENT_ID"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("AZURE_FEDERATED_TOKEN_FILE"); // NOLINT(concurrency-mt-unsafe)
+    });
+
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.privatelink.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    ASSERT_EQ(params.auth_method.index(), 3u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto azure_endpoint = findBuilderOption(options, "azure_endpoint");
+    ASSERT_TRUE(azure_endpoint.has_value());
+    ASSERT_EQ(*azure_endpoint, "https://testaccount.privatelink.blob.core.windows.net");
+}
+
 #endif

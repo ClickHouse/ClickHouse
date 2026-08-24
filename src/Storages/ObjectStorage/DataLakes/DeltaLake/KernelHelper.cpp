@@ -332,22 +332,34 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_name", name);
 
             /// The object_store builder does not read the workload identity environment variables on its own.
-            auto set_option_from_env = [&](const std::string & option, const char * env_var)
+            auto env_value = [](const char * env_var) -> const char *
             {
                 if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
-                    set_option(option, value);
+                    return value;
+                return nullptr;
             };
+
             /// Explicit IDs (extra_credentials / named collection) win over the environment.
-            if (!connection_params.workload_identity_tenant_id.empty())
-                set_option("azure_tenant_id", connection_params.workload_identity_tenant_id);
-            else
-                set_option_from_env("azure_tenant_id", "AZURE_TENANT_ID");
-            if (!connection_params.workload_identity_client_id.empty())
-                set_option("azure_client_id", connection_params.workload_identity_client_id);
-            else
-                set_option_from_env("azure_client_id", "AZURE_CLIENT_ID");
-            set_option_from_env("azure_federated_token_file", "AZURE_FEDERATED_TOKEN_FILE");
-            set_option_from_env("azure_authority_host", "AZURE_AUTHORITY_HOST");
+            const char * tenant = !connection_params.workload_identity_tenant_id.empty()
+                ? connection_params.workload_identity_tenant_id.c_str()
+                : env_value("AZURE_TENANT_ID");
+            const char * client = !connection_params.workload_identity_client_id.empty()
+                ? connection_params.workload_identity_client_id.c_str()
+                : env_value("AZURE_CLIENT_ID");
+            const char * token_file = env_value("AZURE_FEDERATED_TOKEN_FILE");
+
+            if (!tenant || !client || !token_file)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Azure workload identity is not configured for the delta-kernel path: "
+                    "AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE must be set "
+                    "(tenant/client id may instead be passed via extra_credentials)");
+
+            set_option("azure_tenant_id", tenant);
+            set_option("azure_client_id", client);
+            set_option("azure_federated_token_file", token_file);
+            if (const char * authority = env_value("AZURE_AUTHORITY_HOST"))
+                set_option("azure_authority_host", authority);
             break;
         }
         case 1: /// ClientSecretCredential
@@ -362,31 +374,25 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// The builder derives <account>.blob.core.windows.net from the account name.
-    auto is_default_azure_host = [](const std::string & url)
-    {
-        auto scheme_end = url.find("://");
-        if (scheme_end == std::string::npos)
-            return false;
-        auto host_start = scheme_end + 3;
-        auto host_end = url.find_first_of(":/", host_start);
-        std::string_view host(url.data() + host_start, (host_end == std::string::npos ? url.size() : host_end) - host_start);
-        return host.ends_with(".blob.core.windows.net");
-    };
+    /// The builder derives exactly this URL from the account name; anything else must be explicit.
+    /// Value, not a reference: get_account_name() returns a temporary.
+    const std::string account_for_endpoint = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+    const bool endpoint_is_derivable = !account_for_endpoint.empty()
+        && endpoint.storage_account_url == "https://" + account_for_endpoint + ".blob.core.windows.net";
 
     /// Non-default endpoints must be set explicitly: plain HTTP (Azurite; the builder
-    /// defaults to https_only=true) and non-default HTTPS hosts (sovereign clouds).
-    /// The builder still requires the storage account name, so hosts that do not encode
-    /// it in the first label (custom domains) only work when endpoint.account_name is
-    /// set, which the credential-based SQL paths cannot do yet. For a parsed connection
-    /// string, azure_endpoint is already set above and storage_account_url holds the
-    /// connection string, not a URL.
+    /// defaults to https_only=true) and non-default HTTPS hosts (sovereign clouds,
+    /// private endpoints). The builder still requires the storage account name, so
+    /// hosts that do not encode it in the first label (custom domains) only work when
+    /// endpoint.account_name is set, which the credential-based SQL paths cannot do
+    /// yet. For a parsed connection string, azure_endpoint is already set above and
+    /// storage_account_url holds the connection string, not a URL.
     if (endpoint.storage_account_url.starts_with("http://"))
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
         set_option("azure_allow_http", "true");
     }
-    else if (endpoint.storage_account_url.starts_with("https://") && !is_default_azure_host(endpoint.storage_account_url))
+    else if (endpoint.storage_account_url.starts_with("https://") && !endpoint_is_derivable)
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
     }
