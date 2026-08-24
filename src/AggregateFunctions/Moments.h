@@ -118,6 +118,7 @@ struct VarMoments
     {
         static constexpr size_t lanes = neonLanes<T>;
         static constexpr size_t vectors = unroll_count / lanes;
+        static_assert(vectors * lanes == unroll_count);
 
         using Vector = T __attribute__((ext_vector_type(lanes)));
         using SourceVector = Value __attribute__((ext_vector_type(lanes)));

@@ -282,6 +282,21 @@ FROM
         (SELECT corrIfMerge(s) FROM (SELECT corrIfState(vn, w, c) AS s FROM (SELECT number, toFloat64(cityHash64(number, 1) % 1000) / 8 AS v, toFloat64(toInt64(cityHash64(number, 2) % 1000) - 500) / 4 AS w, cityHash64(number, 42) % 2 = 0 AS c, if(cityHash64(number, 7) % 4 = 0, NULL, v) AS vn FROM numbers(70000)) GROUP BY cityHash64(number, 99) % 97)) AS r2
 );
 
+-- A source as wide as the accumulator takes a different arm of the batch kernels than the 4-byte
+-- sources above, and a signed source that spans zero exercises the signed conversion. Values are
+-- kept under 100 so that the sum of 4th powers stays exact, see `kurtPop int exact` above.
+SELECT 'int64 exact', d0 = r0, d1 = r1, d2 = r2
+FROM
+(
+    SELECT
+        (SELECT varSamp(v) FROM (SELECT toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000))) AS d0,
+        (SELECT varSampMerge(s) FROM (SELECT varSampState(v) AS s FROM (SELECT number, toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000)) GROUP BY cityHash64(number, 99) % 97)) AS r0,
+        (SELECT skewSamp(v) FROM (SELECT toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000))) AS d1,
+        (SELECT skewSampMerge(s) FROM (SELECT skewSampState(v) AS s FROM (SELECT number, toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000)) GROUP BY cityHash64(number, 99) % 97)) AS r1,
+        (SELECT kurtSamp(v) FROM (SELECT toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000))) AS d2,
+        (SELECT kurtSampMerge(s) FROM (SELECT kurtSampState(v) AS s FROM (SELECT number, toInt64(cityHash64(number, 1) % 199) - 99 AS v FROM numbers(70000)) GROUP BY cityHash64(number, 99) % 97)) AS r2
+);
+
 SELECT 'f32 approx', abs(d0 - r0) <= 1e-3 * greatest(abs(d0), abs(r0), 1e-30), abs(d1 - r1) <= 1e-3 * greatest(abs(d1), abs(r1), 1e-30)
 FROM
 (
