@@ -24,6 +24,7 @@
 #include "Poco/Timestamp.h"
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
@@ -259,19 +260,34 @@ static int poco_load_embedded_certificates(SSL_CTX * ctx, Context::CAPaths & caP
 			int reason = ERR_GET_REASON(ERR_peek_last_error());
 #pragma clang diagnostic pop
 			if (reason != X509_R_CERT_ALREADY_IN_HASH_TABLE)
-				break;
+			{
+				/// Any other failure to add a certificate must fail context creation: continuing would
+				/// silently leave a partial trust store, and only some remote peers would fail later,
+				/// depending on which root was skipped. The error is left on the queue for the caller.
+				BIO_free(bio);
+				return 0;
+			}
 
 			ERR_clear_error();
 		}
 		++added;
 	}
+
+	/// `PEM_read_bio_X509` returns null both at the normal end of the bundle (`PEM_R_NO_START_LINE`)
+	/// and on a parse failure in the middle of it. The bundle is embedded at build time, so a parse
+	/// failure means it is malformed or truncated: fail closed instead of using a partial trust store.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+	int end_reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
 	BIO_free(bio);
+	if (end_reason != PEM_R_NO_START_LINE)
+		return 0;
+
+	ERR_clear_error();
 
 	if (added == 0)
 		return 0;
-
-	/// Reaching the end of the bundle leaves a PEM_R_NO_START_LINE error on the queue.
-	ERR_clear_error();
 
 	caPaths.caEmbedded = true;
 	return 1;
