@@ -6268,6 +6268,14 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         }
     }
 
+    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
+    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
+    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
+    /// storage would leave the sidecar existsFile-visible but unopenable, failing
+    /// every subsequent load of the part.
+    if (getInMemoryMetadataPtr(getContext(), false)->hasUniqueKey())
+        return {part_type, PartStorageType::Full};
+
     if (storage_type == PartStorageType::Full && !partition_id.empty())
     {
         const UInt64 max_parts_for_full_storage
