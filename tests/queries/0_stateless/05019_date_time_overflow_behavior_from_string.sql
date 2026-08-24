@@ -24,7 +24,8 @@ SELECT CAST(materialize('2106-02-07 06:28:16') AS DateTime); -- { serverError VA
 
 SELECT 'throw, in range';
 SELECT toDate('2149-06-06'), toDate('1970-01-01'), toDateTime('2106-02-07 06:28:15'), toDateTime('1970-01-01 00:00:00');
--- Date32 and DateTime64 have a much wider range, so text parsing cannot overflow them
+-- Date32 and DateTime64 are not covered yet: a high-scale DateTime64 text parse still raises DECIMAL_OVERFLOW
+-- in every mode, because the tick range is only checked in DecimalUtils
 SELECT toDate32('2299-12-31'), toDate32('1900-01-01'), toDateTime64('2299-12-31 23:59:59.999', 3);
 
 SELECT 'throw, OrNull and OrZero still fall back';
