@@ -2,7 +2,7 @@
 
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Interpreters/Aggregator.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ public:
         time_t current_time_,
         bool force_,
         const Block & header_,
-        const MergeTreeData & storage_);
+        const ContextPtr & context);
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;
