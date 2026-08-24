@@ -10,6 +10,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 namespace DB
 {
 
@@ -198,6 +200,38 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_client_id", "");
     impl->set("google_adc_client_secret", "");
     impl->set("google_adc_refresh_token", "");
+}
+
+bool S3AuthSettings::hasEffectiveCredentials() const
+{
+    /// HTTP-layer auth, independent of SigV4.
+    /// `PocoHTTPClientFactory::CreateHttpClient` selects `PocoHTTPClientGCPOAuth` on this value, and that
+    /// client sets an `Authorization: Bearer` header unconditionally, so `no_sign_request` cannot suppress it.
+    if (boost::iequals((*this)[S3AuthSetting::http_client].value, "gcp_oauth"))
+        return true;
+
+    /// Request auth attached to every request: `headers`/`access_headers` may carry `Authorization`, and the
+    /// SSE-C key / SSE-KMS config are secrets travelling in request headers.
+    if (!headers.empty() || !access_headers.empty())
+        return true;
+    if (!(*this)[S3AuthSetting::server_side_encryption_customer_key_base64].value.empty())
+        return true;
+    if (server_side_encryption_kms_config.key_id.has_value() || server_side_encryption_kms_config.encryption_context.has_value())
+        return true;
+
+    /// SigV4 auth. `S3::getCredentialsProvider` installs an anonymous provider under `no_sign_request`, so
+    /// nothing below signs a request then.
+    if ((*this)[S3AuthSetting::no_sign_request].value)
+        return false;
+
+    if (!(*this)[S3AuthSetting::access_key_id].value.empty() || !(*this)[S3AuthSetting::secret_access_key].value.empty())
+        return true;
+    if (!(*this)[S3AuthSetting::role_arn].value.empty())
+        return true;
+    if ((*this)[S3AuthSetting::use_environment_credentials].value)
+        return true;
+
+    return false;
 }
 
 HTTPHeaderEntries S3AuthSettings::getHeaders() const

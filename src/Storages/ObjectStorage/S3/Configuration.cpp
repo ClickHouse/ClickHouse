@@ -123,6 +123,121 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "google_adc_refresh_token", /// For GCP
 };
 
+namespace
+{
+    struct Origin
+    {
+        String scheme;
+        String host;
+        UInt16 port;
+
+        bool operator==(const Origin & other) const = default;
+    };
+
+    /// The origin `raw` points at, or nullopt when it declares none (a relative URL: no scheme, no host).
+    /// `S3::URI` first so that scheme mappings (`s3://bucket/key` -> `https://bucket.s3.amazonaws.com/key`) are
+    /// applied to both sides of a comparison; plain `Poco::URI` for a value it rejects on unrelated grounds.
+    std::optional<Origin> declaredOrigin(const String & raw, ContextPtr context)
+    {
+        if (raw.empty())
+            return std::nullopt;
+
+        const auto & settings = context->getSettingsRef();
+        Poco::URI parsed;
+        try
+        {
+            parsed = S3::URI(
+                         raw,
+                         settings[Setting::allow_archive_path_syntax],
+                         /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+                         /*uri_style*/ settings[Setting::s3_uri_style])
+                         .uri;
+        }
+        catch (...)
+        {
+            try
+            {
+                parsed = Poco::URI(raw);
+            }
+            catch (const Poco::Exception &)
+            {
+                return std::nullopt;
+            }
+        }
+
+        if (parsed.getScheme().empty() && parsed.getHost().empty())
+            return std::nullopt;
+
+        return Origin{
+            boost::algorithm::to_lower_copy(parsed.getScheme()), boost::algorithm::to_lower_copy(parsed.getHost()), parsed.getPort()};
+    }
+
+    /// Whether a secret still in the normalized auth came from the collection definition rather than from the
+    /// query. Only complete replacement releases the destination: a query that overrides `access_key_id` alone
+    /// leaves the stored `secret_access_key` signing.
+    ///
+    /// `headers`, `access_headers` and the SSE keys are absent by design - S3's `optional_configuration_keys`
+    /// accepts none of them, so a value there came from the server `<s3>`/endpoint config. So is
+    /// `use_environment_credentials`, whose credential is the server's own identity.
+    bool hasCollectionDerivedSecret(const NamedCollection & collection, const S3::S3AuthSettings & auth)
+    {
+        auto stored = [&](const std::string & key, const String & effective_value)
+        { return !effective_value.empty() && !collection.isQueryOverridden(key); };
+
+        if (boost::iequals(auth[S3AuthSetting::http_client].value, "gcp_oauth")
+            && (stored("google_adc_client_id", auth[S3AuthSetting::google_adc_client_id].value)
+                || stored("google_adc_client_secret", auth[S3AuthSetting::google_adc_client_secret].value)
+                || stored("google_adc_refresh_token", auth[S3AuthSetting::google_adc_refresh_token].value)
+                || stored("service_account", auth[S3AuthSetting::service_account].value)
+                || stored("request_token_path", auth[S3AuthSetting::request_token_path].value)
+                || stored("metadata_service", auth[S3AuthSetting::metadata_service].value)))
+            return true;
+
+        if (auth[S3AuthSetting::no_sign_request].value)
+            return false;
+
+        return stored("access_key_id", auth[S3AuthSetting::access_key_id].value)
+            || stored("secret_access_key", auth[S3AuthSetting::secret_access_key].value)
+            || stored("session_token", auth[S3AuthSetting::session_token].value)
+            || stored("role_arn", auth[S3AuthSetting::role_arn].value)
+            || stored("external_id", auth[S3AuthSetting::external_id].value);
+    }
+}
+
+void validateS3CollectionDestinationBinding(
+    const NamedCollection & collection, const S3::S3AuthSettings & effective_auth, const String & effective_url, ContextPtr context)
+{
+    if (!collection.isQueryOverridden("url"))
+        return;
+
+    /// An operator who wrote `url = '...' OVERRIDABLE` decided the destination may move. Re-tested here with
+    /// `false` as the default because `findOverrideForbiddingKey` accepts the override on the strength of
+    /// `allow_named_collection_override_by_default` alone and passes no signal on about which of the two it was.
+    if (collection.isOverridable("url", /*default_value=*/false))
+        return;
+
+    if (!effective_auth.hasEffectiveCredentials() || !hasCollectionDerivedSecret(collection, effective_auth))
+        return;
+
+    const auto stored_url = collection.getValueBeforeQueryOverride("url");
+    if (!stored_url)
+        return;
+
+    /// A relative stored URL declares no origin, so there is nothing for this rule to compare against: the
+    /// origin came from `s3_base`, which is server and profile configuration rather than query input. This is
+    /// also the shape `StorageObjectStorageConfiguration::initialize` persists, where the resolved absolute URL
+    /// is written back as a `url='...'` override and the table is later attached with no `s3_base` set.
+    const auto declared = declaredOrigin(*stored_url, context);
+    if (!declared)
+        return;
+
+    const auto effective = declaredOrigin(effective_url, context);
+    if (effective && *effective == *declared)
+        return;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");
+}
+
 String StorageS3Configuration::getDataSourceDescription() const
 {
     return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
@@ -329,6 +444,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
+
+    /// Last, so the auth is normalized and the URI fully resolved (`s3_base`, `filename`, archive syntax).
+    validateS3CollectionDestinationBinding(collection, s3_settings->auth_settings, url.uri.toString(), context);
 }
 
 static ASTPtr extractExtraCredentials(ASTs & args)

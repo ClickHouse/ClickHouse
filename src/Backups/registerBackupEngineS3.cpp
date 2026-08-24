@@ -287,6 +287,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
 
+            /// `BackupInfo::getNamedCollection` hand-copies the `NAMED_COLLECTION` check rather than going
+            /// through `findOverrideForbiddingKey`, so this seam is not covered by the table-function one.
+            validateS3CollectionDestinationBinding(*collection, auth, s3_uri, params.context);
         }
         else
         {

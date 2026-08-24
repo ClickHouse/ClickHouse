@@ -1,0 +1,26 @@
+--- credentialed collection, url moved to another origin
+refused
+--- same origin, different path: still allowed
+allowed
+--- credential-free collection keeps full override freedom
+allowed
+--- explicit OVERRIDABLE wins over the credential binding
+allowed
+--- query replaces the whole key pair: the collection supplies nothing, so no binding
+allowed
+--- partial replacement: the stored secret_access_key still signs
+refused
+--- query-supplied role_arn: the collection keys are dropped, the query role authenticates
+allowed
+--- gcp_oauth sends a bearer token, so its ADC secrets bind the destination too
+refused
+--- no_sign_request disables SigV4 only, the bearer token still goes out
+refused
+--- partial ADC replacement keeps the binding
+refused
+--- backups: BackupInfo does not go through findOverrideForbiddingKey, so the seam is its own
+refused
+--- DatabaseS3: getTableImpl rebuilds positional s3() args, so provenance is gone downstream
+refused
+--- a relative stored url declares no origin, so a materialized s3_base replay still attaches
+1

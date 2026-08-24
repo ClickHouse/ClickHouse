@@ -16,6 +16,16 @@
 namespace DB
 {
 
+/// A credential the collection itself supplied may only be sent to an origin (scheme/host/port) the collection
+/// itself declares. Throws `BAD_ARGUMENTS` when a query moved the origin with such a credential still attached,
+/// which would send it - and, for SigV4, a signature over an attacker-chosen request - to a user-chosen host.
+///
+/// Call once per seam, after the seam has finished resolving credentials and the destination URL, with the
+/// collection still in hand so that per-key override provenance is available. `effective_url` is the URL the
+/// request will actually be sent to.
+void validateS3CollectionDestinationBinding(
+    const NamedCollection & collection, const S3::S3AuthSettings & effective_auth, const String & effective_url, ContextPtr context);
+
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;

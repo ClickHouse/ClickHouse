@@ -20,6 +20,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -33,6 +34,14 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsBool use_environment_credentials;
 }
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
@@ -237,6 +246,16 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         {
             result.no_sign_request = true;
         }
+
+        /// Here rather than downstream: `getTableImpl` rebuilds positional `s3(url, key, secret)` arguments
+        /// that reach `fromAST`, by which point the collection's per-key override provenance is gone. The auth
+        /// is reassembled because this seam builds none of its own; the engine accepts only these four fields.
+        S3::S3AuthSettings auth;
+        auth[S3AuthSetting::access_key_id] = result.access_key_id.value_or("");
+        auth[S3AuthSetting::secret_access_key] = result.secret_access_key.value_or("");
+        auth[S3AuthSetting::no_sign_request] = result.no_sign_request;
+        auth[S3AuthSetting::use_environment_credentials] = result.use_environment_credentials;
+        validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_);
     }
     else
     {
