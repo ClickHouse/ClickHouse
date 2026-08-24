@@ -119,6 +119,18 @@ SELECT
   = (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_desc_lead GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
 SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(b) FROM aio_desc_lead GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
 
+-- 4b. Reversed leading column, grouped by a strict prefix of the key. This shape collapses to a
+-- single group for the whole table, unlike case 4, which keeps one row per key tuple. The group
+-- count is asserted on its own line because the groupArray oracle compares equal for a collapse and
+-- for a reordering alike, so it does not record which of the two occurred.
+SELECT
+    (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_desc_lead GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 1)
+  = (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_desc_lead GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 0);
+SELECT
+    (SELECT count() FROM (SELECT a FROM aio_desc_lead GROUP BY a) SETTINGS optimize_aggregation_in_order = 1)
+  = (SELECT count() FROM (SELECT a FROM aio_desc_lead GROUP BY a) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM aio_desc_lead GROUP BY a SETTINGS optimize_aggregation_in_order = 1);
+
 -- 5. Negative monotonic match composed with the reverse flags.
 -- optimize_injective_functions_in_group_by = 0 is load-bearing on both lines: otherwise the analyzer
 -- rewrites the keys and the monotonicity branch of the builder is never taken.
