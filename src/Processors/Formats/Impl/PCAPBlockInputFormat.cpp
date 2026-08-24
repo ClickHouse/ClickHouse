@@ -178,8 +178,10 @@ void PCAPBlockInputFormat::initializeIfNeeded()
 
     Tins::SnifferConfiguration config;
 
+    ReadBuffer & input = *in;
+
     /// If it's a local file at offset 0, let libpcap open it directly.
-    if (auto * file_in = dynamic_cast<ReadBufferFromFileBase *>(in))
+    if (auto * file_in = dynamic_cast<ReadBufferFromFileBase *>(&input))
     {
         size_t offset = 0;
         if (file_in->isRegularLocalFile(&offset) && offset == 0)
@@ -197,7 +199,9 @@ void PCAPBlockInputFormat::initializeIfNeeded()
 
     {
         WriteBufferFromFileDescriptor out(fileno(capture_file));
-        copyData(*in, out, is_stopped);
+        /// The static analyzer models a failed `dynamic_cast` above as if the operand pointer
+        /// itself could be null, but `in` is never null here.
+        copyData(input, out, is_stopped); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
         out.finalize();
     }
 
@@ -210,6 +214,11 @@ void PCAPBlockInputFormat::initializeIfNeeded()
         throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot rewind the temporary file with a PCAP capture");
 
     sniffer = std::make_unique<Tins::FileSniffer>(capture_file, config);
+
+    /// `pcap_fopen_offline` succeeded, and `pcap_close` (run by the sniffer's destructor)
+    /// closes the underlying `FILE *` itself, so ownership has been transferred to `libpcap`.
+    /// On failure the `FILE *` stays ours and `closeFile` releases it.
+    capture_file = nullptr;
 }
 
 namespace
