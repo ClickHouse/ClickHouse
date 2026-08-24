@@ -1,8 +1,7 @@
 #include <Processors/QueryResultPreview.h>
 
 #include <Core/Settings.h>
-
-#include <ctime>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -53,9 +52,9 @@ QueryResultPreviewsControl::QueryResultPreviewsControl(const QueryResultPreviews
 
 UInt64 QueryResultPreviewsControl::clockNanoseconds()
 {
-    struct timespec ts{};
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return static_cast<UInt64>(ts.tv_sec) * 1'000'000'000ULL + ts.tv_nsec;
+    /// The coarse clock is enough for the preview frequency thresholds, and `Common/Stopwatch.h`
+    /// (via `base/time.h`) defines a portable fallback for platforms without it.
+    return clock_gettime_ns(CLOCK_MONOTONIC_COARSE);
 }
 
 bool QueryResultPreviewsControl::accountAndCheckThresholds(UInt64 rows, UInt64 bytes)
