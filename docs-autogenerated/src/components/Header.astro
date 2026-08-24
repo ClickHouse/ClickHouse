@@ -23,6 +23,9 @@ interface HeaderNavigationTab {
 
 const { section = 'Reference', title } = Astro.props;
 const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
+const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationItem) => (
+  tab.active && item.kind === 'link' && item.label === 'Reference'
+);
 ---
 
 <header id="navbar-transition-maple" class="site-header">
@@ -49,7 +52,7 @@ const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
           aria-controls={`nav-dropdown-${index}`}
         >
           <span>{tab.label}</span>
-          <svg class="nav-dropdown-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg class="nav-dropdown-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6.5 2.75L12.75 9L6.5 15.25"></path>
           </svg>
         </button>
@@ -63,7 +66,12 @@ const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
           {tab.items.map((item) => item.kind === 'heading' ? (
             <div class="nav-dropdown-heading" role="presentation">{item.label}</div>
           ) : (
-            <a class="nav-dropdown-item" href={item.href} role="menuitem">
+            <a
+              class:list={['nav-dropdown-item', { active: isActiveDropdownItem(tab, item) }]}
+              href={item.href}
+              role="menuitem"
+              aria-current={isActiveDropdownItem(tab, item) ? 'location' : undefined}
+            >
               {item.icon && <img src={item.icon} alt="" aria-hidden="true" />}
               <span>{item.label}</span>
             </a>
