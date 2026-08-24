@@ -126,6 +126,9 @@ def warn_on_low_sccache_hit_rate(info):
         return
     total = hits + misses
     if total == 0:
+        info.add_workflow_warning(
+            "sccache recorded no compilations - the compiler cache may not be in use"
+        )
         return
     hit_rate = 100 * hits / total
     if hit_rate < 40:
