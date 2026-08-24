@@ -476,9 +476,8 @@ private:
             if (!search_query)
                 continue;
 
-            /// The condition above is analyzed over the canonicalized subtree, while the rewrites below are
-            /// applied to this node. Both consumers may only use an index whose tokenizer the node's own
-            /// tokenizer argument denotes; for any other tokenizer the predicate is left untouched.
+            /// The search query is built from the canonicalized subtree, but the rewrites below apply to
+            /// the original node, so check that node as well.
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 

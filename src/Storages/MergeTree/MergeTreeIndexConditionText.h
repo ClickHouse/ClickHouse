@@ -115,8 +115,7 @@ public:
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
-    /// Whether the index can answer the predicate: a third argument, if present, must be a constant
-    /// tokenizer definition denoting the index tokenizer.
+    /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
@@ -164,11 +163,9 @@ private:
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
-    /// Whether the function takes an optional tokenizer definition as its third argument.
-    static bool acceptsTokenizerArgument(const String & function_name);
-
-    /// Whether the node is a constant tokenizer definition that denotes the index tokenizer.
-    bool tokenizerArgumentMatchesIndex(const RPNBuilderTreeNode & node) const;
+    /// Whether the function accepts a tokenizer definition as its third argument and the given node
+    /// is a constant one that denotes the index tokenizer.
+    bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,

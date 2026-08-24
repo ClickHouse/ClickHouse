@@ -29,17 +29,31 @@
 -- an invalid or non-constant tokenizer argument is still rejected
 -- tokenizer parameters are not normalized away
 1
--- an index with a postprocessor still full-scans
+-- a postprocessor is applied, like in the two-argument form
 1
 4
 1
 4
 1
-4
-1
-4
--- an index with a preprocessor still full-scans
 2
+3
+4
+5
+1
 2
+3
+4
+5
+-- a preprocessor is applied, like in the two-argument form
+1
+2
+1
+2
+1
+2
+1
+1
+1
+1
 -- expression index
 1

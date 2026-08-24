@@ -1,3 +1,6 @@
+-- Tests that hasAnyTokens, hasAllTokens and hasPhrase use a text index when their third argument
+-- names the tokenizer of that index, and fall back to a full scan when it names a different one.
+
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
@@ -84,7 +87,7 @@ SELECT id FROM tab WHERE hasAnyTokens(doc, ['hell'], 'ngrams(4)') ORDER BY id SE
 
 DROP TABLE tab;
 
-SELECT '-- an index with a postprocessor still full-scans';
+SELECT '-- a postprocessor is applied, like in the two-argument form';
 
 CREATE TABLE tab
 (
@@ -98,15 +101,18 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (1, 'see the cat'), (2, 'see a cat'), (3, 'see cat'), (4, 'the cat see'), (5, 'cat see');
 
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+-- The two forms agree in every combination of the settings that select the index.
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id SETTINGS use_skip_indexes = 1;
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat']) ORDER BY id SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
 
-SELECT '-- an index with a preprocessor still full-scans';
+SELECT '-- a preprocessor is applied, like in the two-argument form';
 
 CREATE TABLE tab
 (
@@ -120,13 +126,13 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (1, 'Hello World'), (2, 'hello there'), (3, 'goodbye');
 
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello']) ORDER BY id SETTINGS use_skip_indexes = 1;
 SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world']) ORDER BY id SETTINGS use_skip_indexes = 1;
 SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasPhrase(doc, 'hello world') ORDER BY id SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
 

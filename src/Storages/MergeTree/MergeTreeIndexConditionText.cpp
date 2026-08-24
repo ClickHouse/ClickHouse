@@ -258,19 +258,10 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
-bool MergeTreeIndexConditionText::acceptsTokenizerArgument(const String & function_name)
+bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
-    /// hasToken is excluded: its third argument is a start position, not a tokenizer.
-    return function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens"
-        || function_name == "hasPhrase";
-}
-
-bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const RPNBuilderTreeNode & node) const
-{
-    /// With a preprocessor or a postprocessor the index stores tokens of a transformed value, which a
-    /// bare tokenizer over the raw argument does not produce, so it cannot answer the same predicate.
-    if (has_preprocessor || has_postprocessor)
+    /// The third argument of hasToken is a start position, not a tokenizer.
+    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
         return false;
 
     Field const_value;
@@ -279,8 +270,8 @@ bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const RPNBuilder
     if (!node.tryGetConstant(const_value, const_type) || const_value.getType() != Field::Types::String)
         return false;
 
-    /// Canonical descriptions, not raw strings: spelling variants and registered aliases of one
-    /// tokenizer compare equal, while parameters still distinguish e.g. ngrams(3) from ngrams(4).
+    /// Descriptions are canonical, so spelling variants and registered aliases of one tokenizer are
+    /// equal, while parameters still distinguish e.g. ngrams(3) from ngrams(4).
     auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
     return argument_tokenizer->getDescription() == tokenizer->getDescription();
 }
@@ -363,8 +354,7 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
     const auto function_node = rpn_node.toFunctionNode();
 
-    return acceptsTokenizerArgument(node.function_base->getName())
-        && tokenizerArgumentMatchesIndex(function_node.getArgumentAt(2));
+    return tokenizerArgumentMatchesIndex(node.function_base->getName(), function_node.getArgumentAt(2));
 }
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
@@ -683,9 +673,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (function_arguments_size == 3)
         {
-            /// The third argument is a tokenizer definition. The index path tokenizes needles with the
-            /// index tokenizer, so it can answer the predicate only when both tokenizers agree.
-            if (!acceptsTokenizerArgument(function_name) || !tokenizerArgumentMatchesIndex(function.getArgumentAt(2)))
+            /// The index path tokenizes needles with the index tokenizer, so it can answer the
+            /// predicate only when the tokenizer argument denotes that same tokenizer.
+            if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
                 return false;
         }
         else if (function_arguments_size != 2)
