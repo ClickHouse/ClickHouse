@@ -1102,6 +1102,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }
 
+            /// Checked before the branch below, not inside it. `TOLERANCE` is accepted by the parser
+            /// after any join syntax, and the `CROSS`/comma branch builds a `CrossJoinNode` that has
+            /// nowhere to put the bound, so a rejection living only on the `JoinNode` path would let
+            /// `CROSS JOIN ... TOLERANCE 5` run as a plain cross join with the bound discarded.
+            if (tolerance_expression && result_join_strictness != JoinStrictness::Asof)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "TOLERANCE is only supported for ASOF JOIN, but the JOIN strictness is {}",
+                    toString(result_join_strictness));
+
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
             {
@@ -1133,11 +1142,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             }
             else
             {
-                if (tolerance_expression && result_join_strictness != JoinStrictness::Asof)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "TOLERANCE is only supported for ASOF JOIN, but the JOIN strictness is {}",
-                        toString(result_join_strictness));
-
                 join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
                     std::move(right_table_expression),
                     std::move(join_expression),

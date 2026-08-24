@@ -166,7 +166,20 @@ Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<Inte
             "TOLERANCE for ASOF JOIN is not a whole number of units of the ASOF key of type {}",
             key_type->getName());
 
-    return Field(static_cast<Int64>(total_nanoseconds / nanoseconds_per_key_unit));
+    /// Through the same exact conversion as a bare number. The rescaled value is still just an
+    /// integer at this point and would otherwise be narrowed into the key type unchecked later:
+    /// `INTERVAL 70000 DAY` against a `Date` key arrives here as 70000 and wraps to 4464.
+    const Field rescaled = Field(static_cast<Int64>(total_nanoseconds / nanoseconds_per_key_unit));
+    try
+    {
+        return convertFieldToTypeOrThrow(rescaled, *removeNullable(key_type));
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN is out of range for the ASOF key type {}",
+            key_type->getName());
+    }
 }
 }
 

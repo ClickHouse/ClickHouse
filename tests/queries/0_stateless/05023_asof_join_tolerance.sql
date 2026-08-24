@@ -88,6 +88,11 @@ ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 10;
 SELECT '-- rejections';
 -- a fractional bound cannot be represented in an integer backed key
 SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 0.5; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+-- CROSS and comma joins have nowhere to put a bound, so they must refuse it rather than drop it
+SELECT count() FROM (SELECT 1 AS a) AS l CROSS JOIN (SELECT 1 AS b) AS r TOLERANCE 5; -- { serverError SYNTAX_ERROR }
+SELECT count() FROM (SELECT 1 AS a) AS l, (SELECT 1 AS b) AS r TOLERANCE 5; -- { serverError SYNTAX_ERROR }
+-- an INTERVAL that rescales past the key type's range is out of range, not silently wrapped
+SELECT count() FROM (SELECT 1 AS s, toDate('2024-01-10') AS t) AS l ASOF JOIN (SELECT 1 AS s, toDate('2024-01-08') AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE INTERVAL 70000 DAY; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 -- nor can a bound wider than the key type itself
 SELECT count() FROM (SELECT 1 AS s, toUInt8(255) AS t) AS l ASOF JOIN (SELECT 1 AS s, toUInt8(250) AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE 1000; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 -- the legacy analyzer cannot carry the bound, so it must refuse rather than ignore it
