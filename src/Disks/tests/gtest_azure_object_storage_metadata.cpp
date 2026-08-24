@@ -2,6 +2,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <algorithm>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -35,6 +37,32 @@ const std::string blob_list_without_etag = R"(<?xml version="1.0" encoding="utf-
   <NextMarker />
 </EnumerationResults>)";
 
+/// A body stream that owns what it serves. Every response needs one: the transport policy of the
+/// SDK buffers the body by calling `ReadToEnd` on it unconditionally, so a response without a body
+/// stream dereferences a null pointer - including the answer to a HEAD request, which has no body.
+class OwningBodyStream : public Azure::Core::IO::BodyStream
+{
+public:
+    explicit OwningBodyStream(std::string data_) : data(std::move(data_)) { }
+
+    int64_t Length() const override { return static_cast<int64_t>(data.size()); }
+
+    void Rewind() override { position = 0; }
+
+private:
+    size_t OnRead(uint8_t * buffer, size_t count, const Azure::Core::Context &) override
+    {
+        const size_t to_read = std::min(count, data.size() - position);
+        if (to_read != 0)
+            memcpy(buffer, data.data() + position, to_read);
+        position += to_read;
+        return to_read;
+    }
+
+    std::string data;
+    size_t position = 0;
+};
+
 /// An endpoint that answers `GetProperties` and `ListBlobs` without the optional `ETag`.
 /// `Azure::ETag::ToString` aborts the process when the tag is absent - in release builds too,
 /// because `AZURE_ASSERT_MSG` is not compiled out with `NDEBUG` - so an endpoint behaving this way
@@ -54,13 +82,13 @@ public:
         {
             response->SetHeader("Content-Length", "10");
             response->SetHeader("x-ms-blob-type", "BlockBlob");
+            response->SetBodyStream(std::make_unique<OwningBodyStream>(""));
             return response;
         }
 
         response->SetHeader("Content-Type", "application/xml");
         response->SetHeader("Content-Length", std::to_string(blob_list_without_etag.size()));
-        response->SetBodyStream(std::make_unique<Azure::Core::IO::MemoryBodyStream>(
-            reinterpret_cast<const uint8_t *>(blob_list_without_etag.data()), blob_list_without_etag.size()));
+        response->SetBodyStream(std::make_unique<OwningBodyStream>(blob_list_without_etag));
         return response;
     }
 };
