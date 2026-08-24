@@ -1,0 +1,5 @@
+--- a failed string flush in a profile events packet fails the stream closed
+the stream was not terminated: OK
+--- a failed string flush in the exception packet aborts the response
+the client observes an aborted connection: OK
+no complete exception packet was delivered: OK

@@ -7,7 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
 A text index stores a mapping from tokens to the row numbers which contain each token.
@@ -81,7 +81,9 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -118,7 +120,9 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -156,7 +160,12 @@ ALTER TABLE table DROP INDEX text_idx;
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
+- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  The `re` argument is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
+  Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
 - `icu(locale)` splits strings into word tokens using the [ICU](https://icu.unicode.org/) library's Unicode word segmentation (UAX #29). For scripts that do not put whitespace between words (e.g., Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so — unlike `asciiCJK` — such text is split into meaningful multi-character words instead of single characters. Here, "dictionary" means ICU's bundled word lists for those scripts (see [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU chooses the most likely split over those words.
   `locale` is the ICU locale passed to the segmenter; segmentation is mainly script- and dictionary-driven, and the locale selects ICU's locale-specific tailoring. It is a mandatory parameter, for example `tokenizer = icu('ja')` or `tokenizer = icu('zh')`.
   The available locales can be listed with `SELECT * FROM system.collations`.
@@ -169,7 +178,7 @@ ALTER TABLE table DROP INDEX text_idx;
   If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned.
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
-- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)).
+- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -261,6 +270,7 @@ Text indexes can be built on top of text data in any language and character set.
 For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
 For languages that do not separate words by whitespace (for example Chinese, Japanese, or Thai), the `icu(locale)` tokenizer produces meaningful multi-character word tokens via ICU's dictionary-based word segmentation.
 For Japanese specifically, the `japanese` tokenizer (MeCab) segments text into words rather than single characters and generally gives better search results.
+For Chinese specifically, the `chinese` tokenizer (jieba) segments text into words rather than single characters and generally gives better search results.
 
 <a id="preprocessor-argument-optional"></a>**Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
 
@@ -397,7 +407,7 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 Usage of non-deterministic functions is disallowed.
 
 The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
-- For `hasToken`, `hasAllTokens`, `hasAnyTokens`, and `hasPhrase` (with any supported tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search). For `hasPhrase`, the postprocessed tokens are positioned densely, so a token the postprocessor drops leaves no positional gap and the phrase still matches across it — e.g. with a stop-word postprocessor that drops `the`, `hasPhrase(col, 'see cat')` matches a document `see the cat`.
+- For `hasToken`, `hasAllTokens`, `hasAnyTokens`, and `hasPhrase` (with any supported tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search). For `hasPhrase`, the postprocessed tokens are positioned densely, so a token the postprocessor drops leaves no positional gap and the phrase still matches across it — e.g. with a stop-word postprocessor that drops `the`, `hasPhrase(col, 'see cat')` matches a document `see the cat`. The one exception is `hasPhrase` on a `splitByRegexp` index, which does not support a postprocessor (the combination is rejected with an exception).
 - For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
 
 Examples:
@@ -505,7 +515,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
 For most functions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
 For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
-Without `support_phrase_search`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `support_phrase_search = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any).
+Without `support_phrase_search`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `support_phrase_search = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any). This postprocessor support does not extend to the `splitByRegexp` tokenizer: `hasPhrase` on a `splitByRegexp` index combined with a postprocessor is rejected (see footnote ³ below).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
@@ -517,7 +527,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | yes |
+| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
@@ -537,6 +547,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 ² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
+
+³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -804,7 +816,7 @@ Function [hasPhrase](/reference/functions/regular-functions/string-search-functi
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
 
 Example:
 
@@ -1213,7 +1225,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, and `icu`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, and `icu`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
@@ -1394,6 +1406,38 @@ The fallback mechanism is controlled by two settings:
 
 This optimization supports only functions `like` and `ilike`.
 
+### Trivial count queries {#count-queries-perf}
+
+A query that only counts the rows matching a text-search predicate
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+is answered from the text index, without reading the matching rows.
+ClickHouse takes the count from the posting-list cardinalities in the index, skipping the virtual column that marks matching rows and the aggregation over it. A single token needs only its dictionary cardinality, so no posting list is read; multi-token predicates read the postings just to union (`hasAnyTokens`) or intersect (`hasAllTokens`) them. As a text index covers the whole part, the count is exact and stays fast even on very large parts.
+
+The optimization applies to a bare `count()` filtered by a single `hasToken`, `hasAnyTokens`, or `hasAllTokens` predicate (or an `Array`/`Map` equivalent). Predicates combined with `AND`/`OR`/`NOT`, an extra filter (e.g. `... AND id > 10`), a hint-mode predicate like `m['key'] = 'value'`, selecting anything besides the count, or phrase or `LIKE`/pattern search makes the query read rows instead. Parts without a materialized index are still counted correctly by reading their rows.
+
+To confirm the optimization is engaged, check for `ReadFromTextIndexCount` in the query plan:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+The optimization is controlled by [query_plan_optimize_count_from_text_index](/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (on by default). It builds on [direct read](#direct-read), so [query_plan_direct_read_from_text_index](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use_skip_indexes](/reference/settings/session-settings/use-skip-indexes#use_skip_indexes), and [optimize_trivial_count_query](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) must be enabled too (all on by default).
+
 ### Caching {#caching}
 
 Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
@@ -1438,6 +1482,12 @@ The text index currently has the following limitations:
 - The materialization of text indexes with a high number of tokens (e.g. 10 billion tokens) can consume significant amounts of memory. Text
   index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
 - It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
+
+## Upgrade Notes {#upgrade-notes}
+
+The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
+The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
+During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 

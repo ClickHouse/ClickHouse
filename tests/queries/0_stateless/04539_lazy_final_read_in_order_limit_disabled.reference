@@ -7,7 +7,7 @@ limit reading till end:	1
 limit above full sort:	1
 distinct with limit:	0
 distinct without limit:	1
-distinct with limit reading till end:	0
+distinct with limit reading till end:	1
 limit above arrayJoin:	1
 0	7	updated
 1	7	updated

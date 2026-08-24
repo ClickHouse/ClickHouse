@@ -30,11 +30,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 轻量级 `DELETE` 是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的：它会将行标记为已删除，但不会立即从物理层面删除这些数据。
 
-默认情况下，`DELETE` 语句会等待这些行完成“已删除”标记后才返回。如果数据量很大，这可能会耗费较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings#lightweight_deletes_sync) 让它在后台异步执行。如果禁用该设置，`DELETE` 语句会立即返回，但在后台变更完成之前，查询仍可能看到这些数据。
+默认情况下，`DELETE` 语句会等待这些行完成“已删除”标记后才返回。如果数据量很大，这可能会耗费较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 让它在后台异步执行。如果禁用该设置，`DELETE` 语句会立即返回，但在后台变更完成之前，查询仍可能看到这些数据。
 
 变更不会物理删除那些已标记为删除的行；只有在下一次合并时才会真正删除。因此，在一段未指定的时间内，数据实际上可能并未从存储中移除，而只是被标记为已删除。
 
-如果你需要确保数据能在可预测的时间内从存储中删除，可以考虑使用表设置 [`min_age_to_force_merge_seconds`](/zh/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds)。或者，你也可以使用 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令。请注意，使用 `ALTER TABLE ... DELETE` 删除数据可能会消耗大量资源，因为它会重新创建所有受影响的 parts。
+如果你需要确保数据能在可预测的时间内从存储中删除，可以考虑使用表设置 [`min_age_to_force_merge_seconds`](/zh/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds)。或者，你也可以使用 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令。请注意，使用 `ALTER TABLE ... DELETE` 删除数据可能会消耗大量资源，因为它会重新创建所有受影响的 parts。
 
 <div id="deleting-large-amounts-of-data">
   ## 删除大量数据

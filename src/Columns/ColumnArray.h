@@ -237,7 +237,6 @@ private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
-
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>
     ColumnPtr replicateNumber(const Offsets & replicate_offsets) const;
