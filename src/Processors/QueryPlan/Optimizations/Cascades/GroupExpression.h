@@ -71,8 +71,9 @@ public:
 
     /// Cross-group identity, for deduplication across the whole memo. Stronger than the
     /// within-group `fingerprint` / `structurallyEqualTo` pair: it compares step content instead
-    /// of step name and description, and it ignores the description entirely. Fails closed - a
-    /// step type that has not opted in compares by pointer.
+    /// of step name and the step's display description. Fails closed - a step type that has not
+    /// opted in compares by pointer, and every GroupExpression-side field that can change what
+    /// the expression means is compared, including `enforced_property` and `description_suffix`.
     size_t globalFingerprint() const;
     bool globallyEqualTo(const GroupExpression & other) const;
 

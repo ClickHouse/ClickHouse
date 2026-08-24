@@ -86,7 +86,7 @@ public:
     virtual bool isSerializable() const { return false; }
 
     /// Cascades cross-group identity: a step type opts in only after a complete field audit
-    /// (see Optimizations/Cascades/StepIdentity.h). Default is fail-closed: pointer identity.
+    /// (see Processors/QueryPlan/StepIdentity.h). Default is fail-closed: pointer identity.
     /// MUST return false whenever `isSerializable()` is false, or whenever `serialize` would
     /// throw for this concrete instance - the identity encoding calls `serialize` directly.
     virtual bool supportsCascadesIdentity() const { return false; }

@@ -122,7 +122,11 @@ const StepIdentity * GroupExpression::getStepIdentity() const
 }
 
 /// `globallyEqualTo` and `globalFingerprint` must cover the same components in the same order:
-/// properties, inputs (group and required properties), strategy, then the step.
+/// properties, inputs (group and required properties), strategy, enforced property, description
+/// suffix, then the step. `enforced_property` and `description_suffix` are GroupExpression state,
+/// not the step's display description that the encoding excludes: `Group` relies on
+/// `enforced_property` for enforcer cycle avoidance, and nothing guarantees `description_suffix`
+/// carries no meaning, so both are included to fail closed.
 size_t GroupExpression::globalFingerprint() const
 {
     size_t hash_value = ExpressionPropertiesHash()(properties);
@@ -133,6 +137,8 @@ size_t GroupExpression::globalFingerprint() const
     }
     if (strategy)
         boost::hash_combine(hash_value, std::hash<String>()(strategy->getName()));
+    boost::hash_combine(hash_value, static_cast<uint8_t>(enforced_property));
+    boost::hash_combine(hash_value, std::hash<String>()(description_suffix));
 
     if (const auto * identity = getStepIdentity())
     {
@@ -166,6 +172,12 @@ bool GroupExpression::globallyEqualTo(const GroupExpression & other) const
     /// Strategies are per-type singletons (`strategySingleton`), so equal pointers mean the
     /// same strategy type.
     if (strategy != other.strategy)
+        return false;
+
+    if (enforced_property != other.enforced_property)
+        return false;
+
+    if (description_suffix != other.description_suffix)
         return false;
 
     if (plan_step == other.plan_step)

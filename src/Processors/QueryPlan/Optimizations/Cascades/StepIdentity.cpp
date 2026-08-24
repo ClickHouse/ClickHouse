@@ -1,15 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
 
-#include <Core/Block.h>
-#include <Core/ProtocolDefines.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/SetSerialization.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
-#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -22,6 +15,7 @@ namespace
 class SipHashWriteBuffer final : public WriteBuffer
 {
 public:
+    /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `buffer` is scratch space, hashed only up to what was written
     SipHashWriteBuffer()
         : WriteBuffer(buffer, sizeof(buffer))
     {
@@ -42,97 +36,6 @@ private:
     char buffer[4096];
 };
 
-}
-
-CascadesIdentityExtras::CascadesIdentityExtras(WriteBuffer & out_, SerializedSetsRegistry & registry_)
-    : out(out_)
-    , registry(registry_)
-{
-}
-
-void CascadesIdentityExtras::addPayload(UInt64 tag, std::string_view payload)
-{
-    writeVarUInt(tag, out);
-    writeBinary(static_cast<UInt8>(1), out);
-    writeVarUInt(payload.size(), out);
-    out.write(payload.data(), payload.size());
-}
-
-void CascadesIdentityExtras::addAbsent(UInt64 tag)
-{
-    writeVarUInt(tag, out);
-    writeBinary(static_cast<UInt8>(0), out);
-}
-
-void CascadesIdentityExtras::addBool(UInt64 tag, bool value)
-{
-    const char byte = value ? 1 : 0;
-    addPayload(tag, std::string_view(&byte, 1));
-}
-
-void CascadesIdentityExtras::addVarUInt(UInt64 tag, UInt64 value)
-{
-    WriteBufferFromOwnString payload;
-    writeVarUInt(value, payload);
-    addPayload(tag, payload.str());
-}
-
-void CascadesIdentityExtras::addString(UInt64 tag, std::string_view value)
-{
-    addPayload(tag, value);
-}
-
-void CascadesIdentityExtras::addStrings(UInt64 tag, const Names & value)
-{
-    WriteBufferFromOwnString payload;
-    writeVarUInt(value.size(), payload);
-    for (const auto & name : value)
-        writeStringBinary(name, payload);
-    addPayload(tag, payload.str());
-}
-
-void CascadesIdentityExtras::addSortDescription(UInt64 tag, const SortDescription & value)
-{
-    WriteBufferFromOwnString payload;
-    serializeSortDescription(value, payload);
-    addPayload(tag, payload.str());
-}
-
-void CascadesIdentityExtras::addDAG(UInt64 tag, const ActionsDAG * dag)
-{
-    if (!dag)
-    {
-        addAbsent(tag);
-        return;
-    }
-
-    WriteBufferFromOwnString payload;
-    dag->serialize(payload, registry);
-    addPayload(tag, payload.str());
-}
-
-void writeCascadesIdentityEncoding(const IQueryPlanStep & step, WriteBuffer & out)
-{
-    writeStringBinary(step.getSerializationName(), out);
-
-    if (step.hasOutputHeader())
-        serializeQueryPlanStepHeader(*step.getOutputHeader(), out);
-    else
-        serializeQueryPlanStepHeader({}, out);
-
-    QueryPlanSerializationSettings settings;
-    step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    settings.writeChangedBinary(out);
-
-    /// `for_cache_key` must stay false on both the context and the registry: the cache-key mode
-    /// drops `AggregatingStep::final` and runtime-filter ids, which are identity-relevant here.
-    SerializedSetsRegistry registry;
-    IQueryPlanStep::Serialization ctx{
-        .out = out, .registry = registry, .for_cache_key = false, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
-    step.serialize(ctx);
-
-    CascadesIdentityExtras extras(out, registry);
-    step.appendCascadesIdentityExtras(extras);
 }
 
 UInt128 computeCascadesIdentityHash(const IQueryPlanStep & step)

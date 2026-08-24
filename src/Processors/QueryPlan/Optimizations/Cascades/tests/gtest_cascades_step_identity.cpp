@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 
 using namespace DB;
 
@@ -104,6 +105,36 @@ TEST(CascadesStepIdentity, PreventInputRemovalIsPartOfIdentity)
     EXPECT_FALSE(a->globallyEqualTo(*b));
 }
 
+/// `Group` uses `enforced_property` to keep a self-referential enforcer from satisfying its own
+/// input, so an enforcer and a plain expression over the same step must never be judged equal.
+TEST(CascadesStepIdentity, EnforcedPropertyIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a = exprWithExpressionStep(header, 1);
+    auto b = exprWithExpressionStep(header, 1);
+    ASSERT_TRUE(a->globallyEqualTo(*b));
+
+    b->enforced_property = EnforcedProperty::Sorting;
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// `description_suffix` is GroupExpression state set by rules (e.g. "(by col)"), not the step's
+/// display description, and nothing guarantees it is free of meaning - so it is compared.
+TEST(CascadesStepIdentity, DescriptionSuffixIsPartOfIdentity)
+{
+    auto header = makeHeader();
+    auto a = exprWithExpressionStep(header, 1);
+    auto b = exprWithExpressionStep(header, 1);
+    ASSERT_TRUE(a->globallyEqualTo(*b));
+
+    b->description_suffix = "(by k)";
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
 /// The hash must be usable before any equality call, so that a memo can bucket expressions eagerly.
 TEST(CascadesStepIdentity, IndependentlyBuiltStepsShareFingerprint)
 {
@@ -124,6 +155,7 @@ TEST(CascadesStepIdentity, StepWithoutOptInComparesByPointer)
     /// Equal-looking but distinct instances are not interchangeable without a field audit.
     EXPECT_FALSE(a->globallyEqualTo(*b));
 
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - the shallow copy is the test subject
     GroupExpression shared_step_copy(*a);
     EXPECT_EQ(shared_step_copy.plan_step, a->plan_step);
     EXPECT_TRUE(a->globallyEqualTo(shared_step_copy));
