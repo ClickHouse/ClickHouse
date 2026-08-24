@@ -1,4 +1,7 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, long
+-- long: one run of this file goes past the flaky check's 180s per-run budget under ASan
+-- with S3 storage and metadata in Keeper, where every statement pays an object-storage
+-- round trip. Untagged, that budget fails the check outright rather than reporting a flake.
 -- no-old-analyzer: a background mutation selects its analyzer from the background context, so a
 -- session `enable_analyzer` cannot reach the `ALTER ... UPDATE` arms, and `WITH RECURSIVE` needs it.
 
