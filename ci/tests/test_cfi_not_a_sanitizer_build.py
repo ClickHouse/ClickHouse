@@ -25,6 +25,7 @@ See ClickHouse/ClickHouse#115122.
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -119,18 +120,22 @@ def test_named_checks_distinguish_between_sanitizers(name):
 
 
 def symbolization_is_disabled_by_installer(tmp_path, flags):
-    """Run the installer's own classification block against a stub `clickhouse`.
+    """Install the test configs for a build whose `CXX_FLAGS` row is `flags`.
 
-    Executes `is_sanitizer_build` together with the `if` that consumes it, so both
-    the classification and its wiring to the symlink are covered, and reports
-    whether `trace_log_no_symbolize.xml` was installed. The function shells out to
-    a bare `clickhouse local --query`, so a stub earlier on PATH answers it.
+    Reports whether the server reads `trace_log_no_symbolize.xml`, so the link
+    must also resolve to the installer's own copy: a dangling link is not an
+    installed config. A stub `clickhouse` earlier on PATH answers the installer's
+    `system.build_options` probes; the environment is an allow-list so an
+    exported `USE_*` cannot steer the run.
     """
     stub = tmp_path / "clickhouse"
     stub.write_text(
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "flags = {!r}\n"
+        "if '--query' not in sys.argv:\n"
+        "    print('ClickHouse local version 99.1.1.1.')\n"
+        "    raise SystemExit(0)\n"
         "query = sys.argv[sys.argv.index('--query') + 1]\n"
         'start = query.index("\'") + 1\n'
         "pattern = query[start : query.index(\"'\", start)].strip('%')\n"
@@ -138,25 +143,20 @@ def symbolization_is_disabled_by_installer(tmp_path, flags):
     )
     stub.chmod(0o755)
 
-    dest = tmp_path / "dest"
-    (dest / "config.d").mkdir(parents=True)
-    script = (
-        "set -e\n"
-        "block=$(sed -n '/^function is_sanitizer_build()/,/^fi$/p' \"$1\")\n"
-        'test -n "$block"\n'
-        'eval "$block"\n'
-    )
-    env = dict(
-        os.environ,
-        PATH="{}:{}".format(tmp_path, os.environ["PATH"]),
-        SRC_PATH=os.path.dirname(INSTALLER),
-        DEST_SERVER_PATH=str(dest),
-    )
+    dest = tmp_path / "server"
     run = subprocess.run(
-        ["bash", "-c", script, "bash", INSTALLER], env=env, capture_output=True
+        ["bash", INSTALLER, str(dest), str(tmp_path / "client")],
+        env={"PATH": "{}:{}".format(tmp_path, os.environ["PATH"])},
+        capture_output=True,
     )
     assert run.returncode == 0, run.stderr.decode()
-    return (dest / "config.d" / "trace_log_no_symbolize.xml").is_symlink()
+    link = dest / "config.d" / "trace_log_no_symbolize.xml"
+    return (
+        link.is_symlink()
+        and link.exists()
+        and link.resolve()
+        == (Path(INSTALLER).parent / "config.d" / link.name).resolve()
+    )
 
 
 @pytest.mark.parametrize("profile", sorted(NON_SANITIZER_FLAGS))
