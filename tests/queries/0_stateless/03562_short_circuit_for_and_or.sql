@@ -50,6 +50,12 @@ SELECT 1 OR count() FROM numbers(10);
 SELECT 0 AND count() FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
 
+SELECT 'Test IN subqueries in discarded logical branches fall back to normal analysis';
+SELECT 1 OR (1 IN (SELECT count() FROM test_03562));
+SELECT 0 AND (1 IN (SELECT count() FROM test_03562));
+SELECT 1 OR (1 NOT IN (SELECT count() FROM test_03562));
+SELECT 1 OR (1 GLOBAL IN (SELECT count() FROM test_03562));
+
 SELECT 'Test JOIN ON scalar subqueries remain planner-safe';
 SELECT *
 FROM values('l UInt8', 1) AS l
