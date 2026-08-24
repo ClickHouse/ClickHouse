@@ -50,7 +50,7 @@ QUERY_ID="${CLICKHOUSE_DATABASE}_schema_inference_cancel"
 $CLICKHOUSE_CLIENT \
     --parallel_replicas_for_cluster_engines 0 \
     --query_id "$QUERY_ID" \
-    --query "SELECT * FROM url('http://127.0.0.1:$HTTP_PORT/failed', 'CSV') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 5000" \
+    --query "SELECT * FROM url('http://127.0.0.1:$HTTP_PORT/failed', 'CSV') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 60000, http_retry_max_backoff_ms = 120000" \
     >/dev/null 2>/dev/null &
 CLIENT_PID=$!
 
@@ -61,12 +61,13 @@ for _ in {1..300}; do
     sleep 0.1
 done
 
-START_MS=$(date +%s%3N)
+# `EPOCHREALTIME` is `seconds.microseconds`; stripping the dot makes it microseconds.
+START_US=${EPOCHREALTIME/./}
 # `KILL QUERY ... SYNC` reports the killed queries in its result, which is not what this test checks.
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC FORMAT Null"
 wait $CLIENT_PID
 CLIENT_STATUS=$?
-ELAPSED_MS=$(( $(date +%s%3N) - START_MS ))
+ELAPSED_MS=$(( (${EPOCHREALTIME/./} - START_US) / 1000 ))
 GET_COUNT=$(curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('GET', 0))")
 
 if ((CLIENT_STATUS != 0)); then
@@ -75,7 +76,10 @@ else
     echo "FAIL: the cancelled schema-inference query succeeded"
 fi
 
-if ((ELAPSED_MS < 2000)); then
+# The measured interval includes starting the `KILL QUERY` client and tearing the killed client
+# down, which alone takes seconds under the sanitizer builds - hence the wide margin against the
+# 60-second backoff.
+if ((ELAPSED_MS < 15000)); then
     echo "the cancellation interrupted the retry backoff"
 else
     echo "FAIL: the cancellation waited $ELAPSED_MS ms for the retry backoff"
