@@ -12,6 +12,7 @@
 
 #include <map>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -204,6 +205,7 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 

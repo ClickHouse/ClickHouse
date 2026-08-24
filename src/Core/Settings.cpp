@@ -9847,6 +9847,11 @@ bool Settings::hasBuiltin(std::string_view name)
     return SettingsImpl::hasBuiltin(name);
 }
 
+std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return SettingsImpl::tryGetTierOfBuiltin(name);
+}
+
 std::string_view Settings::resolveName(std::string_view name)
 {
     return SettingsImpl::Traits::resolveName(name);
