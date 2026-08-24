@@ -1425,7 +1425,6 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
-    streaming_cursor_mutex(o.streaming_cursor_mutex),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -4354,13 +4353,6 @@ void Context::enableStreamingCursor()
 {
     std::lock_guard lock(mutex);
     streaming_cursor = std::make_shared<CursorTreeNode>();
-    streaming_cursor_mutex = std::make_shared<std::mutex>();
-}
-
-void Context::mergeStreamingCursor(const CursorTreeNodePtr & from) const
-{
-    std::lock_guard lock(*streaming_cursor_mutex);
-    mergeCursors(streaming_cursor, from);
 }
 
 CursorTreeNodePtr Context::getStreamingCursor() const
