@@ -194,6 +194,11 @@ bool ProxyServer::anyBackendSecure() const
         for (const auto & backend : pool.backends)
             if (backend.secure)
                 return true;
+    /// Backends materialized from a `backend_template` are not part of any pool, but they need
+    /// the client TLS context just the same, and it can only be created before the scheduler starts.
+    for (const auto & rule : config.rules)
+        if (rule.backend_template && rule.backend_template->secure)
+            return true;
     return false;
 }
 
