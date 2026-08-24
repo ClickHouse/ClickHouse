@@ -292,13 +292,9 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    auto path = object_info.getPath();
-    if (path.starts_with("/"))
-        path = path.substr(1);
-
-    std::string result = include_connection_info
-        ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path;
+    std::string result = joinPathUnderPrefix(
+        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
+        object_info.getPath());
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -407,7 +403,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 for (const auto & path : paths.value())
                 {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    /// `path` is a `_path` column value, so it needs that column's formatter
+                    /// inverted rather than a plain relative().
+                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
                     if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
