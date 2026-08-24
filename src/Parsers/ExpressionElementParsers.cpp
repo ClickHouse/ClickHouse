@@ -45,6 +45,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -2800,6 +2802,78 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementColumnsTransformers(StatementFactory & factory)
+{
+    factory.registerStatement("APPLY modifier",
+    {
+        .description = R"(
+Invokes a function for each column returned by the expression it is applied to, which is usually the asterisk or a
+columns matcher.
+
+**Examples**
+
+**Apply a function to every column**
+
+```sql title="Query"
+SELECT * APPLY(max) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> APPLY(<func>) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
+    factory.registerStatement("EXCEPT modifier",
+    {
+        .description = R"(
+Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the
+output.
+
+**Examples**
+
+**Exclude a column from the result**
+
+```sql title="Query"
+SELECT * EXCEPT (i) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+    });
+
+    factory.registerStatement("REPLACE modifier",
+    {
+        .description = R"(
+Specifies one or more expression aliases. Each alias must match a column name of the `SELECT *` statement, and the
+matching column is replaced by the expression in the output column list. The modifier does not change the names or the
+order of the columns, but it can change the values and their types.
+
+**Examples**
+
+**Replace the expression of a column**
+
+```sql title="Query"
+SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;
+```
+)",
+        .syntax = R"(
+SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+    });
 }
 
 }
