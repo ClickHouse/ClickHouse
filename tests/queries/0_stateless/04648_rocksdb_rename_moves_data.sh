@@ -22,6 +22,24 @@ ORD1="${CLICKHOUSE_DATABASE}_ord1"
 ORD2="${CLICKHOUSE_DATABASE}_ord2"
 EXPLICIT_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}"
 
+ATTACH_PID=""
+# Failpoint state lives in the server and outlives this script, so a run that dies between
+# enabling and disabling one leaves it armed for whatever executes next. The paused query has
+# to be released as well: nothing else resumes it.
+function cleanup()
+{
+    for failpoint in rocksdb_rename_throw_filesystem_error rocksdb_rename_fail_reopen \
+                     rocksdb_rename_pause_before_rollback attach_from_path_pause_before_relocation
+    do
+        $CLIENT -q "SYSTEM DISABLE FAILPOINT $failpoint" 2>/dev/null
+    done
+    if [ -n "$ATTACH_PID" ]; then
+        wait "$ATTACH_PID" 2>/dev/null
+        ATTACH_PID=""
+    fi
+}
+trap cleanup EXIT
+
 $CLIENT -q --multiline "
     DROP DATABASE IF EXISTS $ORD1;
     DROP DATABASE IF EXISTS $ORD2;
@@ -193,6 +211,7 @@ echo "13 concurrent read excluded $(echo "$CONCURRENT_READ" | grep -c "DEADLOCK_
 # DISABLE resumes the paused attach and removes the failpoint in one step.
 $CLIENT -q "SYSTEM DISABLE FAILPOINT attach_from_path_pause_before_relocation"
 wait $ATTACH_PID
+ATTACH_PID=""
 echo "13 attach from count $($CLIENT -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t13")"
 echo "13 attach from reloaded $(reloaded_count "$CLICKHOUSE_DATABASE" t13)"
 
