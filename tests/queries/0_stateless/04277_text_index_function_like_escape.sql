@@ -19,16 +19,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id)
 -- A moderate index_granularity keeps the text index small (few granules) so the
--- flaky check stays well under its per-run time limit; the four single-value parts
+-- flaky check stays well under its per-run time limit; the five single-value parts
 -- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
 -- The granule counts below hold only for this exact layout: index_granularity_bytes = 0 keeps
--- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the four parts separate.
+-- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the five parts separate.
 SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
 
 SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
 
@@ -49,7 +50,25 @@ SELECT 'ESCAPE used to match a literal LIKE wildcard returns the expected zero r
 SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
 SELECT count() FROM tab WHERE message LIKE '%fast#%' ESCAPE '#';
 
-SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 4 parts / 32 granules';
+SELECT 'A consumed escape character is folded before matching: the escaped % is a literal, so the same pattern read without the ESCAPE clause matches nothing';
+
+SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%' ESCAPE '#';
+SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%';
+SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%';
+
+SELECT 'The index still prunes for that folded pattern, to the same 8 of 40 granules as the equivalent standard-escape pattern';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%' ESCAPE '#'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 5 parts / 40 granules';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -121,5 +140,11 @@ SELECT 'A non-ASCII ESCAPE byte is rejected at planning time so the direct-read 
 -- planning time, before any optimization can drop the predicate.
 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+
+-- An escape argument that is not exactly one byte is rejected on the same path.
+SELECT count() FROM tab WHERE like(tag, '%Cloud%', ''); -- { serverError BAD_ARGUMENTS }
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', ''); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE like(tag, '%Cloud%', 'ab'); -- { serverError BAD_ARGUMENTS }
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', 'ab'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;

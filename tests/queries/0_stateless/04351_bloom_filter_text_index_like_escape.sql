@@ -45,7 +45,7 @@ SELECT count() FROM tab WHERE message LIKE '%50#%off%' ESCAPE '#';
 -- No row contains a literal 'fast%', so this is empty.
 SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
 
-SELECT 'The bloom-filter text index prunes with LIKE ESCAPE just like the plain 2-argument LIKE (force_data_skipping_indices accepts the folded query, including the negated and functional forms)';
+SELECT 'The index is used for the folded query just like for the plain 2-argument LIKE: force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms (a direct NOT LIKE is recognized but cannot reject a granule, as with 2 arguments)';
 
 SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab WHERE like(message, '%World%', '|') SETTINGS force_data_skipping_indices = 'idx';

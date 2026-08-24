@@ -7,7 +7,7 @@ Results are the same with and without an ESCAPE clause when the escape character
 ESCAPE used to match a literal LIKE wildcard
 1024
 0
-The bloom-filter text index prunes with LIKE ESCAPE just like the plain 2-argument LIKE (force_data_skipping_indices accepts the folded query, including the negated and functional forms)
+The index is used for the folded query just like for the plain 2-argument LIKE: force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms (a direct NOT LIKE is recognized but cannot reject a granule, as with 2 arguments)
 1024
 1024
 4096

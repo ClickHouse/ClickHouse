@@ -8,7 +8,7 @@
 -- the existing 2-argument handler. `ILIKE ... ESCAPE` and `NOT ILIKE ... ESCAPE`
 -- are not pruned by the primary key because `ilike`/`notILike` are not in
 -- `KeyCondition::atom_map`; case-insensitive forms fall back to row-level
--- evaluation. The text index covers all four forms (see test 04277).
+-- evaluation. The text index covers the two positive forms (see test 04277).
 --
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/105885
 
