@@ -13,6 +13,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -39,6 +41,70 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanOptimizations
+{
+    bool keyTypeBreaksHashSharding(const IDataType & type);
+}
+
+/// The sorting enforcer builds plain full sorts, and the executor merges their output into
+/// one stream per node. A sort that directly feeds a `PARTITION BY` window can carry the
+/// partition keys instead, like the sorts the planner builds for windows: the executor then
+/// splits the streams by a hash of the keys, each partition stays within one stream, the
+/// window computes its partitions in parallel, and `applyStreamDisjointness` passes the
+/// disjointness to the operators above (an aggregation on the partition keys skips its
+/// merge phase). Keys whose hash disagrees with `compareAt` (floats, `JSON`, `Dynamic`)
+/// are left alone - the split would tear one partition apart.
+static void addPartitionsToWindowSorts(QueryPlan & query_plan)
+{
+    std::vector<QueryPlan::Node *> stack = {query_plan.getRootNode()};
+    while (!stack.empty())
+    {
+        QueryPlan::Node * node = stack.back();
+        stack.pop_back();
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        if (node->children.size() != 1)
+            continue;
+        const auto * window_step = typeid_cast<const WindowStep *>(node->step.get());
+        if (!window_step)
+            continue;
+        const auto & partition_by = window_step->getWindowDescription().partition_by;
+        if (partition_by.empty())
+            continue;
+
+        auto * sorting_step = typeid_cast<SortingStep *>(node->children[0]->step.get());
+        if (!sorting_step || sorting_step->getType() != SortingStep::Type::Full
+            || sorting_step->getLimit() != 0 || sorting_step->hasPartitions())
+            continue;
+
+        /// Only the sort made for this window: the partition keys are its prefix.
+        const auto & sort_description = sorting_step->getSortDescription();
+        if (sort_description.size() < partition_by.size()
+            || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
+            continue;
+
+        const auto & input_header = sorting_step->getInputHeaders().front();
+        bool keys_split_partitions = false;
+        for (const auto & partition_column : partition_by)
+        {
+            if (!input_header->has(partition_column.column_name)
+                || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            {
+                keys_split_partitions = true;
+                break;
+            }
+        }
+        if (keys_split_partitions)
+            continue;
+
+        auto partitioned_sort = std::make_unique<SortingStep>(
+            input_header, sort_description, partition_by, /*limit_=*/0, sorting_step->getSettings());
+        partitioned_sort->setStepDescription(*sorting_step);
+        node->children[0]->step = std::move(partitioned_sort);
+    }
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -330,6 +396,8 @@ void CascadesOptimizer::optimize()
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
+
+    addPartitionsToWindowSorts(query_plan);
 
     LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }
