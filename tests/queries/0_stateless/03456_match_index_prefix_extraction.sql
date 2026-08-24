@@ -78,9 +78,8 @@ SELECT count() FROM foo WHERE match(path, '^xxx\\}zzz') SETTINGS force_primary_k
 SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM foo WHERE match(path, '^xxx\\-zzz')) WHERE explain like '%Condition%';
 SELECT count() FROM foo WHERE match(path, '^xxx\\-zzz') SETTINGS force_primary_key = 1;
 
--- No optimization: NUL bytes in regex are not supported
-SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM foo WHERE match(path, '^xxx\0bla')) WHERE explain like '%Condition%';
-SELECT count() FROM foo WHERE match(path, '^xxx\0bla') SETTINGS force_primary_key = 1; -- {serverError INDEX_NOT_USED}
+-- A NUL byte is an ordinary literal character — prefix "xxx\0bla"
+SELECT count() FROM foo WHERE match(path, '^xxx\0bla') SETTINGS force_primary_key = 1;
 
 -- TODO: Support transparent plain groups — could extract prefix "xxxbla"
 -- '(' stops extraction, prefix is "xxx"

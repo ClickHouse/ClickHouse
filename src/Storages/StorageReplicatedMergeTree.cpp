@@ -23,6 +23,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
+#include <Common/saturatedDuration.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -5964,7 +5965,8 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             LOG_TRACE(log, "Trying to startup table from right now");
             /// Try activating replica in the current thread.
             restarting_thread.run();
-            restarting_thread.start(false);
+            /// The restarting thread task can be deactivated (i.e. due to shutdown()), and then run() will not schedule task, so force scheduling as well
+            restarting_thread.start(/*schedule=*/ true);
         }
         else
         {
@@ -6064,7 +6066,7 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
         startup_event.set();
-        shutdown_deadline.emplace(std::chrono::system_clock::now() + std::chrono::milliseconds((*settings_ptr)[MergeTreeSetting::wait_for_unique_parts_send_before_shutdown_ms].totalMilliseconds()));
+        shutdown_deadline.emplace(std::chrono::system_clock::now() + saturatedMilliseconds((*settings_ptr)[MergeTreeSetting::wait_for_unique_parts_send_before_shutdown_ms].totalMilliseconds()));
     }
     catch (...)
     {
@@ -10809,7 +10811,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         /// In opposition, when the part has been mutated in generally it hardlinks the files from source part.
         /// Therefore remote data could be shared, it has to be unlocked in the keeper.
         /// In order to track all that cases remove_tmp_policy is used.
-        /// Clickhouse set that field as REMOVE_BLOBS or PRESERVE_BLOBS when it sure about the decision without asking keeper.
+        /// ClickHouse set that field as REMOVE_BLOBS or PRESERVE_BLOBS when it sure about the decision without asking keeper.
 
         if (part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS
             || part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS)

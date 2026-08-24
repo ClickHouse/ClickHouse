@@ -4,8 +4,10 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SharedMutex.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
+#include <city.h>
 
 
 namespace DB
@@ -14,11 +16,14 @@ class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
 ///
-/// Identifiers can be of any type: they are stored in serialized form,
-/// so lookups must use the same type of identifiers which was used to store them.
-/// Identifiers of all types share the same map, so identifiers of different types are treated as the same
-/// identifier if their serialized forms are identical (for example, UInt64 and Int64 with the same bit pattern,
-/// or UUID and FixedString(16) with the same bytes).
+/// Identifiers can be of any type. Lookups must use the same type of identifiers which was used to store them.
+/// Identifier columns with one of the common fixed-size layouts (UInt64, UInt128, UUID, FixedString(16),
+/// and two-element tuples with a UInt64 first component and a UInt64/UInt128/UUID second component)
+/// are stored in typed maps keyed by the ids' native binary representation; identifiers of other types
+/// are stored in a generic map in serialized form.
+/// Identifiers sharing one map are treated as the same identifier if their key representations are identical
+/// (for example, UUID, UInt128 and FixedString(16) with the same bit pattern, or, in the generic map,
+/// Int64 and FixedString(8) with the same bytes).
 ///
 /// Set of tags are always sorted.
 ///
@@ -83,10 +88,10 @@ public:
     VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
     void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
 
-    /// Returns the groups assigned to the sets of tags which were added to the collector
+    /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
-    /// `id_column` must not be Nullable.
-    VectorWithMemoryTracking<Group> getGroupByID(const ColumnPtr & id_column) const;
+    /// `id_column` must not be Nullable. Any previous contents of `res` are discarded.
+    void getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const;
 
     /// Returns the sets of tags which were added to the collector with identifiers from a column.
     /// Throws an exception if some identifier is unknown.
@@ -185,6 +190,57 @@ private:
     Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags) TSA_REQUIRES(mutex);
     Group tryAddGroupUnlocked(TagsKey && key) TSA_REQUIRES(mutex);
 
+    /// Hash for the keys of the typed identifier maps.
+    struct IDMapHash
+    {
+        size_t operator()(UInt64 id) const { return DefaultHash<UInt64>{}(id); }
+        size_t operator()(const UInt128 & id) const { return DefaultHash<UInt128>{}(id); }
+        size_t operator()(const std::pair<UInt64, UInt64> & id) const { return CityHash_v1_0_2::Hash128to64({id.first, id.second}); }
+        size_t operator()(const std::pair<UInt64, UInt128> & id) const { return CityHash_v1_0_2::Hash128to64({id.first, UInt128Hash{}(id.second)}); }
+    };
+
+    /// A typed identifier map: the keys are the ids' native binary representation.
+    template <typename IDType>
+    struct IDMap
+    {
+        HashMap<IDType, Group, IDMapHash> map;
+    };
+
+    /// The generic identifier map: the keys are the ids' serialized form, the key bytes are owned by `arena`.
+    struct GenericIDMap
+    {
+        using Map = HashMapWithSavedHash<std::string_view, Group>;
+        Arena arena;
+        Map map;
+    };
+
+    /// Returns the typed identifier map with the specified key type.
+    template <typename IDType>
+    IDMap<IDType> & getTypedIDMap() TSA_REQUIRES(mutex);
+    template <typename IDType>
+    const IDMap<IDType> & getTypedIDMap() const TSA_REQUIRES_SHARED(mutex);
+
+    /// Implementations of storeTags, getGroupByID, getTagsByID for identifier columns
+    /// matching one of the typed maps. `IDGetter` extracts the identifier for a specified row.
+    template <typename IDGetter>
+    void storeTagsTyped(const IDGetter & id_getter, const IColumn & id_data, const UInt8 * null_map,
+                        size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    template <typename IDGetter>
+    void getGroupByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
+
+    template <typename IDGetter>
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const;
+
+    /// Implementations of storeTags, getGroupByID, getTagsByID for identifier columns
+    /// which don't match any of the typed maps.
+    void storeTagsGeneric(const IColumn & id_data, const UInt8 * null_map,
+                          size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    void getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDGeneric(const IColumn & id_data, size_t num_rows) const;
+
     mutable SharedMutex mutex;
 
     VectorWithMemoryTracking<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
@@ -194,10 +250,12 @@ private:
 
     std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 
-    /// Identifiers are stored in serialized form, the keys of `groups_by_id` point to memory owned by `ids_arena`.
-    using GroupsByID = HashMapWithSavedHash<std::string_view, Group>;
-    Arena ids_arena TSA_GUARDED_BY(mutex);
-    GroupsByID groups_by_id TSA_GUARDED_BY(mutex);
+    /// Identifier maps: a typed map per common fixed-size id layout, and the generic map for other id types.
+    IDMap<UInt64> id_map_uint64 TSA_GUARDED_BY(mutex);
+    IDMap<UInt128> id_map_uint128 TSA_GUARDED_BY(mutex);
+    IDMap<std::pair<UInt64, UInt64>> id_map_pair_uint64_uint64 TSA_GUARDED_BY(mutex);
+    IDMap<std::pair<UInt64, UInt128>> id_map_pair_uint64_uint128 TSA_GUARDED_BY(mutex);
+    GenericIDMap generic_id_map TSA_GUARDED_BY(mutex);
 };
 
 }

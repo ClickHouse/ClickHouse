@@ -218,7 +218,7 @@ Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGet = "joinGet(join_storage_table_name, value_column, join_keys)";
@@ -280,7 +280,7 @@ Gets data from Join tables using the specified join key.
 Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGetOrNull = "joinGetOrNull(join_storage_table_name, value_column, join_keys)";

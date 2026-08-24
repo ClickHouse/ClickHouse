@@ -97,6 +97,10 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_IOBufferAllocBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes allocated for IO buffers (for ReadBuffer/WriteBuffer).
 - `ProfileEvent_ArenaAllocChunks` ([UInt64](/reference/data-types/int-uint)) — Number of chunks allocated for memory Arena (used for GROUP BY and similar operations)
 - `ProfileEvent_ArenaAllocBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)
+- `ProfileEvent_FiberStackAllocs` ([UInt64](/reference/data-types/int-uint)) — Number of stacks allocated for fibers (fibers are used for asynchronous communication with remote replicas).
+- `ProfileEvent_FiberStackAllocBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes allocated for fiber stacks, including guard pages (guard pages are only used in debug and sanitizer builds).
+- `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/reference/data-types/int-uint)) — Amount of time spent allocating fiber stacks. Nanoseconds are used because a single allocation is normally faster than a microsecond, unless the allocator or the kernel is contended.
+- `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/reference/data-types/int-uint)) — Amount of time spent deallocating fiber stacks.
 - `ProfileEvent_FunctionExecute` ([UInt64](/reference/data-types/int-uint)) — Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).
 - `ProfileEvent_TableFunctionExecute` ([UInt64](/reference/data-types/int-uint)) — Number of table function calls.
 - `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows processed by default implementation for nulls in function execution
@@ -264,14 +268,14 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes passed through 'max_remote_read_network_bandwidth' throttler.
 - `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.
 - `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/reference/data-types/int-uint)) — Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).
-- `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/reference/data-types/int-uint)) — Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.
-- `ProfileEvent_ReaderExecutorRequestedBytes` ([UInt64](/reference/data-types/int-uint)) — Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).
+- `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/reference/data-types/int-uint)) — Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.
+- `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/reference/data-types/int-uint)) — Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).
 - `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/reference/data-types/int-uint)) — Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.
 - `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/reference/data-types/int-uint)) — Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.
 - `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/reference/data-types/int-uint)) — Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.
 - `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.
 - `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time ReaderExecutor spent decrypting served payload in place (CTR, position-addressable). Zero for unencrypted reads and in builds without SSL.
-- `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.
+- `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorDeliveredBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.
 - `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/reference/data-types/int-uint)) — Number of long source connections opened by ReaderExecutor for sequential read optimization.
 - `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/reference/data-types/int-uint)) — Number of windows ReaderExecutor served by reading from an already-open long source connection.
 - `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/reference/data-types/int-uint)) — Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.
@@ -861,10 +865,10 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_FilesystemCacheFailedEvictionCandidates` ([UInt64](/reference/data-types/int-uint)) — Number of file segments which unexpectedly failed to be evicted during dynamic filesystem cache eviction
 - `ProfileEvent_RemoteFSSeeks` ([UInt64](/reference/data-types/int-uint)) — Total number of seeks for async buffer
 - `ProfileEvent_RemoteFSPrefetches` ([UInt64](/reference/data-types/int-uint)) — Number of prefetches made with asynchronous reading from remote filesystem
-- `ProfileEvent_RemoteFSCancelledPrefetches` ([UInt64](/reference/data-types/int-uint)) — Number of cancelled prefecthes (because of seek)
+- `ProfileEvent_RemoteFSCancelledPrefetches` ([UInt64](/reference/data-types/int-uint)) — Number of cancelled prefetches (because of seek)
 - `ProfileEvent_RemoteFSUnusedPrefetches` ([UInt64](/reference/data-types/int-uint)) — Number of prefetches pending at buffer destruction
-- `ProfileEvent_RemoteFSPrefetchedReads` ([UInt64](/reference/data-types/int-uint)) — Number of reads from prefecthed buffer
-- `ProfileEvent_RemoteFSPrefetchedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes from prefecthed buffer
+- `ProfileEvent_RemoteFSPrefetchedReads` ([UInt64](/reference/data-types/int-uint)) — Number of reads from prefetched buffer
+- `ProfileEvent_RemoteFSPrefetchedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes from prefetched buffer
 - `ProfileEvent_RemoteFSUnprefetchedReads` ([UInt64](/reference/data-types/int-uint)) — Number of reads from unprefetched buffer
 - `ProfileEvent_RemoteFSUnprefetchedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes from unprefetched buffer
 - `ProfileEvent_RemoteFSLazySeeks` ([UInt64](/reference/data-types/int-uint)) — Number of lazy seeks
@@ -898,9 +902,28 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from local cache buffer in RemoteReadBufferCache
 - `ProfileEvent_MainConfigLoads` ([UInt64](/reference/data-types/int-uint)) — Number of times the main configuration was reloaded.
 - `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for aggregation.
+- `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/reference/data-types/int-uint)) — How many local hash tables the adaptive aggregation froze at the freeze threshold.
+- `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/reference/data-types/int-uint)) — How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.
+- `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/reference/data-types/int-uint)) — How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.
+- `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.
+- `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/reference/data-types/int-uint)) — How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.
+- `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/reference/data-types/int-uint)) — How many delayed records the adaptive aggregation staged before deduplication.
+- `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/reference/data-types/int-uint)) — How many staged records the adaptive aggregation merged away as duplicate keys at publish and at the seal.
+- `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/reference/data-types/int-uint)) — How many key bytes the adaptive aggregation staged for the merge-time drain.
+- `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/reference/data-types/int-uint)) — How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.
+- `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation seal normalized column representations because the buffered batches disagreed at one argument position.
+- `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many delayed records the adaptive aggregation drained into the shared table at merge time.
+- `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation drained staged records early because of memory pressure.
+- `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many staged records the adaptive aggregation drained early under memory pressure.
+- `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
+- `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
+- `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).
+- `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/reference/data-types/int-uint)) — How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).
+- `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/reference/data-types/int-uint)) — How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.
+- `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/reference/data-types/int-uint)) — How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
 - `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request was answered from cache without making request to Keeper
 - `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request had to be answered from Keeper
@@ -1102,6 +1125,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/reference/data-types/int-uint)) — Amount of parts in selected range for merge
 - `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent waiting for a slot in connection pool.
 - `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time a query was waiting for async loader jobs.
+- `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/reference/data-types/int-uint)) — Number of times the async loader could not spawn a worker because the global thread pool could not provide a thread. Queued jobs are then run by a worker the pool already has: one that is running, or one resuming from a wait on a job of another pool.
 - `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache
 - `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Time spent reading from distributed cache
 - `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Time spend reading from fallback buffer instead of distributed cache
@@ -1287,8 +1311,52 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/reference/data-types/int-uint)) — Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)
 - `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to the changelog in Keeper
 - `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in fsync for Keeper changelog (uncompressed logs only)
+- `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wall time spent in the parallel changelog read during Keeper startup
+- `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wall time spent stitching per-file parallel startup read results into LogEntryStorage state
+- `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/reference/data-types/int-uint)) — Number of changelog records validated by the parallel Keeper startup reader
+- `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/reference/data-types/int-uint)) — Number of physical bytes (checksum + header + blob) read from changelog files by the parallel Keeper startup reader
 - `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to snapshot files in Keeper
 - `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in fsync for Keeper snapshot files
+- `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT memtable flushes finished successfully
+- `ProfileEvent_KeeperLSMTMerges` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT merges finished successfully
+- `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT file deletions
+- `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Compressed bytes written to files by Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes written to files by Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/reference/data-types/int-uint)) — Number of output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Compressed bytes in output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes in output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of input files fully consumed and dropped by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes in input files fully consumed and dropped by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/reference/data-types/int-uint)) — Number of Create entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Create entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/reference/data-types/int-uint)) — Number of Update entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Update entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/reference/data-types/int-uint)) — Number of Remove entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Remove entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of entries appended to the Keeper LSMT committed memtable
+- `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/reference/data-types/int-uint)) — Number of writes delayed because Keeper LSMT background flushes or merges fell behind
+- `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/reference/data-types/int-uint)) — Number of committed memtables created by Keeper LSMT
+- `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/reference/data-types/int-uint)) — Number of uncommitted memtables created by Keeper LSMT
+- `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node lookups that found the node in uncommitted memtables
+- `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node lookups that didn't find the node in uncommitted memtables and fell through to committed state
+- `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups that found the node's block already in memory
+- `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups for nodes that don't exist
+- `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups that had to load the node's block
+- `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node cache entries re-pointed at a freshly loaded block
+- `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/reference/data-types/int-uint)) — Child names (including tombstones) obtained from memtables by Keeper LSMT list operations
+- `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/reference/data-types/int-uint)) — Child names (including tombstones) obtained from files by Keeper LSMT list operations
+- `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/reference/data-types/int-uint)) — Blocks scanned by Keeper LSMT list operations in files
+- `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/reference/data-types/int-uint)) — Entries scanned by Keeper LSMT list operations in files
+- `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of file scans skipped by Keeper LSMT list operations because the parent paths filter ruled out any children
+- `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/reference/data-types/int-uint)) — Number of file scans not skipped by the Keeper LSMT parent paths filter that found no children
+- `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/reference/data-types/int-uint)) — Number of file scans not skipped by the Keeper LSMT parent paths filter that found children
+- `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses served by the weak pointer in the file's block info
+- `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses served by the block cache
+- `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses that had to load a block group from disk
+- `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/reference/data-types/int-uint)) — Number of blocks loaded from disk by Keeper LSMT
+- `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes of blocks loaded from disk by Keeper LSMT
 - `ProfileEvent_StorageConnectionsCreated` ([UInt64](/reference/data-types/int-uint)) — Number of created connections for storages
 - `ProfileEvent_StorageConnectionsReused` ([UInt64](/reference/data-types/int-uint)) — Number of reused connections for storages
 - `ProfileEvent_StorageConnectionsReset` ([UInt64](/reference/data-types/int-uint)) — Number of reset connections for storages
@@ -1378,6 +1446,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read
 - `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
 - `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/reference/data-types/int-uint)) — Task groups sent to a thread pool by parquet reader
@@ -1413,6 +1482,8 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc allocation sample failed
 - `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc deallocation sample failed
 - `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of loading statistics from parts
+- `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it
+- `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`
 - `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/reference/data-types/int-uint)) — Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas
 - `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/reference/data-types/int-uint)) — Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas
 - `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/reference/data-types/int-uint)) — Total number of reused credentials provider from the cache

@@ -857,6 +857,17 @@ def test_path_overrides_are_rejected(started_cluster):
     assert "cannot be overridden with an empty" in error
 
 
+def test_empty_override_without_stored_credential_is_noop(started_cluster):
+    # The rejection covers exactly the overrides that would drop a credential the collection
+    # carries. On a collection with no TLS keys at all there is nothing to drop, so an empty
+    # override stays the no-op it is for the direct arguments (`pg_ssl` stores no `ssl*` keys).
+    for key in ["sslrootcert_pem", "sslcert_pem", "sslkey_pem"]:
+        assert (
+            node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='require', {key}='')").strip()
+            == "10"
+        )
+
+
 def test_tls_credentials_are_masked(started_cluster):
     # The credential contents are secrets: they must not show up in the stored table
     # definition nor in `system.query_log`. The key is the most sensitive of the

@@ -59,17 +59,17 @@ The function takes into account the weight of each sequence member.
 The maximum error is 1%.
 Memory consumption is `log(n)`, where `n` is a number of values.
 
-The performance of the function is lower than performance of [`quantile`](/sql-reference/aggregate-functions/reference/quantile) or [`quantileTiming`](/sql-reference/aggregate-functions/reference/quantiletiming).
+The performance of the function is lower than performance of [`quantile`](/reference/functions/aggregate-functions/quantile) or [`quantileTiming`](/reference/functions/aggregate-functions/quantileTiming).
 In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
 
 :::note
 Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significant error.
-In this case, consider possibility of using [`quantileTDigest`](/sql-reference/aggregate-functions/reference/quantiletdigest) instead.
+In this case, consider possibility of using [`quantileTDigest`](/reference/functions/aggregate-functions/quantileTDigest) instead.
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -106,18 +106,18 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
 The function takes into account the weight of each sequence member.
 
-This function is equivalent to [`quantileTDigestWeighted`](/sql-reference/aggregate-functions/reference/quantiletdigestweighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileTDigestWeighted`](/reference/functions/aggregate-functions/quantileTDigestWeighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
-The performance of the function is lower than performance of [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles) or [`quantilesTiming`](/sql-reference/aggregate-functions/reference/quantilesTiming).
+The performance of the function is lower than performance of [`quantiles`](/reference/functions/aggregate-functions/quantiles) or [`quantilesTiming`](/reference/functions/aggregate-functions/quantilesTiming).
 In terms of the ratio of State size to precision, this function is much better than `quantiles`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
 :::note
 Using `quantilesTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significant error.
-In this case, consider possibility of using [`quantilesTDigest`](/sql-reference/aggregate-functions/reference/quantilesTDigest) instead.
+In this case, consider possibility of using [`quantilesTDigest`](/reference/functions/aggregate-functions/quantilesTDigest) instead.
 :::
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
