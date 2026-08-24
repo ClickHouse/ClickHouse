@@ -310,6 +310,14 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    /** How the finalized value of a merged state relates to the finalized values of the states
+      * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
+      * relation holds exactly for any set of states and any data, and its `insertResultInto` does
+      * not modify the state (the values of partial states are peeked before they are merged).
+      * The safe default is `Unknown`, which excludes the function from the threshold merge.
+      */
+    virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
+
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.

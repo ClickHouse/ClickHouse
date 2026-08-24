@@ -72,6 +72,8 @@ struct Optimization
 
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
+        /// Mirrors `QueryPlanOptimizationSettings::aggregation_top_k_threshold_merge`.
+        bool aggregation_top_k_threshold_merge{};
         bool is_explain{};
 
         size_t max_block_size{};

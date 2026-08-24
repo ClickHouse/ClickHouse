@@ -115,6 +115,8 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
+    /// The merged count of non-nulls is exactly the sum of the partial counts.
+    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
 #if USE_EMBEDDED_COMPILER
 

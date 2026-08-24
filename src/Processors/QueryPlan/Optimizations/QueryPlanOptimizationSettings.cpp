@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool enable_aggregation_top_k_threshold_merge;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
@@ -172,6 +173,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
     /// Always on under the master toggle: the result is bit-exact, so there is no behavior to preserve.
     aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations];
+    aggregation_top_k_threshold_merge
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_aggregation_top_k_threshold_merge];
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];

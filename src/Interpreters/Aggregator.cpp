@@ -2741,6 +2741,15 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
 
+    /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
+    /// groups that can rank among them. It must stand down when the dataflow statistics are
+    /// being collected: the statistics must describe the untruncated merge of every group (see
+    /// `RuntimeDataflowStatistics.h`), which only the ordinary path performs. The updater is
+    /// attached per query, so all buckets take the same path.
+    if (final && params.threshold_top_k && !updater)
+        if (auto threshold_chunk = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled))
+            return std::move(*threshold_chunk);
+
     /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in
     /// the dataflow statistics, because the truncated chunk carries only the kept groups.
     UInt64 topk_full_key_bytes = 0;

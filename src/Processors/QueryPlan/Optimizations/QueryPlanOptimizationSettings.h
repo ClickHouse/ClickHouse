@@ -51,6 +51,10 @@ struct QueryPlanOptimizationSettings
     bool lift_up_array_join;
     bool push_down_limit;
     bool aggregation_bucket_top_k;
+
+    /// The top-K threshold merge of `GROUP BY ... ORDER BY <aggregate> LIMIT n` (Fagin's
+    /// Threshold Algorithm); see `Aggregator::Params::threshold_top_k`.
+    bool aggregation_top_k_threshold_merge;
     bool split_filter;
     bool merge_expressions;
     bool merge_filters;

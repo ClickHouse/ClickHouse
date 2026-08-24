@@ -147,6 +147,10 @@ public:
         this->data(place).insertResultInto(to, this->result_type);
     }
 
+    /// The merged value is exactly the extremum of the partial values (a group's state is never
+    /// empty in GROUP BY: the group exists because at least one row was added to it).
+    MergedValueBound getMergedValueBound() const override { return isMin ? MergedValueBound::Minimum : MergedValueBound::Maximum; }
+
 #if USE_EMBEDDED_COMPILER
     bool isCompilable() const override
     {

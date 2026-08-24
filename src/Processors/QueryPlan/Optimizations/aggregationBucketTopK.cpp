@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -31,14 +32,32 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
     return &node->result_name;
 }
 
+/// Whether the threshold merge may rank groups by values of this type. The `Subadditive` bound
+/// does arithmetic on the values, so they must be `UInt64` (which is what both `count` and
+/// `uniqExact` return). The extremum bounds only compare values, but the comparison of the
+/// peeked values (`IColumn::compareAt`) must order them exactly like the merge of the states
+/// does, which excludes floating point (the merge ignores NaNs, and which NaN order matches it
+/// depends on the direction) and types whose single-value state falls back to `Field` ordering
+/// with quirks (nothing nullable can appear: the plan only sees non-nullable results here).
+bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    if (bound == MergedValueBound::Subadditive)
+        return which.isUInt64();
+    return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isDecimal() || which.isEnum() || which.isString() || which.isFixedString();
 }
 
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+}
+
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
-    /// or more pass-through expressions over a final aggregation, and the sort column is the
-    /// aggregation's lone-`count()` output. `HAVING`, `WITH TOTALS`, `LIMIT BY` and windows sit
-    /// between the aggregation and the sorting as their own steps and break the adjacency.
+    /// or more pass-through expressions over a final aggregation, and the sort column is one of
+    /// the aggregation's outputs. Serves two optimizations: the top-K threshold merge, for any
+    /// aggregate with a declared merged-value bound, and the bucket-local Top-K conversion, for
+    /// the lone-`count()` output. `HAVING`, `WITH TOTALS`, `LIMIT BY` and windows sit between
+    /// the aggregation and the sorting as their own steps and break the adjacency.
     const auto * limit = typeid_cast<LimitStep *>(parent_node->step.get());
     if (!limit || parent_node->children.size() != 1)
         return 0;
@@ -99,6 +118,20 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         const auto & aggregate = params.aggregates[i];
         if (aggregate.column_name != column)
             continue;
+
+        /// The top-K threshold merge (see `Aggregator::Params::threshold_top_k`) serves any
+        /// aggregate with a declared merged-value bound. It stands down at run time in a few
+        /// cases (single-level tables, dataflow statistics collection), so for the lone `count`
+        /// the conversion-stage selection below is enabled as well, as a fallback.
+        if (settings.aggregation_top_k_threshold_merge && !description.front().collator)
+        {
+            const auto bound = aggregate.function->getMergedValueBound();
+            if (bound != MergedValueBound::Unknown && isThresholdTopKValueType(bound, aggregate.function->getResultType()))
+                aggregating->enableThresholdTopK(
+                    Aggregator::Params::ThresholdTopKParams{
+                        .k = n, .ascending = ascending, .aggregate_index = i, .bound = bound});
+        }
+
         if (aggregate.function->getName() != "count" || !aggregate.argument_names.empty() || !aggregate.parameters.empty())
             return 0;
 
