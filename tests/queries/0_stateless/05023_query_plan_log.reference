@@ -1,0 +1,7 @@
+off	0
+explain_analyze	0
+insert_select	0
+before_start	0
+subquery	1
+finish	1	QueryFinish	1	1	1	1	1	1
+exception	1	ExceptionWhileProcessing	1

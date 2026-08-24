@@ -1,0 +1,94 @@
+-- Verifies system.query_plan_log: which queries are captured, which are not, and that the
+-- captured row contains the plan and correct metadata.
+--
+-- Rows are matched by joining on query_id against system.query_log restricted to
+-- currentDatabase(), so the assertions only see queries issued by this run of this test.
+-- Matching on query_string alone would also pick up rows left by an earlier run against the
+-- same server, or by another test running in parallel, since system.query_plan_log is
+-- server-wide and has no current_database column of its own.
+--
+-- Markers are matched with position() rather than LIKE so that `_` stays a literal character.
+
+DROP TABLE IF EXISTS qpl_insert_target;
+CREATE TABLE qpl_insert_target (x UInt64) ENGINE = Memory;
+
+-- Nothing is captured while the setting is off.
+SET log_query_plans = 0;
+SELECT count() FROM numbers(1000) WHERE number > 900 AND '05023_off' != '' FORMAT Null;
+
+SET log_query_plans = 1;
+
+-- A plain SELECT is captured.
+SELECT number FROM numbers(1000) WHERE number % 7 = 0 AND '05023_finish' != '' ORDER BY number DESC LIMIT 3 FORMAT Null;
+
+-- Nested interpreters must not produce one row each.
+SELECT max(x) FROM (SELECT number AS x FROM numbers(100) WHERE number > 10 AND '05023_subquery' != '') FORMAT Null;
+
+-- EXPLAIN ANALYZE runs through InterpreterExplainQuery, which does not support plan profiling.
+-- It is wrapped in a subquery so its output (which contains timings) is discarded and the test
+-- stays deterministic. The wrapper is an ordinary SELECT and is captured itself, so the assertion
+-- below checks that no captured row is an EXPLAIN statement, rather than counting rows.
+SELECT ignore(*) FROM (EXPLAIN ANALYZE SELECT count() FROM numbers(1000) WHERE '05023_explain' != '') FORMAT Null;
+
+-- INSERT ... SELECT is out of scope: the top-level interpreter is InterpreterInsertQuery.
+INSERT INTO qpl_insert_target SELECT number FROM numbers(10) WHERE '05023_insert' != '';
+
+-- A query failing during execution is captured, with the plan it was running.
+SELECT throwIf(number = 5, '05023_throw') FROM numbers(10); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+-- A query failing before any plan exists leaves no row.
+SELECT * FROM qpl_missing_05023_table; -- { serverError UNKNOWN_TABLE }
+
+SET log_query_plans = 0;
+SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS query_plan_log;
+
+SELECT 'off', count()
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_off') > 0;
+
+SELECT 'explain_analyze', countIf(position(query_string, 'EXPLAIN') = 1)
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_explain') > 0;
+
+SELECT 'insert_select', count()
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_insert') > 0;
+
+SELECT 'before_start', count()
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, 'qpl_missing_05023_table') > 0;
+
+SELECT 'subquery', count()
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_subquery') > 0;
+
+SELECT
+    'finish',
+    count(),
+    anyLast(status),
+    anyLast(normalized_query_hash) != 0,
+    anyLast(revision) != 0,
+    anyLast(query_start_time_microseconds) > toDateTime64('1971-01-01 00:00:00', 6),
+    anyLast(event_time_microseconds) >= anyLast(query_start_time_microseconds),
+    anyLast(position(ascii_plan, 'ReadFromSystemNumbers')) > 0,
+    anyLast(position(ascii_plan, 'Filter column')) > 0
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_finish') > 0;
+
+SELECT
+    'exception',
+    count(),
+    anyLast(status),
+    anyLast(length(ascii_plan)) > 0
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_throw') > 0;
+
+DROP TABLE qpl_insert_target;

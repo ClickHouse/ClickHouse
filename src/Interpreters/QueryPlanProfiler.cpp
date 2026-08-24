@@ -43,7 +43,12 @@ String QueryPlanProfiler::renderAsciiPlan(size_t max_description_length) const
 
     String result;
     WriteBufferFromString out(result);
-    query_plan->explainPlan(out, ExplainPlanOptions{.pretty=true}, /*offset=*/ 0, max_description_length, &pretty_names.value());
+    ExplainPlanOptions explain_options {
+        .actions = true,
+        .indexes = true,
+        .compact = true,
+        .pretty = true};
+    query_plan->explainPlan(out, explain_options, /*offset=*/ 0, max_description_length, &pretty_names.value());
     out.finalize();
     return result;
 }
