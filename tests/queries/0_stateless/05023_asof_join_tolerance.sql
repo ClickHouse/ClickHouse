@@ -93,6 +93,8 @@ SELECT count() FROM (SELECT 1 AS a) AS l CROSS JOIN (SELECT 1 AS b) AS r TOLERAN
 SELECT count() FROM (SELECT 1 AS a) AS l, (SELECT 1 AS b) AS r TOLERANCE 5; -- { serverError SYNTAX_ERROR }
 -- an INTERVAL that rescales past the key type's range is out of range, not silently wrapped
 SELECT count() FROM (SELECT 1 AS s, toDate('2024-01-10') AS t) AS l ASOF JOIN (SELECT 1 AS s, toDate('2024-01-08') AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE INTERVAL 70000 DAY; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+-- an INTERVAL whose rescaled value overflows the key must not wrap into a valid looking bound
+SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 9223372036854775807 SECOND; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 -- nor can a bound wider than the key type itself
 SELECT count() FROM (SELECT 1 AS s, toUInt8(255) AS t) AS l ASOF JOIN (SELECT 1 AS s, toUInt8(250) AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE 1000; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 -- the legacy analyzer cannot carry the bound, so it must refuse rather than ignore it

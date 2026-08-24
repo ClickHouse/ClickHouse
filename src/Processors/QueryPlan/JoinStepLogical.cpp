@@ -1,6 +1,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/IntervalKind.h>
+#include <limits>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
@@ -110,7 +111,8 @@ Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<Inte
     /// A negative bound can never be satisfied, so it would silently turn the join into one that
     /// matches nothing. Checked in floating point purely for the sign, so that fractional tolerances
     /// against a floating point key are still allowed through unchanged below.
-    if (applyVisitor(FieldVisitorConvertToNumber<Float64>(), tolerance) < 0)
+    const Float64 magnitude = applyVisitor(FieldVisitorConvertToNumber<Float64>(), tolerance);
+    if (magnitude < 0)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "TOLERANCE for ASOF JOIN must not be negative");
 
     /// A bare number is already in the key's units, but it still has to fit that type exactly.
@@ -137,9 +139,18 @@ Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<Inte
             "TOLERANCE for ASOF JOIN cannot be given in {}, because it is not a fixed length of time",
             interval_kind->toString());
 
-    const Int128 units = applyVisitor(FieldVisitorConvertToNumber<Int128>(), tolerance);
+    const Int128 nanoseconds_per_interval_unit = interval_kind->toAvgNanoseconds();
 
-    const Int128 total_nanoseconds = units * interval_kind->toAvgNanoseconds();
+    /// Checked against the magnitude before converting, not after multiplying. Both the conversion
+    /// into `Int128` and the multiplication wrap silently, and the range check at the end would then
+    /// be looking at whatever the wrap produced: `INTERVAL 170141183460469231731687303715884105727
+    /// SECOND` wrapped into a small in-range value and was accepted as a bound it never asked for.
+    if (magnitude > static_cast<Float64>(std::numeric_limits<Int128>::max()) / static_cast<Float64>(nanoseconds_per_interval_unit))
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN is too large to express as a duration");
+
+    const Int128 units = applyVisitor(FieldVisitorConvertToNumber<Int128>(), tolerance);
+    const Int128 total_nanoseconds = units * nanoseconds_per_interval_unit;
 
     /// Nanoseconds in one unit of the key.
     Int128 nanoseconds_per_key_unit = 0;
@@ -169,7 +180,18 @@ Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<Inte
     /// Through the same exact conversion as a bare number. The rescaled value is still just an
     /// integer at this point and would otherwise be narrowed into the key type unchecked later:
     /// `INTERVAL 70000 DAY` against a `Date` key arrives here as 70000 and wraps to 4464.
-    const Field rescaled = Field(static_cast<Int64>(total_nanoseconds / nanoseconds_per_key_unit));
+    /// Range checked before narrowing, not after. Casting straight down wraps an out of range
+    /// duration into a valid looking number that the conversion below then accepts: a bound of
+    /// `INTERVAL 9223372036854775807 SECOND` rescales to about 9.2e21 milliseconds, far past what a
+    /// `DateTime64(3)` key can hold, yet wrapped into range and was taken as a bound the query never
+    /// asked for. The value has to be narrowed here because the conversion below reads it as an
+    /// integer field of the key's own width.
+    const Int128 rescaled_value = total_nanoseconds / nanoseconds_per_key_unit;
+    if (rescaled_value > Int128(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN is out of range for the ASOF key type {}", key_type->getName());
+
+    const Field rescaled = Field(static_cast<Int64>(rescaled_value));
     try
     {
         return convertFieldToTypeOrThrow(rescaled, *removeNullable(key_type));
