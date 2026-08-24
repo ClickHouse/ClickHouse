@@ -43,6 +43,10 @@ struct WriteSettings
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
 
+    /// Whether a guarded copy restates the source object's tags, which needs permission to read them.
+    /// When false the copy keeps the pre-guard permission set and does not carry the tags over.
+    bool object_storage_copy_preserve_source_tags = true;
+
     /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
     /// 0 disables. Honored only by metadata storages that support inline data.
     size_t inline_file_max_bytes = 0;

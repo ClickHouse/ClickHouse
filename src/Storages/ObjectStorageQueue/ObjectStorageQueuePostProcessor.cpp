@@ -312,6 +312,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     /// with a separate exists() call first would still let two concurrent movers both pass the check.
     if (!preserve_path)
         move_write_settings.object_storage_write_if_none_match = "*";
+    move_write_settings.object_storage_copy_preserve_source_tags = settings.after_processing_move_preserve_tags;
 
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(
         IObjectStorage::getThreadPoolWriter(),
@@ -524,12 +525,13 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         if (!copied)
                         {
                             const String src_bucket = s3_storage->getObjectsNamespace();
-                            const auto source_info = S3::getObjectInfoWithOptionalTags(
+                            const auto source_info = S3::getObjectInfo(
                                 *src_client,
                                 src_bucket,
                                 object_from.remote_path,
+                                /*version_id=*/ {},
                                 /*with_metadata=*/ true,
-                                /*with_tags=*/ !move_if_none_match.empty());
+                                /*with_tags=*/ !move_if_none_match.empty() && settings.after_processing_move_preserve_tags);
                             /// See moveWithinBucket(): lets a later attempt recognize its own committed
                             /// copy; an unguarded copy keeps the native header/metadata preservation instead.
                             const auto provenance = move_if_none_match.empty()

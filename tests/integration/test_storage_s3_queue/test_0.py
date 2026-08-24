@@ -744,6 +744,57 @@ def test_move_after_processing_preserves_source_tags(started_cluster):
     assert dict(moved_tags) == {"classification": "sensitive", "team": "data platform"}
 
 
+def test_move_after_processing_preserve_tags_disabled(started_cluster):
+    """Restating tags needs permission to read them, which the pre-guard CopyObject path never
+    required. `after_processing_move_preserve_tags = 0` is the explicit opt-out: the move keeps
+    the old permission set and carries no tags over."""
+    from minio.commonconfig import Tags
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_no_tags_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = "sink-no-tags"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+    source_tags = Tags.new_object_tags()
+    source_tags["classification"] = "sensitive"
+    started_cluster.minio_client.set_object_tags(
+        started_cluster.minio_bucket, f"{files_path}/{file_name}", source_tags
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "after_processing_move_preserve_tags": 0,
+        },
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    moved_tags = started_cluster.minio_client.get_object_tags(
+        started_cluster.minio_bucket, f"{processed_prefix}/{file_name}"
+    )
+    assert not moved_tags
+
+
 def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
     """Reprocessing the same key with identical bytes after Keeper eviction must not mistake the
     prior destination for its own retry.

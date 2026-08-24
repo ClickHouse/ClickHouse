@@ -1,5 +1,4 @@
 #include <optional>
-#include <Common/logger_useful.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
 
@@ -185,33 +184,6 @@ ObjectInfo getObjectInfo(
         error.GetMessage(),
         static_cast<size_t>(error.GetResponseCode()),
         getAuthenticationErrorHint(error.GetErrorType()));
-}
-
-ObjectInfo getObjectInfoWithOptionalTags(
-    const S3::Client & client,
-    const String & bucket,
-    const String & key,
-    bool with_metadata,
-    bool with_tags,
-    const String & version_id)
-{
-    if (with_tags)
-    {
-        try
-        {
-            return getObjectInfo(client, bucket, key, version_id, with_metadata, /*with_tags=*/ true);
-        }
-        catch (const S3Exception & e)
-        {
-            if (!isAuthenticationError(e.getS3ErrorCode()))
-                throw;
-            /// Rethrows when the denial was the HEAD itself rather than only the tag read.
-            auto object_info = getObjectInfo(client, bucket, key, version_id, with_metadata, /*with_tags=*/ false);
-            LOG_WARNING(getLogger("S3"), "Cannot read tags of {}: {}. Continuing without them", key, e.message());
-            return object_info;
-        }
-    }
-    return getObjectInfo(client, bucket, key, version_id, with_metadata, /*with_tags=*/ false);
 }
 
 size_t getObjectSize(

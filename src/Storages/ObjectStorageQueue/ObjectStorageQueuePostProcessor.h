@@ -19,6 +19,7 @@ public:
         String after_processing_move_uri;
         String after_processing_move_prefix;
         bool after_processing_move_preserve_path = false;
+        bool after_processing_move_preserve_tags = true;
         String after_processing_move_access_key_id;
         String after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
