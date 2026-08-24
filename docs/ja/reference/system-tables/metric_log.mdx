@@ -2065,6 +2065,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **スキーマ**
 このテーブルは、XML タグ `<schema_type>` を使って異なるスキーマタイプに設定できます。デフォルトのスキーマタイプは `wide` で、各メトリクスまたはプロファイルイベントは個別のカラムに保存されます。このスキーマは、単一カラムの読み取りにおいて最も高性能かつ効率的です。
 
+`bucketed` スキーマでは、すべてのプロファイルイベントと現在のメトリクスを、[Map](/ja/reference/data-types/map)([Enum16](/ja/reference/data-types/enum), [Int64](/ja/reference/data-types/int-uint)) 型の単一の `metrics` カラムに格納するため、テーブルは数千ではなく少数のカラムで構成されます。`Map` は、固定数である 128 個のバケットを使用するバケット化シリアライゼーション (`map_serialization_version = 'with_buckets'`) を使用するため、単一のメトリクスを読み取る際は 128 個のバケットのうち 1 つだけを読み取ります。値が 0 のものは保存されず、存在しないキーを読み取ると `0` が返されます。各メトリクスは、メトリクス自体の名前を持つ `ALIAS` カラムとしても公開されます (たとえば、`ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`)。そのため、`wide` スキーマ向けに記述されたすべてのクエリは引き続き機能します。プロファイルイベントは収集間隔中の増分として保存され、現在のメトリクスは収集時点の値として保存されます。
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 `transposed` スキーマでは、`system.asynchronous_metric_log` と同様に、メトリクスとイベントを行として保存するフォーマットでデータを格納します。このスキーマは、マージ時のリソース消費を抑えられるため、リソースの限られた環境で有用です。
 
 **ヒストグラム**

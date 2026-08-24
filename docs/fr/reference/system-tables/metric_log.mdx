@@ -2066,6 +2066,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **Schéma**
 Cette table peut être configurée avec différents types de schéma à l’aide de la balise XML `<schema_type>`. Le type de schéma par défaut est `wide`, dans lequel chaque métrique ou événement de profil est stocké dans une colonne distincte. Ce schéma est le plus performant et le plus efficace pour les lectures d’une seule colonne.
 
+Le schéma `bucketed` stocke tous les événements de profil et les métriques actuelles dans une seule colonne `metrics` de type [Map](/fr/reference/data-types/map)([Enum16](/fr/reference/data-types/enum), [Int64](/fr/reference/data-types/int-uint)), de sorte que la table ne comporte que quelques colonnes au lieu de milliers. La `Map` utilise la sérialisation par buckets (`map_serialization_version = 'with_buckets'`) avec un nombre fixe de 128 buckets : la lecture d’une seule métrique ne lit donc qu’un seul des 128 buckets. Les valeurs zéro ne sont pas stockées : la lecture d’une clé absente renvoie `0`. Chaque métrique est également exposée via une colonne `ALIAS` portant le nom de la métrique elle-même (par exemple, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), de sorte que toutes les requêtes écrites pour le schéma `wide` continuent de fonctionner. Les événements de profil sont stockés sous forme d’incréments pendant l’intervalle de collecte, et les métriques actuelles sont stockées sous forme de valeurs au moment de la collecte.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 Le schéma `transposed` stocke les données dans un format similaire à `system.asynchronous_metric_log`, où les métriques et les événements sont stockés sous forme de lignes. Ce schéma est utile dans les environnements disposant de peu de ressources, car il réduit la consommation de ressources lors des fusions.
 
 **Histogrammes**

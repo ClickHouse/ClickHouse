@@ -2066,6 +2066,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **Esquema**
 Esta tabla puede configurarse con distintos tipos de esquema mediante la etiqueta XML `<schema_type>`. El tipo de esquema predeterminado es `wide`, donde cada métrica o evento de perfil se almacena en una columna independiente. Este esquema ofrece el mejor rendimiento y es el más eficiente para lecturas de una sola columna.
 
+El esquema `bucketed` almacena todos los eventos de perfil y las métricas actuales en una sola columna `metrics` de tipo [Map](/es/reference/data-types/map)([Enum16](/es/reference/data-types/enum), [Int64](/es/reference/data-types/int-uint)), por lo que la tabla consta de unas pocas columnas en lugar de miles. El `Map` utiliza la serialización en buckets (`map_serialization_version = 'with_buckets'`) con un número constante de 128 buckets, por lo que leer una sola métrica lee solo uno de los 128 buckets. Los valores cero no se almacenan: leer una clave ausente devuelve `0`. Cada métrica también se expone mediante una columna `ALIAS` con el nombre de la propia métrica (por ejemplo, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), por lo que todas las consultas escritas para el esquema `wide` siguen funcionando. Los eventos de perfil se almacenan como incrementos durante el intervalo de recopilación, y las métricas actuales se almacenan como valores en el momento de la recopilación.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 El esquema `transposed` almacena los datos en un formato similar a `system.asynchronous_metric_log`, donde las métricas y los eventos se almacenan como filas. Este esquema resulta útil en configuraciones con pocos recursos porque reduce el consumo de recursos durante las fusiones.
 
 **Histogramas**

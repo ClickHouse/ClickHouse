@@ -7,35 +7,35 @@
       "versionId": "a9bcf3875a07cf880ed075f456cbc1b2782d292a0f852b945f6d55846c5c47f3",
       "translations": {
         "ko": {
-          "updatedAt": "2026-08-24T05:33:37.767Z",
+          "updatedAt": "2026-08-24T05:47:49.020Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-24T05:33:38.032Z",
+          "updatedAt": "2026-08-24T05:47:48.830Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-24T05:33:38.295Z",
+          "updatedAt": "2026-08-24T05:47:49.210Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-24T05:33:38.524Z",
+          "updatedAt": "2026-08-24T05:47:49.580Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-24T05:33:38.761Z",
+          "updatedAt": "2026-08-24T05:47:49.770Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-24T05:33:38.989Z",
+          "updatedAt": "2026-08-24T05:47:49.395Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-24T05:33:39.212Z",
+          "updatedAt": "2026-08-24T05:47:48.602Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-24T05:33:39.445Z",
+          "updatedAt": "2026-08-24T05:47:49.962Z",
           "fileName": "docs.json",
           "postProcessHash": "74d1e184b44f5cee6c613c2e25dfe7344cb5dd3ae308b1500cb440f75550ffca"
         }
@@ -23709,47 +23709,47 @@
     },
     {
       "fileId": "07b9c931cb0bc49cbd4b434afea2b73f81e3868cbbabad90b5fa814f39c0bc1d",
-      "versionId": "347595611e78bb8a4aed52bbd85a684b3242c3be361238b48064b699aae96e31",
+      "versionId": "fdb1a6e3ecc2320c678870035b56e1ff4a5eb22e0002a4c122509151ee313c2d",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-23T18:09:16.863Z",
-          "fileName": "es/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "22139383939e32a9bd1052b397b534d5bc44554189dc9742c9b5d340418a4a55"
-        },
-        "ja": {
-          "updatedAt": "2026-08-23T18:09:16.866Z",
-          "fileName": "ja/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "a8ee6f426d5508f507292a411b27520bc7e3deb8473e158ebccc4ad86ff3fdde"
-        },
         "ko": {
-          "updatedAt": "2026-08-23T18:09:16.868Z",
+          "updatedAt": "2026-08-24T05:47:53.234Z",
           "fileName": "ko/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "c2ee108c63fc0464319b87e87bfc3c25c5f3480690dc53b3a59c13740c04ed3c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-23T18:09:16.870Z",
-          "fileName": "pt-BR/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "395af76caaa6dd7a7a40c357f87708afcd14a612e3235d93a6baeb55a374a927"
+          "postProcessHash": "f9e4f915b6f2813cd64b67ec651ac4f2f83fa0dc45d73f84243b0b994e6af1be"
         },
         "ru": {
-          "updatedAt": "2026-08-23T18:09:16.872Z",
+          "updatedAt": "2026-08-24T05:47:53.236Z",
           "fileName": "ru/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "7a5a90d4a307c7ca1d076612a2057f8ad3719a996419d0858a02a0bef443b91c"
+          "postProcessHash": "677aed2baa3b696191737608c81f1e8fa762ff90b95bc62878e7b4f1e1fc23fe"
+        },
+        "es": {
+          "updatedAt": "2026-08-24T05:47:53.238Z",
+          "fileName": "es/reference/system-tables/metric_log.mdx",
+          "postProcessHash": "897e7b6e1b95871804e745cdbcec1f31a0cfc173dc841c3157a7c8e98da7c1c0"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T05:47:53.239Z",
+          "fileName": "pt-BR/reference/system-tables/metric_log.mdx",
+          "postProcessHash": "30ef758d5d0711ed47f8e648241d3cda42a610a870abd89d8c54ca9e710beb06"
         },
         "zh": {
-          "updatedAt": "2026-08-23T18:09:16.874Z",
+          "updatedAt": "2026-08-24T05:47:53.241Z",
           "fileName": "zh/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "770509d0dcd8ddadb8039627fbacb6aac38bcfb16e0dd645ddb40a38bec0070c"
+          "postProcessHash": "1f292244f8958bb6810ea458fcd3a8800f0e38979423ac5e1fd68e51f6a3cdac"
         },
-        "ar": {
-          "updatedAt": "2026-08-23T18:09:16.876Z",
-          "fileName": "ar/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "257000023726a26e0bfb1364d02728897a20ef7f569f93dcdee38239240a1903"
+        "ja": {
+          "updatedAt": "2026-08-24T05:47:53.242Z",
+          "fileName": "ja/reference/system-tables/metric_log.mdx",
+          "postProcessHash": "0ddfa94ddd846c6882d2a3682683bd0da2d17fc24d8a9ba820383eb236db8f24"
         },
         "fr": {
-          "updatedAt": "2026-08-23T18:09:16.879Z",
+          "updatedAt": "2026-08-24T05:47:53.244Z",
           "fileName": "fr/reference/system-tables/metric_log.mdx",
-          "postProcessHash": "8b4e2b0bea59a7bd9b48b256f8884d30249202a08e1ae498edb17e02a33d99b7"
+          "postProcessHash": "50600b873f8035284ad232975f3f8a0ddabcc504d030879261bf270d8a8f8eda"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T05:47:53.246Z",
+          "fileName": "ar/reference/system-tables/metric_log.mdx",
+          "postProcessHash": "dd2da1223c794e46be08109e58d64b3b04a0dd709aef3b8755570c3b62b0347a"
         }
       },
       "fileName": "reference/system-tables/metric_log.mdx",

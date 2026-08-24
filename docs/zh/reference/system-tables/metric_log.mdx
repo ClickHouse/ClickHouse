@@ -2066,6 +2066,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **Schema**
 此表可通过 XML 标签 `<schema_type>` 配置为不同的 schema 类型。默认 schema 类型为 `wide`，即每个指标或 profile 事件都存储在单独的列中。对于单列读取，这种 schema 的性能和效率最高。
 
+`bucketed` schema 将所有 profile 事件和当前指标存储在一个类型为 [Map](/zh/reference/data-types/map)([Enum16](/zh/reference/data-types/enum), [Int64](/zh/reference/data-types/int-uint)) 的 `metrics` 列中，因此该表只包含少数几列，而非数千列。`Map` 使用分桶序列化 (`map_serialization_version = 'with_buckets'`)，桶数量固定为 128，因此读取单个指标时只会读取 128 个桶中的一个。不会存储零值：读取缺失的键会返回 `0`。每个指标还通过以指标本身命名的 `ALIAS` 列公开 (例如，`ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`) ，因此为 `wide` schema 编写的所有查询仍可正常运行。profile 事件存储为采集间隔期间的增量，当前指标则存储为采集时刻的值。
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 `transposed` schema 以类似 `system.asynchronous_metric_log` 的格式存储数据，其中指标和事件按行存储。该 schema 适用于资源较少的部署，因为它能降低 merge 期间的资源消耗。
 
 **直方图**

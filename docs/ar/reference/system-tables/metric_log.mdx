@@ -2066,6 +2066,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **المخطط**
 يمكن تهيئة هذا الجدول بأنواع مختلفة من المخططات باستخدام وسم XML `<schema_type>`. نوع المخطط الافتراضي هو `wide`، حيث يُخزَّن كل مقياس أو حدث profile في عمود منفصل. هذا المخطط هو الأفضل أداءً والأكثر كفاءة لعمليات القراءة من عمود واحد.
 
+يخزّن المخطط `bucketed` جميع أحداث profile والمقاييس الحالية في عمود `metrics` واحد من النوع [Map](/ar/reference/data-types/map)([Enum16](/ar/reference/data-types/enum)، [Int64](/ar/reference/data-types/int-uint))، لذا يتكوّن الجدول من بضعة أعمدة بدلًا من آلاف الأعمدة. يستخدم `Map` تسلسلًا مقسّمًا إلى bucket (`map_serialization_version = 'with_buckets'`) بعدد ثابت قدره 128 bucket، لذا فإن قراءة مقياس واحد لا تقرأ سوى bucket واحدة من أصل 128. لا تُخزَّن القيم الصفرية: إذ تؤدي قراءة مفتاح مفقود إلى إرجاع `0`. يُعرَض كل مقياس أيضًا من خلال عمود `ALIAS` يحمل اسم المقياس نفسه (على سبيل المثال، `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`)، لذا تستمر جميع الاستعلامات المكتوبة للمخطط `wide` في العمل. تُخزَّن أحداث profile كزيادات خلال فترة التجميع، وتُخزَّن المقاييس الحالية كقيم في لحظة التجميع.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 يخزّن المخطط `transposed` البيانات بتنسيق مشابه لـ `system.asynchronous_metric_log`، حيث تُخزَّن المقاييس والأحداث على شكل صفوف. ويكون هذا المخطط مفيدًا في البيئات محدودة الموارد لأنه يقلّل استهلاك الموارد أثناء عمليات الدمج.
 
 **المدرجات التكرارية**

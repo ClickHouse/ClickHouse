@@ -2065,6 +2065,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 **스키마**
 이 테이블은 XML 태그 `<schema_type>`를 사용해 여러 스키마 유형으로 구성할 수 있습니다. 기본 스키마 유형은 `wide`이며, 각 메트릭 또는 프로파일 이벤트가 별도의 컬럼으로 저장됩니다. 이 스키마는 단일 컬럼 읽기에서 가장 높은 성능과 효율을 제공합니다.
 
+`bucketed` 스키마는 모든 프로파일 이벤트와 현재 메트릭을 [Map](/ko/reference/data-types/map)([Enum16](/ko/reference/data-types/enum), [Int64](/ko/reference/data-types/int-uint)) 타입의 단일 `metrics` 컬럼에 저장하므로, 테이블이 수천 개의 컬럼 대신 몇 개의 컬럼으로 구성됩니다. `Map`은 128개의 고정 버킷을 사용하는 버킷 직렬화(`map_serialization_version = 'with_buckets'`)를 사용하므로, 단일 메트릭을 읽을 때 128개 버킷 중 하나만 읽습니다. 값이 0인 항목은 저장되지 않으며, 없는 키를 읽으면 `0`이 반환됩니다. 모든 메트릭은 메트릭 자체의 이름을 가진 `ALIAS` 컬럼으로도 노출되므로(예: `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), `wide` 스키마용으로 작성된 모든 쿼리가 계속 작동합니다. 프로파일 이벤트는 수집 인터벌 동안의 증가분으로 저장되며, 현재 메트릭은 수집 시점의 값으로 저장됩니다.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
+
 `transposed` 스키마는 메트릭과 이벤트를 행으로 저장하는 `system.asynchronous_metric_log`와 유사한 포맷으로 데이터를 저장합니다. 이 스키마는 머지 중 리소스 사용량을 줄여 주므로 리소스가 제한된 환경에서 유용합니다.
 
 **히스토그램**
