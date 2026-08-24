@@ -887,6 +887,75 @@ TEST_F(ReaderExecutorTest, WholeSegmentCellEnteredByFetchIsCompleted)
         << "both whole-segment blocks must be populated";
 }
 
+TEST_F(ReaderExecutorTest, PageBlockStraddlingObjectsIsFetchedWholeAndCached)
+{
+    /// A file-level (page-cache-like) block can straddle two StoredObjects: block [256, 512) crosses the
+    /// A/B boundary at 300. The whole-segment fetch widens across the boundary, reads the block whole
+    /// from source (spanning both objects), and caches it. Documents the accepted cross-object C-case -
+    /// the widen may read a bit into the neighbour object, but the block is stored and served correctly.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 300)};   /// boundary at 300, inside [256,512)
+    const size_t total = 600;
+
+    auto state = std::make_shared<MockCacheState>(total);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    /// window (384) stops inside the straddling block, forcing the widen across the object boundary.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 384, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), total);
+    for (size_t i = 0; i < 300; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "object A at " << i;
+    for (size_t i = 0; i < 300; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[300 + i]), patternByte(i)) << "object B at " << i;
+
+    /// The block spanning A and B was fetched whole and cached.
+    EXPECT_TRUE(state->resident.subtract(ByteRange{256, block}).empty())
+        << "the cross-object block was not cached";
+    /// Each byte is read from source exactly once - the widen never re-reads a part it already fetched.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), total)
+        << "the file was re-fetched in part";
+}
+
+TEST_F(ReaderExecutorTest, StackedTiersRefetchFasterHitToFillSlower)
+{
+    /// C-case (stacked page + filesystem cache): the faster tier holds [0,50), the slower tier misses
+    /// [0,100). Serving [0,50) from the faster tier is free, but filling the slower tier's cell needs it
+    /// from its start, so the fetch re-reads [0,50) from source. Correct (data right), but NOT perfect -
+    /// the faster hit does not shrink the source read (the deferred gather-from-slower-tier path would
+    /// read only [50,100)). Documents that we accept this on the stacked-layer path.
+    StoredObjects objects{makeFile("a.bin", 100)};
+
+    auto fast = std::make_shared<MockCacheState>(100);   /// faster tier: [0,50) resident
+    fast->resident.add(ByteRange{0, 50});
+    for (size_t i = 0; i < 50; ++i)
+        fast->store[i] = static_cast<char>(patternByte(i));
+    auto slow = std::make_shared<MockCacheState>(100);   /// slower tier: all miss
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/50, fast));
+    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/100, slow));   /// one [0,100) cell
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 200, .block_size = 50, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 100u);
+    for (size_t i = 0; i < 100; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// Correct but not perfect: the whole file is read from source to fill the slower tier, even though
+    /// the faster tier already held [0,50) (a gather path would read only ~50 bytes).
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 100u)
+        << "expected the C-case whole-file read (faster hit re-read to fill the slower tier)";
+    EXPECT_TRUE(slow->resident.subtract(ByteRange{0, 100}).empty()) << "slower tier not populated";
+}
+
 TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
 {
     /// Case 4 (snapshot contract): a writer-less miss (here a read-only/bypass tier) is resolved once and
