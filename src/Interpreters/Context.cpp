@@ -118,7 +118,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -1408,6 +1408,7 @@ ContextData::ContextData(const ContextData &o) :
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
+    is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
@@ -2791,16 +2792,16 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
-HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
+HypotheticalObjectStore & Context::getHypotheticalObjectStore() const
 {
     /// in session context so the store persists across queries
     if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
-        return session_ctx->getHypotheticalIndexStore();
+        return session_ctx->getHypotheticalObjectStore();
 
     std::lock_guard lock(mutex);
-    if (!hypothetical_index_store)
-        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
-    return *hypothetical_index_store;
+    if (!hypothetical_object_store)
+        hypothetical_object_store = std::make_shared<HypotheticalObjectStore>();
+    return *hypothetical_object_store;
 }
 
 
@@ -3146,7 +3147,28 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         column.name = identifier->name();
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
+
+                        /** The same column of the table function can be selected more than once,
+                          * as in `INSERT INTO t (x, y) SELECT c, c FROM file(...)`.
+                          * A source column has a single type, so the hint is usable only if all the
+                          * insert table columns that it is mapped to agree on the type.
+                          */
+                        if (const auto * already_hinted = structure_hint.tryGet(column.name))
+                        {
+                            if (!already_hinted->type->equals(*column.type))
+                            {
+                                if (use_structure_from_insertion_table_in_table_functions == 1)
+                                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                        "Column {} is selected more than once in INSERT SELECT query, "
+                                        "but the corresponding columns of the insert table have different types: {} and {}.",
+                                        backQuote(column.name), already_hinted->type->getName(), column.type->getName());
+
+                                use_columns_from_insert_query = false;
+                                break;
+                            }
+                        }
+                        else
+                            structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
@@ -3530,6 +3552,12 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
+void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -6519,13 +6547,8 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
-}
-
-void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("message_queue_disable_insertion", message_queue_disable_insertion);
+    return shared->server_settings[ServerSetting::message_queue_disable_insertion]
+        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
@@ -8843,7 +8866,7 @@ const ServerSettings & Context::getServerSettings() const
 ServerSettings Context::getServerSettingsCopy() const
 {
     /// Synchronize with the runtime writers of `shared->server_settings`
-    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    /// (e.g. `setS3QueueDisableStreaming`), which write under `shared->mutex`.
     SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
 }

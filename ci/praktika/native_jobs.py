@@ -41,7 +41,11 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    timeout=600,
+    # On a submodule-cache miss this job does a full shallow clone of all
+    # submodules (see _prepare_submodule_cache), which can take well over 10
+    # minutes. Keep a generous timeout so the config job doesn't get killed
+    # mid-clone.
+    timeout=1800,
 )
 
 _docker_build_manifest_job = Job.Config(
