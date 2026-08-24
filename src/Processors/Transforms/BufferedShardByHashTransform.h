@@ -47,16 +47,11 @@ private:
     /// Pulling stops once any queue reaches this length, unless a demanded output has an empty
     /// queue and nothing else is drainable - then a queue can exceed it, bounded only by memory.
     ///
-    /// That escape is only reachable under a consumer that activates our outputs one at a time,
-    /// `ConcatProcessor` being the one that produces it: its `prepare` calls `setNeeded` on a
-    /// single input and advances only once that input finishes, so every other shard's port
-    /// reports `canPush() == false` until then. Buffering the not-yet-demanded shards in full is
-    /// therefore inherent to that topology rather than something the escape introduces - a
-    /// producer feeding a `Concat` has to hold its later inputs' rows somewhere. Honouring the cap
-    /// instead deadlocks, because the demanded empty queue can only ever be filled from input.
-    /// Queued chunks are tracked memory, so overflow surfaces as a memory-limit exception rather
-    /// than the `Pipeline stuck` logical error the cap would cause. Making the cap a hard bound
-    /// needs an overflow/spill path for the over-cap shard.
+    /// The escape applies only while no consumer holds a chunk in flight, i.e. while none is
+    /// draining. It cannot be dropped: a consumer that activates outputs one at a time
+    /// (`ConcatProcessor::prepare` makes only `current_input` needed) leaves the demanded empty
+    /// queue fillable from input alone, so honouring the cap there deadlocks. Queued chunks are
+    /// tracked memory, so exceeding the cap raises a memory-limit exception.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     size_t num_shards;

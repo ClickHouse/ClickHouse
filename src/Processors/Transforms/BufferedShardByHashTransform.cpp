@@ -56,12 +56,16 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now
     bool has_pushable_empty_port = false; /// an active shard whose queue is empty AND downstream is asking
     bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
+    bool has_chunk_in_flight = false; /// an active shard is asking but still holds an undelivered chunk
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
         if (queued_output_it->isFinished())
             continue;
+
+        if (queued_output_it->isNeeded() && queued_output_it->hasData())
+            has_chunk_in_flight = true;
 
         const auto & queue = output_queues[shard];
         if (queue.size() >= MAX_QUEUE_LENGTH)
@@ -97,7 +101,11 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// The cap holds back input unless the sole demand is an empty port with nothing
     /// drainable: that port can only be fed from input, so the cap yields to it.
     /// See `MAX_QUEUE_LENGTH` for why yielding is the only non-deadlocking option here.
-    if (any_queue_at_capacity && !(has_pushable_empty_port && !has_pushable_queued_chunks))
+    /// A chunk still in flight on a needed port means that consumer is draining, and taking it
+    /// will schedule this processor again, so the cap can be honoured without stalling. Yielding
+    /// is only required when nothing is in flight, because then input is the sole way forward.
+    const bool may_exceed_cap = has_pushable_empty_port && !has_pushable_queued_chunks && !has_chunk_in_flight;
+    if (any_queue_at_capacity && !may_exceed_cap)
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
     /// Try to pull a new input chunk.
