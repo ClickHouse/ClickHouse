@@ -84,5 +84,23 @@
 10	2
 12	3
 14	3
+--- GROUP BY, ORDER BY count() WITH FILL, local ---
+0	10
+0	11
+0	12
+0	13
+0	14
+0	15
+0	16
+0	17
+--- GROUP BY, ORDER BY count() WITH FILL, plan_based = 1 ---
+0	10
+0	11
+0	12
+0	13
+0	14
+0	15
+0	16
+0	17
 --- explain: has_remote_read, sort_shipped ---
 1	1

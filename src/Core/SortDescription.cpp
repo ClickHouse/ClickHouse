@@ -26,11 +26,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
 {
     auto & out = settings.out;
@@ -299,10 +294,13 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
             flags |= 2;
         if (desc.collator)
             flags |= 4;
-        /// Bit 8 used to mark `WITH FILL`, which the reader below still rejects. It is never written now: the fill
-        /// information is deliberately dropped instead. `WITH FILL` is applied by `FillingStep`, which is not
+        /// Only the flag travels, not the fill bounds: `WITH FILL` is applied by `FillingStep`, which is not
         /// serializable and is added only on the finalizing node, so a fragment executed by a remote node never
         /// fills - it only has to return the rows in the right order, and `with_fill` does not affect ordering.
+        /// The flag still has to survive, because the remote node re-optimizes the deserialized plan and
+        /// `tryPushBucketTopKIntoAggregation` refuses a description with `with_fill`.
+        if (desc.with_fill)
+            flags |= 8;
 
         writeIntBinary(flags, out);
 
@@ -333,8 +331,9 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
                 desc.collator = std::make_shared<Collator>(collator_locale);
         }
 
-        if (flags & 8)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in deserialized sort description");
+        /// `fill_description` stays empty - the writer sends no bounds, and nothing in a deserialized fragment
+        /// builds a `FillingTransform` from them. The flag is here for the plan optimizations that consult it.
+        desc.with_fill = (flags & 8) != 0;
     }
 }
 

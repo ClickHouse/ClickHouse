@@ -4,9 +4,10 @@
 --
 -- The sort is shipped with the fragment, and its description used to be rejected by
 -- `serializeSortDescription`, so every `WITH FILL` query failed with
--- "WITH FILL is not supported in serialized sort description". The fill information is dropped on the wire
--- instead: `FillingStep` is not serializable and is added only on the finalizing node, so a replica just
--- returns its rows in order and the initiator fills the gaps above the merge.
+-- "WITH FILL is not supported in serialized sort description". The description travels now, carrying the
+-- `WITH FILL` flag but not its bounds: `FillingStep` is not serializable and is added only on the
+-- finalizing node, so a replica just returns its rows in order and the initiator fills the gaps above
+-- the merge.
 -- See https://github.com/ClickHouse/ClickHouse/issues/115527
 
 DROP TABLE IF EXISTS t_pr_with_fill;
@@ -64,6 +65,20 @@ SELECT a, b FROM t_pr_with_fill ORDER BY a WITH FILL STEP 2 INTERPOLATE (b AS b)
 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- WITH FILL STEP 2 INTERPOLATE, plan_based = 1 ---';
 SELECT a, b FROM t_pr_with_fill ORDER BY a WITH FILL STEP 2 INTERPOLATE (b AS b) LIMIT 8;
+
+-- `ORDER BY count() WITH FILL LIMIT n` over a `GROUP BY` is the shape `tryPushBucketTopKIntoAggregation`
+-- refuses when the sort description carries `with_fill`, so the flag has to survive the wire for the
+-- fragment's own re-optimization to see it.
+-- The four groups have distinct sizes (10, 20, 30, 40), so the order of the top-N is not tie-dependent.
+SELECT '--- GROUP BY, ORDER BY count() WITH FILL, local ---';
+SELECT k, c FROM (
+    SELECT multiIf(a < 40, 0, a < 120, 1, a < 240, 2, 3) AS k, count() AS c
+    FROM t_pr_with_fill GROUP BY k ORDER BY c WITH FILL LIMIT 8)
+SETTINGS enable_parallel_replicas = 0;
+SELECT '--- GROUP BY, ORDER BY count() WITH FILL, plan_based = 1 ---';
+SELECT k, c FROM (
+    SELECT multiIf(a < 40, 0, a < 120, 1, a < 240, 2, 3) AS k, count() AS c
+    FROM t_pr_with_fill GROUP BY k ORDER BY c WITH FILL LIMIT 8);
 
 -- The sort really is shipped now - the query is not silently kept local.
 SELECT '--- explain: has_remote_read, sort_shipped ---';
