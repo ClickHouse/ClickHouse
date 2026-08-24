@@ -29,9 +29,13 @@ SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO test_116038 SELECT number % 4 AS a, repeat(hex(cityHash64(number)), 8) AS b
 FROM numbers_mt(1000000) SETTINGS max_insert_threads = 1;
 
--- Precondition: the sharded transform is really in the pipeline, and no `ConcatProcessor` is
--- involved - the cap bypass is reachable with a plain `Resize` + `AggregatingTransform` consumer.
-SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0, countIf(explain LIKE '%Concat%') = 0
+-- Precondition: the sharded transform is really in the pipeline at the width the skew is chosen
+-- for, and no `ConcatProcessor` is involved - the cap bypass is reachable with a plain `Resize`
+-- + `AggregatingTransform` consumer. The width is asserted, not just the presence: at a narrower
+-- fan-out the four keys occupy every shard, no shard is left empty while demanded, and the arm
+-- would pass without ever reaching the predicate.
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform × 4 1 → 4%') > 0,
+       countIf(explain LIKE '%Concat%') = 0
 FROM (
     EXPLAIN PIPELINE
     SELECT a, uniqCombined(b), uniqCombined(concat(b, '1')), uniqCombined(concat(b, '2'))
@@ -68,17 +72,23 @@ SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
 DROP TABLE IF EXISTS test_116038_mixed;
 CREATE TABLE test_116038_mixed (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
--- Key 23 is deliberate: with 16 shards it routes to shard 0, which is the input the narrowed
--- `ConcatProcessor` demands first, so the sparse shard is the demanded one while the heavy key
--- fills a sibling queue to the cap. A sparse key on any other shard lets the input
--- finish before that state is ever reached, and the arm degenerates into a plain query.
-INSERT INTO test_116038_mixed SELECT if(number % 100 = 0, 23, 7) AS a, number AS b FROM numbers(2000000)
+-- The narrowing caps the sharder well below `max_threads`, and the exact width depends on how
+-- many parts the reader sees, so the keys are chosen to work at any of them: key 4 routes to
+-- shard 0 - the input the narrowed `ConcatProcessor` demands first - at every width from 4 to
+-- 16, while key 0 never does, so the sparse shard is the demanded one while the heavy key fills
+-- a sibling queue to the cap. Both keys landing on one shard lets the input finish before that
+-- state is reached, and the arm degenerates into a plain query.
+INSERT INTO test_116038_mixed SELECT if(number % 100 = 0, 4, 0) AS a, number AS b FROM numbers(2000000)
 SETTINGS max_insert_threads = 1;
 
 -- Precondition: both halves of the topology this arm depends on, asserted rather than assumed -
--- 16 sharded transforms and the narrowed sequential `ConcatProcessor`. Without the narrowing the
--- query still returns the same sums, so the assertion is what keeps the arm from going vacuous.
-SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0 AND countIf(explain LIKE '%Concat%') > 0
+-- a sharder fanning out to more than one output, and the narrowed sequential `ConcatProcessor`
+-- that consumes them. Without the narrowing the query still returns the same sums, so the
+-- assertion is what keeps the arm from going vacuous. The fan-out is matched by shape rather
+-- than by a fixed number because the width follows the part count, which the statements above
+-- influence; the keys are chosen to hold at every width this can take.
+SELECT countIf(match(explain, 'BufferedShardByHashTransform × \\d+ 1 → [2-9]')) > 0
+       AND countIf(match(explain, 'Concat \\d+ → 1')) > 0
 FROM (
     EXPLAIN PIPELINE
     SELECT a, max(s)
