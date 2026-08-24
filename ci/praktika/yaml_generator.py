@@ -180,7 +180,7 @@ jobs:
         run: |
           . {ENV_SETUP_SCRIPT}
           PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci --timestamp
-{UPLOADS_GITHUB}\
+{UPLOADS_GITHUB}{FAILURE_REPORT_UPLOAD}\
 """
 
         TEMPLATE_SETUP_ENV_SECRETS = """\
@@ -239,6 +239,24 @@ jobs:
         with:
           name: {NAME}
           path: {PATH}
+"""
+
+        TEMPLATE_GH_UPLOAD_FAILURE_REPORT = """
+      - name: Upload failure report artifact
+        if: failure()
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: failure-{JOB_NAME_NORMALIZED}
+          path: |
+            ci/tmp/result_*.json
+            ci/tmp/test_result.txt
+            ci/tmp/pytest*.jsonl
+            ci/tmp/gtest.json
+            ci/tmp/logs.tar.gz
+            ci/tmp/configs.tar.gz
+          if-no-files-found: ignore
+          retention-days: 14
 """
 
         TEMPLATE_GH_DOWNLOAD = """
@@ -430,6 +448,14 @@ class PullRequestPushYamlGen:
                     )
                 )
 
+            failure_report_upload = ""
+            if self.workflow_config.name == "Community PR":
+                failure_report_upload = (
+                    YamlGenerator.Templates.TEMPLATE_GH_UPLOAD_FAILURE_REPORT.format(
+                        JOB_NAME_NORMALIZED=job_name_normalized
+                    )
+                )
+
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
@@ -446,6 +472,7 @@ class PullRequestPushYamlGen:
                 JOB_ADDONS="".join(job_addons),
                 DOWNLOADS_GITHUB="\n".join(downloads_github),
                 UPLOADS_GITHUB="\n".join(uploads_github),
+                FAILURE_REPORT_UPLOAD=failure_report_upload,
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,

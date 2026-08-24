@@ -24,7 +24,9 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <base/arithmeticOverflow.h>
@@ -32,8 +34,15 @@
 #include <base/unaligned.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 
 #include <IO/ReadHelpers.h>
+
+namespace ProfileEvents
+{
+extern const Event PuffinFilesRead;
+extern const Event PuffinFileReadMicroseconds;
+}
 
 namespace DB
 {
@@ -44,25 +53,32 @@ namespace ErrorCodes
     extern const int LZ4_DECODER_FAILED;
 }
 
-namespace
-{
-
-constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
-constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
-constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
-constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
-constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
-constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
-constexpr size_t PUFFIN_DV_MAX_BLOB_SIZE = 2ULL * 1024 * 1024 * 1024;
-constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
-constexpr const char * PUFFIN_DELETION_VECTOR_BLOB_TYPE = "deletion-vector-v1";
 
-UInt64 positionFromKeyAndSubPosition(UInt32 key, UInt32 sub_position)
+static UInt64 positionFromKeyAndSubPosition(UInt32 key, UInt32 sub_position)
 {
     return (static_cast<UInt64>(key) << 32) | static_cast<UInt64>(sub_position);
 }
+
+namespace
+{
+
+struct ScopedPuffinFileReadProfileEvent
+{
+    ProfileEventTimeIncrement<Microseconds> watch;
+
+    ScopedPuffinFileReadProfileEvent()
+        : watch(ProfileEvents::PuffinFileReadMicroseconds)
+    {
+        ProfileEvents::increment(ProfileEvents::PuffinFilesRead);
+    }
+};
+
+constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
+constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
+constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
+constexpr const char * PUFFIN_DELETION_VECTOR_BLOB_TYPE = "deletion-vector-v1";
 
 void checkMagic(const UInt8 * p, const char * context)
 {
@@ -253,28 +269,6 @@ String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const
     return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
-void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
-{
-    static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
-    for (const char * key : required_properties)
-    {
-        auto it = blob.properties.find(key);
-        if (it == blob.properties.end() || it->second.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 missing required property '{}'",
-                blob_index,
-                key);
-    }
-
-    UInt64 cardinality = 0;
-    if (!tryParse(cardinality, blob.properties.at("cardinality")))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-            blob_index);
-}
-
 void parseStringValuedProperties(
     const Poco::JSON::Object::Ptr & props_obj,
     std::map<String, String> * out,
@@ -387,12 +381,13 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
-                i,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            /// Puffin allows arbitrary blob types in one file (indexes, sketches, DVs, ...).
+            /// Keep common metadata so Iceberg can bind a DV by offset/length; do not require
+            /// deletion-vector properties for non-DV entries.
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
+
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
         }
 
         requireBlobMetadataField(blob_obj, "fields", i);
@@ -410,8 +405,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     return blobs;
 }
 
-std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+std::vector<PuffinBlob> readPuffinFooterFromSeekableImpl(SeekableReadBuffer & seekable, size_t file_size)
 {
+    ScopedPuffinFileReadProfileEvent profile_event;
+
     if (file_size < 16)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
 
@@ -485,7 +482,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 
     if (seekable_read && seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
-        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
+        result.blobs = readPuffinFooterFromSeekableImpl(*seekable, *file_size_opt);
     }
     else
     {
@@ -495,15 +492,10 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
         checkMagic(result.data.data(), "header");
 
-        std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
-        while (!buf.eof())
-        {
-            size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
-            result.data.insert(result.data.end(), tmp.data(), tmp.data() + n);
-        }
+        appendReadBufferWithAbsoluteSizeLimit(buf, result.data, PUFFIN_NON_SEEKABLE_MAX_BUFFERED_SIZE);
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
-        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size());
+        result.blobs = readPuffinFooterFromSeekableImpl(mem_buf, result.data.size());
     }
 
     return result;
@@ -554,183 +546,23 @@ void readDeletionVectorEnvelopePrefix(
 }
 
 String readDeletionVectorBlobBytes(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+    const PuffinBlob & blob,
+    ReadBuffer & buf,
+    const std::vector<UInt8> & data,
+    bool seekable_read,
+    UInt64 expected_cardinality)
 {
-    if (blob.length < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
+    ScopedPuffinFileReadProfileEvent profile_event;
 
-    if (static_cast<UInt64>(blob.length) > PUFFIN_DV_MAX_BLOB_SIZE)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector blob length {} exceeds absolute limit {}",
-            blob.length,
-            PUFFIN_DV_MAX_BLOB_SIZE);
-
-    if (static_cast<UInt64>(blob.length) < 12)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
+    /// Fail closed before envelope peek / full allocate — shared with Iceberg
+    /// `readDeletionVectorFromPuffin`. `deserializeDeletionVectorV1` still re-checks.
+    checkDeletionVectorBlobReadLimits(blob.length, expected_cardinality);
 
     UInt8 header[8];
     readDeletionVectorEnvelopePrefix(blob, buf, data, seekable_read, header);
-
-    ReadBufferFromMemory header_buf(reinterpret_cast<const UInt8 *>(header), sizeof(header));
-    UInt32 combined_length = 0;
-    readBinaryBigEndian(combined_length, header_buf);
-    if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
-
-    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
-
-    UInt64 expected_blob_size = 0;
-    if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
-
-    if (static_cast<UInt64>(blob.length) != expected_blob_size)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector blob size {} does not match combined length {}",
-            blob.length,
-            combined_length);
+    validateDeletionVectorEnvelope(header, blob.length);
 
     return readPuffinBlobBytes(blob, buf, data, seekable_read);
-}
-
-roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
-{
-    try
-    {
-        return roaring::Roaring::readSafe(data, size);
-    }
-    catch (const std::exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
-    }
-}
-
-void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, ColumnUInt64 & positions)
-{
-    if (bytes.size() < sizeof(Int64))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
-
-    const char * ptr = bytes.data();
-    size_t remaining = bytes.size();
-
-    /// Iceberg deletion-vector roaring layout stores count and keys as little-endian.
-    const Int64 bitmap_count = unalignedLoadLittleEndian<Int64>(ptr);
-    ptr += sizeof(Int64);
-    remaining -= sizeof(Int64);
-
-    if (bitmap_count < 0 || bitmap_count > std::numeric_limits<Int32>::max())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap count: {}", bitmap_count);
-
-    Int32 last_key = -1;
-    Int32 remaining_count = static_cast<Int32>(bitmap_count);
-    UInt64 running_cardinality = 0;
-
-    while (remaining_count > 0)
-    {
-        if (remaining < sizeof(Int32))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is truncated while reading key");
-
-        const Int32 key = unalignedLoadLittleEndian<Int32>(ptr);
-        ptr += sizeof(Int32);
-        remaining -= sizeof(Int32);
-
-        if (key < 0 || key > DELETION_VECTOR_MAX_KEY)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap key: {}", key);
-        if (key <= last_key)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap keys must be sorted in ascending order");
-
-        auto bitmap = readRoaringPortableSafe(ptr, remaining, key);
-
-        const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
-        if (bitmap_size > remaining)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector roaring bitmap at key {} exceeds blob size", key);
-
-        const UInt64 bitmap_cardinality = bitmap.cardinality();
-        UInt64 new_running_cardinality = 0;
-        if (common::addOverflow(running_cardinality, bitmap_cardinality, new_running_cardinality))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Deletion vector cardinality exceeds declared cardinality {}",
-                expected_cardinality);
-
-        if (new_running_cardinality > expected_cardinality)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Deletion vector cardinality {} exceeds declared cardinality {}",
-                new_running_cardinality,
-                expected_cardinality);
-
-        running_cardinality = new_running_cardinality;
-
-        for (UInt32 sub_position : bitmap)
-        {
-            const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
-            if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector position {} is out of supported range", position);
-            positions.insertValue(position);
-        }
-
-        ptr += bitmap_size;
-        remaining -= bitmap_size;
-        last_key = key;
-        --remaining_count;
-    }
-
-    if (remaining != 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
-
-    if (running_cardinality != expected_cardinality)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} does not match deserialized row count {}",
-            expected_cardinality,
-            running_cardinality);
-}
-
-std::string_view extractDeletionVectorPayload(std::string_view blob)
-{
-    if (blob.size() < 12)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
-
-    const auto * blob_bytes = reinterpret_cast<const UInt8 *>(blob.data());
-    ReadBufferFromMemory mem_buf(blob.data(), blob.size());
-    UInt32 combined_length = 0;
-    readBinaryBigEndian(combined_length, mem_buf);
-    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
-
-    const size_t vector_size = combined_length - sizeof(DELETION_VECTOR_MAGIC);
-    const size_t expected_blob_size = sizeof(UInt32) + combined_length + sizeof(UInt32);
-    if (blob.size() != expected_blob_size)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob size {} does not match combined length {}", blob.size(), combined_length);
-
-    if (std::memcmp(blob_bytes + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
-
-    const UInt8 * crc_input = blob_bytes + sizeof(UInt32);
-    const size_t crc_input_size = combined_length;
-    mem_buf.ignore(combined_length);
-    UInt32 expected_crc = 0;
-    readBinaryBigEndian(expected_crc, mem_buf);
-    const UInt32 actual_crc = static_cast<UInt32>(crc32_z(0L, reinterpret_cast<const unsigned char *>(crc_input), crc_input_size));
-    if (expected_crc != actual_crc)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector CRC mismatch");
-
-    return std::string_view(blob.data() + 2 * sizeof(UInt32), vector_size);
-}
-
-void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions)
-{
-    if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} exceeds materialization limit {}",
-            expected_cardinality,
-            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
-
-    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, positions);
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -800,6 +632,217 @@ void checkPuffinHeader(const Block & header)
     checkPuffinFormatHeader(header, getPuffinSchema(), "Puffin");
 }
 
+}
+
+UInt64 requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
+{
+    /// Puffin v1: snapshot-id and sequence-number are unknown when the file is written and must be -1.
+    if (blob.snapshot_id != -1 || blob.sequence_number != -1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
+            blob_index);
+
+    validateDeletionVectorV1Fields(blob.fields, blob_index);
+
+    static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
+    for (const char * key : required_properties)
+    {
+        auto it = blob.properties.find(key);
+        if (it == blob.properties.end() || it->second.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 missing required property '{}'",
+                blob_index,
+                key);
+    }
+
+    UInt64 cardinality = 0;
+    if (!tryParse(cardinality, blob.properties.at("cardinality")))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+            blob_index);
+
+    return cardinality;
+}
+
+namespace
+{
+
+roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
+{
+    roaring::Roaring bitmap;
+    try
+    {
+        bitmap = roaring::Roaring::readSafe(data, size);
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
+    }
+
+    /// `readSafe` only bounds the read; CRoaring requires internal validation before use on untrusted input.
+    const char * reason = nullptr;
+    if (!roaring::api::roaring_bitmap_internal_validate(&bitmap.roaring, &reason))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector roaring bitmap at key {} failed internal validation: {}",
+            key,
+            reason ? reason : "unknown");
+    }
+
+    return bitmap;
+}
+
+}
+
+std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, std::optional<UInt64> expected_cardinality)
+{
+    if (bytes.size() < sizeof(Int64))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
+
+    const char * ptr = bytes.data();
+    size_t remaining = bytes.size();
+
+    /// Iceberg deletion-vector roaring layout stores count and keys as little-endian.
+    const Int64 bitmap_count = unalignedLoadLittleEndian<Int64>(ptr);
+    ptr += sizeof(Int64);
+    remaining -= sizeof(Int64);
+
+    if (bitmap_count < 0 || bitmap_count > std::numeric_limits<Int32>::max())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap count: {}", bitmap_count);
+
+    std::vector<UInt64> positions;
+    if (expected_cardinality.has_value())
+        positions.reserve(*expected_cardinality);
+
+    Int32 last_key = -1;
+    Int32 remaining_count = static_cast<Int32>(bitmap_count);
+    UInt64 running_cardinality = 0;
+
+    while (remaining_count > 0)
+    {
+        if (remaining < sizeof(Int32))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is truncated while reading key");
+
+        const Int32 key = unalignedLoadLittleEndian<Int32>(ptr);
+        ptr += sizeof(Int32);
+        remaining -= sizeof(Int32);
+
+        if (key < 0 || key > DELETION_VECTOR_MAX_KEY)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap key: {}", key);
+        if (key <= last_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap keys must be sorted in ascending order");
+
+        auto bitmap = readRoaringPortableSafe(ptr, remaining, key);
+
+        const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
+        if (bitmap_size > remaining)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector roaring bitmap at key {} exceeds blob size", key);
+
+        if (expected_cardinality.has_value())
+        {
+            const UInt64 bitmap_cardinality = bitmap.cardinality();
+            UInt64 new_running_cardinality = 0;
+            if (common::addOverflow(running_cardinality, bitmap_cardinality, new_running_cardinality))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Deletion vector cardinality exceeds declared cardinality {}",
+                    *expected_cardinality);
+
+            if (new_running_cardinality > *expected_cardinality)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Deletion vector cardinality {} exceeds declared cardinality {}",
+                    new_running_cardinality,
+                    *expected_cardinality);
+
+            running_cardinality = new_running_cardinality;
+        }
+
+        for (UInt32 sub_position : bitmap)
+        {
+            const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
+            if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector position {} is out of supported range", position);
+            positions.push_back(position);
+        }
+
+        ptr += bitmap_size;
+        remaining -= bitmap_size;
+        last_key = key;
+        --remaining_count;
+    }
+
+    if (remaining != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
+
+    if (expected_cardinality.has_value() && running_cardinality != *expected_cardinality)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} does not match deserialized row count {}",
+            *expected_cardinality,
+            running_cardinality);
+
+    return positions;
+}
+
+static void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, ColumnUInt64 & positions)
+{
+    auto decoded = deserializeRoaringPositionBitmap(bytes, std::optional<UInt64>{expected_cardinality});
+    for (UInt64 position : decoded)
+        positions.insertValue(position);
+}
+
+std::string_view extractDeletionVectorPayload(std::string_view blob)
+{
+    if (blob.size() < 12)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
+
+    const auto * blob_bytes = reinterpret_cast<const UInt8 *>(blob.data());
+    ReadBufferFromMemory mem_buf(blob.data(), blob.size());
+    UInt32 combined_length = 0;
+    readBinaryBigEndian(combined_length, mem_buf);
+    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    const size_t vector_size = combined_length - sizeof(DELETION_VECTOR_MAGIC);
+    const size_t expected_blob_size = sizeof(UInt32) + combined_length + sizeof(UInt32);
+    if (blob.size() != expected_blob_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob size {} does not match combined length {}", blob.size(), combined_length);
+
+    if (std::memcmp(blob_bytes + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+
+    const UInt8 * crc_input = blob_bytes + sizeof(UInt32);
+    const size_t crc_input_size = combined_length;
+    mem_buf.ignore(combined_length);
+    UInt32 expected_crc = 0;
+    readBinaryBigEndian(expected_crc, mem_buf);
+    const UInt32 actual_crc = static_cast<UInt32>(crc32_z(0L, reinterpret_cast<const unsigned char *>(crc_input), crc_input_size));
+    if (expected_crc != actual_crc)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector CRC mismatch");
+
+    return std::string_view(blob.data() + 2 * sizeof(UInt32), vector_size);
+}
+
+void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions)
+{
+    if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            expected_cardinality,
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
+
+    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, positions);
+}
+
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+{
+    return readPuffinFooterFromSeekableImpl(seekable, file_size);
 }
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)
@@ -906,21 +949,10 @@ Chunk PuffinInputFormat::read()
         const auto & blob = footer.blobs[blob_index++];
 
         if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
-                current_blob_index,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            continue;
 
+        const UInt64 expected_cardinality = requireDeletionVectorV1Properties(blob, current_blob_index);
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
-
-        UInt64 expected_cardinality = 0;
-        if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-                current_blob_index);
 
         auto col_file = ColumnString::create();
         col_file->insertData(referenced_data_file.data(), referenced_data_file.size());
@@ -928,7 +960,8 @@ Chunk PuffinInputFormat::read()
         MutableColumnPtr col_rows;
         if (need_deleted_rows)
         {
-            const String blob_data = readDeletionVectorBlobBytes(blob, *in, footer.data, seekable_read);
+            const String blob_data
+                = readDeletionVectorBlobBytes(blob, *in, footer.data, seekable_read, expected_cardinality);
             auto col_rows_data = ColumnUInt64::create();
             deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
@@ -1002,9 +1035,7 @@ void registerInputFormatPuffin(FormatFactory & factory)
 ## Description {#description}
 
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
-It outputs one row per blob entry from the footer `BlobMetadata` list.
-
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+It outputs one row per blob entry from the footer `BlobMetadata` list, including non-deletion-vector types (for example `apache-datasketches-theta-v1`). Full deletion-vector property validation applies only to `deletion-vector-v1` entries.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
@@ -1047,16 +1078,16 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
 
 Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
 
-The format exposes deleted row positions from `deletion-vector-v1` blobs. It is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
 Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
-Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
+Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested, **before** envelope peek or full blob allocation (same fail-closed order as the Iceberg deletion-vector reader). Footer `deletion-vector-v1` properties are always validated: `cardinality` must parse as an unsigned integer, `snapshot-id` / `sequence-number` must be `-1`, and `fields` must be either empty or the singleton Iceberg reserved `_pos` id (`2147483645`) that Spark writes for file-scoped DVs — other `fields` lists (column-scoped DVs) are rejected. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
 
-On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
+On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested and cardinality is within the materialization ceiling, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
 
 LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 

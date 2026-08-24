@@ -5,24 +5,11 @@ from __future__ import annotations
 
 import json
 import struct
-import subprocess
-import sys
 import zlib
 from pathlib import Path
-
-try:
-    import lz4.frame
-    import xxhash
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "lz4", "xxhash", "-q"])
-    import lz4.frame
-    import xxhash
-
-try:
-    import pyroaring
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyroaring", "-q"])
-    import pyroaring
+import lz4.frame
+import xxhash
+import pyroaring
 
 OUTPUT_DIR = Path(__file__).parent
 PUFFIN_MAGIC = b"PFA1"
@@ -345,6 +332,21 @@ def generate_missing_required_fields() -> None:
         ),
     )
 
+    # Puffin v1 DV blobs must keep snapshot-id / sequence-number at -1.
+    for name, field, value in (
+        ("dv_snapshot_id_not_minus_one.puffin", "snapshot-id", 0),
+        ("dv_sequence_number_not_minus_one.puffin", "sequence-number", 0),
+    ):
+        case_payload = json.loads(footer_json.decode("utf-8"))
+        case_payload["blobs"][0][field] = value
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
 
 def generate_invalid_property_value_types() -> None:
     """Property maps must have string values; non-strings must fail with BAD_ARGUMENTS."""
@@ -618,6 +620,48 @@ def generate_invalid_file_metadata_properties() -> None:
     )
 
 
+def generate_mixed_blob_types() -> None:
+    """DV plus a non-DV blob: footer parse and Puffin SQL must tolerate the sketch entry."""
+    ok = OUTPUT_DIR / "file_properties_ok.puffin"
+    if not ok.exists():
+        raise SystemExit("file_properties_ok.puffin required to build mixed_blob_types.puffin")
+
+    sketch = b"\x00" * 16
+    puffin = ok.read_bytes()
+    blob_end = puffin.index(PUFFIN_MAGIC, 4)
+    dv = puffin[4:blob_end]
+
+    footer = {
+        "blobs": [
+            {
+                "type": "apache-datasketches-theta-v1",
+                "fields": [],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4,
+                "length": len(sketch),
+                "properties": {},
+            },
+            {
+                "type": "deletion-vector-v1",
+                "fields": [],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4 + len(sketch),
+                "length": len(dv),
+                "properties": default_dv_properties(cardinality="2"),
+            },
+        ]
+    }
+    write_fixture(
+        "mixed_blob_types.puffin",
+        build_puffin_file_from_blobs(
+            [sketch, dv],
+            json.dumps(footer, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
+
+
 def generate_unparseable_footer_json() -> None:
     """Malformed JSON / oversize integers must fail with BAD_ARGUMENTS, not STD_EXCEPTION."""
     write_raw_footer_fixture("malformed_footer_json.puffin", b"{")
@@ -653,6 +697,7 @@ def main() -> None:
     generate_missing_footer_leading_magic()
     generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
+    generate_mixed_blob_types()
 
     generate_cardinality_mismatch_large_bitmap()
     generate_dense_range_100k()

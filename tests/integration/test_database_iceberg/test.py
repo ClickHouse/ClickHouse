@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import random
@@ -30,6 +31,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import get_file_contents
 from helpers.test_tools import TSV
 
 BASE_URL = "http://rest:8181/v1"
@@ -815,6 +817,52 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+@pytest.mark.parametrize(
+    "fields_to_remove",
+    [
+        ["snapshots"],
+        ["metadata-log"],
+        ["snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
+    ],
+)
+def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
+    # The Iceberg spec marks snapshots / metadata-log / snapshot-log as optional, so external
+    # engines may create empty-table metadata that omits any of them. Inserting into such a table
+    # must still succeed instead of aborting in the metadata write path.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_insert_no_optional_arrays_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert iceberg_table.metadata_location.startswith("s3://")
+    metadata_bucket, metadata_key = iceberg_table.metadata_location[len("s3://"):].split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+    for field in fields_to_remove:
+        metadata.pop(field, None)
+    metadata_bytes = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(
+        metadata_bucket,
+        metadata_key,
+        io.BytesIO(metadata_bytes),
+        len(metadata_bytes),
+        content_type="application/json",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
+
+
 def test_create(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1199,6 +1247,85 @@ def test_writes_schema_evolution(started_cluster):
         node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
         == "123\t1\t\\N\n456\t2\thello\n"
     )
+
+
+def test_writes_schema_evolution_drop_last_column(started_cluster):
+    """DROP COLUMN of the highest-id column must not be rejected by the catalog.
+
+    Reproducer for the bug where the REST add-schema update omitted
+    last-column-id, causing the catalog to derive it from the schema's
+    highestFieldId which decreases after dropping the last-added column.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_drop_last_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} DROP COLUMN z;", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "z" not in desc
+
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "abc\t1\n"
+
+    # Add another column after the drop to exercise schema-id allocation when
+    # current-schema-id is not the highest in the schemas list (Fix 1 reproducer).
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN w Nullable(Int64);", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "w" in desc
+    assert "z" not in desc
+
+    node.query(f"INSERT INTO {table_ref} (x, y, w) VALUES ('def', 2, 42);", settings=write_settings)
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY x", settings=write_settings) == "abc\t1\t\\N\ndef\t2\t42\n"
+
+
+def test_writes_alter_when_commit_is_reported_as_failed(started_cluster):
+    """An Iceberg commit can land in the catalog while the client observes a failure
+    (commit state unknown, e.g. a proxy rewriting the response to 5xx). The ALTER retry
+    must notice that the change is already present instead of applying it a second time
+    and failing with `Column already exists`.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_alter_commit_unknown_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
+
+    failpoint = "iceberg_alter_catalog_commit_reported_as_failed"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
+    assert columns.count("z") == 1, f"expected exactly one `z` column in:\n{description}"
+    assert sorted(columns) == sorted(["x", "y", "z"])
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('def', 2, 'zz');", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY x", settings=write_settings)
+        == "abc\t1\t\\N\ndef\t2\tzz\n"
+    )
+
 
 
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):

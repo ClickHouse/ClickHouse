@@ -83,6 +83,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool export_merge_tree_part_allow_lossy_cast;
+    extern const SettingsMergeTreePartExportSchemaMismatchMode export_merge_tree_part_schema_mismatch_mode;
 }
 
 namespace FailPoints
@@ -172,6 +173,12 @@ namespace ExportPartitionUtils
             context_copy->setSetting("output_format_parquet_row_group_size", *manifest.parquet_row_group_size);
         if (manifest.parquet_row_group_size_bytes)
             context_copy->setSetting("output_format_parquet_row_group_size_bytes", *manifest.parquet_row_group_size_bytes);
+        /// Manifests written before this setting existed have no value here; such tasks were always
+        /// scheduled under the old, strict column-count check, so an absent value must resolve to
+        /// `strict` regardless of the ambient context's setting (which may have since been changed).
+        context_copy->setSetting(
+            "export_merge_tree_part_schema_mismatch_mode",
+            String(magic_enum::enum_name(manifest.schema_mismatch_mode.value_or(MergeTreePartExportSchemaMismatchMode::strict))));
 
         context_copy->setSetting("max_threads", manifest.max_threads);
         context_copy->setSetting("export_merge_tree_part_file_already_exists_policy", String(magic_enum::enum_name(manifest.file_already_exists_policy)));
@@ -756,8 +763,28 @@ namespace ExportPartitionUtils
 
         const auto destination_sample_block = destination_metadata->getSampleBlockNonMaterialized();
 
-        const auto source_columns = source_sample_block.getColumnsWithTypeAndName();
-        const auto destination_columns = destination_sample_block.getColumnsWithTypeAndName();
+        auto source_columns = source_sample_block.getColumnsWithTypeAndName();
+        const auto & destination_columns = destination_sample_block.getColumnsWithTypeAndName();
+
+        /// In `ignore_extra_source_columns_by_position` mode a source with more columns than the destination
+        /// is allowed: the extra trailing source columns (by position) are dropped, mirroring
+        /// the trimming `ExportPartTask::addExportConvertingActions` applies to the real data.
+        /// The reverse (destination has more columns than source) is always rejected below by
+        /// `makeConvertingActions`, in both modes.
+        const bool ignore_extra_source_columns_by_position =
+            context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode]
+                == MergeTreePartExportSchemaMismatchMode::ignore_extra_source_columns_by_position;
+
+        if (ignore_extra_source_columns_by_position && source_columns.size() > destination_columns.size())
+        {
+            LOG_DEBUG(getLogger("ExportPartitionUtils"),
+                "Source has {} columns while destination has {} columns, "
+                "the {} extra trailing source column(s) will be ignored",
+                source_columns.size(), destination_columns.size(),
+                source_columns.size() - destination_columns.size());
+
+            source_columns.resize(destination_columns.size());
+        }
 
         (void) ActionsDAG::makeConvertingActions(
             source_columns,

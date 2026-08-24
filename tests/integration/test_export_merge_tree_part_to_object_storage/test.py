@@ -40,6 +40,24 @@ def create_s3_table(node, s3_table):
     node.query(f"CREATE TABLE {s3_table} (id UInt64, year UInt16) ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive') PARTITION BY year")
 
 
+def wait_for_export_part(node, table, part, timeout=60, poll_interval=0.5):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        node.query("SYSTEM FLUSH LOGS")
+        count = node.query(
+            f"SELECT count() FROM system.part_log "
+            f"WHERE event_type = 'ExportPart' "
+            f"AND table = '{table}' "
+            f"AND part_name = '{part}'"
+        ).strip()
+        if count != "0":
+            return
+        time.sleep(poll_interval)
+    raise TimeoutError(
+        f"ExportPart event for part {part!r} in table {table!r} did not appear within {timeout}s"
+    )
+
+
 def create_tables_and_insert_data(node, mt_table, s3_table):
     # enable_block_number_column and enable_block_offset_column are needed for patch parts support
     node.query(f"CREATE TABLE {mt_table} (id UInt64, year UInt16) ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1")
@@ -946,3 +964,101 @@ def test_export_part_subcolumn_partition_key_owner_reordered_rejected_even_with_
         f"of `t`/`decoy` swapping positions around the partition key column `t.a`; "
         f"got: {error!r}"
     )
+
+
+def test_export_part_column_count_mismatch_source_more_is_rejected(cluster):
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"count_more_mt_table_{postfix}"
+    s3_table = f"count_more_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16, extra String) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    create_s3_table(node=node, s3_table=s3_table)
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table}"
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source>dest column count, got: {error}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 0, f"Expected 0 rows in destination table after rejected export, got {count}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")
+
+
+def test_export_part_column_count_mismatch_source_fewer_is_rejected(cluster):
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"count_fewer_mt_table_{postfix}"
+    s3_table = f"count_fewer_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    node.query(
+        f"CREATE TABLE {s3_table} (id UInt64, year UInt16, extra String) "
+        f"ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive') "
+        f"PARTITION BY year"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table}"
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source<dest column count, got: {error}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 0, f"Expected 0 rows in destination table after rejected export, got {count}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")
+
+
+def test_export_part_source_more_columns_allowed_with_ignore_extra_setting(cluster):
+    node = cluster.instances["node1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"ignore_extra_mt_table_{postfix}"
+    s3_table = f"ignore_extra_s3_table_{postfix}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16, extra String) "
+        f"ENGINE = MergeTree() PARTITION BY year ORDER BY tuple() "
+        f"SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(
+        f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar'), (3, 2020, 'baz')"
+    )
+
+    create_s3_table(node=node, s3_table=s3_table)
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} "
+        f"SETTINGS export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'"
+    )
+    wait_for_export_part(node=node, table=mt_table, part="2020_1_1_0")
+
+    count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 3, f"Expected 3 rows in destination table after export, got {count}"
+
+    result = node.query(f"SELECT id, year FROM {s3_table} ORDER BY id").strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+    node.query(f"DROP TABLE {mt_table}")
+    node.query(f"DROP TABLE {s3_table}")

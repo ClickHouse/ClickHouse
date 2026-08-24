@@ -1300,6 +1300,440 @@ def test_export_partition_column_count_mismatch_source_fewer_is_rejected(cluster
     )
 
 
+def test_export_partition_source_more_columns_allowed_with_ignore_extra_setting(cluster):
+    """
+    Source has 3 columns (id, year, extra), destination has 2 (id, year).
+    With `export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'`,
+    the export must succeed: the trailing `extra` source column is dropped
+    (matched positionally) and only `id`/`year` land in the destination.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32, extra String",
+             partition_by="year", replica_name="replica1")
+    node.query(
+        f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar'), (3, 2020, 'baz')"
+    )
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int64, year Int32", partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH without the setting, got: {error!r}"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "strict",
+        },
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH with schema_mismatch_mode='strict', got: {error!r}"
+    )
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+        },
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 3, f"Expected 3 rows in Iceberg table after export, got {count}"
+
+    result = node.query(f"SELECT id, year FROM {iceberg_table} ORDER BY id").strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+
+def test_export_partition_column_count_mismatch_source_fewer_still_rejected_with_ignore_extra_setting(cluster):
+    """
+    `ignore_extra_source_columns_by_position` only relaxes the source-has-more-columns
+    direction. Source has 2 columns (id, year), destination has 3 (id, year, extra):
+    the destination cannot be filled from the source, so this must still be
+    rejected synchronously even with the relaxed setting.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_fewer_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_fewer_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32", partition_by="year",
+             replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int64, year Int32, extra String",
+                    partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+        },
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source<dest column count "
+        f"even with ignore_extra_source_columns_by_position, got: {error!r}"
+    )
+
+    rows_in_system_view = node.query(
+        f"SELECT count() FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip()
+    assert rows_in_system_view == "0", (
+        f"Expected no row in system.replicated_partition_exports after a "
+        f"synchronously-rejected export, got {rows_in_system_view}."
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, (
+        f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+    )
+
+
+def test_export_partition_column_count_mismatch_source_fewer_reports_column_count_error_despite_name_mismatch(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_count_fewer_name_{uid}"
+    iceberg_table = f"iceberg_count_fewer_name_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="renamed_id Int64, year Int32, extra Int32",
+                    partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH to take precedence over the 'id'/'renamed_id' "
+        f"name mismatch, got: {error!r}"
+    )
+
+    rows_in_system_view = node.query(
+        f"SELECT count() FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip()
+    assert rows_in_system_view == "0", (
+        f"Expected no row in system.replicated_partition_exports after a "
+        f"synchronously-rejected export, got {rows_in_system_view}."
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+
+
+def test_export_partition_column_count_mismatch_source_fewer_reports_column_count_error_despite_type_mismatch(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_count_fewer_type_{uid}"
+    iceberg_table = f"iceberg_count_fewer_type_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id String, year Int32, extra Int32",
+                    partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH to take precedence over the 'id' "
+        f"type mismatch, got: {error!r}"
+    )
+    assert "INCOMPATIBLE_COLUMNS" not in error, (
+        f"Column-count mismatch must be reported before any per-column cast check, got: {error!r}"
+    )
+
+    rows_in_system_view = node.query(
+        f"SELECT count() FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip()
+    assert rows_in_system_view == "0", (
+        f"Expected no row in system.replicated_partition_exports after a "
+        f"synchronously-rejected export, got {rows_in_system_view}."
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+
+
+def test_export_partition_key_arity_mismatch_is_rejected(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_pkey_arity_{uid}"
+    iceberg_table = f"iceberg_pkey_arity_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int32, year Int32", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="(year, id)")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error, (
+        f"Expected BAD_ARGUMENTS for partition key arity mismatch, got: {error!r}"
+    )
+    assert "partition" in error.lower(), (
+        f"Expected error to mention the partition scheme mismatch, got: {error!r}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+
+
+def test_export_partition_ignore_extra_setting_prefix_contains_different_type_rejected_without_lossy_cast(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_lossy_reject_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_lossy_reject_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32, extra String", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+        },
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error, (
+        f"Expected INCOMPATIBLE_COLUMNS for the lossy cast on the kept 'id' column, got: {error!r}"
+    )
+    assert "lossy cast" in error, f"Expected 'lossy cast' in error, got: {error!r}"
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+
+
+def test_export_partition_ignore_extra_setting_prefix_contains_different_type_succeeds_with_lossy_cast(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_lossy_ok_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_lossy_ok_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32, extra String", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+            "export_merge_tree_part_allow_lossy_cast": 1,
+        },
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    result = node.query(
+        f"SELECT id, toTypeName(id), year FROM {iceberg_table} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt32\t2020\n2\tInt32\t2020", f"Unexpected data:\n{result}"
+
+
+def test_export_partition_ignore_extra_setting_prefix_contains_different_name(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_renamed_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_renamed_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int64, year Int32, extra String", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar'), (3, 2020, 'baz')")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="renamed_id Int64, year Int32", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+        },
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    result = node.query(
+        f"SELECT renamed_id, year FROM {iceberg_table} ORDER BY renamed_id"
+    ).strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+
+def test_export_partition_ignore_extra_setting_is_noop_when_column_counts_match(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_ignore_extra_noop_{uid}"
+    iceberg_table = f"iceberg_ignore_extra_noop_{uid}"
+
+    make_rmt(node=node, name=mt_table, columns="id Int32, year Int32", partition_by="year",
+              replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020), (3, 2020)")
+
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+        },
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 3, f"Expected 3 rows in Iceberg table after export, got {count}"
+
+    result = node.query(f"SELECT id, year FROM {iceberg_table} ORDER BY id").strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+
+def test_export_partition_column_count_mismatch_into_table_with_existing_data(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_seed_table = f"mt_existing_data_seed_{uid}"
+    mt_table = f"mt_existing_data_{uid}"
+    iceberg_table = f"iceberg_existing_data_{uid}"
+
+    ignore_extra_settings = {
+        "allow_insert_into_iceberg": 1,
+        "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+    }
+
+    make_rmt(node=node, name=mt_seed_table, columns="id Int32, year Int32, extra String",
+              partition_by="year", replica_name="replica1")
+    make_rmt(node=node, name=mt_table, columns="id Int32, year Int32, extra String",
+              partition_by="year", replica_name="replica1")
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="year")
+
+    node.query(f"INSERT INTO {mt_seed_table} VALUES (100, 2020, 'x'), (101, 2021, 'y')")
+    node.query(
+        f"ALTER TABLE {mt_seed_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings=ignore_extra_settings,
+    )
+    wait_for_export_status(node=node, source_table=mt_seed_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+    node.query(
+        f"ALTER TABLE {mt_seed_table} EXPORT PARTITION ID '2021' TO TABLE {iceberg_table}",
+        settings=ignore_extra_settings,
+    )
+    wait_for_export_status(node=node, source_table=mt_seed_table, dest_table=iceberg_table,
+                            partition_id="2021", expected_status="COMPLETED")
+
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'a'), (2, 2020, 'b')")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings=ignore_extra_settings,
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 4, f"Expected 4 rows (2 pre-existing + 2 exported), got {count}"
+
+    result = node.query(f"SELECT id, year FROM {iceberg_table} ORDER BY id").strip()
+    assert result == "1\t2020\n2\t2020\n100\t2020\n101\t2021", (
+        f"Unexpected data after exporting into a table with pre-existing rows:\n{result}"
+    )
+
+
+def test_export_partition_column_count_mismatch_into_partition_that_already_has_data(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_repeat_partition_{uid}"
+    iceberg_table = f"iceberg_repeat_partition_{uid}"
+
+    ignore_extra_settings = {
+        "allow_insert_into_iceberg": 1,
+        "export_merge_tree_part_schema_mismatch_mode": "ignore_extra_source_columns_by_position",
+    }
+
+    make_rmt(node=node, name=mt_table, columns="id Int32, year Int32, extra String",
+              partition_by="year", replica_name="replica1")
+    make_iceberg_s3(node=node, name=iceberg_table, columns="id Int32, year Int32", partition_by="year")
+
+    node.query(f"SYSTEM STOP MERGES {mt_table}")
+
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'a'), (2, 2020, 'b')")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings=ignore_extra_settings,
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    count_after_first = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count_after_first == 2, (
+        f"Expected 2 rows after first export, got {count_after_first}"
+    )
+
+    node.query(f"INSERT INTO {mt_table} VALUES (3, 2020, 'c'), (4, 2020, 'd')")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={**ignore_extra_settings, "export_merge_tree_partition_force_export": 1},
+    )
+    wait_for_export_status(node=node, source_table=mt_table, dest_table=iceberg_table,
+                            partition_id="2020", expected_status="COMPLETED")
+
+    count_after_second = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count_after_second == 6, (
+        f"Expected 6 rows (2 original + 2 duplicated by the forced re-export + 2 new) "
+        f"after re-exporting an already-populated partition, got {count_after_second}"
+    )
+
+    result = node.query(f"SELECT id, year FROM {iceberg_table} ORDER BY id").strip()
+    assert result == "1\t2020\n1\t2020\n2\t2020\n2\t2020\n3\t2020\n4\t2020", (
+        f"Unexpected data after two exports of the same partition:\n{result}"
+    )
+
+
 def test_export_partition_with_renamed_destination_column(cluster):
     """
     Source has column `id`, destination has the same shape but the column is

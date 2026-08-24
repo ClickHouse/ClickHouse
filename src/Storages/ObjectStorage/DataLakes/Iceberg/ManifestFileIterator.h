@@ -90,8 +90,8 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    /// Fields with rows count in manifest files are optional
-    /// they can be absent.
+    /// Sums required per-file `record_count` for live entries of the given content type.
+    /// Returns nullopt on negative `record_count` or Int64 overflow (fail closed).
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
