@@ -33,6 +33,7 @@ ${CLICKHOUSE_LOCAL} --path "${test_dir}" --multiquery --ignore-error --query "
     SELECT 'eager table served' FROM system.one;
     SELECT 'implicit system.one served';
     EXISTS TABLE system.numbers;
+    SHOW TABLES FROM system;
 "
 
 rm -rf "${test_dir}"
