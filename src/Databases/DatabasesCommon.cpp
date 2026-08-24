@@ -465,10 +465,6 @@ void DatabaseWithOwnTablesBase::setDeferredPopulation(std::function<void(IDataba
 
     if (deferred_populate)
     {
-        /// A table that is attached already - for a `system` database loaded from a `--path`, one that the path
-        /// stores - can carry the name of a table the populator is going to attach. Remember those names, so
-        /// that looking one of them up populates the database instead of returning the stored table: a reserved
-        /// `system.*` name has to keep being reserved, not be shadowed by whatever the path happens to contain.
         std::lock_guard tables_lock(mutex);
         for (const auto & [table_name, _] : tables)
             deferred_shadowing_candidates.insert(table_name);
@@ -481,10 +477,6 @@ bool DatabaseWithOwnTablesBase::mayShadowDeferredTable(const String & table_name
 {
     if (!has_deferred_population.load(std::memory_order_acquire))
         return false;
-    /// A failed population left the database half-filled behind a saved exception. The fast path must not keep
-    /// serving the tables the populator managed to attach before it threw - `system.one` or a lookup that
-    /// succeeded once must not make the failure invisible - so force every access through `ensurePopulated`,
-    /// which rethrows the remembered error.
     if (deferred_populate_failed.load(std::memory_order_acquire))
         return true;
     return deferred_shadowing_candidates.contains(table_name);
@@ -497,16 +489,11 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
 
     std::unique_lock lock(populate_mutex);
 
-    /// Re-entered from the populator itself, which is attaching tables to this database. Whatever it has
-    /// attached so far is already visible, and waiting for it to finish here would deadlock.
     if (populating && populating_thread == std::this_thread::get_id())
         return;
 
-    /// Another thread is populating: wait, so that we never observe a half-filled database.
     populated.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !populating; });
 
-    /// The population threw. It left the database half-filled, and there is no second attempt, so report the
-    /// same error to everybody, the way the eager attachment this replaces fails the whole startup.
     if (deferred_populate_error)
         std::rethrow_exception(deferred_populate_error);
 
@@ -519,9 +506,6 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
     populating_thread = std::this_thread::get_id();
     lock.unlock();
 
-    /// Nothing is pending any more once this returns successfully, so subsequent calls take the lock-free fast
-    /// path. A failure keeps `has_deferred_population` set, so that `ensurePopulated` keeps rethrowing the
-    /// remembered error rather than exposing the tables the populator did not get to attach.
     auto finish = [this](std::exception_ptr error)
     {
         {
@@ -551,8 +535,6 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
 
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
-    /// Look among the already attached tables first, so that a hit does not force deferred population.
-    /// This is what keeps `system.one` (attached eagerly) from dragging in the whole `system` database.
     if (!mayShadowDeferredTable(table_name))
     {
         std::lock_guard lock(mutex);
@@ -607,7 +589,6 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
 
 bool DatabaseWithOwnTablesBase::empty() const
 {
-    /// A non-empty table list answers the question without forcing deferred population.
     {
         std::lock_guard lock(mutex);
         if (!tables.empty())
@@ -850,8 +831,6 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
-    /// Look among the already attached tables first, so that a hit does not force deferred population.
-    /// This is what keeps `system.one` (attached eagerly) from dragging in the whole `system` database.
     if (!mayShadowDeferredTable(table_name))
     {
         std::lock_guard lock(mutex);

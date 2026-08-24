@@ -481,45 +481,28 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
     return system_database;
 }
 
-/// Leave filling in the tables of an already created database to the first access, see
-/// `DatabaseWithOwnTablesBase::setDeferredPopulation`. Attaching the `system` and `information_schema` tables costs
-/// about 10ms - 134 system table storages, plus 20 embedded `CREATE VIEW` statements that go through the parser -
-/// and an invocation such as `clickhouse local --query "SELECT 1"` never reads any of them.
 void deferDatabaseTables(IDatabase & database, std::function<void(IDatabase &)> populate)
 {
-    /// The deferred-population hook lives on `DatabaseWithOwnTablesBase`; every database engine that
-    /// `clickhouse local` can end up with here derives from it. Cast to the base, so throw loudly rather than
-    /// silently attaching eagerly if that ever stops being true.
     dynamic_cast<DatabaseWithOwnTablesBase &>(database).setDeferredPopulation(std::move(populate));
 }
 
-/// The same, for a database that has to be created first, as a memory (ephemeral) one.
 void createMemoryDatabaseWithDeferredTables(ContextPtr context, const String & database_name, std::function<void(IDatabase &)> populate)
 {
     deferDatabaseTables(*createMemoryDatabaseIfNotExists(context, database_name), std::move(populate));
 }
 
-/// The tables that `deferSystemDatabaseTables` leaves out of the deferred population.
 void attachRemainingSystemTables(ContextPtr context, IDatabase & system_database)
 {
     attachSystemTablesServerExceptOne(context, system_database, false, false);
 }
 
-/// Arm the deferred population of the `system` database, along with everything that has to happen eagerly around
-/// it: the collision check that `attachSystemTablesServer` performs up front, and `system.one`, which every
-/// `FROM`-less query resolves - deferring it together with the rest would make the very first query build the
-/// whole database anyway. The order matters, see the comments below.
 void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
 {
-    /// Before arming: this looks a table up, which would trigger the population it is supposed to precede.
     validateSystemUserQueryLog(context, system_database);
 
     deferDatabaseTables(system_database,
         [context](IDatabase & database) { attachRemainingSystemTables(context, database); });
 
-    /// After arming: a table attached before it would be taken for one that may shadow a deferred system table,
-    /// so that looking it up populates the database - and `system.one` is looked up by every `FROM`-less query.
-    /// `attachTable` itself never triggers the population.
     attachSystemTableOne(context, system_database);
 }
 
@@ -1774,9 +1757,6 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                /// The `system` database comes from disk, so the tables it stores are attached already. The system
-                /// table storages are added on top of them, and, exactly as for the ephemeral database below, that
-                /// is left to the first access to the database.
                 deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));
                 attached_system_database = true;
             }

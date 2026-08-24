@@ -168,8 +168,6 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
-    /// This does not go through `DatabaseWithOwnTablesBase::detachTable`, so the deferred population has to be
-    /// triggered here as well.
     ensurePopulated();
 
     // it is important to call the destructors of not_in_use without
@@ -273,8 +271,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
-    /// The destination has to know all of its table names before we may treat `to_table_name` as free: a
-    /// deferred `system` database still owns the reserved names it has not attached yet.
     ensurePopulated();
     if (!inside_database)
         other_db.ensurePopulated();

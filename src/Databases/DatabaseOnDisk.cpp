@@ -477,9 +477,6 @@ void DatabaseOnDisk::renameTable(
     createDirectories();
     waitDatabaseStarted();
 
-    /// The destination has to know all of its table names before we may treat `to_table_name` as free: a
-    /// deferred `system` database still owns the reserved names it has not attached yet. This must happen
-    /// before the source table is detached, otherwise a collision would be found halfway through the rename.
     ensurePopulated();
     if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
         to_database_with_own_tables->ensurePopulated();
