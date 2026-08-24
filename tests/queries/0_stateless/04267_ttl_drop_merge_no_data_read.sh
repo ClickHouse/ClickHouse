@@ -400,3 +400,61 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_groupby;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_groupby;"
+
+# -------------------------------------------------------------------
+# Case 8: a Regular merge over fully expired parts is short-circuited too
+#
+# When TTL merge admission is unavailable, selection falls through to a
+# Regular merge that still drops every row - it must not read the source
+# parts just because the assigned type is no longer TTLDrop (issue #116172).
+# max_number_of_merges_with_ttl_in_pool = 0 is the deterministic form of the
+# saturated-limit state, and it also keeps a background TTLDrop merge from
+# racing this one. OPTIMIZE TABLE FINAL always assigns MergeType::Regular.
+# -------------------------------------------------------------------
+echo "-- Case 8: Regular merge over fully expired parts"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_regular_fallback
+    (
+        id UInt64,
+        value String,
+        event_time DateTime DEFAULT now() - INTERVAL 2 DAY
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_regular_fallback;
+
+    INSERT INTO t_ttl_regular_fallback (id, value) SELECT number, randomString(100) FROM numbers(100);
+    INSERT INTO t_ttl_regular_fallback (id, value) SELECT number, randomString(100) FROM numbers(100);
+
+    SYSTEM START MERGES t_ttl_regular_fallback;
+
+    OPTIMIZE TABLE t_ttl_regular_fallback FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT
+        merge_reason,
+        rows,
+        read_rows
+    FROM system.part_log
+    WHERE
+        database = currentDatabase()
+        AND table = 't_ttl_regular_fallback'
+        AND event_type = 'MergeParts'
+        AND length(merged_from) > 1
+    ORDER BY event_time DESC
+    LIMIT 1;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_regular_fallback;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_regular_fallback;"
