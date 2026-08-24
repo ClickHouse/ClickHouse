@@ -15,7 +15,7 @@ integration:
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 import { Image } from "/snippets/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
@@ -50,7 +50,7 @@ If you don't have a dataset to work with you can add one of the examples. This g
 <Info>
 **Docker Compose Setup**
 
-    For Docker-based installations, see the [Superset database configuration guide](https://superset.apache.org/docs/configuration/databases/#clickhouse) for instructions on adding `clickhouse-connect` to your container.
+    For Docker-based installations, see the [Superset database configuration guide](https://superset.apache.org/user-docs/6.0.0/configuration/databases/) for instructions on adding `clickhouse-connect` to your container.
 </Info>
 
 2. Start (or restart) Superset.

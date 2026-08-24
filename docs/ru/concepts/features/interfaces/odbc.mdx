@@ -150,7 +150,7 @@ BI, а не пишутся пользователями вручную. Таки
 
 В этом разделе описано, какие настройки изменяет драйвер ODBC и почему.
 
-**[cast&#95;keep&#95;nullable](/ru/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/ru/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 По умолчанию ClickHouse не позволяет преобразовывать типы Nullable в типы, не допускающие NULL. Однако многие BI-инструменты не
 различают типы, допускающие и не допускающие NULL, при преобразовании типов. Поэтому нередко можно
@@ -171,7 +171,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 Включение `cast_keep_nullable` изменяет поведение `CAST` так, что он сохраняет признак Nullable у своих аргументов. Это
 приближает поведение ClickHouse к поведению других баз данных и стандарту SQL для такого типа преобразований.
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/ru/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/ru/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 ClickHouse позволяет ссылаться на выражения в том же списке `SELECT` по их псевдонимам. Например, этот запрос позволяет избежать
 повторений, и его проще писать:

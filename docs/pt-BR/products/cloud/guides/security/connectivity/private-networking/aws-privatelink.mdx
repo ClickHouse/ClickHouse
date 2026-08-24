@@ -7,11 +7,15 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
 
 Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para estabelecer conectividade segura entre VPCs, serviços da AWS, seus sistemas on-premise e o ClickHouse Cloud sem expor o tráfego à internet pública. Este documento descreve as etapas para se conectar ao ClickHouse Cloud usando o AWS PrivateLink.
+
+<Warning>
+  O AWS PrivateLink oferece suporte apenas a conexões iniciadas da sua VPC da AWS para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
+</Warning>
 
 Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente por meio de endereços do AWS PrivateLink, siga as instruções fornecidas pelo ClickHouse Cloud em [IP Access Lists](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
 
@@ -38,6 +42,7 @@ Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente p
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -47,7 +52,10 @@ Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente p
   * us-west-1
   * us-east-2
   * us-east-1
-    Considerações sobre preços: a AWS cobrará dos usuários pela transferência de dados entre regiões. Consulte os preços [aqui](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+  A AWS cobra pela transferência de dados entre regiões. Consulte os [preços do AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/) para obter detalhes.
 </Note>
 
 **Conclua as etapas a seguir para habilitar o AWS PrivateLink**:
@@ -159,7 +167,9 @@ Selecione **Endpoint services that use NLBs and GWLBs** e use `Service name`<sup
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Configurações do endpoint do AWS PrivateLink" border />
 
-Se quiser estabelecer uma conexão entre regiões via PrivateLink, marque a caixa de seleção &quot;Cross region endpoint&quot; e especifique a região do serviço. A região do serviço é aquela em que a instância do ClickHouse está em execução.
+<Note>
+  Para uma conexão entre regiões, marque a caixa de seleção **Cross region endpoint** e especifique a região do serviço em que seu serviço ClickHouse está em execução.
+</Note>
 
 Se você receber o erro &quot;Service name couldn&#39;t be verified.&quot;, entre em contato com o Suporte ao Cliente para solicitar a adição de novas regiões à lista de regiões compatíveis.
 
@@ -241,7 +251,7 @@ Você precisa apontar o &quot;DNS name&quot;, obtido na etapa [Obtain Endpoint &
   ### Adicione o &quot;Endpoint ID&quot; à lista de permissões do serviço ClickHouse
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-2">
   #### Opção 1: console do ClickHouse Cloud
 </div>
 
@@ -416,13 +426,11 @@ jq .result.privateEndpointIds
 ```
 
 <div id="connecting-to-a-remote-database">
-  ### Como se conectar a um banco de dados remoto
+  ### Conectando-se a um banco de dados remoto
 </div>
-
-Digamos que você esteja tentando usar as table functions [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud e se conectar ao seu banco de dados hospedado em uma VPC da Amazon Web Services (AWS). O AWS PrivateLink não pode ser usado para habilitar essa conexão com segurança. O PrivateLink é uma conexão unidirecional. Ele permite que sua rede interna ou VPC da Amazon se conecte com segurança ao ClickHouse Cloud, mas não permite que o ClickHouse Cloud se conecte à sua rede interna.
 
 De acordo com a [documentação do AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-> Use o AWS PrivateLink quando houver uma configuração cliente/servidor na qual você queira permitir que uma ou mais VPCs consumidoras tenham acesso unidirecional a um serviço específico ou a um conjunto de instâncias na VPC do provedor de serviços. Somente os clientes na VPC consumidora podem iniciar uma conexão com o serviço na VPC do provedor de serviços.
+> Use o AWS PrivateLink quando houver uma configuração cliente/servidor em que você queira permitir que uma ou mais VPCs consumidoras tenham acesso unidirecional a um serviço específico ou a um conjunto de instâncias na VPC do provedor de serviço. Somente os clientes na VPC consumidora podem iniciar uma conexão com o serviço na VPC do provedor de serviço.
 
-Para isso, configure seus Security Groups da AWS para permitir conexões do ClickHouse Cloud com seu serviço de banco de dados interno/privado. Consulte os [endereços IP de egress padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).
+Para conectar as funções de tabela [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud a um banco de dados hospedado na sua VPC da AWS, configure seus grupos de segurança da AWS para permitir conexões do ClickHouse Cloud. Consulte os [endereços IP de egress padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).

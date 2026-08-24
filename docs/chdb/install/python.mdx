@@ -327,114 +327,23 @@ cursor.executemany(
 )
 ```
 
-### User defined functions (UDF) {#user-defined-functions}
+### Python user-defined functions (UDF) {#user-defined-functions}
 
-Extend SQL with custom Python functions:
-
-#### Basic UDF usage {#basic-udf-usage}
+chDB supports native in-process Python UDFs with typed arguments, automatic type inference, and configurable NULL/exception handling.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# Simple mathematical function
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# String processing function
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# JSON processing function  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# Use UDFs in queries
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-#### Advanced UDF with custom return types {#advanced-udf-custom-return-types}
-
-```python
-# UDF with specific return type
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # Convert cm to meters
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# UDF for data validation
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# Use in complex queries
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-#### UDF best practices {#udf-best-practices}
-
-1. **Stateless Functions**: UDFs should be pure functions without side effects
-2. **Import Inside Functions**: All required modules must be imported within the UDF
-3. **String Input/Output**: All UDF parameters are strings (TabSeparated format)
-4. **Error Handling**: Include try-catch blocks for robust UDFs
-5. **Performance**: UDFs are called for each row, so optimize for performance
-
-```python
-# Well-structured UDF with error handling
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# Use with complex nested JSON
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+For the complete guide covering registration methods, type system, NULL handling, exception handling, and DateTime support, see the [Python UDF guide](/chdb/guides/python-udf). For the full API reference, see the [Python UDF API reference](/chdb/api/python#user-defined-functions). The older `@chdb_udf` decorator is still available but superseded by this API — see [Legacy API](/chdb/api/python#legacy-udf).
 
 ### Streaming query processing {#streaming-queries}
 

@@ -28,9 +28,7 @@ doc_type: 'guide'
 Вы можете выполнить следующие шаги либо в Python REPL, либо с помощью скрипта.
 
 <Steps>
-  <Step>
-    ## Установка библиотек
-
+  <Step title="Установка библиотек" id="install-libraries">
     Установите необходимые библиотеки, выполнив следующие команды:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Настройка учетных данных
-
+  <Step title="Настройка учетных данных" id="setup-credentials">
     Далее вам нужно указать API-ключ Anthropic:
 
     ```python
@@ -61,9 +57,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## Инициализируйте MCP-сервер
-
+  <Step title="Инициализируйте MCP-сервер" id="initialize-mcp-and-agent">
     Теперь настройте MCP-сервер ClickHouse для работы с песочницей ClickHouse SQL:
 
     ```python
@@ -89,9 +83,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Настройте обработчик потока
-
+  <Step title="Настройте обработчик потока" id="configure-the-stream-handler">
     При работе с Langchain и MCP-сервером ClickHouse результаты запроса часто
     возвращаются в виде потока данных, а не одним ответом. Для больших наборов данных или
     сложных аналитических запросов, обработка которых может занять некоторое время, важно настроить
@@ -114,11 +106,11 @@ doc_type: 'guide'
                 data = chunk.get("data", {})
                 chunk_data = data.get("chunk", {})
                 
-                # Обрабатывать только текстовое содержимое, пропускать потоки вызова инструментов
+                # Only handle actual text content, skip tool invocation streams
                 if hasattr(chunk_data, 'content'):
                     content = chunk_data.content
                     if isinstance(content, str) and not content.startswith('{"'):
-                        # Добавить пробел после завершения инструмента, если необходимо
+                        # Add space after tool completion if needed
                         if self.last_was_tool:
                             print(" ", end="", flush=True)
                             self.last_was_tool = False
@@ -131,7 +123,7 @@ doc_type: 'guide'
                                 'partial_json' not in str(item)):
                                 text = item.get('text', '')
                                 if text and not text.startswith('{"'):
-                                    # Добавить пробел после завершения инструмента, если необходимо
+                                    # Add space after tool completion if needed
                                     if self.last_was_tool:
                                         print(" ", end="", flush=True)
                                         self.last_was_tool = False
@@ -149,9 +141,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Обратитесь к агенту
-
+  <Step title="Вызовите агента" id="call-the-agent">
     Наконец, обратитесь к своему агенту и спросите, кто внёс больше всего кода в ClickHouse:
 
     ```python
@@ -174,28 +164,28 @@ doc_type: 'guide'
     Вы должны увидеть ответ, похожий на приведённый ниже:
 
     ```response title="Response"
-    Я помогу вам найти того, кто внёс наибольший вклад в кодовую базу ClickHouse, изучив доступные базы данных и таблицы с данными о git-коммитах.
-    🔧 list_databases ✅ Я вижу базу данных `git`, которая, вероятно, содержит информацию о git-коммитах. Давайте изучим таблицы в этой базе данных:
-    🔧 list_tables ✅ Отлично! Таблица `clickhouse_commits` в базе данных git содержит данные о коммитах ClickHouse — всего 80 644 коммита. В таблице хранится информация о каждом коммите: автор, добавленные/удалённые строки, изменённые файлы и т. д. Выполним запрос к этой таблице, чтобы определить, кто внёс наибольший вклад по различным метрикам.
-    🔧 run_select_query ✅ Давайте также посмотрим только на добавленные строки, чтобы выяснить, кто написал больше всего нового кода:
-    🔧 run_select_query ✅ По данным git-коммитов ClickHouse, **Алексей Миловидов** внёс наибольший вклад в кодовую базу ClickHouse сразу по нескольким показателям:
+    I'll help you find who has committed the most code to ClickHouse by exploring the available databases and tables to locate git commit data.
+    🔧 list_databases ✅ I can see there's a `git` database which likely contains git commit information. Let me explore the tables in that database:
+    🔧 list_tables ✅ Perfect! I can see the `clickhouse_commits` table in the git database contains ClickHouse commit data with 80,644 commits. This table has information about each commit including the author, lines added/deleted, files modified, etc. Let me query this table to find who has committed the most code based on different metrics.
+    🔧 run_select_query ✅ Let me also look at just the lines added to see who has contributed the most new code:
+    🔧 run_select_query ✅ Based on the ClickHouse git commit data, **Alexey Milovidov** has committed the most code to ClickHouse by several measures:
 
-    ## Ключевая статистика:
+    ## Key Statistics:
 
-    1. **Наибольшее общее количество изменённых строк**: Алексей Миловидов — **1 696 929 строк** (853 049 добавлено + 843 880 удалено)
-    2. **Наибольшее количество добавленных строк**: Алексей Миловидов — **853 049 строк**
-    3. **Наибольшее количество коммитов**: Алексей Миловидов — **15 375 коммитов**
-    4. **Наибольшее количество изменённых файлов**: Алексей Миловидов — **73 529 файлов**
+    1. **Most Total Lines Changed**: Alexey Milovidov with **1,696,929 total lines changed** (853,049 added + 843,880 deleted)
+    2. **Most Lines Added**: Alexey Milovidov with **853,049 lines added**
+    3. **Most Commits**: Alexey Milovidov with **15,375 commits**
+    4. **Most Files Changed**: Alexey Milovidov with **73,529 files changed**
 
-    ## Топ участников по количеству добавленных строк:
+    ## Top Contributors by Lines Added:
 
-    1. **Alexey Milovidov**: 853 049 строк (15 375 коммитов)
-    2. **s-kat**: 541 609 строк (50 коммитов)
-    3. **Nikolai Kochetov**: 219 020 строк (4 218 коммитов)
-    4. **alesapin**: 193 566 строк (4 783 коммита)
-    5. **Vitaly Baranov**: 168 807 строк (1 152 коммита)
+    1. **Alexey Milovidov**: 853,049 lines added (15,375 commits)
+    2. **s-kat**: 541,609 lines added (50 commits) 
+    3. **Nikolai Kochetov**: 219,020 lines added (4,218 commits)
+    4. **alesapin**: 193,566 lines added (4,783 commits)
+    5. **Vitaly Baranov**: 168,807 lines added (1,152 commits)
 
-    Алексей Миловидов — безусловно, самый активный участник разработки ClickHouse, что неудивительно: он является одним из создателей проекта и его ведущим разработчиком. Его вклад значительно превосходит вклад остальных как по объёму кода, так и по количеству коммитов — почти 16 000 коммитов и более 850 000 добавленных строк кода.
+    Alexey Milovidov is clearly the most prolific contributor to ClickHouse, which makes sense as he is one of the original creators and lead developers of the project. His contribution dwarfs others both in terms of total code volume and number of commits, with nearly 16,000 commits and over 850,000 lines of code added to the project.
     ```
   </Step>
 </Steps>

@@ -23,16 +23,16 @@ Elastic Stack proporciona dos tipos de SDK para distintos lenguajes que permiten
 </Info>
 
 <div id="migrating-edot-sdks">
-  ## Migración de SDKs de EDOT
+  ## Migración de EDOT SDKs
 </div>
 
-Al igual que los SDKs de ClickStack basados en OpenTelemetry, Elastic Distributions of the OpenTelemetry SDKs (SDKs de EDOT) son versiones personalizadas de los SDKs oficiales de OpenTelemetry. Por ejemplo, el [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) es una distribución del [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) personalizada por el proveedor y diseñada para integrarse sin problemas con Elastic Observability.
+Al igual que los SDKs de ClickStack basados en OpenTelemetry, Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) son versiones personalizadas de los SDKs oficiales de OpenTelemetry. Por ejemplo, el [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) es una distribución del [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) personalizada por el proveedor y diseñada para integrarse sin problemas con Elastic Observability.
 
 Como estos SDKs se basan en bibliotecas estándar de OpenTelemetry, la migración a ClickStack es sencilla: no es necesario volver a instrumentar. Solo tiene que ajustar la configuración para enviar los datos de telemetría al ClickStack OpenTelemetry Collector.
 
 La configuración sigue los mecanismos estándar de OpenTelemetry. En Python, esto suele hacerse mediante variables de entorno, como se describe en la [documentación de instrumentación sin código de OpenTelemetry](https://opentelemetry.io/docs/zero-code/python/configuration/).
 
-Una configuración típica de un SDK de EDOT podría verse así:
+Una configuración típica de un EDOT SDK podría verse así:
 
 ```shell
 export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>

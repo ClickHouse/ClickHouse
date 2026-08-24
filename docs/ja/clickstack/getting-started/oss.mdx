@@ -1,55 +1,61 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
-title: 'オープンソース版 ClickStack の利用開始'
+title: 'ClickStack Open Source の使用を開始する'
 sidebarTitle: 'オープンソース'
-description: 'オープンソース版 ClickStack の利用開始'
+description: 'ClickStack Open Source をローカルで実行し、テストデータを送信してインジェストが正常に機能することを確認します'
 doc_type: 'guide'
-keywords: ['ClickStack オープンソース', '利用開始', 'Docker デプロイ', 'HyperDX UI', 'ローカルデプロイ']
+keywords: ['ClickStack Open Source', '使用開始', 'Docker デプロイメント', 'OpenTelemetry', 'ローカルデプロイメント']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-**ClickStack Open Source** をデプロイするために、つまり ClickHouse と ClickStack UI を自分で実行・管理する構成向けに、UI、OpenTelemetry collector、ClickHouse を単一のコンテナーにまとめたビルド済みの Docker image を提供しています。これにより、ローカルでの開発、テスト、セルフマネージド環境へのデプロイを簡単に始められます。
+ClickStack Open Source をローカルで実行し、その OpenTelemetry Collector 経由でテストイベントを送信して、イベントが ClickStack UI で利用可能であることを確認します。
+
+ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジェストパイプラインを実行・管理します。オールインワンイメージには、これらのコンポーネントと MongoDB がローカルでの評価・テスト用に単一の Docker コンテナーへバンドルされています。
 
 <Tip>
-  ClickStack のマネージド版も利用できます。詳しくは [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
+  Managed ClickStack も利用できます。詳細は [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
 </Tip>
 
-これらのイメージは公式の ClickHouse Debian パッケージをベースとしており、用途に応じて選べる複数のディストリビューションを提供しています。
+以下の手順では、認証済みのオールインワンイメージを使用します。アカウントを作成せずにローカル UI を利用する場合は、代わりに [Docker を使用するローカルモードのウォークスルー](/ja/clickstack/deployment/local-mode-only) に従ってください。
 
-最もシンプルな選択肢は、スタックの主要コンポーネントをすべてひとつにまとめた **単一イメージのディストリビューション** です。
+<div id="before-you-begin">
+  ## 始める前に
+</div>
 
-* **HyperDX UI**
-* **OpenTelemetry (OTel) collector**
-* **ClickHouse**
+[Docker](https://docs.docker.com/get-docker/)をインストールし、以下のポートが使用可能であることを確認します。
 
-このオールインワンイメージでは、1 つのコマンドでスタック全体を起動できるため、テスト、検証、または手早いローカルデプロイに最適です。
+* ClickStack UI 用: `8080`
+* gRPC 経由の OTLP 用: `4317`
+* HTTP 経由の OTLP 用: `4318`
+* ClickHouse HTTP インターフェイス用: `8123`
 
-<Steps>
-  <Step>
-    ## dockerでスタックをデプロイ
+継続的なワークロードや本番ワークロードについては、[オープンソースでのデプロイメントオプション](/ja/clickstack/deployment/oss)および[本番環境への移行](/ja/clickstack/managing/production)を参照してください。
 
-    以下のコマンドは、OpenTelemetry collector (ポート 4317 と 4318) 、HyperDX UI (ポート 8080) 、および ClickHouse (ポート 8123) を起動します。
+<div id="set-up-clickstack-open-source">
+  ## オールインワンイメージで ClickStack Open Source をセットアップする
+</div>
+
+<Steps titleSize="h3">
+  <Step title="ClickStack を起動する" id="deploy-stack-with-docker">
+    オールインワンイメージを実行します。
 
     ```shell
-    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    docker run \
+      --name clickstack \
+      -p 8123:8123 \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
     ```
 
-    <Info>
-      **イメージ名の更新**
+    コンテナーはフォアグラウンドで実行されます。この端末は開いたままにし、このガイドの以降のコマンドは別の端末で実行してください。
 
-      ClickStack のイメージは現在 `clickhouse/clickstack-*` として公開されています (以前は `docker.hyperdx.io/hyperdx/*`) 。
-    </Info>
-
-    <Tip>
-      **データと設定の永続化**
-
-      コンテナーの再起動後もデータと設定を保持するには、上記の docker コマンドを変更し、`/data/db`、`/var/lib/clickhouse`、`/var/log/clickhouse-server` の各パスをマウントします。
-
-      例:
+    <Accordion title="データと設定を永続化する">
+      コンテナーを削除した後も ClickStack の設定、ClickHouse のデータ、ClickHouse のログを保持するには、代わりに次のコマンドを実行します。
 
       ```shell
-      # パスをマウントするようにコマンドを変更
       docker run \
         --name clickstack \
         -p 8123:8123 \
@@ -61,87 +67,152 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
         clickhouse/clickstack-all-in-one:latest
       ```
-    </Tip>
+
+      `$(pwd)` は現在のディレクトリに展開されます。このコマンドにより、永続データはその場所の `.volumes` ディレクトリに保存されます。
+    </Accordion>
   </Step>
 
-  <Step>
-    ## ClickStack UI に移動する
+  <Step title="ClickStack を開く" id="navigate-to-hyperdx-ui">
+    ClickStack の起動後、[http://localhost:8080](http://localhost:8080) を開き、アカウントを作成します。
 
-    [http://localhost:8080](http://localhost:8080) にアクセスして、ClickStack UI (HyperDX) を開きます。
+    ClickStack はバンドルされた ClickHouse インスタンスに自動的に接続し、ログ、トレース、メトリクス、セッション用のデータソースを作成します。
 
-    複雑さの要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
+    #### インジェスト API key をコピーする
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
-
-    HyperDX は自動的にローカルクラスターに接続し、logs、traces、metrics、sessions 用のデータソースを作成するため、すぐに使い始められます。
+    左側のメニューの **Get Started** セクションで **Add Data** を選択し、**Ingestion API Key** をコピーします。バンドルされた OpenTelemetry Collector に送信するテレメトリーには、このキーを `authorization` ヘッダーに含める必要があります。
   </Step>
 
-  <Step>
-    ## 製品を試す
-
-    スタックをデプロイしたら、以下のデータセットのいずれかを試してみてください。
-
-    ローカルクラスターを引き続き使用する場合:
-
-    * [Example dataset](/ja/clickstack/example-datasets/sample-data) - 公開デモからサンプルデータセットを読み込み、簡単な問題を診断します。
-    * [Local files and metrics](/ja/clickstack/example-datasets/local-data) - ローカルファイルを読み込み、ローカル OTel collector を使用して OSX または Linux 上のシステムを監視します。
-
-    <br />
-
-    または、より大規模なデータセットを確認できるデモクラスターに接続することもできます。
-
-    * [Remote demo dataset](/ja/clickstack/example-datasets/remote-demo-data) - デモ ClickHouse service のデモデータセットを確認します。
-  </Step>
-</Steps>
-
-<div id="alternative-deployment-models">
-  ## 別のデプロイモデル
-</div>
-
-<div id="local-mode">
-  ### ローカルモード
-</div>
-
-ローカルモードは、認証なしで HyperDX をデプロイするための方法です。
-
-**認証はサポートされていません**。
-
-このモードは、認証や設定の永続化が不要な、簡単なテスト、開発、デモ、デバッグ用途を想定しています。
-
-このデプロイモデルの詳細については、[&quot;Local Mode Only&quot;](/ja/clickstack/deployment/local-mode-only) を参照してください。
-
-<div id="hosted-version">
-  ### ホステッド版
-</div>
-
-[play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com) では、ローカルモードで動作する ClickStack のホステッド版を利用できます。
-
-<div id="self-hosted-version">
-  ### セルフホスト版
-</div>
-
-<Steps>
-  <Step>
-    ### Docker で実行する
-
-    セルフホストのローカルモード用イメージには、OpenTelemetry Collector、ClickStack UI、ClickHouse server があらかじめ設定された状態で含まれています。これにより、アプリケーションからのテレメトリーデータを簡単に取り込み、最小限の追加セットアップで可視化できます。セルフホスト版を使い始めるには、必要なポートを公開して Docker コンテナーを実行するだけです。
+  <Step title="テストデータを送信する" id="send-test-data">
+    別の端末で、インジェスト API key をエクスポートします。
 
     ```shell
-    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
     ```
 
-    &quot;All in one&quot; イメージとは異なり、**ローカルモードには認証が含まれていないため**、ユーザーの作成は求められません。
+    現在のタイムスタンプを含む OTLP ログを送信します。
+
+    ```shell
+    NOW_NANO="$(date +%s)000000000"
+
+    curl -i "http://localhost:4318/v1/logs" \
+      -H "Content-Type: application/json" \
+      -H "authorization: ${CLICKSTACK_API_KEY}" \
+      --data-binary @- <<EOF
+    {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [{
+            "key": "service.name",
+            "value": {"stringValue": "clickstack-docs-test"}
+          }]
+        },
+        "scopeLogs": [{
+          "scope": {"name": "clickstack-docs-test"},
+          "logRecords": [{
+            "timeUnixNano": "${NOW_NANO}",
+            "severityText": "INFO",
+            "body": {"stringValue": "ClickStack ingestion test"}
+          }]
+        }]
+      }]
+    }
+    EOF
+    ```
+
+    リクエストが成功すると、`HTTP/1.1 200 OK` が返されます。
   </Step>
 
-  <Step>
-    ### 接続認証情報を入力する
+  <Step title="インジェストを確認する" id="confirm-ingestion">
+    ClickStack で **Search** ビューを開き、`ClickStack ingestion test` を検索します。
 
-    独自の**外部 ClickHouse クラスター**に接続するには、接続認証情報を手動で入力できます。
+    検索結果には、サービス名が `clickstack-docs-test` のテストイベントが表示されます。
 
-    また、製品を手早く試したい場合は、**Connect to Demo Server** をクリックして、あらかじめ読み込まれたデータセットにアクセスし、セットアップ不要で ClickStack を試すこともできます。
-
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="認証情報" size="md" />
-
-    デモサーバーに接続する場合は、[デモデータセットの手順](/ja/clickstack/example-datasets/remote-demo-data)に従ってデータセットを確認できます。
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー" border />
   </Step>
 </Steps>
+
+これで、ローカルの ClickStack インスタンス、動作するインジェストエンドポイント、ClickStack で確認できるテストイベントが用意されました。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+<div id="send-application-and-infrastructure-data">
+  ### アプリケーションとインフラストラクチャのデータを送信する
+</div>
+
+ClickStack に送信するデータに応じて、ガイドを選択してください。
+
+<CardGroup cols={2}>
+  <Card title="アプリケーションをインストルメントする" icon="code" href="/ja/clickstack/ingesting-data/sdks/index">
+    サポート対象の OpenTelemetry SDK を使用して、アプリケーションのトレースとログを送信します。
+  </Card>
+
+  <Card title="ホストログを収集する" icon="server" href="/ja/clickstack/integration-examples/host-logs">
+    エージェントの役割で実行される OpenTelemetry Collector からホストログを転送します。
+  </Card>
+
+  <Card title="Kubernetes を監視する" icon="cubes" href="/ja/clickstack/integration-examples/kubernetes">
+    Kubernetes クラスターからログ、メトリクス、トレースを収集します。
+  </Card>
+
+  <Card title="その他のインテグレーションを確認する" icon="plug" href="/ja/clickstack/integration-examples/index">
+    追加のアプリケーションやテレメトリーソース向けのガイドを確認します。
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### サンプルデータを探索する
+</div>
+
+サンプルデータセットを使用して、より充実したテレメトリーでClickStackを探索できます。
+
+<CardGroup cols={2}>
+  <Card title="サンプルログ、トレース、メトリクス" href="/ja/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    公開デモのデータを読み込み、issueを診断します。
+  </Card>
+
+  <Card title="ローカルログとメトリクス" href="/ja/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    macOSまたはLinuxでローカルファイルとシステムメトリクスを収集します。
+  </Card>
+</CardGroup>
+
+Dockerをインストールせずに事前に読み込まれたデータを探索するには、[ホスト型ClickStackデモ](/ja/clickstack/example-datasets/remote-demo-data)を使用します。
+
+<div id="generate-synthetic-data">
+  ### 合成データを生成する
+</div>
+
+既存のアプリケーションやデータセットがない場合でも、ジェネレーターを使用してインジェストをテストできます。
+
+<CardGroup cols={2}>
+  <Card title="otelgen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/otelgen">
+    合成 OTLP ログ、トレース、メトリクスを短時間に送信します。
+  </Card>
+
+  <Card title="telemetrygen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/telemetrygen">
+    複数のサービスにわたって、設定可能な OpenTelemetry シグナルを生成します。
+  </Card>
+</CardGroup>
+
+[ClickStack のすべてのサンプルデータとデモ](/ja/clickstack/example-datasets/index)を参照してください。
+
+<div id="prepare-for-production">
+  ### 本番運用の準備
+</div>
+
+ClickStack を継続的なワークロードで使用する前に、デプロイメントおよび本番運用に関するガイダンスを確認してください。
+
+<CardGroup cols={2}>
+  <Card title="本番環境への移行" icon="shield" href="/ja/clickstack/managing/production">
+    インジェスト用認証情報、セキュリティ、保持期間、運用に関するガイダンスを確認します。
+  </Card>
+
+  <Card title="デプロイメントモデルを選択する" icon="server" href="/ja/clickstack/deployment/oss">
+    環境に適したオープンソースのデプロイメントオプションを比較します。
+  </Card>
+</CardGroup>

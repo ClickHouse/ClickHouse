@@ -23,14 +23,14 @@ O ClickHouse oferece suporte às seguintes sintaxes para `count`:
 **Detalhes**
 
 O ClickHouse oferece suporte à sintaxe `COUNT(DISTINCT ...)`.
-O comportamento dessa construção depende da configuração [`count_distinct_implementation`](/pt-BR/reference/settings/session-settings#count_distinct_implementation).
+O comportamento dessa construção depende da configuração [`count_distinct_implementation`](/pt-BR/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 Ela define qual das funções [uniq*](/pt-BR/reference/functions/aggregate-functions/uniq) é usada para realizar a operação.
 O padrão é a função [uniqExact](/pt-BR/reference/functions/aggregate-functions/uniqExact).
 
 A consulta `SELECT count() FROM table` é otimizada por padrão com base nos metadados do MergeTree.
-Se você precisar usar segurança em nível de linha, desative essa otimização usando a configuração [`optimize_trivial_count_query`](/pt-BR/reference/settings/session-settings#optimize_trivial_count_query).
+Se você precisar usar segurança em nível de linha, desative essa otimização usando a configuração [`optimize_trivial_count_query`](/pt-BR/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-No entanto, a consulta `SELECT count(nullable_column) FROM table` pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns).
+No entanto, a consulta `SELECT count(nullable_column) FROM table` pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [`null`](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna.
 A consulta `SELECT count(n) FROM table` é transformada em `SELECT sum(NOT n.null) FROM table`.
 
@@ -72,7 +72,7 @@ SELECT count() FROM t
 **Exemplo de COUNT(DISTINCT)**
 
 ```sql title=Query
--- Este exemplo mostra que `count(DISTINCT num)` é executado pela função `uniqExact` de acordo com o valor da configuração `count_distinct_implementation`.
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

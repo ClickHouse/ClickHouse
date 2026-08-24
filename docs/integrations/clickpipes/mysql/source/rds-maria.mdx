@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 This is a step-by-step guide on how to configure your RDS MariaDB instance for replicating its data via the MySQL ClickPipe.
 <br/>
@@ -100,11 +101,19 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
 
+### Using IAM authentication (optional) {#iam-authentication}
+
+<Note>
+AWS [introduced IAM database authentication for RDS for MariaDB in version 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). Support depends on the exact engine version and AWS Region. Check [AWS's current supported Regions and engine versions](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html) before using this option.
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}
 
-If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to the `Inbound rules` of your RDS security group.
+If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your RDS security group.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Where to find security group in RDS?" size="lg" border/>
 

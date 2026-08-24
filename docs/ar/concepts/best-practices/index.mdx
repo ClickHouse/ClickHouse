@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
-keywords: ['Cloud', 'المفتاح الأساسي', 'مفتاح الترتيب', 'العروض المادية', 'أفضل الممارسات', 'عمليات الإدراج المجمّعة', 'عمليات الإدراج غير المتزامنة', 'تجنب Mutations', 'تجنب الأعمدة Nullable', 'تجنب Optimize Final', 'مفتاح التقسيم']
+keywords: ['Cloud', 'المفتاح الأساسي', 'مفتاح الترتيب', 'العروض المادية', 'أفضل الممارسات', 'عمليات الإدراج المجمّعة', 'عمليات الإدراج غير المتزامنة', 'تجنب عمليات التعديل', 'تجنب الأعمدة من النوع Nullable', 'تجنب Optimize Final', 'مفتاح التقسيم']
 title: 'أفضل الممارسات في ClickHouse'
 hide_title: true
 description: 'الصفحة الرئيسية لقسم أفضل الممارسات في ClickHouse'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ar/_table_of_contents.mdx';
+يقدّم هذا القسم أفضل الممارسات التي يُنصح باتباعها لتحقيق أقصى استفادة من ClickHouse.
 
-يعرض هذا القسم أفضل الممارسات التي يُنصح باتباعها لتحقيق أقصى استفادة من ClickHouse.
+<CardGroup cols={2}>
+  <Card title="اختيار مفتاح أساسي" icon="key" href="/ar/concepts/best-practices/choosing-a-primary-key">
+    كيفية اختيار مفتاح أساسي في ClickHouse.
+  </Card>
 
-<TableOfContents />
+  <Card title="اختيار أنواع البيانات" icon="shapes" href="/ar/concepts/best-practices/select-data-type">
+    كيفية اختيار أنواع البيانات المناسبة لأعمدتك.
+  </Card>
+
+  <Card title="استخدام العروض المادية" icon="layer-group" href="/ar/concepts/best-practices/use-materialized-views">
+    انقل العمليات الحسابية من وقت الاستعلام إلى وقت الإدراج باستخدام العروض المادية.
+  </Card>
+
+  <Card title="تقليل JOINs وتحسينها" icon="link" href="/ar/concepts/best-practices/minimize-optimize-joins">
+    أفضل الممارسات لاستخدام JOINs في ClickHouse.
+  </Card>
+
+  <Card title="اختيار مفتاح تقسيم" icon="folder-tree" href="/ar/concepts/best-practices/partitioning-keys">
+    كيفية اختيار مفتاح تقسيم.
+  </Card>
+
+  <Card title="اختيار استراتيجية الإدراج" icon="file-import" href="/ar/concepts/best-practices/selecting-an-insert-strategy">
+    كيفية اختيار استراتيجية إدراج، بما في ذلك عمليات الإدراج المجمّعة وغير المتزامنة.
+  </Card>
+
+  <Card title="استخدم فهارس تخطي البيانات عند الاقتضاء" icon="filter" href="/ar/concepts/best-practices/using-data-skipping-indices">
+    كيفية ومتى تستخدم فهارس تخطي البيانات.
+  </Card>
+
+  <Card title="تجنب عمليات التعديل" icon="ban" href="/ar/concepts/best-practices/avoid-mutations">
+    لماذا ينبغي عليك تجنب عمليات التعديل في ClickHouse.
+  </Card>
+
+  <Card title="تجنب OPTIMIZE FINAL" icon="triangle-exclamation" href="/ar/concepts/best-practices/avoid-optimize-final">
+    لماذا ينبغي عليك تجنب `OPTIMIZE TABLE ... FINAL`.
+  </Card>
+
+  <Card title="تجنب الأعمدة من النوع Nullable" icon="circle-minus" href="/ar/concepts/best-practices/avoidnullablecolumns">
+    لماذا ينبغي تجنب الأعمدة من النوع Nullable في ClickHouse.
+  </Card>
+
+  <Card title="استخدم JSON عند الاقتضاء" icon="code" href="/ar/concepts/best-practices/json-type">
+    متى تستخدم نوع البيانات `JSON`.
+  </Card>
+</CardGroup>

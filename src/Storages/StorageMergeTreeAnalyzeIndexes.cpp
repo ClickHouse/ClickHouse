@@ -141,7 +141,7 @@ protected:
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
-            QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+            auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
 
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
@@ -216,6 +216,7 @@ protected:
             .find_exact_ranges = false,
             .is_parallel_reading_from_replicas = false,
             .has_projections = false,
+            .check_row_limits = true,
             .result = analysis_result,
         };
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);

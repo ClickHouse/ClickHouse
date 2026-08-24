@@ -84,6 +84,11 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
+    const std::function<std::unique_ptr<QueryPlan>()> & getQueryPlanWithParallelReplicasBuilder() const
+    {
+        return query_plan_with_parallel_replicas_builder;
+    }
+
 private:
     ASTPtr query;
     ContextMutablePtr context;

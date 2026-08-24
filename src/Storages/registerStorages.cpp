@@ -13,6 +13,7 @@ void registerStorageNull(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
+void registerStorageRemote(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
 void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
@@ -78,6 +79,7 @@ void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
+void registerStorageBigQuery(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -124,6 +126,7 @@ void registerStorages()
     registerStorageMerge(factory);
     registerStorageBuffer(factory);
     registerStorageDistributed(factory);
+    registerStorageRemote(factory);
     registerStorageMemory(factory);
     registerStorageQueryRunner(factory);
     registerStorageFile(factory);
@@ -186,6 +189,7 @@ void registerStorages()
 
     registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
+    registerStorageBigQuery(factory);
 
 #if USE_RDKAFKA
     registerStorageKafka(factory);

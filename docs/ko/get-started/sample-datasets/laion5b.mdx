@@ -24,7 +24,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 데이터셋 세부 정보
 </div>
 
-전체 데이터셋은 [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)에서 `npy` 파일과 `Parquet` 파일이 혼합된 형태로 제공됩니다.
+전체 데이터셋은 [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader)를 사용하여 다운로드할 수 있습니다.
 
 ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니다.
 이 `S3` 버킷에는 10개의 `Parquet` 파일이 있으며, 각 `Parquet` 파일에는 1천만 개의 행이 들어 있습니다.
@@ -36,9 +36,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
 </div>
 
 <Steps>
-  <Step>
-    ### 테이블 생성
-
+  <Step title="테이블 생성" id="create-table">
     임베딩과 연관된 속성을 저장할 `laion_5b_100m` 테이블을 생성하세요:
 
     ```sql
@@ -67,9 +65,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     포스트필터링/프리필터링이 결합된 벡터 유사도 검색을 이해하는 데 활용할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 데이터 로드
-
+  <Step title="데이터 로드" id="load-table">
     모든 `Parquet` 파일에서 데이터셋을 로드하려면 다음 SQL 문을 실행하십시오:
 
     ```sql
@@ -87,9 +83,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     ```
   </Step>
 
-  <Step>
-    ### 브루트 포스 벡터 유사도 검색(vector similarity search) 실행하기
-
+  <Step title="브루트 포스 벡터 유사도 검색(vector similarity search) 실행하기" id="run-a-brute-force-vector-similarity-search">
     KNN (k - Nearest Neighbours) 검색 또는 브루트 포스(brute force) 검색은 데이터셋 내 각 벡터와 검색 임베딩 벡터 사이의 거리를 계산한 후, 거리를 기준으로 정렬하여 가장 가까운 이웃(nearest neighbours)을 찾는 방식입니다. 데이터셋에 포함된 벡터 중 하나를 검색 벡터로 활용할 수 있습니다. 예시:
 
     ```sql title="Query"
@@ -98,11 +92,11 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
     LIMIT 20
 
-    id = 9999인 행의 벡터는 델리 레스토랑 이미지의 임베딩입니다.
+    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
     ```
 
     ```response title="Response" highlight={24}
-    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
      1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
      2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
      3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
@@ -132,9 +126,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     1억 행을 대상으로 벡터 인덱스 없이 위 쿼리를 실행하면 완료까지 수 초에서 수 분이 소요될 수 있습니다.
   </Step>
 
-  <Step>
-    ### 벡터 유사도 인덱스 생성
-
+  <Step title="벡터 유사도 인덱스 생성" id="build-vector-similarity-index">
     다음 SQL을 실행하여 `laion_5b_100m` 테이블의 `vector` 컬럼에 벡터 유사도 인덱스를 정의하고 생성합니다:
 
     ```sql
@@ -150,9 +142,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     인덱스를 빌드하고 저장하는 데는 사용 가능한 CPU 코어 수와 스토리지 대역폭에 따라 전체 1억 데이터셋의 경우 몇 시간이 걸릴 수도 있습니다.
   </Step>
 
-  <Step>
-    ### ANN 검색 수행
-
+  <Step title="ANN 검색 수행" id="perform-ann-search">
     벡터 유사도 인덱스가 생성되면 벡터 검색 쿼리는 자동으로 이 인덱스를 사용합니다:
 
     ```sql title="Query"
@@ -166,9 +156,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     메모리에 벡터 인덱스를 처음 로드할 때는 몇 초에서 몇 분 정도 걸릴 수 있습니다.
   </Step>
 
-  <Step>
-    ### 검색 쿼리용 임베딩 생성
-
+  <Step title="검색 쿼리용 임베딩 생성" id="generating-embeddings-for-search-query">
     `LAION 5b` 데이터셋의 임베딩 벡터는 `OpenAI CLIP` 모델 `ViT-L/14`를 사용해 생성되었습니다.
 
     아래에는 `CLIP` API를 사용해 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여주는 Python 예시 스크립트가 제공됩니다. 그런 다음 검색 임베딩 벡터를 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달합니다.
@@ -185,21 +173,21 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load("ViT-L/14", device=device)
 
-    # 개와 고양이가 모두 포함된 이미지 검색
+    # Search for images that contain both a dog and a cat
     text = clip.tokenize(["a dog and a cat"]).to(device)
 
     with torch.no_grad():
         text_features = model.encode_text(text)
         np_arr = text_features.detach().cpu().numpy()
 
-        # 여기에 ClickHouse 자격 증명을 입력하세요
+        # Pass ClickHouse credentials here
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
         result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
-        # 결과를 브라우저에서 열 수 있는 간단한 HTML 페이지로 출력합니다. 일부 URL은 더 이상 유효하지 않을 수 있습니다.
+        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
         print("<html>")
         for r in result.result_rows:
             print("<img src = ", r[1], 'width="200" height="200">')

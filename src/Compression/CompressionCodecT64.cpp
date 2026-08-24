@@ -24,8 +24,25 @@ namespace DB
 class CompressionCodecT64 : public ICompressionCodec
 {
 public:
-    static constexpr UInt32 HEADER_SIZE = 1 + 2 * sizeof(UInt64);
-    static constexpr UInt32 MAX_COMPRESSED_BLOCK_SIZE = sizeof(UInt64) * 64;
+    /// On-disk layout per codec invocation:
+    ///
+    ///   [ cookie            |  COOKIE_SIZE             ]  type id (low 7 bits) | variant (high bit)
+    ///   [ unaligned prefix  |  input_size % sizeof(T)  ]  leftover bytes that don't fill a full T element, copied verbatim (bytes_to_skip)
+    ///   [ min/max header    |  HEADER_SIZE             ]  one (min, max) pair covering the entire matrix portion
+    ///   [ matrix block 0    |  8·n_bits                ]  n_bits transposed bit-planes for MATRIX_SIZE elements
+    ///   [ matrix block 1    |  ditto                   ]
+    ///   ...
+    ///   [ matrix block k-1  |  ditto                   ]  last block zero-pads if fewer than MATRIX_SIZE real elements
+    ///
+    /// n_bits = number of low bits stored per value after dropping high bits common to all values.
+    /// Edge cases:
+    ///   - n_bits = 0 (constant column): min/max header present, no matrix blocks.
+    ///   - input_size < sizeof(T): no min/max header, no matrix blocks; output is just cookie + prefix.
+    /// MAX_COMPRESSED_BLOCK_SIZE bounds the payload of one matrix block (when n_bits = 64).
+    static constexpr UInt32 COOKIE_SIZE = 1;
+    static constexpr UInt32 MATRIX_SIZE = 64;
+    static constexpr UInt32 HEADER_SIZE = 2 * sizeof(UInt64);
+    static constexpr UInt32 MAX_COMPRESSED_BLOCK_SIZE = sizeof(UInt64) * MATRIX_SIZE;
 
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
@@ -40,8 +57,8 @@ public:
     CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
-
     void updateHash(SipHash & hash) const override;
+    std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override;
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
@@ -49,8 +66,7 @@ protected:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
     {
-        /// uncompressed_size - (uncompressed_size % (sizeof(T) * 64)) + sizeof(UInt64) * sizeof(T) + header_size
-        return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + HEADER_SIZE;
+        return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + COOKIE_SIZE + HEADER_SIZE;
     }
 
     bool isCompression() const override { return true; }
@@ -531,74 +547,101 @@ void findMinMax(const char * src, UInt32 src_size, T & min, T & max)
 
 using Variant = CompressionCodecT64::Variant;
 
+template <typename T>
+using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
+
+template <typename T>
+struct T64Layout
+{
+    UInt8 bytes_to_skip = 0;
+    UInt32 bytes_to_compress = 0;
+    UInt32 full_matrices_count = 0;
+    UInt32 tail_elements = 0;
+    UInt32 valuable_bits = 0;
+    MinMaxType<T> min64 = 0;
+    MinMaxType<T> max64 = 0;
+    UInt32 total_size = 0;
+};
+
+template <typename T>
+T64Layout<T> computeT64Layout(const char * src, UInt32 bytes_size)
+{
+    T64Layout<T> layout;
+    layout.bytes_to_skip = bytes_size % sizeof(T);
+    layout.bytes_to_compress = bytes_size - layout.bytes_to_skip;
+
+    if (layout.bytes_to_compress == 0)
+    {
+        layout.total_size = layout.bytes_to_skip;
+        return layout;
+    }
+
+    const UInt32 src_size = layout.bytes_to_compress / sizeof(T);
+    layout.full_matrices_count = src_size / CompressionCodecT64::MATRIX_SIZE;
+    layout.tail_elements = src_size % CompressionCodecT64::MATRIX_SIZE;
+
+    T min;
+    T max;
+    findMinMax<T>(src + layout.bytes_to_skip, layout.bytes_to_compress, min, max);
+    layout.min64 = static_cast<MinMaxType<T>>(min);
+    layout.max64 = static_cast<MinMaxType<T>>(max);
+
+    layout.valuable_bits = getValuableBitsNumber(layout.min64, layout.max64);
+    if (layout.valuable_bits == 0)
+    {
+        layout.total_size = CompressionCodecT64::HEADER_SIZE + layout.bytes_to_skip;
+        return layout;
+    }
+
+    const UInt32 dst_shift = sizeof(UInt64) * layout.valuable_bits;
+    const UInt32 dst_bytes = layout.full_matrices_count * dst_shift + (layout.tail_elements ? dst_shift : 0);
+    layout.total_size = CompressionCodecT64::HEADER_SIZE + dst_bytes + layout.bytes_to_skip;
+    return layout;
+}
+
 template <typename T, bool full>
 UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 {
-    using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
+    const T64Layout<T> layout = computeT64Layout<T>(src, bytes_size);
 
-    static constexpr const UInt32 matrix_size = 64;
-    static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
+    memcpy(dst, src, layout.bytes_to_skip);
+    src += layout.bytes_to_skip;
+    dst += layout.bytes_to_skip;
 
-    UInt8 bytes_to_skip = bytes_size % sizeof(T);
-    bytes_size -= bytes_to_skip;
-    memcpy(dst, src, bytes_to_skip);
-    src += bytes_to_skip;
-    dst += bytes_to_skip;
-
-    if (bytes_size == 0)
-        return bytes_to_skip;
-
-    UInt32 src_size = bytes_size / sizeof(T);
-    UInt32 num_full = src_size / matrix_size;
-    UInt32 tail = src_size % matrix_size;
-    T min;
-    T max;
-    findMinMax<T>(src, bytes_size, min, max);
-    MinMaxType min64 = min; // NOLINT
-    MinMaxType max64 = max; // NOLINT
+    if (layout.bytes_to_compress == 0)
+        return layout.total_size;
 
     /// Write header
-    {
-        memcpy(dst, &min64, sizeof(MinMaxType));
-        memcpy(dst + 8, &max64, sizeof(MinMaxType));
-        dst += header_size;
-    }
+    memcpy(dst, &layout.min64, sizeof(MinMaxType<T>));
+    memcpy(dst + 8, &layout.max64, sizeof(MinMaxType<T>));
+    dst += CompressionCodecT64::HEADER_SIZE;
 
-    UInt32 num_bits = getValuableBitsNumber(min64, max64);
-    if (!num_bits)
-        return header_size + bytes_to_skip;
+    if (layout.valuable_bits == 0)
+        return layout.total_size;
 
-    T buf[matrix_size];
-    UInt32 src_shift = sizeof(T) * matrix_size;
-    UInt32 dst_shift = sizeof(UInt64) * num_bits;
-    for (UInt32 i = 0; i < num_full; ++i)
+    T buf[CompressionCodecT64::MATRIX_SIZE];
+    const UInt32 src_shift = sizeof(T) * CompressionCodecT64::MATRIX_SIZE;
+    const UInt32 dst_shift = sizeof(UInt64) * layout.valuable_bits;
+    for (UInt32 i = 0; i < layout.full_matrices_count; ++i)
     {
-        load<T>(src, buf, matrix_size);
-        transpose<T, full>(buf, dst, num_bits);
+        load<T>(src, buf, CompressionCodecT64::MATRIX_SIZE);
+        transpose<T, full>(buf, dst, layout.valuable_bits);
         src += src_shift;
         dst += dst_shift;
     }
 
-    UInt32 dst_bytes = num_full * dst_shift;
-
-    if (tail)
+    if (layout.tail_elements)
     {
-        load<T>(src, buf, tail);
-        transpose<T, full>(buf, dst, num_bits, tail);
-        dst_bytes += dst_shift;
+        load<T>(src, buf, layout.tail_elements);
+        transpose<T, full>(buf, dst, layout.valuable_bits, layout.tail_elements);
     }
 
-    return header_size + dst_bytes + bytes_to_skip;
+    return layout.total_size;
 }
 
 template <typename T, bool full>
 UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
-    using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
-
-    static constexpr const UInt32 matrix_size = 64;
-    static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
-
     const char * const original_dst = dst;
     UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
     if (bytes_to_skip > bytes_size)
@@ -620,18 +663,18 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         return static_cast<UInt32>(dst - original_dst);
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
-    MinMaxType min;
-    MinMaxType max;
+    MinMaxType<T> min;
+    MinMaxType<T> max;
 
     /// Read header
     {
-        if (bytes_size < header_size)
+        if (bytes_size < CompressionCodecT64::HEADER_SIZE)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data: compressed size ({}) is too small"
-                            " to contain the min/max header ({} bytes)", bytes_size, header_size);
-        memcpy(&min, src, sizeof(MinMaxType));
-        memcpy(&max, src + 8, sizeof(MinMaxType));
-        src += header_size;
-        bytes_size -= header_size;
+                            " to contain the min/max header ({} bytes)", bytes_size, CompressionCodecT64::HEADER_SIZE);
+        memcpy(&min, src, sizeof(MinMaxType<T>));
+        memcpy(&max, src + 8, sizeof(MinMaxType<T>));
+        src += CompressionCodecT64::HEADER_SIZE;
+        bytes_size -= CompressionCodecT64::HEADER_SIZE;
     }
 
     UInt32 num_bits = getValuableBitsNumber(min, max);
@@ -644,18 +687,18 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
     }
 
     UInt32 src_shift = sizeof(UInt64) * num_bits;
-    UInt32 dst_shift = sizeof(T) * matrix_size;
+    UInt32 dst_shift = sizeof(T) * CompressionCodecT64::MATRIX_SIZE;
 
     if (!bytes_size || bytes_size % src_shift)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is not a multiplier of {}",
                         bytes_size, src_shift);
 
     UInt32 num_full = bytes_size / src_shift;
-    UInt32 tail = num_elements % matrix_size;
+    UInt32 tail = num_elements % CompressionCodecT64::MATRIX_SIZE;
     if (tail)
         --num_full;
 
-    UInt64 expected = static_cast<UInt64>(num_full) * matrix_size + tail;    /// UInt64 to avoid overflow.
+    UInt64 expected = static_cast<UInt64>(num_full) * CompressionCodecT64::MATRIX_SIZE + tail;    /// UInt64 to avoid overflow.
     if (expected != num_elements)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, the number of elements in the compressed data ({})"
                         " is not equal to the expected number of elements in the decompressed data ({})",
@@ -676,12 +719,12 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         }
     }
 
-    T buf[matrix_size];
+    T buf[CompressionCodecT64::MATRIX_SIZE];
     for (UInt32 i = 0; i < num_full; ++i)
     {
         reverseTranspose<T, full>(src, buf, num_bits);
         restoreUpperBits(buf, upper_min, upper_max, sign_bit);
-        store<T>(buf, dst, matrix_size);
+        store<T>(buf, dst, CompressionCodecT64::MATRIX_SIZE);
         src += src_shift;
         dst += dst_shift;
     }
@@ -706,6 +749,12 @@ UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant varia
 }
 
 template <typename T>
+UInt32 calculateCompressedDataSize(const char * src, UInt32 bytes_size)
+{
+    return computeT64Layout<T>(src, bytes_size).total_size;
+}
+
+template <typename T>
 UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant)
 {
     if (variant == Variant::Bit)
@@ -717,29 +766,58 @@ UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 unco
 }
 
 
-UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
+std::optional<UInt32> CompressionCodecT64::tryGetCompressedSize(const char * source, UInt32 source_size) const
 {
-    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | static_cast<UInt8>(static_cast<UInt8>(variant) << 7);
-    memcpy(dst, &cookie, 1);
-    dst += 1;
+    if (!type_idx.has_value())
+        return std::nullopt;
+
+    /// Cookie byte + per-type payload (matches doCompressData output)
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
-            return 1 + compressData<Int8>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int8>(source, source_size);
         case TypeIndex::Int16:
-            return 1 + compressData<Int16>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int16>(source, source_size);
         case TypeIndex::Int32:
-            return 1 + compressData<Int32>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int32>(source, source_size);
         case TypeIndex::Int64:
-            return 1 + compressData<Int64>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int64>(source, source_size);
         case TypeIndex::UInt8:
-            return 1 + compressData<UInt8>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt8>(source, source_size);
         case TypeIndex::UInt16:
-            return 1 + compressData<UInt16>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt16>(source, source_size);
         case TypeIndex::UInt32:
-            return 1 + compressData<UInt32>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt32>(source, source_size);
         case TypeIndex::UInt64:
-            return 1 + compressData<UInt64>(src, src_size, dst, variant);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt64>(source, source_size);
+        default:
+            return std::nullopt;
+    }
+}
+
+UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
+{
+    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | static_cast<UInt8>(static_cast<UInt8>(variant) << 7);
+    memcpy(dst, &cookie, COOKIE_SIZE);
+    dst += COOKIE_SIZE;
+    switch (baseType(*type_idx))
+    {
+        case TypeIndex::Int8:
+            return COOKIE_SIZE + compressData<Int8>(src, src_size, dst, variant);
+        case TypeIndex::Int16:
+            return COOKIE_SIZE + compressData<Int16>(src, src_size, dst, variant);
+        case TypeIndex::Int32:
+            return COOKIE_SIZE + compressData<Int32>(src, src_size, dst, variant);
+        case TypeIndex::Int64:
+            return COOKIE_SIZE + compressData<Int64>(src, src_size, dst, variant);
+        case TypeIndex::UInt8:
+            return COOKIE_SIZE + compressData<UInt8>(src, src_size, dst, variant);
+        case TypeIndex::UInt16:
+            return COOKIE_SIZE + compressData<UInt16>(src, src_size, dst, variant);
+        case TypeIndex::UInt32:
+            return COOKIE_SIZE + compressData<UInt32>(src, src_size, dst, variant);
+        case TypeIndex::UInt64:
+            return COOKIE_SIZE + compressData<UInt64>(src, src_size, dst, variant);
         default:
             break;
     }
@@ -753,8 +831,8 @@ UInt32 CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, 
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
-    src += 1;
-    src_size -= 1;
+    src += COOKIE_SIZE;
+    src_size -= COOKIE_SIZE;
 
     auto saved_variant = static_cast<Variant>(cookie >> 7);
     TypeIndex saved_type_id = deserializeTypeId(cookie & 0x7F);

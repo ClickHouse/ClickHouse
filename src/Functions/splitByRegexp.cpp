@@ -227,7 +227,7 @@ Empty substrings may be selected when:
 - the original string string is empty while the regular expression is not empty.
 
 :::note
-Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax = "splitByRegexp(regexp, s[, max_substrings])";

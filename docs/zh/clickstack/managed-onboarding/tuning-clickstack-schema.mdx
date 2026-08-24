@@ -16,9 +16,7 @@ hide_advert: true
 下面的概述特意写得比较简短。如需了解每项变更背后的原因、基准测试，以及如何将这些变更逐步应用到现有数据，请参阅[性能调优](/zh/clickstack/managing/performance-tuning)。
 
 <Steps>
-  <Step>
-    ## 将常查属性设为 materialized 列
-
+  <Step title="将常查属性设为 materialized 列" id="materialize-attributes">
     按 `LogAttributes['service.version']` 进行筛选时，ClickHouse 需要为它检查的每一行加载并解码整个 `LogAttributes` Map。将该属性提升为 `MATERIALIZED` 列后，相同的过滤条件就会变成读取列，通常能快一个数量级。一旦该列存在，ClickStack 会自动重写过滤条件，因此已保存的搜索和仪表盘都无需修改即可继续使用。
 
     请选择你确实经常查询的属性。每个 materialized 列都会增加存储和写入时成本，因此这里应遵循“只提升常用项”，而不是“全部提升”。
@@ -34,13 +32,11 @@ hide_advert: true
     更多信息：[将常查属性设为 materialized 列](/zh/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes)。
   </Step>
 
-  <Step>
-    ## 添加跳过索引
-
+  <Step title="添加跳过索引" id="add-skip-indexes">
     跳过索引可让 ClickHouse 排除不可能匹配过滤条件的数据粒度块，从而把全表扫描变成小范围的定向读取。有三种类型值得了解：
 
-    * 字符串列以及 `mapKeys`/`*AttributeItems` 数组上的 **文本索引** (`text(tokenizer = ...)`) 。默认日志 schema 已经自带这些索引。
-    * 按范围筛选的数值列上的 **最小-最大索引**。链路追踪中的 `Duration` 就是典型场景。
+    * **文本索引** (`text(tokenizer = ...)`) ，用于字符串列以及 `mapKeys`/`*AttributeItems` 数组。默认日志 schema 已经自带这些索引。
+    * **最小-最大索引**，用于按范围筛选的数值列。链路追踪中的 `Duration` 就是典型场景。
     * 对于尚不支持文本索引的 ClickHouse 版本，用于高基数等值查找的 **布隆过滤器**。
 
     ```sql
@@ -53,9 +49,7 @@ hide_advert: true
     更多信息：[添加跳过索引](/zh/clickstack/managing/performance-tuning#adding-skip-indexes)。
   </Step>
 
-  <Step>
-    ## 预计算重复聚合
-
+  <Step title="预计算重复聚合" id="materialized-views">
     当同一个聚合在仪表盘中反复运行时 (例如按错误率统计的热门服务、每个端点的 p99 延迟、每分钟请求数) ，materialized view 会在写入时计算结果，并将其写入一个小型 rollup 表。这样仪表盘查询的就是 rollup，而不是原始日志或链路追踪，成本要低得多。
 
     当仪表盘访问很频繁且底层表很大时，这种方式最能带来收益。代价是增加一些写入时 CPU 开销，以及需要维护第二张表。
@@ -63,9 +57,7 @@ hide_advert: true
     更多信息：[利用 materialized view](/zh/clickstack/managing/performance-tuning#exploiting-materialized-views)。
   </Step>
 
-  <Step>
-    ## 按你的访问模式选择主键
-
+  <Step title="按你的访问模式选择主键" id="choose-primary-key">
     主键决定了行在磁盘上的排序方式。针对该键前导列的过滤条件可以让 ClickHouse 直接定位到相关区域；如果过滤条件不是以前导列开头，就需要扫描整个分区。
 
     默认的日志键 `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` 更适合“查看最近 N 分钟内服务 X 发生了什么”。如果你的大多数查询都以其他列为前导 (例如租户 id、客户 id、区域) ，那么将主键改为以该列开头，会是你能做出的影响最大的改动。

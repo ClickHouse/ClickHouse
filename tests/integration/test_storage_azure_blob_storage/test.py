@@ -1121,6 +1121,12 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_union_schema_inference%'"
+    )
+    assert int(result) == 2
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1477,6 +1483,13 @@ def test_format_detection(cluster):
     )
 
     assert result == expected_result
+
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_format_detection%'"
+    )
+    assert int(result) > 0
 
     result = azure_query(
         node,

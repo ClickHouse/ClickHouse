@@ -1,0 +1,58 @@
+-- decimal vs integer comparisons (mixed pairs, non-constant columns)
+0	1
+1	1
+1
+1
+1
+1
+-- decimal vs decimal comparisons of different widths and scales
+1
+1
+1
+1
+-- DateTime64 vs other datetime-like types
+1
+1
+1
+-- comparison with constants on either side
+0	1
+1	0
+-- decimal comparison overflow behavior
+0
+0
+0
+-- isNotDistinctFrom over mixed decimal pairs
+1
+1
+-- wide integer arithmetic: values and result types
+8	UInt256
+-8	Int256
+340282366920938463463374607431768211455	UInt128
+170141183460469231731687303715884105727	Int128
+255	UInt256
+12.5	Float64
+-12.5	Float64
+-- wide integer division and modulo: values, result types, sign quirks
+14	UInt256
+-14	Int256
+-14	Int256
+14	UInt8
+-14	Int128
+2	UInt8
+-2	Int16
+-2	Int16
+2	UInt256
+0	Int256
+6	UInt8
+5	UInt8
+-- division exceptional cases must be preserved
+-- OrZero and OrNull variants over mixed wide pairs
+0
+\N
+\N
+-2
+1
+\N
+-- unsigned wrap quirks of the compute type are preserved
+100	UInt8
+115792089237316195423570985008687907853269984665640564039457584007913129639935	UInt256
