@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- ^ uses SYSTEM DROP QUERY CACHE, which would interfere with concurrent query cache tests.
+
 -- A subquery opts into the Planner-level query result cache (the `is_subquery = 1` entries) with its own
 -- query-level `SETTINGS use_query_cache`. A `UNION` subquery carries that clause on its `UnionNode`, and
 -- `Planner::buildPlanForUnionNode` has to honor it the same way `Planner::buildPlanForQueryNode` honors it

@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- ^ uses SYSTEM DROP QUERY CACHE, which would interfere with concurrent query cache tests.
+
 -- A query-level `SETTINGS` clause governs the whole (sub)query it belongs to, including the parts of
 -- the AST that syntactically precede it. For the *top-level* query `executeQuery` has already applied
 -- that clause to the context by the time the query result cache checks the query for non-deterministic
