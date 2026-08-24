@@ -545,9 +545,26 @@ public:
     /// step lives, `GroupExpression` pins the step a cached hash was computed from, and
     /// `cascadesIdentityEncodingsEqual` re-encodes both steps while both are alive.
     ///
+    /// Two of the witnessed members - `indexes` and `analyzed_result_ptr` - are `mutable` and populate
+    /// lazily while the step is being costed, so this step's encoding is *not* stable over its
+    /// lifetime: it differs before and after the analysis is memoized. That is fail-closed, because
+    /// equality is only ever decided by re-encoding two live steps (a hash cached before the analysis
+    /// goes stale and can only lose a merge, never invent one), and it is why the encoded bytes must
+    /// not be cached and compared against a step encoded at another time - see the framing contract in
+    /// `Processors/QueryPlan/StepIdentity.h`.
+    ///
     /// The pruning inputs were traced through `selectRangesToRead` (the member and the static
     /// overload), `buildIndexes`, `applyFilters` and `initializePipeline`; the trace is in the
     /// per-field entries below.
+    ///
+    /// Expected consequence, so that a zero merge count is not misread as a bug: nothing copies
+    /// `Indexes`, `analyzed_result_ptr` or `prepared_parts` from one step to another (`clone` rebuilds
+    /// the first, deep-copies the second and only shares the third), so two reads that have both been
+    /// analyzed are unconditionally unequal. What this opt-in can merge is pre-analysis reads that
+    /// share the part, mutation and metadata snapshots - a copy of the same step, or two reads built
+    /// over the same `SelectQueryInfo`. Making analyzed reads comparable would require a content
+    /// encoding of the analysis result and of `Indexes`, which is a much larger change than an opt-in;
+    /// until then the low merge count here is the intended trade-off, not a defect.
     ///
     /// Own fields:
     ///  - `data` - the database and table name are on the wire; the table UUID is **extras** so two
@@ -598,7 +615,8 @@ public:
     ///    assigned after the build (in `selectRangesToRead`), so all four flags are encoded
     ///    explicitly. Read-time pruning depends on this state directly: `initializePipeline` hands
     ///    `indexes->skip_indexes` and `indexes->key_condition_rpn_template` to
-    ///    `MergeTreeSkipIndexReader`.
+    ///    `MergeTreeSkipIndexReader`. `mutable` and lazily built, so this component's value changes
+    ///    over the step's lifetime (see the note on encoding stability above).
     ///  - `join_runtime_filters_for_index_analysis` - **extras** (content: count, then each
     ///    descriptor's `filter_id`, `key_column_name` and key type name, in container order).
     ///    Deliberately not serialized - a worker skips this pruning - but locally it prunes granules
@@ -624,7 +642,9 @@ public:
     ///    content (parts, mark ranges, sampling, read type) is intentionally not encoded: a witness is
     ///    sound, and encoding thousands of parts on every hash pass is not affordable. Note `clone`
     ///    deep-copies the analysis, so a clone and its original are unequal here - which is correct
-    ///    anyway, since `clone` also drops `indexes`.
+    ///    anyway, since `clone` also drops `indexes`. `mutable` and memoized by `selectRangesToRead`
+    ///    while the step is costed, so this component's value changes over the step's lifetime (see the
+    ///    note on encoding stability above).
     ///  - `shared_virtual_fields` - excluded: filled in `initializePipeline` from the analysis result
     ///    and the storage id, i.e. after optimization, and derived from encoded state.
     ///  - `index_read_tasks` - **predicate-gated** (false when non-empty). Direct text-index reads

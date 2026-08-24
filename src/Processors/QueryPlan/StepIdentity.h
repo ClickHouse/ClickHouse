@@ -19,6 +19,12 @@ struct SerializedSetsRegistry;
 /// same values across tags, and no re-split of adjacent variable-length components, can produce
 /// the same byte string. Tags are per-step-type constants, unique within the step; a step must
 /// append the same tags in the same order on every call.
+/// Only the tags and their order are stable, not the values: a step may hold `mutable` state that
+/// populates lazily (`ReadFromMergeTree` memoizes its index analysis and its analysis result while
+/// being costed), so the same step can encode to different bytes before and after that. Equality is
+/// therefore defined only over two live steps re-encoded at compare time, which is what
+/// `cascadesIdentityEncodingsEqual` does; a cached hash can go stale and only ever lose a merge.
+/// Do not cache the encoded bytes and compare them against a step encoded at another time.
 class CascadesIdentityExtras
 {
 public:
