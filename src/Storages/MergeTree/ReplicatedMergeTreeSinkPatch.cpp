@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Interpreters/InsertDeduplication.h>
 
 namespace DB
@@ -14,13 +13,13 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     StorageReplicatedMergeTree & storage_,
-    PatchPartMetadata patch_metadata_,
+    StorageMetadataPtr metadata_snapshot_,
     LightweightUpdateHolderInKeeper update_holder_,
     ContextPtr context_)
     : ReplicatedMergeTreeSink(
         /*async_insert=*/ false,
         storage_,
-        patch_metadata_.metadata,
+        metadata_snapshot_,
         /*quorum=*/ 0,
         /*quorum_timeout_ms=*/ 0,
         /*max_parts_per_block=*/ 0,
@@ -28,7 +27,6 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
         /*majority_quorum=*/ false,
         std::move(context_))
     , update_holder(std::move(update_holder_))
-    , patch_metadata(std::move(patch_metadata_))
 {
     deduplicate = false;
 }
@@ -83,9 +81,9 @@ TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartiti
 
     auto partition_id = getPartitionIdForPatch(block.partition);
     auto data_version = getDataVersionInPartition(partition_id);
-    auto patch_part_index = buildPatchPartIndex(*block.block, data_version, patch_metadata);
 
-    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(patch_part_index), context);
+    auto source_parts_set = buildSourceSetForPatch(*block.block, data_version);
+    return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }
 
 UInt64 ReplicatedMergeTreeSinkPatch::getDataVersionInPartition(const String & partition_id) const

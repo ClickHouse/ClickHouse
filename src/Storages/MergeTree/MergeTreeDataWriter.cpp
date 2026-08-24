@@ -704,25 +704,25 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     bool may_have_leftover)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    PatchPartIndex patch_part_index,
+    SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
     bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     BlockWithPartition & block_with_partition,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    std::optional<PatchPartIndex> patch_part_index,
+    SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
     UInt64 block_number,
     bool may_have_leftover)
@@ -747,8 +747,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
-    if (patch_part_index && !patch_part_index->empty())
-        new_part_info.mutation = patch_part_index->getMaxDataVersion();
+    if (!source_parts_set.empty())
+        new_part_info.mutation = source_parts_set.getMaxDataVersion();
 
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -966,10 +966,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-
-    if (patch_part_index)
-        new_data_part->setPatchPartIndex(std::move(*patch_part_index));
-
+    new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);

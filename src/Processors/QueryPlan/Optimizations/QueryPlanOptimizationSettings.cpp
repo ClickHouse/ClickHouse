@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
+    extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -63,6 +64,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
+    extern const SettingsBool query_plan_optimize_lazy_materialization_for_file;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_volume_reducing_functions;
     extern const SettingsBool optimize_prewhere_after_pushdown;
@@ -218,6 +220,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
+    creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
@@ -295,6 +298,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
+    optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
