@@ -12,6 +12,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/SwapHelper.h>
+#include <mutex>
 
 
 namespace CurrentMetrics
@@ -251,6 +252,10 @@ private:
 
     ReadFromFileSegmentStatePtr state;
     ReadInfo info;
+
+    /// Guards the lazily initialized file_size: tryGetFileSize may be called from readBigAt
+    /// concurrently with the sequential read path.
+    mutable std::mutex file_size_mutex;
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;

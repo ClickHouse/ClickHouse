@@ -61,7 +61,6 @@ type mismatch result:	9
 arrayJoin in projection disables pushdown:	1
 arrayJoin in projection result count:	10
 view QUALIFY disables pushdown:	1
-view SETTINGS limit disables pushdown:	1
 prefer_column_name_to_alias disables pushdown:	1
 view SETTINGS prefer_column_name_to_alias disables pushdown:	1
 definer profile limit disables pushdown:	1

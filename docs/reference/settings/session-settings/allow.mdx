@@ -70,6 +70,18 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 
 If it is set to true, then a user is allowed to executed DDL queries.
 
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_delta_kernel_rs`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}]}]}/>
+
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -208,6 +220,15 @@ When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of num
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Don't allow creating MVs referencing nonexistent columns or tables"}]}, {"id": "row-2","items": [{"label": "24.9"},{"label": "1"},{"label": "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"}]}]}/>
 
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
+
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to control metadata-only ALTER for named Tuple subfield additions."}]}]}/>
+
+If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
+Set to false to force the old full-mutation behavior.
 
 ## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
