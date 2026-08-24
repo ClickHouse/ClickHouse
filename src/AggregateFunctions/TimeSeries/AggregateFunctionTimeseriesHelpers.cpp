@@ -253,6 +253,8 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_timeSeriesRateToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -342,6 +344,8 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The value is the total extrapolated increase of a counter over the window. A decrease between consecutive samples is treated as a counter reset and counted towards the increase, so the result reflects the cumulative growth of the counter even when it restarts from zero.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -430,6 +434,8 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like delta](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) from this data on a regular time grid described by start timestamp, end timestamp and step.
 For each point on the grid the samples for calculating `delta` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -517,6 +523,8 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     /// timeSeriesInstantRateToGrid documentation
     FunctionDocumentation::Description description_timeSeriesInstantRateToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `irate` are considered within the specified time window.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
@@ -607,6 +615,8 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) from this data on a regular time grid described by start timestamp, end timestamp and step.
 For each point on the grid the samples for calculating `idelta` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -695,6 +705,8 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
     FunctionDocumentation::Description description_timeSeriesDerivToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like derivative](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `deriv` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -780,6 +792,8 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     /// timeSeriesPredictLinearToGrid documentation
     FunctionDocumentation::Description description_timeSeriesPredictLinearToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like linear prediction](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) with a specified prediction timestamp offset from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `predict_linear` are considered within the specified time window.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
@@ -872,6 +886,8 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
     FunctionDocumentation::Description description_timeSeriesChangesToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like changes](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `changes` are considered within the specified time window.
 
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
@@ -957,6 +973,8 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
     /// timeSeriesResetsToGrid documentation
     FunctionDocumentation::Description description_timeSeriesResetsToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like resets](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `resets` are considered within the specified time window.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
@@ -1046,6 +1064,8 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
 Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (within the specified time window) sample is chosen.
 
 Alias: `timeSeriesLastToGrid`.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
