@@ -5,7 +5,10 @@
 -- stateful function such as `rowNumberInAllBlocks`, or a function that is not deterministic in
 -- the scope of a query such as `blockNumber`, must not be replayed there.
 
-SET enable_analyzer = 1, query_plan_optimize_lazy_materialization = true, query_plan_max_limit_for_lazy_materialization = 100, max_threads = 1;
+-- The absolute values of `rowNumberInAllBlocks` in the reference depend on how rows are numbered
+-- on a single replica, so pin `enable_parallel_replicas = 0` (under parallel replicas the rows
+-- are numbered differently, identically with and without the optimization).
+SET enable_analyzer = 1, query_plan_optimize_lazy_materialization = true, query_plan_max_limit_for_lazy_materialization = 100, max_threads = 1, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS test_lazy_alias_stateful SYNC;
 CREATE TABLE test_lazy_alias_stateful
