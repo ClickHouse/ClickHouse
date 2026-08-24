@@ -371,6 +371,46 @@ std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
     return new_join_step;
 }
 
+/// Registers the pushdown alternative in the memo: the pushed aggregation becomes its own group
+/// over the join's pushed input, the rebuilt join a group over (pushed aggregation, other input).
+/// With `merge_step` (variant A) the merge becomes the alternative in the source group; without
+/// (variant B, full pushdown) the rebuilt join itself does. The top expression is marked with the
+/// rule so the transformation is not re-applied to it.
+GroupExpressionPtr registerPushdownAlternative(
+    Memo & memo,
+    const IOptimizationRule & rule,
+    const GroupExpressionPtr & source_expression,
+    const GroupExpressionPtr & join_expression,
+    size_t pushed_input_index,
+    GroupExpressionPtr pushed_aggregation_expression,
+    GroupExpressionPtr join_alternative_expression,
+    QueryPlanStepPtr merge_step) /// nullptr => full pushdown
+{
+    pushed_aggregation_expression->inputs = {join_expression->inputs[pushed_input_index]};
+    GroupId aggregation_group_id = memo.addGroup(pushed_aggregation_expression);
+
+    join_alternative_expression->inputs = join_expression->inputs;
+    join_alternative_expression->inputs[pushed_input_index] = {aggregation_group_id, {}};
+
+    GroupExpressionPtr top_expression;
+    if (merge_step)
+    {
+        GroupId join_group_id = memo.addGroup(join_alternative_expression);
+        top_expression = std::make_shared<GroupExpression>(std::move(merge_step));
+        top_expression->inputs = {{join_group_id, {}}};
+    }
+    else
+        top_expression = std::move(join_alternative_expression);
+
+    top_expression->setApplied(rule, {});
+    /// The pushed-aggregation group is new, so the top expression is a duplicate only when the
+    /// same pushdown was already registered. Return nothing then, so the dropped expression is
+    /// not explored.
+    if (!memo.getGroup(source_expression->group_id)->addLogicalExpression(top_expression))
+        return nullptr;
+    return top_expression;
+}
+
 GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     const GroupExpressionPtr & source_expression,
     const MatchedJoin & match,
@@ -509,8 +549,8 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
         GroupExpressionPtr pushed_expression = std::make_shared<GroupExpression>(std::move(partial_step));
         GroupExpressionPtr join_alternative = std::make_shared<GroupExpression>(std::move(new_join_step));
-        return addEagerAggregationFullPushdown(memo, source_expression, match.join_expression, pushed_input_index,
-            std::move(pushed_expression), std::move(join_alternative));
+        return registerPushdownAlternative(memo, *this, source_expression, match.join_expression, pushed_input_index,
+            std::move(pushed_expression), std::move(join_alternative), /*merge_step=*/nullptr);
     }
 
     auto merge_params = agg_step.getParams();
@@ -536,7 +576,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
     GroupExpressionPtr partial_expression = std::make_shared<GroupExpression>(std::move(partial_step));
     GroupExpressionPtr join_alternative = std::make_shared<GroupExpression>(std::move(new_join_step));
-    return addEagerAggregationSplit(memo, source_expression, match.join_expression, pushed_input_index,
+    return registerPushdownAlternative(memo, *this, source_expression, match.join_expression, pushed_input_index,
         std::move(partial_expression), std::move(join_alternative), std::move(merge_step));
 }
 

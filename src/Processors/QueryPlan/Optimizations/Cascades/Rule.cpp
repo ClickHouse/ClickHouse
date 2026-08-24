@@ -28,39 +28,6 @@ GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupE
     return final_expression;
 }
 
-GroupExpressionPtr IOptimizationRule::addEagerAggregationSplit(Memo & memo, const GroupExpressionPtr & source_expression,
-    const GroupExpressionPtr & join_expression, size_t pushed_input_index,
-    GroupExpressionPtr partial_expression, GroupExpressionPtr join_alternative_expression,
-    QueryPlanStepPtr merge_step) const
-{
-    partial_expression->inputs = {join_expression->inputs[pushed_input_index]};
-    GroupId partial_group_id = memo.addGroup(partial_expression);
-
-    join_alternative_expression->inputs = join_expression->inputs;
-    join_alternative_expression->inputs[pushed_input_index] = {partial_group_id, {}};
-    GroupId join_group_id = memo.addGroup(join_alternative_expression);
-
-    auto merge_expression = std::make_shared<GroupExpression>(std::move(merge_step));
-    merge_expression->inputs = {{join_group_id, {}}};
-    merge_expression->setApplied(*this, {});
-    memo.getGroup(source_expression->group_id)->addLogicalExpression(merge_expression);
-    return merge_expression;
-}
-
-GroupExpressionPtr IOptimizationRule::addEagerAggregationFullPushdown(Memo & memo, const GroupExpressionPtr & source_expression,
-    const GroupExpressionPtr & join_expression, size_t pushed_input_index,
-    GroupExpressionPtr pushed_aggregation_expression, GroupExpressionPtr join_alternative_expression) const
-{
-    pushed_aggregation_expression->inputs = {join_expression->inputs[pushed_input_index]};
-    GroupId aggregation_group_id = memo.addGroup(pushed_aggregation_expression);
-
-    join_alternative_expression->inputs = join_expression->inputs;
-    join_alternative_expression->inputs[pushed_input_index] = {aggregation_group_id, {}};
-    join_alternative_expression->setApplied(*this, {});
-    memo.getGroup(source_expression->group_id)->addLogicalExpression(join_alternative_expression);
-    return join_alternative_expression;
-}
-
 void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
     Memo & memo, std::vector<GroupExpressionPtr> & result) const
 {
