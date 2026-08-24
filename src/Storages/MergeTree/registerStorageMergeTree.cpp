@@ -1246,9 +1246,14 @@ ORDER BY expr
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
 [TTL expr
-    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|RECOMPRESS codec_name|CLEAR INDEX index_name [, ...] ]
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|RECOMPRESS codec_name|CLEAR INDEX index_name]
     [WHERE conditions]
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
+    [, expr
+        [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|RECOMPRESS codec_name|CLEAR INDEX index_name]
+        [WHERE conditions]
+        [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
+    ...] ]
 [SETTINGS name = value, ...]
 ```
 
@@ -1964,9 +1969,14 @@ Table can have an expression for removal of expired rows, and multiple expressio
 
 ```sql
 TTL expr
-    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'|CLEAR INDEX index_name] ...
+    [DELETE|RECOMPRESS codec_name|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
+    [, expr
+        [DELETE|RECOMPRESS codec_name|TO DISK 'aaa'|TO VOLUME 'bbb'|CLEAR INDEX index_name]
+        [WHERE conditions]
+        [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
+    ...]
 ```
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
