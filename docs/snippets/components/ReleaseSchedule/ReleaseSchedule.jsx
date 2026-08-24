@@ -38,7 +38,12 @@ const ReleaseSchedule = ({ releases = [] }) => {
   const DateCell = ({ date, note, status }) => (
     <span style={{ whiteSpace: "nowrap" }}>
       {status && <StatusIndicator status={status} />}
-      {note ? <Tooltip tip={note}>{date}</Tooltip> : date}
+      {date}
+      {note && (
+        <span style={{ display: "inline-flex", marginLeft: 4, verticalAlign: "middle" }}>
+          <Tooltip tip={note}><span><Icon icon="circle-info" size={12} /></span></Tooltip>
+        </span>
+      )}
     </span>
   );
 
