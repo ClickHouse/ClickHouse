@@ -58,10 +58,16 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
 
     /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
+    /// A part can hold no columns at all: a mutation drops every column it was written with, while
+    /// the columns the table has now were added later and were never materialised in it. Then there
+    /// is no first column and no rest of them, and `front()` on the empty list would be undefined.
     const auto & part_columns = getColumns();
-    auto first_column_file = getFileNameForColumn(part_columns.front());
-    if (first_column_file)
-        preferred_order.push_back(*first_column_file + getMarksFileExtension());
+    if (!part_columns.empty())
+    {
+        auto first_column_file = getFileNameForColumn(part_columns.front());
+        if (first_column_file)
+            preferred_order.push_back(*first_column_file + getMarksFileExtension());
+    }
 
     preferred_order.push_back("primary" + getIndexExtension(true));
     preferred_order.push_back("primary" + getIndexExtension(false));
@@ -76,11 +82,14 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     }
 
     /// Move all marks for the rest of columns before all data files.
-    for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
+    if (!part_columns.empty())
     {
-        auto column_file = getFileNameForColumn(*column_it);
-        if (column_file)
-            preferred_order.push_back(*column_file + getMarksFileExtension());
+        for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
+        {
+            auto column_file = getFileNameForColumn(*column_it);
+            if (column_file)
+                preferred_order.push_back(*column_file + getMarksFileExtension());
+        }
     }
 
     /// Files for projection columns
