@@ -23,7 +23,6 @@ jobs:
       - name: Check out trusted base revision
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Request documentation team reviews
@@ -42,7 +41,6 @@ jobs:
       - name: Check out trusted base revision
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Request documentation team reviews
