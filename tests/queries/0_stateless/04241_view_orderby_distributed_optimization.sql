@@ -9,6 +9,15 @@
 -- which would collide across concurrent runs (e.g. the flaky check).
 
 SET allow_experimental_analyzer = 1;
+-- This test targets `pushOrderByIntoView` specifically. Disable the unrelated
+-- `optimize_trivial_view_pushdown_to_distributed` (default on): it ships the
+-- whole outer query (including modifiers like FINAL/SAMPLE) to the underlying
+-- Distributed table's real storage rather than synthesizing a new ORDER BY
+-- reference, so it has no alias-ambiguity or FINAL-support hazard to guard
+-- against and can safely fire (or legitimately error, for a storage that
+-- rejects FINAL) in cases this test exercises to check `pushOrderByIntoView`'s
+-- own, narrower safety guards.
+SET optimize_trivial_view_pushdown_to_distributed = 0;
 
 DROP TABLE IF EXISTS test_local_04241;
 DROP TABLE IF EXISTS test_distributed_04241;

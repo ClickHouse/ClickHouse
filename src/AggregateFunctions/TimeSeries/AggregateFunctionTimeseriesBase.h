@@ -11,6 +11,9 @@
 
 #include <base/sort.h>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -106,6 +109,8 @@ public:
         , odd_bucket_step(bucketStep(true, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_end_time(firstBucketEndTimestamp(start_timestamp_, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_is_clamped(firstBucketIsClamped(first_bucket_end_time, even_bucket_width))
+        , fast_bucket_math(canUseFastBucketMath(start_timestamp, end_timestamp, step, window))
+        , step_divider(static_cast<Int64>(step) > 0 ? static_cast<Int64>(step) : 1)
     {
     }
 
@@ -415,6 +420,11 @@ protected:
     const TimestampType first_bucket_end_time{};  /// End timestamp of bucket #0
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
 
+    /// For grid parameters bounded by 2^61 only.
+    const bool fast_bucket_math{};
+    /// Reciprocal of `step` for the fast path (`step` is fixed at construction).
+    const libdivide::divider<Int64> step_divider{1};
+
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
     /// copyable or declaring `is_position_independent`.
@@ -706,6 +716,62 @@ private:
         return static_cast<size_t>(bucket_index);
     }
 
+    /// Whether all the arithmetic in `bucketIndexForTimestampFast` fits in Int64 for every sample
+    /// that passes its range checks. Bounding all grid parameters by 2^61 leaves headroom for the
+    /// sums and products of two such values. A single-point grid (`start == end`, `step == 0`,
+    /// see `checkStep`) has nothing to divide and uses the generic path.
+    static bool canUseFastBucketMath(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
+    {
+        constexpr Int128 bound = Int128(1) << 61;
+        const Int128 start_128 = static_cast<Int128>(static_cast<Int64>(start));
+        const Int128 end_128 = static_cast<Int128>(static_cast<Int64>(end));
+        const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step_));
+        const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window_));
+        return (-bound < start_128 && start_128 < bound) && (-bound < end_128 && end_128 < bound)
+            && (0 < step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
+    }
+
+    /// Same as `bucketIndexForTimestamp` with all arithmetic in Int64. Requires `fast_bucket_math`.
+    size_t ALWAYS_INLINE bucketIndexForTimestampFast(const TimestampType timestamp) const
+    {
+        const Int64 ts = static_cast<Int64>(timestamp);
+        /// Samples at or below `start - window` are out of window for every grid point.
+        if (ts > static_cast<Int64>(end_timestamp) || ts <= static_cast<Int64>(start_timestamp) - static_cast<Int64>(window))
+            return NO_BUCKET;
+
+        const Int64 offset = ts - static_cast<Int64>(start_timestamp);
+        const Int64 step_64 = static_cast<Int64>(step);
+
+        Int64 unclamped_grid_index = offset / step_divider;
+        if (offset - unclamped_grid_index * step_64 > 0)
+            ++unclamped_grid_index;
+
+        const Int64 grid_index = std::max<Int64>(unclamped_grid_index, 0);
+        if (ts + static_cast<Int64>(window) <= static_cast<Int64>(start_timestamp) + grid_index * step_64)
+            return NO_BUCKET;
+
+        const Int64 leading_buckets = static_cast<Int64>(buckets_per_first_window);
+        Int64 bucket_index = 0;
+        if (window_remainder == 0)
+        {
+            bucket_index = unclamped_grid_index + leading_buckets - 1;
+        }
+        else
+        {
+            const Int64 remainder = static_cast<Int64>(window_remainder);
+            const bool before_split_point = (offset + remainder) <= (unclamped_grid_index * step_64);
+            bucket_index = 2 * unclamped_grid_index + leading_buckets - 1 - (before_split_point ? 1 : 0);
+        }
+
+        chassert(bucket_index >= 0 && bucket_index < static_cast<Int64>(bucket_count));
+        return static_cast<size_t>(bucket_index);
+    }
+
+    size_t ALWAYS_INLINE bucketIndex(const TimestampType timestamp) const
+    {
+        return fast_bucket_math ? bucketIndexForTimestampFast(timestamp) : bucketIndexForTimestamp(timestamp);
+    }
+
     /// Returns a half-open range [first, last) of bucket indices that fall in a grid point's window. The range has
     /// `buckets_per_window` buckets, except early windows that are truncated at 0 by the dropped leading buckets.
     std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
@@ -766,7 +832,7 @@ private:
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        const size_t bucket_index = bucketIndexForTimestamp(timestamp);
+        const size_t bucket_index = bucketIndex(timestamp);
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
@@ -774,24 +840,69 @@ private:
         bucket.add(timestamp, value);
     }
 
+    /// The batch loops cache the last bucket: samples arrive sorted by timestamp within a series,
+    /// so consecutive samples usually land in the same bucket and skip the hash-map lookup.
+    /// Inserting into the map can invalidate the cached pointer, but an insert happens only on
+    /// a bucket change, which re-acquires the pointer anyway.
     void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end) const
     {
+        auto & buckets = data(place)->buckets;
+        size_t cached_bucket_index = NO_BUCKET;
+        Bucket * cached_bucket = nullptr;
         for (size_t i = start; i < end; ++i)
-            add(place, timestamp_ptr[i], value_ptr[i]);
+        {
+            const size_t bucket_index = bucketIndex(timestamp_ptr[i]);
+            if (bucket_index == NO_BUCKET)
+                continue;
+            if (bucket_index != cached_bucket_index)
+            {
+                cached_bucket = &buckets[bucket_index];
+                cached_bucket_index = bucket_index;
+            }
+            cached_bucket->add(timestamp_ptr[i], value_ptr[i]);
+        }
     }
 
     void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end) const
     {
+        auto & buckets = data(place)->buckets;
+        size_t cached_bucket_index = NO_BUCKET;
+        Bucket * cached_bucket = nullptr;
         for (size_t i = start; i < end; ++i)
-            if (!null_map[i])
-                add(place, timestamp_ptr[i], value_ptr[i]);
+        {
+            if (null_map[i])
+                continue;
+            const size_t bucket_index = bucketIndex(timestamp_ptr[i]);
+            if (bucket_index == NO_BUCKET)
+                continue;
+            if (bucket_index != cached_bucket_index)
+            {
+                cached_bucket = &buckets[bucket_index];
+                cached_bucket_index = bucket_index;
+            }
+            cached_bucket->add(timestamp_ptr[i], value_ptr[i]);
+        }
     }
 
     void addManyConditional(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) const
     {
+        auto & buckets = data(place)->buckets;
+        size_t cached_bucket_index = NO_BUCKET;
+        Bucket * cached_bucket = nullptr;
         for (size_t i = start; i < end; ++i)
-            if (condition_map[i])
-                add(place, timestamp_ptr[i], value_ptr[i]);
+        {
+            if (!condition_map[i])
+                continue;
+            const size_t bucket_index = bucketIndex(timestamp_ptr[i]);
+            if (bucket_index == NO_BUCKET)
+                continue;
+            if (bucket_index != cached_bucket_index)
+            {
+                cached_bucket = &buckets[bucket_index];
+                cached_bucket_index = bucket_index;
+            }
+            cached_bucket->add(timestamp_ptr[i], value_ptr[i]);
+        }
     }
 
     /// `flag_value_to_include` parameter determines which rows are included into result.

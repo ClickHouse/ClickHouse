@@ -76,6 +76,7 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
     hash.update(static_cast<int>(version));
     hash.update(static_cast<int>(string_serialization_version));
     hash.update(static_cast<int>(nullable_serialization_version));
+    hash.update(static_cast<int>(map_serialization_version));
     hash.update(propagate_types_serialization_versions_to_nested_types);
 }
 

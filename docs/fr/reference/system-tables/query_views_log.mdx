@@ -18,14 +18,14 @@ Contient des informations sur les vues dépendantes exécutées lors de l’exé
 
 Pour activer la journalisation :
 
-1. Configurez les paramètres dans la section [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings#query_views_log).
-2. Définissez [log&#95;query&#95;views](/fr/reference/settings/session-settings#log_query_views) sur 1.
+1. Configurez les paramètres dans la section [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings/query#query_views_log).
+2. Définissez [log&#95;query&#95;views](/fr/reference/settings/session-settings/log-query#log_query_views) sur 1.
 
-L’intervalle de vidage des données est défini dans le paramètre `flush_interval_milliseconds` de la section des paramètres du serveur [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings#query_views_log). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
+L’intervalle de vidage des données est défini dans le paramètre `flush_interval_milliseconds` de la section des paramètres du serveur [query&#95;views&#95;log](/fr/reference/settings/server-settings/settings/query#query_views_log). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
 
 ClickHouse ne supprime pas automatiquement les données de la table. Voir [Introduction](/fr/reference/system-tables/overview#system-tables-introduction) pour plus de détails.
 
-Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/reference/settings/session-settings#log_queries_probability)) pour réduire le nombre de requêtes enregistrées dans la table `query_views_log`.
+Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/reference/settings/session-settings/log-queries#log_queries_probability)) pour réduire le nombre de requêtes enregistrées dans la table `query_views_log`.
 
 <div id="columns">
   ## Colonnes

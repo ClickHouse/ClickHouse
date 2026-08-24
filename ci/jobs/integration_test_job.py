@@ -149,6 +149,7 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
         "docker_compose_iceberg_hms_catalog.yml",
         "docker_compose_iceberg_lakekeeper_catalog.yml",
         "docker_compose_iceberg_nessie_catalog.yml",
+        "docker_compose_iceberg_seaweedfs_catalog.yml",
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
@@ -1002,7 +1003,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd

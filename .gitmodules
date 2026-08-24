@@ -69,7 +69,7 @@
 	url = https://github.com/ClickHouse/h3
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/simdjson/simdjson
+	url = https://github.com/ClickHouse/simdjson
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse/rapidjson

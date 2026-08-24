@@ -192,8 +192,8 @@ Puis créez pg&#95;clickhouse :
 CREATE EXTENSION pg_clickhouse;
 ```
 
-Créez un foreign server à l’aide du nom d’hôte, du port et du nom de la base de données de votre
-base ClickHouse.
+Créez un serveur foreign à l’aide du nom d’hôte, du port et du nom de la base de données de votre
+base de données ClickHouse.
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -202,6 +202,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 Ici, nous avons choisi d&#39;utiliser le driver binaire, qui utilise le protocole
 binaire de ClickHouse. Vous pouvez également utiliser le driver &quot;http&quot;, qui utilise l&#39;interface HTTP.
+
+<Note>
+  Si vous utilisez la ClickHouse Cloud console pour exécuter du SQL, accordez à l&#39;utilisateur admin de la console l&#39;accès au serveur foreign :
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 Ensuite, mappez un utilisateur PostgreSQL à un utilisateur ClickHouse. Le moyen le plus simple de procéder
 consiste à associer l&#39;utilisateur PostgreSQL actuel à un utilisateur distant pour le

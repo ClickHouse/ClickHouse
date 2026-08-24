@@ -69,6 +69,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
@@ -359,10 +363,49 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
+        /// Run partition/PK analysis up front: statistics must be composed over the parts
+        /// surviving pruning, not over all active parts (issue #110281), and the index-based
+        /// fallback below needs the same analysis result anyway.
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
+        if (!analyzed_result)
+        {
+            const auto & settings = reading->getContext()->getSettingsRef();
+            const bool has_throwing_row_limit
+                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+
+            /// Join-order estimation needs these ranges before `optimizeReadInOrder` runs. Both variants
+            /// perform the same partition/PK/index analysis; the normal one memoizes its result for later
+            /// consumers. Since `optimizeReadInOrder` may exempt the final read from row limits, under
+            /// throwing limits analyze locally without checking them, then let the final read analyze and
+            /// memoize the ranges after its input order is known.
+            analyzed_result = has_throwing_row_limit
+                ? reading->selectRangesToReadForEstimation()
+                : reading->selectRangesToRead();
+        }
+
+        /// `has_exact_ranges` is a deterministic index-analysis result, not a confidence estimate.
+        /// If it selects zero rows, the read is provably empty. Early empty returns have no
+        /// `index_stats`, so preserve zero here instead of degrading to unknown in the fallback.
+        if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+
+        /// `STREAM` reads intentionally defer index analysis to `MergeTreeCommitOrderSequentialSource`,
+        /// so the empty `AnalysisResult` is not an exact empty relation. Do not expose its sentinel
+        /// zero as a join cardinality estimate.
+        if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
+            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
@@ -381,10 +424,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
-        /// No column statistics: the row count comes from the primary index, or cannot be derived at all.
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
 
@@ -1235,7 +1274,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
                 && (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness)
                     || !MergeJoin::isSupported(reverseJoinKind(join_operator.kind), join_operator.strictness));
-            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness) && !should_worry_about_partial_merge_join;
+            bool skip_flip_any_join = join_settings.join_any_take_last_row && join_operator.strictness == JoinStrictness::Any;
+            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness)
+                && !should_worry_about_partial_merge_join
+                && !skip_flip_any_join;
             if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
                 flip_join = false;
 

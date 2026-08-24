@@ -390,7 +390,18 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
+    {
+        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
+        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
+        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
+        if (cancelled)
+        {
+            Packet res;
+            res.type = Protocol::Server::EndOfStream;
+            return res;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+    }
 
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;

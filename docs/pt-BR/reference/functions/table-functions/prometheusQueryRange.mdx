@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - O horário de término do intervalo de avaliação.
 * `step` - O passo usado para percorrer o tempo de avaliação de `start_time` até `end_time` (inclusive).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
@@ -60,7 +60,7 @@ Seletores instantâneos, seletores de intervalo, correspondências de labels (`=
 
 | Categoria     | Funções                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| Intervalo     | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Intervalo     | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | Matemática    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | Trigonometria | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

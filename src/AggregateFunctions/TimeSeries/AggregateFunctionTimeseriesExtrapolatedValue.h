@@ -95,7 +95,6 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
         /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
         /// not the two-stacks path which combines values out of time order.
@@ -111,10 +110,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples (visited in ascending order) into a per-bucket summary; the bucket's
-            /// latest timestamp is the summary's `last_timestamp`.
             Summary summary;
-            samples.forEachSampleSorted([&summary](TimestampType timestamp, ValueType value)
+            samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
                 if (summary.count == 0)
                 {
@@ -129,7 +126,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 summary.last_timestamp = timestamp;
                 summary.last_value = value;
                 ++summary.count;
-            }, temp_buffer);
+            });
             add(std::move(summary), bucket_end_timestamp);
         }
 

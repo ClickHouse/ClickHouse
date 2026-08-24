@@ -68,6 +68,15 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const Aggregator::Params & getParams() const { return params; }
+    bool isFinal() const { return final; }
+
+    /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
+    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    {
+        params.bucket_top_k = n;
+        params.bucket_top_k_ascending = ascending;
+        params.bucket_top_k_count_index = count_index;
+    }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
@@ -86,6 +95,9 @@ public:
 
     bool canUseProjection() const;
     bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
+    /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
+    /// for the trace log.
+    const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)

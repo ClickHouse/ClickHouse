@@ -1044,6 +1044,7 @@ public:
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
+            ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
             /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
@@ -1055,8 +1056,9 @@ public:
             auto test_pos = pos;
             ++test_pos;
 
-            /// End of query
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
+            /// so a comma in front of it is unambiguously a trailing comma.
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))

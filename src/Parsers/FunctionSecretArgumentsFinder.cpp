@@ -861,7 +861,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
     else if (engine_name == "NATS")
     {
-        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+        /// NATS(named_collection, nats_password = 'password', ...)
         findNATSTableEngineSecretArguments();
     }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
@@ -876,8 +876,9 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
 void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
-    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
-    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
+    ///      [, nats_credential_file = '/path'] [, nats_url = 'nats://user:password@host:4222'], ...)
+    /// The removed `nats_credentials` setting is masked too: the query is formatted for logging
+    /// before the overrides are validated, so the old spelling must not leak the JWT/seed.
     /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
     /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
@@ -1096,6 +1097,16 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         /// PostgreSQL('host:port', 'database', 'user', 'password')
+        findMySQLDatabaseSecretArguments();
+    }
+    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    {
+        /// Remote('addresses_expr', 'database', 'user', 'password')
+        /// RemoteSecure(...) - same as Remote(...)
+        /// The password is the last positional argument (or `password = ...` in the named-collection
+        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
         findMySQLDatabaseSecretArguments();
     }
     else if (engine_name == "S3")

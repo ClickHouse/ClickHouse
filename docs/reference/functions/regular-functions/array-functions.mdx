@@ -5226,7 +5226,8 @@ zero-padding to a longer power of two; it is **rejected with an exception** rath
 returning a longer vector. Use a supported length, or pass `output_dims` to compute a truncated
 projection of an arbitrary length (see below).
 
-The result has the same element type as the input; an empty input array returns an empty array.
+The result has the same element type as the input; an empty input array returns an empty array
+(`output_dims` does not apply to it).
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.

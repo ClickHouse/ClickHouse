@@ -49,12 +49,53 @@ function run_with_retry()
     return 1
 }
 
+# Only the upgrade check needs this: it installs a released version, and a release is
+# a set of packages. The stress test itself takes the plain binary - see `install_binary`.
 function install_packages()
 {
     dpkg -i "$1"/clickhouse-common-static_*.deb
     dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
     dpkg -i "$1"/clickhouse-server_*.deb
     dpkg -i "$1"/clickhouse-client_*.deb
+}
+
+# Set up the same paths the packages own, but from a single `clickhouse` binary, which is
+# built and uploaded for every build type anyway. Packages are assembled only for the
+# release builds, the ones users install and the ones the `Install packages` check covers.
+#
+# The binary keeps the place it was downloaded to and everything else points at it: the
+# artifact is a self-extracting archive that unpacks over itself, so it needs the room for
+# the unpacked binary once, on the volume it already occupies.
+function install_binary()
+{
+    local binary
+    binary="$(realpath "$1")"
+
+    chmod +x "$binary"
+    local name
+    for name in clickhouse ch chc chl \
+        clickhouse-benchmark clickhouse-client clickhouse-compressor \
+        clickhouse-disks clickhouse-extract-from-config clickhouse-format clickhouse-keeper \
+        clickhouse-keeper-client clickhouse-keeper-converter clickhouse-local \
+        clickhouse-obfuscator clickhouse-server clickhouse-chdig chdig
+    do
+        ln -sf "$binary" "/usr/bin/$name"
+    done
+
+    # The `google/*.proto` files that the packages carry in `/usr/share/clickhouse/protos`
+    # come with `protoc` in the image, the same way the functional tests take them.
+    mkdir -p /usr/share/clickhouse
+    ln -sf /usr/local/include /usr/share/clickhouse/protos
+
+    # `configure` replaces most of the config tree below, but the server does not start
+    # without these two, and they are what the server package installs.
+    cp /repo/programs/server/config.xml /repo/programs/server/users.xml /etc/clickhouse-server/
+
+    # Unpack the self-extracting archive here, before anything else reaches for the binary.
+    # Decompressing a sanitizer build takes a while, and left to the first server start it
+    # would count against the wait for the pid file, while any `clickhouse local` running
+    # meanwhile would race a half-written binary.
+    clickhouse-server --version
 }
 
 function configure()

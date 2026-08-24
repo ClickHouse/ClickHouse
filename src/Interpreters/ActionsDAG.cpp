@@ -3902,6 +3902,16 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
         auto it = node_name_to_input_node_column.find(node->result_name);
         if (it == node_name_to_input_node_column.end())
             return nullptr;
+        /// The replacement must not change the type: the parent FUNCTION nodes are rebuilt with
+        /// their existing function_base, so a differently-typed input makes the DAG inconsistent
+        /// (the declared result type no longer matches what the function returns for the new
+        /// argument types). This happens when a predicate typed against a view header is pushed
+        /// down to the underlying storage where a column of the same name has another type, e.g.
+        /// `engine` is `Nullable(String)` in the `information_schema.tables` view but `String` in
+        /// `system.tables`. Keeping the original input is safe: the subtree is then just not
+        /// evaluated over the storage columns, and the filter is still applied upstream.
+        if (!it->second.type->equals(*node->result_type))
+            return nullptr;
         return &it->second;
     };
 

@@ -213,6 +213,7 @@ void Suggest::load(IServerConnection & connection,
 {
     try
     {
+        last_exchange_ended_in_sync = false;
         auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
         fetch(connection, timeouts, suggestion_query, client_info);
     }
@@ -247,10 +248,16 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 continue;
 
             case Protocol::Server::Exception:
+                /// A server exception is the terminal packet of a protocol-consistent exchange:
+                /// the query was sent with the terminating empty block (`with_pending_data` is
+                /// false), and the server drains what it has not read yet and preserves the
+                /// connection. Unlike a transport failure, it leaves the connection in sync.
+                last_exchange_ended_in_sync = true;
                 packet.exception->rethrow();
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_exchange_ended_in_sync = true;
                 last_error = ErrorCodes::OK;
                 return;
 

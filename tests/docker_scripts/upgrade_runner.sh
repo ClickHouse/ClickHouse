@@ -20,7 +20,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 source /repo/tests/docker_scripts/stress_tests.lib
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || ( echo "Failed to start seaweedfs" && exit 1 ) # to have a proper environment
 
 bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
 
@@ -135,6 +135,13 @@ stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_reposit
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# The full server stacktrace dumps must survive the removal of the phase
+# output folder below.
+for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
+    if [ -f "$stacktrace_log" ]; then
+        mv "$stacktrace_log" /test_output/
+    fi
+done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
@@ -451,6 +458,28 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
+# `is broken and needs manual correction` / `while loading part` + Code 697 (CANNOT_RESTORE_TO_NONENCRYPTED_DISK)
+#       is a benign leftover-state error from the `Backup` database engine. The `03276`/`03277`/`03278`/`03279`
+#       backup-database tests `CREATE DATABASE ... ENGINE = Backup(...)` and drop it, but the upgrade check runs
+#       the client with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade
+#       restart. When the run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on
+#       restart the MergeTree part loader reads them through the Backup engine's `DiskBackup` (a non-encrypted
+#       virtual disk), so `BackupImpl::readFileImpl` rejects each encrypted part with Code 697 and the loader logs
+#       it as a broken part. This is expected: an encrypted backup stores already-encrypted bytes and no disk key,
+#       so it can only be read back on an encrypted disk; the Backup DB engine cannot serve it, no crash/data loss.
+#       Scoped to the part-loader wrapper (`is broken and needs manual correction` OR `while loading part`), which
+#       Code 697 only carries on this background Backup-engine read path (`BackupImpl.cpp` readFileImpl, ~912).
+#       The explicit RESTORE-to-disk path (`copyFileToDisk`, ~1038) throws the same message straight to the client
+#       without a part-loader wrapper, so a real regression restoring an encrypted backup to a non-encrypted
+#       destination still surfaces. The scope is database-name-independent, so it covers all four tests regardless
+#       of the surviving DB name (`03279` -> `..._inner_backup_database`; `03277` -> `..._restore`). The follow-up
+#       `Detaching broken part` + `backward incompatibility` cleanup line carries no Code 697 message, so it is
+#       matched by the sibling regex below, scoped to the backup-database DB-name tokens (`backup_database` for
+#       `03276`/`03278`/`03279`, and the full unique test-name prefix
+#       `03277_database_backup_database_file_engine.*_restore` for `03277`) so unrelated broken-part errors are not
+#       masked. `03277`'s restore DB is named `${CLICKHOUSE_TEST_UNIQUE_NAME}_restore`, which embeds the test file
+#       name, so keying on the bare `_restore` token would also swallow real regressions for ordinary restored
+#       objects created by other previous-release tests (e.g. `${TABLE}_restored`, `t_restore_*`).
 # `DDLWorker(rdb_test_...)` + `Error on initialization of rdb_test_...` + `Mapping for table with UUID=... already
 #       exists` + `TABLE_ALREADY_EXISTS` is benign noise from the `--replicated-database` test wrapper during the
 #       upgrade restart. `clickhouse-test --replicated-database` creates each test's database as
@@ -560,6 +589,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
+    | grep -av -e "is broken and needs manual correction.*is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

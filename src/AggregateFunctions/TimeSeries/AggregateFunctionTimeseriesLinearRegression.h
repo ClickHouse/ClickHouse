@@ -104,7 +104,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples into centered moments; the merge is order-independent, so no sorting.
+            /// Preaggregate the bucket's samples into centered moments; the accumulation is order-independent, so any iteration order would do.
             Summary summary;
             samples.forEachSample([&summary, this](TimestampType timestamp, ValueType value)
             {

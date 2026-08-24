@@ -335,6 +335,21 @@ void LocalServer::processError(std::string_view) const
 }
 
 
+LocalServer::~LocalServer()
+{
+#if !defined(OS_WASM)
+    /// Stop and join the asynchronous logging threads, like `BaseDaemon` does at shutdown.
+    /// They must not keep consuming the log queues while `exit` runs static destructors,
+    /// and ThreadSanitizer reports finished but unjoined threads as leaks at exit.
+    /// Only the asynchronous channel is closed: with `logger.async = 0` there are no logging
+    /// threads to stop, and logging must stay usable because later destructors still log
+    /// (e.g. `~ClientApplicationBase` reports failures via `tryLogCurrentException`).
+    /// A closed asynchronous channel delivers messages synchronously, so those logs survive too.
+    closeAsyncLogging();
+#endif
+}
+
+
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
@@ -906,7 +921,9 @@ void LocalServer::cleanup()
             /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
             /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
             /// nonzero status in that case instead of always reporting success.
-            safeExit(std::uncaught_exceptions() ? 1 : 0);
+            /// No leak check: handlers below `server_pool->joinAll()` still own memory it would
+            /// report as leaked. Quiet, because here stderr is program output, not a log.
+            safeExit(std::uncaught_exceptions() ? 1 : 0, LeakCheck::SkipQuietly);
         }
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.

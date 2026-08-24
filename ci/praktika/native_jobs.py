@@ -1,6 +1,7 @@
 import dataclasses
 import hashlib
 import json
+import os
 import platform
 import shlex
 import sys
@@ -214,7 +215,22 @@ def _clean_buildx_volumes():
     )
 
 
-def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+def _submodule_auth_env(workflow) -> dict:
+    """Prepare the environment and access permissions for submodule clones."""
+    env = os.environ.copy()
+    if not Settings.ENABLE_SUBMODULE_CLONE_AUTH:
+        return env
+    if not GHAuth.auth(workflow, no_strict=True):
+        print("WARNING: no GH token available, submodule clones run anonymously")
+        return env
+    token = Shell.get_output("gh auth token", strict=True)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
+    env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
+def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
@@ -248,6 +264,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
                 retries=3,
+                env=_submodule_auth_env(workflow),
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
             Shell.check(
@@ -804,7 +821,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
-        result = _prepare_submodule_cache(workflow_config)
+        result = _prepare_submodule_cache(workflow, workflow_config)
         results.append(result)
 
     if workflow.enable_slack_feed:

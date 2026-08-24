@@ -4,11 +4,13 @@ description: 'Как интегрировать ClickPipes с реестром �
 slug: /integrations/clickpipes/kafka/schema-registries
 title: 'Реестры схем для Kafka ClickPipe'
 doc_type: 'guide'
-keywords: ['реестры схем', 'kafka', 'clickpipes', 'avro', 'confluent']
+keywords: ['реестры схем', 'kafka', 'clickpipes', 'avro', 'confluent', 'aws glue', 'msk']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 ClickPipes поддерживает интеграцию с реестром схем для декодирования топиков в форматах Avro и Protobuf.
 
@@ -16,15 +18,19 @@ ClickPipes поддерживает интеграцию с реестром с�
   ## Поддерживаемые реестры схем для Kafka ClickPipes
 </div>
 
-Поддерживаются реестры схем, совместимые с API Confluent Schema Registry. К ним относятся:
+Kafka ClickPipes поддерживает два типа реестров схем:
 
-* Confluent Schema Registry
-* Redpanda Schema Registry
+* [Реестры, совместимые с Confluent](#confluent-compatible-registries): любые реестры, API которых совместим с Confluent Schema Registry, включая сам Confluent Schema Registry и Redpanda Schema Registry. Поддерживаются Avro и Protobuf.
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): для данных Avro, сериализованных с помощью AWS Glue SerDe, обычно поступающих из Amazon MSK.
 
-ClickPipes пока не поддерживает AWS Glue Schema Registry и Azure Schema Registry. Если вам нужна поддержка этих реестров схем, [обратитесь к нашей команде](https://clickhouse.com/company/contact?loc=clickpipes).
+ClickPipes пока не поддерживает Azure Schema Registry. Если вам нужна его поддержка, [свяжитесь с нашей командой](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="confluent-compatible-registries">
+  ## Реестры, совместимые с Confluent
+</div>
 
 <div id="schema-registry-configuration">
-  ## Конфигурация
+  ### Конфигурация
 </div>
 
 Чтобы интегрироваться с реестром схем при настройке ClickPipes, необходимо использовать один из следующих способов:
@@ -35,12 +41,12 @@ ClickPipes пока не поддерживает AWS Glue Schema Registry и Az
 3. Укажите корневой URL реестра схем (например, `https://registry.example.com`)
 
 <div id="network-connectivity">
-  ## Сетевое подключение
+  ### Сетевое подключение
 </div>
 
 ClickPipes подключается к реестру схем по HTTPS, используя указанный вами URL. Реестр схем не обязательно должен быть общедоступным.
 
-Если доступ к вашим брокерам Kafka осуществляется через [обратную частную конечную точку](/ru/integrations/clickpipes/aws-privatelink) (AWS PrivateLink или GCP Private Service Connect), реестр схем может использовать то же частное подключение. ClickPipes разрешает имя хоста реестра через private DNS обратной частной конечной точки, поэтому реестр, размещённый в частной сети рядом с вашими брокерами, будет доступен, если его имя хоста разрешается в частные IP-адреса обратной частной конечной точки (через поддержку private DNS этой конечной точки или через [пользовательское сопоставление private DNS](/ru/integrations/clickpipes/aws-privatelink#custom-private-dns)).
+Если доступ к вашим брокерам Kafka осуществляется через [обратную частную конечную точку](/ru/integrations/clickpipes/networking/aws-privatelink) (AWS PrivateLink или GCP Private Service Connect), реестр схем может использовать то же частное подключение. ClickPipes разрешает имя хоста реестра через private DNS обратной частной конечной точки, поэтому реестр, размещённый в частной сети рядом с вашими брокерами, будет доступен, если его имя хоста разрешается в частные IP-адреса обратной частной конечной точки (через поддержку private DNS этой конечной точки или через [пользовательское сопоставление private DNS](/ru/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)).
 
 Имейте в виду следующее:
 
@@ -48,7 +54,7 @@ ClickPipes подключается к реестру схем по HTTPS, ис�
 * Если имя хоста реестра разрешается в частный адрес, он должен быть доступен через обратную частную конечную точку, выбранную для ClickPipe; в противном случае проверка подключения на этапе настройки завершится ошибкой.
 
 <div id="how-schema-registries-work">
-  ## Как это работает
+  ### Как это работает
 </div>
 
 ClickPipes динамически получает и применяет схему из настроенного реестра схем.
@@ -59,11 +65,155 @@ ClickPipes динамически получает и применяет схе�
 * Если сообщение не соответствует схеме, оно будет пропущено; в таблицу ошибок ClickPipes будет записана ошибка `DATA_PARSING_ERROR`.
 * Только для схем Protobuf: ClickPipes загрузит все импортированные схемы, указанные как зависимости. Схемы Avro с внешними ссылками пока не поддерживаются.
 
+<div id="aws-glue-schema-registry">
+  ## AWS Glue Schema Registry
+</div>
+
+Если ваши producer сериализуют Avro с помощью AWS Glue SerDe (например, `AWSKafkaAvroSerializer` для топика Amazon MSK), ClickPipes может получать эти схемы непосредственно из AWS Glue Schema Registry. Glue использует другой формат передачи данных и другой API, чем реестры, совместимые с Confluent, поэтому настраивается отдельно.
+
+Настройка AWS Glue Schema Registry в настоящее время доступна только в консоли ClickHouse Cloud. Через API ClickPipes или Terraform-провайдер она не поддерживается.
+
+<Note>
+  **Только Avro.** Реестры AWS Glue поддерживаются только для формата Avro. Glue SerDe также может формировать JSON и Protobuf, но ClickPipes их не поддерживает и отклоняет при создании пайпа.
+</Note>
+
+<div id="schema-registry-configuration">
+  ### Конфигурация
+</div>
+
+В мастере создания ClickPipe на шаге подключения Kafka включите **Реестр схем** и установите для параметра **Тип реестра** значение **AWS Glue**:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Панель реестра схем с выбранным AWS Glue" size="lg" border />
+
+| Поле         | Обязательно | Описание                                                                                                                             | Пример                                                     |
+| ------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Тип реестра  | Да          | Выберите **AWS Glue**                                                                                                                | `AWS Glue`                                                 |
+| Регион AWS   | Да          | Регион, в котором расположен реестр Glue. Должен в точности совпадать с регионом реестра.                                            | `us-east-1`                                                |
+| Имя реестра  | Да          | Имя реестра Glue. Схемы из другого реестра отклоняются, поэтому опечатка будет выявлена при разрешении ClickPipes версии схемы.      | `my-glue-registry`                                         |
+| ARN роли IAM | Условно     | Выделенная роль для доступа к реестру. Необязательна, если ваш брокер использует аутентификацию IAM; в противном случае обязательна. | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+
+URL реестра настраивать не требуется. Каждая запись, созданная Glue SerDe, содержит идентификатор своей версии схемы, который ClickPipes получает с помощью `glue:GetSchemaVersion` и кэширует; для каждой уникальной версии схемы выполняется один вызов API. Изменение схемы обрабатывается автоматически: если записи в потоке переключаются на новую версию схемы, она будет получена при первом обращении.
+
+<div id="glue-iam-setup">
+  ### Настройка IAM
+</div>
+
+Выберите один из двух вариантов в зависимости от вашей конфигурации. Вариант A обычно используется для Amazon MSK.
+
+<div id="glue-iam-option-a">
+  #### Вариант A: использовать IAM-идентичность брокера
+</div>
+
+Если ваш Kafka ClickPipe уже аутентифицируется в MSK с помощью IAM, ClickPipes использует ту же IAM-идентичность для чтения реестра. Оставьте поле **ARN роли IAM** пустым и добавьте следующий оператор в разрешения этой идентичности:
+
+* **Роль IAM:** Добавьте оператор в политику разрешений роли, настроенной для MSK.
+* **Учетные данные IAM:** Добавьте оператор в политику разрешений субъекта IAM, связанного с ключом доступа.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClickPipesGlueSchemaRegistryRead",
+      "Effect": "Allow",
+      "Action": ["glue:GetSchemaVersion"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Для аутентификации на основе ролей изменять политику доверия не требуется: отношение доверия, настроенное для MSK, уже предусматривает этот доступ. Учетные данные IAM не используют политику доверия.
+
+<div id="glue-iam-option-b">
+  #### Вариант B: использование отдельной роли для реестра
+</div>
+
+Используйте этот вариант, если ваш брокер не использует аутентификацию IAM (SASL/SCRAM, SASL/PLAIN, mTLS) или если реестр находится в другом аккаунте AWS, чем брокер.
+
+<Note>
+  **Только для развертываний в AWS.** Для этого варианта требуется сервис ClickHouse Cloud, развернутый в AWS, поскольку он использует роль AWS IAM сервиса. Если ваш сервис работает в GCP или Azure, а брокер не использует аутентификацию IAM, настроить отдельную роль для реестра не получится.
+</Note>
+
+<Steps>
+  <Step title="Получите ARN роли IAM сервиса ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
+    Откройте сервис, перейдите на вкладку **Settings**, прокрутите до раздела **Network security information** и скопируйте значение **Service role ID (IAM)** — ARN вида `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. Далее оно обозначается как `{ClickHouse_IAM_ARN}`. У каждого сервиса ClickHouse, развернутого в AWS, есть собственная роль, поэтому это значение отличается для каждого сервиса.
+
+    <Image img="/images/cloud/security/secures3_arn.webp" alt="Идентификатор сервисной роли (IAM)" size="lg" border />
+  </Step>
+
+  <Step title="Создайте роль IAM для реестра" id="create-registry-iam-role">
+    Создайте роль IAM в своем аккаунте AWS. Имя роли **должно начинаться с** `ClickHouseAccessRole-`.
+
+    **Настройте политику доверия**
+
+    Замените `{ClickHouse_IAM_ARN}` значением из предыдущего шага.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "{ClickHouse_IAM_ARN}"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **Настройте политику разрешений**
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ClickPipesGlueSchemaRegistryRead",
+          "Effect": "Allow",
+          "Action": ["glue:GetSchemaVersion"],
+          "Resource": "*"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Настройте ClickPipe" id="configure-clickpipe-registry-role">
+    Вставьте ARN новой роли в поле **ARN роли IAM** мастера.
+  </Step>
+</Steps>
+
+<Note>
+  **Область действия IAM-ресурсов.** Эти примеры соответствуют [документированной AWS политике для десериализаторов](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) и ее [управляемой политике `AWSGlueSchemaRegistryReadonlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html), обе из которых предоставляют разрешение `glue:GetSchemaVersion` для `"*"`. ClickPipes независимо проверяет каждую разрешенную схему на соответствие настроенному вами **Имя реестра** и отклоняет версии из любых других реестров.
+</Note>
+
+<div id="glue-troubleshooting">
+  ### Устранение неполадок
+</div>
+
+| Ошибка                                                                                       | Причина и решение                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | У идентификатора IAM, используемого для доступа к реестру, отсутствует привилегия `glue:GetSchemaVersion`. При ролевом доступе в политике доверия роли также может не быть указан идентификатор роли вашего сервиса. Ещё раз проверьте настройку IAM выше. |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | В политике доверия указан неверный субъект. В ошибке указана точная роль, которая попыталась принять роль. Используйте это значение в политике доверия.                                                                                                     |
+| `schema version … not found in Glue schema registry`                                         | Записи ссылаются на версию схемы, которой нет в настроенном аккаунте или регионе. Убедитесь, что **регион AWS** совпадает с регионом реестра.                                                                                                              |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | Ваши producer регистрируют схемы в реестре, отличающемся от указанного для пайпа. Исправьте **Имя реестра** или настройте producer на правильный реестр.                                                                                                |
+| `the AWS Glue schema registry only supports the Avro format`                                 | Пайпы Glue поддерживают только формат Avro. JSON и Protobuf через Glue SerDe не поддерживаются.                                                                                                                                                             |
+
+<div id="glue-limitations">
+  ### Ограничения
+</div>
+
+* Поддерживается только Avro. JSON Schema и Protobuf через Glue SerDe не поддерживаются.
+* Поддерживаются только источники Kafka. ClickPipes для Kinesis не могут использовать реестр Glue.
+
 <div id="schema-mapping">
   ## Сопоставление схемы
 </div>
 
-К сопоставлению между полученной схемой и целевой таблицей ClickHouse применяются следующие правила:
+Следующие правила применяются как к Confluent-совместимым реестрам, так и к AWS Glue Schema Registry. Они регулируют сопоставление между полученной схемой и целевой таблицей ClickHouse:
 
 * Если схема содержит поле, которое отсутствует в сопоставлении с целевой таблицей ClickHouse, это поле игнорируется.
 * Если в схеме отсутствует поле, определённое в сопоставлении с целевой таблицей ClickHouse, соответствующий столбец ClickHouse будет заполнен &quot;нулевым&quot; значением, например 0 или пустой строкой. Обратите внимание, что выражения `DEFAULT` не поддерживаются.

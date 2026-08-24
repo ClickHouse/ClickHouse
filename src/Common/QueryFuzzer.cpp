@@ -428,7 +428,7 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
@@ -5211,8 +5211,11 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
         /// grouped for name-swapping (a swap would produce arity-mismatched calls).
         {"aiEmbed"},
+        /// aiSimilarity takes (text1, text2, model[, params]); like aiEmbed its arity matches no other
+        /// AI function, so it is not grouped for name-swapping.
+        {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate"},
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter", "aiRedact"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)

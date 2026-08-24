@@ -181,6 +181,27 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
+def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
+    """Whether this job may run more test workers than the runner has cores.
+
+    A plain (non-sanitizer) binary job runs the whole suite, where every worker
+    picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower.
+
+    A flaky/targeted check is the opposite case: every worker runs the *same*
+    changed test, so `--jobs N` multiplies that one test's resource use by `N`.
+    For a heavy test (its own `max_threads`, large inserts, merges) that turns
+    into self-contention, and the flaky check fails a test whose wall-clock time
+    exceeds `TEST_MAX_RUN_TIME_IN_SECONDS` - so oversubscription decides the
+    verdict. Keep those checks at the default concurrency, where per-iteration
+    times are comparable to the other flaky-check jobs and the "too long"
+    verdict reflects the test rather than how many copies of it were co-scheduled.
+    """
+    if is_flaky_check or is_targeted_check:
+        return False
+    return "binary" in options and len(test_options) < 3
+
+
 def invert_bugfix_validation_status(test_result: Result) -> bool:
     """Invert FAIL/OK in `test_result.results` for bugfix validation.
 
@@ -266,6 +287,28 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
         return True
     test_result.set_success()
     return False
+
+
+def attach_post_verdict_artifacts(
+    test_result: Result, artifacts: list, preserve_verdict: bool
+) -> None:
+    """Attach artifact-collection rows without letting them decide the status.
+
+    `extend_sub_results` re-derives the parent status from its children, so rows
+    appended once the run is over overwrite whatever the parent said. With
+    `preserve_verdict` the parent's own status wins instead, while the rows stay
+    visible in the report: on a bugfix-validation job that status is the
+    validation verdict, which `new_tests_check.py` reads with strict
+    `is_success` to decide whether any arch validated the bug.
+
+    The captured status is restored rather than forced to `OK`, so every verdict
+    the inverter can set survives: reproduction `OK`, no-repro `SKIPPED`,
+    inconclusive `ERROR`.
+    """
+    verdict = test_result.status
+    test_result.extend_sub_results(artifacts)
+    if preserve_verdict:
+        test_result.set_status(verdict)
 
 
 def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
@@ -481,7 +524,7 @@ def main():
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options and len(test_options) < 3:
+        if allow_oversubscription(args.options, test_options, is_flaky_check, is_targeted_check):
             # Plain binary job runs fast; allow higher concurrency
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
@@ -835,7 +878,7 @@ def main():
 
         # Reasons recorded by the setup closure that must reach the persisted
         # Result.info (CIDB test_context_raw) even when setup ultimately
-        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # succeeds - e.g. a non-fatal seaweedfs log-table/restart failure that would
         # otherwise be invisible in CIDB (only visible as a report-page warning).
         setup_notes = []
 
@@ -844,10 +887,10 @@ def main():
             # Result.info (hence CIDB test_context_raw) only when it returns a
             # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
             # at each failure point so the opaque "Start ClickHouse Server"
-            # umbrella can be split into measurable sub-causes (minio /
+            # umbrella can be split into measurable sub-causes (seaweedfs /
             # wait_ready / kafka / stateful) instead of one bucket.
-            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
-                print("SETUP FAILURE: minio/azurite did not start")
+            if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
             if not CH.start():
                 print("SETUP FAILURE: clickhouse-server process did not start")
@@ -907,7 +950,7 @@ def main():
                 command=start,
             )
         )
-        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # Surface non-fatal setup notes (e.g. seaweedfs) into the persisted Result
         # so they are queryable in CIDB test_context_raw even on the success path.
         for note in setup_notes:
             results[-1].set_info(note)
@@ -1013,9 +1056,9 @@ def main():
                     # `cp` over a running ELF fails with `Text file busy`,
                     # and `strict=True` ensures a failed switch is not ignored.
                     # Use `stop_server` rather than `terminate` so the auxiliary
-                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # services (Kafka/Redpanda, SeaweedFS) started
                     # in the outer setup keep running for the next build type;
-                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # `terminate` would tear them down, making Kafka/SeaweedFS tests
                     # spuriously "reproduce" a bug under later build types.
                     # `stop_server` does not guarantee that every descendant
                     # process (transient `clickhouse-client` invocations, stray
@@ -1084,7 +1127,7 @@ def main():
                     # the environment built once in the START stage is gone: for
                     # stateful suites, reload the stateful data and the
                     # `system.zookeeper` config. Auxiliary services
-                    # (Kafka/Redpanda, MinIO) keep running across `stop_server`,
+                    # (Kafka/Redpanda, SeaweedFS) keep running across `stop_server`,
                     # so only the server-side state has to be rebuilt. Without
                     # this a stateful changed test fails only because
                     # `test.hits`/`datasets`/the auxiliary ZooKeeper row
@@ -1346,7 +1389,11 @@ def main():
             )
         )
         if test_result and CH.extra_tests_results:
-            test_result.extend_sub_results(CH.extra_tests_results)
+            attach_post_verdict_artifacts(
+                test_result,
+                CH.extra_tests_results,
+                preserve_verdict=is_labeled_bugfix_validation,
+            )
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
@@ -1387,6 +1434,13 @@ def main():
     if test_result:
         test_result.sort()
 
+    # On a test timeout or a failed hung check the full server stacktrace
+    # dumps land in the working directory (stdout keeps a trimmed preview).
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        stacktrace_log_path = Path(stacktrace_log)
+        if stacktrace_log_path.exists():
+            debug_files.append(stacktrace_log_path)
+
     R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
@@ -1426,7 +1480,7 @@ def main():
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
-            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+            for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
                 cmd = f"llvm-profdata{'-' + ver if ver else ''}"
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd
