@@ -5434,9 +5434,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
                 if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !renamed_away.contains(command.column_name))
                     dropped_by_alter.insert(command.column_name);
-                /// `command.ignore` is decided against the definition before any command ran, so a
-                /// rename of a name a preceding drop already removed is not marked ignored even
-                /// though it moves nothing.
+                /// `command.ignore` is decided before any command ran, so a rename of an
+                /// already-dropped name is not marked ignored even though it moves nothing.
                 if (command.type == AlterCommand::RENAME_COLUMN && !dropped_by_alter.contains(command.column_name))
                 {
                     renamed_from[command.rename_to] = command.column_name;
