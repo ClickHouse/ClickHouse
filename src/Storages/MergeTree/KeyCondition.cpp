@@ -576,10 +576,11 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
 }
 
 /// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN.
-/// IEEE-754 makes all of `<`, `>`, `<=`, `>=`, `=`, `!=` evaluate to `false` when either side is NaN, so
-/// `not(NaN > c) = true` while the candidate inverse `NaN <= c = false`. Without this guard, partition
-/// and primary-key pruning translate `not(sqrt(c0) > 10)` into `sqrt(c0) <= 10` and incorrectly drop the
-/// `c0 = -1` partition where `sqrt(c0)` is NaN (issue #106533).
+/// A NaN operand makes each of `<`, `>`, `<=`, `>=` evaluate to `false`, so an ordering op and its
+/// candidate inverse are both `false` instead of complementary: `not(NaN > c) = true` while
+/// `NaN <= c = false`. Pruning would then translate `not(sqrt(c0) > 10)` into `sqrt(c0) <= 10` and
+/// drop the `c0 = -1` partition where `sqrt(c0)` is NaN (issue #106533). `=` / `!=` do stay
+/// complements under NaN; they are covered too, to keep one rule for every comparison.
 ///
 /// A constant float operand whose value is finite is safe; only a floating-point column or a NaN-valued
 /// constant blocks the rewrite, so plain literal comparisons like `c <= 5.5` (Int column vs Float literal)
