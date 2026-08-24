@@ -25,6 +25,9 @@ SET enable_parallel_replicas = 0;
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_optimize_join_order_limit = 10;
+-- Pinned off because merging a cross-type equality into a join condition makes the fallback
+-- compare floats bitwise, changing the guarded cases' documented `equals` semantics (cases 12, 24).
+SET query_plan_merge_filter_into_join_condition = 0;
 
 SELECT '-- Case 1: the reproducer from the issue; the nullability mismatch must not force a CROSS JOIN';
 -- The NULL pre-filter is pushed past the subquery join into the `store_sales` Prewhere,
