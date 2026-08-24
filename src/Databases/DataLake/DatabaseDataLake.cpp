@@ -1704,6 +1704,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_unity_v2_catalog");
                 }
 
+                /// `auth_header` is not wired through `UnityV2Catalog`; a bearer token goes into
+                /// `catalog_credential` directly, so reject the setting instead of silently ignoring it.
+                if (!args.create_query.attach && !database_settings[DatabaseDataLakeSetting::auth_header].value.empty())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unity v2 catalog does not support `auth_header`. "
+                                    "Pass the token as `catalog_credential = '<token>'`, or an OAuth service principal "
+                                    "as `catalog_credential = '<client_id>:<client_secret>'`");
+                }
+
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
