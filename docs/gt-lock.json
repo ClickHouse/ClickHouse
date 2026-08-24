@@ -7,36 +7,36 @@
       "versionId": "b87b6761c38881ce9c49dfcde638d7f4622d33fca65436284fef96c67213cd5f",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-24T09:23:05.662Z",
+          "updatedAt": "2026-08-24T10:42:56.508Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-24T09:23:05.929Z",
+          "updatedAt": "2026-08-24T10:42:56.688Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-24T09:23:04.519Z",
+          "updatedAt": "2026-08-24T10:42:55.741Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-24T09:23:06.491Z",
+          "updatedAt": "2026-08-24T10:42:57.056Z",
           "fileName": "docs.json",
           "postProcessHash": "91bad66b682e18db1402c59de0d65a798c57b66af46952972fda881110cbf512"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-24T09:23:05.378Z",
+          "updatedAt": "2026-08-24T10:42:56.327Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-24T09:23:05.112Z",
+          "updatedAt": "2026-08-24T10:42:56.140Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-24T09:23:06.245Z",
+          "updatedAt": "2026-08-24T10:42:56.868Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-24T09:23:04.843Z",
+          "updatedAt": "2026-08-24T10:42:55.953Z",
           "fileName": "docs.json"
         }
       },
@@ -21645,47 +21645,47 @@
     },
     {
       "fileId": "42432f2a46e648f0fdd89917bf064aa1c41261dc4ad28f25e0cf83992ff1674a",
-      "versionId": "9b29a2882940bfbb7f1f15a28f59e0d61ad383afc449faf14e5f4502aa06daaf",
+      "versionId": "42faabc8c4f78c18392652cd9905b56346b96bfbacc39f553ce7501f5ae2c042",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
-          "fileName": "es/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "acef0346cb266e01b26530c3eda09cd6fc092e45d29efd139363fc3ba2437eb9"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
-          "fileName": "ja/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "0834f9cbe28281b57e930c76f1f85ae6dbcc7136bb22148960ffef22d1eef33e"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
-          "fileName": "ko/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "4a2bb7ffb08ee576430ce2fc6f775dcfc135b1ae1aa3d3e693cd0d0b19a8a0cc"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
+          "updatedAt": "2026-08-24T10:43:00.285Z",
           "fileName": "pt-BR/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "ea5d04c248bd78e637e1be36ce61051ed79f9e34d05af23d1e1c6a8fba332645"
+          "postProcessHash": "4f8ebd96e9a4fe4de567795f13186fcdaede5ed7c82f68521a9448b4b8e3c8a5"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
+          "updatedAt": "2026-08-24T10:43:00.285Z",
           "fileName": "ru/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "2273882d92f7538be4c41997c919b6e0d0478c202a23f66e8ed6396e3e101568"
+          "postProcessHash": "1d06d8cfae9dc49232893fed29e4cc7ae5e3669961db7231eb8fd0255a167075"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T10:43:00.285Z",
+          "fileName": "ko/reference/system-tables/dimensional_metrics.mdx",
+          "postProcessHash": "ffad0c31b0451bb9f2ca79a9d7c79d6038e6f05f97c63bcd6465cdc012176a47"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T10:43:00.286Z",
+          "fileName": "ja/reference/system-tables/dimensional_metrics.mdx",
+          "postProcessHash": "01a41adbddc56a8ac0dc90119e5988d014e8fc9b36daa1f05a9e200f609113fa"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.124Z",
+          "updatedAt": "2026-08-24T10:43:00.286Z",
           "fileName": "zh/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "4664ab321337ef8bf5985de97bd7e49836b7c9465ff24077900c312e35e8679f"
+          "postProcessHash": "187ea1666962a5bcc4d4de74059642b1592fd29e03c449bce52e2e264c4b69d5"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.125Z",
-          "fileName": "ar/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "4bb71af084f88cc6d2a966ad6eb250506f18ff82b9b5a246ef3f47ffa485eff2"
+        "es": {
+          "updatedAt": "2026-08-24T10:43:00.286Z",
+          "fileName": "es/reference/system-tables/dimensional_metrics.mdx",
+          "postProcessHash": "4f816c936512977483055f09f9d17af1521838d44f57dc686338ca1fabc0b8db"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.125Z",
+          "updatedAt": "2026-08-24T10:43:00.287Z",
           "fileName": "fr/reference/system-tables/dimensional_metrics.mdx",
-          "postProcessHash": "9b53ac03f08b73a65a2353d2f82d3ded6054d26afe02e0c56e716295bf2f66ec"
+          "postProcessHash": "84d3e90a57677387a3eaccdf7cc80b53e0f35f25c728bebb460410eacb19a1df"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T10:43:00.287Z",
+          "fileName": "ar/reference/system-tables/dimensional_metrics.mdx",
+          "postProcessHash": "0c960508624a276de297037cf5c4e25df696596526ea3ec2d38395e92cd038ea"
         }
       },
       "fileName": "reference/system-tables/dimensional_metrics.mdx",
