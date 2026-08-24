@@ -91,6 +91,8 @@ SELECT count() FROM prometheusQuery('ts', 'up * on (job) group_left() up', 1000)
 SELECT count() FROM prometheusQuery('ts', 'up * ignoring (instance) group_right() up', 1000);
 SELECT count() FROM prometheusQuery('ts', 'up * on ("service.name") group_left ("pod.name") target_info', 1000);
 SELECT count() FROM prometheusQuery('ts', 'up / ignoring ("cluster.name") group_right ("instance.name") target_info', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up + 1', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up + on () 1', 1000);
 
 SELECT '--- prometheusQueryRange with various steps ---';
 SELECT count() FROM prometheusQueryRange('ts', 'up', 1000, 2000, 60);
@@ -104,5 +106,7 @@ SELECT * FROM prometheusQuery('ts', '1 +', 1000); -- { serverError CANNOT_PARSE_
 SELECT * FROM prometheusQuery('ts', 'up{job=}', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts', 'up{job="unclosed}', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts', 'sum by ("") (up)', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('ts', 'up + on (job) 1', 1000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('ts', 'up == ignoring (instance) 1', 1000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 DROP TABLE ts;
