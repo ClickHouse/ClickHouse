@@ -115,6 +115,12 @@ if __name__ == "__main__":
     except Exception:
         # Best-effort by design: loom's poller heals missed triggers.
         traceback.print_exc()
-        Info().add_workflow_warning(
-            "loom code.refresh failed - index freshness degraded until next poll"
-        )
+        try:
+            Info().add_workflow_warning(
+                "loom code.refresh failed - index freshness degraded until next poll"
+            )
+        except Exception:
+            # A non-zero exit from a pre_hook fails the workflow's config
+            # job; refreshing loom is a helper, never worth failing CI for,
+            # so even a failure to emit the warning must not leak out.
+            traceback.print_exc()
