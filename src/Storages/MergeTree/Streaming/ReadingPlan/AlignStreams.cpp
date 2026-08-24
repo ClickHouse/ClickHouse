@@ -6,6 +6,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/Streaming/Markers.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -90,7 +91,7 @@ class StreamAligner
         const auto * right_block_offsets = keyColumn(*data_columns[right_block_offset_pos]);
         const size_t left_rows = left_columns.front()->size();
 
-        while (left_row < left_rows && hasUnmatchedRows())
+        while (left_row < left_rows && hasPendingRightRows())
         {
             const std::pair left_key{left_block_numbers->getElement(left_row), left_block_offsets->getElement(left_row)};
             const std::pair right_key{right_block_numbers->getElement(matched), right_block_offsets->getElement(matched)};
@@ -134,7 +135,7 @@ public:
     }
 
     bool hasPendingLeftRows() const { return !left_columns.empty(); }
-    bool hasUnmatchedRows() const { return matched < data_columns.front()->size(); }
+    bool hasPendingRightRows() const { return matched < data_columns.front()->size(); }
     bool hasMatchedRows() const { return matched > 0; }
 
     void addRightChunk(Chunk chunk)
@@ -157,7 +158,6 @@ public:
     void addLeftChunk(Chunk chunk)
     {
         chassert(left_columns.empty());
-
         if (chunk.getNumRows() == 0)
             return;
 
@@ -215,24 +215,24 @@ private:
     size_t left_row = 0;
 
     /// Right stream data
-    size_t matched = 0;
     MutableColumns data_columns;
     MutableColumns attached_columns;
+    size_t matched = 0;
 };
 
 class AlignStreamsProcessor final : public IProcessor
 {
-    void forwardLeftInfos()
-    {
-        Chunk info_chunk(output.getHeader().cloneEmptyColumns(), 0);
-        info_chunk.setChunkInfos(std::move(left_chunk->getChunkInfos()));
-        ready_chunks.push(std::move(info_chunk));
-    }
-
-    void enqueue(std::optional<Chunk> chunk)
+    void enqueueChunk(std::optional<Chunk> chunk)
     {
         if (chunk.has_value())
             ready_chunks.push(std::move(*chunk));
+    }
+
+    void enqueueInfos(Chunk::ChunkInfoCollection && infos)
+    {
+        Chunk info_chunk(output.getHeader().cloneEmptyColumns(), 0);
+        info_chunk.setChunkInfos(std::move(infos));
+        enqueueChunk(std::move(info_chunk));
     }
 
 public:
@@ -284,7 +284,7 @@ public:
         /// An empty metadata chunk (infos) is processable without data-side progress.
         const bool left_infos_only = left_chunk.has_value() && left_chunk->getNumRows() == 0;
 
-        if (!left_infos_only && !right_chunk.has_value() && !aligner.hasUnmatchedRows() && !right_input.isFinished())
+        if (!left_infos_only && !right_chunk.has_value() && !aligner.hasPendingRightRows() && !right_input.isFinished())
         {
             right_input.setNeeded();
             if (!right_input.hasData())
@@ -293,7 +293,7 @@ public:
             right_chunk = right_input.pull(/*set_not_needed=*/true);
         }
 
-        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasUnmatchedRows() || aligner.hasMatchedRows();
+        const bool has_work = left_chunk.has_value() || right_chunk.has_value() || aligner.hasPendingLeftRows() || aligner.hasPendingRightRows() || aligner.hasMatchedRows();
 
         if (!has_work)
         {
@@ -315,12 +315,12 @@ public:
 
         if (left_chunk.has_value())
         {
-            if (left_chunk->getNumRows() == 0 && !left_chunk->getChunkInfos().empty())
+            if (isMarkerChunk(*left_chunk))
             {
-                enqueue(aligner.flushMatched());
-                forwardLeftInfos();
+                enqueueChunk(aligner.flushMatched());
+                enqueueInfos(std::move(left_chunk->getChunkInfos()));
             }
-            else if (!right_input.isFinished() || aligner.hasUnmatchedRows())
+            else
             {
                 aligner.addLeftChunk(std::move(*left_chunk));
             }
@@ -329,15 +329,15 @@ public:
         }
 
         /// Data rows left without metadata coverage - invariant is broken.
-        if (left_input.isFinished() && !aligner.hasPendingLeftRows() && aligner.hasUnmatchedRows())
+        if (left_input.isFinished() && !aligner.hasPendingLeftRows() && aligner.hasPendingRightRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata stream of AlignStreams ended before all data stream rows were matched");
 
         /// The data stream ended - the pending metadata tail can never match.
-        if (right_input.isFinished() && !right_chunk.has_value() && !aligner.hasUnmatchedRows() && aligner.hasPendingLeftRows())
+        if (right_input.isFinished() && !right_chunk.has_value() && !aligner.hasPendingRightRows())
             aligner.dropPendingLeftRows();
 
         const bool streams_done = left_input.isFinished() && right_input.isFinished();
-        enqueue(aligner.flushMatched(streams_done ? 0 : DEFAULT_BLOCK_SIZE));
+        enqueueChunk(aligner.flushMatched(streams_done ? 0 : DEFAULT_BLOCK_SIZE));
     }
 
 private:
