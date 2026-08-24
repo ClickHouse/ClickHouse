@@ -67,8 +67,9 @@ SELECT DISTINCT
     AS has_any_agrees
 FROM shapes;
 
--- Nullable arrays are handled by the scalar path on both architectures. A NULL
--- needle is satisfied only when the haystack also holds a NULL.
+-- Short Nullable arrays. These haystacks are below the vector threshold for
+-- every width here, so they run the scalar loop. A NULL needle is satisfied
+-- only when the haystack also holds a NULL.
 SELECT
     hasAll([1, 2, NULL, 4] :: Array(Nullable(Int32)), [NULL] :: Array(Nullable(Int32))) = 1,
     hasAll([1, 2, 3, 4] :: Array(Nullable(Int32)), [NULL] :: Array(Nullable(Int32))) = 0,
@@ -97,8 +98,9 @@ FROM (
     FROM (SELECT arrayJoin([33, 64, 65, 200]) AS n)
 );
 
--- Boundary values: a kernel that mishandles the sign bit or the type limits
--- fails here while passing on small positive values.
+-- Sign bit and type limits on the scalar path: these haystacks are 2 to 3
+-- elements, below the vector threshold for every width. The block below repeats
+-- the extremes at a length that reaches the kernel.
 SELECT
     hasAll([-128, 0, 127] :: Array(Int8), [-128, 127] :: Array(Int8)) = 1,
     hasAll([-32768, 0, 32767] :: Array(Int16), [-32768, 32767] :: Array(Int16)) = 1,
