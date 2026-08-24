@@ -14,7 +14,8 @@ DROP TABLE IF EXISTS t_map_shard_dist;
 
 CREATE TABLE t_map_shard (id UInt64, tags Map(String, String), arr Array(String), n Nullable(UInt64), j JSON)
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+    index_granularity = 8192, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_map_shard SELECT
     number,
