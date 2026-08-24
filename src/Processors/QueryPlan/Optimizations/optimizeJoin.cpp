@@ -98,6 +98,7 @@ struct ValueHop
     bool propagates = false;  /// output inherits the source NDV of children[0]
     UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
     bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
+    bool preserves_value = false;  /// output value equals the source's, including the NULL set
 };
 
 /// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
@@ -105,7 +106,7 @@ struct ValueHop
 static ValueHop describeValueHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true, .preserves_width = true};
+        return {.propagates = true, .preserves_width = true, .preserves_value = true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
@@ -126,7 +127,12 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
         ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
+    /// The value range and NULL set survive only a hop that passes the value through unchanged
+    /// (unlike NDV, they do not survive a generic deterministic function, e.g. `negate(k)`), and
+    /// collapsing nullability rewrites the NULL rows into real values.
+    const bool preserves_value = isValuePassThroughFunction(node.function_base->getName())
+        && preserves_width && !collapses_null;
+    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width, .preserves_value = preserves_value};
 }
 
 /// How an output column relates to the source input column it traces back to.
@@ -134,6 +140,7 @@ struct BackTrackedColumn
 {
     UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
     bool preserves_width = true; /// value bytes unchanged along the whole path
+    bool preserves_value = true; /// value and NULL set unchanged along the whole path
 };
 
 /// For each output column that traces back to `input_name`, describe the path to it.
@@ -186,7 +193,8 @@ static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const
                 if (auto source_path = path_to_input[node->children[0]])
                     result = BackTrackedColumn{
                         .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
-                        .preserves_width = source_path->preserves_width && hop.preserves_width};
+                        .preserves_width = source_path->preserves_width && hop.preserves_width,
+                        .preserves_value = source_path->preserves_value && hop.preserves_value};
             }
             path_to_input[node] = result;
             nodes_to_process.pop();
@@ -219,6 +227,12 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             /// width to unknown.
             if (!back_tracked.preserves_width)
                 stats.avg_bytes = 0;
+            if (!back_tracked.preserves_value)
+            {
+                stats.min_value.reset();
+                stats.max_value.reset();
+                stats.null_fraction = 0;
+            }
             mapped[remapped] = stats;
         }
     }
@@ -371,7 +385,6 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();

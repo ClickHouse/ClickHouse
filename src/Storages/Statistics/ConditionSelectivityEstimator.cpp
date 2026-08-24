@@ -121,6 +121,23 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
+/// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
+/// describe the whole relation regardless of the filter.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+{
+    ColumnStats result;
+    result.num_distinct_values = num_distinct_values;
+    if (!stats)
+        return result;
+
+    auto estimate = stats->getEstimate();
+    result.min_value = std::move(estimate.estimated_min);
+    result.max_value = std::move(estimate.estimated_max);
+    if (estimate.estimated_null_count && estimate.rows_count)
+        result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    return result;
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
@@ -208,7 +225,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
     }
     return result;
 }
@@ -219,7 +236,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
 }
