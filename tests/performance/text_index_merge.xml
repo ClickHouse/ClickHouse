@@ -9,28 +9,6 @@
         </substitution>
     </substitutions>
 
-    <!-- Merges of text indexes are measured over two properties, because both change the work a lot.
-
-         Layout of the parts: parts of `t_text_index_merge_{codec}` cover disjoint ranges of the
-         primary key, so merging them concatenates the rows and row ids of one part are remapped by
-         a constant shift. Parts of `t_text_index_merge_intersecting_{codec}` cover the same range
-         of the primary key, so merging them interleaves the rows of all parts and posting lists of
-         a token are merged into an interleaved order.
-
-         Distribution of the tokens: the tables above hold one token per row plus a token shared by
-         all rows, so their postings are either single-row lists or one huge list. The tables named
-         `vocabulary` model natural text instead: a bounded vocabulary whose tokens all occur in
-         every part, which keeps most postings in lists of a few thousand row ids.
-
-         The tables named `multiblock` measure posting lists that span many blocks: a small
-         `posting_list_block_size` and a vocabulary of 8 tokens that each occur in 4 of 5 rows
-         give every token a large multi-block posting list, so the merge reads and unions the
-         postings of a token block by block. The `bitpacking` codec splits postings by cardinality
-         (about 30 blocks per part), while uncompressed postings are split at roaring container
-         boundaries, so the parts must span several containers of 65536 row ids (about 5 blocks
-         per part of 300000 rows). The 80% density keeps the roaring containers as bitsets
-         instead of full run containers, so unions of blocks are not short-circuited. -->
-
     <create_query>
         CREATE TABLE t_text_index_merge_{codec}
         (
