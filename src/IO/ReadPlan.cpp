@@ -40,10 +40,8 @@ size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_en
 
 ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
 {
-    PlanRun run;
-    run.range = ByteRange{offset, 0};
     if (offset < span_start || offset >= span_end)
-        return run;
+        return std::monostate{};
 
     /// Memory hold (already fetched, no tier took it) is fastest - serve to its first gap.
     if (!memory.empty() && memory.covers(ByteRange{offset, 1}))
@@ -51,9 +49,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         size_t end = memory.range().end();
         if (auto g = memory.gaps(ByteRange{offset, end - offset}); !g.empty())
             end = g.front().offset;
-        run.from_memory = true;
-        run.range = ByteRange{offset, end - offset};
-        return run;
+        return ServeFromMemory{ByteRange{offset, end - offset}, &memory};
     }
 
     /// Fastest tier serving `offset`: a hit reader, or a miss committed here (served from its writer).
@@ -63,20 +59,12 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         if (!cell)
             continue;
         if (cell->kind == CacheResolution::Kind::Hit && cell->reader)
-        {
-            run.reader = cell->reader.get();
-            run.range = ByteRange{offset, cell->range.end() - offset};
-            return run;
-        }
+            return ServeFromReader{ByteRange{offset, cell->range.end() - offset}, cell->reader.get()};
         if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
         {
             const size_t committed = cell->writer->committed();
-            if (offset < committed)
-            {
-                run.writer = cell->writer.get();
-                run.range = ByteRange{offset, committed - offset};   /// committed() never exceeds range().end()
-                return run;
-            }
+            if (offset < committed)   /// committed() never exceeds range().end()
+                return ServeFromWriter{ByteRange{offset, committed - offset}, cell->writer.get()};
         }
     }
 
@@ -117,8 +105,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         }
     }
 
-    run.range = ByteRange{fetch_start, fetch_end - fetch_start};
-    return run;
+    return Fetch{ByteRange{fetch_start, fetch_end - fetch_start}};
 }
 
 VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) const
@@ -136,11 +123,6 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
 void ReadPlan::hold(ChainedBuffers bytes)
 {
     memory.append(std::move(bytes));
-}
-
-ChainedBuffers ReadPlan::readMemory(ByteRange range) const
-{
-    return memory.slice(range);
 }
 
 void ReadPlan::extend(size_t new_end, const CacheChain & chain,

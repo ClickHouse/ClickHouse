@@ -73,6 +73,10 @@ VectorWithMemoryTracking<PlanTier> tiers(Ts &&... ts)
     return out;
 }
 
+/// Extract a specific `PlanRun` alternative from `run`, or nullptr if it is a different outcome.
+template <typename T>
+const T * as(const ReadPlan::PlanRun & run) { return std::get_if<T>(&run); }
+
 }
 
 TEST(ReadPlan, HitsServeFromReaderPerCell)
@@ -87,12 +91,12 @@ TEST(ReadPlan, HitsServeFromReaderPerCell)
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     auto r0 = plan.runAt(0);
-    EXPECT_NE(r0.reader, nullptr);
-    EXPECT_FALSE(r0.isFetch());
-    EXPECT_EQ(r0.range.offset, 0u);
-    EXPECT_EQ(r0.range.end(), 1u);   /// serves to the hit cell end
+    const auto * hit0 = as<ReadPlan::ServeFromReader>(r0);
+    ASSERT_NE(hit0, nullptr);
+    EXPECT_EQ(hit0->range.offset, 0u);
+    EXPECT_EQ(hit0->range.end(), 1u);   /// serves to the hit cell end
 
-    EXPECT_NE(plan.runAt(2).reader, nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
 TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
@@ -109,15 +113,16 @@ TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
 
     /// [0,2) is an uncommitted miss run; it coalesces and stops at the hit at 2.
     auto r = plan.runAt(0);
-    EXPECT_TRUE(r.isFetch());
-    EXPECT_EQ(r.range.offset, 0u);
-    EXPECT_EQ(r.range.end(), 2u);
+    const auto * fetch = as<ReadPlan::Fetch>(r);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.offset, 0u);
+    EXPECT_EQ(fetch->range.end(), 2u);
 
     /// writersFor spans both miss cells in the fetch run.
     EXPECT_EQ(plan.writersFor({0, 2}).size(), 2u);
 
     /// The hit caps the run and is servable.
-    EXPECT_NE(plan.runAt(2).reader, nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
 TEST(ReadPlan, CommittedWriterBecomesServable)
@@ -130,13 +135,13 @@ TEST(ReadPlan, CommittedWriterBecomesServable)
     c.push_back(std::move(missed));
     plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));
 
-    EXPECT_TRUE(plan.runAt(0).isFetch());   /// nothing committed yet
+    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0)), nullptr);   /// nothing committed yet
 
     writer->commit({0, 2});                 /// the executor filled it
     auto r = plan.runAt(0);
-    EXPECT_FALSE(r.isFetch());
-    EXPECT_NE(r.writer, nullptr);
-    EXPECT_EQ(r.range.end(), 2u);
+    const auto * srv = as<ReadPlan::ServeFromWriter>(r);
+    ASSERT_NE(srv, nullptr);
+    EXPECT_EQ(srv->range.end(), 2u);
 }
 
 TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
@@ -159,14 +164,15 @@ TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
 
     /// [0,2) miss on both tiers -> fetch, capped at the fs hit at 2.
     auto r = plan.runAt(0);
-    EXPECT_TRUE(r.isFetch());
-    EXPECT_EQ(r.range.end(), 2u);
+    const auto * fetch = as<ReadPlan::Fetch>(r);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.end(), 2u);
 
     /// At 2 the fs tier serves it (fastest tier missed).
     auto r2 = plan.runAt(2);
-    EXPECT_FALSE(r2.isFetch());
-    EXPECT_NE(r2.reader, nullptr);
-    EXPECT_EQ(r2.range.end(), 4u);
+    const auto * hit2 = as<ReadPlan::ServeFromReader>(r2);
+    ASSERT_NE(hit2, nullptr);
+    EXPECT_EQ(hit2->range.end(), 4u);
 
     /// A fetch of [0,2) writes up both populating tiers.
     EXPECT_EQ(plan.writersFor({0, 2}).size(), 4u);
@@ -185,7 +191,7 @@ TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
 
     plan.retireBefore(2);
     EXPECT_EQ(plan.spanStart(), 2u);
-    EXPECT_NE(plan.runAt(2).reader, nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
 TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
@@ -206,10 +212,11 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
     EXPECT_EQ(plan.resolvedEnd(), 4u);
     /// [1,3) is one coalesced miss (not doubled); the hit at 3 caps it.
     auto r = plan.runAt(1);
-    EXPECT_TRUE(r.isFetch());
-    EXPECT_EQ(r.range.end(), 3u);
+    const auto * fetch = as<ReadPlan::Fetch>(r);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.end(), 3u);
     EXPECT_EQ(plan.writersFor({1, 3}).size(), 1u);   /// one writer, not two
-    EXPECT_NE(plan.runAt(3).reader, nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3)), nullptr);
 }
 
 TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
@@ -227,20 +234,25 @@ TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
 
     /// Virgin: the fetch extends left to the segment start (0), not `offset` (2).
     auto r = plan.runAt(2);
-    EXPECT_TRUE(r.isFetch());
-    EXPECT_EQ(r.range.offset, 0u);
-    EXPECT_EQ(r.range.end(), 4u);
+    const auto * fetch = as<ReadPlan::Fetch>(r);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.offset, 0u);
+    EXPECT_EQ(fetch->range.end(), 4u);
 
     /// The window caps the right end; the left extension is independent of it.
-    EXPECT_EQ(plan.runAt(2, 1).range.offset, 0u);
-    EXPECT_EQ(plan.runAt(2, 1).range.end(), 3u);
+    auto rc = plan.runAt(2, 1);
+    const auto * capped = as<ReadPlan::Fetch>(rc);
+    ASSERT_NE(capped, nullptr);
+    EXPECT_EQ(capped->range.offset, 0u);
+    EXPECT_EQ(capped->range.end(), 3u);
 
     /// After committing [0,2), a read at 3 fetches from the frontier 2, not the segment start.
     writer->commit({0, 2});
     auto r2 = plan.runAt(3);
-    EXPECT_TRUE(r2.isFetch());
-    EXPECT_EQ(r2.range.offset, 2u);
-    EXPECT_EQ(r2.range.end(), 4u);
+    const auto * fetch2 = as<ReadPlan::Fetch>(r2);
+    ASSERT_NE(fetch2, nullptr);
+    EXPECT_EQ(fetch2->range.offset, 2u);
+    EXPECT_EQ(fetch2->range.end(), 4u);
 }
 
 TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
@@ -256,9 +268,10 @@ TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
     plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));   /// span_end = 2, cell to 4
 
     auto r = plan.runAt(0, /*max_fetch_ahead=*/1);
-    EXPECT_TRUE(r.isFetch());
-    EXPECT_EQ(r.range.offset, 0u);
-    EXPECT_EQ(r.range.end(), 4u);
+    const auto * fetch = as<ReadPlan::Fetch>(r);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.offset, 0u);
+    EXPECT_EQ(fetch->range.end(), 4u);
 }
 
 TEST(ReadPlan, ResetDiscardsAndReanchors)
@@ -293,14 +306,15 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnRetire)
     plan.hold(std::move(held));
 
     /// A miss offset not held → FETCH; a held offset → memory, up to the hold's end.
-    EXPECT_TRUE(plan.runAt(0).isFetch());
+    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0)), nullptr);
     auto r = plan.runAt(1);
-    EXPECT_TRUE(r.from_memory);
-    EXPECT_EQ(r.range.offset, 1u);
-    EXPECT_EQ(r.range.end(), 3u);
-    EXPECT_EQ(plan.readMemory(ByteRange{1, 2}).totalBytes(), 2u);
+    const auto * mem = as<ReadPlan::ServeFromMemory>(r);
+    ASSERT_NE(mem, nullptr);
+    EXPECT_EQ(mem->range.offset, 1u);
+    EXPECT_EQ(mem->range.end(), 3u);
+    EXPECT_EQ(mem->memory->slice(ByteRange{1, 2}).totalBytes(), 2u);
 
     /// Retire past the hold frees it; the offset is then a plain miss again.
     plan.retireBefore(3);
-    EXPECT_FALSE(plan.runAt(3).from_memory);
+    EXPECT_EQ(as<ReadPlan::ServeFromMemory>(plan.runAt(3)), nullptr);
 }

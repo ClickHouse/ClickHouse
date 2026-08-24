@@ -416,14 +416,15 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
 
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
     ChainedBuffers out;
-    if (run.from_memory)
-        out = read_plan.readMemory(ByteRange{pos, serve_len(run.range.end())});
-    else if (run.reader)
-        out = run.reader->read(ByteRange{pos, serve_len(run.range.end())});
-    else if (run.writer)
-        out = run.writer->read(ByteRange{pos, serve_len(run.range.end())});
-    else
-        out = fetchFillServe(pos, run.range, max_serve);
+    if (const auto * m = std::get_if<ReadPlan::ServeFromMemory>(&run))
+        out = m->memory->slice(ByteRange{pos, serve_len(m->range.end())});
+    else if (const auto * rd = std::get_if<ReadPlan::ServeFromReader>(&run))
+        out = rd->reader->read(ByteRange{pos, serve_len(rd->range.end())});
+    else if (const auto * wr = std::get_if<ReadPlan::ServeFromWriter>(&run))
+        out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
+    else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
+        out = fetchFillServe(pos, f->range, max_serve);
+    /// std::monostate: offset outside the resolved span -> serve nothing.
 
     /// Eagerly retire what we served, freeing its pins and memory hold now (`out` owns its bytes).
     if (!out.empty())

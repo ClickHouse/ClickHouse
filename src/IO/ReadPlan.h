@@ -6,6 +6,7 @@
 #include <base/types.h>
 
 #include <limits>
+#include <variant>
 
 namespace DB
 {
@@ -26,17 +27,13 @@ struct PlanTier
 class ReadPlan
 {
 public:
-    /// The run serving `[offset, range.end())`, from exactly one source: `from_memory` (executor-local
-    /// held bytes, see `readMemory`), a hit `reader`, a committed miss `writer`, or a FETCH (all unset) -
-    /// a source read of the extent no tier serves.
-    struct PlanRun
-    {
-        ByteRange range{};
-        CacheReader * reader = nullptr;
-        CacheWriter * writer = nullptr;
-        bool from_memory = false;
-        bool isFetch() const { return reader == nullptr && writer == nullptr && !from_memory; }
-    };
+    /// The outcome of `runAt`: how to serve `[offset, range.end())`. Exactly one alternative, each
+    /// carrying only what that source needs. `std::monostate` means `offset` is outside the resolved span.
+    struct ServeFromReader { ByteRange range; CacheReader * reader = nullptr; };          /// an already-cached hit
+    struct ServeFromWriter { ByteRange range; CacheWriter * writer = nullptr; };          /// a committed miss prefix
+    struct ServeFromMemory { ByteRange range; const ChainedBuffers * memory = nullptr; }; /// the plan's memory hold
+    struct Fetch { ByteRange range; };                                                    /// source-read, then fill
+    using PlanRun = std::variant<std::monostate, ServeFromReader, ServeFromWriter, ServeFromMemory, Fetch>;
 
     bool empty() const { return span_end <= span_start; }
     size_t spanStart() const { return span_start; }
@@ -61,10 +58,9 @@ public:
     void extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved);
 
     /// The executor-local memory hold - fetched bytes no tier accepted (read-only / detached / rejected
-    /// write). `hold` keeps them (served by a `from_memory` run), `readMemory` serves a sub-range; freed
-    /// as `retireBefore` passes them, so already-fetched bytes are never re-read.
+    /// write). `hold` keeps them (served by a `ServeFromMemory` run that points at this hold); freed as
+    /// `retireBefore` passes them, so already-fetched bytes are never re-read.
     void hold(ChainedBuffers bytes);
-    ChainedBuffers readMemory(ByteRange range) const;
 
     /// Drop cells that end at or before `offset` (release their pins) and advance `spanStart` to it.
     void retireBefore(size_t offset);
