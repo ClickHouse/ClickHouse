@@ -31,6 +31,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedRecords;
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationStagedBytes;
+    extern const Event AdaptiveAggregationSealNormalizations;
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
@@ -904,7 +905,10 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
             ColumnPtr gathered = isColumnConst(*columns[position])
                 ? columns[position]->cloneResized(total)
                 : columns[position]->index(*gather_indexes, 0);
-            payload.argument_columns[position] = recursiveRemoveLowCardinality(gathered->convertToFullIfWrapped());
+            ColumnPtr normalized = recursiveRemoveLowCardinality(gathered->convertToFullIfWrapped());
+            if (normalized.get() != gathered.get())
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealNormalizations);
+            payload.argument_columns[position] = std::move(normalized);
         }
 }
 

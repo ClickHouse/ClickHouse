@@ -1,12 +1,8 @@
-#include <algorithm>
 #include <unordered_set>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/ProfileEvents.h>
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 
@@ -14,7 +10,6 @@ namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
-    extern const Event AdaptiveAggregationSealNormalizations;
     extern const Event AdaptiveAggregationBucketsRetired;
 }
 
@@ -291,7 +286,6 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     else
     {
         concatenateStagedKeys(keys, minis);
-        const size_t total = keys.size();
 
         auto columns_of = [](const StagedChunk & mini) -> const Columns &
         { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
@@ -304,40 +298,13 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 if (argument_columns[position])
                     continue;
 
-                /// A constant argument stays constant only when every batch agrees on the value.
-                /// The values can genuinely differ across the blocks of one stream, and
-                /// ColumnConst::insertRangeFrom ignores the source, so a mismatch materializes
-                /// every batch's column instead (the same treatment as Squashing).
-                bool all_const_equal = isColumnConst(*columns_of(*minis.front())[position]);
-                for (size_t m = 1; all_const_equal && m < num_minis; ++m)
-                {
-                    const auto & column = *columns_of(*minis[m])[position];
-                    all_const_equal = isColumnConst(column)
-                        && assert_cast<const ColumnConst &>(*columns_of(*minis.front())[position])
-                                   .getDataColumn()
-                                   .compareAt(0, 0, assert_cast<const ColumnConst &>(column).getDataColumn(), -1)
-                            == 0;
-                }
-                if (all_const_equal)
-                {
-                    argument_columns[position] = columns_of(*minis.front())[position]->cloneResized(total);
-                    continue;
-                }
-
+                /// The seal normalized every batch's payload columns to the dense form the
+                /// drain consumes, so the buffered batches always agree at a position and the
+                /// coalescing is a plain concatenation.
                 VectorWithMemoryTracking<ColumnPtr> sources;
                 sources.reserve(num_minis);
                 for (const auto & mini : minis)
-                    sources.push_back(columns_of(*mini)[position]->convertToFullColumnIfConst());
-
-                /// The clone below takes the destination's class from the first source and the two
-                /// calls after it downcast every source to that class. Lazy replication is decided
-                /// per block, so one position can legitimately mix wrapped and dense columns.
-                if (!std::ranges::all_of(sources, [&](const auto & source) { return source->structureEquals(*sources.front()); }))
-                {
-                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealNormalizations);
-                    for (auto & source : sources)
-                        source = removeSpecialRepresentations(source);
-                }
+                    sources.push_back(columns_of(*mini)[position]);
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);
