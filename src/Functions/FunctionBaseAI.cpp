@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <algorithm>
