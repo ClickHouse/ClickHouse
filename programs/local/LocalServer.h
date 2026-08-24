@@ -126,11 +126,6 @@ private:
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
-    /// The working directory is the default designated directory in the user's home
-    /// (neither --path nor --tmp was specified). Used to give a hint about these options
-    /// when the directory turns out to be locked by another instance.
-    bool default_path_used = false;
-
     std::unique_ptr<ReadBufferFromFile> input;
 
     /// MemoryWorker periodically updates RSS and resizes the userspace page cache.

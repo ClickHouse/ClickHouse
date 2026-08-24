@@ -605,7 +605,6 @@ void LocalServer::tryInitPath()
                 " or use the --tmp option to work with a temporary directory.");
 
         path = (data_home / "clickhouse-local").string();
-        default_path_used = true;
 
         /// The directory may hold user data, so restrict it on creation, similarly to the data
         /// directory of a server. The permissions of an already existing directory are left as is.
@@ -1767,9 +1766,15 @@ void LocalServer::processConfig()
         }
         catch (Exception & e)
         {
-            if (default_path_used)
-                e.addMessage("Use the --tmp option to work with a temporary directory (removed on exit),"
-                    " or the --path option to specify another location for the data");
+            /// Typically the directory is locked by a concurrent instance ("Another server instance
+            /// in same directory is already running"), so suggest the ways out: the options that
+            /// give this instance its own directory, or turning the instance that holds the
+            /// directory into a server and connecting to it.
+            e.addMessage("Use the --tmp option to work with a unique temporary directory that is removed on exit,"
+                " or the --path option to specify a different location for the data."
+                " Alternatively, the already running instance can serve concurrent clients:"
+                " execute SYSTEM START LISTEN TCP in it and connect with clickhouse-client,"
+                " or execute SYSTEM START LISTEN HTTP and open http://localhost:8123/play in a web browser");
             throw;
         }
 
