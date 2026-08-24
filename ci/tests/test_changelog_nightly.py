@@ -213,10 +213,11 @@ def test_prepare_repo_fetches_the_commit_graph_only(monkeypatch):
     fetches = [c for c in commands if c.startswith("git fetch")]
     assert len(fetches) == 2
     for command in fetches:
-        # Trees and blobs of the whole history are never needed, and fetching
-        # them cost ~35 minutes of every run.
-        assert "--filter=tree:0" in command
+        # Restricted to master: the default refspec pulled every branch of the
+        # repository. Not filtered: a partial clone hangs changelog.py's own
+        # `git fetch --tags` in the container.
         assert "'+refs/heads/master:refs/remotes/origin/master'" in command
+        assert "--filter" not in command
     assert "--unshallow" in fetches[0]
     assert "--tags" in fetches[1]
 
@@ -230,6 +231,37 @@ def test_prepare_repo_skips_unshallow_on_a_complete_repository(monkeypatch):
     m.prepare_repo()
     # `git fetch --unshallow` on a complete repository is an error.
     assert not [c for c in commands if "--unshallow" in c]
+
+
+def test_generate_raw_entries_bounds_the_container_run(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(m, "refresh_gh_token", lambda: None)
+    monkeypatch.setattr(m, "_sha", lambda ref: "b" * 40)
+    monkeypatch.setattr(
+        m.Shell, "get_output", lambda *_a, **_k: pytest.fail("no git output needed")
+    )
+    monkeypatch.setattr(m, "RAW_OUTPUT", str(tmp_path / "raw.md"))
+
+    def _check(command, **kwargs):
+        calls.append((command, kwargs.get("timeout")))
+        if "docker run" in command:
+            with open(m.RAW_OUTPUT, "w") as fd:
+                fd.write(GENERATED)
+        return True
+
+    monkeypatch.setattr(m.Shell, "check", _check)
+    monkeypatch.setattr(m, "_read_changelog", lambda: MINI)
+    written = {}
+    monkeypatch.setattr(m, "_write_changelog", lambda text: written.update(text=text))
+    info = m.generate_raw_entries("26.8", "b" * 40, "b" * 40)
+    assert info == "No new commits since the last generation"
+    # A run that reaches the container must carry a timeout: an unbounded
+    # `docker run` hung for five hours in
+    # https://github.com/ClickHouse/ClickHouse/actions/runs/32747225427.
+    monkeypatch.setattr(m, "_sha", lambda ref: "a" * 40)
+    m.generate_raw_entries("26.8", "a" * 40, "b" * 40)
+    docker_runs = [(c, t) for c, t in calls if "docker run" in c]
+    assert docker_runs and all(t == m.GENERATE_TIMEOUT_SEC for _c, t in docker_runs)
 
 
 def test_get_pr_states_scopes_repo_and_filters_fork_prs(monkeypatch):
