@@ -4357,7 +4357,7 @@ void Context::enableStreamingCursor()
     streaming_cursor_mutex = std::make_shared<std::mutex>();
 }
 
-void Context::mergeStreamingCursor(const CursorTreeNodePtr & from)
+void Context::mergeStreamingCursor(const CursorTreeNodePtr & from) const
 {
     std::lock_guard lock(*streaming_cursor_mutex);
     mergeCursors(streaming_cursor, from);

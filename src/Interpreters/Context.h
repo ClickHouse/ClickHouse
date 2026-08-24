@@ -1287,7 +1287,7 @@ public:
     /// Enable collection of the final `STREAM [BOUNDED]` cursor; reading sources merge into it, the outer
     /// query reads it back. `mergeStreamingCursor` is thread-safe so parallel streams can merge concurrently.
     void enableStreamingCursor();
-    void mergeStreamingCursor(const CursorTreeNodePtr & from);
+    void mergeStreamingCursor(const CursorTreeNodePtr & from) const;
     CursorTreeNodePtr getStreamingCursor() const;
 
     /// I/O formats.
