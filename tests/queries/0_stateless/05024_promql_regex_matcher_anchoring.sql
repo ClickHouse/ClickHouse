@@ -85,6 +85,15 @@ SELECT count() FROM timeSeriesSelector(ts, '{__name__=~"foo[](?m)]"}', 0, 1000);
 SELECT 'metric regex with a POSIX class';
 SELECT count() FROM timeSeriesSelector(ts, '{__name__=~"foo[[:alpha:](?m)]"}', 0, 1000);
 
+SELECT 'simple metric regex keeps the tags primary-key optimization';
+-- EXPLAIN of timeSeriesSelector only shows the samples-side read. Inspect the tags table directly,
+-- where the plain anchored regex and its primary-key condition are visible.
+SELECT plan LIKE '%Filter column: match(metric_name, \'^test_metric$\')%'
+    AND plan LIKE '%Condition: (metric_name in [\'test_metric\', \'test_metric\'])%'
+    AND NOT plan LIKE '%^(?:test_metric)$%' AS has_plain_metric_regex
+FROM (SELECT arrayStringConcat(groupArray(explain), '\\n') AS plan
+      FROM (EXPLAIN indexes = 1 SELECT metric_name FROM timeSeriesTags(ts) WHERE match(metric_name, '^test_metric$')));
+
 SELECT 'deeply nested matcher regex stays safe';
 SELECT count() FROM timeSeriesSelector(
     ts,

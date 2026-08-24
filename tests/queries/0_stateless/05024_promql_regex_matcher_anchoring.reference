@@ -58,6 +58,8 @@ metric regex with a leading class terminator
 0
 metric regex with a POSIX class
 0
+simple metric regex keeps the tags primary-key optimization
+1
 deeply nested matcher regex stays safe
 1
 metric regex matcher
