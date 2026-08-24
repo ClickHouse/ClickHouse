@@ -131,7 +131,9 @@ client_compwords_positive = [
     "uniqCombined64ForEach",
     # system.keywords
     "CHANGEABLE_IN_READONLY",
-    # FIXME: one may add separate case for suggestion_limit
+    # NOTE: The words below live in contexts the client truncates to
+    # suggestion_limit rows ordered by word, so tables held by concurrent tests can
+    # outrank them at the default bound. The argv passes an explicit larger limit.
     # system.databases
     # NOTE: Do not use "system" here because the prefix "sys" (3 chars) is too
     # short and matches many completions, causing timeouts under TSan.
@@ -164,6 +166,7 @@ if __name__ == "__main__":
     args = shlex.split(clickhouse_client)
     args.append("--wait_for_suggestions_to_load")
     args.append("--highlight=0")
+    args.append("--suggestion_limit=1000000")
     [
         run_with_timeout(
             test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
