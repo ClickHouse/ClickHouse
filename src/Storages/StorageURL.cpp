@@ -2631,7 +2631,7 @@ void registerStorageURL(StorageFactory & factory)
                 object_storage_args.push_back(engine_arg->clone());
             StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
-            auto configuration = std::make_shared<StorageWebConfiguration>();
+            auto configuration = std::make_shared<StorageWebConfiguration>(urlCaller(TABLE_ENGINE_URL_CALLER));
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

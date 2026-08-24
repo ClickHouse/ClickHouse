@@ -112,6 +112,16 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
     }
 }
 
+StorageWebConfiguration::StorageWebConfiguration()
+    : StorageWebConfiguration(urlCaller(TABLE_FUNCTION_URL_CALLER))
+{
+}
+
+StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_caller_)
+    : glob_caller(std::move(glob_caller_))
+{
+}
+
 StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
@@ -282,7 +292,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
     const auto url_shards_with_failover = parseURLShardsWithFailover(
-        url_root_for_expansion + query_fragment_part, max_addresses, urlCaller(TABLE_FUNCTION_URL_CALLER));
+        url_root_for_expansion + query_fragment_part, max_addresses, glob_caller);
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
