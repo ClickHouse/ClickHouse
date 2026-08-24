@@ -18,3 +18,7 @@ underflow clamps to the smallest tick too
 -999:59:59.999999	-999:59:59.999999	-999:59:59.999999	-999:59:59.999999999
 numeric sources still saturate under throw, the transforms are dispatched with Ignore
 999:59:59.999999	999:59:59.999999	999:59:59.999999
+a fraction inside the boundary second survives, only real overflow saturates
+2262-04-11 23:47:16.499999744	1677-09-21 00:12:43.500000256
+999:59:59.500000	-999:59:59.500000
+999:59:59.999999	-999:59:59.999999

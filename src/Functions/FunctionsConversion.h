@@ -691,23 +691,24 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-        /// Clamping to the calendar-wide [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] window would still let
-        /// precision 8/9 inputs overflow the Int64 in convertToDecimal and surface DECIMAL_OVERFLOW instead of
-        /// saturating, so use the same scale-dependent bounds as the integer transforms.
         const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
-        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < min_whole || from > max_whole) [[unlikely]]
+            if (from < minWholeSecondsForDateTime64(scale_multiplier) || from > maxWholeSecondsForDateTime64(scale_multiplier)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        if (from > static_cast<FromType>(max_whole))
-            return maxTicksForDateTime64(scale_multiplier);
-        if (from < static_cast<FromType>(min_whole))
-            return minTicksForDateTime64(scale_multiplier);
+        /// The fractional part is kept, so the bounds have to be compared in ticks rather than whole seconds,
+        /// otherwise the whole last second saturates. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 min_ticks = minTicksForDateTime64(scale_multiplier);
+        const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+        DateTime64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeDateTime64>(from, scale, result) && result.value >= min_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return min_ticks;
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -846,14 +847,16 @@ struct ToTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
-        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
-        /// decimal, producing Time64 values that display correctly but compare as different from the
-        /// saturated maximum.
-        if (from > static_cast<FromType>(MAX_TIME_TIMESTAMP))
-            return maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
-        if (from < static_cast<FromType>(-MAX_TIME_TIMESTAMP))
-            return minTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
+        /// Time64 is much narrower than DateTime64, so the value needs its own range, compared in ticks so that
+        /// the fractional part survives. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 max_ticks = maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
+        Time64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeTime64>(from, scale, result) && result.value >= -max_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return -max_ticks;
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };

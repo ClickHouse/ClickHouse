@@ -32,3 +32,8 @@ SELECT toTime64(-3600000, 6), toTime64(-3600000::Int64, 6), toTime64(-3600000.0,
 SELECT 'numeric sources still saturate under throw, the transforms are dispatched with Ignore';
 SELECT toTime64(materialize(3600000.0), 6), toTime64(materialize(3600000::Int64), 6), toTime64(materialize(3600000::UInt64), 6)
 SETTINGS date_time_overflow_behavior = 'throw';
+
+SELECT 'a fraction inside the boundary second survives, only real overflow saturates';
+SELECT toDateTime64(9223372036.5, 9), toDateTime64(-9223372036.5, 9);
+SELECT toTime64(3599999.5, 6), toTime64(-3599999.5, 6);
+SELECT toTime64(3600000.5, 6), toTime64(-3600000.5, 6);
