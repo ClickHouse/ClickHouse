@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -125,6 +126,31 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     }
 
     return node;
+}
+
+/// Whether `step` (e.g. a JOIN) passes `column_names` through unchanged, just reordering/dropping rows.
+bool isColumnPreservingStep(const IQueryPlanStep & step, const NameSet & column_names)
+{
+    if (!step.hasOutputHeader())
+        return false;
+
+    const auto & output_header = *step.getOutputHeader();
+
+    for (const auto & column_name : column_names)
+    {
+        if (!output_header.has(column_name))
+            return false;
+
+        bool found_in_inputs = std::ranges::any_of(step.getInputHeaders(), [&](const auto & input_header)
+        {
+            return input_header->has(column_name);
+        });
+
+        if (!found_in_inputs)
+            return false;
+    }
+
+    return true;
 }
 
 String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
@@ -954,21 +980,43 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() < 2)
         return;
 
-    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    /// Column names used by isColumnPreservingStep to bound how far up the walk below may climb.
+    NameSet text_index_column_names;
+    for (const auto & [index_name, info] : text_index_read_infos)
+    {
+        auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition_template->generateUnsubstituted());
+        for (const auto & column : text_index_condition.getHeader())
+            text_index_column_names.insert(column.name);
+    }
 
-    if (!filter_step)
-        return;
+    /// Reach a FilterStep past a JOIN (e.g. an OR-combined WHERE not pushed below it); only the step
+    /// adjacent to the scan may get the virtual-column direct-read substitution.
+    bool allow_direct_read = direct_read_from_text_index && !optimized && !already_has_direct_read;
 
-    ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read);
+    for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
+    {
+        QueryPlan::Node * node = it->node;
+        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
 
-    if (!result_filter_node)
-        return;
+        if (!filter_step)
+        {
+            if (isColumnPreservingStep(*node->step, text_index_column_names))
+                continue;
+            break;
+        }
 
-    bool removes_filter_column = filter_step->removesFilterColumn();
-    auto new_filter_column_name = result_filter_node->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+        ActionsDAG & filter_dag = filter_step->getExpression();
+        const auto * result_filter_node = processAndOptimizeTextIndexDAG(
+            *read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), allow_direct_read);
+        allow_direct_read = false;
+
+        if (!result_filter_node)
+            continue;
+
+        bool removes_filter_column = filter_step->removesFilterColumn();
+        auto new_filter_column_name = result_filter_node->result_name;
+        node->step = std::make_unique<FilterStep>(filter_step->getInputHeaders().front(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+    }
 }
 
 }
