@@ -42,6 +42,19 @@ TEST_RUN_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$"
 QUERY_LOG_COMMENT="04869_break_query_${TEST_RUN_SUFFIX}"
 INFINITE_LOCK_QUERY_LOG_COMMENT="04869_infinite_lock_break_query_${TEST_RUN_SUFFIX}"
 
+# Best-effort cleanup that also runs on the failure paths (`wait_for_query` / `wait_for_drop_lock`
+# exit early): without it a failure would leak the 15-second reader, the queued `DROP TABLE` and
+# the `Ordinary` database into the rest of the test run. Every step is idempotent, so running it
+# again after the happy path is harmless.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id IN ('$READER_QUERY_ID', '$DROP_QUERY_ID') SYNC FORMAT Null" >/dev/null 2>&1 ||:
+    wait 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $ORDINARY_DB" >/dev/null 2>&1 ||:
+}
+
+trap cleanup EXIT
+
 # Holds a share lock on the table for about 15 seconds (killed earlier at the end of the test).
 # The table has 5 single-row parts, so the rows arrive in single-row blocks and each block sleeps
 # only 3 seconds: this keeps every block under the per-block sleep limit and lets KILL QUERY take

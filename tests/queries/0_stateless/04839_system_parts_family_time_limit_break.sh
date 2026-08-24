@@ -16,62 +16,66 @@
 # The first group of checks uses a deadline of 1 millisecond, which is guaranteed to fire before
 # the full result is built, because the failpoint sleeps 500 ms on every enumerated part: every
 # query must return fewer rows than the full result. Without the failpoint this assertion would be
-# racy: a fast machine can build the whole 20-row result in under a millisecond, before the first
+# racy: a fast machine can build the whole 10-row result in under a millisecond, before the first
 # cancellation checkpoint sees an expired deadline. Only the upper bound is asserted, because the
 # exact number of rows collected before the deadline is inherently nondeterministic.
 #
 # The second group of checks proves that the cancellation checkpoints actually stop the eager
-# result building quickly, with timed assertions:
+# result building quickly. Every sleep of the failpoint is counted by the
+# `SystemPartsEnumerationSlowdownSleeps` profile event, and each check asserts an upper bound on
+# the number of sleeps its query performed before stopping, taken from `system.query_log`. The
+# sleeps covered are:
 # - the per-part checkpoints: the failpoint sleeps 500 ms on every enumerated part, so building
-#   the full result of a 20-part table takes at least 10 seconds;
+#   the full result of a 10-part table performs 10 sleeps;
 # - the per-column checkpoints of `system.parts_columns` and `system.projection_parts_columns`:
-#   the failpoint sleeps 1 second per `COLUMNS_CANCELLATION_CHECK_PERIOD` (128) enumerated
-#   columns of a part, so building the full result over a single part with 1025 columns takes
-#   at least 8 seconds;
+#   the failpoint sleeps 500 ms per `COLUMNS_CANCELLATION_CHECK_PERIOD` (128) enumerated
+#   columns of a part, so building the full result over a single part with 1025 columns performs
+#   8 sleeps;
 # - the stop callback inside the parts-snapshot walks of MergeTree: for the tables with the
 #   '_snap' name marker the failpoint sleeps 500 ms per enumerated part inside the walk itself
 #   and polls the callback on every part (its regular cadence of 8192 parts cannot be reached
 #   with a fixture of a reasonable size);
 # - the checkpoints of the column-metadata prepass of the column-oriented tables: for the tables
-#   with the '_meta' name marker the failpoint sleeps 1 second per 128 enumerated metadata
+#   with the '_meta' name marker the failpoint sleeps 500 ms per 128 enumerated metadata
 #   columns inside the prepass;
 # - the per-column checkpoints of the column-oriented tables after the parts snapshot itself has
-#   already stopped: the '_snap_wide' fixture combines the slowed down snapshot walk with a part
-#   that has many columns, so the row materialization that follows the stopped snapshot must keep
+#   already stopped: the '_snap_wide' fixture combines the slowed down snapshot walk with parts
+#   that have many columns, so the row materialization that follows the stopped snapshot must keep
 #   polling instead of enumerating every column of every returned part.
-# In all cases a query with a 1 second deadline must finish close to the same query without the
-# failpoint, and it can only do so by stopping at the checkpoints. Without the checkpoints these
-# queries keep building rows long past the deadline and the elapsed time assertions fail.
+# In all cases a query with a 0.5 second deadline must stop at the first checkpoint that sees the
+# expired deadline. Every sleep site is polled at the same cadence as it sleeps, so a query that
+# honors the checkpoints performs at most 2-3 sleeps per exercised site before it stops, while a
+# query that ignores them performs one sleep per enumerated element: at least 8 in every check
+# below. The sleep count is asserted instead of the elapsed time on purpose: the count has a
+# deterministic upper bound, while any wall-clock bound flakes on a loaded worker, where the
+# system-table query pipeline alone can take seconds to initialize. Load can only make the
+# deadline fire earlier and the count smaller, never larger.
 #
 # Note that a query of these tables that runs into its deadline returns no rows at all, in any
 # overflow mode: the whole result is built as a single chunk after the enumeration, and a chunk
 # produced past the deadline is never handed over to the rest of the pipeline. So the checks below
 # assert that the work stops quickly, not that a partial result is handed out.
 #
-# The elapsed time is taken from `system.query_log`, not measured around the client invocation:
-# the startup of `clickhouse-client` alone takes seconds in the debug and sanitizer builds, which
-# is of the same order as the durations being asserted. For the same reason all the timed queries
-# are sent in a single client invocation.
+# All the checked queries are sent in a single client invocation: the client startup alone takes
+# seconds in the debug and sanitizer builds.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 # A table with several parts and a projection: exercises the checkpoints of the per-part loops.
-NUM_PARTS=20
+NUM_PARTS=10
 # This fixture exercises the eager storage-discovery pass in `StoragesDroppedInfoStream`.
-NUM_DROPPED_TABLES=20
+NUM_DROPPED_TABLES=10
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
 # loops, which fire every 128 enumerated columns: 1025 columns give 8 checkpoints per part.
 NUM_WIDE_COLUMNS=1024
-# Every timed query is run twice: once with the failpoint and the deadline, and once without either
-# of them, and only the difference between the two elapsed times is asserted. An absolute bound does
-# not work here: on the loaded debug and sanitizer workers the system-table query pipeline alone can
-# take several seconds to initialize, which is of the same order as the bound being asserted, while
-# that overhead cancels out of the difference. A query that stops at the first checkpoint after the
-# deadline spends at most the deadline plus one sleep of the failpoint more than its baseline, while
-# a query that ignores the checkpoints spends at least eight seconds more.
-MAX_EXTRA_MS=4000
+# The upper bound on the failpoint sleeps a query may perform before it stops. A query that stops
+# at the checkpoints performs at most 2-3 sleeps: the sleeps are 500 ms each, the deadline is
+# 0.5 seconds, and every sleep site is polled at the sleep cadence, so at most two sleeps fit
+# before the deadline and at most one checkpoint sees it late. A query that ignores a checkpoint
+# performs one sleep per enumerated element instead: at least 8 in every check below.
+MAX_SLEEPS=4
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_WIDE_COLUMNS); do echo -n ", c$i UInt64"; done)
 TEST_RUN_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$"
@@ -131,7 +135,7 @@ INSERT INTO t_slowdown_system_parts SELECT number FROM numbers($NUM_PARTS) SETTI
 INSERT INTO $DROPPED_TABLE SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_wide (x) VALUES (1);
 INSERT INTO t_slowdown_system_parts_snap SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
-INSERT INTO t_slowdown_system_parts_snap_wide (x) SELECT number FROM numbers(4) SETTINGS max_partitions_per_insert_block = 0;
+INSERT INTO t_slowdown_system_parts_snap_wide (x) SELECT number FROM numbers(2) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_meta (x) VALUES (1);
 $DROPPED_DISCOVERY_TABLES
 
@@ -194,91 +198,77 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
     check_break_dropped_discovery
 } | $CLICKHOUSE_CLIENT
 
-# $1 - 'slow' (with the deadline) or 'base' (the baseline run without one), $2 - the position of
-# the check, $3 - a label, $4 - the system table, $5 - the source table,
-# $6 - the select list (default: name).
-# The elapsed time of every query is looked up afterwards in `system.query_log` by its
-# `log_comment`, which also gives the checks their deterministic output order.
-function timed_query()
+# $1 - the position of the check, $2 - a label, $3 - the system table, $4 - the source table,
+# $5 - the select list (default: name).
+# The number of failpoint sleeps of every query is looked up afterwards in `system.query_log` by
+# its `log_comment`, which also gives the checks their deterministic output order.
+function counted_query()
 {
-    local deadline=""
-    [ "$1" = "slow" ] && deadline="max_execution_time = 1, timeout_overflow_mode = 'break',"
-
     echo "
-    SELECT ${6:-name} FROM system.$4 WHERE database = currentDatabase() AND table = '$5'
+    SELECT ${5:-name} FROM system.$3 WHERE database = currentDatabase() AND table = '$4'
     FORMAT Null
-    SETTINGS $deadline log_comment = '$QUERY_LOG_PREFIX $1 $2 $3';
+    SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break',
+             log_comment = '$QUERY_LOG_PREFIX $1 $2';
     "
 }
 
-function timed_dropped_discovery()
+function counted_dropped_discovery()
 {
-    local deadline=""
-    [ "$1" = "slow" ] && deadline="max_execution_time = 1, timeout_overflow_mode = 'break',"
-
     echo "
     SELECT name FROM system.dropped_tables_parts
     WHERE database = currentDatabase() AND table LIKE '${DROPPED_DISCOVERY_TABLE_PREFIX}%'
     FORMAT Null
-    SETTINGS $deadline log_comment = '$QUERY_LOG_PREFIX $1 08 dropped_tables_parts_discovery';
+    SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break',
+             log_comment = '$QUERY_LOG_PREFIX 08 dropped_tables_parts_discovery';
     "
 }
 
-# $1 - 'slow' or 'base'.
-function all_timed_queries()
 {
-    timed_query "$1" 01 parts parts t_slowdown_system_parts
-    timed_query "$1" 02 parts_columns parts_columns t_slowdown_system_parts
-    timed_query "$1" 03 projection_parts projection_parts t_slowdown_system_parts
-    timed_query "$1" 04 projection_parts_columns projection_parts_columns t_slowdown_system_parts
-    timed_query "$1" 05 parts_columns_wide parts_columns t_slowdown_system_parts_wide
-    timed_query "$1" 06 projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
-    timed_query "$1" 07 dropped_tables_parts dropped_tables_parts $DROPPED_TABLE
+    counted_query 01 parts parts t_slowdown_system_parts
+    counted_query 02 parts_columns parts_columns t_slowdown_system_parts
+    counted_query 03 projection_parts projection_parts t_slowdown_system_parts
+    counted_query 04 projection_parts_columns projection_parts_columns t_slowdown_system_parts
+    counted_query 05 parts_columns_wide parts_columns t_slowdown_system_parts_wide
+    counted_query 06 projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
+    counted_query 07 dropped_tables_parts dropped_tables_parts $DROPPED_TABLE
 
-    # The failpoint delays each of 20 entries while `StoragesDroppedInfoStream` eagerly discovers
+    # The failpoint delays each of the entries while `StoragesDroppedInfoStream` eagerly discovers
     # dropped storages. This is before inherited per-part enumeration, so it pins the prepass poll.
-    timed_dropped_discovery "$1"
+    counted_dropped_discovery
 
-    # The '_snap' fixture times out inside the parts-snapshot walk in MergeTree (500 ms per part,
-    # at least 10 seconds for the full walk). Selecting the _state column switches to the walks
-    # over all part states (getAllDataPartsVector / getAllProjectionPartsVector instead of the
-    # ForInternalUsage helpers), so both pairs of helpers are covered.
-    timed_query "$1" 09 parts_snap parts t_slowdown_system_parts_snap
-    timed_query "$1" 10 parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
-    timed_query "$1" 11 projection_parts_snap projection_parts t_slowdown_system_parts_snap
-    timed_query "$1" 12 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
+    # The '_snap' fixture runs into its deadline inside the parts-snapshot walk in MergeTree
+    # (500 ms per part, one sleep per part for the full walk). Selecting the _state column switches
+    # to the walks over all part states (getAllDataPartsVector / getAllProjectionPartsVector
+    # instead of the ForInternalUsage helpers), so both pairs of helpers are covered.
+    counted_query 09 parts_snap parts t_slowdown_system_parts_snap
+    counted_query 10 parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
+    counted_query 11 projection_parts_snap projection_parts t_slowdown_system_parts_snap
+    counted_query 12 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
 
-    # The '_meta' fixture times out inside the column-metadata prepass (1 second per 128 enumerated
-    # metadata columns, at least 8 seconds for the full prepass over 1025 columns).
-    timed_query "$1" 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
-    timed_query "$1" 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
+    # The '_meta' fixture runs into its deadline inside the column-metadata prepass (500 ms per
+    # 128 enumerated metadata columns, 8 sleeps for the full prepass over 1025 columns).
+    counted_query 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
+    counted_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 
     # The '_snap_wide' fixture stops inside the parts-snapshot walk, and the parts it returns are
     # then materialized column by column: without the per-column checkpoints of that materialization
-    # a single returned part alone takes at least eight seconds.
-    timed_query "$1" 15 parts_columns_snap_wide parts_columns t_slowdown_system_parts_snap_wide
-    timed_query "$1" 16 projection_parts_columns_snap_wide projection_parts_columns t_slowdown_system_parts_snap_wide
-}
-
-all_timed_queries slow | $CLICKHOUSE_CLIENT
+    # a single returned part alone performs at least eight more sleeps.
+    counted_query 15 parts_columns_snap_wide parts_columns t_slowdown_system_parts_snap_wide
+    counted_query 16 projection_parts_columns_snap_wide projection_parts_columns t_slowdown_system_parts_snap_wide
+} | $CLICKHOUSE_CLIENT
 
 disable_slowdown_failpoint
-
-# The baseline: the same queries with neither the failpoint nor a deadline. Their elapsed time is
-# the environment's overhead, which is subtracted from the elapsed time of the queries above.
-all_timed_queries base | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'fast ' || any(label) || ' ' || toString(maxIf(query_duration_ms, kind = 'slow') < maxIf(query_duration_ms, kind = 'base') + $MAX_EXTRA_MS)
+SELECT 'fast ' || any(label) || ' ' || toString(max(sleeps) <= $MAX_SLEEPS)
 FROM
 (
     SELECT
-        splitByChar(' ', log_comment)[2] AS kind,
-        splitByChar(' ', log_comment)[3] AS idx,
-        splitByChar(' ', log_comment)[4] AS label,
-        query_duration_ms
+        splitByChar(' ', log_comment)[2] AS idx,
+        splitByChar(' ', log_comment)[3] AS label,
+        ProfileEvents['SystemPartsEnumerationSlowdownSleeps'] AS sleeps
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '$QUERY_LOG_PREFIX ')

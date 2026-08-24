@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
@@ -13,6 +14,11 @@
 
 #include <thread>
 
+
+namespace ProfileEvents
+{
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
+}
 
 namespace DB
 {
@@ -62,7 +68,10 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
         {
             if (table_name.starts_with("t_slowdown_system_parts_dropped_discovery"))
+            {
+                ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
         });
 
         if (!dynamic_cast<MergeTreeData *>(storage.get()))

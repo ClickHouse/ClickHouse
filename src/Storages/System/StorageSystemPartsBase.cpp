@@ -1,6 +1,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -38,6 +39,11 @@ constexpr auto * active_column_name = "active";
 constexpr auto * storage_uuid_column_name = "storage_uuid";
 }
 
+namespace ProfileEvents
+{
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
+}
+
 namespace DB
 {
 namespace Setting
@@ -63,7 +69,10 @@ void slowDownSystemPartsEnumeration([[maybe_unused]] const String & table_name)
         /// Slow down only the tables with a special name prefix, so that the tests using
         /// this failpoint do not affect concurrent queries over the tables of other tests.
         if (table_name.starts_with("t_slowdown_system_parts"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
             sleepForMilliseconds(500);
+        }
     });
 }
 
@@ -72,10 +81,13 @@ void slowDownSystemPartsColumnsEnumeration([[maybe_unused]] const String & table
     fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
     {
         /// Sleep at the same cadence as the cancellation checkpoints of the column-enumeration
-        /// loops, so that a test can prove with a timed assertion that those checkpoints stop
+        /// loops, so that a test can prove by counting the sleeps that those checkpoints stop
         /// the eager result building on a table with many columns per part.
         if (column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && table_name.starts_with("t_slowdown_system_parts"))
-            sleepForMilliseconds(1000);
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
     });
 }
 
@@ -84,11 +96,14 @@ void slowDownSystemPartsMetadataEnumeration([[maybe_unused]] const String & tabl
     fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
     {
         /// Sleep at the same cadence as the cancellation checkpoints of the column-metadata
-        /// prepasses, so that a test can prove with a timed assertion that those checkpoints
+        /// prepasses, so that a test can prove by counting the sleeps that those checkpoints
         /// stop the prepass on a table with many columns. The narrower name prefix keeps the
         /// prepass fast for the tables that test the later per-part / per-column checkpoints.
         if (column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && table_name.starts_with("t_slowdown_system_parts_meta"))
-            sleepForMilliseconds(1000);
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
     });
 }
 

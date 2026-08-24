@@ -189,6 +189,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
@@ -9362,6 +9363,12 @@ bool isPartsSnapshotSlowdownActive(const StorageID & storage_id)
     return active;
 }
 
+void sleepForPartsSnapshotSlowdown()
+{
+    ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+    sleepForMilliseconds(500);
+}
+
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
@@ -9390,7 +9397,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
                 {
                     ++counter;
                     if (slowdown)
-                        sleepForMilliseconds(500);
+                        sleepForPartsSnapshotSlowdown();
                     if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
                     {
                         stopped = true;
@@ -9496,7 +9503,7 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
         {
             ++counter;
             if (slowdown)
-                sleepForMilliseconds(500);
+                sleepForPartsSnapshotSlowdown();
             if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
             {
                 stopped = true;
@@ -9535,7 +9542,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
         {
             ++counter;
             if (slowdown)
-                sleepForMilliseconds(500);
+                sleepForPartsSnapshotSlowdown();
             if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
                 break;
             res.push_back(part);
@@ -9617,7 +9624,7 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     {
         ++counter;
         if (slowdown)
-            sleepForMilliseconds(500);
+            sleepForPartsSnapshotSlowdown();
         if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
             break;
 
