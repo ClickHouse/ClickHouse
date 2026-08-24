@@ -238,9 +238,11 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 /** Remove conjuncts that are unsafe to copy into another query tree (non-deterministic in this
-  * query, or stateful). Nested `and` is flattened the same way as
+  * query, stateful, or server-constant). Nested `and` is flattened the same way as
   * `removeExpressionsThatDoNotDependOnTableIdentifiers`. Window and aggregate functions are also
   * dropped. JOIN filter pushdown refuses stateful predicates via `ActionsDAG::hasStatefulFunctions`.
+  * Server constants such as `hostName` must stay on the initiator: the wrap `WHERE` is sent to
+  * remote cluster nodes, where those functions can return a different value.
   */
 void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
