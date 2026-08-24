@@ -576,9 +576,10 @@ namespace
                 auto * number_ctx = offset_value_ctx->NUMBER();
                 if (!number_ctx)
                     throwInconsistentSchema("OffsetOp", ctx->getText());
+
                 auto & offset_value = new_node->offset_value.emplace();
                 ok &= parseDuration(number_ctx, offset_value);
-                if (ok && offset_value_ctx->SUB())
+                if (ok && offset_value_ctx->SUB().size() % 2)
                     offset_value = -offset_value;
             }
 
