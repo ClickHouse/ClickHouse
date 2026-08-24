@@ -81,8 +81,8 @@ class DataChunkAssembler
 
         while (left_row < left_rows && hasUnmatchedRows())
         {
-            const auto left_key = std::pair(left_block_numbers->getElement(left_row), left_block_offsets->getElement(left_row));
-            const auto right_key = std::pair(right_block_numbers->getElement(matched), right_block_offsets->getElement(matched));
+            const std::pair left_key{left_block_numbers->getElement(left_row), left_block_offsets->getElement(left_row)};
+            const std::pair right_key{right_block_numbers->getElement(matched), right_block_offsets->getElement(matched)};
 
             if (left_key > right_key)
                 throw Exception(
@@ -98,8 +98,10 @@ class DataChunkAssembler
 
                 ++matched;
             }
-
-            ++left_row;
+            else
+            {
+                ++left_row;
+            }
         }
 
         if (left_row == left_rows)
