@@ -6273,7 +6273,8 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
     /// storage would leave the sidecar existsFile-visible but unopenable, failing
     /// every subsequent load of the part.
-    if (getInMemoryMetadataPtr(getContext(), false)->hasUniqueKey())
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (metadata_snapshot->hasUniqueKey())
         return {part_type, PartStorageType::Full};
 
     if (storage_type == PartStorageType::Full && !partition_id.empty())
