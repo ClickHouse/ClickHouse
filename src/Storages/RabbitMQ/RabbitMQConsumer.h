@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/saturatedDuration.h>
 
 #include <functional>
 
@@ -78,7 +79,7 @@ public:
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms),
+        cv.wait_for(lock, saturatedMilliseconds(*timeout_ms),
             [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
     }
 
