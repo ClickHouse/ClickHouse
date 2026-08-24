@@ -4,7 +4,11 @@
 -- with the optimization enabled and disabled, and both blocks must match the reference.
 
 -- Force two-level aggregation states and several partial tables, so the threshold merge engages
--- even on this small dataset.
+-- even on this small dataset. The adaptive aggregator keeps the tables single-level while it is
+-- staging (it converts only when the per-thread scan outgrows its watermarks, which needs far
+-- more data), so it is pinned off to let `group_by_two_level_threshold` act; its interplay with
+-- the threshold merge is covered by the events test.
+SET enable_adaptive_aggregator = 0;
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
@@ -23,13 +27,14 @@ INSERT INTO threshold_top_k
 INSERT INTO threshold_top_k
     SELECT k, k % 7, k * 1000 + r, toString(k * 1000 + r), r, nullIf(r, 0), r
     FROM (SELECT 100 + number AS k FROM numbers(100)) ARRAY JOIN range(100 + k) AS r;
--- Tail: 8000 keys with 150 rows each, so the bucket tables are much larger than the LIMIT. The
--- tail count of 150 collides with no head count (1..100 and 200..299 are the unique ends), so
--- every asserted top/bottom set stays free of boundary ties.
+-- Tail: 8000 keys with 8 rows each, so the bucket tables are much larger than the LIMIT. The
+-- tail count of 8 stays away from every asserted boundary (the bottom counts 1..5, the top
+-- counts 295..299, and the HAVING band 95..99 all come from the head with strictly distinct
+-- neighbours), so every asserted top/bottom set stays free of boundary ties.
 INSERT INTO threshold_top_k
-    SELECT 200 + intDiv(number, 150), (200 + intDiv(number, 150)) % 7, (200 + intDiv(number, 150)) * 1000 + number % 150,
-           toString((200 + intDiv(number, 150)) * 1000 + number % 150), number % 150, nullIf(number % 150, 0), number % 150
-    FROM numbers(1200000);
+    SELECT 200 + intDiv(number, 8), (200 + intDiv(number, 8)) % 7, (200 + intDiv(number, 8)) * 1000 + number % 8,
+           toString((200 + intDiv(number, 8)) * 1000 + number % 8), number % 8, nullIf(number % 8, 0), number % 8
+    FROM numbers(64000);
 
 SELECT 'count() DESC';
 SELECT k, count() AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;
