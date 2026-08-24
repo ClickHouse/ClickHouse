@@ -20,7 +20,8 @@ runs:
         sudo cat <<EOT > /etc/docker/daemon.json
         {
           "ipv6": true,
-          "fixed-cidr-v6": "${{ env.ipv6_subnet }}"
+          "fixed-cidr-v6": "${{ env.ipv6_subnet }}",
+          "dns": ["1.1.1.1", "1.0.0.1"]
         }
         EOT
         sudo chown root:root /etc/docker/daemon.json
