@@ -51,6 +51,14 @@ The terminal uses [xterm.js](https://xtermjs.org/) for rendering. All assets are
 
 The [`/play`](/concepts/features/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (for example, when `enable_webterminal` is set to `false`).
 
+## Integration with the documentation website {#docs-integration}
+
+This documentation website embeds the same terminal as a drop-down panel, connected to the [ClickHouse playground](https://play.clickhouse.com) as the read-only `play` user, so that the examples on any page can be tried out without leaving it. Open and close it with the terminal icon at the left of the top navigation, or with the `~` key; pressing `Escape` inside the terminal closes the panel as well. Drag the bottom edge of the panel to resize it, and drag it all the way up to close it.
+
+Closing the panel keeps the session and its scrollback: reopening the terminal returns to the same prompt. The session lives in the page, so it survives navigation between documentation pages, but not a reload of the browser tab — after a reload the panel comes back with a new session.
+
+The panel is part of the desktop layout of the website, and is not available on narrow viewports where the top navigation is collapsed.
+
 ## Security considerations {#security}
 
 The web terminal exposes an interactive shell-like session to anyone who can authenticate against the ClickHouse HTTP endpoint, so the same caveats that apply to the HTTP protocol apply here:
