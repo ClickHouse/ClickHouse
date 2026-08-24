@@ -1,0 +1,10 @@
+plain LIMIT keeps read-in-order
+0
+preliminary DISTINCT does not preserve the LIMIT
+1
+arrayJoin does not preserve the LIMIT
+1
+non-LEFT ARRAY JOIN does not preserve the LIMIT
+1
+LEFT ARRAY JOIN preserves the LIMIT and keeps read-in-order
+0

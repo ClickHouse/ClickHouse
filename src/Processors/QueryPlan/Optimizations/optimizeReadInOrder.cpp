@@ -327,9 +327,13 @@ void buildSortingDAG(
 
     buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, query_limit);
 
+    /// A preliminary DISTINCT can swallow an arbitrarily long prefix of the input while
+    /// producing few rows, so the SQL `LIMIT` above it no longer bounds the read either.
     if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
+        if (query_limit)
+            *query_limit = 0;
     }
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
@@ -337,8 +341,13 @@ void buildSortingDAG(
         const auto & actions = expression->getExpression();
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
+        /// For the same reason the SQL `LIMIT` no longer bounds the read.
         if (actions.hasArrayJoin())
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
 
         appendExpression(dag, actions);
     }
@@ -357,8 +366,13 @@ void buildSortingDAG(
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
+        /// A non-LEFT ARRAY JOIN also stops the SQL `LIMIT` from bounding the read.
         if (!array_join->isLeft())
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
 
         if (dag)
         {
@@ -1212,8 +1226,10 @@ InputOrderInfoPtr buildInputOrderInfo(
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
     /// A SQL `LIMIT` remains useful for the first read task and the PK-selectivity guard even
-    /// when a filter prevents pushing it to the read step. A non-limit-preserving join is
-    /// different: it can discard left rows, so the output limit does not bound the read.
+    /// when a filter prevents pushing it to the read step. Cardinality-reducing steps are
+    /// different: a non-limit-preserving join can discard left rows, and a preliminary DISTINCT,
+    /// `arrayJoin` or non-LEFT `ARRAY JOIN` can consume an arbitrary prefix of the input, so
+    /// the output limit does not bound the read there.
     size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
