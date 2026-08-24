@@ -335,6 +335,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     incrementProfileEvents(num_filtered_rows, columns);
 
+    const std::shared_ptr<MarkRangesInfo> mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {

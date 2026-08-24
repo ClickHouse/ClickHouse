@@ -170,6 +170,7 @@ public:
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
 
     static Node createAlias(const Node & child, std::string alias);
+    static const Node & resolveAliases(const Node & node);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);

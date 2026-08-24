@@ -53,6 +53,11 @@ namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 }
 
 namespace DB::QueryPlanOptimizations
@@ -481,7 +486,15 @@ static void appendAggregateFunctions(
     }
 }
 
-static std::optional<ActionsDAG> analyzeAggregateProjection(
+struct AnalyzedProjection
+{
+    ActionsDAG dag;
+    /// Set to the `dag` filter output if the one is present.
+    /// Assumed to be valid after `dag` is moved.
+    const ActionsDAG::Node * filter_node = nullptr;
+};
+
+static std::optional<AnalyzedProjection> analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
@@ -538,9 +551,19 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
     if (!new_inputs)
         return {};
 
-    auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
-    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
-    return proj_dag;
+    AnalyzedProjection result;
+    result.dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
+    appendAggregateFunctions(result.dag, aggregates, *matched_aggregates);
+    if (query.filter_node)
+    {
+        result.filter_node = result.dag.tryFindInOutputs(query.filter_node->result_name);
+        if (!result.filter_node)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter node '{}' is missing from the folded projection DAG outputs",
+                query.filter_node->result_name);
+        }
+    }
+    return result;
 }
 
 
@@ -552,10 +575,10 @@ struct AggregateProjectionCandidate : public ProjectionCandidate
     /// in order to get all the columns required for aggregation.
     ActionsDAG dag;
 
-    /// Whether this candidate's DAG includes a filter output (first output).
-    /// False when a filtered projection's WHERE fully covers the query filter
+    /// Holds pointer to the filter actions sub-graph root if this candidate's DAG includes a filter output.
+    /// nullptr when a filtered projection's WHERE fully covers the query filter
     /// (residual is empty), so the DAG has no filter column.
-    bool has_filter = false;
+    const ActionsDAG::Node * filter_node = nullptr;
 };
 
 struct MinMaxProjectionCandidate
@@ -568,9 +591,6 @@ struct AggregateProjectionCandidates
 {
     std::vector<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
-
-    /// This flag means that DAG for projection candidate should be used in FilterStep.
-    bool has_filter = false;
 
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
@@ -613,7 +633,6 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     auto query_index = buildDAGIndex(*dag.dag);
 
-    candidates.has_filter = dag.filter_node;
     /// We can't use minmax projection if filter has non-deterministic functions.
     if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
         can_use_minmax_projection = false;
@@ -622,15 +641,15 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+        if (auto proj = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
-            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
-            candidate.has_filter = (dag.filter_node != nullptr);
+            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj->dag)};
+            candidate.filter_node = proj->filter_node;
 
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
                 candidate.dag.getRequiredColumnsNames(),
-                (dag.filter_node ? &*dag.dag : nullptr),
+                dag.filter_node,
                 reading.getParts(),
                 max_added_blocks.get(),
                 context);
@@ -688,11 +707,11 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+            if (auto proj = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
             {
-                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj->dag)};
                 candidate.projection = projection;
-                candidate.has_filter = (dag.filter_node != nullptr);
+                candidate.filter_node = proj->filter_node;
                 candidates.real.emplace_back(std::move(candidate));
             }
 
@@ -728,7 +747,6 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         return candidates;
 
     auto query_index = buildDAGIndex(*dag.dag);
-    candidates.has_filter = dag.filter_node;
 
     const auto & keys = distinct.getColumnNames();
 
@@ -765,11 +783,11 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+        if (auto proj = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
-            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj->dag)};
             candidate.projection = projection;
-            candidate.has_filter = (dag.filter_node != nullptr);
+            candidate.filter_node = proj->filter_node;
             candidates.real.emplace_back(std::move(candidate));
         }
 
@@ -987,17 +1005,13 @@ std::optional<String> optimizeUseAggregateProjections(
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
                 projection_query_info.row_level_filter = nullptr;
-                /// `candidate.dag` is the projection-rewrite DAG. Its first output is a real `WHERE` /
-                /// `PREWHERE` filter predicate only when this candidate has a (residual) filter
-                /// (`candidate.has_filter`); otherwise — either the query has no filter, or the projection's
-                /// own `WHERE` fully covers it — the first output is a projection key column. Part selection
+                /// `candidate.dag` is the projection-rewrite DAG. `candidate.filter_node` is a root of the
+                /// filter sub-graph, so clone only the corresponding sub-graph. Part selection
                 /// in `MergeTreeDataSelectExecutor::estimateNumMarksToRead` treats
                 /// `filter_actions_dag->getOutputs().front()` as a filter predicate for primary-key and
-                /// skip-index analysis, so installing the rewrite DAG as the pruning filter when there is no
-                /// real filter would make it prune on a bare key column (e.g. since #89222 a numeric key
-                /// column is read as `key != 0`), which is wrong. See #89222.
-                projection_query_info.filter_actions_dag = candidate.has_filter
-                    ? std::make_unique<ActionsDAG>(candidate.dag.clone())
+                /// skip-index analysis.
+                projection_query_info.filter_actions_dag = candidate.filter_node
+                    ? std::make_unique<ActionsDAG>(ActionsDAG::cloneSubDAG({candidate.filter_node}, false /* remove_aliases */))
                     : nullptr;
 
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
@@ -1162,7 +1176,9 @@ std::optional<String> optimizeUseAggregateProjections(
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.row_level_filter = nullptr;
-        projection_query_info.filter_actions_dag = nullptr;
+        projection_query_info.filter_actions_dag = best_candidate->filter_node
+            ? std::make_unique<ActionsDAG>(ActionsDAG::cloneSubDAG({best_candidate->filter_node}, false))
+            : nullptr;
 
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
         projection_reading = reader.readFromParts(
@@ -1224,9 +1240,9 @@ std::optional<String> optimizeUseAggregateProjections(
     {
         aggregate_projection_node = &nodes.emplace_back();
 
-        if (candidates.has_filter && best_candidate->has_filter)
+        if (best_candidate->filter_node)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
+            const auto & result_name = best_candidate->filter_node->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
@@ -1304,7 +1320,9 @@ std::optional<String> optimizeUseAggregateProjections(
         }
     }
     else
+    {
         node.children.front() = source_node;
+    }
 
     return selected_projection_name;
 }

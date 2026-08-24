@@ -112,9 +112,10 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
                 return;
 
+            const auto & condition_output = ActionsDAG::resolveAliases(*filter_actions_dag->getOutputs()[0]);
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            size_t condition_hash = condition_output.getHash();
 
             /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
             /// filter is no longer "applies to every granule of every part" — it applies only to
@@ -125,7 +126,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (const auto & top_k_filter_info = read_from_merge_tree->getTopKFilterInfo())
                 boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
-            String condition = filter_actions_dag->getNames()[0];
+            String condition = condition_output.result_name;
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
             return;
         }

@@ -382,6 +382,19 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
     return node;
 }
 
+const ActionsDAG::Node & ActionsDAG::resolveAliases(const Node & node)
+{
+    const Node * result = &node;
+    while (result->type == ActionType::ALIAS)
+    {
+        chassert(result->children.size() == 1);
+        result = result->children.front();
+        chassert(result);
+    }
+
+    return *result;
+}
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));

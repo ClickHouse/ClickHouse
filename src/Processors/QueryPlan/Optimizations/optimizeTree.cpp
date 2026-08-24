@@ -737,7 +737,7 @@ void optimizeTreeSecondPass(
     /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
     /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
     /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
-    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
+    if (optimization_settings.use_query_condition_cache && (lazy_materialization_applied || !applied_projection_names.empty()))
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});

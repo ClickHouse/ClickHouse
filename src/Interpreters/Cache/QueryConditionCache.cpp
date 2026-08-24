@@ -5,6 +5,8 @@
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace ProfileEvents
 {
@@ -37,6 +39,26 @@ String QueryConditionCache::makeFilePartName(const String & path, std::string_vi
     part_name.push_back('\0');
     part_name.append(version_token);
     return part_name;
+}
+
+String QueryConditionCache::makePartNameFromDataPart(const IMergeTreeDataPart & data_part)
+{
+    return makePartName(data_part.isProjectionPart() ? data_part.getParentPartName() : "", data_part.name);
+}
+
+String QueryConditionCache::makePartNameFromDataPartInfoForReader(const IMergeTreeDataPartInfoForReader & data_part)
+{
+    return makePartName(data_part.isProjectionPart() ? data_part.getParentPartName() : "", data_part.getPartName());
+}
+
+String QueryConditionCache::makePartName(const String & parent_name, const String & part_name)
+{
+    if (parent_name.empty())
+    {
+        return part_name;
+    }
+
+    return fmt::format("{}:{}", parent_name, part_name);
 }
 
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const

@@ -10515,7 +10515,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
-    const ActionsDAG * filter_dag,
+    const ActionsDAG::Node * filter_output,
     const RangesInDataParts & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
@@ -10558,7 +10558,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
     bool has_virtual_column
         = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
-    if (has_virtual_column || filter_dag)
+    if (has_virtual_column || filter_output)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
         if (virtual_columns_block.rows() == 0)
@@ -10570,7 +10570,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
     std::optional<PartitionPruner> partition_pruner;
     DataTypes minmax_columns_types;
-    if (filter_dag)
+    if (filter_output)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         const auto data_settings = getSettings();
@@ -10588,13 +10588,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                     /*single_point=*/false,
                     /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
             };
-            auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
+            auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_output, query_context, /* boolean_context */ true);
             minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, std::move(key_condition_factory), metadata_snapshot, query_context, /*skip_folding_=*/!query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis]);
         }
 
         if (metadata_snapshot->hasPartitionKey())
         {
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
+            ActionsDAGWithInversionPushDown inverted_dag(filter_output, query_context, /* boolean_context */ true);
             const auto & query_settings = query_context->getSettingsRef();
 
             partition_pruner.emplace(
@@ -10605,11 +10605,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning]);
         }
 
-        const auto * predicate = filter_dag->getOutputs().at(0);
-
         // Generate valid expressions for filtering
         VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+            filter_output, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
