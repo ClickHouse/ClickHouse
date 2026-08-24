@@ -22,7 +22,6 @@
   --selected-background: rgb(28 28 28 / 5%);
   --active-navigation: #1f1f1c;
   --active-navigation-border: #1c1c1c;
-  --search-result-active: #ffff00;
   --search-result-aggregate-function: #eef0ff;
   --search-result-asynchronous-metric: #eaf4f7;
   --search-result-current-metric: #e9f6ee;
@@ -78,7 +77,6 @@
   --selected-background: rgb(255 255 255 / 5%);
   --active-navigation: #e6e7e9;
   --active-navigation-border: #333431;
-  --search-result-active: #ffff00;
   --search-result-aggregate-function: #282e3e;
   --search-result-asynchronous-metric: #29363a;
   --search-result-current-metric: #293a31;
@@ -2101,16 +2099,12 @@ a.version-option:hover,
 
 .search-results a:hover,
 .search-results a.active {
-  color: #1a1a1a;
-  background: var(--search-result-active);
+  background: color-mix(
+    in srgb,
+    var(--search-result-background) 84%,
+    var(--heading) 16%
+  );
   outline: none;
-}
-
-.search-results a:hover strong,
-.search-results a:hover em,
-.search-results a.active strong,
-.search-results a.active em {
-  color: #1a1a1a;
 }
 
 .search-results a > span {
