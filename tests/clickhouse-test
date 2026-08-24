@@ -1928,6 +1928,15 @@ class MergeTreeSettingsRandomizer:
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
+
+            # `countmin` is unavailable when ClickHouse is built without DataSketches.
+            if setting == "auto_statistics_types" and "use_datasketches" not in args.build_flags:
+                value = ",".join(
+                    statistic_type
+                    for statistic_type in value.split(",")
+                    if statistic_type != "countmin"
+                )
+
             if type(value) == str and value == "":
                 continue
 
