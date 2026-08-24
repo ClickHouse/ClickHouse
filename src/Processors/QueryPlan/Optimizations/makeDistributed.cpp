@@ -228,6 +228,13 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                         "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
         }
 
+        if (const auto * sorting = typeid_cast<const SortingStep *>(node->step.get());
+            sorting
+            && (sorting->getType() == SortingStep::Type::FinishSorting
+                || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a read-in-order distributed read");
+
         for (const auto * child : node->children)
             stack.push_back(child);
     }
