@@ -45,6 +45,40 @@ namespace Setting
 
 namespace
 {
+    void syncCurrentDatabaseFromSetQuery(const ASTPtr & set_query_ast, ContextMutablePtr context)
+    {
+        if (!set_query_ast || !context)
+            return;
+
+        const auto * set_query = set_query_ast->as<ASTSetQuery>();
+        if (!set_query)
+            return;
+
+        for (const auto & change : set_query->changes)
+        {
+            if (change.name == "database")
+            {
+                context->setCurrentDatabase(change.value.safeGet<String>());
+                return;
+            }
+        }
+
+        for (const auto & default_setting : set_query->default_settings)
+        {
+            if (default_setting == "database")
+            {
+                Field value;
+                if (!context->getSettingsRef().tryGet("database", value))
+                    return;
+
+                const String database = value.safeGet<String>();
+                if (!database.empty())
+                    context->setCurrentDatabase(database);
+                return;
+            }
+        }
+    }
+
     void rejectUnsupportedReturningContextSettings(const Settings & settings)
     {
         /// Query-result-cache probe/write wrappers are wired in `executeQueryImpl` for regular `SELECT`.
@@ -204,8 +238,11 @@ ContextMutablePtr makeReturningSelectContext(
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
     if (source_select_settings_restore_ast)
+    {
         InterpreterSetQuery(source_select_settings_restore_ast, returning_context)
             .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        syncCurrentDatabaseFromSetQuery(source_select_settings_restore_ast, returning_context);
+    }
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
     return returning_context;
 }
@@ -325,6 +362,7 @@ bool replacePipelineWithInsertReturningAfterPush(
     {
         InterpreterSetQuery(insert_query.source_select_settings_restore_ast, query_context)
             .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        syncCurrentDatabaseFromSetQuery(insert_query.source_select_settings_restore_ast, query_context);
     }
 
     io.pipeline.reset();
@@ -366,6 +404,7 @@ QueryPipeline buildInsertReturningPipeline(
     {
         InterpreterSetQuery(source_select_settings_restore_ast, query_context)
             .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        syncCurrentDatabaseFromSetQuery(source_select_settings_restore_ast, query_context);
     }
 
     return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_restore_ast);

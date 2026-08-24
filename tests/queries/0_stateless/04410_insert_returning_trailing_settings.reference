@@ -37,6 +37,8 @@ query settings preserved for returning
 8
 9
 10
+source database setting does not leak into returning
+1
 source custom setting does not leak into returning
 unset
 1

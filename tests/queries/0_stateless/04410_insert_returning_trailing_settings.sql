@@ -69,6 +69,24 @@ RETURNING (SELECT number FROM numbers(10) ORDER BY number);
 
 SELECT count() FROM t_ret_settings;
 
+-- Source-only `database` setting must be restored before delayed RETURNING planning/execution.
+SELECT 'source database setting does not leak into returning';
+DROP DATABASE IF EXISTS db_ret_settings_b;
+DROP TABLE IF EXISTS t_ret_db;
+DROP TABLE IF EXISTS t_ret_probe;
+CREATE DATABASE db_ret_settings_b;
+CREATE TABLE t_ret_db (id UInt64) ENGINE = Memory;
+CREATE TABLE t_ret_probe (id UInt64) ENGINE = Memory;
+CREATE TABLE db_ret_settings_b.t_ret_probe (id UInt64) ENGINE = Memory;
+INSERT INTO t_ret_probe VALUES (1);
+INSERT INTO db_ret_settings_b.t_ret_probe VALUES (1), (2);
+INSERT INTO t_ret_db SELECT 1
+SETTINGS database = 'db_ret_settings_b'
+RETURNING (SELECT count() FROM t_ret_probe);
+DROP TABLE t_ret_db;
+DROP TABLE t_ret_probe;
+DROP DATABASE db_ret_settings_b;
+
 -- Source-only custom settings must not leak into RETURNING settings context.
 SELECT 'source custom setting does not leak into returning';
 TRUNCATE TABLE t_ret_settings;
