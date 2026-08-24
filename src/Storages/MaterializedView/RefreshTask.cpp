@@ -1323,16 +1323,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         CursorTreeNodePtr stream_cursor;
         if (incremental)
         {
-            /// The injected `STREAM BOUNDED UNORDERED` source requires streaming queries and the analyzer.
-            refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
-            refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
-            /// STREAM does not support parallel replicas (MergeTreeDataSelectExecutor rejects it), so read the
-            /// source locally regardless of any parallel-replica settings inherited by the refresh context.
-            refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
-            refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
-            /// A single reader so its cursor covers all source partitions; no per-stream cursors to merge.
-            refresh_context->setSetting("max_threads", Field(UInt64{1}));
-
             stream_cursor = execution.znode.cursor;
             refresh_context->enableStreamingCursor();
         }

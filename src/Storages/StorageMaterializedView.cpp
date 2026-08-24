@@ -36,6 +36,8 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -72,6 +74,12 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace ErrorCodes
@@ -160,15 +168,29 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
-        /// The source engine must support STREAM, otherwise every refresh would re-scan and re-append the whole source.
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
             return;
         auto source = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(identifier->getTableId()), context);
-        if (source && !source->supportsStreaming())
+        if (!source)
+            return;
+
+        /// The source engine must support STREAM, otherwise every refresh would re-scan and re-append the whole source.
+        if (!source->supportsStreaming())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source.get());
+        if (merge_tree)
+        {
+            const auto settings = merge_tree->getSettings();
+            if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Incremental refresh source table {} must set enable_block_number_column = 1 and enable_block_offset_column = 1",
+                    source->getStorageID().getNameForLogs());
+        }
     }
 
     /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
@@ -739,7 +761,16 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
 
     if (incremental)
+    {
         injectIncrementalStreamModifier(select_query, stream_cursor);
+
+        /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
+        refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
+        refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
+        refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
+        refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
+        refresh_context->setSetting("max_threads", Field(UInt64{1}));
+    }
 
     if (!append)
     {
