@@ -43,7 +43,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     if (offset < span_start || offset >= span_end)
         return std::monostate{};
 
-    /// Memory hold (already fetched, no tier took it) is fastest - serve to its first gap.
+    /// memory hold - serve to its first gap
     if (!memory.empty() && memory.covers(ByteRange{offset, 1}))
     {
         size_t end = memory.range().end();
@@ -52,7 +52,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         return ServeFromMemory{ByteRange{offset, end - offset}, &memory};
     }
 
-    /// Fastest tier serving `offset`: a hit reader, or a miss committed here (served from its writer).
+    /// fastest tier that covers `offset`
     for (const auto & tier : tiers)
     {
         const CacheResolution * cell = cellCovering(tier, offset);
@@ -63,22 +63,19 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
         {
             const size_t committed = cell->writer->committed();
-            if (offset < committed)   /// committed() never exceeds range().end()
+            if (offset < committed)
                 return ServeFromWriter{ByteRange{offset, committed - offset}, cell->writer.get()};
         }
     }
 
-    /// FETCH: the single source read that serves `offset` and fills the covering segments.
-    /// Right: coalesce to the nearest resident offset (one read fills several cells, never re-reads a
-    /// resident block), capped at the window.
+    /// FETCH extent. Right: coalesce to the nearest resident byte, capped at the window.
     size_t fetch_end = span_end;
     for (const auto & tier : tiers)
         fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, span_end));
     if (max_fetch_ahead < span_end - offset)
         fetch_end = std::min(fetch_end, offset + max_fetch_ahead);
 
-    /// Left: down to the committed frontier of each populating segment covering `offset` - below
-    /// `offset` when the read opens mid-segment (an incremental segment fills from its frontier).
+    /// Left: down to each covering segment's write frontier.
     size_t fetch_start = offset;
     for (const auto & tier : tiers)
     {
@@ -87,9 +84,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
             fetch_start = std::min(fetch_start, cell->writer->committed());
     }
 
-    /// A whole-segment cell is populated only whole, so cover EVERY one the fetch enters (else a cell it
-    /// stops inside gets a rejected partial write and is re-read later). Fixpoint - converges on a
-    /// boundary; its end may pass `span_end` (source has it; cells never cross an object).
+    /// Widen to complete every whole-segment cell the fetch enters (fixpoint).
     for (bool grew = true; grew;)
     {
         grew = false;
@@ -148,9 +143,8 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
     }
     else
     {
-        /// Append each tier's new cells, matching resolved tiers to held tiers by `CacheTier` rather
-        /// than by position (a chain has one provider per tier). Drop any cell starting before its held
-        /// end - a segment overhanging the previous sub-span is re-returned by the next `resolve`.
+        /// Match resolved tiers to held tiers by `CacheTier`; skip cells before the held end (overhang
+        /// the next `resolve` re-returns).
         for (auto & held : tiers)
         {
             auto it = std::find_if(resolved.begin(), resolved.end(),
@@ -177,8 +171,7 @@ void ReadPlan::retireBefore(size_t offset)
     for (auto & tier : tiers)
     {
         auto & cells = tier.cells;
-        /// Cells are offset-ordered, so the consumed ones (ending at or before `offset`) are a leading
-        /// run: erase it, releasing the pinned readers/writers.
+        /// Consumed cells (ending at/before `offset`) form a leading run - erase it, releasing pins.
         auto first_live = std::find_if(cells.begin(), cells.end(),
             [&](const CacheResolution & c) { return c.range.end() > offset; });
         cells.erase(cells.begin(), first_live);
