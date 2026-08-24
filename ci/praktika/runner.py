@@ -13,6 +13,12 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
+    _IMAGE_PULL_RETRIES,
+    _IMAGE_PULL_RETRY_ERRORS,
+    _IMAGE_PULL_TIMEOUT_S,
+    Docker,
+)
 from .event import EventFeed
 from .gh import GH
 from .gh_auth import GHAuth
@@ -27,24 +33,6 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-
-# Matched against the pull's stderr. Transport-class phrases only: must never match a
-# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
-_IMAGE_PULL_RETRY_ERRORS = [
-    "connection reset by peer",
-    "connection refused",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "unexpected EOF",
-    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
-    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
-    "server misbehaving",
-    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
-    # writes nothing, so without this entry a stall is not retried.
-    "sending signal TERM to command",
-]
-_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
-_IMAGE_PULL_RETRIES = 3
 
 
 class Runner:
@@ -500,13 +488,7 @@ class Runner:
                         f"({attempt}/{attempts}): {docker}"
                     )
 
-                Shell.run(
-                    f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {docker}",
-                    retries=_IMAGE_PULL_RETRIES,
-                    retry_errors=_IMAGE_PULL_RETRY_ERRORS,
-                    verbose=True,
-                    on_retry=_warn_pull_retried,
-                )
+                Docker.pull_image(docker, on_retry=_warn_pull_retried)
 
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the

@@ -16,6 +16,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <azure/core/http/http.hpp>
@@ -39,6 +40,8 @@ namespace DB::FailPoints
     extern const char azure_inject_auth_failure_on_request_once[];
     extern const char azure_inject_poco_timeout[];
     extern const char azure_inject_poco_timeout_once[];
+    extern const char azure_inject_poco_network_error[];
+    extern const char azure_inject_poco_network_error_once[];
     extern const char azure_inject_bad_request[];
 }
 
@@ -384,6 +387,11 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
         fiu_do_on(DB::FailPoints::azure_inject_poco_timeout_once,
             { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
+        /// Test-only: raise a real Poco network error so the IOException -> TransportException path is what's tested.
+        fiu_do_on(DB::FailPoints::azure_inject_poco_network_error,
+            { throw Poco::Net::ConnectionResetException("connection reset (injected by failpoint)"); });
+        fiu_do_on(DB::FailPoints::azure_inject_poco_network_error_once,
+            { throw Poco::Net::ConnectionResetException("connection reset (injected by failpoint)"); });
 
         Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -564,6 +572,30 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         addMetric(method, AzureMetricType::Errors);
 
         /// Throw TransportException (retryable) for a timeout instead of a synthetic 408 that read as a broken part.
+        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
+    }
+    catch (const Poco::IOException &)
+    {
+        if (!latency_recorded)
+        {
+            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        }
+
+        addMetric(method, AzureMetricType::Errors);
+
+        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
+    }
+    catch (const NetException &)
+    {
+        if (!latency_recorded)
+        {
+            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        }
+
+        addMetric(method, AzureMetricType::Errors);
+
         throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
     }
     catch (...)
