@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/NamePrompter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -1664,6 +1666,7 @@ The server successfully detected this situation and will download merged part fr
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SERVER_OVERLOADED;
 }
 
@@ -1909,14 +1912,26 @@ const std::string_view & getDocumentation(Event event)
 /// Get ProfileEvent by its name
 Event getByName(std::string_view name)
 {
-    static std::unordered_map<std::string_view, Event> map =
+    static const std::unordered_map<std::string_view, Event> map =
     {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
 #undef M
     };
 
-    return map.at(name);
+    auto it = map.find(name);
+    if (it == map.end())
+    {
+        DB::VectorWithMemoryTracking<String> all_names;
+        all_names.reserve(names.size());
+        for (const auto & known_name : names)
+            all_names.emplace_back(known_name);
+
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown profile event: {}{}",
+            name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
+    }
+
+    return it->second;
 }
 
 void Counters::setTraceProfileEvent(Event event)
@@ -1944,7 +1959,18 @@ void Counters::setTraceProfileEvents(const String & events_list)
         it != decltype(it)();
         ++it)
     {
-        setTraceProfileEvent(getByName(std::string_view(*it)));
+        std::string_view name(*it);
+
+        /// The list is written by a human, so allow spaces around the names and a trailing comma.
+        while (!name.empty() && isWhitespaceASCII(name.front()))
+            name.remove_prefix(1);
+        while (!name.empty() && isWhitespaceASCII(name.back()))
+            name.remove_suffix(1);
+
+        if (name.empty())
+            continue;
+
+        setTraceProfileEvent(getByName(name));
     }
 }
 
