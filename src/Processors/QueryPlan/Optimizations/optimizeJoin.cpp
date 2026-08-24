@@ -385,6 +385,20 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
+/// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
+/// sorted range), so the child's value ranges and NULL fraction do not describe the output.
+/// Applied whenever a limit is present: the row estimate cannot prove the limit does not
+/// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
+static void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+{
+    for (auto & [_, stats] : column_stats)
+    {
+        stats.min_value.reset();
+        stats.max_value.reset();
+        stats.null_fraction = 0;
+    }
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
@@ -518,6 +532,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
+        clearColumnValueRanges(estimated.column_stats);
         return estimated;
     }
 
@@ -562,6 +577,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
+            clearColumnValueRanges(stats.column_stats);
         }
         return stats;
     }

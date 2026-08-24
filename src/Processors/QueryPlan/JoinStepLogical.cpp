@@ -943,11 +943,14 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 
 using IEJoinKeyCandidate = std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>;
 
-/// P(x < y) for independent x ~ U[min_x, max_x] and y ~ U[min_y, max_y]. The distinction between
-/// strict and non-strict comparison and boundary ties are ignored: the result ranks conditions
-/// against each other, it does not have to be exact.
-static Float64 uniformLessProbability(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y)
+/// P(x < y) (strict) or P(x <= y) for independent x ~ U[min_x, max_x] and y ~ U[min_y, max_y].
+/// Under the continuous model boundary ties have measure zero and strictness is ignored, except
+/// when both ranges degenerate to the same point: there the comparison always ties, so the strict
+/// probability is 0 and the non-strict one is 1.
+static Float64 uniformLessProbability(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y, bool strict)
 {
+    if (min_x == max_x && min_y == max_y && min_x == min_y)
+        return strict ? 0.0 : 1.0;
     if (max_x <= min_y)
         return 1.0;
     if (max_y <= min_x)
@@ -1033,7 +1036,10 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_range || !right_range)
         return {};
 
-    Float64 result = uniformLessProbability(left_range->min, left_range->max, right_range->min, right_range->max);
+    /// The Greater family goes through the complement, which flips strictness:
+    /// P(x > y) = 1 - P(x <= y) and P(x >= y) = 1 - P(x < y).
+    bool strict = predicate_op == JoinConditionOperator::Less || predicate_op == JoinConditionOperator::GreaterOrEquals;
+    Float64 result = uniformLessProbability(left_range->min, left_range->max, right_range->min, right_range->max, strict);
     if (predicate_op == JoinConditionOperator::Greater || predicate_op == JoinConditionOperator::GreaterOrEquals)
         result = 1.0 - result;
 
