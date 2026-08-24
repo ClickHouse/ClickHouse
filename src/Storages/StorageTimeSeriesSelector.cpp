@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -44,6 +45,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -207,6 +209,284 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+    bool hasMultilineFlag(std::string_view expression)
+    {
+        bool in_character_class = false;
+        bool character_class_at_start = false;
+        bool in_quoted_literal = false;
+
+        for (size_t i = 0; i < expression.size(); ++i)
+        {
+            const char c = expression[i];
+
+            if (in_quoted_literal)
+            {
+                if (c == '\\' && i + 1 < expression.size() && expression[i + 1] == 'E')
+                {
+                    in_quoted_literal = false;
+                    ++i;
+                }
+                continue;
+            }
+
+            if (in_character_class)
+            {
+                if (c == '\\' && i + 1 < expression.size())
+                {
+                    character_class_at_start = false;
+                    ++i;
+                    continue;
+                }
+
+                if (c == '[' && i + 1 < expression.size()
+                    && (expression[i + 1] == ':' || expression[i + 1] == '.' || expression[i + 1] == '='))
+                {
+                    const char delimiter = expression[i + 1];
+                    i += 2;
+                    while (i + 1 < expression.size()
+                        && !(expression[i] == delimiter && expression[i + 1] == ']'))
+                        ++i;
+                    if (i + 1 < expression.size())
+                        ++i;
+                    character_class_at_start = false;
+                    continue;
+                }
+
+                if (c == ']' && !character_class_at_start)
+                    in_character_class = false;
+
+                if (character_class_at_start && c == '^')
+                    continue;
+
+                character_class_at_start = false;
+                continue;
+            }
+
+            if (c == '\\')
+            {
+                if (i + 1 < expression.size() && expression[i + 1] == 'Q')
+                {
+                    in_quoted_literal = true;
+                    ++i;
+                }
+                else if (i + 1 < expression.size())
+                    ++i;
+                continue;
+            }
+
+            if (c == '[')
+            {
+                in_character_class = true;
+                character_class_at_start = true;
+                continue;
+            }
+
+            if (c != '(' || i + 2 >= expression.size() || expression[i + 1] != '?')
+                continue;
+
+            size_t flag_pos = i + 2;
+            while (flag_pos < expression.size())
+            {
+                const char flag = expression[flag_pos];
+                if (flag == 'm')
+                    return true;
+                if (flag != 'i' && flag != 's' && flag != 'U')
+                    break;
+                ++flag_pos;
+            }
+        }
+
+        return false;
+    }
+
+    bool hasUnterminatedQuotedLiteral(std::string_view expression)
+    {
+        bool in_quoted_literal = false;
+        for (size_t i = 0; i < expression.size();)
+        {
+            if (expression[i] != '\\')
+            {
+                ++i;
+                continue;
+            }
+
+            if (in_quoted_literal)
+            {
+                if (i + 1 < expression.size() && expression[i + 1] == 'E')
+                {
+                    in_quoted_literal = false;
+                    i += 2;
+                }
+                else
+                    ++i;
+            }
+            else if (i + 1 < expression.size() && expression[i + 1] == 'Q')
+            {
+                in_quoted_literal = true;
+                i += 2;
+            }
+            else if (i + 1 < expression.size())
+                i += 2;
+            else
+                ++i;
+        }
+
+        return in_quoted_literal;
+    }
+
+    bool hasEscapedTrailingDollar(std::string_view expression)
+    {
+        if (!expression.ends_with('$'))
+            return false;
+
+        size_t trailing_backslashes = 0;
+        for (size_t pos = expression.size() - 1; pos > 0 && expression[pos - 1] == '\\'; --pos)
+            ++trailing_backslashes;
+
+        return trailing_backslashes % 2 != 0;
+    }
+
+    bool hasMandatoryLeadingBeginText(re2::Regexp * expression)
+    {
+        while (true)
+        {
+            switch (expression->op())
+            {
+                case re2::kRegexpBeginText:
+                    return true;
+                case re2::kRegexpCapture:
+                case re2::kRegexpConcat:
+                    if (expression->nsub() == 0)
+                        return false;
+                    expression = expression->sub()[0];
+                    break;
+                case re2::kRegexpPlus:
+                    expression = expression->sub()[0];
+                    break;
+                case re2::kRegexpRepeat:
+                    if (expression->min() == 0)
+                        return false;
+                    expression = expression->sub()[0];
+                    break;
+                default:
+                    return false;
+            }
+        }
+    }
+
+    bool hasTopLevelAlternation(std::string_view expression)
+    {
+        size_t parentheses_depth = 0;
+        bool in_character_class = false;
+        bool character_class_at_start = false;
+        bool in_quoted_literal = false;
+
+        for (size_t i = 0; i < expression.size(); ++i)
+        {
+            const char c = expression[i];
+
+            if (in_quoted_literal)
+            {
+                if (c == '\\' && i + 1 < expression.size() && expression[i + 1] == 'E')
+                {
+                    in_quoted_literal = false;
+                    ++i;
+                }
+                continue;
+            }
+
+            if (in_character_class)
+            {
+                if (c == '\\' && i + 1 < expression.size())
+                {
+                    character_class_at_start = false;
+                    ++i;
+                    continue;
+                }
+
+                if (c == '[' && i + 1 < expression.size()
+                    && (expression[i + 1] == ':' || expression[i + 1] == '.' || expression[i + 1] == '='))
+                {
+                    const char delimiter = expression[i + 1];
+                    i += 2;
+                    while (i + 1 < expression.size()
+                        && !(expression[i] == delimiter && expression[i + 1] == ']'))
+                        ++i;
+                    if (i + 1 < expression.size())
+                        ++i;
+                    character_class_at_start = false;
+                    continue;
+                }
+
+                if (c == ']' && !character_class_at_start)
+                {
+                    in_character_class = false;
+                    continue;
+                }
+
+                if (character_class_at_start && c == '^')
+                    continue;
+
+                character_class_at_start = false;
+                continue;
+            }
+
+            if (c == '\\')
+            {
+                if (i + 1 < expression.size() && expression[i + 1] == 'Q')
+                {
+                    in_quoted_literal = true;
+                    ++i;
+                }
+                else if (i + 1 < expression.size())
+                    ++i;
+                continue;
+            }
+
+            if (c == '[')
+            {
+                in_character_class = true;
+                character_class_at_start = true;
+            }
+            else if (c == '(')
+                ++parentheses_depth;
+            else if (c == ')')
+            {
+                if (parentheses_depth > 0)
+                    --parentheses_depth;
+            }
+            else if (c == '|' && parentheses_depth == 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    struct ParsedPromQLRegexp
+    {
+        bool has_top_level_alternation;
+        bool has_mandatory_leading_begin_text;
+    };
+
+    ParsedPromQLRegexp parsePromQLRegexp(std::string_view expression)
+    {
+        re2::RE2::Options options;
+        options.set_dot_nl(true);
+        re2::RegexpStatus status;
+        auto * parsed = re2::Regexp::Parse(
+            expression,
+            static_cast<re2::Regexp::ParseFlags>(options.ParseFlags()),
+            &status);
+        if (!parsed)
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile PromQL regular expression '{}': {}", expression, status.Text());
+
+        const ParsedPromQLRegexp result{
+            .has_top_level_alternation = hasTopLevelAlternation(expression),
+            .has_mandatory_leading_begin_text = hasMandatoryLeadingBeginText(parsed)};
+        parsed->Decref();
+        return result;
+    }
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -225,10 +505,26 @@ namespace
         String value = matcher.label_value;
         if (add_anchors)
         {
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
+            const auto parsed_regexp = parsePromQLRegexp(value);
+            const bool has_unterminated_quoted_literal = hasUnterminatedQuotedLiteral(value);
+            const bool needs_grouped_anchors
+                = parsed_regexp.has_top_level_alternation
+                || hasMultilineFlag(value)
+                || hasEscapedTrailingDollar(value)
+                || has_unterminated_quoted_literal;
+
+            if (has_unterminated_quoted_literal)
+                value += "\\E";
+
+            if (needs_grouped_anchors)
+                value = "^(?:" + value + ")$";
+            else
+            {
+                if (!value.starts_with('^') || !parsed_regexp.has_mandatory_leading_begin_text)
+                    value = '^' + value;
+                if (!value.ends_with('$'))
+                    value += '$';
+            }
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)
