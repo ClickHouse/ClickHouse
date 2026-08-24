@@ -12,6 +12,10 @@
 -- `enable_parallel_replicas = 0` is pinned because with parallel replicas the aggregation
 -- is split between the replicas and the initiator (`isSecondStage` is false on the
 -- replicas), so the cutoff intentionally stays off there.
+--
+-- `enable_analyzer = 1` is pinned because the aggregate cutoff is armed by the planner of
+-- the new analyzer; with the old analyzer the events never fire.
+SET enable_analyzer = 1;
 
 SELECT toUInt64(number) AS k, count() AS c, sum(number) AS s FROM numbers_mt(1000000) GROUP BY k LIMIT 5 FORMAT Null
 SETTINGS optimize_trivial_group_by_limit_query = 1, max_threads = 4, max_block_size = 8192,
