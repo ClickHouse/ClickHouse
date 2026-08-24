@@ -321,8 +321,9 @@ String SplitByStringTokenizer::getDescription() const
 namespace
 {
 
-/// `no_capture = true` unless `extract` needs capture group 1: tracking capture groups would
-/// otherwise only waste work (a larger `MatchVec` resized on every match).
+/// Capture groups are tracked only in `extract` mode, which reads group 1. Otherwise only the whole
+/// match (group 0) is ever read, and tracking capture groups would just waste work (a larger `MatchVec`
+/// resized on every match).
 std::shared_ptr<OptimizedRegularExpression> compileSplitByRegexp(const String & regexp_, bool extract_)
 {
     if (extract_)
@@ -337,6 +338,10 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool extr
     , regexp_str(regexp_)
     , extract(extract_)
     , regexp(compileSplitByRegexp(regexp_, extract_))
+    /// A pattern with capture groups is never "trivial" (a plain substring search), so whenever
+    /// `getNumberOfSubpatterns()` is non-zero the RE2 path runs and fills `number_of_subpatterns + 1`
+    /// entries - i.e. index 1 is always populated. See the `chassert` in `nextInStringImpl`.
+    , token_group(extract_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
 {
 }
 
@@ -353,25 +358,19 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
         {
             if (extract)
             {
-                /// No capture groups in the pattern: fall back to the whole match (`std::regex_iterator` semantics).
-                if (regexp->getNumberOfSubpatterns() == 0)
-                {
-                    token_start = match_start;
-                    token_length = match_length;
-                    return true;
-                }
+                chassert(token_group < matches.size());
 
-                /// Capture group 1 of this match, if it participated and is non-empty. `pos` has already
-                /// advanced past the whole match, so a non-participating/empty group is simply skipped -
-                /// scanning never overlaps or re-visits the match.
-                const auto & group = matches[1];
+                /// The token is `token_group` of this match: capture group 1, or the whole match when the
+                /// pattern has no capture groups. `pos` has already advanced past the whole match, so a
+                /// group that did not participate or captured an empty string is simply skipped - scanning
+                /// never overlaps or re-visits a match.
+                const auto & group = matches[token_group];
                 if (group.offset != std::string::npos && group.length > 0)
                 {
                     token_start = group.offset;
                     token_length = group.length;
                     return true;
                 }
-                /// Group did not participate or captured an empty string: skip, keep scanning.
                 continue;
             }
 
@@ -386,16 +385,12 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
         }
         else
         {
-            if (extract)
-            {
-                /// No "trailing tail" concept in extract mode: a token only ever comes from a match.
-                pos = length + 1; /// Mark exhausted so subsequent calls return false.
-                return false;
-            }
-
-            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
             pos = length + 1; /// Mark exhausted so subsequent calls return false.
-            if (token_begin < length)
+
+            /// In `extract` mode a token only ever comes from a match, so there is no trailing tail.
+            /// Otherwise, no further separator means the remaining tail is the last token; an empty tail
+            /// is not emitted.
+            if (!extract && token_begin < length)
             {
                 token_start = token_begin;
                 token_length = length - token_begin;

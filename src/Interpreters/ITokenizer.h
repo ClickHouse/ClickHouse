@@ -392,6 +392,11 @@ private:
     /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
     /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
     std::shared_ptr<OptimizedRegularExpression> regexp;
+    /// Index into the RE2 match vector of the span that becomes the token in `extract` mode: capture
+    /// group 1 when the pattern has capture groups, otherwise 0 (the whole match). Loop-invariant, so it
+    /// is resolved once at construction rather than per match. Unused when `extract` is false.
+    /// Declared after `regexp` because it is derived from it.
+    size_t token_group;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
