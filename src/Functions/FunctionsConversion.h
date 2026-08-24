@@ -838,7 +838,7 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < -static_cast<Int64>(MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 

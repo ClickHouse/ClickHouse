@@ -25,3 +25,6 @@ SELECT toDateTime64(1, 9), toDateTime64(1::Int64, 6), toTime64(1, 6);
 SELECT 'underflow still clamps to the lower bound';
 SELECT toDateTime64(-1e30, 6), toTime64(-3600000, 6), toTime64(-3600000::Int64, 6);
 
+SELECT 'numeric sources still saturate under throw, the transforms are dispatched with Ignore';
+SELECT toTime64(materialize(3600000.0), 6), toTime64(materialize(3600000::Int64), 6), toTime64(materialize(3600000::UInt64), 6)
+SETTINGS date_time_overflow_behavior = 'throw';
