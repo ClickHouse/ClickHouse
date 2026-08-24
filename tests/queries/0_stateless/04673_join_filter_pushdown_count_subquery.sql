@@ -1,4 +1,3 @@
--- Tags: no-parallel-replicas
 -- Left-only WHERE on `count()` of `SELECT * … JOIN` must still be pushed through
 -- the JOIN (and composed through identifier-rename expressions) so the left
 -- read can apply PREWHERE / index analysis.
