@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
@@ -27,15 +28,13 @@ For instances with [standbys](/products/managed-postgres/high-availability) enab
 
 ## Scheduled upgrades {#scheduled-upgrades}
 
+<EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" support={true}/>
+
 By default, maintenance is applied to your instance whenever a new release is ready.
 With **scheduled upgrades** you choose a two-hour UTC window, and optionally the days of
 the week, during which that maintenance may be applied, so the brief failover lands at
 the time that's least disruptive to your workload. Expected downtime is less than
 1 minute within the window.
-
-Scheduled upgrades are enabled per organization. If you don't see the **Scheduled
-upgrades** section described below, contact [support](https://clickhouse.com/support/program)
-to have it enabled for your organization.
 
 ### Configure a schedule {#configure-a-schedule}
 
