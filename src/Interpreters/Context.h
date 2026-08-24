@@ -185,6 +185,7 @@ struct SettingChange;
 class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
 struct AlterSettingsProfileElements;
+class SettingsProfileElements;
 class RemoteHostFilter;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -1222,7 +1223,7 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraints(const SettingsProfileElements & old_elements, const AlterSettingsProfileElements & profile_elements, SettingSource source);
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
@@ -2049,7 +2050,7 @@ private:
     /// Must be called with the context mutex held.
     void mirrorCurrentDatabaseIntoSetting(const String & name);
 
-    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & old_elements, const AlterSettingsProfileElements & profile_elements, SettingSource source);
 
     void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);
 
@@ -2058,8 +2059,6 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
-    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
-
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;

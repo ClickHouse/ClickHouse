@@ -4,7 +4,9 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingSource.h>
+#include <Core/SettingsTierType.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -77,14 +79,20 @@ public:
 
     void merge(const SettingsConstraints & other);
 
-    /// Checks whether `change` violates these constraints and throws an exception if so. `skip_unchanged_check`
-    /// forces the check to run even if `change.value` matches `current_settings`: used when the caller already
-    /// knows this is a real change for someone other than the session `current_settings` belongs to.
-    void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool skip_unchanged_check = false) const;
+    /// Checks whether `change` violates these constraints and throws an exception if so. Set `is_known_change`
+    /// when the change is already known to be one, so that it is checked even if it matches `current_settings`.
+    void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool is_known_change = false) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
-    void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
+
+    /// Checks a change to the settings of an access entity, `old_elements` being the settings it has now.
+    /// What counts as a change is decided by that entity's effective settings, not by `current_settings`.
+    void check(
+        const Settings & current_settings,
+        const SettingsProfileElements & old_elements,
+        const AlterSettingsProfileElements & profile_elements,
+        SettingSource source) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
@@ -172,11 +180,16 @@ private:
         ReactionOnViolation reaction,
         SettingSource source,
         bool ignore_unchanged_settings = false,
-        bool skip_unchanged_check = false) const;
+        bool is_known_change = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+
+    bool isAnyTierRestricted() const;
+
+    /// A checker refusing the change if `allow_feature_tier` disables `tier`, nothing if it allows it.
+    std::optional<Checker> getTierChecker(std::string_view setting_name, SettingsTierType tier) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
 
     std::string_view resolveSettingNameWithCache(std::string_view name) const;

@@ -62,27 +62,30 @@ BlockIO InterpreterCreateRoleQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{SettingsProfileElements(*query.settings, access_control)};
 
-    /// A settings clause can drop a setting explicitly, or by omission (`DROP ALL SETTINGS`, or a full
-    /// replacement via old-style `SETTINGS ...` or `OR REPLACE`). Either way it must still be checked
-    /// against the tier, so add every name each target currently has that this change would drop.
-    if (settings_from_query && (query.alter || query.or_replace) && !query.attach)
+    /// A replacement states the whole entity, so leaving out the settings clause replaces the settings with
+    /// nothing. That is a change like any other and has to be checked.
+    const AlterSettingsProfileElements replace_with_nothing{SettingsProfileElements{}};
+    const AlterSettingsProfileElements * settings_change = nullptr;
+    if (settings_from_query)
+        settings_change = &*settings_from_query;
+    else if (query.or_replace)
+        settings_change = &replace_with_nothing;
+
+    /// Check the change against the settings each target has now, so that what it changes for that target is
+    /// what gets checked, however the clause is written and whatever the caller's own settings are.
+    if (settings_change && !query.attach)
     {
         for (const auto & name : query.names)
         {
-            if (auto role = access_control.tryRead<Role>(name))
+            SettingsProfileElements old_settings;
+            if (query.alter || query.or_replace)
             {
-                for (const auto & setting_name : role->settings.findRevertedSettingNames(*settings_from_query, access_control))
-                {
-                    SettingsProfileElement element;
-                    element.setting_name = setting_name;
-                    settings_from_query->drop_settings.push_back(element);
-                }
+                if (auto role = access_control.tryRead<Role>(name))
+                    old_settings = role->settings;
             }
+            getContext()->checkSettingsConstraints(old_settings, *settings_change, SettingSource::ROLE);
         }
     }
-
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());

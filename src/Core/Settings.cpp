@@ -9564,6 +9564,15 @@ SettingsTierType Settings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
+SettingsTierType Settings::getBuiltinTier(std::string_view name)
+{
+    const auto & accessor = SettingsImpl::Traits::Accessor::instance();
+    size_t index = accessor.find(SettingsImpl::Traits::resolveName(name));
+    if (index == static_cast<size_t>(-1))
+        BaseSettingsHelpers::throwSettingNotFound(name);
+    return accessor.getTier(index);
+}
+
 std::string_view Settings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);

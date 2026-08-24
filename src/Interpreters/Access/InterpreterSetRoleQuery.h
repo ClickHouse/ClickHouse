@@ -8,8 +8,14 @@ namespace DB
 {
 
 class ASTSetRoleQuery;
+class AccessControl;
 struct RolesOrUsersSet;
 struct User;
+
+/// A role stops or starts being default without naming any setting, but that decides which of the settings
+/// the user was granted apply to it. Throws if `allow_feature_tier` forbids changing one of them.
+void checkSettingsOfDefaultRolesChange(
+    const ContextMutablePtr & context, const AccessControl & access_control, const User & user, const RolesOrUsersSet & new_default_roles);
 
 class InterpreterSetRoleQuery : public IInterpreter, WithMutableContext
 {

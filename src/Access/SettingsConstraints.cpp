@@ -181,22 +181,26 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
-void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+void SettingsConstraints::check(
+    const Settings & current_settings,
+    const SettingsProfileElements & old_elements,
+    const AlterSettingsProfileElements & profile_elements,
+    SettingSource source) const
 {
     check(current_settings, profile_elements.add_settings, source);
     check(current_settings, profile_elements.modify_settings, source);
 
-    /// A dropped override reverts the setting to its compiled default; check that reversion like a MODIFY to
-    /// it. `settingIsBuiltin` (not `Settings::hasBuiltin`) so a `merge_tree_`-prefixed name is recognized too;
-    /// truly custom settings have no compiled default (and no tier), so they are left alone, same as before.
-    /// `skip_unchanged_check`: the caller already knows this drop changes the *target*'s value, so the check
-    /// must not be skipped just because the synthesized default happens to match the *caller*'s own session.
-    for (const auto & element : profile_elements.drop_settings)
+    /// The checks above only see what the query writes, compared against the caller's own session. What
+    /// matters is what changes for the entity being altered, which is the diff of its effective settings.
+    auto changed = old_elements.findChangedSettings(profile_elements, *access_control);
+    for (const auto & change : changed.values)
+        check(current_settings, change, source, /*is_known_change=*/true);
+
+    /// A change of the constraints alone carries no value, so only the tier can be checked.
+    for (const auto & setting_name : changed.constraints)
     {
-        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name) || !settingIsBuiltin(element.setting_name))
-            continue;
-        SettingChange change(element.setting_name, settingGetDefaultValue(element.setting_name));
-        check(current_settings, change, source, /*skip_unchanged_check=*/true);
+        if (auto tier_checker = getTierChecker(setting_name, settingGetTier(setting_name)))
+            throw Exception(tier_checker->explain, tier_checker->code);
     }
 }
 
@@ -248,9 +252,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool skip_unchanged_check) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool is_known_change) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, skip_unchanged_check);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, is_known_change);
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const
@@ -317,13 +321,12 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
 }
 
 /// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
-/// the value is unchanged (when `ignore_unchanged_settings` is false and `skip_unchanged_check` is false) or because the cast failed
-/// (when `throw_on_failure` is false).
+/// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure, bool skip_unchanged_check = false)
+Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure, bool is_known_change = false)
 {
     Field current_value;
-    bool has_current_value = !skip_unchanged_check && current_settings.tryGet(change.name, current_value);
+    bool has_current_value = !is_known_change && current_settings.tryGet(change.name, current_value);
 
     if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
         return {};
@@ -354,7 +357,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
                                     bool ignore_unchanged_settings,
-                                    bool skip_unchanged_check) const
+                                    bool is_known_change) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -382,11 +385,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION, skip_unchanged_check);
+    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION, is_known_change);
     if (new_value.isNull())
         return false;
 
-    if (ignore_unchanged_settings && !skip_unchanged_check)
+    if (ignore_unchanged_settings && !is_known_change)
     {
         Field current_value;
         if (current_settings.tryGet(change.name, current_value) && new_value == current_value)
@@ -406,6 +409,13 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
     Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
     if (new_value.isNull())
         return false;
+
+    if (isAnyTierRestricted())
+    {
+        if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::getBuiltinTier(setting_name)))
+            return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
+    }
+
     return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 
@@ -550,35 +560,11 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
-    if (access_control)
+    /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name belongs to `MergeTreeSettings`.
+    if (isAnyTierRestricted())
     {
-        bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
-        bool allowed_private_preview = access_control->getAllowPrivatePreviewTierSettings();
-        bool allowed_beta = access_control->getAllowBetaTierSettings();
-        if (!allowed_experimental || !allowed_private_preview || !allowed_beta)
-        {
-            /// Not `current_settings.getTier`: `merge_tree_`-prefixed names belong to `MergeTreeSettings`.
-            auto setting_tier = settingGetTier(resolved_name, current_settings);
-            if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
-                return Checker(
-                    PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
-                        setting_name),
-                    ErrorCodes::READONLY);
-            if (setting_tier == SettingsTierType::PRIVATE_PREVIEW && !allowed_private_preview)
-                return Checker(
-                    PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
-                        "('allow_feature_tier')",
-                        setting_name),
-                    ErrorCodes::READONLY);
-            if (setting_tier == SettingsTierType::BETA && !allowed_beta)
-                return Checker(
-                    PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                        setting_name),
-                    ErrorCodes::READONLY);
-        }
+        if (auto tier_checker = getTierChecker(setting_name, settingGetTier(resolved_name)))
+            return *tier_checker;
     }
 
     auto it = constraints.find(resolved_name);
@@ -594,6 +580,41 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (it == constraints.end())
         return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
     return Checker(it->second, Settings::resolveName);
+}
+
+/// Whether `allow_feature_tier` restricts anything at all. Checked before looking a tier up, because it
+/// usually restricts nothing.
+bool SettingsConstraints::isAnyTierRestricted() const
+{
+    return access_control
+        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowPrivatePreviewTierSettings()
+            || !access_control->getAllowBetaTierSettings());
+}
+
+/// The single place enforcing `allow_feature_tier`, for every kind of setting. Callers only reach it for
+/// settings a query really changes, so a value the server itself put in effect is never refused.
+std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const
+{
+    if (!access_control)
+        return {};
+
+    auto refuse = [&](std::string_view tier_name)
+    {
+        return Checker(
+            PreformattedMessage::create(
+                "Cannot modify setting '{}'. Changes to {} settings are disabled in the server config ('allow_feature_tier')",
+                setting_name,
+                tier_name),
+            ErrorCodes::READONLY);
+    };
+
+    if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
+        return refuse("EXPERIMENTAL");
+    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control->getAllowPrivatePreviewTierSettings())
+        return refuse("PRIVATE PREVIEW");
+    if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
+        return refuse("BETA");
+    return {};
 }
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const

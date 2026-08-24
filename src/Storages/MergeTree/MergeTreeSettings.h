@@ -87,10 +87,9 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
-    /// `baseline`: what the feature tier check compares `changes` against, instead of `this`. Pass the table's
-    /// live settings when `changes` is the full stored SETTINGS list (e.g. on `ALTER`).
-    void applyChanges(
-        const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, const MergeTreeSettings * baseline = nullptr);
+    /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
+    SettingsChanges changesFrom(const MergeTreeSettings & base) const;
+    void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getAllAliasNames() const;
@@ -105,12 +104,7 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(
-        size_t background_pool_tasks,
-        bool allow_experimental,
-        bool allow_private_preview,
-        bool allow_beta,
-        bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;

@@ -328,16 +328,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
         }
 
-        const auto & ac = query_context->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
+        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
+        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
 

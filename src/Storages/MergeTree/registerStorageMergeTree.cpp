@@ -896,13 +896,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
+        /// What this query changes from the settings the server has in effect, which already include the
+        /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
+        /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
+        if (is_fresh_definition)
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(
+                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an

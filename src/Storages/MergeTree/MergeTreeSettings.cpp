@@ -26,7 +26,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <cmath>
-#include <unordered_set>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -2437,35 +2436,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(
-        size_t background_pool_tasks,
-        bool allow_experimental,
-        bool allow_private_preview,
-        bool allow_beta,
-        bool background_pool_auto_lowered) const;
-
-    /// Settings a query changed from the value in effect. Drives the feature tier check in `sanityCheck`,
-    /// mirroring `SettingsConstraints::getNewValueToCheck`.
-    std::unordered_set<String> changed_by_query;
-
-    /// Apply changes from a query. `baseline` (default `this`) is what each entry is compared against.
-    void applyChangesFromQuery(const SettingsChanges & changes, const MergeTreeSettingsImpl * baseline = nullptr)
-    {
-        const MergeTreeSettingsImpl & compare_against = baseline ? *baseline : *this;
-        for (const auto & change : changes)
-        {
-            auto resolved_name = Traits::resolveName(change.name);
-
-            Field current_value;
-            bool has_current_value = compare_against.tryGet(resolved_name, current_value);
-            Field new_value = castValueUtil(resolved_name, change.value);
-            if (has_current_value && new_value == current_value)
-                changed_by_query.erase(String(resolved_name));
-            else
-                changed_by_query.emplace(resolved_name);
-        }
-        applyChanges(changes);
-    }
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2542,7 +2513,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             if (table_disk)
                 validateTableDisk(disk);
 
-            applyChangesFromQuery(changes);
+            applyChanges(changes);
         }
         catch (Exception & e)
         {
@@ -2570,48 +2541,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_private_preview || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!changed_by_query.contains(String(setting.getName())))
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_private_preview && tier == PRIVATE_PREVIEW)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool
     /// may be tuned below the default thresholds, and we do not want to fail table creation in
@@ -2850,7 +2781,7 @@ Field MergeTreeSettings::get(std::string_view name) const
 
 void MergeTreeSettings::set(std::string_view name, const Field & value)
 {
-    impl->applyChangesFromQuery({SettingChange{name, value}});
+    impl->set(name, value);
 }
 
 SettingsChanges MergeTreeSettings::changes() const
@@ -2858,19 +2789,30 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(
-    const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, const MergeTreeSettings * baseline)
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
-    impl->applyChangesFromQuery(resolved_changes, baseline ? baseline->impl.get() : nullptr);
+    impl->applyChanges(resolved_changes);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_change = change;
     resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
-    impl->applyChangesFromQuery({resolved_change});
+    impl->applyChange(resolved_change);
 }
 
 void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
@@ -2940,7 +2882,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)
-                impl->set(final_name, previous_value);
+                set(final_name, previous_value);
         }
     }
 }
@@ -3017,14 +2959,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_private_preview, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

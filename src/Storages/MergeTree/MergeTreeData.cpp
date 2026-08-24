@@ -772,15 +772,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -5933,6 +5926,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    local_context->checkMergeTreeSettingsConstraints(
+        *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -5949,8 +5947,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6328,40 +6324,12 @@ void MergeTreeData::changeSettings(
         }
 
         /// Reset to default settings before applying existing.
-        auto old_settings = storage_settings.get();
         auto copy = getDefaultSettings();
-
-        /// `RESET SETTING` drops a name from `new_changes` instead of setting it to the default, so add it
-        /// back explicitly with its reverted value - otherwise the feature tier check never sees it.
-        /// `old_settings->changes()` gives canonical names, but `new_changes` may still spell a surviving
-        /// override as an alias, so compare resolved names rather than raw strings.
-        std::unordered_set<std::string_view> new_changes_resolved_names;
-        for (const auto & change : new_changes)
-            new_changes_resolved_names.insert(MergeTreeSettings::resolveName(change.name));
-
-        auto changes_with_resets = new_changes;
-        for (const auto & old_change : old_settings->changes())
-        {
-            if (!new_changes_resolved_names.contains(old_change.name))
-            {
-                changes_with_resets.emplace_back(old_change.name, copy->get(old_change.name));
-            }
-        }
-
-        /// Compare against the table's live settings, not `copy`'s bare defaults, so an existing override isn't
-        /// mistaken for a change made by this ALTER.
-        copy->applyChanges(changes_with_resets, getContext(), /*is_loading_from_existing_metadata=*/true, old_settings.get());
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 

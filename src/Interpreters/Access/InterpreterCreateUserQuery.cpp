@@ -310,27 +310,54 @@ BlockIO InterpreterCreateUserQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
 
-    /// A settings clause can drop a setting explicitly, or by omission (`DROP ALL SETTINGS`, or a full
-    /// replacement via old-style `SETTINGS ...` or `OR REPLACE`). Either way it must still be checked
-    /// against the tier, so add every name each target currently has that this change would drop.
-    if (settings_from_query && (query.alter || query.or_replace) && !query.attach)
+    /// `CREATE USER ... ROLE r` grants the role here instead of through `GRANT`, and `DEFAULT ROLE r` on a
+    /// new user grants it too (see `grant_roles` above). Either way it grants the settings the role carries.
+    const RolesOrUsersSet * granted_by_query = nullptr;
+    if (roles_from_query)
+        granted_by_query = &*roles_from_query;
+    else if (default_roles_from_query && !query.alter && !default_roles_from_query->all)
+        granted_by_query = &*default_roles_from_query;
+
+    if (granted_by_query && !query.attach)
+    {
+        auto elements = getSettingsOfRolesRecursively(granted_by_query->getMatchingIDs(), access_control);
+        if (!elements.empty())
+            getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
+    }
+
+    if (default_roles_from_query && !query.attach)
     {
         for (const auto & name : query.names->toStrings())
         {
             if (auto user = access_control.tryRead<User>(name))
-            {
-                for (const auto & setting_name : user->settings.findRevertedSettingNames(*settings_from_query, access_control))
-                {
-                    SettingsProfileElement element;
-                    element.setting_name = setting_name;
-                    settings_from_query->drop_settings.push_back(element);
-                }
-            }
+                checkSettingsOfDefaultRolesChange(getContext(), access_control, *user, *default_roles_from_query);
         }
     }
 
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+    /// A replacement states the whole entity, so leaving out the settings clause replaces the settings with
+    /// nothing. That is a change like any other and has to be checked.
+    const AlterSettingsProfileElements replace_with_nothing{SettingsProfileElements{}};
+    const AlterSettingsProfileElements * settings_change = nullptr;
+    if (settings_from_query)
+        settings_change = &*settings_from_query;
+    else if (query.or_replace)
+        settings_change = &replace_with_nothing;
+
+    /// Check the change against the settings each target has now, so that what it changes for that target is
+    /// what gets checked, however the clause is written and whatever the caller's own settings are.
+    if (settings_change && !query.attach)
+    {
+        for (const auto & name : query.names->toStrings())
+        {
+            SettingsProfileElements old_settings;
+            if (query.alter || query.or_replace)
+            {
+                if (auto user = access_control.tryRead<User>(name))
+                    old_settings = user->settings;
+            }
+            getContext()->checkSettingsConstraints(old_settings, *settings_change, SettingSource::USER);
+        }
+    }
 
     if (!query.cluster.empty())
     {

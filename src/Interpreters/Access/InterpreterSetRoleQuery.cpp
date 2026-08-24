@@ -4,6 +4,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControl.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 
@@ -46,6 +47,12 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
     std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
     RolesOrUsersSet roles_from_query{*query.roles, access_control};
 
+    for (const auto & user_id : to_users)
+    {
+        if (auto user = access_control.tryRead<User>(user_id))
+            checkSettingsOfDefaultRolesChange(getContext(), access_control, *user, roles_from_query);
+    }
+
     auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
     {
         auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
@@ -56,6 +63,21 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
     access_control.update(to_users, update_func);
 }
 
+
+void checkSettingsOfDefaultRolesChange(
+    const ContextMutablePtr & context, const AccessControl & access_control, const User & user, const RolesOrUsersSet & new_default_roles)
+{
+    std::vector<UUID> no_longer_or_newly_default;
+    for (const auto & role_id : user.granted_roles.getGranted())
+    {
+        if (user.default_roles.match(role_id) != new_default_roles.match(role_id))
+            no_longer_or_newly_default.push_back(role_id);
+    }
+
+    auto elements = getSettingsOfRolesRecursively(no_longer_or_newly_default, access_control);
+    if (!elements.empty())
+        context->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
+}
 
 void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const RolesOrUsersSet & roles_from_query)
 {

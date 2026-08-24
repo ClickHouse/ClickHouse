@@ -5,7 +5,9 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Role.h>
+#include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -468,6 +470,41 @@ BlockIO InterpreterGrantQuery::execute()
                 "Cannot grant role '{}' to itself",
                 entity ? entity->getName() : String{});
         }
+    }
+
+    /// Granting or revoking a role makes the settings it carries effective for the grantees, or stops doing
+    /// so, without naming any of them. Check them like a settings clause naming them would be checked.
+    auto check_settings_of_roles = [&](const std::vector<UUID> & role_ids)
+    {
+        auto elements = getSettingsOfRolesRecursively(role_ids, access_control);
+        if (!elements.empty())
+            getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
+    };
+
+    /// Only what really starts or stops being granted: re-granting a role, or granting the admin option for
+    /// one that is already granted, leaves every setting where it is.
+    for (const auto & grantee_id : grantees)
+    {
+        /// A grantee is a user or a role, and `tryRead<T>` throws on the other one.
+        auto grantee = access_control.tryRead(grantee_id);
+        const GrantedRoles * granted_roles = nullptr;
+        if (const auto * user = typeid_cast<const User *>(grantee.get()))
+            granted_roles = &user->granted_roles;
+        else if (const auto * role = typeid_cast<const Role *>(grantee.get()))
+            granted_roles = &role->granted_roles;
+        if (!granted_roles)
+            continue;
+
+        std::vector<UUID> newly_granted;
+        for (const auto & role_id : roles_to_grant)
+        {
+            if (!granted_roles->isGranted(role_id))
+                newly_granted.push_back(role_id);
+        }
+        check_settings_of_roles(newly_granted);
+
+        if (!roles_to_revoke.empty() && !query.admin_option)
+            check_settings_of_roles(granted_roles->findGranted(roles_to_revoke));
     }
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.

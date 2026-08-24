@@ -1,6 +1,7 @@
 #include <Access/SettingsProfileElement.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
+#include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/resolveSetting.h>
 #include <Core/Settings.h>
@@ -11,6 +12,7 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <base/removeDuplicates.h>
 #include <algorithm>
+#include <map>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
 
@@ -549,61 +551,118 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
 
 namespace
 {
-    /// Matches what SettingsConstraints::check(const SettingsProfileElements &) checks against the tier.
-    bool hasCheckableValue(const SettingsProfileElement & element)
+    struct EffectiveSetting
     {
-        return element.value || element.min_value || element.max_value;
-    }
+        std::optional<Field> value;
+        std::optional<Field> min_value;
+        std::optional<Field> max_value;
+        std::vector<Field> disallowed_values;
+        std::optional<SettingConstraintWritability> writability;
 
-    /// Expands `parent_profile` references into the referenced profile's own elements, recursively, so a
-    /// setting inherited only through a profile is visible to the revert diff below. `visited` dedupes
-    /// repeated/cyclic profile references, same as SettingsProfilesCache::substituteProfiles.
-    SettingsProfileElements resolveProfiles(const SettingsProfileElements & elements, const AccessControl & access_control, boost::container::flat_set<UUID> & visited)
+        auto constraints() const { return std::tie(min_value, max_value, disallowed_values, writability); }
+    };
+
+    /// The value and the constraints each setting ends up with: profiles substituted as
+    /// `SettingsProfilesCache::substituteProfiles` does it, last occurrence winning, names canonical.
+    std::map<String, EffectiveSetting> getEffectiveSettings(SettingsProfileElements elements, const AccessControl & access_control)
     {
-        SettingsProfileElements result;
+        boost::container::flat_set<UUID> substituted_profiles;
+        size_t i = elements.size();
+        while (i != 0)
+        {
+            auto & element = elements[--i];
+            if (!element.parent_profile)
+                continue;
+
+            auto profile_id = *element.parent_profile;
+            element.parent_profile.reset();
+            if (!substituted_profiles.insert(profile_id).second)
+                continue;
+
+            auto profile = access_control.tryRead<SettingsProfile>(profile_id);
+            if (!profile)
+                continue;
+
+            elements.insert(elements.begin() + i, profile->elements.begin(), profile->elements.end());
+            i += profile->elements.size();
+        }
+
+        std::map<String, EffectiveSetting> result;
         for (const auto & element : elements)
         {
-            if (!element.parent_profile)
-            {
-                result.push_back(element);
+            /// A custom setting has neither a tier nor a compiled default to revert to, so it is not checked here.
+            if (element.setting_name.empty() || SettingsProfileElements::isAllowBackupSetting(element.setting_name)
+                || !settingIsBuiltin(element.setting_name))
                 continue;
-            }
-            if (!visited.insert(*element.parent_profile).second)
-                continue;
-            if (auto profile = access_control.tryRead<SettingsProfile>(*element.parent_profile))
-            {
-                auto nested = resolveProfiles(profile->elements, access_control, visited);
-                result.insert(result.end(), nested.begin(), nested.end());
-            }
+
+            auto & effective = result[resolveSettingName(element.setting_name)];
+            if (element.value)
+                effective.value = element.value;
+            if (element.min_value)
+                effective.min_value = element.min_value;
+            if (element.max_value)
+                effective.max_value = element.max_value;
+            /// Same folding as `toSettingsConstraints` + `SettingsConstraints::set`: disallowed values
+            /// accumulate, and any constraint element sets the writability, defaulting to `WRITABLE`.
+            for (const auto & disallowed_value : element.disallowed_values)
+                effective.disallowed_values.push_back(disallowed_value);
+            if (element.isConstraint())
+                effective.writability = element.writability.value_or(SettingConstraintWritability::WRITABLE);
         }
         return result;
     }
 }
 
-Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const
+SettingsProfileElements getSettingsOfRolesRecursively(const std::vector<UUID> & role_ids, const AccessControl & access_control)
+{
+    SettingsProfileElements result;
+    boost::container::flat_set<UUID> visited;
+    std::vector<UUID> to_visit = role_ids;
+    while (!to_visit.empty())
+    {
+        auto role_id = to_visit.back();
+        to_visit.pop_back();
+        if (!visited.insert(role_id).second)
+            continue;
+
+        auto role = access_control.tryRead<Role>(role_id);
+        if (!role)
+            continue;
+
+        result.merge(role->settings, /*normalize_=*/false);
+        const auto & granted = role->granted_roles.getGranted();
+        to_visit.insert(to_visit.end(), granted.begin(), granted.end());
+    }
+    return result;
+}
+
+SettingsProfileElements::EffectiveChanges
+SettingsProfileElements::findChangedSettings(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const
 {
     SettingsProfileElements new_elements = *this;
     new_elements.applyChanges(changes);
 
-    boost::container::flat_set<UUID> visited_old, visited_new;
-    SettingsProfileElements old_effective = resolveProfiles(*this, access_control, visited_old);
-    SettingsProfileElements new_effective = resolveProfiles(new_elements, access_control, visited_new);
+    auto old_effective = getEffectiveSettings(*this, access_control);
+    auto new_effective = getEffectiveSettings(std::move(new_elements), access_control);
 
-    Strings reverted;
-    for (const auto & old_element : old_effective)
+    /// A setting the change reverts is gone from the new elements: add it back as empty so the diff sees it.
+    for (const auto & old_one : old_effective)
+        new_effective.emplace(old_one.first, EffectiveSetting{});
+
+    static const EffectiveSetting nothing;
+    EffectiveChanges result;
+    for (const auto & [name, new_one] : new_effective)
     {
-        if (!hasCheckableValue(old_element) || old_element.setting_name.empty())
-            continue;
+        auto it = old_effective.find(name);
+        const EffectiveSetting & old_one = (it == old_effective.end()) ? nothing : it->second;
 
-        auto old_resolved = resolveSettingName(old_element.setting_name);
-        auto it = std::find_if(
-            new_effective.begin(), new_effective.end(),
-            [&](const SettingsProfileElement & e) { return !e.setting_name.empty() && resolveSettingName(e.setting_name) == old_resolved; });
-
-        if (it == new_effective.end() || !hasCheckableValue(*it))
-            reverted.push_back(old_element.setting_name);
+        /// What disappears reverts to the compiled default, and that reversion is the change to check.
+        if (new_one.value != old_one.value)
+            result.values.push_back({name, new_one.value ? *new_one.value : settingGetDefaultValue(name)});
+        if (new_one.constraints() != old_one.constraints())
+            result.constraints.push_back(name);
     }
-    return reverted;
+    return result;
 }
 
 }
