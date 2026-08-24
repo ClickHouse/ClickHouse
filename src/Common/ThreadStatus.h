@@ -198,6 +198,9 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Set while executing `IProcessor::work`. `CurrentMemoryTracker` uses it to attribute
+    /// query-level allocation/free deltas to the active processor.
+    Int64 * current_processor_memory_usage_delta = nullptr;
     /// Per-CPU untracked memory
     PerCPUMemoryThreadState per_cpu_untracked_memory;
 

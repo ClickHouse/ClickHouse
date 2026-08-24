@@ -9,6 +9,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -48,21 +50,58 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+class ProcessorMemoryUsageScope
+{
+public:
+    explicit ProcessorMemoryUsageScope(Int64 & memory_usage_delta_)
+        : thread(current_thread)
+    {
+        if (thread)
+        {
+            previous_memory_usage_delta = thread->current_processor_memory_usage_delta;
+            thread->current_processor_memory_usage_delta = &memory_usage_delta_;
+        }
+    }
+
+    ~ProcessorMemoryUsageScope()
+    {
+        if (thread)
+            thread->current_processor_memory_usage_delta = previous_memory_usage_delta;
+    }
+
+private:
+    ThreadStatus * thread = nullptr;
+    Int64 * previous_memory_usage_delta = nullptr;
+};
+
+void ExecutionThreadContext::executeJob()
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        auto & processor = *node->processor();
 
-        node->processor()->work();
+        if (processor.isSpillable())
+        {
+            if (auto group = CurrentThread::getGroup())
+                group->memory_spill_scheduler->checkAndSpill(node->processor());
+        }
+
+        if (profile_processors)
+        {
+            ProcessorMemoryUsageScope memory_usage_scope(processor.memory_usage_delta);
+            processor.work();
+        }
+        else
+        {
+            processor.work();
+        }
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = node->processor()->getReadProgress())
+            if (auto read_progress = processor.getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -71,7 +110,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    node->processor()->cancel();
+                    processor.cancel();
             }
         }
     }
@@ -125,7 +164,7 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node, read_progress_callback);
+        executeJob();
         ++node->num_executed_jobs;
     }
     catch (...)
