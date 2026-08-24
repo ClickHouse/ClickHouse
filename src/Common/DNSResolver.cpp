@@ -115,7 +115,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
 
     {
         ProfileEvents::increment(ProfileEvents::DNSRequests);
-        ProfileEventTimeIncrement<Time::Microseconds> request_time(ProfileEvents::DNSRequestMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSRequestMicroseconds);
 
         try
         {
@@ -169,7 +169,7 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     auto ptr_resolver = DB::DNSPTRResolverProvider::get();
 
     ProfileEvents::increment(ProfileEvents::DNSReverseRequests);
-    ProfileEventTimeIncrement<Time::Microseconds> request_time(ProfileEvents::DNSReverseRequestMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSReverseRequestMicroseconds);
 
     try
     {
