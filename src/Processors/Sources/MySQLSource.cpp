@@ -219,6 +219,7 @@ void MySQLWithFailoverSource::onCancel() noexcept
         tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
     }
 }
+
 UInt64 parseMySQLBitValue(std::string_view value)
 {
     /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
