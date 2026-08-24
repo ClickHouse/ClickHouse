@@ -191,10 +191,10 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
         - Check the LDF should be updated
         - Push changes if there are
     - Create directories in ClickHouse/docker-library via
-        `tests/ci/official_docker.py generate-tree`
+        `ci/tools/official_docker.py generate-tree`
     - If there aren't changes:
         - Finish
-    - Create a new LDF as `tests/ci/official_docker.py generate-ldf`
+    - Create a new LDF as `ci/tools/official_docker.py generate-ldf`
     - Update ClickHouse/docker-library-official-images to the upstream
     - Create a branch in ClickHouse/docker-library-official-images
     - Copy `ClickHouse/docker-library/clickhouse` to
@@ -301,7 +301,7 @@ def update_ldf_repo(repos: LibraryRepos, dry_run: bool = True) -> None:
     run(f"{GIT_PREFIX} clone {repos.ldf.ssh_url}", cwd=temp_path)
 
     generate_tree_cmd = (
-        f"{executable} tests/ci/official_docker.py generate-tree --build --fetch-tags "
+        f"{executable} ci/tools/official_docker.py generate-tree --build --fetch-tags "
         f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
     )
 
@@ -329,7 +329,7 @@ def update_ldf_repo(repos: LibraryRepos, dry_run: bool = True) -> None:
         run(f"{generate_tree_cmd} --commit")
 
     generate_ldf_cmd = (
-        f"{executable} tests/ci/official_docker.py generate-ldf -vvv "
+        f"{executable} ci/tools/official_docker.py generate-ldf -vvv "
         f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
     )
     if dry_run:

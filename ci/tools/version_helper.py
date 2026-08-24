@@ -20,7 +20,7 @@ const char * auto_contributors[] {{
 
 VERSIONS = Dict[str, Union[int, str]]
 
-VERSIONS_TEMPLATE = """# This variables autochanged by tests/ci/version_helper.py:
+VERSIONS_TEMPLATE = """# This variables autochanged by ci/tools/version_helper.py:
 
 # NOTE: VERSION_REVISION has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.

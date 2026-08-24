@@ -77,7 +77,7 @@ def recover_git_state() -> None:
     """
     try:
         # `--absolute-git-dir` -- avoid a relative `.git` resolved against
-        # Python's cwd (which is `tests/ci/`, not the repo root).
+        # Python's cwd (which is `ci/tools/`, not the repo root).
         git_dir = git_runner("git rev-parse --absolute-git-dir")
     except CalledProcessError:
         return

@@ -4,7 +4,7 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 
 # Daily preparation of CHANGELOG.md for the upcoming release. The job
 # generates raw changelog entries for the pull requests newly merged into
-# master (utils/changelog wrapper around tests/ci/changelog.py) and edits them
+# master (utils/changelog wrapper around ci/tools/changelog.py) and edits them
 # following .claude/skills/edit-changelog/SKILL.md, committing the two states
 # separately to a per-release bot branch (auto/changelog-X.Y) with a draft PR
 # that the release manager finalizes at release time.
