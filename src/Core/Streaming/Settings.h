@@ -9,6 +9,7 @@
 namespace DB
 {
 
+///////////////////////////////////////////////////////////////////////////////////
 struct WatermarkSettings
 {
     String column;
@@ -21,6 +22,7 @@ public:
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
+///////////////////////////////////////////////////////////////////////////////////
 struct StreamSettings
 {
     /// If true, read only the first snapshot and then finish (do not subscribe for updates).

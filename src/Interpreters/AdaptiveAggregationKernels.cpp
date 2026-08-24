@@ -1232,7 +1232,8 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 {
     auto & impl = method.data.impls[bucket_index];
 
-    const size_t reserve_sample_records = total_records / adaptive_reserve_sample_inverse;
+    /// At least one record: the extrapolation below divides by the sample size.
+    const size_t reserve_sample_records = std::max<size_t>(1, total_records / adaptive_reserve_sample_inverse);
     const size_t size_before = impl.size();
     bool reserved = false;
     size_t processed = 0;
