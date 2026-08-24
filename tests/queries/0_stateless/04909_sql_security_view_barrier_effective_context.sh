@@ -21,12 +21,16 @@ DEFINER = $definer SQL SECURITY DEFINER
 AS SELECT * FROM $db.security_view_context_secrets;
 GRANT SELECT ON $db.security_view_context_limit TO $invoker;
 
-CREATE ROW POLICY ${definer}_source_policy ON $db.security_view_context_secrets
-FOR SELECT USING owner = '${invoker}' TO $definer;
 CREATE VIEW $db.security_view_context_policy
 DEFINER = $definer SQL SECURITY DEFINER
 AS SELECT * FROM $db.security_view_context_secrets;
 GRANT SELECT ON $db.security_view_context_policy TO $invoker;
+
+-- The policy must be created after the views: with the legacy analyzer, CREATE VIEW resolves the
+-- view's sample block as the creating user, and a table that has row policies for other users
+-- only makes that resolution fail with ACCESS_DENIED. The policy applies at query time either way.
+CREATE ROW POLICY ${definer}_source_policy ON $db.security_view_context_secrets
+FOR SELECT USING owner = '${invoker}' TO $definer;
 EOF
 
 for view in security_view_context_limit security_view_context_policy; do

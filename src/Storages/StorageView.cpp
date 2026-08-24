@@ -62,6 +62,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
@@ -930,6 +931,13 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// Callers pass the view context, so this also covers `SQL SECURITY DEFINER` profiles.
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0)
+        return true;
+
+    /// `additional_result_filter` grows a filter step on top of the inner query's result
+    /// (the inner interpreter runs at subquery depth 0), and `additional_table_filters`
+    /// filter the tables it reads. Both hide rows just like clauses of the view's AST.
+    /// Fail closed without matching the filtered table names against the view's sources.
+    if (!settings[Setting::additional_result_filter].value.empty() || !settings[Setting::additional_table_filters].value.empty())
         return true;
 
     const auto * union_query = inner_query->as<ASTSelectWithUnionQuery>();
