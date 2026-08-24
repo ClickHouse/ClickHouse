@@ -1331,7 +1331,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             String device = line.substr(0, p1);
             String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
             String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
-            if (mount_point.find('\\') != String::npos)
+            if (mount_point.contains('\\'))
                 continue;
 
             bool contains_data_path = canonical_data_path == mount_point
