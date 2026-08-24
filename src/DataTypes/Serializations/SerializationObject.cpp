@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationObject.h>
-#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
@@ -1228,9 +1227,6 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    /// See the same check in SerializationDynamic::deserializeBinary: the two recurse into each other.
-    checkStackSize();
-
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1331,9 +1327,6 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    /// See the same check in SerializationDynamic::deserializeBinary: the two recurse into each other.
-    checkStackSize();
-
     updateMaxDynamicPathsLimitIfNeeded(col, settings);
 
     if (settings.binary.read_json_as_string)
