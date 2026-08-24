@@ -159,6 +159,7 @@ def test_removing_constraint_from_default_profile():
 
     # The constraints are in effect. Adding them was never broken, but assert it so that a fix which
     # simply stops applying constraints does not pass.
+    assert node_with_constraints.query("SELECT enabledProfiles()") == "['parent_profile','default']\n"
     assert get_constraints("alter_sync") == "\\N\t\\N\t1\n"
     assert get_constraints("max_memory_usage") == "5000000000\t20000000000\t0\n"
     assert (
@@ -178,6 +179,7 @@ def test_removing_constraint_from_default_profile():
 
     assert get_constraints("alter_sync") == "\\N\t\\N\t0\n"
     assert get_constraints("max_memory_usage") == "\\N\t\\N\t0\n"
+    assert node_with_constraints.query("SELECT enabledProfiles()") == "['default']\n"
     assert node_with_constraints.query("SELECT 1 SETTINGS alter_sync = 0") == "1\n"
     assert (
         node_with_constraints.query("SELECT 1 SETTINGS max_memory_usage = 100000000")

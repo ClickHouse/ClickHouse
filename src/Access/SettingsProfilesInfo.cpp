@@ -42,7 +42,7 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
     else
         res->constraints = constraints;
 
-    if (previous)
+    if (previous && composition == Composition::Layer)
     {
         res->enabled_profiles.reserve(previous->enabled_profiles.size() + profiles_with_implicit.size());
         res->enabled_profiles = previous->enabled_profiles;
