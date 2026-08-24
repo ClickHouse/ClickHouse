@@ -47,10 +47,10 @@ bool SerializationDate::tryDeserializeWholeText(IColumn & column, ReadBuffer & i
     return true;
 }
 
-void SerializationDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DayNum x;
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
@@ -75,11 +75,11 @@ void SerializationDate::serializeTextQuoted(const IColumn & column, size_t row_n
     writeChar('\'', ostr);
 }
 
-void SerializationDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DayNum x;
     assertChar('\'', istr);
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assertChar('\'', istr);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -109,7 +109,7 @@ void SerializationDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
         return;
     }
     DayNum x;
-    readDateText(x, istr, time_zone);
+    readDateText(x, istr, time_zone, format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assertChar('"', istr);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
@@ -133,10 +133,10 @@ void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num,
     writeChar('"', ostr);
 }
 
-void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DayNum value;
-    readCSV(value, istr, time_zone);
+    readCSV(value, istr, time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
 }
 

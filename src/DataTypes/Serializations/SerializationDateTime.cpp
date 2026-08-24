@@ -46,7 +46,7 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeTextImpl<>(x, istr, time_zone);
+            readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
