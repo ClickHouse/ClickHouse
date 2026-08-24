@@ -174,39 +174,6 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
-Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
-{
-    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
-    chassert(this->n == rhs.n);
-
-    const auto * lhs_data = chars.data() + p1 * n;
-    const auto * rhs_data = rhs.chars.data() + p2 * n;
-
-    Int64 res = memcmpSmallAllowOverflow15(lhs_data, rhs_data, n);
-
-    if (res < 0)
-    {
-        const auto * lhs_end = chars.data() + chars.size();
-        lhs_data += n;
-        while (lhs_data < lhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) < 0))
-        {
-            --res;
-            lhs_data += n;
-        }
-    }
-    else if (res > 0)
-    {
-        const auto * rhs_end = rhs.chars.data() + rhs.chars.size();
-        rhs_data += n;
-        while (rhs_data < rhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) > 0))
-        {
-            ++res;
-            rhs_data += n;
-        }
-    }
-    return res;
-}
-
 #if USE_EMBEDDED_COMPILER
 bool ColumnFixedString::isComparatorCompilable() const { return true; }
 llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
@@ -276,6 +243,24 @@ size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end,
     /// A fixed-size memcmp is cheap, so use a longer linear probe (the default is 8).
     static constexpr size_t linear_probe = 16;
     return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
+}
+
+Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
+{
+    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+    chassert(this->n == rhs.n);
+
+    const UInt8 * lhs_data = chars.data();
+    const UInt8 * rhs_data = rhs.chars.data();
+    const UInt8 * lhs_value = lhs_data + p1 * n;
+    const UInt8 * rhs_value = rhs_data + p2 * n;
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        memcmpSmallAllowOverflow15(lhs_value, rhs_value, n),
+        p1, p2, size(), rhs.size(), linear_probe,
+        [&](size_t row) { return memcmpSmallAllowOverflow15(lhs_data + row * n, rhs_value, n) < 0; },
+        [&](size_t row) { return memcmpSmallAllowOverflow15(lhs_value, rhs_data + row * n, n) > 0; });
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

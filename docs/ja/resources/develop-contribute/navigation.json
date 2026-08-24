@@ -46,11 +46,11 @@
     {
       "group": "インテグレーション開発",
       "pages": [
+        "ja/resources/develop-contribute/integrations/index",
         "ja/resources/develop-contribute/integrations/building-integrations",
         "ja/resources/develop-contribute/integrations/testing-your-integration",
         "ja/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "ja/resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "ロードマップ",
