@@ -11,8 +11,14 @@ def refresh():
     info = Info()
 
     try:
-        loom_url = info.get_secret("loom-url").rstrip("/")
-        token = info.get_secret("loom-ci-token")
+        # get_secret returns a Secret.Config handle; join_with batches both
+        # SSM parameters into one get-parameters call, values in request order.
+        loom_url, token = (
+            info.get_secret("loom-url")
+            .join_with(info.get_secret("loom-ci-token"))
+            .get_value()
+        )
+        loom_url = loom_url.rstrip("/")
     except Exception:
         info.add_workflow_warning(
             "loom secrets unavailable - skipping code index refresh"
