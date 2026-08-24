@@ -313,8 +313,9 @@ ALWAYS_INLINE UInt64 transposeBitsInLane(UInt64 lane)
 void transpose64x8(UInt64 * src_dst)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
-    /// A 64x8 bit transpose is the per-lane bit transpose composed with the byte transpose across
-    /// lanes, in either order; the byte pass is shared with the matrix transposes below.
+    /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across
+    /// lanes; applying the two passes in the opposite order inverts it, which is what
+    /// reverseTranspose64x8 below does. The byte pass is shared with the matrix transposes.
     for (UInt32 lane = 0; lane < 8; ++lane)
         src_dst[lane] = transposeBitsInLane(src_dst[lane]);
     transposeByteLanes(src_dst);
