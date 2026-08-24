@@ -17,6 +17,25 @@ query() {
     $CLICKHOUSE_CLIENT --query "$1"
 }
 
+# EXPORT PART runs in the background, so wait for it instead of sleeping.
+wait_for_exports() {
+    local expected="$1"
+    local timeout="${2:-120}"
+    local start
+    start=$(date +%s)
+    local n=0
+    while [ $(( $(date +%s) - start )) -lt "$timeout" ]; do
+        query "SYSTEM FLUSH LOGS" > /dev/null 2>&1 || true
+        n=$(query "SELECT count() FROM system.part_log WHERE event_type = 'ExportPart' AND database = currentDatabase()" | tr -d '\n')
+        if [ "$n" -ge "$expected" ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "Timeout waiting for $expected export(s) to complete (got $n)"
+    return 1
+}
+
 query "DROP TABLE IF EXISTS $mt_table, $s3_table, $mt_table_roundtrip, $s3_table_wildcard, $s3_table_wildcard_partition_expression_with_function, $mt_table_partition_expression_with_function"
 
 # Create all tables
@@ -46,8 +65,7 @@ echo "---- Export 3: Export 2020_1_1_0 and 2021_2_2_0 to wildcard table with par
 query "ALTER TABLE $mt_table_partition_expression_with_function EXPORT PART 'cb217c742dc7d143b61583011996a160_1_1_0' TO TABLE $s3_table_wildcard_partition_expression_with_function SETTINGS allow_experimental_export_merge_tree_part = 1"
 query "ALTER TABLE $mt_table_partition_expression_with_function EXPORT PART '3be6d49ecf9749a383964bc6fab22d10_2_2_0' TO TABLE $s3_table_wildcard_partition_expression_with_function SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# below exports are using parts that were exported in export 1 and export 2, so we need to wait for them to complete
-sleep 5
+wait_for_exports 6
 
 echo "---- Export 4: Export the same part again, it should be idempotent"
 query "ALTER TABLE $mt_table EXPORT PART '2020_1_1_0' TO TABLE $s3_table SETTINGS allow_experimental_export_merge_tree_part = 1"
@@ -55,8 +73,7 @@ query "ALTER TABLE $mt_table EXPORT PART '2020_1_1_0' TO TABLE $s3_table SETTING
 echo "---- Export 5: Export the same part again to wildcard, it should be idempotent"
 query "ALTER TABLE $mt_table EXPORT PART '2022_3_3_0' TO TABLE $s3_table_wildcard SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# ONE BIG SLEEP after all exports
-sleep 15
+wait_for_exports 8
 
 # ============================================================================
 # ALL SELECTS/VERIFICATIONS HAPPEN HERE

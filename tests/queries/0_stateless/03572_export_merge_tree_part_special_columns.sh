@@ -22,6 +22,25 @@ query() {
     $CLICKHOUSE_CLIENT --query "$1"
 }
 
+# EXPORT PART runs in the background, so wait for it instead of sleeping.
+wait_for_exports() {
+    local expected="$1"
+    local timeout="${2:-120}"
+    local start
+    start=$(date +%s)
+    local n=0
+    while [ $(( $(date +%s) - start )) -lt "$timeout" ]; do
+        query "SYSTEM FLUSH LOGS" > /dev/null 2>&1 || true
+        n=$(query "SELECT count() FROM system.part_log WHERE event_type = 'ExportPart' AND database = currentDatabase()" | tr -d '\n')
+        if [ "$n" -ge "$expected" ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "Timeout waiting for $expected export(s) to complete (got $n)"
+    return 1
+}
+
 query "DROP TABLE IF EXISTS $mt_alias, $mt_materialized, $s3_alias_export, $s3_materialized_export, $mt_mixed, $s3_mixed_export, $mt_complex_expr, $s3_complex_expr_export, $mt_ephemeral, $s3_ephemeral_export"
 
 # Create all tables
@@ -112,7 +131,7 @@ query "ALTER TABLE $mt_mixed EXPORT PART '$mixed_part_2' TO TABLE FUNCTION s3(s3
 query "ALTER TABLE $mt_complex_expr EXPORT PART '$complex_expr_part' TO TABLE $s3_complex_expr_export SETTINGS allow_experimental_export_merge_tree_part = 1"
 
 # ONE BIG SLEEP after all exports
-sleep 20
+wait_for_exports 6
 
 # ============================================================================
 # ALL SELECTS/VERIFICATIONS HAPPEN HERE

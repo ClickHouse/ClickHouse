@@ -16,6 +16,25 @@ query() {
     $CLICKHOUSE_CLIENT --query "$1"
 }
 
+# EXPORT PART runs in the background, so wait for it instead of sleeping.
+wait_for_exports() {
+    local expected="$1"
+    local timeout="${2:-120}"
+    local start
+    start=$(date +%s)
+    local n=0
+    while [ $(( $(date +%s) - start )) -lt "$timeout" ]; do
+        query "SYSTEM FLUSH LOGS" > /dev/null 2>&1 || true
+        n=$(query "SELECT count() FROM system.part_log WHERE event_type = 'ExportPart' AND database = currentDatabase()" | tr -d '\n')
+        if [ "$n" -ge "$expected" ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "Timeout waiting for $expected export(s) to complete (got $n)"
+    return 1
+}
+
 query "DROP TABLE IF EXISTS $mt, $dest1, $dest2, $dest3"
 
 query "CREATE TABLE $mt (id UInt64, year UInt16) ENGINE = MergeTree() PARTITION BY year ORDER BY tuple()"
@@ -27,21 +46,21 @@ query "CREATE TABLE $dest3 (id UInt64, year UInt16) ENGINE = S3(s3_conn, filenam
 
 echo "---- Test: Default pattern {part_name}_{checksum}"
 query "ALTER TABLE $mt EXPORT PART '2020_1_1_0' TO TABLE $dest1 SETTINGS allow_experimental_export_merge_tree_part = 1, export_merge_tree_part_filename_pattern = '{part_name}_{checksum}'"
-sleep 3
+wait_for_exports 1
 query "SELECT * FROM $dest1 ORDER BY id"
 echo "---- Verify filename matches 2020_1_1_0_*.1.parquet"
 query "SELECT count() FROM s3(s3_conn, filename='$dest1/**/2020_1_1_0_*.1.parquet', format='One')"
 
 echo "---- Test: Custom prefix pattern"
 query "ALTER TABLE $mt EXPORT PART '2021_2_2_0' TO TABLE $dest2 SETTINGS allow_experimental_export_merge_tree_part = 1, export_merge_tree_part_filename_pattern = 'myprefix_{part_name}'"
-sleep 3
+wait_for_exports 2
 query "SELECT * FROM $dest2 ORDER BY id"
 echo "---- Verify filename matches myprefix_2021_2_2_0.1.parquet"
 query "SELECT count() FROM s3(s3_conn, filename='$dest2/**/myprefix_2021_2_2_0.1.parquet', format='One')"
 
 echo "---- Test: Pattern with macros"
 query "ALTER TABLE $mt EXPORT PART '2020_1_1_0' TO TABLE $dest3 SETTINGS allow_experimental_export_merge_tree_part = 1, export_merge_tree_part_filename_pattern = '{database}_{table}_{part_name}'"
-sleep 3
+wait_for_exports 3
 query "SELECT * FROM $dest3 ORDER BY id"
 echo "---- Verify macros expanded (no literal braces in parquet filenames, that's the best we can do for stateless tests)"
 query "SELECT count() = 0 FROM s3(s3_conn, filename='$dest3/**/*.1.parquet', format='One') WHERE _file LIKE '%{%'"
