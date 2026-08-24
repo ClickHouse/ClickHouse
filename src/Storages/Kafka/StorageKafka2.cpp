@@ -57,6 +57,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -1095,7 +1096,8 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         {
             auto elapsed_ns = watch.elapsed();
 
-            if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
+            if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
                 return false;
         }
 
@@ -1445,8 +1447,8 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     /// schedules them so that Query A holds consumer 0 and waits for consumer 1 while Query B
     /// holds consumer 1 and waits for consumer 0, we get a deadlock. The timeout breaks it
     /// by failing one of the queries, allowing the other to proceed.
-    auto acquire_timeout = std::chrono::milliseconds(
-        (*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
+    auto acquire_timeout
+        = saturatedMilliseconds((*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
     auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
 
     /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock

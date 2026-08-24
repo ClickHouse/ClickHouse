@@ -112,13 +112,30 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     AIResponse ai_response;
 
-    String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
-    if (anthropic_stop_reason == "max_tokens")
-        ai_response.finish_reason = "length";
-    else if (anthropic_stop_reason == "end_turn")
-        ai_response.finish_reason = "stop";
+    /** Map Anthropic's `stop_reason` onto the canonical `FinishReason`.
+      *
+      * `end_turn` and `stop_sequence` are complete answers, an absent field defaults to `end_turn`.
+      *
+      * `tool_use` is complete only when we explicitly require a `structured_output` JSON response,
+      * otherwise it is mapped to `RequiresAction` and is rejected because it means the response is
+      * incomplete and the model is requesting a tool use.
+      *
+      * Only a token/context limit counts as truncation.
+      */
+    ai_response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+    const bool forced_structured_output = !ai_request.response_format.isNull();
+    if (ai_response.raw_finish_reason == "end_turn" || ai_response.raw_finish_reason == "stop_sequence")
+        ai_response.finish_reason = FinishReason::Complete;
+    else if (ai_response.raw_finish_reason == "tool_use")
+        ai_response.finish_reason = forced_structured_output ? FinishReason::Complete : FinishReason::RequiresAction;
+    else if (ai_response.raw_finish_reason == "max_tokens" || ai_response.raw_finish_reason == "model_context_window_exceeded")
+        ai_response.finish_reason = FinishReason::Truncated;
+    else if (ai_response.raw_finish_reason == "refusal")
+        ai_response.finish_reason = FinishReason::ContentFilter;
+    else if (ai_response.raw_finish_reason == "pause_turn")
+        ai_response.finish_reason = FinishReason::RequiresAction;
     else
-        ai_response.finish_reason = anthropic_stop_reason;
+        ai_response.finish_reason = FinishReason::Unknown;
 
     auto content = json_obj->getArray("content");
     if (!content)

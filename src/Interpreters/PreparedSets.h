@@ -40,6 +40,10 @@ struct SetAndKey
     String key;
     SetPtr set;
     StoragePtr external_table;
+    /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
+    /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
+    /// that must know whether the set fill also feeds an external table.
+    bool external_table_expected = false;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -60,6 +64,13 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+
+    /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
+    /// Its only caller is `ConditionSelectivityEstimator`, which wants a single selectivity number;
+    /// every other caller consumes the elements to prune or read data and so is entitled to build.
+    /// A cost model that executes a subquery gives planning a side effect of unbounded cost, for a
+    /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
+    SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
 
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
@@ -198,6 +209,7 @@ public:
 
     void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
+    void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }

@@ -201,7 +201,7 @@ SETTINGS_GENERATORS = [
     },
     {
         # Run after the split settings families so both `--write` and `--check`
-        # resolve links from their freshly generated manifests.
+        # resolve links from their freshly generated routing metadata.
         "name": "beta-and-experimental",
         "sql": ["beta-settings.sql", "experimental-settings.sql"],
         "outfile": "experimental-beta-settings.md",
@@ -527,6 +527,48 @@ def dictionary_source_generators(docs_dir, file_map):
                 "source": DICTIONARY_SOURCE_PAGE_ALIASES.get(basename, basename)
             },
             "outfile": "temp-dictionary-source.md",
+            "dest": docu,
+            "method": "markers",
+            "skip_if_empty": True,
+            "full_transform": True,
+        })
+    return gens
+
+
+DICTIONARY_LAYOUT_PAGE_ALIASES = {
+    "hashed-array": "hashed_array",
+    "ip-trie": "ip_trie",
+    "naive-bayes": "naive_bayes",
+    "range-hashed": "range_hashed",
+    "regexp-tree": "regexp_tree",
+    "ssd-cache": "ssd_cache",
+}
+
+
+def dictionary_layout_generators(docs_dir, file_map):
+    # One page per dictionary-layout family, discovered from the migrated docs
+    # tree. The canonical layout registrations expose their complete page bodies
+    # through `system.dictionary_layouts`. Some pages cover related complex-key
+    # variants as well, while page filenames use hyphens where registered layout
+    # names use underscores, so bridge those names explicitly.
+    gens = []
+    for docu, mint in sorted(file_map.items()):
+        if "/statements/create/dictionary/layouts/" not in mint or not mint.endswith(".mdx"):
+            continue
+        page = os.path.join(docs_dir, mint)
+        if not os.path.isfile(page):
+            continue
+        with open(page, encoding="utf-8") as f:
+            if not START_RE.search(f.read()):
+                continue
+        basename = os.path.basename(mint)[: -len(".mdx")]
+        gens.append({
+            "name": f"dictionary-layout:{basename}",
+            "sql": ["generate-dictionary-layouts.sql"],
+            "params": {
+                "layout": DICTIONARY_LAYOUT_PAGE_ALIASES.get(basename, basename)
+            },
+            "outfile": "temp-dictionary-layout.md",
             "dest": docu,
             "method": "markers",
             "skip_if_empty": True,
@@ -867,18 +909,18 @@ def _setting_page_for_route(base_route, route, route_definition=None):
 def group_session_settings(
         sections,
         base_route=SESSION_SETTINGS_BASE_ROUTE,
-        previous_manifest=None):
+        previous_routing=None):
     """Group settings without changing the page of an existing setting.
 
-    The committed manifest is the routing contract. New settings first join a
-    matching existing page; only the remaining new settings participate in the
-    prefix-count heuristic which can create another page.
+    The committed routing metadata is the routing contract. New settings first
+    join a matching existing page; only the remaining new settings participate
+    in the prefix-count heuristic which can create another page.
     """
-    if not previous_manifest or not previous_manifest.get("anchorRoutes"):
+    if not previous_routing or not previous_routing.get("anchorRoutes"):
         return _group_session_settings_fresh(sections, base_route)
 
-    previous_anchor_routes = previous_manifest["anchorRoutes"]
-    previous_routes = previous_manifest.get("routes", [])
+    previous_anchor_routes = previous_routing["anchorRoutes"]
+    previous_routes = previous_routing.get("routes", [])
     route_definitions = {
         route["target"]: route
         for route in previous_routes
@@ -941,6 +983,15 @@ def walk_setting_pages(pages):
         yield from walk_setting_pages(page.children)
 
 
+def _settings_route_sort_key(route):
+    mode_priority = {"token": 0, "raw": 1}
+    return (
+        -len(route["prefix"]),
+        mode_priority.get(route["mode"], 2),
+        route["target"],
+    )
+
+
 def session_settings_routes(pages):
     routes = [
         {
@@ -951,11 +1002,7 @@ def session_settings_routes(pages):
         for page in walk_setting_pages(pages)
         if page.sections
     ]
-    mode_priority = {"token": 0, "raw": 1}
-    return sorted(
-        routes,
-        key=lambda route: (-len(route["prefix"]), mode_priority.get(route["mode"], 2), route["target"]),
-    )
+    return sorted(routes, key=_settings_route_sort_key)
 
 
 def setting_route(name, routes):
@@ -1118,53 +1165,289 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         r"\]\(#(?P<anchor>[A-Za-z0-9_.:-]+)\)", fragment_repl, markdown)
 
 
-def _settings_manifest_path(docs_dir, family):
+def _settings_legacy_routes_path(docs_dir, family_name):
     return (
         Path(docs_dir)
-        / family["base_route"].lstrip("/")
-        / "manifest.json"
+        / "_site/customizations/settings-legacy-routes"
+        / f"{family_name}.js"
     )
 
 
-def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
-    family = SETTINGS_SPLIT_FAMILIES[family_name]
-    manifest_path = _settings_manifest_path(docs_dir, family).resolve()
-    matches = [
-        artifact for artifact in artifacts
-        if artifact.path.resolve() == manifest_path
+def _settings_route_contract_path(repo_root, family_name):
+    return (
+        Path(repo_root)
+        / "ci/jobs/scripts/docs/autogenerate/settings-route-contracts"
+        / f"{family_name}.json"
+    )
+
+
+def _settings_route_contract(routes):
+    route_lines = [
+        "    " + json.dumps(route, separators=(",", ":"))
+        for route in routes
     ]
-    if len(matches) != 1:
+    return (
+        '{\n  "version": 1,\n  "routes": [\n'
+        + ",\n".join(route_lines)
+        + '\n  ]\n}\n'
+    )
+
+
+def _settings_routes_from_contract_content(content, source):
+    contract = json.loads(content)
+    if (
+        not isinstance(contract, dict)
+        or contract.get("version") != 1
+        or not isinstance(contract.get("routes"), list)
+    ):
+        raise ValueError(f"invalid settings route contract: {source}")
+    return contract["routes"]
+
+
+def _settings_routes_from_contract(path):
+    return _settings_routes_from_contract_content(
+        Path(path).read_text(encoding="utf-8"), path
+    )
+
+
+def _parse_settings_legacy_routes_script(script, family_name):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    assignment = (
+        "window.clickhouseSettingsLegacyRoutes["
+        + json.dumps(family["base_route"])
+        + "] = "
+    )
+    route_line = next(
+        (line for line in script.splitlines() if line.startswith(assignment)),
+        None,
+    )
+    if route_line is None or not route_line.endswith(";"):
         raise ValueError(
-            f"expected one generated {family_name} manifest, found {len(matches)}"
+            f"invalid generated {family_name} legacy routes script"
         )
-    return json.loads(matches[0].content)
+    return json.loads(route_line[len(assignment):-1])
 
 
-def _rewrite_setting_links_from_manifests(
-        markdown, docs_dir, generated_manifests=None):
-    """Resolve settings links against the current generated shard manifests."""
-    if generated_manifests is not None:
-        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_manifests)
+def _validate_settings_routing(
+        family_name, routes, anchor_routes, source):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    base_route = family["base_route"].rstrip("/")
+    target_prefix = base_route + "/"
+
+    if not isinstance(routes, list):
+        raise ValueError(
+            f"invalid {family_name} settings routes in {source}: "
+            "expected a list"
+        )
+    if not isinstance(anchor_routes, dict):
+        raise ValueError(
+            f"invalid {family_name} settings anchor routes in {source}: "
+            "expected an object"
+        )
+    if not anchor_routes:
+        raise ValueError(
+            f"invalid {family_name} settings anchor routes in {source}: "
+            "the registry must not be empty"
+        )
+
+    prefixes = {}
+    targets = {}
+    for index, route in enumerate(routes):
+        if not isinstance(route, dict):
+            raise ValueError(
+                f"invalid {family_name} settings route {index} in {source}: "
+                "expected an object"
+            )
+
+        prefix = route.get("prefix")
+        mode = route.get("mode")
+        target = route.get("target")
+        if (
+            not isinstance(prefix, str)
+            or not re.fullmatch(r"[A-Za-z0-9_.-]*", prefix)
+            or (mode == "token" and not prefix)
+        ):
+            raise ValueError(
+                f"invalid {family_name} settings route prefix at index "
+                f"{index} in {source}: {prefix!r}"
+            )
+        if mode not in ("token", "raw"):
+            raise ValueError(
+                f"invalid {family_name} settings route mode at index "
+                f"{index} in {source}: {mode!r}"
+            )
+        if not isinstance(target, str) or not target.startswith(target_prefix):
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r} is outside {base_route!r}"
+            )
+        target_parts = target[len(target_prefix):].split("/")
+        if len(target_parts) != 1:
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r} must identify one flat shard"
+            )
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", target_parts[0]):
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r}"
+            )
+
+        if prefix in prefixes:
+            raise ValueError(
+                f"duplicate {family_name} settings route prefix {prefix!r} "
+                f"at indexes {prefixes[prefix]} and {index} in {source}"
+            )
+        if target in targets:
+            raise ValueError(
+                f"duplicate {family_name} settings route target {target!r} "
+                f"at indexes {targets[target]} and {index} in {source}"
+            )
+        prefixes[prefix] = index
+        targets[target] = index
+
+    expected_routes = sorted(routes, key=_settings_route_sort_key)
+    if routes != expected_routes:
+        mismatch = next(
+            index
+            for index, (route, expected_route) in enumerate(
+                zip(routes, expected_routes)
+            )
+            if route != expected_route
+        )
+        raise ValueError(
+            f"invalid {family_name} settings route order at index {mismatch} "
+            f"in {source}: routes must be ordered by descending prefix "
+            "specificity, then mode and target"
+        )
+
+    referenced_targets = set()
+    for anchor, target in anchor_routes.items():
+        if not isinstance(anchor, str) or not anchor:
+            raise ValueError(
+                f"invalid {family_name} settings anchor in {source}: "
+                f"{anchor!r}"
+            )
+        if not isinstance(target, str) or target not in targets:
+            raise ValueError(
+                f"invalid {family_name} settings anchor target for "
+                f"{anchor!r} in {source}: {target!r} is not present in the "
+                "route contract"
+            )
+        referenced_targets.add(target)
+
+    orphan_targets = sorted(set(targets) - referenced_targets)
+    if orphan_targets:
+        raise ValueError(
+            f"invalid {family_name} settings routes in {source}: "
+            "route targets without anchors: " + ", ".join(orphan_targets)
+        )
+
+    return {"routes": routes, "anchorRoutes": anchor_routes}
+
+
+def _settings_routing_from_paths(
+        legacy_routes_path, route_contract_path, family_name):
+    legacy_routes_path = Path(legacy_routes_path)
+    route_contract_path = Path(route_contract_path)
+    missing = [
+        path
+        for path in (legacy_routes_path, route_contract_path)
+        if not path.is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"missing {family_name} settings routing metadata: "
+            + ", ".join(str(path) for path in missing)
+            + "; refusing to regenerate settings pages without stable routing"
+        )
+
+    routes = _settings_routes_from_contract(route_contract_path)
+    anchor_routes = _parse_settings_legacy_routes_script(
+        legacy_routes_path.read_text(encoding="utf-8"), family_name
+    )
+    return _validate_settings_routing(
+        family_name,
+        routes,
+        anchor_routes,
+        f"{route_contract_path} and {legacy_routes_path}",
+    )
+
+
+def _settings_routing_from_disk(docs_dir, repo_root, family_name):
+    return _settings_routing_from_paths(
+        _settings_legacy_routes_path(docs_dir, family_name),
+        _settings_route_contract_path(repo_root, family_name),
+        family_name,
+    )
+
+
+def _settings_routing_from_artifacts(
+        family_name, artifacts, docs_dir, repo_root):
+    routes_path = _settings_legacy_routes_path(docs_dir, family_name).resolve()
+    route_matches = [
+        artifact for artifact in artifacts
+        if artifact.path.resolve() == routes_path
+    ]
+    contract_path = _settings_route_contract_path(
+        repo_root, family_name
+    ).resolve()
+    contract_matches = [
+        artifact for artifact in artifacts
+        if artifact.path.resolve() == contract_path
+    ]
+    if len(route_matches) != 1 or len(contract_matches) != 1:
+        raise ValueError(
+            f"expected generated {family_name} routing artifacts, found "
+            f"{len(route_matches)} legacy scripts and "
+            f"{len(contract_matches)} contracts"
+        )
+    return _validate_settings_routing(
+        family_name,
+        _settings_routes_from_contract_content(
+            contract_matches[0].content, family_name
+        ),
+        _parse_settings_legacy_routes_script(
+            route_matches[0].content, family_name
+        ),
+        f"generated {family_name} routing artifacts",
+    )
+
+
+def _rewrite_setting_links_from_routes(
+        markdown, docs_dir, generated_routes=None, repo_root=None):
+    """Resolve settings links against current generated routing metadata."""
+    if generated_routes is not None:
+        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_routes)
         if missing:
             raise ValueError(
-                "missing generated settings manifests: "
+                "missing generated settings routes: "
                 + ", ".join(sorted(missing))
             )
 
     for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
-        if generated_manifests is None:
-            manifest = json.loads(
-                _settings_manifest_path(docs_dir, family).read_text(
-                    encoding="utf-8"
-                )
+        if generated_routes is None:
+            route_metadata = _settings_routing_from_disk(
+                docs_dir, repo_root, family_name
             )
         else:
-            manifest = generated_manifests[family_name]
+            supplied_metadata = generated_routes[family_name]
+            if not isinstance(supplied_metadata, dict):
+                raise ValueError(
+                    f"invalid generated {family_name} settings routing "
+                    "metadata: expected an object"
+                )
+            route_metadata = _validate_settings_routing(
+                family_name,
+                supplied_metadata.get("routes"),
+                supplied_metadata.get("anchorRoutes"),
+                "generated settings routing metadata",
+            )
         markdown = _rewrite_setting_links(
             markdown,
-            manifest["routes"],
+            route_metadata["routes"],
             family["base_route"],
-            manifest["anchorRoutes"],
+            route_metadata["anchorRoutes"],
         )
     return markdown
 
@@ -1596,24 +1879,24 @@ export default __COMPONENT_NAME__;
     )
 
 
-def split_settings_page(dest, content, docs_dir, family_name):
+def split_settings_page(
+        dest, content, docs_dir, family_name, route_contract_path=None):
     family = SETTINGS_SPLIT_FAMILIES[family_name]
     root_frontmatter, preamble, sections = parse_settings_page(content)
-    manifest_path = _settings_manifest_path(docs_dir, family)
-    previous_manifest = None
-    if manifest_path.is_file():
-        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    previous_routing = None
+    legacy_routes_path = _settings_legacy_routes_path(docs_dir, family_name)
+    if route_contract_path is not None:
+        previous_routing = _settings_routing_from_paths(
+            legacy_routes_path, route_contract_path, family_name
+        )
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
-        previous_manifest=previous_manifest,
+        previous_routing=previous_routing,
     )
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
     shard_dir = Path(dest).with_suffix("")
-    current_routes = {
-        page.route for page in walk_setting_pages(pages) if page.sections
-    }
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
     # Mintlify renders the frontmatter title as the page H1. Some generated
@@ -1638,10 +1921,13 @@ def split_settings_page(dest, content, docs_dir, family_name):
         _settings_explorer_component(pages, family),
     ))
     artifacts.append(GeneratedArtifact(
-        Path(docs_dir) / "_site/customizations/settings-legacy-routes"
-        / f"{family_name}.js",
+        _settings_legacy_routes_path(docs_dir, family_name),
         _settings_legacy_routes_script(anchor_routes, family),
     ))
+    if route_contract_path:
+        artifacts.append(GeneratedArtifact(
+            Path(route_contract_path), _settings_route_contract(routes)
+        ))
 
     for page in walk_setting_pages(pages):
         if not page.sections:
@@ -1688,24 +1974,19 @@ def split_settings_page(dest, content, docs_dir, family_name):
     artifacts.append(GeneratedArtifact(
         shard_dir / "navigation.json", json.dumps(navigation, indent=2, sort_keys=False) + "\n"))
 
-    manifest = {
-        "settings": len(sections),
-        "anchorRoutes": anchor_routes,
-        "routes": routes,
-        "pages": sorted(current_routes),
-    }
-    artifacts.append(GeneratedArtifact(
-        manifest_path, json.dumps(manifest, indent=2, sort_keys=False) + "\n"))
     return artifacts
 
 
-def split_session_settings_page(dest, content, docs_dir):
-    return split_settings_page(dest, content, docs_dir, "session-settings")
+def split_session_settings_page(
+        dest, content, docs_dir, route_contract_path=None):
+    return split_settings_page(
+        dest, content, docs_dir, "session-settings", route_contract_path
+    )
 
 
 def generate(
         gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
-        generated_settings_manifests=None):
+        generated_settings_routes=None):
     scratch = tempfile.mkdtemp(prefix="autogen-")
     # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
     for staged, src in gen.get("deps", {}).items():
@@ -1732,8 +2013,12 @@ def generate(
         else:
             content = transform_body(migrate, content, gen["dest"], dest, lk)
         if gen["name"] == "beta-and-experimental":
-            content = _rewrite_setting_links_from_manifests(
-                content, docs_dir, generated_settings_manifests)
+            content = _rewrite_setting_links_from_routes(
+                content,
+                docs_dir,
+                generated_settings_routes,
+                repo_root,
+            )
 
     if gen["method"] == "markers":
         with open(dest, encoding="utf-8") as f:
@@ -1752,7 +2037,7 @@ def generate(
 
 def generate_artifacts(
         gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
-        generated_settings_manifests=None):
+        generated_settings_routes=None):
     dest, content = generate(
         gen,
         binary,
@@ -1762,12 +2047,18 @@ def generate_artifacts(
         lk,
         file_map,
         remap,
-        generated_settings_manifests,
+        generated_settings_routes,
     )
     if content is None:
         return []
     if gen["name"] in SETTINGS_SPLIT_FAMILIES and remap:
-        return split_settings_page(dest, content, docs_dir, gen["name"])
+        return split_settings_page(
+            dest,
+            content,
+            docs_dir,
+            gen["name"],
+            _settings_route_contract_path(repo_root, gen["name"]),
+        )
     return [GeneratedArtifact(Path(dest), content)]
 
 
@@ -1883,9 +2174,9 @@ def main(argv=None):
     repo_root = os.path.dirname(docs_dir)
     slug_map = args.slug_map or os.path.join(docs_dir, "_migration", "slug-map.csv")
 
-    # The component-reference families (table/database engines, data types, formats,
-    # table/window functions, dictionary sources) discover their pages by
-    # iterating the slug map (file_map), so build it even for a
+    # The component-reference families (table/database engines, data types,
+    # formats, table/window functions, dictionary sources and layouts) discover
+    # their pages by iterating the slug map (file_map), so build it even for a
     # --no-remap-legacy run: those generators'
     # names are what the fast-fail check needs to tell whether the current selection
     # targets a family such a run cannot produce. The link/import remapping itself
@@ -1903,6 +2194,7 @@ def main(argv=None):
         table_function_generators,
         window_function_generators,
         dictionary_source_generators,
+        dictionary_layout_generators,
     ]
 
     all_generators = ALL_GENERATORS + aggregate_generators(docs_dir)
@@ -1920,8 +2212,9 @@ def main(argv=None):
         # source is updated to emit Mintlify-native paths (see the module
         # docstring). Today no family can be produced in it:
         #   * the component-reference families (table/database engines, data
-        #     types, formats, table/window functions, dictionary sources) are
-        #     discovered through the slug map and need its link/path remapping
+        #     types, formats, table/window functions, dictionary sources and
+        #     layouts) are discovered through the slug map and need its link/path
+        #     remapping
         #     to even be enumerated;
         #   * settings, functions and aggregate carry hard-coded Docusaurus
         #     `dest` paths (e.g. docs/operations/settings/settings.md,
@@ -1956,14 +2249,15 @@ def main(argv=None):
 
     drift = 0
     selected_generator_names = {gen["name"] for gen in generators}
-    generated_settings_manifests = {}
+    generated_settings_routes = {}
     if "beta-and-experimental" in selected_generator_names:
         for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
             if family_name in selected_generator_names:
                 continue
-            manifest_path = _settings_manifest_path(docs_dir, family)
-            generated_settings_manifests[family_name] = json.loads(
-                manifest_path.read_text(encoding="utf-8")
+            generated_settings_routes[family_name] = (
+                _settings_routing_from_disk(
+                    docs_dir, repo_root, family_name
+                )
             )
     for gen in generators:
         artifacts = generate_artifacts(
@@ -1975,13 +2269,13 @@ def main(argv=None):
             lk,
             file_map,
             args.remap,
-            generated_settings_manifests or None,
+            generated_settings_routes or None,
         )
         stale_paths = []
         if gen["name"] in SETTINGS_SPLIT_FAMILIES and args.remap:
-            generated_settings_manifests[gen["name"]] = (
-                _settings_manifest_from_artifacts(
-                    gen["name"], artifacts, docs_dir)
+            generated_settings_routes[gen["name"]] = (
+                _settings_routing_from_artifacts(
+                    gen["name"], artifacts, docs_dir, repo_root)
             )
             stale_paths = stale_settings_page_paths(
                 gen["name"], artifacts, docs_dir)

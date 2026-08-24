@@ -1144,18 +1144,17 @@ void registerStorageIceberg(StorageFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 :::warning
-We recommend using the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+Use the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for direct access to an existing Iceberg table. Use the Iceberg Table Engine when you need a persistent ClickHouse table or want to create a new standalone Iceberg table with an explicit schema on a writable backend.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
-For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a *data* integration with Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
-Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
+Without an explicit schema, the Iceberg table must already exist in storage. To create a new standalone Iceberg table on a writable backend, specify its schema in the `CREATE TABLE` statement.
 
 ```sql
 CREATE TABLE iceberg_table_s3
@@ -1320,7 +1319,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Example scenarios {#example-scenarios}
 
-All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
+These scenarios use Spark to illustrate schema changes made by an external Iceberg writer.
 
 #### Scenario 1: Schema changes without new snapshots {#scenario-1}
 
@@ -1559,7 +1558,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with existing Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
             .syntax = "ENGINE = IcebergS3(url [, access_key_id, secret_access_key])",
             .related = {"Iceberg"}});
 #    endif
@@ -1598,7 +1597,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with existing Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
             .syntax = "ENGINE = IcebergAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"Iceberg"}});
 #    endif
@@ -1657,7 +1656,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with existing Apache Iceberg tables stored on the local filesystem.",
+            .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",
             .syntax = "ENGINE = IcebergLocal(path)",
             .related = {"Iceberg"}});
 }

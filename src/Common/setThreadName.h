@@ -34,6 +34,7 @@ namespace DB
     M(BACKUP_COORDINATION, "BackupCoord") \
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
+    M(BUCKETED_METRIC_LOG, "BMetricLog") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
