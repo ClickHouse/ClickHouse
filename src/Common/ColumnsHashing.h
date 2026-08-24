@@ -405,6 +405,17 @@ struct HashMethodSerialized
     IColumn::SerializationSettings serialization_settings;
     std::vector<std::string_view> serialized_keys;
 
+    /// The block laid out in one piece, for a caller that does not go through its rows in order and
+    /// so cannot be given a chunk at a time.
+    PaddedPODArray<char> serialized_buffer;
+    bool use_whole_block = false;
+    /// Whether a caller that cannot take the chunk gets the whole block laid out, or its keys
+    /// serialized a row at a time. Set from the row width, see the constructor.
+    bool whole_block_allowed = false;
+    /// Which of the three layouts this block gets is settled on the first key, by which point the
+    /// caller has had its chance to ask for the chunk.
+    bool layout_decided = false;
+
     /// Whether the block's keys are laid out a chunk at a time, one key column at a time, rather
     /// than a row at a time. Only a caller that goes through the rows in order may turn it on.
     bool can_use_key_region = false;
@@ -496,18 +507,23 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-
-            /// A block's keys are laid out one key column at a time, which amortises the per-row
-            /// call over the whole column, or one row at a time into a buffer reused across the
-            /// block. The first stops paying once a row is a couple of cache lines wide - measured
-            /// on x86-64 and on aarch64 alike, the crossover is around 128 bytes per row and the
-            /// row-at-a-time form is up to 50% faster beyond it.
+            /// Laying a block's keys out ahead of the probe loop is what makes their hashes, and
+            /// with them the probe prefetch, possible at all: a key serialized a row at a time
+            /// exists only for the row that asked for it, and that path measures the same with the
+            /// prefetch on and off. There are two ways to lay them out, and they cost differently.
             ///
-            /// Where the cells hold only the key it keeps paying further, up to about 512 bytes per
-            /// row, because there the layout doubles as the keys' final home: an inserted key stays
-            /// where it was written instead of being copied into the arena.
-            can_use_key_region = total_size != 0 && avg_row_size <= (Base::has_mapped ? 128 : 512);
+            /// A caller that goes through the rows in order takes them a chunk at a time. A chunk
+            /// stays in cache between being written and being probed, so it is worth taking at any
+            /// width - measured from 40 to 1024 bytes per row, on Graviton4, Zen5 and Granite
+            /// Rapids, at one thread and at 32, it never costs anything and is worth up to 3x.
+            can_use_key_region = total_size != 0;
+
+            /// Any other caller - the adaptive aggregator visits a block's rows grouped by bucket -
+            /// can only take the whole block at once, which is written to memory and read back
+            /// rather than kept in cache. That pays while a row is narrow: 44% at 56 bytes per row,
+            /// against 22-40% lost at 192 and beyond once threads compete for bandwidth.
+            const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+            whole_block_allowed = avg_row_size < 128;
         }
 
         /// We can only precompute canonical per-row hashes when:
@@ -560,21 +576,61 @@ struct HashMethodSerialized
 
     void enableKeyRegion()
     {
-        if (!can_use_key_region)
+        if (!can_use_key_region || layout_decided)
             return;
 
         use_key_region = true;
+        layout_decided = true;
         /// A key in a cell that also holds an aggregate state is copied into the arena in front of
         /// that state, so the layout goes into a buffer reused across chunks rather than the arena.
         if constexpr (Base::has_mapped)
             use_chunk_scratch = true;
-        /// With the keys materialised ahead of the loop their hashes can be too, which is what the
-        /// prefetch needs. Until the region is turned on there is nothing to precompute them from.
+        armPrecomputedHashes();
+    }
+
+    /// With the keys materialised ahead of the loop their hashes can be too, which is what the
+    /// prefetch needs. Until one of the two layouts is settled there is nothing to compute them from.
+    void armPrecomputedHashes()
+    {
         if (has_pre_computed_hashes && prefetch_enabled && !prefetching)
         {
             can_precompute_hashes = true;
             precomputed_hashes_initialized = false;
             prefetching = std::make_unique<PrefetchingHelper>();
+        }
+    }
+
+    /// Lay the whole block out at once, for a caller that never asked for the chunk. This is the
+    /// layout the rows of a block get when they are visited in some order of the caller's own - the
+    /// adaptive aggregator groups them by bucket, for one - which a chunk cannot serve.
+    void NO_INLINE prepareWholeBlock()
+    {
+        layout_decided = true;
+        if (total_size == 0 || !whole_block_allowed)
+            return;
+
+        use_whole_block = true;
+        armPrecomputedHashes();
+
+        const size_t rows = row_sizes.size();
+        serialized_buffer.resize(total_size);
+        serialized_keys.resize(rows);
+        chunk_memories.resize(rows);
+
+        char * memory = serialized_buffer.data();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            serialized_keys[i] = std::string_view(memory, row_sizes[i]);
+            chunk_memories[i] = memory;
+            memory += row_sizes[i];
+        }
+
+        for (size_t j = 0; j < keys_size; ++j)
+        {
+            if constexpr (nullable)
+                key_columns[j]->batchSerializeValueIntoMemoryWithNull(chunk_memories, 0, rows, null_maps[j], &serialization_settings);
+            else
+                key_columns[j]->batchSerializeValueIntoMemory(chunk_memories, 0, rows, &serialization_settings);
         }
     }
 
@@ -675,7 +731,16 @@ struct HashMethodSerialized
                 serialized_keys[row], pool, use_chunk_scratch ? ArenaKeyPlacement::NeedsCopy : ArenaKeyPlacement::InArena};
         }
 
-        /// One buffer for the whole block instead of one allocation per row. The key stays valid
+        if (!layout_decided) [[unlikely]]
+            prepareWholeBlock();
+
+        /// The whole block is laid out in a buffer of its own, which the hash table copies an
+        /// inserted key out of - the buffer is reused by the next block.
+        if (use_whole_block)
+            return ArenaKeyHolder{serialized_keys[row], pool};
+
+        /// Nothing to lay out - a block of empty keys. One buffer for the whole block instead of one
+        /// allocation per row. The key stays valid
         /// until the next call for this state, which is what its callers need: they persist it into
         /// the arena or discard it before asking for the next row, and the key snapshot that
         /// `EmplaceResult` carries is read once `emplaceKey` has returned (the top-K heap keeps it).
