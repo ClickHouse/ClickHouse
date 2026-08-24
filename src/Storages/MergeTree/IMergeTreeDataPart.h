@@ -509,6 +509,12 @@ public:
     UInt64 getMarksCount() const;
     IndexSize getIndexSizeFromFile() const;
 
+    /// Compose the Query Condition Cache key (`part_name`) for this part under `name` - the caller
+    /// spells `name`, since projection parts are keyed as `<parent part>:<projection>` - or nullopt
+    /// when the part has no content-version token and so must not be cached.
+    std::optional<String> makeQueryConditionCacheKey(const String & name) const;
+    bool hasQueryConditionCacheKey() const;
+
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
@@ -858,6 +864,12 @@ protected:
 private:
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
+
+    /// Lazily computed content-version token, see `makeQueryConditionCacheKey`. Empty when the part
+    /// has no reliable identity.
+    const String & queryConditionCacheToken() const;
+    mutable std::once_flag query_condition_cache_token_initialized;
+    mutable String query_condition_cache_token;
 
     /// Schema-derived metadata shared with all other parts of the table that store the same
     /// columns: the column list, the name-to-position map (in compact parts order of columns

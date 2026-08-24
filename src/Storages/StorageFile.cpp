@@ -1818,7 +1818,7 @@ Chunk StorageFileSource::generate()
 
             if (query_condition_cache)
             {
-                const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                const String cache_file_key = QueryConditionCache::makeVersionedPartName(current_path, *current_file_cache_version);
                 auto matching_marks = query_condition_cache->read(
                     storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
                 if (matching_marks.has_value())
@@ -2070,7 +2070,7 @@ Chunk StorageFileSource::generate()
                     {
                         if (auto query_condition_cache = getContext()->getQueryConditionCache())
                         {
-                            const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                            const String cache_file_key = QueryConditionCache::makeVersionedPartName(current_path, *current_file_cache_version);
                             query_condition_cache->write(
                                 storage->getStorageID().uuid,
                                 cache_file_key,

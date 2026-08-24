@@ -30,10 +30,10 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     return hash.get128();
 }
 
-String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
+String QueryConditionCache::makeVersionedPartName(const String & name, std::string_view version_token)
 {
-    /// NUL cannot occur in a file path or in a version token, so it is an unambiguous separator.
-    String part_name = path;
+    /// NUL cannot occur in a name or in a version token, so it is an unambiguous separator.
+    String part_name = name;
     part_name.push_back('\0');
     part_name.append(version_token);
     return part_name;

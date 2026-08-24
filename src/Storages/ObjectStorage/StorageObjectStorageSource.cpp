@@ -140,7 +140,7 @@ namespace
         const auto & metadata = object_info.getObjectMetadata();
         if (!metadata || metadata->etag.empty())
             return std::nullopt;
-        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+        return QueryConditionCache::makeVersionedPartName(identifier, metadata->etag);
     }
 
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)

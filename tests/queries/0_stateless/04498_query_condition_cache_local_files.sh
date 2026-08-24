@@ -19,7 +19,7 @@
 # rows regardless of the cache.
 #
 # The file version token (sub-second mtime + inode + size) is folded into the cache
-# key via `QueryConditionCache::makeFilePartName`, and it is trusted only after the
+# key via `QueryConditionCache::makeVersionedPartName`, and it is trusted only after the
 # file has settled: filesystem timestamps are coarser than the wall clock, so a
 # rewrite that lands in the same timestamp tick as the previous write could otherwise
 # produce an identical token and reuse a stale entry. The table therefore points at

@@ -292,21 +292,26 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// apply_mutations_on_fly = 0 query.
             if (!current_task.appliesMutationsBeforePrewhere())
             {
-                String part_name
-                    = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
-                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                    /// QueryConditionCache is a coordinator feature; concrete part present here.
-                    data_part_info->getDataPart()->storage.getStorageID().uuid,
-                    part_name,
-                    data_part_info->getIndexGranularity().getMarksCount(),
-                    data_part_info->getIndexGranularity().hasFinalMark(),
-                    res.read_mark_ranges));
+                /// Leaving the marks unattached makes the downstream FilterTransform write nothing.
+                const auto query_condition_cache_key = data_part_info->getDataPart()->makeQueryConditionCacheKey(
+                    data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName());
+                if (query_condition_cache_key)
+                {
+                    chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
+                        /// QueryConditionCache is a coordinator feature; concrete part present here.
+                        data_part_info->getDataPart()->storage.getStorageID().uuid,
+                        *query_condition_cache_key,
+                        data_part_info->getIndexGranularity().getMarksCount(),
+                        data_part_info->getIndexGranularity().hasFinalMark(),
+                        res.read_mark_ranges));
+                }
             }
 
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
             if (prewhere_info && !res.unmatched_mark_ranges.empty()
+                && data_part_info->getDataPart()->hasQueryConditionCacheKey()
                 && !current_task.readersChainCanSkipMarksBeforePrewhere()
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
@@ -327,7 +332,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
     /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
     /// PREWHERE predicate and read by a later query without that policy.
+    const auto & concrete_part = current_task.getInfo().data_part_info->getDataPart();
     if (reader_settings.use_query_condition_cache && prewhere_info
+        && concrete_part && concrete_part->hasQueryConditionCacheKey()
         && !current_task.readersChainCanSkipMarksBeforePrewhere()
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
@@ -432,13 +439,17 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             const auto & data_part_info = task->getInfo().data_part_info;
 
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
+                            const auto query_condition_cache_key = data_part_info->getDataPart()->makeQueryConditionCacheKey(
+                                data_part_info->isProjectionPart()
+                                    ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                                    : data_part_info->getPartName());
+                            if (!query_condition_cache_key)
+                                break;
+
                             query_condition_cache->write(
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
+                                *query_condition_cache_key,
                                 output->getHash(),
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),

@@ -19,6 +19,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -2143,6 +2144,34 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
             getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
+}
+
+const String & IMergeTreeDataPart::queryConditionCacheToken() const
+{
+    std::call_once(query_condition_cache_token_initialized, [this]
+    {
+        /// `checksums` is not changed after the part is loaded, so the token is computed once. It is
+        /// empty only for a part whose `checksums.txt` is at format version 1, which `read` does not
+        /// parse; every other path either parses the file or recomputes it.
+        if (!checksums.empty())
+            query_condition_cache_token = checksums.getTotalChecksumHex();
+    });
+
+    return query_condition_cache_token;
+}
+
+bool IMergeTreeDataPart::hasQueryConditionCacheKey() const
+{
+    return !queryConditionCacheToken().empty();
+}
+
+std::optional<String> IMergeTreeDataPart::makeQueryConditionCacheKey(const String & name) const
+{
+    const String & token = queryConditionCacheToken();
+    if (token.empty())
+        return std::nullopt;
+
+    return QueryConditionCache::makeVersionedPartName(name, token);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)

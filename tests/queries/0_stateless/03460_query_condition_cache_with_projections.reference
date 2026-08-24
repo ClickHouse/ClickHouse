@@ -18,7 +18,7 @@ select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_
 7
 8
 9
-select part_name from system.query_condition_cache order by part_name;
+select splitByChar(char(0), part_name)[1] from system.query_condition_cache order by part_name;
 all_1_1_0:p
 all_2_2_0:p
 select j from t where j > 3 and i = 20 order by j settings max_threads = 1, use_query_condition_cache = 1, query_condition_cache_store_conditions_as_plaintext = 1;
