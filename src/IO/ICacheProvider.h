@@ -59,10 +59,8 @@ public:
 
     bool complete() const { return committed() >= range().end(); }
 
-    /// Whether this tier stores each segment WHOLE (first-writer-wins, never completed later) or
-    /// appends it incrementally. Mirrors `ICacheProvider::fillsWholeSegment`. A whole-segment writer is
-    /// populated only by one write covering its entire `range()`, so a fetch that fills it must span
-    /// those bounds; an incremental writer stores whatever prefix it is given from its write frontier.
+    /// Whether the tier stores each segment WHOLE (one all-or-nothing write) or appends it
+    /// incrementally. Mirrors `ICacheProvider::fillsWholeSegment`.
     virtual bool fillsWholeSegment() const { return false; }
 
     /// A held downloader role over one write range. Move-only RAII: the destructor completes and
