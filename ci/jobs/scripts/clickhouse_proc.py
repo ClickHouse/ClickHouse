@@ -54,6 +54,9 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
+    # for the same reason.
+    JEMALLOC_SYMBOLIZATION_BUDGET = 1200
 
     def __init__(
         self,
@@ -944,16 +947,42 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+        # hour, timing the whole job out here, long after every test had finished (the sibling
+        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+        # artifact of the job, not its result, so give them up rather than the job.
+        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+
         chbinary = Shell.get_output("readlink -f $(which clickhouse)")
         for pid, profile in latest_profiles.items():
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
+                continue
+
+            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
                 verbose=True,
-            )
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
+                Path(text_report).unlink(missing_ok=True)
+
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
+                continue
+
+            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+            # The whole pipeline is under the timeout: killing jeprof alone would leave
+            # flamegraph.pl to write a truncated graph out of what it had received.
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
                 verbose=True,
-            )
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
+                Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",

@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleBinaryOperator.h>
 
+#include <Common/Exception.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -18,6 +19,12 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
 
 
@@ -211,6 +218,20 @@ namespace
                 res = dropMetricName(std::move(res), context);
 
             return res;
+        }
+    }
+
+    void checkVectorMatching(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        const SQLQueryPiece & left_argument,
+        const SQLQueryPiece & right_argument)
+    {
+        if (!operator_node->labels.empty()
+            && ((left_argument.type != ResultType::INSTANT_VECTOR) || (right_argument.type != ResultType::INSTANT_VECTOR)))
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Binary operator '{}' with vector matching expects two arguments of type {}, got {} and {}",
+                            operator_node->operator_name, ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
         }
     }
 
@@ -657,6 +678,8 @@ SQLQueryPiece applySimpleBinaryOperator(
     bool allow_grouping_modifier_copy_metric_name,
     const SimpleBinaryOperatorHistogramArm * histogram_arm)
 {
+    checkVectorMatching(operator_node, left_argument, right_argument);
+
     if ((left_argument.type == ResultType::SCALAR) || (right_argument.type == ResultType::SCALAR))
     {
         /// At least one operand is scalar.

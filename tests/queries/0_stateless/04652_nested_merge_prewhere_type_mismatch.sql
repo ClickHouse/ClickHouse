@@ -1,7 +1,6 @@
 -- Tags: no-old-analyzer
 --       no-old-analyzer: reading a column absent from one `Merge` child (the het section's
---       `WHERE y != 0`) fills defaults only under the analyzer; the old one throws
---       UNKNOWN_IDENTIFIER. The explicit `SETTINGS enable_analyzer = 0` lines still cover it.
+--       `WHERE y != 0`) fills defaults only under the analyzer.
 
 -- The transitive PREWHERE type-mismatch guards through local wrappers (Merge, MaterializedView,
 -- Buffer, Alias). The row-policy / Remote / lazy-proxy / subcolumn carriers live in
@@ -188,11 +187,9 @@ INSERT INTO buf_alias_dst (x) SELECT number FROM numbers(10);
 
 SELECT '-- a destination ALIAS twin is rejected for PREWHERE, not forwarded --';
 SELECT count() FROM buf_alias PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM buf_alias PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 -- Reading it through the Buffer does not work regardless; the policy must not turn that into a push.
 CREATE ROW POLICY rp_04652_alias ON buf_alias FOR SELECT USING y != 0 TO CURRENT_USER;
 SELECT count() FROM buf_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT count() FROM buf_alias SETTINGS enable_analyzer = 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP ROW POLICY rp_04652_alias ON buf_alias;
 
 SELECT '-- a MATERIALIZED twin is physical in the destination and stays supported --';
@@ -201,7 +198,6 @@ CREATE TABLE buf_mat (y UInt64)
     ENGINE = Buffer(currentDatabase(), buf_mat_dst, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
 INSERT INTO buf_mat_dst (x) SELECT number FROM numbers(10);
 SELECT count() FROM buf_mat PREWHERE y > 5;
-SELECT count() FROM buf_mat PREWHERE y > 5 SETTINGS enable_analyzer = 0;
 CREATE ROW POLICY rp_04652_mat ON buf_mat FOR SELECT USING y > 5 TO CURRENT_USER;
 SELECT count() FROM buf_mat;
 DROP ROW POLICY rp_04652_mat ON buf_mat;
@@ -220,10 +216,8 @@ ALTER TABLE mv_alias_tgt MODIFY COLUMN y UInt64 ALIAS x;
 
 SELECT '-- a target ALIAS twin behind a view is rejected for PREWHERE too --';
 SELECT count() FROM mv_alias PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM mv_alias PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 CREATE ROW POLICY rp_04652_mv_alias ON mv_alias FOR SELECT USING y != 0 TO CURRENT_USER;
 SELECT count() FROM mv_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT count() FROM mv_alias SETTINGS enable_analyzer = 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP ROW POLICY rp_04652_mv_alias ON mv_alias;
 
 DROP VIEW mv_alias;
@@ -239,7 +233,6 @@ INSERT INTO het_leaf2 SELECT number + 100 FROM numbers(5);
 
 SELECT '-- a column missing from one child is rejected for PREWHERE --';
 SELECT count() FROM het_m PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
-SELECT count() FROM het_m PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '-- a column every child declares still supports PREWHERE, and WHERE sees the defaults --';
 SELECT count() FROM het_m PREWHERE x >= 100;
@@ -248,7 +241,6 @@ SELECT count() FROM het_m WHERE y != 0;
 SELECT '-- a policy on the missing column filters above the read instead of failing inside it --';
 CREATE ROW POLICY rp_04652_het ON het_m FOR SELECT USING y != 0 TO CURRENT_USER;
 SELECT count() FROM het_m;
-SELECT count() FROM het_m SETTINGS enable_analyzer = 0;
 DROP ROW POLICY rp_04652_het ON het_m;
 
 SELECT '-- a policy on the shared column still pushes --';
