@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 namespace DB
@@ -13,7 +12,7 @@ class MergeTreeSinkPatch final : public MergeTreeSink
 public:
     MergeTreeSinkPatch(
         StorageMergeTree & storage_,
-        PatchPartMetadata patch_metadata_,
+        StorageMetadataPtr metadata_snapshot_,
         PlainLightweightUpdateHolder update_holder_,
         ContextPtr context_,
         UInt64 commit_epoch_);
@@ -22,7 +21,6 @@ public:
 
 protected:
     PlainLightweightUpdateHolder update_holder;
-    PatchPartMetadata patch_metadata;
 
     void finishDelayedChunk() override;
     TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;
