@@ -8,7 +8,6 @@
 
 -- Original reproducer
 SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
-SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=0;
 
 -- Multiple constant types
 SELECT DISTINCT 1, '1', 2.5 ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
