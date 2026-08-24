@@ -346,8 +346,12 @@ class PocoHttpPayload : public HttpPayload {
   // The session goes back to the pool only when this response was read to the
   // end and both sides agreed to keep the connection: a socket with unread body
   // bytes still buffered would desynchronise whichever request picked it up next.
+  // A response abandoned just short of its end is worth finishing off first --
+  // see DrainShortRemainder.
   ~PocoHttpPayload() override {
-    if (!session_ || !finished_ || failed_) return;
+    if (!session_) return;
+    if (!failed_ && !finished_) DrainShortRemainder();
+    if (!finished_ || failed_) return;
     if (!response_ || !response_->getKeepAlive()) return;
     SessionPool::Instance().Release(session_key_, std::move(session_));
   }
@@ -359,6 +363,7 @@ class PocoHttpPayload : public HttpPayload {
     try {
       body_->read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
       auto count = static_cast<std::size_t>(body_->gcount());
+      bytes_read_ += count;
       if (body_->eof() || count == 0) finished_ = true;
       if (body_->bad()) {
         failed_ = true;
@@ -373,10 +378,49 @@ class PocoHttpPayload : public HttpPayload {
   }
 
  private:
+  // A caller that stops reading early -- a ranged read abandoned because the reader seeked
+  // elsewhere -- leaves unread bytes on the socket, so the session cannot be pooled as is. Reading
+  // the tail out makes it reusable, and while the tail is short that costs less than the DNS
+  // lookup, TCP connect and TLS handshake a replacement connection would pay. The budget keeps
+  // that trade honest: a long tail is not worth transferring, so the socket is closed instead.
+  //
+  // Only a known `Content-Length` is acted on, so the cost is known up front rather than
+  // discovered by blocking on the network. Anything unexpected leaves `finished_` false, which
+  // means "do not reuse" -- the conservative direction.
+  void DrainShortRemainder() {
+    // Roughly the transfer time of a TLS handshake's round trip on an intra-region link. Above
+    // this, reconnecting is the cheaper of the two.
+    static constexpr std::uint64_t kMaxDrainBytes = 128 * 1024;
+
+    if (!response_) return;
+    auto const content_length = response_->getContentLength();
+    if (content_length == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH) return;
+    auto const total = static_cast<std::uint64_t>(content_length);
+    if (bytes_read_ >= total) return;
+    auto remaining = total - bytes_read_;
+    if (remaining > kMaxDrainBytes) return;
+
+    try {
+      char scratch[16 * 1024];
+      while (remaining > 0) {
+        auto const want = static_cast<std::streamsize>(
+            std::min<std::uint64_t>(remaining, sizeof(scratch)));
+        body_->read(scratch, want);
+        auto const count = static_cast<std::uint64_t>(body_->gcount());
+        if (count == 0 || body_->bad()) return;
+        remaining -= count;
+      }
+      finished_ = true;
+    } catch (...) {
+      // Destructor: swallow and leave the session unreusable.
+    }
+  }
+
   std::unique_ptr<Poco::Net::HTTPClientSession> session_;
   std::unique_ptr<Poco::Net::HTTPResponse> response_;
   std::istream* body_;
   std::string session_key_;
+  std::uint64_t bytes_read_ = 0;
   bool finished_ = false;
   bool failed_ = false;
 };
