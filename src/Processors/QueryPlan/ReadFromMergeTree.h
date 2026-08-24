@@ -531,6 +531,181 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// Cascades cross-group identity. This is the step where a wrong cross-group merge returns wrong
+    /// rows - two reads of the same table with different pruning would collapse into one - so every
+    /// member of `ReadFromMergeTree`, `SourceStepWithFilter`, `SourceStepWithFilterBase` and
+    /// `SelectQueryInfo` is classified below, and every uncertainty is resolved fail-closed.
+    ///
+    /// Some state has no serialization at all (`KeyCondition`, `PartitionPruner`, part snapshots,
+    /// settings snapshots, the query tree). Those fields get a **provenance witness**: the address of
+    /// an object the step owns through a `shared_ptr`. Equal address means literally the same object,
+    /// so equal content; a different address makes the two steps unequal even when their contents
+    /// match, which costs a deduplication but never produces a wrong one. The address cannot be
+    /// recycled behind our back: the owning `shared_ptr` keeps the object alive for as long as the
+    /// step lives, `GroupExpression` pins the step a cached hash was computed from, and
+    /// `cascadesIdentityEncodingsEqual` re-encodes both steps while both are alive.
+    ///
+    /// The pruning inputs were traced through `selectRangesToRead` (the member and the static
+    /// overload), `buildIndexes`, `applyFilters` and `initializePipeline`; the trace is in the
+    /// per-field entries below.
+    ///
+    /// Own fields:
+    ///  - `data` - the database and table name are on the wire; the table UUID is **extras** so two
+    ///    same-named tables (a re-created or exchanged table) cannot collide. `data.merging_params`
+    ///    and the rest of the storage object are properties of that table, hence covered by the UUID.
+    ///  - `data_settings` - **extras** (witness). A `MergeTreeSettings` snapshot; the static
+    ///    `selectRangesToRead` reads `distributed_index_analysis_min_*_to_activate` from it and
+    ///    `buildIndexes` reads the minmax-column settings, so it selects parts.
+    ///  - `prepared_parts` - **extras** (witness). The part set to analyze (`getParts()`), not on the
+    ///    wire: a worker re-snapshots the table. Two reads of one table can legitimately carry
+    ///    different part lists (a projection part set, the primary-key-layer split of
+    ///    `optimizeJoinByShards`), so this is a first-class pruning carrier.
+    ///  - `mutations_snapshot` - **extras** (witness). Feeds `filterPartsByStatistics`,
+    ///    `filterPartsByQueryConditionCache` and the patch-part/delete-bitmap application, i.e. which
+    ///    rows a part yields.
+    ///  - `all_column_names` - on the wire.
+    ///  - `reader_settings` - excluded: derived. Built in the constructor by
+    ///    `MergeTreeReaderSettings::createForQuery`, which is `createFromContext(context)` plus
+    ///    `read_in_order = query_info.input_order_info != nullptr`; the context is witnessed and
+    ///    `input_order_info` is in the extras (`requestReadingInOrder` sets both together). Its later
+    ///    mutations (`force_read_complete_granules`, `use_query_condition_cache`) all happen inside
+    ///    `initializePipeline`, i.e. after optimization.
+    ///  - `actions_settings` - excluded: `ExpressionActionsSettings(context)`, derived from the
+    ///    witnessed context.
+    ///  - `block_size` - `max_block_size_rows` is on the wire; the other members are **extras**. They
+    ///    are constructor-derived from the context, but the struct is `const` and cheap to encode, so
+    ///    encode rather than argue.
+    ///  - `result_sort_description` - **extras**. Derived from `input_order_info` and the sorting key
+    ///    by `updateSortDescription`, but it is what `getSortDescription()` returns, which the
+    ///    optimizer reads as a physical property.
+    ///  - `requested_num_streams` - on the wire.
+    ///  - `output_streams_limit` - **extras**: bounds the stream count and is what
+    ///    `requestReadingInOrder` collapses `requested_num_streams` to.
+    ///  - `output_each_partition_through_separate_port` - **extras**: it changes the number of output
+    ///    ports, which the aggregation above consumes positionally.
+    ///  - `max_block_numbers_to_read` - **extras** (witness). A pinned per-partition block-number
+    ///    boundary (`select_sequential_consistency`); `filterPartsByPartition` drops parts above it.
+    ///  - `indexes` - **extras** (witness of `key_condition` + the four `use_skip_indexes*` flags).
+    ///    The memoized index-analysis state: key/minmax/part-offset conditions, the partition pruner,
+    ///    the useful skip indexes and `part_values`. It has no serialization, and it is *not*
+    ///    reproducible from the encoded fields: `applyFilters` builds it from the deferred-FINAL-
+    ///    filtered DAG (`index_filter_dag_without_deferred`, which the step does not keep) and from
+    ///    `skip_partition_pruning`, whereas the static `selectRangesToRead` would rebuild it from
+    ///    `query_info.filter_actions_dag` with partition pruning enabled. `buildIndexes` allocates a
+    ///    fresh `ConditionTemplate` for `key_condition` on every call and `Indexes` is copied as a
+    ///    whole, so an equal `key_condition` address proves both `Indexes` values came from one
+    ///    `buildIndexes` call and are therefore content-equal. `use_skip_indexes_on_data_read` is
+    ///    assigned after the build (in `selectRangesToRead`), so all four flags are encoded
+    ///    explicitly. Read-time pruning depends on this state directly: `initializePipeline` hands
+    ///    `indexes->skip_indexes` and `indexes->key_condition_rpn_template` to
+    ///    `MergeTreeSkipIndexReader`.
+    ///  - `join_runtime_filters_for_index_analysis` - **extras** (content: count, then each
+    ///    descriptor's `filter_id`, `key_column_name` and key type name, in container order).
+    ///    Deliberately not serialized - a worker skips this pruning - but locally it prunes granules
+    ///    through `buildRuntimeRangePredicate` and the dynamic skip-index filter.
+    ///  - `deferred_row_level_filter`, `deferred_prewhere_info` - **extras** (content: the DAG, the
+    ///    column name and the flags). Deferral both removes the filter from index analysis and moves
+    ///    its application to after the FINAL merge, so it changes rows. The objects are *not* the wire
+    ///    ones after a `clone`: `clone` copies these pointers but deep-copies
+    ///    `query_info.row_level_filter` / `prewhere_info`, so the two can diverge and the content is
+    ///    encoded rather than assumed equal to the wire copy.
+    ///  - `skip_partition_pruning` - **extras**: `buildIndexes` turns it into
+    ///    `PartitionPruner::skip_analysis` and into `skip_constant_folding`.
+    ///  - `log` - excluded: logging only.
+    ///  - `selected_parts`, `selected_rows`, `selected_marks` - excluded: introspection counters
+    ///    copied out of the analysis result in `initializePipeline`.
+    ///  - `query_task_size_limit` - **extras**: read-in-order task sizing, set by
+    ///    `requestReadingInOrder` next to `input_order_info`.
+    ///  - `vector_search_parameters` - **extras** (content). Selects the vector-similarity index
+    ///    condition in `buildIndexes` and gates the query-condition cache.
+    ///  - `analyzed_result_ptr` - **extras** (witness). When set it *is* the read set: `getParts()`
+    ///    and `getAnalysisResult()` return it instead of re-analyzing, and `setAnalyzedResult` lets
+    ///    another pass pin an analysis produced elsewhere (projections, parallel replicas). The
+    ///    content (parts, mark ranges, sampling, read type) is intentionally not encoded: a witness is
+    ///    sound, and encoding thousands of parts on every hash pass is not affordable. Note `clone`
+    ///    deep-copies the analysis, so a clone and its original are unequal here - which is correct
+    ///    anyway, since `clone` also drops `indexes`.
+    ///  - `shared_virtual_fields` - excluded: filled in `initializePipeline` from the analysis result
+    ///    and the storage id, i.e. after optimization, and derived from encoded state.
+    ///  - `index_read_tasks` - **predicate-gated** (false when non-empty). Direct text-index reads
+    ///    materialize `__text_index_*` virtual columns and pin the marks they read; the tasks have no
+    ///    serialization.
+    ///  - `is_parallel_reading_from_replicas` - on the wire as a flag, but **predicate-gated**: the
+    ///    coordinator callbacks and the replica number that go with it are not on the wire and have no
+    ///    encodable state, so a parallel-replicas read never opts in.
+    ///  - `all_ranges_callback`, `read_task_callback`, `number_of_current_replica` -
+    ///    **predicate-gated** with the flag above.
+    ///  - `enable_vertical_final` - **extras**: chooses the FINAL implementation and is cleared by
+    ///    `requestReadingInOrder`.
+    ///  - `allow_query_condition_cache` - **extras**: it decides whether index analysis may skip
+    ///    granules recorded by other queries, and it is copied around by
+    ///    `copyTopKFilterInfoAndQueryConditionCacheGate`.
+    ///  - `lazy_materializing_rows` - **extras** (witness): lazy row materialization state, not
+    ///    carried by `clone`.
+    ///  - `virtual_row_conversion` - **extras** (witness): the virtual row a read-in-order merge
+    ///    announces; `requestReadingInOrder` can reset it.
+    ///  - `top_k_filter_info` - **extras** (content, including the threshold-tracker witness). It
+    ///    selects the TopK skip index, salts the query-condition-cache key, and the tracker is the
+    ///    running threshold that prunes granules.
+    ///  - `projection_index_read_desc` - **predicate-gated** (false when non-empty): per-projection
+    ///    pinned read ranges with no serialization.
+    ///  - `distributed_read_bucket_count`, `distributed_read_param_name` - on the wire, but the count
+    ///    is **predicate-gated** to zero: the marks of each bucket live in `distributed_read_buckets`
+    ///    / `distributed_read_task_buckets`, which are not on the wire and pin exactly what is read.
+    ///    Gating the count to zero also covers all remaining throw sites of `serialize`
+    ///    (`verifyBucketedReadSupported`, the bucketed deferred-FINAL rejection and the serialization
+    ///    version check), and costs nothing: bucketing happens after the Cascades pass.
+    ///  - `distributed_read_buckets`, `distributed_read_lanes_per_task`,
+    ///    `distributed_read_task_buckets` - **predicate-gated** as above.
+    ///
+    /// Inherited from `SourceStepWithFilter` / `SourceStepWithFilterBase`:
+    ///  - `filter_actions_dag` - **extras** (content, `addDAG`). The step-level pruning predicate. Not
+    ///    on the wire, and a separate carrier from the `query_info` one: `applyFilters` copies it into
+    ///    `query_info` only when it is non-null, so a null step DAG leaves whatever `query_info` had.
+    ///  - `query_info.filter_actions_dag` - **extras** (content, `addDAG`), its own framed component.
+    ///    This is the DAG index analysis actually reads (`buildIndexes`, the distributed index
+    ///    analysis, the query-condition-cache key), so both DAGs are encoded, absent slots explicit.
+    ///  - `filter_nodes`, `filter_dags` - **predicate-gated** through `hasPendingFilters()`: filters
+    ///    still waiting for `applyFilters` are private to the base and would change the pruning.
+    ///  - `limit` - **extras**: a trivial-limit bound on how much is read.
+    ///  - `required_source_columns` - **extras**: the requested columns (`all_column_names` on the
+    ///    wire is the read list, which the vector-search and lazy-read rewrites change independently).
+    ///  - `query_info` - not on the wire as a whole. Members that the MergeTree read path reads
+    ///    (verified by enumerating every `query_info.` use in `ReadFromMergeTree.cpp` and
+    ///    `MergeTreeDataSelectExecutor.cpp`): `prewhere_info` and `row_level_filter` are on the wire;
+    ///    `table_expression_modifiers` is on the wire except its `stream_settings` (predicate-gated
+    ///    via `isStream()`); `filter_actions_dag`, `input_order_info`, `trivial_limit` and
+    ///    `is_internal` are **extras**; `isFinal()` is **extras** as a bool, because with no
+    ///    modifiers it falls back to `apply_query_level_final_if_no_modifiers` and the query-level
+    ///    FINAL, neither of which is on the wire. Every pointer-valued member (`query`, `view_query`,
+    ///    `query_tree`, `planner_context`, `table_expression`, `storage_limits`,
+    ///    `initial_storage_snapshot`, `cluster`, `optimized_cluster`, `syntax_analyzer_result`,
+    ///    `additional_filter_ast`, `filter_asts`, `order_optimizer`, `prepared_sets`) goes into one
+    ///    framed provenance-witness component: `query`/`query_tree` decide sampling and
+    ///    `supportsSkipIndexesOnDataRead`, `storage_limits` bounds what may be read, `prepared_sets`
+    ///    holds the IN sets index analysis uses, and the rest is witnessed rather than argued about.
+    ///    The remaining scalars (`local_storage_limits`, `has_window`, `has_order_by`,
+    ///    `need_aggregate`, `has_aggregates`, `settings_limit_offset_done`, `is_parameterized_view`,
+    ///    `optimize_trivial_count`, `columns_mask`) are excluded: no MergeTree read path reads them.
+    ///  - `storage_snapshot` - **extras** (witness): the metadata snapshot (primary key, partition
+    ///    key, skip indexes, virtuals) and the part snapshot every analysis step reads.
+    ///  - `context` - **extras** (witness): the settings that gate partition pruning, skip indexes,
+    ///    the query-condition cache, distributed index analysis and the runtime-filter lookup.
+    ///
+    /// Inherited from `ISourceStep` / `IQueryPlanStep`:
+    ///  - `output_header` - covered by the identity encoding itself.
+    ///  - `input_headers` - empty for a source step.
+    ///  - `step_description`, `step_index`, `processors`, `dataflow_cache_updater` - display or
+    ///    instrumentation only, excluded.
+    ///
+    /// `isSerializable()` is unconditionally true. `serializeSettings` is not overridden anywhere in
+    /// this hierarchy, so it writes nothing and cannot throw. `serialize` throws for a STREAM read and
+    /// for the bucketed cases, both predicate-gated; the DAGs it writes throw on a correlated
+    /// `PLACEHOLDER` node, so the predicate checks `hasCorrelatedColumns` on every DAG the encoding
+    /// writes, not only on the one `hasCorrelatedExpressions()` looks at.
+    bool supportsCascadesIdentity() const override;
+    void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
+
 private:
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;

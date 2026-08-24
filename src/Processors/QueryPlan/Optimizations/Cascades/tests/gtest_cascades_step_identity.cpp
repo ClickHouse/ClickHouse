@@ -5,10 +5,13 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/ProtocolDefines.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -22,7 +25,15 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/StepIdentity.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageSnapshot.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -927,6 +938,243 @@ TEST(CascadesStepIdentity, JoinStepLogicalWithCorrelatedExpressionsDoesNotSuppor
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_EQ(a->getStepIdentity(), nullptr);
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// ReadFromMergeTree
+
+namespace
+{
+
+/// The smallest storage a `ReadFromMergeTree` can be built over: one `UInt64` column `a`, `ORDER BY a`,
+/// no partition key, attached (so no sanity checks) and with no data on disk.
+struct MergeTreeReadFixture
+{
+    ContextMutablePtr context;
+    std::shared_ptr<StorageMergeTree> storage;
+    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
+    MergeTreeSettingsPtr data_settings;
+    RangesInDataPartsPtr parts;
+
+    explicit MergeTreeReadFixture(const String & table_name)
+    {
+        MainThreadStatus::getInstance();
+        tryRegisterFunctions();
+        /// `getMinMaxCountProjection` below builds `min`/`max`/`count` over the partition key.
+        tryRegisterAggregateFunctions();
+
+        getActivePartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
+        context = Context::createCopy(getContext().context);
+
+        StorageInMemoryMetadata metadata;
+
+        ColumnsDescription columns;
+        columns.add(ColumnDescription("a", std::make_shared<DataTypeUInt64>()));
+        metadata.setColumns(columns);
+
+        ASTPtr order_by_ast = make_intrusive<ASTIdentifier>("a");
+        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
+        metadata.primary_key = metadata.sorting_key;
+        metadata.primary_key.definition_ast = nullptr;
+        metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
+
+        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata.partition_key.expression_list_ast->clone();
+        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
+
+        auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
+        storage = std::make_shared<StorageMergeTree>(
+            StorageID("test_cascades_identity", table_name),
+            "store/test_cascades_step_identity_" + table_name + "/",
+            metadata,
+            LoadingStrictnessLevel::ATTACH,
+            context,
+            /*date_column_name=*/ "",
+            MergeTreeData::MergingParams{},
+            std::move(storage_settings));
+
+        /// The handle only converts to a `StorageMetadataPtr` as an lvalue.
+        const StorageMetadataHandle metadata_handle = storage->getInMemoryMetadataPtr(context, false);
+        metadata_snapshot = metadata_handle;
+        storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
+        data_settings = storage->getSettings();
+        parts = std::make_shared<RangesInDataParts>();
+    }
+
+    ~MergeTreeReadFixture() { storage->flushAndShutdown(); }
+
+    /// `table_expression_modifiers` must be present: with no modifiers and no query tree `isFinal()`
+    /// falls back to the (absent) select AST. Note that every call allocates its own `PreparedSets`,
+    /// which the identity encoding witnesses - reads meant to differ in one field only must share one
+    /// `SelectQueryInfo` (copies share the pointer).
+    static SelectQueryInfo makeQueryInfo()
+    {
+        SelectQueryInfo query_info;
+        query_info.table_expression_modifiers.emplace(/*has_final_=*/ false, std::nullopt, std::nullopt);
+        return query_info;
+    }
+
+    std::unique_ptr<ReadFromMergeTree> makeRead(const SelectQueryInfo & query_info) const
+    {
+        return std::make_unique<ReadFromMergeTree>(
+            parts,
+            MergeTreeData::MutationsSnapshotPtr{},
+            Names{"a"},
+            *storage,
+            data_settings,
+            query_info,
+            storage_snapshot,
+            context,
+            /*max_block_size_=*/ 8192,
+            /*num_streams_=*/ 1,
+            /*max_block_numbers_to_read_=*/ nullptr,
+            getLogger("CascadesStepIdentityTest"),
+            /*analyzed_result_ptr_=*/ nullptr,
+            /*enable_parallel_reading_=*/ false);
+    }
+};
+
+/// A filter over an `UInt8` input column, so `applyFilters` has a non-constant node to fold into
+/// `filter_actions_dag`.
+ActionsDAG makeReadFilterDag()
+{
+    ActionsDAG dag(NamesAndTypesList{{"a", std::make_shared<DataTypeUInt64>()}, {"f", std::make_shared<DataTypeUInt8>()}});
+    dag.getOutputs().push_back(&dag.findInOutputs("f"));
+    return dag;
+}
+
+String encodeIdentity(const IQueryPlanStep & step)
+{
+    WriteBufferFromOwnString out;
+    writeCascadesIdentityEncoding(step, out);
+    return out.str();
+}
+
+}
+
+/// Two reads of the same table over the same snapshots: every provenance witness matches, so the
+/// content-based identity holds even though the steps are distinct objects.
+TEST(CascadesStepIdentity, ReadFromMergeTreeIdenticalReadsAreEqual)
+{
+    MergeTreeReadFixture fixture("identical");
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+
+    auto a_step = fixture.makeRead(query_info);
+    ASSERT_TRUE(a_step->supportsCascadesIdentity());
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
+
+    EXPECT_NE(a->plan_step, b->plan_step);
+    EXPECT_EQ(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_TRUE(a->globallyEqualTo(*b));
+}
+
+/// `SourceStepWithFilter::filter_actions_dag` is not on the wire and is its own framed component,
+/// separate from the `query_info` copy that `applyFilters` leaves behind.
+TEST(CascadesStepIdentity, ReadFromMergeTreeStepFilterActionsDagIsPartOfIdentity)
+{
+    MergeTreeReadFixture fixture("step_filter");
+
+    auto step = fixture.makeRead(MergeTreeReadFixture::makeQueryInfo());
+    step->addFilter(makeReadFilterDag(), "f");
+    /// The zero-argument overload is hidden by `ReadFromMergeTree::applyFilters`; it dispatches to it.
+    step->SourceStepWithFilterBase::applyFilters();
+
+    ASSERT_NE(step->getFilterActionsDAG(), nullptr);
+    ASSERT_FALSE(step->hasPendingFilters());
+    ASSERT_TRUE(step->supportsCascadesIdentity());
+    const auto with_step_dag = encodeIdentity(*step);
+
+    /// Detaching clears only the step-level slot: `query_info` keeps the copy `applyFilters` made, and
+    /// `indexes` is already built, so nothing else the encoding covers changes.
+    auto detached = step->detachFilterActionsDAG();
+    ASSERT_EQ(step->getFilterActionsDAG(), nullptr);
+    ASSERT_EQ(step->getQueryInfo().filter_actions_dag, detached);
+
+    EXPECT_NE(with_step_dag, encodeIdentity(*step));
+}
+
+/// `SelectQueryInfo::filter_actions_dag` is the DAG index analysis reads, and it is a carrier of its
+/// own: two reads with no step-level DAG at all must still be unequal when it differs.
+TEST(CascadesStepIdentity, ReadFromMergeTreeQueryInfoFilterActionsDagIsPartOfIdentity)
+{
+    MergeTreeReadFixture fixture("query_info_filter");
+
+    const auto base_query_info = MergeTreeReadFixture::makeQueryInfo();
+    auto query_info_a = base_query_info;
+    auto query_info_b = base_query_info;
+    query_info_a.filter_actions_dag = std::make_shared<const ActionsDAG>(makeFilterDag(1));
+    query_info_b.filter_actions_dag = std::make_shared<const ActionsDAG>(makeFilterDag(2));
+    /// Everything else the `query_info` provenance witness covers is shared by the two copies.
+    ASSERT_EQ(query_info_a.prepared_sets, query_info_b.prepared_sets);
+
+    auto a_step = fixture.makeRead(query_info_a);
+    auto b_step = fixture.makeRead(query_info_b);
+    ASSERT_EQ(a_step->getFilterActionsDAG(), nullptr);
+    ASSERT_EQ(b_step->getFilterActionsDAG(), nullptr);
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// `join_runtime_filters_for_index_analysis` is deliberately not serialized (a worker skips this
+/// pruning) but it prunes granules locally, so it must be part of the identity.
+TEST(CascadesStepIdentity, ReadFromMergeTreeJoinRuntimeFilterDescriptorsArePartOfIdentity)
+{
+    MergeTreeReadFixture fixture("join_runtime_filter");
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+
+    auto a_step = fixture.makeRead(query_info);
+    auto b_step = fixture.makeRead(query_info);
+    ASSERT_EQ(encodeIdentity(*a_step), encodeIdentity(*b_step));
+
+    a_step->addJoinRuntimeFilterIndexAnalysisOnDataRead("filter_1", "a", std::make_shared<DataTypeUInt64>());
+
+    EXPECT_NE(encodeIdentity(*a_step), encodeIdentity(*b_step));
+}
+
+/// A pinned analysis result *is* the read set (`getParts()` returns it), so pinning one must not
+/// deduplicate against a read that analyzes on its own.
+TEST(CascadesStepIdentity, ReadFromMergeTreeAnalyzedResultPinningIsPartOfIdentity)
+{
+    MergeTreeReadFixture fixture("analyzed_result");
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+
+    auto a_step = fixture.makeRead(query_info);
+    auto b_step = fixture.makeRead(query_info);
+    ASSERT_EQ(encodeIdentity(*a_step), encodeIdentity(*b_step));
+
+    a_step->setAnalyzedResult(std::make_shared<ReadFromMergeTree::AnalysisResult>());
+
+    EXPECT_NE(encodeIdentity(*a_step), encodeIdentity(*b_step));
+}
+
+/// `serialize` rejects the STREAM modifier, so the predicate must reject such an instance before the
+/// encoding calls `serialize`.
+TEST(CascadesStepIdentity, ReadFromMergeTreeStreamReadDoesNotSupportIdentity)
+{
+    MergeTreeReadFixture fixture("stream");
+    auto query_info = MergeTreeReadFixture::makeQueryInfo();
+    query_info.table_expression_modifiers.emplace(/*has_final_=*/ false, std::nullopt, std::nullopt, StreamSettings{});
+
+    auto a_step = fixture.makeRead(query_info);
+    ASSERT_TRUE(a_step->getQueryInfo().isStream());
+    EXPECT_FALSE(a_step->supportsCascadesIdentity());
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(fixture.makeRead(query_info));
 
     EXPECT_EQ(a->getStepIdentity(), nullptr);
     EXPECT_FALSE(a->globallyEqualTo(*b));

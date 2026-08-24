@@ -44,6 +44,7 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -6478,6 +6479,365 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     writeVarUInt(distributed_read_bucket_count, ctx.out);
     if (distributed_read_bucket_count > 0)
         writeStringBinary(distributed_read_param_name, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `ReadFromMergeTree`. Unique within the step; never reused.
+enum ReadFromMergeTreeIdentityTag : UInt64
+{
+    STORAGE_UUID_TAG = 1,
+    IS_FINAL_TAG = 2,
+    STEP_FILTER_ACTIONS_DAG_TAG = 3,
+    QUERY_INFO_FILTER_ACTIONS_DAG_TAG = 4,
+    DEFERRED_ROW_LEVEL_FILTER_DAG_TAG = 5,
+    DEFERRED_ROW_LEVEL_FILTER_PARAMS_TAG = 6,
+    DEFERRED_PREWHERE_DAG_TAG = 7,
+    DEFERRED_PREWHERE_PARAMS_TAG = 8,
+    JOIN_RUNTIME_FILTERS_TAG = 9,
+    INDEXES_KEY_CONDITION_WITNESS_TAG = 10,
+    INDEXES_FLAGS_TAG = 11,
+    ANALYZED_RESULT_WITNESS_TAG = 12,
+    PREPARED_PARTS_WITNESS_TAG = 13,
+    MUTATIONS_SNAPSHOT_WITNESS_TAG = 14,
+    STORAGE_SNAPSHOT_WITNESS_TAG = 15,
+    DATA_SETTINGS_WITNESS_TAG = 16,
+    CONTEXT_WITNESS_TAG = 17,
+    MAX_BLOCK_NUMBERS_TO_READ_WITNESS_TAG = 18,
+    QUERY_INFO_PROVENANCE_TAG = 19,
+    INPUT_ORDER_SORT_DESCRIPTION_TAG = 20,
+    INPUT_ORDER_PARAMS_TAG = 21,
+    RESULT_SORT_DESCRIPTION_TAG = 22,
+    TOP_K_FILTER_INFO_TAG = 23,
+    VECTOR_SEARCH_PARAMETERS_TAG = 24,
+    TRIVIAL_LIMIT_TAG = 25,
+    LIMIT_TAG = 26,
+    REQUIRED_SOURCE_COLUMNS_TAG = 27,
+    SKIP_PARTITION_PRUNING_TAG = 28,
+    ALLOW_QUERY_CONDITION_CACHE_TAG = 29,
+    ENABLE_VERTICAL_FINAL_TAG = 30,
+    OUTPUT_EACH_PARTITION_THROUGH_SEPARATE_PORT_TAG = 31,
+    OUTPUT_STREAMS_LIMIT_TAG = 32,
+    QUERY_TASK_SIZE_LIMIT_TAG = 33,
+    LAZY_MATERIALIZING_ROWS_WITNESS_TAG = 34,
+    VIRTUAL_ROW_CONVERSION_WITNESS_TAG = 35,
+    IS_INTERNAL_TAG = 36,
+    BLOCK_SIZE_TAG = 37,
+};
+
+void writePointerWitness(WriteBuffer & out, const void * ptr)
+{
+    writeVarUInt(static_cast<UInt64>(reinterpret_cast<uintptr_t>(ptr)), out);
+}
+
+/// See the provenance-witness paragraph in the audit comment: an owning `shared_ptr` keeps the
+/// address unique for as long as either compared step is alive.
+void addPointerWitness(CascadesIdentityExtras & extras, UInt64 tag, const void * ptr)
+{
+    if (!ptr)
+        extras.addAbsent(tag);
+    else
+        extras.addVarUInt(tag, static_cast<UInt64>(reinterpret_cast<uintptr_t>(ptr)));
+}
+
+void addRowLevelFilter(CascadesIdentityExtras & extras, UInt64 dag_tag, UInt64 params_tag, const FilterDAGInfoPtr & filter)
+{
+    if (!filter)
+    {
+        extras.addAbsent(dag_tag);
+        extras.addAbsent(params_tag);
+        return;
+    }
+
+    extras.addDAG(dag_tag, &filter->actions);
+
+    WriteBufferFromOwnString payload;
+    writeStringBinary(filter->column_name, payload);
+    writeBinary(static_cast<UInt8>(filter->do_remove_column), payload);
+    extras.addString(params_tag, payload.str());
+}
+
+void addPrewhereInfo(CascadesIdentityExtras & extras, UInt64 dag_tag, UInt64 params_tag, const PrewhereInfoPtr & prewhere)
+{
+    if (!prewhere)
+    {
+        extras.addAbsent(dag_tag);
+        extras.addAbsent(params_tag);
+        return;
+    }
+
+    extras.addDAG(dag_tag, &prewhere->prewhere_actions);
+
+    WriteBufferFromOwnString payload;
+    writeStringBinary(prewhere->prewhere_column_name, payload);
+    writeBinary(static_cast<UInt8>(prewhere->remove_prewhere_column), payload);
+    writeBinary(static_cast<UInt8>(prewhere->need_filter), payload);
+    extras.addString(params_tag, payload.str());
+}
+
+String encodeRuntimeFilterIndexAnalysisDescriptors(const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(descriptors.size(), payload);
+    for (const auto & descriptor : descriptors)
+    {
+        writeStringBinary(descriptor.filter_id, payload);
+        writeStringBinary(descriptor.key_column_name, payload);
+        writeStringBinary(descriptor.key_column_type ? descriptor.key_column_type->getName() : String{}, payload);
+    }
+    return payload.str();
+}
+
+/// Every pointer-valued member of `SelectQueryInfo`, in declaration order.
+String encodeQueryInfoProvenance(const SelectQueryInfo & query_info)
+{
+    WriteBufferFromOwnString payload;
+    writePointerWitness(payload, query_info.query.get());
+    writePointerWitness(payload, query_info.view_query.get());
+    writePointerWitness(payload, query_info.query_tree.get());
+    writePointerWitness(payload, query_info.planner_context.get());
+    writePointerWitness(payload, query_info.table_expression.get());
+    writePointerWitness(payload, query_info.storage_limits.get());
+    writePointerWitness(payload, query_info.initial_storage_snapshot.get());
+    writePointerWitness(payload, query_info.cluster.get());
+    writePointerWitness(payload, query_info.optimized_cluster.get());
+    writePointerWitness(payload, query_info.syntax_analyzer_result.get());
+    writePointerWitness(payload, query_info.additional_filter_ast.get());
+    writeVarUInt(query_info.filter_asts.size(), payload);
+    for (const auto & filter_ast : query_info.filter_asts)
+        writePointerWitness(payload, filter_ast.get());
+    writePointerWitness(payload, query_info.order_optimizer.get());
+    writePointerWitness(payload, query_info.prepared_sets.get());
+    return payload.str();
+}
+
+UInt64 encodeIndexesFlags(const ReadFromMergeTree::Indexes & indexes)
+{
+    UInt64 flags = 0;
+    if (indexes.use_skip_indexes)
+        flags |= 1;
+    if (indexes.use_skip_indexes_for_disjunctions)
+        flags |= 2;
+    if (indexes.use_skip_indexes_if_final_exact_mode)
+        flags |= 4;
+    if (indexes.use_skip_indexes_on_data_read)
+        flags |= 8;
+    return flags;
+}
+
+String encodeTopKFilterInfo(const TopKFilterInfo & top_k_filter_info)
+{
+    WriteBufferFromOwnString payload;
+    writeStringBinary(top_k_filter_info.column_name, payload);
+    writeStringBinary(top_k_filter_info.data_type ? top_k_filter_info.data_type->getName() : String{}, payload);
+    writeVarUInt(top_k_filter_info.num_sort_columns, payload);
+    writeVarUInt(top_k_filter_info.limit_n, payload);
+    writeVarInt(static_cast<Int64>(top_k_filter_info.direction), payload);
+    writeBinary(static_cast<UInt8>(top_k_filter_info.where_clause), payload);
+    writeVarUInt(top_k_filter_info.condition_hash, payload);
+    /// The running threshold that prunes granules; shared with the sorting step above.
+    writePointerWitness(payload, top_k_filter_info.threshold_tracker.get());
+    return payload.str();
+}
+
+String encodeVectorSearchParameters(const VectorSearchParameters & parameters)
+{
+    WriteBufferFromOwnString payload;
+    writeStringBinary(parameters.column, payload);
+    writeStringBinary(parameters.distance_function, payload);
+    writeVarUInt(parameters.limit, payload);
+    writeVarUInt(parameters.reference_vector.size(), payload);
+    for (const auto & coordinate : parameters.reference_vector)
+        writeFloatBinary(coordinate, payload);
+    writeBinary(static_cast<UInt8>(parameters.additional_filters_present), payload);
+    writeBinary(static_cast<UInt8>(parameters.return_distances), payload);
+    return payload.str();
+}
+}
+
+bool ReadFromMergeTree::supportsCascadesIdentity() const
+{
+    if (!isSerializable())
+        return false;
+
+    /// `serialize` rejects the STREAM modifier, and its index analysis lives elsewhere entirely
+    /// (`MergeTreeCommitOrderSource`), so nothing below describes what such a read returns.
+    if (query_info.isStream())
+        return false;
+
+    /// Filters not yet folded into `filter_actions_dag`: they are private to the base and would
+    /// change the pruning once `applyFilters` runs.
+    if (hasPendingFilters())
+        return false;
+
+    /// Parallel replicas: the coordinator callbacks and the replica number are not on the wire and
+    /// have no encodable state.
+    if (is_parallel_reading_from_replicas || all_ranges_callback || read_task_callback || number_of_current_replica)
+        return false;
+
+    /// A bucketed distributed read is pinned to per-bucket marks that are not on the wire. This also
+    /// covers the remaining throw sites of `serialize`: `verifyBucketedReadSupported`, the bucketed
+    /// deferred-FINAL rejection and the serialization-version check all require a non-zero count.
+    if (distributed_read_bucket_count != 0 || !distributed_read_buckets.empty() || !distributed_read_task_buckets.empty()
+        || distributed_read_lanes_per_task != 1)
+        return false;
+
+    /// Direct text-index read tasks and per-projection read ranges pin marks and have no serialization.
+    if (!index_read_tasks.empty() || !projection_index_read_desc.read_ranges.empty()
+        || !projection_index_read_desc.read_infos.empty())
+        return false;
+
+    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. Check every DAG the encoding
+    /// writes, not only the step-level filter that `hasCorrelatedExpressions()` looks at.
+    if (hasCorrelatedExpressions())
+        return false;
+    if (query_info.filter_actions_dag && query_info.filter_actions_dag->hasCorrelatedColumns())
+        return false;
+    if (query_info.row_level_filter && query_info.row_level_filter->actions.hasCorrelatedColumns())
+        return false;
+    if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasCorrelatedColumns())
+        return false;
+    if (deferred_row_level_filter && deferred_row_level_filter->actions.hasCorrelatedColumns())
+        return false;
+    if (deferred_prewhere_info && deferred_prewhere_info->prewhere_actions.hasCorrelatedColumns())
+        return false;
+
+    return true;
+}
+
+void ReadFromMergeTree::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    /// Only the database and table name are on the wire; a re-created table reuses them.
+    {
+        const auto uuid = data.getStorageID().uuid.toUnderType();
+        WriteBufferFromOwnString payload;
+        writeVarUInt(static_cast<UInt64>(uuid.items[0]), payload);
+        writeVarUInt(static_cast<UInt64>(uuid.items[1]), payload);
+        extras.addString(STORAGE_UUID_TAG, payload.str());
+    }
+
+    /// The wire carries `table_expression_modifiers->hasFinal()`; with no modifiers `isFinal()` falls
+    /// back to `apply_query_level_final_if_no_modifiers` and the query-level FINAL.
+    extras.addBool(IS_FINAL_TAG, query_info.isFinal());
+
+    /// The two pruning DAGs are separate carriers: `applyFilters` copies the step-level one into
+    /// `query_info` only when it is non-null, and index analysis reads the `query_info` one.
+    extras.addDAG(STEP_FILTER_ACTIONS_DAG_TAG, getFilterActionsDAG().get());
+    extras.addDAG(QUERY_INFO_FILTER_ACTIONS_DAG_TAG, query_info.filter_actions_dag.get());
+
+    /// Deferring a filter past the FINAL merge both removes it from index analysis and changes the
+    /// rows the read returns; after a `clone` these objects are not the wire copies any more.
+    addRowLevelFilter(extras, DEFERRED_ROW_LEVEL_FILTER_DAG_TAG, DEFERRED_ROW_LEVEL_FILTER_PARAMS_TAG, deferred_row_level_filter);
+    addPrewhereInfo(extras, DEFERRED_PREWHERE_DAG_TAG, DEFERRED_PREWHERE_PARAMS_TAG, deferred_prewhere_info);
+
+    /// Not serialized (a worker skips this pruning), but locally these descriptors prune granules.
+    extras.addString(JOIN_RUNTIME_FILTERS_TAG, encodeRuntimeFilterIndexAnalysisDescriptors(join_runtime_filters_for_index_analysis));
+
+    /// The memoized index analysis. `buildIndexes` allocates a fresh `key_condition` template per call
+    /// and `Indexes` is copied as a whole, so an equal address proves both values came from the same
+    /// call; the four flags are encoded because `use_skip_indexes_on_data_read` is assigned later.
+    if (indexes)
+    {
+        addPointerWitness(extras, INDEXES_KEY_CONDITION_WITNESS_TAG, indexes->key_condition.get());
+        extras.addVarUInt(INDEXES_FLAGS_TAG, encodeIndexesFlags(*indexes));
+    }
+    else
+    {
+        extras.addAbsent(INDEXES_KEY_CONDITION_WITNESS_TAG);
+        extras.addAbsent(INDEXES_FLAGS_TAG);
+    }
+
+    /// When pinned, this *is* the read set: `getParts()` and `getAnalysisResult()` return it instead
+    /// of analyzing again.
+    addPointerWitness(extras, ANALYZED_RESULT_WITNESS_TAG, analyzed_result_ptr.get());
+
+    /// The snapshots every analysis step reads: parts, mutations, metadata, storage settings, the
+    /// settings context and the pinned block-number boundary.
+    addPointerWitness(extras, PREPARED_PARTS_WITNESS_TAG, prepared_parts.get());
+    addPointerWitness(extras, MUTATIONS_SNAPSHOT_WITNESS_TAG, mutations_snapshot.get());
+    addPointerWitness(extras, STORAGE_SNAPSHOT_WITNESS_TAG, storage_snapshot.get());
+    addPointerWitness(extras, DATA_SETTINGS_WITNESS_TAG, data_settings.get());
+    addPointerWitness(extras, CONTEXT_WITNESS_TAG, context.get());
+    addPointerWitness(extras, MAX_BLOCK_NUMBERS_TO_READ_WITNESS_TAG, max_block_numbers_to_read.get());
+
+    /// Every pointer-valued member of `SelectQueryInfo` (sampling reads `query`,
+    /// `supportsSkipIndexesOnDataRead` reads `query_tree`, index analysis reads `prepared_sets`).
+    extras.addString(QUERY_INFO_PROVENANCE_TAG, encodeQueryInfoProvenance(query_info));
+
+    /// Read-in-order state: which prefix, direction and limit the read is pinned to.
+    if (const auto & input_order_info = query_info.input_order_info)
+    {
+        extras.addSortDescription(INPUT_ORDER_SORT_DESCRIPTION_TAG, input_order_info->sort_description_for_merging);
+
+        WriteBufferFromOwnString payload;
+        writeVarUInt(input_order_info->used_prefix_of_sorting_key_size, payload);
+        writeVarInt(static_cast<Int64>(input_order_info->direction), payload);
+        writeVarUInt(input_order_info->limit, payload);
+        extras.addString(INPUT_ORDER_PARAMS_TAG, payload.str());
+    }
+    else
+    {
+        extras.addAbsent(INPUT_ORDER_SORT_DESCRIPTION_TAG);
+        extras.addAbsent(INPUT_ORDER_PARAMS_TAG);
+    }
+
+    /// What `getSortDescription()` returns to the optimizer as a physical property.
+    extras.addSortDescription(RESULT_SORT_DESCRIPTION_TAG, result_sort_description);
+
+    /// Selects the TopK skip index, salts the query-condition-cache key, and carries the running
+    /// threshold tracker.
+    if (top_k_filter_info)
+        extras.addString(TOP_K_FILTER_INFO_TAG, encodeTopKFilterInfo(*top_k_filter_info));
+    else
+        extras.addAbsent(TOP_K_FILTER_INFO_TAG);
+
+    /// Selects the vector-similarity index condition and gates the query-condition cache.
+    if (vector_search_parameters)
+        extras.addString(VECTOR_SEARCH_PARAMETERS_TAG, encodeVectorSearchParameters(*vector_search_parameters));
+    else
+        extras.addAbsent(VECTOR_SEARCH_PARAMETERS_TAG);
+
+    /// Both bound how much is read.
+    extras.addVarUInt(TRIVIAL_LIMIT_TAG, query_info.trivial_limit);
+    if (limit)
+        extras.addVarUInt(LIMIT_TAG, *limit);
+    else
+        extras.addAbsent(LIMIT_TAG);
+
+    /// The requested columns; `all_column_names` on the wire is the read list, which the
+    /// vector-search and lazy-read rewrites change independently.
+    extras.addStrings(REQUIRED_SOURCE_COLUMNS_TAG, required_source_columns);
+
+    /// `buildIndexes` turns it into `PartitionPruner::skip_analysis` and `skip_constant_folding`.
+    extras.addBool(SKIP_PARTITION_PRUNING_TAG, skip_partition_pruning);
+
+    /// Decides whether index analysis may skip granules recorded by other queries.
+    extras.addBool(ALLOW_QUERY_CONDITION_CACHE_TAG, allow_query_condition_cache);
+
+    /// Chooses the FINAL implementation; cleared by `requestReadingInOrder`.
+    extras.addBool(ENABLE_VERTICAL_FINAL_TAG, enable_vertical_final);
+
+    /// Changes the number of output ports, which the step above consumes positionally.
+    extras.addBool(OUTPUT_EACH_PARTITION_THROUGH_SEPARATE_PORT_TAG, output_each_partition_through_separate_port);
+    extras.addVarUInt(OUTPUT_STREAMS_LIMIT_TAG, output_streams_limit);
+
+    /// Read-in-order task sizing, set by `requestReadingInOrder` next to `input_order_info`.
+    extras.addVarUInt(QUERY_TASK_SIZE_LIMIT_TAG, query_task_size_limit);
+
+    /// Neither is carried by `clone`; both change what the pipeline produces.
+    addPointerWitness(extras, LAZY_MATERIALIZING_ROWS_WITNESS_TAG, lazy_materializing_rows.get());
+    addPointerWitness(extras, VIRTUAL_ROW_CONVERSION_WITNESS_TAG, virtual_row_conversion.get());
+
+    extras.addBool(IS_INTERNAL_TAG, query_info.is_internal);
+
+    /// `max_block_size_rows` is on the wire; the rest of the struct is not.
+    {
+        WriteBufferFromOwnString payload;
+        writeVarUInt(block_size.preferred_block_size_bytes, payload);
+        writeVarUInt(block_size.preferred_max_column_in_block_size_bytes, payload);
+        writeFloatBinary(block_size.min_filtration_ratio, payload);
+        extras.addString(BLOCK_SIZE_TAG, payload.str());
+    }
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
