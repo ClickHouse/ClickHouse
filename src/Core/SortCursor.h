@@ -406,6 +406,24 @@ inline constexpr bool sort_cursor_compare_is_expensive = false;
 template <> inline constexpr bool sort_cursor_compare_is_expensive<SortCursor> = true;
 template <> inline constexpr bool sort_cursor_compare_is_expensive<SortCursorWithCollation> = true;
 
+/// The runtime counterpart of `sort_cursor_compare_is_expensive` for code that always merges
+/// through the generic `SortCursor` regardless of the sort description (the special merge
+/// algorithms: Replacing/Summing/Aggregating/Collapsing/VersionedCollapsing/Graphite).
+/// Mirrors the cursor selection in `SortQueueVariants`: a single-column description without
+/// a collation would get a specialized cursor with a cheap comparator there, so such merges
+/// should keep the heap container even though the cursor type says otherwise.
+inline bool sortDescriptionCompareIsExpensive(const SortDescription & description)
+{
+    if (description.size() > 1)
+        return true;
+
+    for (const auto & column_description : description)
+        if (column_description.collator)
+            return true;
+
+    return false;
+}
+
 /// Allows to fetch data from multiple sort cursors in sorted order (merging sorted data streams).
 template <typename Cursor, SortingQueueStrategy strategy, SortingQueueContainer container = SortingQueueContainer::Heap>
 class SortingQueueImpl
@@ -413,8 +431,12 @@ class SortingQueueImpl
 public:
     SortingQueueImpl() = default;
 
+    /// `enable_array_container` allows to keep the heap behavior at runtime when the actual
+    /// comparator is known to be cheap even though the cursor type is marked expensive (e.g.
+    /// a single-column sorting key merged through the generic `SortCursor` by the special
+    /// merge algorithms). It only matters for the Array container.
     template <typename Cursors>
-    explicit SortingQueueImpl(Cursors & cursors)
+    explicit SortingQueueImpl(Cursors & cursors, bool enable_array_container = true)
     {
         size_t size = cursors.size();
         queue.reserve(size);
@@ -432,7 +454,7 @@ public:
             /// The decision is based on the number of sources rather than the number of
             /// non-empty cursors: `push` re-adds sources that were empty here or removed
             /// later, so the queue can grow up to the number of sources.
-            array_mode = size <= max_array_container_size;
+            array_mode = enable_array_container && size <= max_array_container_size;
         }
 
         if (isArrayMode())

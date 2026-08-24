@@ -34,7 +34,9 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
         inputs_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(current_inputs[source_num].chunk);
     }
 
-    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors);
+    /// A single-column key without a collation compares cheaply even through the generic
+    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, sortDescriptionCompareIsExpensive(description));
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)

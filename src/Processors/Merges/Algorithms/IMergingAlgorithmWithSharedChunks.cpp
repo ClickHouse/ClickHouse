@@ -41,7 +41,9 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
         sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
     }
 
-    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors);
+    /// A single-column key without a collation compares cheaply even through the generic
+    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, sortDescriptionCompareIsExpensive(description));
 }
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)
