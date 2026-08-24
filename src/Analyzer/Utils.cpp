@@ -56,6 +56,7 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <functional>
 #include <ranges>
 
 namespace DB
@@ -1245,9 +1246,47 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
     return false;
 }
 
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
+namespace
+{
+
+bool isDeterministicInScopeOfQueryTree(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+        if (!current)
+            continue;
+
+        const auto type = current->getNodeType();
+        if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+            return false;
+
+        if (const auto * function = current->as<FunctionNode>())
+        {
+            if (function->isWindowFunction() || function->isAggregateFunction())
+                return false;
+            if (function->isOrdinaryFunction())
+            {
+                auto function_base = function->getFunction();
+                if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+                    return false;
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return true;
+}
+
+void filterConjunctions(
     QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & table_expression,
+    const std::function<bool(const QueryTreeNodePtr &)> & keep,
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
@@ -1256,8 +1295,8 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     if (function->getFunctionName() != "and")
     {
-        if (hasUnknownColumn(expression, table_expression))
-            expression = nullptr;
+        if (!keep(expression))
+            expression = {};
         return;
     }
 
@@ -1272,10 +1311,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         if (auto * function_node = node->as<FunctionNode>())
         {
             if (function_node->getFunctionName() == "and")
-                std::ranges::copy(
-                    function_node->getArguments(),
-                    std::back_inserter(processing)
-                );
+                std::ranges::copy(function_node->getArguments(), std::back_inserter(processing));
             else
                 conjunctions.push_back(node);
         }
@@ -1289,7 +1325,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     for (const auto & node : processing)
     {
-        if (!hasUnknownColumn(node, table_expression))
+        if (keep(node))
             conjunctions.push_back(node);
     }
 
@@ -1309,6 +1345,29 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     const auto function_impl = FunctionFactory::instance().get("and", context);
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+}
+
+}
+
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    filterConjunctions(
+        expression,
+        [&](const QueryTreeNodePtr & node) { return !hasUnknownColumn(node, table_expression); },
+        context);
+}
+
+void removeExpressionsThatAreNotDeterministicInScopeOfQuery(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context)
+{
+    if (!expression)
+        return;
+
+    filterConjunctions(expression, isDeterministicInScopeOfQueryTree, context);
 }
 
 namespace

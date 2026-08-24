@@ -236,6 +236,12 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
+/** Remove conjuncts that are not deterministic in the current query (`rand`, and similar).
+  * Nested `and` is flattened the same way as `removeExpressionsThatDoNotDependOnTableIdentifiers`.
+  */
+void removeExpressionsThatAreNotDeterministicInScopeOfQuery(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context);
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
