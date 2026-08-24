@@ -1,12 +1,14 @@
 #include <Analyzer/TrivialGroupByLimit.h>
 
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/arithmeticOverflow.h>
@@ -37,6 +39,49 @@ std::optional<UInt64> tryGetNonNegativeUInt64(const ConstantNode * node)
     return converted->getUInt(0);
 }
 
+/// `arrayJoin` can be spelled through its case-insensitive alias `unnest`, and with
+/// `normalize_function_names = 0` the alias reaches the query tree unchanged, so a literal
+/// name comparison (as in `hasFunctionNode`) would miss it. Compare canonical names instead.
+class CheckArrayJoinExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckArrayJoinExistsVisitor>
+{
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_array_join)
+            return;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    {
+        if (has_array_join)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasArrayJoin() const
+    {
+        return has_array_join;
+    }
+
+private:
+    bool has_array_join = false;
+};
+
+bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node)
+{
+    CheckArrayJoinExistsVisitor visitor;
+    visitor.visit(node);
+    return visitor.hasArrayJoin();
+}
+
 }
 
 std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Settings & settings)
@@ -56,7 +101,7 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     /// - `arrayJoin` can expand or drop rows, so `LIMIT + OFFSET` groups may produce fewer
     ///   rows than the LIMIT while more groups exist.
     /// `DISTINCT` and `QUALIFY` (checked above) collapse and filter the groups in the same way.
-    if (hasWindowFunctionNodes(query.getProjectionNode()) || hasFunctionNode(query.getProjectionNode(), "arrayJoin"))
+    if (hasWindowFunctionNodes(query.getProjectionNode()) || hasArrayJoinFunctionNode(query.getProjectionNode()))
         return std::nullopt;
 
     /// `group_by_overflow_mode` controls what happens when `max_rows_to_group_by` is exceeded.

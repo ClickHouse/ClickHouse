@@ -3,8 +3,6 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TrivialGroupByLimit.h>
-#include <Analyzer/Utils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -27,16 +25,8 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
         || hasAggregateFunctionNodes(query->getProjectionNode()))
         return;
 
-    /// Window functions and `arrayJoin` in the projection consume the aggregated rows after
-    /// GROUP BY, so the produced groups are not simply cut by LIMIT and keeping only the first
-    /// `LIMIT + OFFSET` groups changes the result:
-    /// - a window function is evaluated over all groups (`count() OVER ()` counts them);
-    /// - `arrayJoin` can expand or drop rows, so `LIMIT + OFFSET` groups may produce fewer
-    ///   rows than the LIMIT while more groups exist.
-    /// `DISTINCT` and `QUALIFY` (checked above) collapse and filter the groups in the same way.
-    if (hasWindowFunctionNodes(query->getProjectionNode()) || hasFunctionNode(query->getProjectionNode(), "arrayJoin"))
-        return;
-
+    /// The window-function and `arrayJoin` projection guards live in `getTrivialGroupByLimit`,
+    /// shared with the aggregate cutoff of the planner.
     const Settings & settings = context->getSettingsRef();
     auto max_rows = getTrivialGroupByLimit(*query, settings);
     if (!max_rows)
