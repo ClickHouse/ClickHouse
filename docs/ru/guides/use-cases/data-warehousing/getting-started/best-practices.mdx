@@ -31,9 +31,9 @@ FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
 WHERE event_date >= today() - 7
 ```
 
-Используйте вариант S3 для AWS S3 и GCS. Для Azure и локальной файловой системы предусмотрены отдельные варианты (`icebergAzure`, `icebergLocal` и эквиваленты для других форматов). Полный список см. в разделе [Прямые запросы](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly).
+Используйте вариант S3 для AWS S3 и GCS. Для Azure и локальной файловой системы предусмотрены отдельные варианты (`icebergAzure`, `icebergLocal` и эквиваленты для других форматов). Полный список см. в разделе [Прямое выполнение запросов](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly).
 
-Для [Paimon](/ru/reference/functions/table-functions/paimon) доступны только табличные функции.
+[Paimon](/ru/reference/functions/table-functions/paimon) предоставляет табличные функции и [экспериментальные движки таблиц](/ru/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### Движки таблиц
