@@ -1,92 +1,12 @@
-text	Granules: 2/250
-text global	Granules: 2/250
-tokenbf_v1	Granules: 2/250
-tokenbf_v1 global	Granules: 2/250
-ngrambf_v1	Granules: 29/250
-ngrambf_v1 global	Granules: 29/250
-text rows	1
-tokenbf_v1 rows	1
-ngrambf_v1 rows	1
-tokenbf_v1 global, transform_null_in = 0	Granules: 2/250
-tokenbf_v1 not null in used	998
-tokenbf_v1 global not in used	998
-tokenbf_v1 global not null in used	998
-ngrambf_v1 not null in used	998
-tokenbf_v1 negated global not null in	Granules: 2/250
-tokenbf_v1 not in rows	1
-tokenbf_v1 negated not in rows	1
-text null in set	11
-text null in set, transform_null_in = 0	1
-tokenbf_v1 null in subquery set rows	1
-ngrambf_v1 null in subquery set rows	1
-tokenbf_v1 null-free subquery set	Granules: 2/250
-ngrambf_v1 fixed set rows	1
-ngrambf_v1 fixed set count	1
-ngrambf_v1 fixed set rows, transform_null_in = 0	1
-tokenbf_v1 fixed set	Granules: 1/250
-tokenbf_v1 fixed set rows	1
-text fixed set rows	1
-text fixed set count	1
-text fixed set rows, transform_null_in = 0	1
-ngrambf_v1 fixed key, fixed set	Granules: 1/250
-ngrambf_v1 fixed key, fixed set rows	1
-ngrambf_v1 narrow key, wide set rows	1
-ngrambf_v1 narrow key, wide set count	1
-ipv6 text set rows	1
-ipv6 text set count	1
-ipv6 text set rows, transform_null_in = 0	1
-ipv6 own set rows	1
-array fixed key, fixed set rows	1
-array fixed key, fixed set count	1
-array fixed key, string set rows	1
-array fixed key, string set count	1
-array fixed key, string set rows, transform_null_in = 0	1
-array string key, fixed set rows	1
-array string key, fixed set count	1
-array string key, fixed set rows, transform_null_in = 0	1
-array string key, string set	Granules: 1/250
-tuple subquery set used	1
-tuple subquery set rows	1
-tuple subquery set unpacked rows	1
-preprocessor fixed set rows	1
-preprocessor fixed set count	1
-preprocessor fixed set rows, transform_null_in = 0	1
-preprocessor string set	Granules: 1/250
-map fixed set rows	1
-map fixed set count	1
-map fixed set rows, transform_null_in = 0	1
-map string set	Granules: 1/250
-preprocessor wrapped key rows	1
-preprocessor wrapped key count	1
-preprocessor wrapped key rows, transform_null_in = 0	1
-preprocessor map carrier still prunes	Granules: 1/250
-preprocessor map carrier rows	1
-preprocessor plain key still prunes	Granules: 1/250
-preprocessor folded key used	1
-preprocessor folded key rows	1
-preprocessor folded key mixed case rows	1
-preprocessor cast key used	1
-preprocessor cast key rows	1
-preprocessor cast target used	1
-preprocessor cast target rows	1
-preprocessor cast narrow fitting used	1
-preprocessor cast narrow oversized rows	1
-preprocessor cast expanding fitting used	1
-preprocessor cast expanding oversized rows	1
-preprocessor cast fixed rows	1
-preprocessor cast fixed target rows	1
-preprocessor cast nested rows	1
-map fixed default rows	1
-map fixed default rows, transform_null_in = 0	1
-map fixed stored value still prunes	143
-map nullable value used	143
-map nullable value rows	1
-json string set	Granules: 1/250
-json fixed set rows	1
-json fixed set count	1
-normalized string set	Granules: 1/250
-normalized fixed set rows	1
-sparse_grams	Granules: 29/250
-sparse_grams rows	1
-sparse_grams fixed set rows	1
-sparse_grams fixed set count	1
+Granules: 1/4
+1
+1
+Granules: 1/4
+1
+3
+Granules: 1/4
+1
+1
+1
+1
+1
