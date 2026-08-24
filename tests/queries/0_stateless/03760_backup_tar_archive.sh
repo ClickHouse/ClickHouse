@@ -5,11 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-backups_disk_root=$($CLICKHOUSE_CLIENT --query "SELECT path FROM system.disks WHERE name='backups'" 2>/dev/null)
+# Unique per run, so a previous run cannot leave an archive of this name behind.
 backup_name="${CLICKHOUSE_TEST_UNIQUE_NAME}.tar"
-
-# Clean up any leftover backup from a previous run.
-rm -rf "${backups_disk_root:?}/${backup_name}" 2>/dev/null || true
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t0 SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t1 SYNC"
@@ -26,4 +23,3 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM t1 ORDER BY c1 LIMIT 10"
 # Clean up.
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t1 SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t0 SYNC"
-rm -rf "${backups_disk_root:?}/${backup_name}" 2>/dev/null || true
