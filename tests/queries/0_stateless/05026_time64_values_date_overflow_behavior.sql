@@ -2,6 +2,10 @@
 -- which must honor `date_time_overflow_behavior` exactly like the column path used by `CAST` and
 -- `INSERT SELECT`.
 
+-- With asynchronous inserts the inline `VALUES` data is parsed on the server, otherwise on the
+-- client; pin the setting so the expected error kind below is deterministic.
+SET async_insert = 0;
+
 DROP TABLE IF EXISTS t_time64_date_overflow;
 CREATE TABLE t_time64_date_overflow (d Date) ENGINE = Memory;
 
