@@ -1136,6 +1136,28 @@ def parse_slower_count(message):
     return int(match.group(2).strip()) if match else 0
 
 
+# A genuine perf summary produced by `report.py` is either "See the report"
+# (nothing notable) or a comma-separated list of "<N> too long", "<N> faster",
+# "<N> slower", "<N> unstable" phrases. "<N> errors" is deliberately excluded:
+# a run with errors may have skipped queries, so its slower count would
+# understate the baseline. Everything else - "No status in report.",
+# "No message in report.", "Failed to parse the report.", "Errors while
+# building the report." - is a failure sentinel, not a summary.
+_PERF_SUMMARY_PART_RE = re.compile(r"^\d+ (too long|faster|slower|unstable)$")
+
+
+def is_perf_summary_message(message):
+    """Return True when a lowercased result message is a normal perf summary
+    that can serve as a slower-count baseline."""
+    # A previous run of this job appends "; delta vs prev master run (...)"
+    # to its own summary - ignore everything after the first ";".
+    summary = message.split(";")[0].strip()
+    if summary == "see the report":
+        return True
+    parts = [p.strip() for p in summary.split(",")]
+    return all(_PERF_SUMMARY_PART_RE.match(p) for p in parts)
+
+
 def too_many_slow(message):
     return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
 
@@ -1144,10 +1166,17 @@ def find_prev_master_slower_count(job_name, commits):
     """Find the "slower" query count reported by the most recent valid run of
     this job on a predecessor master commit. Returns (count, sha), or
     (None, None) when no valid previous run is found. Runs that produced no
-    report or ended with errors are skipped: their counts would inflate the
-    delta of the current run."""
+    report or whose message is not a normal perf summary (errors, sentinel
+    messages like "No status in report.") are skipped: their counts would
+    distort the delta of the current run.
+
+    `commits` on master runs is the raw GitHub `/commits` listing, which
+    interleaves merged PR side-branch commits with the first-parent chain, so
+    the walk deliberately has no cutoff: side-branch commits have no report in
+    S3 and are skipped cheaply, and truncating the list could exhaust it
+    before reaching the previous actual master run."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
-    for sha in commits[:20]:
+    for sha in commits:
         link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
         out = Shell.get_output(f"curl -sf --compressed --max-time 60 {link}")
         if not out:
@@ -1157,11 +1186,11 @@ def find_prev_master_slower_count(job_name, commits):
         except Exception:
             print(f"WARNING: failed to parse previous run result [{link}]")
             continue
-        if (
-            not prev_message
-            or "error" in prev_message.lower()
-            or "failed" in prev_message.lower()
-        ):
+        if not prev_message or not is_perf_summary_message(prev_message.lower()):
+            print(
+                f"WARNING: previous run result for {sha} is not a usable perf "
+                f"summary, skipping: {prev_message!r}"
+            )
             continue
         return parse_slower_count(prev_message.lower()), sha
     return None, None
