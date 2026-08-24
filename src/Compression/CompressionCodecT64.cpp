@@ -261,15 +261,15 @@ TypeIndex typeIdx(const IDataType * data_type)
     return TypeIndex::Nothing;
 }
 
-/** The transposes move a single byte (or a single bit) per step, so the scalar loops issue 64
-  * dependent one-byte accesses at stride 64 for every matrix. Both permutations exchange the two
-  * indices of an 8x8 tile, which a byte shuffle performs a whole vector at a time.
+/** Both transposes exchange the two indices of an 8x8 tile: the byte transpose moves the byte at
+  * 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same one
+  * level down, within a lane. The scalar loops below carry out that exchange one byte (or one bit)
+  * at a time; a byte shuffle performs it a whole vector at a time.
   *
   * The kernels are written with generic clang vectors, so no arch-specific code or runtime
-  * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence,
-  * a handful of instructions on the x86-64-v3 baseline and on NEON. Bytes are addressed in native
-  * order, so the fast path also requires a little-endian build to match the little-endian on-disk
-  * format; others fall back to the scalar loops.
+  * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence.
+  * Bytes are addressed in native order, so the fast path also requires a little-endian build to
+  * match the little-endian on-disk format; others fall back to the scalar loops.
   */
 #if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
     && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -283,8 +283,8 @@ using ByteVec [[gnu::vector_size(64)]] = UInt8;
 
 /// Move the byte at position 8 * j + b to 8 * b + j, i.e. transpose the 8x8 tile of bytes formed by
 /// eight consecutive 64-bit lanes. Self-inverse, so one helper serves both directions. The vector is
-/// passed by pointer: a 64-byte vector argument without AVX-512 changes the ABI (-Wpsabi, an error
-/// in this build).
+/// passed by pointer: a 64-byte vector argument is split across registers without AVX-512, which
+/// changes the ABI.
 template <size_t... i>
 ALWAYS_INLINE void transposeByteLanes(UInt64 * lanes, std::index_sequence<i...>)
 {
