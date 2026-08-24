@@ -111,7 +111,6 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -166,8 +165,10 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
-            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
+            "./ci/jobs/promql_compliance_job.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -176,7 +177,7 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
-        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
     ],
 )
 
@@ -212,6 +213,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
@@ -532,6 +537,43 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
+    # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
+    # the host, so it is a CMake project of its own driven by its own script in its own image -
+    # not a `BuildTypes` entry in the `Build` matrix, which `binary-builder` and
+    # `build_clickhouse.py` serve. The two post hooks the other build jobs carry are left off for
+    # the same reason: neither the master-head binary nor the build profile has a counterpart here.
+    #
+    # Nothing else in CI compiles this module, so this job is also what notices when it stops
+    # compiling - which it did within a day of being merged, twice over.
+    wasm_parser_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_wasm_parser.py",
+        run_in_docker="clickhouse/wasm-builder",
+        timeout=2 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_wasm_parser.py",
+                "./utils/wasm-parser",
+                # The closure the project names is the parser and everything it reaches, which
+                # spans most of `src` and `base` and a dozen contrib libraries. Nothing narrower
+                # than the build digest's own source paths bounds it.
+                "./src",
+                "./base",
+                "./contrib/",
+                "./.gitmodules",
+            ],
+            with_git_submodules=True,
+        ),
+        needs_submodules=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.WASM_PARSER,
+            provides=[ArtifactNames.CH_WASM_PARSER],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -662,11 +704,8 @@ class JobConfigs:
     # subset as well. If test selection cannot be fetched, the job fails instead
     # of silently running a weaker unbatched fallback configuration.
     # The selection is computed from PR-local state (including failed tests
-    # from earlier jobs) that is not part of a repository digest. Reusing a
-    # cached result could therefore skip a different selection; keep these
-    # jobs uncached.
+    # from earlier jobs).
     selected_ft_job_config = common_ft_job_config.copy()
-    selected_ft_job_config.digest_config = None
     stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
@@ -1138,6 +1177,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1738,10 +1781,7 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
                 "./ci/jobs/parser_memory_check.py",
-                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
@@ -1783,15 +1823,7 @@ class JobConfigs:
     # Compares the PR's arm_release build profile (binary and per-object sizes,
     # per-symbol sizes, compile and link time down to individual functions and
     # template instantiations) against the latest master build, and posts a PR
-    # comment when the change is significant. The data comes from the CI logs
-    # cluster: the PR side is uploaded by the arm_release build post-hook
-    # (build_profile_hook.py), the master side by master workflow builds.
-    # No digest_config, i.e. not cacheable: the job's output is a PR comment
-    # about one concrete commit (it embeds the head sha and links this run's
-    # report). Reusing a cached result would leave that comment describing an
-    # older commit of the PR - including a change that the head has already
-    # reverted - so the comparison is redone for every head. The job is cheap:
-    # it only queries the CI logs cluster.
+    # comment when the change is significant.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1801,6 +1833,9 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         requires=["Build (arm_release)"],
         command="python3 ./ci/jobs/build_profile_diff_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_profile_diff_job.py"],
+        ),
         timeout=1800,
         enable_gh_auth=True,
         # Run on a red head too. This job is the only writer of the
@@ -1847,6 +1882,27 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+    promql_compliance_job = Job.Config(
+        name=JobNames.PROMQL_COMPLIANCE,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        run_in_docker="clickhouse/test-base",
+        # Wait for integration upload post-hooks, including failed integration jobs.
+        run_after=[
+            j.name
+            for j in (
+                integration_test_jobs_required + integration_test_jobs_non_required
+            )
+        ],
+        command="python3 ./ci/jobs/promql_compliance_job.py",
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
+        ],
+        # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
+        # would skip later labeled PRs after one successful run.
+        timeout=600,
+        enable_gh_auth=True,
+        allow_failure=True,
     )
 
     sign_macos_binary_jobs = Job.Config(
