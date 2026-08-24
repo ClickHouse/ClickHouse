@@ -2,12 +2,9 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -23,10 +20,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
-    if (parseCheckTable(pos, node, expected))
-        return true;
-
-    return parseCheckDatabase(pos, node, expected);
+    return parseCheckTable(pos, node, expected);
 }
 
 bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expected)
@@ -72,74 +66,6 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
     node = query;
     return true;
-}
-
-bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_check_database(Keyword::CHECK_DATABASE);
-
-    if (!s_check_database.ignore(pos, expected))
-        return false;
-
-    auto query = make_intrusive<ASTCheckDatabaseQuery>();
-
-    if (!parseDatabaseAsAST(pos, expected, query->database))
-        return false;
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    node = query;
-    return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementCheck(StatementFactory & factory)
-{
-    factory.registerStatement("CHECK TABLE",
-    {
-        .description = R"(
-Performs a validation check on a table or on its partitions or parts. It verifies the checksums and the other internal
-data structures, in particular it compares the actual file sizes with the expected values stored on the server.
-
-**Examples**
-
-**Check a table**
-
-```sql title="Query"
-CHECK TABLE test_table;
-```
-)",
-        .syntax = R"(
-CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
-)",
-        .related = {"CHECK DATABASE", "SYSTEM", "OPTIMIZE"},
-    });
-
-    factory.registerStatement("CHECK DATABASE",
-    {
-        .description = R"(
-Verifies the health of a database. Its primary use is with the `DataLakeCatalog` database engine, where it checks that
-the external catalog backing the database is reachable and that its list of tables can be retrieved. This is a
-lightweight probe: it confirms connectivity and authentication without reading any table data.
-
-**Examples**
-
-**Check a database**
-
-```sql title="Query"
-CHECK DATABASE datalake;
-```
-)",
-        .syntax = R"(
-CHECK DATABASE database_name
-)",
-        .related = {"CHECK TABLE", "CREATE DATABASE"},
-    });
 }
 
 }

@@ -7,8 +7,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -24,21 +22,6 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
 
     auto old_pos = pos;
-
-    // `select` (case-insensitive) as a bareword is disallowed as a CTE name
-    // because it creates ambiguity with the SELECT keyword that follows the WITH clause.
-    // This check must happen before the CTE/expression parsing below, because if CTE parsing
-    // rejects `select` and falls through to the expression path, `WITH select AS foo` would be
-    // silently reinterpreted as an expression alias instead of producing an error.
-    if (ASTPtr ident; s_ident.parse(pos, ident, expected))
-    {
-        String name;
-        if (tryGetIdentifierNameInto(ident, name)
-            && old_pos->type == TokenType::BareWord
-            && strcasecmp(name.c_str(), "select") == 0)
-            return false;
-    }
-    pos = old_pos;
 
     // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
     if (ASTPtr cte_name, aliases;
@@ -88,37 +71,5 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementWith(StatementFactory & factory)
-{
-    factory.registerStatement("WITH",
-    {
-        .description = R"(
-Defines common table expressions (CTE), common scalar expressions and recursive queries, which can be referenced by
-the rest of the query. A `WITH RECURSIVE` clause allows the common table expression to reference itself.
-
-**Examples**
-
-**Define a common table expression**
-
-```sql title="Query"
-WITH t AS (SELECT number AS n FROM numbers(10))
-SELECT sum(n) FROM t;
-```
-)",
-        .syntax = R"(
-WITH <expression> AS <identifier>
-WITH <identifier> AS [MATERIALIZED] <subquery expression>
-WITH RECURSIVE <identifier> AS <subquery expression>
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "FROM", "CREATE VIEW"},
-    });
-}
 
 }

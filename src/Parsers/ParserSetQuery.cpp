@@ -8,10 +8,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -156,7 +155,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -217,16 +216,12 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
+    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        auto pos_before_func = pos;
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-        {
-            tryGetIdentifierNameInto(name, change.name);
-            change.value = createFieldFromAST(function_ast);
+        tryGetIdentifierNameInto(name, change.name);
+        change.value = createFieldFromAST(function_ast);
 
-            return true;
-        }
-        pos = pos_before_func;
+        return true;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -248,7 +243,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq = false;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
@@ -290,32 +285,12 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         }
 
         /// Setting
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
         {
-            auto pos_before_func = pos;
-            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-            {
-                change.name = name;
-                change.value = createFieldFromAST(function_ast);
+            change.name = name;
+            change.value = createFieldFromAST(function_ast);
 
-                return true;
-            }
-            pos = pos_before_func;
-        }
-
-        /// Query parameter as a setting value, e.g. `SET max_threads = {threads:UInt64}`
-        /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
-        /// Keep it as an ASTQueryParameter wrapped into a Field (same mechanism as disk(...) above);
-        /// it is resolved later by ReplaceQueryParameterVisitor once parameter values are known.
-        {
-            ParserSubstitution substitution_p;
-            ASTPtr substitution;
-            if (substitution_p.parse(pos, substitution, expected))
-            {
-                change.name = name;
-                change.value = createFieldFromAST(substitution);
-
-                return true;
-            }
+            return true;
         }
 
         if (!value_p.parse(pos, node, expected))
@@ -323,15 +298,22 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
     else
     {
-        /// A setting name with no value is shorthand for `= true`. Only a Bool setting can be
-        /// written this way, but the parser does not know the settings schema, so it records that
-        /// the value was omitted and leaves the check to `BaseSettings::applyChange`.
-        node = make_intrusive<ASTLiteral>(Field(true));
+        try
+        {
+            Field type_test = Settings::castValueUtil(name, true);
+            if (type_test.getType() == Field::Types::Which::Bool)
+                node = make_intrusive<ASTLiteral>(Field(true));
+            else
+                return false;
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
     }
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
-    change.shorthand = !have_eq;
 
     return true;
 }
@@ -351,30 +333,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
-
-        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
-        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
-        {
-            ParserToken eq(TokenType::Equals);
-            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
-            ASTPtr value_node;
-            ParserLiteralOrMap literal_parser;
-
-            if (!literal_parser.parse(pos, value_node, expected))
-                return false;
-
-            auto query = make_intrusive<ASTSetQuery>();
-            node = query;
-
-            query->is_standalone = !parse_only_internals;
-
-            SettingChange change;
-            change.name = "session_timezone";
-            change.value = value_node->as<ASTLiteral &>().value;
-            query->changes.push_back(std::move(change));
-
-            return true;
-        }
     }
 
     SettingsChanges changes;
@@ -412,36 +370,5 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementSet(StatementFactory & factory)
-{
-    factory.registerStatement("SET",
-    {
-        .description = R"(
-Assigns a value to a setting for the current session. Server settings cannot be changed this way. Assigning a value to
-the setting `profile` applies all the settings of the given settings profile at once.
-
-The settings of a session are shown in `system.settings`.
-
-**Examples**
-
-**Change a setting for the session**
-
-```sql title="Query"
-SET max_threads = 4;
-```
-)",
-        .syntax = R"(
-SET param = value
-SET profile = 'profile-name-from-the-settings-file'
-)",
-        .related = {"SET ROLE", "CREATE SETTINGS PROFILE", "SHOW", "ALTER TABLE ... MODIFY SETTING"},
-    });
-}
 
 }

@@ -5,8 +5,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -35,7 +33,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_force(Keyword::FORCE);
     ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
     ParserKeyword s_cleanup(Keyword::CLEANUP);
-    ParserKeyword s_manifest(Keyword::MANIFEST);
     ParserKeyword s_by(Keyword::BY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
@@ -49,7 +46,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     bool final = false;
     bool deduplicate = false;
     bool cleanup = false;
-    bool manifest = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -94,9 +90,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_cleanup.ignore(pos, expected))
         cleanup = true;
 
-    if (s_manifest.ignore(pos, expected))
-        manifest = true;
-
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
     {
@@ -118,7 +111,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
     query->cleanup = cleanup;
-    query->manifest = manifest;
     query->database = database;
     query->table = table;
 
@@ -131,37 +123,5 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementOptimize(StatementFactory & factory)
-{
-    factory.registerStatement("OPTIMIZE",
-    {
-        .description = R"(
-Tries to initiate an unscheduled merge of the data parts of a table. `FINAL` merges the data even if there is only one
-part, `DEDUPLICATE` removes the duplicate rows, and `DRY RUN` only reports which parts would be merged.
-
-`OPTIMIZE TABLE ... FINAL` is meant for administration rather than for daily operations, and it cannot fix a
-`Too many parts` error.
-
-**Examples**
-
-**Merge the parts of a table**
-
-```sql title="Query"
-OPTIMIZE TABLE test FINAL;
-```
-)",
-        .syntax = R"(
-OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
-OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
-)",
-        .related = {"SYSTEM", "ALTER TABLE ... PARTITION", "CHECK TABLE"},
-    });
-}
 
 }

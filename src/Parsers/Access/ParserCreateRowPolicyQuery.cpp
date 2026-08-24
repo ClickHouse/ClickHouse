@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -268,7 +266,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         if (!is_restrictive)
         {
-            bool new_is_restrictive = false;
+            bool new_is_restrictive;
             if (parseAsRestrictiveOrPermissive(pos, expected, new_is_restrictive))
             {
                 is_restrictive = new_is_restrictive;
@@ -316,70 +314,4 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementRowPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROW POLICY",
-    {
-        .description = R"(
-Creates a row policy, i.e. a filter which determines which rows a user can read from a table. Row policies only make
-sense for users with read-only access: a user who can modify a table or copy partitions between tables can defeat the
-restrictions of a row policy.
-
-**Examples**
-
-**Restrict the visible rows of a table**
-
-```sql title="Query"
-CREATE ROW POLICY pol1 ON table1
-    FOR SELECT USING id = 1
-    TO accountant;
-```
-)",
-        .syntax = R"(
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
-    [ON CLUSTER cluster_name]
-    ON { [db.]table | db.* } [, ...]
-    [IN access_storage_type]
-    [FOR SELECT] USING condition
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
-    });
-
-    factory.registerStatement("ALTER ROW POLICY",
-    {
-        .description = R"(
-Changes a row policy: renames it and changes its condition, its kind (permissive or restrictive) and the roles and
-users it applies to.
-
-**Examples**
-
-**Rename a row policy**
-
-```sql title="Query"
-ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
-```
-)",
-        .syntax = R"(
-ALTER [ROW] POLICY [IF EXISTS] name [, ...]
-    ON { [database.]table | database.* } [, ...]
-    [RENAME TO new_name]
-    [ON CLUSTER cluster_name]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
-    });
-}
-
 }

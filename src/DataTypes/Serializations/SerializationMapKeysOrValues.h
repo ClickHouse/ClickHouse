@@ -25,15 +25,10 @@ private:
     SerializationPtr keys_or_values_serialization;
     MergeTreeMapSerializationVersion serialization_version;
 
+public:
     SerializationMapKeysOrValues(
         const SerializationPtr & keys_or_values_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
-
-public:
-    static UInt128 getHash(const SerializationPtr & keys_or_values_serialization_, MergeTreeMapSerializationVersion serialization_version_);
-    static SerializationPtr create(const SerializationPtr & keys_or_values_serialization_, MergeTreeMapSerializationVersion serialization_version_);
-
-    bool supportsPooling() const override { return keys_or_values_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

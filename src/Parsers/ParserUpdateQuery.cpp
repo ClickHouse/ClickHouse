@@ -5,8 +5,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserPartition.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -95,37 +93,6 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     add_to_children(query->settings_ast);
 
     return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementUpdate(StatementFactory & factory)
-{
-    factory.registerStatement("UPDATE",
-    {
-        .description = R"(
-Updates the rows matching the filter expression in a table.
-
-It is called a lightweight `UPDATE` to contrast it with `ALTER TABLE ... UPDATE`: the new values are written into patch
-parts and applied on the fly when the data is read, whereas the affected data parts are rewritten later by merges or by
-`ALTER TABLE ... APPLY PATCHES`.
-
-**Examples**
-
-**Update the rows matching a condition**
-
-```sql title="Query"
-UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
-```
-)",
-        .syntax = R"(
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
-)",
-        .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
-    });
 }
 
 }

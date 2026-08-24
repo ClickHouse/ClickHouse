@@ -1,92 +1,30 @@
 import dataclasses
 import re
-import runpy
-import signal
 import traceback
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from praktika.result import Result
 
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "
+TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
-NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
+SERVER_DIED_SIGN = "Server died, terminating all processes"
+SERVER_DIED_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
 
-# Pick up the runner exit codes straight from `tests/clickhouse-test` so
-# the contract has a single source of truth.
-_clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
-_clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
-STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
-GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
-MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
-HUNG_CHECK_EXIT_CODE = _clickhouse_test_globals["HUNG_CHECK_EXIT_CODE"]
-
-# Synthetic leaf names for an aborted run, keyed by exit code. The liveness name
-# claims only what its probe establishes - the check failed - because the check
-# also fails on a non-200 *response*.
-ABORTED_RUN_DEFAULT_LEAF = "Server died"
-ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
-
-# Exit codes that mean the run was aborted mid-flight, so per-test results
-# (if any) are incomplete and we cannot trust which test "caused" the
-# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
-# raised `StopTesting` and reached the outer handler. The kill-by-signal
-# variants cover the out-of-band cases where the parent was killed before
-# it could exit through that handler (currently reachable via the
-# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
-# parent terminates re-broadcasts SIGTERM to the whole process group via
-# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
-# also covers external kills like job-level timeouts and runner shutdown).
-#
-# Both `128 + N` (bash's convention when its child died from signal N) and
-# the negative form `-N` are included: `Shell.run` wraps the command in
-# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
-# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
-# wrapper bash can itself die from the signal — and Python's
-# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
-#
-# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
-# checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
-# that run AFTER all tests have finished. Per-test results in that case are
-# complete and authoritative and must not be demoted.
-# `MAX_FAILURES_EXIT_CODE` is likewise excluded: the run stopped early because
-# too many tests failed, but the server is alive and those failures are real
-# and already attributed - so they must be reported as FAIL, not "Server died".
-# `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
-# for the other members, so the same demotion applies; only the synthetic leaf's
-# name differs.
-ABORTED_RUN_EXIT_CODES = frozenset(
-    {
-        STOP_TESTING_EXIT_CODE,
-        HUNG_CHECK_EXIT_CODE,
-        128 + signal.SIGTERM,  # 143
-        128 + signal.SIGKILL,  # 137
-        -signal.SIGTERM,  # -15
-        -signal.SIGKILL,  # -9
-    }
-)
-
-NO_TESTS_SIGN = "No tests were run"
-NO_TESTS_FILTERED_OUT_SIGN = (
-    "No tests were run because every explicitly requested test was filtered out"
-)
-SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
+SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
-# Regex pattern to match test result lines.
-# The shape `name: [ STATUS ] N.NN sec.` is specific enough that we don't pin
-# the leading timestamp or the counter - the bounded `^.{0,36}?` lets through
-# any expected framing (raw=0, `ts`=20, `[YYYY-MM-DD HH:MM:SS] `=22) but rules
-# out matches embedded deeper in an error/exception message (see PR #88825).
-# Test names can contain letters, digits, underscores, hyphens, and dots.
+# Regex pattern to match test result lines
+# Format: "2025-10-21 04:08:13 test_name: [ STATUS ] time sec."
+# This ensures we only match actual test result lines, not patterns embedded in error messages
+# Note: Test names can contain letters, digits, underscores, hyphens, and dots
 TEST_RESULT_PATTERN = re.compile(
-    r"^.{0,36}?"
-    r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
 )
 
 
@@ -100,9 +38,9 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
+        server_died: bool = False
         retries: bool = False
         success_finish: bool = False
-        no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
@@ -116,9 +54,9 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
+        server_died = False
         retries = False
         success_finish = False
-        no_tests_run = False
         test_results = []
         test_end = True
 
@@ -129,13 +67,13 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
-                if NO_TESTS_FILTERED_OUT_SIGN in line:
-                    no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
                 if HUNG_SIGN in line:
                     hung = True
                     break
+                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
+                    server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -156,17 +94,15 @@ class FTResultsProcessor:
                         continue
 
                     total += 1
-                    if FAIL_SIGN in status_marker:
+                    if TIMEOUT_SIGN in status_marker:
+                        failed += 1
+                        test_results.append((test_name, "Timeout", test_time, []))
+                    elif FAIL_SIGN in status_marker:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
                     elif UNKNOWN_SIGN in status_marker:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
-                    elif NOT_FAILED_SIGN in status_marker:
-                        # Test was on a blacklist (expected to fail) but passed -
-                        # the blacklist needs updating. Surface as a failure.
-                        failed += 1
-                        test_results.append((test_name, "NOT_FAILED", test_time, []))
                     elif SKIPPED_SIGN in status_marker:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
@@ -176,7 +112,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] in ("FAIL", "SKIPPED", "NOT_FAILED")
+                    and test_results[-1][1] in ("FAIL", "SKIPPED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -199,7 +135,7 @@ class FTResultsProcessor:
                         info="".join(test[3])[:16384],
                     )
                 )
-            except Exception:
+            except Exception as e:
                 print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
                 self.debug_files.append(self.tests_output_file)
@@ -226,141 +162,51 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
+            server_died=server_died,
             success_finish=success_finish,
-            no_tests_run=no_tests_run,
             retries=retries,
         )
 
         return s
 
-    def run(
-        self,
-        task_name="Tests",
-        runner_exit_code: Optional[int] = None,
-        is_bugfix_validation: bool = False,
-        allow_no_tests: bool = False,
-    ):
-        state = Result.Status.OK
+    def run(self, task_name="Tests"):
+        state = Result.Status.SUCCESS
         s = self._process_test_output()
         test_results = s.test_results
 
-        if s.no_tests_run and allow_no_tests and not s.hung:
-            # The job was given an explicit list of tests (flaky, targeted or
-            # `selected tests` run), and `clickhouse-test` explicitly proved it
-            # filtered every one of them out - e.g. all are tagged `no-tsan` in a
-            # TSan job. A generic "No tests were run" banner is not sufficient:
-            # it is also printed after runner-level failures before the first test.
-            return Result.create_from(
-                name=task_name,
-                results=test_results,
-                status=Result.Status.SKIPPED,
-                info="No tests to run - every selected test is filtered out in this job flavor",
-            )
-
         if s.failed != 0 or s.unknown != 0:
-            state = Result.Status.FAIL
+            state = Result.Status.FAILED
 
         info = ""
         if s.hung:
-            state = Result.Status.FAIL
+            state = Result.Status.FAILED
             test_results.append(
-                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+                Result("Some queries hung", "FAIL", info="Some queries hung")
             )
-        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
-            state = Result.Status.FAIL
+        elif s.server_died:
+            state = Result.Status.FAILED
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
-                # Multiple tests failed before the run was aborted - this is a
-                # parallel run where we can't tell which test (if any) caused it.
+                # Multiple tests failed when the server died - this is a parallel
+                # run where we can't tell which test (if any) caused the crash.
                 # Mark them all as UNKNOWN so they don't pollute failure reports.
-                # The actual failure is captured by the synthetic leaf below and
-                # by the LOGICAL_ERROR entries added from the server log.
+                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                # entry added from the server log.
                 for result in failed_results:
-                    result.status = Result.Status.UNKNOWN
+                    result.status = Result.StatusExtended.UNKNOWN
             elif len(failed_results) == 1:
-                # Exactly one FAIL was captured before the abort. The runner may
-                # still have been parallel (`--jobs` is always passed), so this
-                # is best-effort attribution of the culprit, not proof of a
-                # single-test sequential run. Demote it to ERROR so a test that
-                # merely witnessed the abort is not reported as an ordinary test
-                # failure - except in bugfix validation, where the job runs only
-                # the PR's own changed tests: a server death or hang while they
-                # run is the expected reproduction of the bug regardless of
-                # which of them got its FAIL printed first, so keep the FAIL for
-                # `invert_bugfix_validation_status` instead of tripping its
-                # fail-closed ERROR guard and reporting the run inconclusive
-                # (#105789). This matches the >1-failed path (UNKNOWN rows +
-                # flipped synthetic row), which already validates the
-                # parallel-crash case. Accepted tradeoff:
-                # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
-                # 128+SIGKILL from an OOM of the runner), so in bugfix
-                # validation such an abort with a single failed test reads as
-                # a reproduction too.
-                if not is_bugfix_validation:
-                    failed_results[0].status = Result.Status.ERROR
-            leaf = (
-                ABORTED_RUN_LIVENESS_LEAF
-                if runner_exit_code == HUNG_CHECK_EXIT_CODE
-                else ABORTED_RUN_DEFAULT_LEAF
-            )
-            test_results.append(Result(leaf, Result.Status.FAIL, info=leaf))
-        elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
-            # The run stopped early because too many tests failed
-            # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
-            # branch above, the server is alive and the parsed failures are real
-            # and correctly attributed - so leave them as FAIL (do not demote to
-            # UNKNOWN, do not synthesize a "Server died" leaf) and just add an
-            # informational summary. `state` stays FAIL from the parsed failures.
-            state = Result.Status.FAIL
-            test_results.append(
-                Result(
-                    "Too many test failures",
-                    Result.Status.FAIL,
-                    info="Stopped early after reaching the --max-failures limit. The failing tests above are the real failures.",
-                )
-            )
-        elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
-            # The run stopped gracefully because the global time limit was
-            # reached. This is the *expected* stop condition for the flaky and
-            # targeted checks, which rerun the selected tests until the time
-            # budget is exhausted - not a failure. Real test failures and hung
-            # queries are still reported through the branches above (they set
-            # `state` to FAIL regardless), so here we only add an informational
-            # leaf and leave `state` as computed from the parsed results.
-            test_results.append(
-                Result(
-                    "Global time limit reached",
-                    Result.Status.OK,
-                    info="Stopped after reaching the time budget - the expected stop condition for this check.",
-                )
-            )
+                # Single test failed - sequential run, this test is the culprit.
+                failed_results[0].status = Result.StatusExtended.ERROR
+            test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
+                Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
             )
         else:
             pass
-
-        # The runner's exit code is the authoritative signal: if `clickhouse-test`
-        # exited non-zero, the job must not report OK even when log parsing finds
-        # nothing to blame. The synthetic leaf is added only when the parser
-        # found nothing - otherwise the real failure already explains the result
-        # and a duplicate entry is just noise.
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
-        # stop (handled above), not a failure, even though it is non-zero.
-        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
-            if state == Result.Status.OK:
-                state = Result.Status.FAIL
-                test_results.append(
-                    Result(
-                        name="clickhouse-test",
-                        status=Result.Status.FAIL,
-                        info=f"clickhouse-test exited with code {runner_exit_code}",
-                    )
-                )
 
         if not info:
             info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
