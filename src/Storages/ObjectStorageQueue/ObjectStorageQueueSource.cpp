@@ -1832,7 +1832,7 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
         failed_paths_set.insert(path);
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified] : processed_files)
     {
         try
         {
