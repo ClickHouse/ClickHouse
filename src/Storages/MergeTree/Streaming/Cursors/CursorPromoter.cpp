@@ -1,12 +1,12 @@
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
+
+#include <base/defines.h>
 
 #include <fmt/core.h>
 
 #include <boost/algorithm/string/join.hpp>
 
 #include <vector>
-
-#include <base/defines.h>
 
 namespace DB
 {

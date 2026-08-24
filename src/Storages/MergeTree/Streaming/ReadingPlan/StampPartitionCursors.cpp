@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/StreamingChunkCursor.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 
 #include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>
@@ -30,12 +30,12 @@ ITransformingStep::Traits getCursorBuildTraits(bool unordered)
     };
 }
 
-/// Sets StreamingChunkCursorInfo for each chunk; the cursor is computed by the derived class.
+/// Sets PartitionCursorInfo for each chunk; the cursor is computed by the derived class.
 /// It is assumed that a chunk originates from a single partition.
-class BuildStreamingChunkCursorTransformBase : public ISimpleTransform
+class StampPartitionCursorsTransformBase : public ISimpleTransform
 {
 public:
-    explicit BuildStreamingChunkCursorTransformBase(SharedHeader header_)
+    explicit StampPartitionCursorsTransformBase(SharedHeader header_)
         : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
         , pos_partition_id(header_->getPositionByName(PartitionIdColumn::name))
         , pos_block_number(header_->getPositionByName(BlockNumberColumn::name))
@@ -43,7 +43,7 @@ public:
     {
     }
 
-    String getName() const override { return "BuildStreamingChunkCursor"; }
+    String getName() const override { return "StampPartitionCursors"; }
 
     void transform(Chunk & chunk) override
     {
@@ -53,7 +53,7 @@ public:
 
         const auto & cols = chunk.getColumns();
 
-        auto info = std::make_shared<StreamingChunkCursorInfo>();
+        auto info = std::make_shared<PartitionCursorInfo>();
         info->partition_id = String(cols[pos_partition_id]->getDataAt(0));
         info->cursor = computeChunkCursor(cols, rows);
 
@@ -75,10 +75,10 @@ private:
 };
 
 /// Ordered stream: rows are already sorted by cursor, so the last row carries the chunk's cursor.
-class BuildStreamingChunkCursorTransform : public BuildStreamingChunkCursorTransformBase
+class StampPartitionCursorsTransform : public StampPartitionCursorsTransformBase
 {
 public:
-    using BuildStreamingChunkCursorTransformBase::BuildStreamingChunkCursorTransformBase;
+    using StampPartitionCursorsTransformBase::StampPartitionCursorsTransformBase;
 
 private:
     PartitionCursor computeChunkCursor(const Columns & cols, size_t rows) const override
@@ -88,10 +88,10 @@ private:
 };
 
 /// Unordered stream: rows are not sorted by cursor, so take the maximum cursor in the chunk.
-class BuildUnorderedStreamingChunkCursorTransform : public BuildStreamingChunkCursorTransformBase
+class StampPartitionCursorsUnorderedTransform : public StampPartitionCursorsTransformBase
 {
 public:
-    using BuildStreamingChunkCursorTransformBase::BuildStreamingChunkCursorTransformBase;
+    using StampPartitionCursorsTransformBase::StampPartitionCursorsTransformBase;
 
 private:
     PartitionCursor computeChunkCursor(const Columns & cols, size_t rows) const override
@@ -105,30 +105,31 @@ private:
 
 }
 
-BuildStreamingChunkCursorStep::BuildStreamingChunkCursorStep(SharedHeader input_header_, bool unordered_)
+StampPartitionCursorsStep::StampPartitionCursorsStep(SharedHeader input_header_, bool unordered_)
     : ITransformingStep(input_header_, input_header_, getCursorBuildTraits(unordered_))
     , unordered(unordered_)
 {
 }
 
-void BuildStreamingChunkCursorStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void StampPartitionCursorsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([is_unordered = unordered](const SharedHeader & header) -> ProcessorPtr
     {
         if (is_unordered)
-            return std::make_shared<BuildUnorderedStreamingChunkCursorTransform>(header);
-        return std::make_shared<BuildStreamingChunkCursorTransform>(header);
+            return std::make_shared<StampPartitionCursorsUnorderedTransform>(header);
+
+        return std::make_shared<StampPartitionCursorsTransform>(header);
     });
 }
 
-void BuildStreamingChunkCursorStep::updateOutputHeader()
+void StampPartitionCursorsStep::updateOutputHeader()
 {
     output_header = input_headers.front();
 }
 
-QueryPlanStepPtr BuildStreamingChunkCursorStep::clone() const
+QueryPlanStepPtr StampPartitionCursorsStep::clone() const
 {
-    return std::make_unique<BuildStreamingChunkCursorStep>(*this);
+    return std::make_unique<StampPartitionCursorsStep>(*this);
 }
 
 }
