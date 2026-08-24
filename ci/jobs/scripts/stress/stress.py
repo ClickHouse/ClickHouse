@@ -310,7 +310,12 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             # equality join with NOT_IMPLEMENTED.
             selected.append("hash")
         client_options.append("join_algorithm='{}'".format(",".join(selected)))
-        if "auto" in selected:
+        if selected[0] == "auto":
+            # The low limit makes auto switch from hash to partial_merge. It is safe
+            # only when auto is actually selected: the planner takes the first
+            # buildable algorithm from the list, and max_rows_in_join applies to
+            # every join implementation, so with e.g. 'hash,auto' the hash join
+            # would run under the cap and fail with SET_SIZE_LIMIT_EXCEEDED.
             client_options.append("max_rows_in_join=1000")
 
     # Rarely enable the query cache; independently, half the time also pin the
