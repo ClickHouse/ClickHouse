@@ -4002,7 +4002,7 @@ Example value: 'DiskS3ReadMicroseconds,DiskS3ReadRequestsCount,SelectQueryTimeMi
 
 Using this setting allows more precise collection of data for a large number of queries, because otherwise the vast amount of events can overflow the internal system log queue and some portion of them will be dropped.
 
-The names are checked against [system.events](/reference/system-tables/events), and a query fails if the list mentions an event that does not exist.
+The names are checked against [`system.events`](/reference/system-tables/events), and a query fails if the list mentions an event that does not exist.
 )", 0) \
     \
     DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
