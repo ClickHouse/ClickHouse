@@ -76,37 +76,17 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
 
-    /// Distribute the memory and thread budgets among stages.
-    /// The distribution is static to make sure no stage gets starved if others eat all the resources.
-    /// E.g. if the budget was shared among all stages, maybe ColumnData could run far ahead and eat
-    /// all the memory, starving the small index reads that other row groups need to make progress.
+    /// Static per-stage memory and thread budgets so no stage starves the others (e.g. ColumnData
+    /// eating all memory and blocking the small index reads other row groups need).
     ///
-    /// The values below are relative weights, not fractions: they need not sum to 1 (the memory weights
-    /// sum to 20, the thread weights to 8). The normalization loop right after divides each by the
-    /// per-resource sum to turn them into the actual budget fractions stored in the Stage. A stage then
-    /// gets `weight/sum` of the query-global memory watermark and of the parsing thread pool (further
-    /// divided across files read in parallel, see `getLimitsPerReader`).
-    ///
-    /// Memory and threads are budgeted separately (an earlier single 0.2 fraction capped ColumnData at
-    /// 0.2 of *both*, so only ~2 row groups were read/decoded ahead) because they answer two different
-    /// questions, and the weights follow from those:
-    ///
-    /// Threads = "does a task in this stage occupy a CPU?" Index/bloom/prefetch tasks only *issue* an
-    /// async read - they return immediately and the actual IO runs in the Prefetcher's own io pool - so
-    /// 1 slot each is enough to keep issuing and extra slots buy nothing. Decode (ColumnData) is real
-    /// CPU work (decompress + decode), so it gets the majority (3 of 8) to overlap several row groups
-    /// without monopolizing the pool and starving the cheap read-issuing stages.
-    ///
-    /// Memory = "how much outstanding work does a byte here buy?" ColumnDataPrefetch holds *compressed*
-    /// pages in flight, i.e. the read-ahead depth (~bandwidth-delay product): high-RTT S3 needs many
-    /// GETs outstanding to hide latency, and compressed pages are small, so memory here buys the most
-    /// concurrency per byte - hence the largest share (9). ColumnData holds *decoded* columns, which are
-    /// far larger per row group, so it is bounded (6) to keep resident decoded groups from blowing the
-    /// budget. Index/bloom footprints are tiny (a few KB per row group), so they get just a floor to
-    /// keep a few row groups' indexes resident for pipelining; BloomFilterBlocksOrDictionary gets 2 vs
-    /// 1 because dictionary/bloom blocks are larger than headers and offset indexes.
-    ///
-    /// The exact integers are relative priorities tuned empirically on high-RTT S3, not derived constants.
+    /// Values are relative weights, not fractions; the normalization loop below divides each by the
+    /// per-resource sum to get the actual fraction of the memory watermark / parsing pool per stage.
+    /// Memory and threads are weighted separately (a single shared fraction coupled them, capping
+    /// read-ahead and decode together): ColumnDataPrefetch holds small compressed pages, so it gets
+    /// the most memory to keep many GETs outstanding and hide S3 latency; ColumnData holds large
+    /// decoded columns, so its memory is bounded but it gets most threads (decode is the real CPU
+    /// work). Index/bloom stages only issue async reads, so 1 thread and a small memory floor each.
+    /// Integers are empirical priorities, not derived constants.
     auto set_weights = [&](ReadStage s, double memory_weight, double thread_weight)
     {
         stages[size_t(s)].memory_target_fraction = memory_weight;
@@ -822,11 +802,9 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 if (row_subgroup.filter.rows_pass == 0)
                     break;
-                /// Determine which data pages this subgroup needs and queue their reads. The
-                /// startPrefetch at the end of this function issues them against the Prefetcher's io
-                /// pool and charges the compressed bytes to the ColumnDataPrefetch stage budget -
-                /// separate from the decoded-output budget (ColumnData) - so many row groups can have
-                /// their reads in flight (deep prefetch) while only a few are decoded at once.
+                /// Queue this subgroup's data-page reads; startPrefetch (below) issues them and charges
+                /// compressed bytes to the ColumnDataPrefetch budget, separate from the decode budget,
+                /// so many row groups prefetch ahead while only a few decode at once.
                 reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
@@ -851,9 +829,8 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
                 if (row_subgroup.filter.rows_pass == 0)
                     break;
-                /// The data-page reads were already issued in ColumnDataPrefetch (and are in flight or
-                /// done in the Prefetcher). Here we only reserve the estimated decoded-output memory
-                /// against the ColumnData budget; runTask then decodes from those buffers.
+                /// Reads already issued in ColumnDataPrefetch; here just reserve estimated decoded-output
+                /// memory against the ColumnData budget (runTask decodes from those buffers).
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
                 size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
@@ -877,17 +854,10 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
 
     reader.prefetcher.startPrefetch(prefetches, &diff);
 
-    /// We want to detect tiny tasks to group them together to reduce scheduling overhead.
-    /// Use the predicted memory usage as a rough estimate of how long a task will take.
-    /// E.g. main data read task's memory estimate consists of the input page sizes and the output
-    /// column size; the run time is also roughly proportional to these sizes.
-    /// Hope it's a good enough proxy in all cases.
-    ///
-    /// Exception: ColumnDataPrefetch tasks do all their work (startPrefetch) synchronously here and
-    /// have an empty runTask, so their run time is ~0 regardless of how many compressed bytes they
-    /// charge. Reporting the (large) charged bytes as the cost would make the batching split them
-    /// across many batches - i.e. many thread-pool dispatches for tasks that do nothing on the
-    /// thread. Report cost 0 so they collapse into a single batch.
+    /// Group tiny tasks to reduce scheduling overhead, using predicted memory as a proxy for run time.
+    /// Exception: ColumnDataPrefetch does its work (startPrefetch) here and has an empty runTask, so
+    /// its run time is ~0 no matter how many compressed bytes it charges; report cost 0 so these tasks
+    /// collapse into one batch instead of being split across many no-op thread-pool dispatches.
     ssize_t memory_after = diff.by_stage[size_t(diff.cur_stage)];
     task.cost_estimate_bytes = task.stage == ReadStage::ColumnDataPrefetch
         ? 0
@@ -967,9 +937,8 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnDataPrefetch:
-                /// The compressed data-page reads were already issued in scheduleTask (startPrefetch)
-                /// and proceed asynchronously in the Prefetcher's io pool. Nothing to do here; the
-                /// subgroup advances to ColumnData, which decodes from those buffers.
+                /// Reads were issued in scheduleTask (startPrefetch) and run async in the Prefetcher;
+                /// nothing to do here. The subgroup advances to ColumnData, which decodes them.
                 break;
             case ReadStage::ColumnData:
             {
