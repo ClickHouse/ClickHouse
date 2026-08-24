@@ -107,7 +107,7 @@ INNER JOIN
     WHERE database = 'system' AND endsWith(table, '_log')
     GROUP BY table
 ) AS c ON c.table = t.name
-WHERE t.database = 'system' AND endsWith(t.name, '_log')
+WHERE t.database = 'system' AND endsWith(t.name, '_log') AND t.engine LIKE '%MergeTree'
 ORDER BY table
 FORMAT JSONEachRow
 """
@@ -170,9 +170,12 @@ def _adapt_create_statement(table, hash_value, statement):
     """Transform the local CREATE TABLE statement into the statement for the
     destination table on the CI Logs cluster. The transformations mirror
     setup_log_cluster.sh: add the extra columns, prepend the extra ORDER BY
-    columns, rename the table, drop TTL/SETTINGS/COMMENT."""
+    columns, rename the table, drop TTL/SETTINGS/COMMENT, strip per-column
+    comments (wide tables like system.metric_log expand into a CREATE larger
+    than the default max_query_size otherwise)."""
     result = []
     for line in statement.split("\n"):
+        line = re.sub(r" COMMENT '([^'\\]|\\.)*'", "", line)
         if re.fullmatch(r"CREATE TABLE system\.\w+_log", line):
             line = f"CREATE TABLE IF NOT EXISTS {table}_{hash_value}"
         elif line == "(":
@@ -211,6 +214,10 @@ def _run_remote_query(client_bin_path, sql, timeout=90):
         "10",
         "--distributed_ddl_task_timeout",
         "30",
+        # Wide log tables produce large CREATE statements even with the
+        # per-column comments stripped
+        "--max_query_size",
+        "33554432",
         "--distributed_ddl_output_mode",
         "throw_only_active",
     ]
@@ -320,7 +327,10 @@ def _setup_for_instance(cluster, instance):
     tables = []
     output = instance.query(
         LOG_TABLES_QUERY,
-        settings={"param_extra_columns": EXTRA_COLUMNS},
+        # formatQuery throws on statements longer than max_query_size, and the
+        # CREATE statement of a wide log table (e.g. system.metric_log with
+        # per-column comments) exceeds the default of 256 KiB
+        settings={"param_extra_columns": EXTRA_COLUMNS, "max_query_size": "33554432"},
         timeout=120,
     )
     for line in output.splitlines():
