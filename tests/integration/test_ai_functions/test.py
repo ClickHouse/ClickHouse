@@ -170,6 +170,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_refusal AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/refusal', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_refusal AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/refusal', "
@@ -500,6 +507,19 @@ def test_generate_anthropic_pause_turn_throw(started_cluster):
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
     assert "pause_turn" in error
     assert "further caller action" in error
+
+
+def test_generate_anthropic_refusal_throw(started_cluster):
+    """Anthropic reports a safety refusal as `stop_reason="refusal"`, which maps to
+    `FinishReason::ContentFilter`. The body still carries text, so accepting it would return the
+    refusal itself as the answer."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_refusal'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+    assert "refusal" in error
+    assert "withheld or filtered" in error
 
 
 def test_generate_refusal_response_throw(started_cluster):

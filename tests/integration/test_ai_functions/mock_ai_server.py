@@ -53,6 +53,8 @@ Endpoints:
   POST /v1/anthropic/context_window  — Anthropic-shaped HTTP 200 with
       `stop_reason="model_context_window_exceeded"`, also a truncated answer, but one whose remedy is
       the opposite of the `max_tokens` case.
+  POST /v1/anthropic/refusal         — Anthropic-shaped HTTP 200 with `stop_reason="refusal"`, a
+      safety refusal that must be rejected rather than returned as an answer.
   POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
       successful structured-output (forced tool call) response that must NOT be rejected.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
@@ -401,6 +403,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 200,
                 make_anthropic_response(user_msg, stop_reason="model_context_window_exceeded"),
             )
+            return
+
+        if parsed.path == "/v1/anthropic/refusal":
+            # Anthropic-shaped 200 with `stop_reason="refusal"`: the model declined to answer, so
+            # the content is not an answer and must be rejected rather than returned.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="refusal"))
             return
 
         if parsed.path == "/v1/anthropic/tool_use":
