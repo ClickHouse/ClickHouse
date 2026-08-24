@@ -69,12 +69,6 @@ private:
     WriteBuffer & out;
     CompressionCodecPtr codec;
 
-    /// If true, the size of internal buffer will be exponentially increased up to
-    /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
-    /// large buffer allocation when actual size of written data is small.
-    bool use_adaptive_buffer_size;
-    size_t adaptive_buffer_max_size;
-
     /// Current block size, growing up to adaptive_buffer_max_size.
     size_t block_size;
 

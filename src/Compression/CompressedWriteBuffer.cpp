@@ -134,13 +134,12 @@ void CompressedWriteBuffer::finalizeImpl()
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buf_size) : buf_size)
+    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buf_size))
     , out(out_)
     , codec(std::move(codec_))
-    , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-    , adaptive_buffer_max_size(buf_size)
     , block_size(memory.size())
 {
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
