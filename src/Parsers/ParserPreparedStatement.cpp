@@ -90,7 +90,14 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     for (size_t i = 0; i < ast_args->children.size(); ++i)
     {
-        result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+        /// The expression list parser accepts arbitrary expressions, but only literals are valid here.
+        const auto * literal = ast_args->children[i]->as<ASTLiteral>();
+        if (!literal)
+        {
+            expected.add(pos, "literal");
+            return false;
+        }
+        result->arguments.push_back(fieldToString(literal->value));
     }
     if (!close_bracket.ignore(pos, expected))
         return false;

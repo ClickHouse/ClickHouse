@@ -121,7 +121,7 @@ namespace
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
-    DECLARE(UInt64, shutdown_wait_unfinished, 5, R"(Delay in seconds to wait for unfinished queries)", 0) \
+    DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries)", 0) \
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
@@ -254,6 +254,19 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
+    DECLARE(String, default_session_user, "default", R"(
+The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
+
+The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
+
+If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
+
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+
+The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
+
+The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
+)", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
 
@@ -1322,7 +1335,9 @@ When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory 
 Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
 )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
+Disables `INSERT`, `ALTER`, and `DELETE` queries so read-only replicas do not create data parts, mutations, or merge work that affects read performance.
+
+Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `PostgreSQL`, and `Kafka` remain allowed. Background streaming from `Kafka`, `RabbitMQ`, `NATS`, and `S3Queue` tables into attached materialized views is disabled because it produces `MergeTree` parts and merge work on this replica.
 )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
 Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud
@@ -3549,8 +3564,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
-            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
-
+            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
