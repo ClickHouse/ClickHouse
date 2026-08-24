@@ -7,35 +7,35 @@
       "versionId": "6dce0a76f98100d4b4f03d277602f294b5ffc1afcac33c58718ad1c957cd17cd",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-24T00:52:16.076Z",
+          "updatedAt": "2026-08-24T01:43:29.152Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-24T00:52:16.329Z",
+          "updatedAt": "2026-08-24T01:43:29.414Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-24T00:52:16.581Z",
+          "updatedAt": "2026-08-24T01:43:29.623Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-24T00:52:16.849Z",
+          "updatedAt": "2026-08-24T01:43:29.854Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-24T00:52:17.102Z",
+          "updatedAt": "2026-08-24T01:43:30.085Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-24T00:52:17.389Z",
+          "updatedAt": "2026-08-24T01:43:30.356Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-24T00:52:17.632Z",
+          "updatedAt": "2026-08-24T01:43:30.581Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-24T00:52:17.867Z",
+          "updatedAt": "2026-08-24T01:43:30.796Z",
           "fileName": "docs.json",
           "postProcessHash": "833945fdd41a4f386cab5b3b33d934243dc3f6fed6dac29e8b050bb4ee0ae4d0"
         }
@@ -10413,47 +10413,47 @@
     },
     {
       "fileId": "242a9ff49781030ee031f0d9a66e8b7ebc1cf52324e9b9c5fc4f93d6d48583a5",
-      "versionId": "0e7a8c11b63b121adf7d2102615f002d4ce85e67ee1f81d4b6e5f1bd94e09903",
+      "versionId": "eda7449353b51c247ee0564e7f65b288ec13cd3190d21b2811a6a61a1afdfd95",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.858Z",
+          "updatedAt": "2026-08-24T01:43:35.846Z",
           "fileName": "es/get-started/about/intro.mdx",
-          "postProcessHash": "437a9b626005b0e9d5b905ff4bd9d0c36582cdcbe588104f05a83bdc729166cf"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.858Z",
-          "fileName": "ja/get-started/about/intro.mdx",
-          "postProcessHash": "6735124ed92f4e0fce16bf300eb44dba819b7d15d95904c35dd91b7e34dd6e53"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
-          "fileName": "ko/get-started/about/intro.mdx",
-          "postProcessHash": "666e69b67565c19545b997647bbe3c4730d27120b5ddb48095d8695f81ced715"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
-          "fileName": "pt-BR/get-started/about/intro.mdx",
-          "postProcessHash": "e07264f9cd97bee2e17314a2bc85e75b8b744431608e436cdbbcb6506f02cda8"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
-          "fileName": "ru/get-started/about/intro.mdx",
-          "postProcessHash": "bea9bf153ee9ff3a9cd62fec94170c2401c99e2664e9903ad84d33761e3862e9"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
-          "fileName": "zh/get-started/about/intro.mdx",
-          "postProcessHash": "32202e7bddf82a97614aedaec18c571cba8eadfbfa64da4ec52b3e0365c4f02d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
-          "fileName": "ar/get-started/about/intro.mdx",
-          "postProcessHash": "c44adf0c0ca03430a1d09e4fc2a0a9078cd80b35cfa8ccf4b5342243c89bbbee"
+          "postProcessHash": "963fbe35f3086a36b3fef292d39199b120699035ee05f4c2a5a224e8331bf7c8"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.859Z",
+          "updatedAt": "2026-08-24T01:43:35.847Z",
           "fileName": "fr/get-started/about/intro.mdx",
-          "postProcessHash": "ae675d857f4d80645a49b1d2ce3da5d6ab9f7c8385d3cc76819723e2ed2abd5e"
+          "postProcessHash": "d8c06dcad5bc9bf1a6cf844896231e2457ef0cf179268acbe6dbefeb62e854bb"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T01:43:35.848Z",
+          "fileName": "ar/get-started/about/intro.mdx",
+          "postProcessHash": "a30a0eed2a3c20e25478b57015ac7d04567818020633e586f391b5e28ee9cccd"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T01:43:35.848Z",
+          "fileName": "ko/get-started/about/intro.mdx",
+          "postProcessHash": "4205ef6320e7d35e4965c4e6ee40c178a766569eae55d37033c5fc7417be7e43"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T01:43:35.849Z",
+          "fileName": "pt-BR/get-started/about/intro.mdx",
+          "postProcessHash": "806a6c6680a23285b229d943530c5acb5e181961fece152999eeb81183f8790d"
+        },
+        "zh": {
+          "updatedAt": "2026-08-24T01:43:35.850Z",
+          "fileName": "zh/get-started/about/intro.mdx",
+          "postProcessHash": "bfa35ba1e72fbd3a8c08a01178fd1396f828d79ce4a51556405e87be57927970"
+        },
+        "ru": {
+          "updatedAt": "2026-08-24T01:43:35.850Z",
+          "fileName": "ru/get-started/about/intro.mdx",
+          "postProcessHash": "feb16754b6923b747fecac336b56827f8de0d8d22dccfce90670a7560a40b51f"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T01:43:35.851Z",
+          "fileName": "ja/get-started/about/intro.mdx",
+          "postProcessHash": "ca14077dfa66da23e85a7c623a2ab03449583efa4d737d15d4c0595eecf87114"
         }
       },
       "fileName": "get-started/about/intro.mdx",
