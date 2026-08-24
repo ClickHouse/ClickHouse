@@ -3,7 +3,7 @@
 -- instead of silently defaulting to an empty name or a zero bound, which would either format a
 -- parser-impossible clause or produce a different, valid definition.
 
-SET allow_experimental_json_ast_dialect = 1;
+SET enable_json_ast_dialect = 1;
 
 -- Positives: the clauses round-trip byte-identically.
 

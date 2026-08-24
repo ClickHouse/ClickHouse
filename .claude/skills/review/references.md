@@ -46,11 +46,11 @@ packet types, handshake/version negotiation, or the wire layout of any non-`Bloc
 
 Trigger (format): the diff changes the `Native` format — its wire/serialization format, type
 encodings (`LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column
-structure, the compression frame, `NativeReader`/`NativeWriter`, or `docs/en/interfaces/formats/Native.md`.
+structure, the compression frame, `NativeReader`/`NativeWriter`, or `docs/reference/formats/Native.mdx`.
 
 Verify the corresponding specification is updated in the **same PR**:
-`docs/en/interfaces/specs/NativeProtocol.md` for protocol changes,
-`docs/en/interfaces/specs/NativeFormat.md` for format changes. The spec is the canonical reference
+`docs/reference/interfaces/specs/NativeProtocol.mdx` for protocol changes,
+`docs/reference/interfaces/specs/NativeFormat.mdx` for format changes. The spec is the canonical reference
 third-party native clients (`ch-go`, `clickhouse-go`) are built against; letting it drift forces
 re-deriving the protocol/format from C++ source. This applies to new features, bug fixes, and
 behavior changes alike. Flag a missing or stale spec section as a **Major**, naming the

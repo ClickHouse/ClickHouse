@@ -301,6 +301,85 @@ bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & colu
 }
 
 
+bool StorageMaterializedPostgreSQL::supportsPrewhere() const
+{
+    /// `read` hands the `SelectQueryInfo` over to the nested table untouched, so whatever the nested table
+    /// can do with `PREWHERE` the wrapper can do too. While the nested table is not created yet there is
+    /// nothing to read from anyway, so the default is good enough.
+    if (auto nested = tryGetNested())
+        return nested->supportsPrewhere();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::canMoveConditionsToPrewhere() const
+{
+    if (auto nested = tryGetNested())
+        return nested->canMoveConditionsToPrewhere();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// `StorageMerge` ANDs this bit across its children, so leaving it at the `IStorage` default would
+    /// silently drop a subcolumn condition from `PREWHERE` for the whole `Merge` table.
+    if (auto nested = tryGetNested())
+        return nested->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsSubcolumns() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsSubcolumns();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
+{
+    if (auto nested = tryGetNested())
+        return nested->getColumnSizes();
+    return {};
+}
+
+
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
+{
+    if (auto nested = tryGetNested())
+        return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
+    return {};
+}
+
+
+std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_context) const
+{
+    /// An estimate: as for any `ReplacingMergeTree`, the deleted rows and the superseded versions of the
+    /// updated rows are still counted until the parts are merged.
+    if (auto nested = tryGetNested())
+        return nested->totalRows(query_context);
+    return {};
+}
+
+
+std::optional<UInt64> StorageMaterializedPostgreSQL::totalBytes(ContextPtr query_context) const
+{
+    if (auto nested = tryGetNested())
+        return nested->totalBytes(query_context);
+    return {};
+}
+
+
 void StorageMaterializedPostgreSQL::read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -676,7 +755,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
+            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.ssl);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
@@ -721,7 +801,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
 :::
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
@@ -751,6 +831,21 @@ PRIMARY KEY key;
 - `table` — Remote table name.
 - `user` — PostgreSQL user.
 - `password` — User password.
+
+## TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----')
+PRIMARY KEY key;
+```
+
+The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the table is created.
 
 ## Requirements {#requirements}
 
@@ -782,7 +877,7 @@ SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
 :::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
 :::
 )DOCS_MD",
             .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",

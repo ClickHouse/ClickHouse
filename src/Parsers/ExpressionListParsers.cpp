@@ -931,7 +931,8 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     {
         is_like = true;
     }
-    else if (func->name == "match"
+    else if (func->name == "match" || func->name == "notMatch"
+             || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
              || func->name == "extract" || func->name == "extractAll"
              || func->name == "extractGroups" || func->name == "extractAllGroups"
              || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
@@ -953,6 +954,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     auto * literal = args->children[1]->as<ASTLiteral>();
 
     if (!literal || literal->value.getType() != Field::Types::String)
+        return;
+
+    /// Only literals actually tokenized from the query carry valid token info; a synthesized
+    /// literal may have inherited a stale map entry from a freed literal that reused its address.
+    if (!literal->hasTokenInfo())
         return;
 
     /// Look up token position from the map stored in Expected
@@ -1039,6 +1045,7 @@ public:
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
+            ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
             /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
@@ -1050,8 +1057,9 @@ public:
             auto test_pos = pos;
             ++test_pos;
 
-            /// End of query
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
+            /// so a comma in front of it is unambiguously a trailing comma.
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
@@ -3341,6 +3349,10 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
     {toStringView(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
     {toStringView(Keyword::REGEXP),        Operator("match",           9,  2)},
+    {"~",              Operator("match",                    9, 2)},
+    {"~*",             Operator("matchCaseInsensitive",     9, 2)},
+    {"!~",             Operator("notMatch",                 9, 2)},
+    {"!~*",            Operator("notMatchCaseInsensitive",  9, 2)},
     {toStringView(Keyword::IN),            Operator("in",              9,  2)},
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
@@ -3386,7 +3398,8 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::StartNotBetween
                 || op.type == OperatorType::Cast)
                 return;
-            if (op.function_name == "match")
+            if (op.function_name == "match" || op.function_name == "matchCaseInsensitive"
+                || op.function_name == "notMatch" || op.function_name == "notMatchCaseInsensitive")
                 return;
             /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
             /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
@@ -3503,7 +3516,8 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
-        "like", "ilike", "notLike", "notILike", "match"
+        "like", "ilike", "notLike", "notILike",
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
     };
     return predicates.contains(function_name);
 }

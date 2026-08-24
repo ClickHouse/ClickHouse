@@ -20,11 +20,29 @@ The ClickHouse Cloud control plane maintains several types of connections to ope
 | **Troubleshooting — ClickHouse service**     | Tailscale                                       | ClickHouse engineers access the ClickHouse service (e.g., system tables) for diagnostics via Tailscale.                                                                                         |
 | **Troubleshooting — Kubernetes API server**  | Tailscale                                       | ClickHouse engineers access the Kubernetes API server for cluster diagnostics via Tailscale.                                                                                                           |
 
+## Cloud provider APIs vs the Kubernetes API {#cloud-api-vs-kubernetes-api}
+
+Two distinct control paths are easy to conflate. They differ in where the traffic originates, how it authenticates, and whether Tailscale applies:
+
+| | Cloud provider APIs | Kubernetes API server |
+| --- | --- | --- |
+| **What it manages** | Cloud resources: the Kubernetes cluster itself, node groups, load balancers, storage buckets, DNS | Workloads inside the cluster: ClickHouse pods, operators, and their configuration |
+| **Traffic destination** | The cloud provider's public API endpoints (for example `eks.amazonaws.com`, `ec2.amazonaws.com`) — this traffic never enters your VPC/VNet | Your cluster's API endpoint in your account |
+| **Authentication** | AWS: cross-account `sts:AssumeRole` into `ClickHouseManagementRole` and the per-infrastructure management role, protected by an external ID. GCP: service account impersonation (no keys). Azure: federated identity for the ClickHouse service principal (no credentials exchanged) | Short-lived Kubernetes credentials issued through the cloud provider's API (for example `eks:GetToken` using the assumed role) |
+| **Tailscale applicability** | **None.** These calls go from ClickHouse Cloud's network directly to the cloud provider and cannot be routed through Tailscale or through your network | Public endpoint restricted to ClickHouse egress IPs by default; can be switched to private access via Tailscale or, on AWS, VPC Lattice |
+| **Your audit trail** | AWS CloudTrail (or the GCP/Azure equivalents) in your account records every call with the assumed identity | On AWS, EKS control-plane logs — including the audit log — are delivered to a CloudWatch log group in your account (see [billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services)); on GCP and Azure, contact support to confirm or enable control-plane audit logging for your cluster |
+
+In short: only Kubernetes API and troubleshooting traffic can use Tailscale. Cloud provider API calls always originate from ClickHouse Cloud's network and terminate at the provider's endpoints — routing them through Tailscale isn't possible, because they never enter your network in the first place.
+
+### Network-origin permission boundaries {#network-origin-permission-boundaries}
+
+If your organization restricts IAM role assumption or cloud API calls by network origin (for example, AWS SCPs or role trust conditions using `aws:SourceIp` or `aws:SourceVpc`), those conditions will block ClickHouse's automation: the calls legitimately originate from ClickHouse Cloud's network, not yours. Exempt the ClickHouse-created roles from such conditions, or contact ClickHouse for the current egress IP ranges if you must allowlist by origin.
+
 The following section describes how the **Tailscale** private network is used for troubleshooting and optional management access.
 
 ## Tailscale Private Network {#tailscale-private-network}
 
-Tailscale provides a zero-trust, private network connection between ClickHouse Cloud's management services and your BYOC deployment. This secure channel enables ClickHouse engineers to perform troubleshooting and management operations without requiring public internet access or complex VPN configurations.
+Tailscale provides a zero-trust, private network connection between ClickHouse Cloud's management services and your BYOC deployment. This secure channel enables ClickHouse engineers to perform troubleshooting and management operations without requiring inbound public network access or complex VPN configurations; the agents themselves make outbound-only connections and need outbound internet access to reach the Tailscale coordination service.
 
 ### Overview {#tailscale-overview}
 
@@ -97,7 +115,7 @@ By default, ClickHouse management services access your BYOC Kubernetes cluster v
 
 - You can configure the Kubernetes API server to use only a private endpoint
 - In this case, management services access the API server via Tailscale (similar to human troubleshooting access) or, on AWS, via VPC Lattice (see [Kubernetes API Private Connection](/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
-- Public access is kept as a backup mechanism for emergency investigation and support needs
+- By default, the public endpoint (restricted to ClickHouse's NAT IP addresses) is kept as a backup mechanism for emergency investigation and support needs; once private access is verified, it can be disabled entirely in coordination with ClickHouse
 
 ### Network Traffic Flow {#tailscale-traffic-flow}
 
@@ -160,4 +178,4 @@ Metrics and logs are stored within the customer's BYOC VPC. Logs are currently s
 
 _Outbound, Public_
 
-State Exporter sends ClickHouse service state information to an SQS owned by ClickHouse Cloud.
+State Exporter sends ClickHouse service and backup state information (operational status events, not backup contents) to an SQS queue owned by ClickHouse Cloud.
