@@ -47,6 +47,15 @@ SELECT (SELECT count() FROM tab WHERE s IN (SELECT toFixedString('word1', 12))) 
 SELECT count() FROM tab WHERE s IN (SELECT CAST('word1', 'Nullable(String)')) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab WHERE s IN (SELECT CAST(NULL, 'Nullable(String)')) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
+-- sparse_grams
+
+DROP TABLE tab;
+CREATE TABLE tab (s String, INDEX idx s TYPE sparse_grams(3, 100, 512, 2, 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab SELECT 'word' || toString(number) FROM numbers(4);
+
+SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE s IN ('word1')) WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM tab WHERE s GLOBAL IN ('word1') SETTINGS force_data_skipping_indices = 'idx';
+
 -- A tuple set is one Tuple column unpacked by position, so its element types are unpacked with it.
 
 DROP TABLE tab;
