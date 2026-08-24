@@ -1,9 +1,0 @@
-<clickhouse>
-    <!--
-        Minimal placeholder config for the `non_regular_users_config` cluster. The test points
-        `<users_config>` at a FIFO at runtime (a supported delivery path: `ConfigProcessor::parseConfig`
-        explicitly accepts a non-regular config file such as a pipe) and asserts that the main server
-        config is still checked for unknown options: the users config is a separate tree that
-        contributes no top-level server key, so a non-regular users config must not silence the check.
-    -->
-</clickhouse>
