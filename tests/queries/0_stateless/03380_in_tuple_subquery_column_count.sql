@@ -150,3 +150,17 @@ SELECT (1, 1, 1) IN v_in_param; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH 
 SELECT (1, 1) IN cluster('test_shard_localhost', currentDatabase(), 'v_in_param'); -- { serverError UNKNOWN_FUNCTION }
 SELECT (1, 1) IN remote('127.0.0.1', currentDatabase(), 'v_in_param'); -- { serverError UNKNOWN_FUNCTION }
 DROP VIEW v_in_param;
+
+-- A single right `Tuple` column is compared against the whole left value as one set key, so the left
+-- side is only a genuine mismatch when it cannot be cast to that tuple at all. A scalar cannot
+-- (`1 IN (SELECT tuple(1))` above), but a `String` is parsed into the tuple by the accurate cast, and
+-- a tuple wrapped into `Nullable` is still a tuple key - `FunctionIn` keeps it as one key and `Set`
+-- strips that wrapper (and `LowCardinality`) before comparing. None of these may be rejected during
+-- analysis.
+-- Regression for the over-broad scalar-versus-tuple rejection flagged in PR #97540.
+SELECT '(1,2)' IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+SELECT materialize('(1,3)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+SET enable_nullable_tuple_type = 1;
+SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+SELECT CAST((1, 3), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+SELECT CAST('(1,2)', 'LowCardinality(String)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));

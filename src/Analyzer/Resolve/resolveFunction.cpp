@@ -409,13 +409,42 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
             && !in_first_argument_result_type->hasDynamicStructure()
             && !isNothing(removeNullable(in_first_argument_result_type)))
         {
+            /// Compare the types the set actually uses as keys, i.e. after stripping the wrappers
+            /// that `Set::getElementTypes` removes (`LowCardinality` recursively and a top-level
+            /// `Nullable`). A `Nullable(Tuple(...))` (or `LowCardinality(...)`) left side is a tuple
+            /// key, not a scalar: `FunctionIn` keeps it as one key and `Set::execute` compares it
+            /// element by element against a single right `Tuple` column, which is a perfectly valid
+            /// one-key comparison and must not be rejected here.
+            const auto left_single_key_type = removeNullable(recursiveRemoveLowCardinality(in_first_argument_result_type));
             const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
-            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get()))
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Cannot cast {} to {} in IN",
-                    in_first_argument_result_type->getName(),
-                    right_projection_columns.front().type->getName());
+            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get())
+                && !typeid_cast<const DataTypeTuple *>(left_single_key_type.get()))
+            {
+                /// Not every non-tuple left type is a mismatch either: `Set::execute` casts the whole
+                /// left value to the single right key type, and that cast is defined for some
+                /// non-tuple sources - `String`, for instance, is parsed into the tuple by
+                /// `FunctionCast::createTupleWrapper`. So reject only when no cast path exists at
+                /// all, probing at the type level with an *empty* column exactly like the
+                /// column-count probe below (the cast wrapper is built before any row is touched,
+                /// and a fabricated row could fail a per-value check the real rows would pass).
+                bool left_castable_to_single_key = false;
+                try
+                {
+                    castColumnAccurate({left_single_key_type->createColumn(), left_single_key_type, "left"}, right_single_key_type);
+                    left_castable_to_single_key = true;
+                }
+                catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                {
+                    /// No cast path exists - report the mismatch below.
+                }
+
+                if (!left_castable_to_single_key)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "Cannot cast {} to {} in IN",
+                        in_first_argument_result_type->getName(),
+                        right_projection_columns.front().type->getName());
+            }
         }
 
         if (right_columns_count > 0 && left_columns_count != right_columns_count)
