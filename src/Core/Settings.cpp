@@ -1974,11 +1974,11 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, enable_aggregation_top_k_threshold_merge, true, R"(
-Enable the top-K threshold merge (Fagin's Threshold Algorithm) for `GROUP BY keys ORDER BY <aggregate> LIMIT K` queries where the aggregate is `count`, `uniqExact`, `min` or `max`.
+Enable the top-K threshold merge (Fagin's Threshold Algorithm) for `GROUP BY keys ORDER BY <aggregate> LIMIT K` queries where the aggregate is `count` or `uniqExact` (descending order), or `min`/`max` (either order).
 
 For these functions the value of a merged aggregation state can be bounded from the values of the per-thread partial states without merging them: `count` and `uniqExact` are bounded by the sum of the partial values, and `min`/`max` are exactly their extremum. When the final merge of parallel aggregation combines the per-thread hash tables, it walks the groups in the order of their partial values and stops as soon as no unseen group can rank among the top `K`, so only the candidate groups are merged and materialized instead of every group. The result is exactly the same as without the optimization.
 
-The optimization engages during the merge of two-level (high-cardinality) aggregation states, and pays off the most when the value distribution is skewed and the aggregate state is expensive to merge (e.g. `ORDER BY uniqExact(...) DESC LIMIT 10` over many groups). In the worst case (no skew) every group is visited, which costs about as much as the ordinary merge plus the ranking overhead.
+The optimization engages during the merge of two-level (high-cardinality) aggregation states, and pays off the most when the value distribution is skewed and the aggregate state is expensive to merge (e.g. `ORDER BY uniqExact(...) DESC LIMIT 10` over many groups). For the summing bound of `count`/`uniqExact` a cheap precheck of the peeked partial values predicts whether the walk can stop early, and falls back to the ordinary merge when it cannot (e.g. near-uniform counts split across every thread); the extremum bounds of `min`/`max` always converge right after the top `K` candidates are found.
 
 The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `LIMIT WITH TIES`, `ROLLUP`/`CUBE`/`GROUPING SETS`, an `ORDER BY` of more than one column, a `COLLATE`, `exact_rows_before_limit`, nullable or low-cardinality group keys, a nullable or floating-point ordering value, and when the ordering aggregate is wrapped in a combinator.
 

@@ -2,35 +2,47 @@
     <!-- The top-K threshold merge (Fagin's Threshold Algorithm): for
          `GROUP BY k ORDER BY <count/uniqExact/min/max> LIMIT n` over many groups, the final
          merge of the per-thread aggregation states only merges and materializes the groups that
-         can rank among the top n. Compare against the same query with the merge disabled, on a
-         skewed distribution (where the threshold converges quickly) and on a uniform one (the
-         worst case, which must not regress much). -->
+         can rank among the top n. The heavy-hitter table shows the win (the per-thread partial
+         values already reveal the winners, so the threshold converges fast); the weak-skew and
+         uniform tables are the guard cases, where the convergence precheck must fall back to the
+         ordinary merge with no noticeable regression. -->
 
     <create_query>
-        CREATE TABLE threshold_top_k_perf ENGINE = MergeTree ORDER BY () AS
+        CREATE TABLE threshold_top_k_hot ENGINE = MergeTree ORDER BY () AS
         SELECT
-            /* millions of groups with a heavy skew: drawing the group id uniformly from a range
-               that is itself uniform makes the small ids far more frequent (about harmonically),
-               so a few hot groups dominate while the tail keeps the cardinality high */
-            intHash64(rand64() % (1 + rand64() % 10000000)) AS k,
+            /* 1000 heavy groups carry 30% of the rows (~12000 rows each); the rest spreads over
+               ~10M rare groups */
+            if(number % 10 &lt; 3, intHash64(number % 1000), intHash64(1000 + rand64() % 10000000)) AS k,
             number AS v,
             number % 1000000 AS u
         FROM numbers_mt(40000000)
     </create_query>
 
-    <query tag="count_desc">SELECT k, count() AS c FROM threshold_top_k_perf GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
-    <query tag="count_desc_baseline">SELECT k, count() AS c FROM threshold_top_k_perf GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+    <create_query>
+        CREATE TABLE threshold_top_k_flat ENGINE = MergeTree ORDER BY () AS
+        SELECT
+            /* a weak skew: the hottest group gets only tens of rows, so per-thread partial
+               values say almost nothing about the merged order */
+            intHash64(rand64() % (1 + rand64() % 10000000)) AS k,
+            number AS v
+        FROM numbers_mt(40000000)
+    </create_query>
 
-    <query tag="uniq_exact_desc">SELECT k, uniqExact(u) AS c FROM threshold_top_k_perf GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
-    <query tag="uniq_exact_desc_baseline">SELECT k, uniqExact(u) AS c FROM threshold_top_k_perf GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+    <query tag="count_desc">SELECT k, count() AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
+    <query tag="count_desc_baseline">SELECT k, count() AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
 
-    <query tag="max_desc">SELECT k, max(v) AS m FROM threshold_top_k_perf GROUP BY k ORDER BY m DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
-    <query tag="max_desc_baseline">SELECT k, max(v) AS m FROM threshold_top_k_perf GROUP BY k ORDER BY m DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+    <query tag="uniq_exact_desc">SELECT k, uniqExact(u) AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
+    <query tag="uniq_exact_desc_baseline">SELECT k, uniqExact(u) AS c FROM threshold_top_k_hot GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
 
-    <!-- The worst case: a perfectly uniform count, where the threshold never converges and every
-         group is visited anyway. -->
-    <query tag="uniform_worst_case">SELECT number AS k, count() AS c FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
-    <query tag="uniform_worst_case_baseline">SELECT number AS k, count() AS c FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+    <query tag="max_desc">SELECT k, max(v) AS m FROM threshold_top_k_hot GROUP BY k ORDER BY m DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
+    <query tag="max_desc_baseline">SELECT k, max(v) AS m FROM threshold_top_k_hot GROUP BY k ORDER BY m DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
 
-    <drop_query>DROP TABLE IF EXISTS threshold_top_k_perf</drop_query>
+    <query tag="flat_guard">SELECT k, count() AS c FROM threshold_top_k_flat GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
+    <query tag="flat_guard_baseline">SELECT k, count() AS c FROM threshold_top_k_flat GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+
+    <query tag="uniform_guard">SELECT number AS k, count() AS c FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 1</query>
+    <query tag="uniform_guard_baseline">SELECT number AS k, count() AS c FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS enable_aggregation_top_k_threshold_merge = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS threshold_top_k_hot</drop_query>
+    <drop_query>DROP TABLE IF EXISTS threshold_top_k_flat</drop_query>
 </test>

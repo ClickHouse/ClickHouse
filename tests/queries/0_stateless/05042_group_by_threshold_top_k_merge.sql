@@ -23,11 +23,13 @@ INSERT INTO threshold_top_k
 INSERT INTO threshold_top_k
     SELECT k, k % 7, k * 1000 + r, toString(k * 1000 + r), r, nullIf(r, 0), r
     FROM (SELECT 100 + number AS k FROM numbers(100)) ARRAY JOIN range(100 + k) AS r;
--- Tail: 20000 keys with 5 rows each, so the bucket tables are much larger than the LIMIT.
+-- Tail: 8000 keys with 150 rows each, so the bucket tables are much larger than the LIMIT. The
+-- tail count of 150 collides with no head count (1..100 and 200..299 are the unique ends), so
+-- every asserted top/bottom set stays free of boundary ties.
 INSERT INTO threshold_top_k
-    SELECT 200 + intDiv(number, 5), (200 + intDiv(number, 5)) % 7, (200 + intDiv(number, 5)) * 1000 + number % 5,
-           toString((200 + intDiv(number, 5)) * 1000 + number % 5), number % 5, nullIf(number % 5, 0), number % 5
-    FROM numbers(100000);
+    SELECT 200 + intDiv(number, 150), (200 + intDiv(number, 150)) % 7, (200 + intDiv(number, 150)) * 1000 + number % 150,
+           toString((200 + intDiv(number, 150)) * 1000 + number % 150), number % 150, nullIf(number % 150, 0), number % 150
+    FROM numbers(1200000);
 
 SELECT 'count() DESC';
 SELECT k, count() AS c FROM threshold_top_k GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS enable_aggregation_top_k_threshold_merge = 1;

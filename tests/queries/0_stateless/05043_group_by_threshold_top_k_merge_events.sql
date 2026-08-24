@@ -23,38 +23,38 @@ INSERT INTO threshold_top_k_events SELECT intDiv(number, 4), number, number % 4 
 INSERT INTO threshold_top_k_events SELECT 500000 + number % 20, 1e9 + number, number FROM numbers(20000);
 
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_a_count' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_a_count' FORMAT Null;
 SELECT k, uniqExact(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_b_uniq_exact' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_b_uniq_exact' FORMAT Null;
 SELECT k, max(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
-    SETTINGS log_comment = '05043_c_max' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_c_max' FORMAT Null;
 
 -- Shapes the threshold merge must not serve.
 -- The estimating uniq: its estimate is not exactly subadditive.
 SELECT k, uniq(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_d_uniq_estimate' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_d_uniq_estimate' FORMAT Null;
 -- A floating-point ordering value: no NaN order is consistent with the merge in both directions.
 SELECT k, max(v) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
-    SETTINGS log_comment = '05043_e_float' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_e_float' FORMAT Null;
 -- HAVING sits between the aggregation and the sort as a filter step.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k HAVING c > 1 ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_f_having' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_f_having' FORMAT Null;
 -- More than one ORDER BY column: dropped boundary ties would break the tiebreaker.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC, k ASC LIMIT 10
-    SETTINGS log_comment = '05043_g_two_columns' FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_g_two_columns' FORMAT Null;
 -- The optimization is off.
 SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
-    SETTINGS log_comment = '05043_h_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
+    SETTINGS log_comment = '05043_ttkm_h_disabled', enable_aggregation_top_k_threshold_merge = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    replaceOne(log_comment, '05043_', ''),
+    replaceOne(log_comment, '05043_ttkm_', ''),
     ProfileEvents['AggregationThresholdTopKMerges'] > 0,
     ProfileEvents['AggregationThresholdTopKMergedGroups'] > 0,
     ProfileEvents['AggregationThresholdTopKPrunedCells'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05043\\_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05043\_ttkm\_%'
 ORDER BY log_comment;
 
 DROP TABLE threshold_top_k_events;

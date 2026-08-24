@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -71,7 +72,7 @@ constexpr size_t cancellation_check_period = 256;
 
 UInt64 saturatingAdd(UInt64 a, UInt64 b)
 {
-    UInt64 sum;
+    UInt64 sum = 0;
     if (__builtin_add_overflow(a, b, &sum))
         return std::numeric_limits<UInt64>::max();
     return sum;
@@ -149,8 +150,6 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         if (total_cells <= k * min_cells_per_k)
             return std::nullopt;
 
-        ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMerges);
-
         const IAggregateFunction * order_by_function = aggregate_functions[order_by_index];
         const size_t order_by_offset = offsets_of_aggregate_states[order_by_index];
 
@@ -188,34 +187,67 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 
         std::vector<List> lists(tables.size());
 
+        /// The first pass peeks the partial values, so that a hopeless bucket can take the
+        /// ordinary merge before anything is committed; the second pass collects the cells.
         for (size_t i = 0; i < tables.size(); ++i)
         {
             List & list = lists[i];
             list.table = tables[i];
             const size_t cells = tables[i]->size();
-            list.entries.reserve(cells);
             if (is_simple_count)
+            {
                 list.inline_counts.reserve(cells);
+                tables[i]->forEachValue(
+                    [&](const auto &, auto & mapped) { list.inline_counts.push_back(getInlineCountState(mapped)); });
+                list.values_uint = list.inline_counts.data();
+            }
             else
             {
                 list.values_column = order_by_function->getResultType()->createColumn();
                 list.values_column->reserve(cells);
+                tables[i]->forEachValue(
+                    [&](const auto &, auto & mapped)
+                    { order_by_function->insertResultInto(mapped + order_by_offset, *list.values_column, arena); });
+                if (values_are_uint64)
+                    list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
             }
+        }
 
+        /// The convergence precheck of the summing threshold. The merge stops only once the sum
+        /// of the per-table heads drops below the worst kept candidate. The (k * m)-th largest
+        /// partial value V bounds the k-th best candidate from below (a group has at most m
+        /// partials, so the top k * m partials cover at least k groups), and the sum of m heads
+        /// falls under V roughly once the pop frontier passes the values above V / m. When the
+        /// majority of the cells lies above that level - e.g. near-uniform counts split across
+        /// every thread, where per-table partials say nothing about the merged order - the
+        /// threshold cannot stop the walk, and paying the setup would only slow the merge down.
+        /// The exact extremum bounds need no such check: they converge right after the candidate
+        /// heap fills.
+        if (additive_descending && tables.size() > 1)
+        {
+            PaddedPODArray<UInt64> all_values;
+            all_values.reserve(total_cells);
+            for (const List & list : lists)
+                all_values.insert(list.values_uint, list.values_uint + list.table->size());
+            const size_t rank = std::min(k * tables.size(), all_values.size()) - 1;
+            std::nth_element(all_values.begin(), all_values.begin() + rank, all_values.end(), std::greater<>());
+            const UInt64 head_bound = all_values[rank] / tables.size();
+            size_t cells_above = 0;
+            for (const UInt64 value : all_values)
+                cells_above += value > head_bound;
+            if (cells_above * 2 > all_values.size())
+                return std::nullopt;
+        }
+
+        ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMerges);
+
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            List & list = lists[i];
+            list.entries.reserve(tables[i]->size());
             tables[i]->forEachValue(
                 [&](const auto & key, auto & mapped)
-                {
-                    if (is_simple_count)
-                        list.inline_counts.push_back(getInlineCountState(mapped));
-                    else
-                        order_by_function->insertResultInto(mapped + order_by_offset, *list.values_column, arena);
-                    list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
-                });
-
-            if (is_simple_count)
-                list.values_uint = list.inline_counts.data();
-            else if (values_are_uint64)
-                list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
+                { list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())}); });
             list.heap_size = list.entries.size();
         }
 
@@ -347,7 +379,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     /// exact extremum bounds, and any bound with the ascending order, where the
                     /// merged value is no better than some partial value) - the best head.
                     const Candidate & worst = candidates.front();
-                    bool can_beat;
+                    bool can_beat = false;
                     if (additive_descending)
                     {
                         UInt64 threshold = 0;
