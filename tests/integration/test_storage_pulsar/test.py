@@ -170,6 +170,24 @@ def test_dead_letter_queue_mode_rejected(pulsar_cluster):
     assert "BAD_ARGUMENTS" in error
 
 
+def test_dead_letter_queue_mode_rejected_on_full_attach(pulsar_cluster):
+    # A full ATTACH supplies a brand-new engine definition, so the unsupported
+    # mode must fail at DDL time exactly like CREATE, not later in streaming.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    full_attach = pulsar_table(
+        "test.pulsar_reader_dlq_attach",
+        "dlq_attach_topic",
+        "dlq_attach_group",
+        extra_settings=", pulsar_handle_error_mode = 'dead_letter_queue'",
+    ).replace(
+        "CREATE TABLE test.pulsar_reader_dlq_attach",
+        "ATTACH TABLE test.pulsar_reader_dlq_attach UUID '00000000-0000-0000-0000-000000000002'",
+        1,
+    )
+    error = instance.query_and_get_error(full_attach)
+    assert "BAD_ARGUMENTS" in error
+
+
 def test_csv_first_row_is_not_treated_as_header(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
 

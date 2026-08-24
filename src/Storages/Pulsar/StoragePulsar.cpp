@@ -851,8 +851,9 @@ void registerStoragePulsar(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_rows_per_message` must be at least 1");
 
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
-        /// by this engine, so reject it up front instead of failing on the first broken message.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        /// by this engine, so reject any freshly supplied definition (CREATE or full ATTACH) up front
+        /// instead of failing on the first broken message.
+        if (is_fresh_definition
             && (*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "`dead_letter_queue` mode of `pulsar_handle_error_mode` is not supported by the table engine");
