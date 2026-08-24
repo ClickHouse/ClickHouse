@@ -697,10 +697,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
     const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
 
+    /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
+    /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
+    const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
+
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
