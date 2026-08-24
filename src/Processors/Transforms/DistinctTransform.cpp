@@ -383,7 +383,7 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                         impl.prefetchByHash(hash_buf[j + prefetch_dist]);
 
                     const UInt32 row = rows_buf[j];
-                    bool inserted;
+                    bool inserted = false;
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
                         /// The string view is cheap to re-derive; persist it into the per-bucket arena
@@ -400,7 +400,7 @@ void DistinctTransform::buildTwoLevelParallelFilter(
                     {
                         /// Reuse the key computed in phase A instead of re-deriving it, so the `hashed`
                         /// carrier does not run its `hash128` over every key column a second time.
-                        KeyType key;
+                        KeyType key{};
                         memcpy(&key, keys_buf.data() + j * sizeof(KeyType), sizeof(KeyType));
                         impl.emplace(key, it, inserted, hash_buf[j]);
                     }
@@ -602,17 +602,34 @@ void DistinctTransform::transform(Chunk & chunk)
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    /// Promote single-level → two-level once the set crosses the row-count OR byte threshold,
-    /// which unlocks the per-bucket parallel build below. A threshold of 0 disables that trigger;
-    /// both 0 disables promotion entirely. A pool only exists for the final deduplication (see the
-    /// constructor), so its presence already restricts promotion to that case.
-    if (pool
-        && SetVariants::isConvertibleToTwoLevel(data->type)
-        && ((two_level_threshold != 0 && data->getTotalRowCount() > two_level_threshold)
-            || (two_level_threshold_bytes != 0 && data->getTotalByteCount() > two_level_threshold_bytes)))
+    /// Promote single-level → two-level once the set crosses the row-count OR byte threshold, which
+    /// unlocks the per-bucket parallel build below. The bound already includes the current chunk, so
+    /// the chunk that first crosses the threshold is itself built through the two-level path (deciding
+    /// on the pre-chunk size would promote one chunk late, and never at all for a query whose whole
+    /// result arrives in a single large block). The row bound is exact because deduplication only
+    /// lowers it; the byte bound adds the key columns' size of this chunk, an over-estimate that never
+    /// under-promotes. A threshold of 0 disables that trigger; both 0 disables promotion entirely. A
+    /// pool only exists for the final deduplication (see the constructor), so its presence already
+    /// restricts promotion to that case.
+    if (pool && SetVariants::isConvertibleToTwoLevel(data->type))
     {
-        data->convertToTwoLevel();
-        ProfileEvents::increment(ProfileEvents::DistinctHashTablesInitializedAsTwoLevel);
+        const bool cross_rows = two_level_threshold != 0
+            && data->getTotalRowCount() + num_rows > two_level_threshold;
+
+        bool cross_bytes = false;
+        if (two_level_threshold_bytes != 0)
+        {
+            size_t projected_bytes = data->getTotalByteCount();
+            for (const auto * col : column_ptrs)
+                projected_bytes += col->byteSize();
+            cross_bytes = projected_bytes > two_level_threshold_bytes;
+        }
+
+        if (cross_rows || cross_bytes)
+        {
+            data->convertToTwoLevel();
+            ProfileEvents::increment(ProfileEvents::DistinctHashTablesInitializedAsTwoLevel);
+        }
     }
 
     const auto old_set_size = data->getTotalRowCount();
@@ -729,7 +746,7 @@ void DistinctTransform::transform(Chunk & chunk)
 /// whose phase-3 emplace persists keys into per-bucket arenas.
 #define INSTANTIATE_TWO_LEVEL_BUILD(METHOD_TYPE) \
     template void DistinctTransform::buildTwoLevelParallelFilter<METHOD_TYPE>( \
-        METHOD_TYPE &, const ColumnRawPtrs &, IColumnFilter &, size_t, ThreadPool &) const;
+        METHOD_TYPE &, const ColumnRawPtrs &, IColumnFilter &, size_t, ThreadPool &) const; // NOLINT(bugprone-macro-parentheses)
 
 using NonClearableHashedTwoLevel          = SetMethodHashedTwoLevel<TwoLevelHashSet<UInt128, UInt128TrivialHash>>;
 using NonClearableKey32TwoLevel           = SetMethodOneNumber<UInt32, TwoLevelHashSet<UInt32, HashCRC32<UInt32>>>;
