@@ -13,6 +13,12 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
+    _IMAGE_PULL_RETRIES,
+    _IMAGE_PULL_RETRY_ERRORS,
+    _IMAGE_PULL_TIMEOUT_S,
+    Docker,
+)
 from .event import EventFeed
 from .gh import GH
 from .gh_auth import GHAuth
@@ -27,21 +33,6 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-
-# Matched against the pull's stderr. Transport-class phrases only: must never match a
-# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
-_IMAGE_PULL_RETRY_ERRORS = [
-    "connection reset by peer",
-    "connection refused",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "unexpected EOF",
-    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
-    # writes nothing, so without this entry a stall is not retried.
-    "sending signal TERM to command",
-]
-_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
-_IMAGE_PULL_RETRIES = 3
 
 
 class Runner:
@@ -497,13 +488,7 @@ class Runner:
                         f"({attempt}/{attempts}): {docker}"
                     )
 
-                Shell.run(
-                    f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {docker}",
-                    retries=_IMAGE_PULL_RETRIES,
-                    retry_errors=_IMAGE_PULL_RETRY_ERRORS,
-                    verbose=True,
-                    on_retry=_warn_pull_retried,
-                )
+                Docker.pull_image(docker, on_retry=_warn_pull_retried)
 
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the
@@ -620,6 +605,20 @@ class Runner:
             print("NOTE: Job has force_success=True - overriding status to OK")
             result.set_status(Result.Status.OK)
         return result
+
+    @staticmethod
+    def _pipeline_status(result) -> str:
+        """The GH Actions `pipeline_status` output for a finished job.
+
+        These are GH Actions output values matched by workflow YAML conditions,
+        not Result.Status values - they must stay lowercase "success"/"failure".
+        A "failure" skips the job's whole transitive downstream closure.
+        `hook_html` decides whether to mark dependees `DROPPED` from the same
+        flag and must reach the same verdict as this function.
+        """
+        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+            return "failure"
+        return "success"
 
     @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
@@ -941,15 +940,7 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        # These are GH Actions output values matched by workflow YAML conditions,
-        # not Result.Status values — must stay lowercase "success"/"failure".
-        pipeline_status = "success"
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = "failure"
+        pipeline_status = self._pipeline_status(result)
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",

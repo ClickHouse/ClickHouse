@@ -3,6 +3,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -48,6 +50,37 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementUse(StatementFactory & factory)
+{
+    factory.registerStatement("USE",
+    {
+        .description = R"(
+Sets the current database of the session. The current database is used to look up the tables which are not qualified
+with a database name.
+
+The statement cannot be used over the HTTP protocol, because there is no concept of a session there; pass the
+`database` parameter instead.
+
+**Examples**
+
+**Switch the current database**
+
+```sql title="Query"
+USE system;
+```
+)",
+        .syntax = R"(
+USE [DATABASE] db
+)",
+        .related = {"CREATE DATABASE", "SHOW", "SET"},
+    });
 }
 
 }

@@ -214,6 +214,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
@@ -526,6 +530,43 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
+    # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
+    # the host, so it is a CMake project of its own driven by its own script in its own image -
+    # not a `BuildTypes` entry in the `Build` matrix, which `binary-builder` and
+    # `build_clickhouse.py` serve. The two post hooks the other build jobs carry are left off for
+    # the same reason: neither the master-head binary nor the build profile has a counterpart here.
+    #
+    # Nothing else in CI compiles this module, so this job is also what notices when it stops
+    # compiling - which it did within a day of being merged, twice over.
+    wasm_parser_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_wasm_parser.py",
+        run_in_docker="clickhouse/wasm-builder",
+        timeout=2 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_wasm_parser.py",
+                "./utils/wasm-parser",
+                # The closure the project names is the parser and everything it reaches, which
+                # spans most of `src` and `base` and a dozen contrib libraries. Nothing narrower
+                # than the build digest's own source paths bounds it.
+                "./src",
+                "./base",
+                "./contrib/",
+                "./.gitmodules",
+            ],
+            with_git_submodules=True,
+        ),
+        needs_submodules=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.WASM_PARSER,
+            provides=[ArtifactNames.CH_WASM_PARSER],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -1135,6 +1176,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
