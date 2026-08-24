@@ -23,16 +23,13 @@ RBAC is only available in Managed ClickStack deployments.
 ClickStack authenticates through ClickHouse Cloud. Before you can assign ClickStack roles, each user must:
 
 1. **Be invited to your ClickHouse Cloud organization.** An organization admin invites users from the Cloud console. See [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for details.
-2. **Have access to the service and its database.** How you grant access depends on whether your organization has migrated to custom roles:
+2. **Have SQL Console access on the service.** Navigate to your service's **Settings** → **SQL Console Access** and set the appropriate permission level:
 
-   - For migrated organizations, [assign a custom Cloud role](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) with access to the organization, the selected service, and its database.
-   - For organizations that have not migrated, use the [legacy SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) in **Settings** → **SQL Console Access**.
-
-| Database access | ClickStack access |
+| Cloud SQL Console access | ClickStack access |
 |---|---|
-| **Admin** through a custom role, or legacy **Full Access** | Full access to ClickStack. Required for enabling [alerts](/clickstack/features/alerts). |
-| **Read-only** through a custom role, or legacy **Read Only** | Can view observability data and create dashboards. |
-| No database access | Can't access ClickStack. |
+| **SQL Console Admin** (Full Access) | Full access to ClickStack. Required for enabling [alerts](/clickstack/features/alerts). |
+| **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
+| **No access** | Can't access ClickStack. |
 
 Once a user has Cloud access, they appear in the ClickStack **Team Settings** page where you can assign a ClickStack role.
 

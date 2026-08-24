@@ -292,32 +292,19 @@ Once the source is configured, click "Save" and begin exploring your data.
 
 ### Granting access to Managed ClickStack {#configure-access}
 
-How you grant access depends on whether your organization has migrated to custom roles:
-
-<Tabs>
-<Tab title="Custom roles">
-
-[Assign a custom Cloud role](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) with access to the organization, the selected service, and its database. Choose **Admin** database access for users who need to enable alerts, or **Read-only** for users who only need to view observability data and create dashboards.
-</Tab>
-<Tab title="Legacy SQL console access">
-
-For an organization that has not migrated to custom roles:
-
-1. Navigate to your service in the ClickHouse Cloud console.
-2. Go to **Settings** → **SQL Console Access**.
+1. Navigate to your service in the ClickHouse Cloud console
+2. Go to **Settings** → **SQL Console Access**
 3. Set the appropriate permission level for each user:
-   - **Service Admin → Full Access** - Required for enabling alerts.
-   - **Service Read Only → Read Only** - Can view observability data and create dashboards.
-   - **No access** - Can't access Managed ClickStack.
+   - **Service Admin → Full Access** - Required for enabling alerts
+   - **Service Read Only → Read Only** - Can view observability data and create dashboards
+   - **No access** - Can't access HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Read Only" size="md"/>
-</Tab>
-</Tabs>
 
 <Warning>
 **Alerts require admin access**
 
-To enable alerts, at least one user with **Admin** database access through a custom role, or legacy **Service Admin** permissions mapped to **Full Access**, must log into Managed ClickStack at least once. This provisions a dedicated user in the database that runs alert queries.
+To enable alerts, at least one user with **Service Admin** permissions (mapped to **Full Access** in the SQL Console Access dropdown) must log into HyperDX at least once. This provisions a dedicated user in the database that runs alert queries.
 </Warning>
 
 ### Using ClickStack with read-only compute {#clickstack-read-only-compute}
