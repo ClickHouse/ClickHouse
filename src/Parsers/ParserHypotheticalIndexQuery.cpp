@@ -7,6 +7,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -115,6 +117,37 @@ bool ParserHypotheticalIndexQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     node = query;
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementHypotheticalIndex(StatementFactory & factory)
+{
+    factory.registerStatement("HYPOTHETICAL INDEX",
+    {
+        .description = R"(
+Hypothetical indexes are virtual, session-scoped skipping indexes which can be attached to a table of the `MergeTree`
+family without actually building or storing them. They exist only inside the current session and are used by
+`EXPLAIN WHATIF` to estimate how a real skipping index would affect a query.
+
+**Examples**
+
+**Estimate the effect of a skipping index**
+
+```sql title="Query"
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+)",
+        .syntax = R"(
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+)",
+        .related = {"EXPLAIN", "ALTER TABLE ... INDEX", "CREATE TABLE"},
+    });
 }
 
 }
