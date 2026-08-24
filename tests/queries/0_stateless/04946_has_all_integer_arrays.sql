@@ -77,12 +77,11 @@ SELECT
     hasAny([1, 2, NULL] :: Array(Nullable(Int16)), [NULL] :: Array(Nullable(Int16))) = 1,
     hasAny([1, 2, 3] :: Array(Nullable(Int16)), [NULL] :: Array(Nullable(Int16))) = 0;
 
--- Long Nullable arrays: past the kernel threshold, so this is the case that
--- proves nulls are still diverted before any vector load. With no NULL among
--- the needles, the NULL slots of the haystack cannot satisfy anything, so the
--- answer must match the same call on the haystack with those slots removed.
--- The compacted side is short enough to run the scalar path, so the two sides
--- exercise different code and agreement is meaningful.
+-- Long Nullable arrays. With no NULL among the needles, the NULL slots of the
+-- haystack cannot satisfy anything, so the answer must equal the same call on
+-- the haystack with those slots removed. This pins the answer, not the path:
+-- hasAll currently receives no null map from its caller, so it does not
+-- distinguish the null-map branch of the kernel's entry guard.
 SELECT DISTINCT
     hasAll(nullable_hay, needles)
         = hasAll(arrayFilter(x -> x IS NOT NULL, nullable_hay), needles) AS nullable_long_agrees
