@@ -54,6 +54,35 @@ WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'ta
 ORDER BY a.record_id
 SETTINGS query_plan_direct_read_from_text_index = 0;
 
+SELECT 'OR with a column of the scanned table';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) OR a.group_id = 999
+ORDER BY a.record_id;
+
+SELECT 'AND with the other side, no OR';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'target'
+ORDER BY a.record_id;
+
+-- The explicit-tokenizer form and `has` never depended on the injection; they pin that it stays that way.
+SELECT 'explicit tokenizer argument';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma'], 'array') OR a.group_id = 999
+ORDER BY a.record_id;
+
+SELECT 'has, not a text-search function';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE has(a.shingle_tokens, 'alpha beta gamma') OR a.group_id = 999
+ORDER BY a.record_id;
+
 -- An unindexed column of the other join side that happens to share the indexed column's name must not be
 -- tokenized with this index's tokenizer. Both queries must agree (and return nothing).
 SELECT 'same column name on the other join side';
