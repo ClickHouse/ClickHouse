@@ -46,7 +46,7 @@ namespace DB
 namespace
 {
 
-/// Commit-order key plus everything the watermark needs.
+/// Commit-order key + everything the watermark needs.
 Names metadataStreamColumns(const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
     Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
@@ -62,7 +62,7 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
     return columns;
 }
 
-/// User-requested columns plus the commit-order key and the prewhere and row filter inputs.
+/// User-requested columns + the commit-order key and the prewhere and row filter inputs.
 Names dataStreamColumns(Names columns, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
 {
     for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
@@ -183,8 +183,8 @@ Pipe buildPartitionReadingPipeline(
     if (stream_settings.watermark)
     {
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
-
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
+
         metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
         metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
         metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
