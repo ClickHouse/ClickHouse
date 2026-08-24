@@ -1684,6 +1684,23 @@ target_compile_options(musl PRIVATE
     -Werror=pointer-arith
 )
 
+if (ENABLE_XRAY)
+    # Emit XRay sleds in libc too, so `SYSTEM INSTRUMENT` can patch musl
+    # functions. Sleds are inert nops until patched, so early-init code is
+    # unaffected (unlike sanitizers, which stay off above). The dispatch
+    # handler's thread-local reentrancy guard makes patching functions the
+    # handler itself calls safe. CRT objects stay uninstrumented: rcrt1
+    # runs before static-PIE self-relocation. Note this only covers C
+    # sources - the hot asm routines (memcpy and friends) have no sleds.
+    # Flags mirror cmake/xray_instrumentation.cmake, which runs only after
+    # contrib is configured.
+    target_compile_options(musl PRIVATE
+        -fxray-instrument
+        -fxray-modes=none
+        -fxray-instrumentation-bundle=function
+    )
+endif ()
+
 # Suppress warnings expected in musl's own code
 target_compile_options(musl PRIVATE
     -Wno-unused-function
