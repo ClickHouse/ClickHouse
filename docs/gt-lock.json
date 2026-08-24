@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "a9bcf3875a07cf880ed075f456cbc1b2782d292a0f852b945f6d55846c5c47f3",
+      "versionId": "b87b6761c38881ce9c49dfcde638d7f4622d33fca65436284fef96c67213cd5f",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-24T05:47:49.020Z",
-          "fileName": "docs.json"
-        },
-        "ja": {
-          "updatedAt": "2026-08-24T05:47:48.830Z",
-          "fileName": "docs.json"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-24T05:47:49.210Z",
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:31.405Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-24T05:47:49.580Z",
-          "fileName": "docs.json"
-        },
-        "ar": {
-          "updatedAt": "2026-08-24T05:47:49.770Z",
-          "fileName": "docs.json"
-        },
-        "ru": {
-          "updatedAt": "2026-08-24T05:47:49.395Z",
+          "updatedAt": "2026-08-24T07:19:31.591Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-24T05:47:48.602Z",
+          "updatedAt": "2026-08-24T07:19:31.764Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-24T05:47:49.962Z",
+          "updatedAt": "2026-08-24T07:19:31.940Z",
+          "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T07:19:32.114Z",
+          "fileName": "docs.json"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.285Z",
+          "fileName": "docs.json"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T07:19:32.456Z",
+          "fileName": "docs.json"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T07:19:32.627Z",
           "fileName": "docs.json",
-          "postProcessHash": "74d1e184b44f5cee6c613c2e25dfe7344cb5dd3ae308b1500cb440f75550ffca"
+          "postProcessHash": "91bad66b682e18db1402c59de0d65a798c57b66af46952972fda881110cbf512"
         }
       },
       "fileName": "docs.json",
@@ -31725,47 +31725,47 @@
     },
     {
       "fileId": "439706063732480ca8ea33295b046db328a0924818342785cc252f703728bd4d",
-      "versionId": "c8212064048ee26e699153a601461c2b35708822e974faa7e7394e7fbb889b22",
+      "versionId": "89af6f18573af3b462d26513a66e7d2c2d95ca4c3402866f043fc290bf08ff07",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
+          "updatedAt": "2026-08-24T07:19:32.628Z",
           "fileName": "es/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "e2b39093b4d8af49f1bf678922a40ac1cb55205ff909d9158201fd5a4ec8ee4d"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
-          "fileName": "ja/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "64ebc9b9bb454faf8ee7c82bbe0624481b28fe031dfae8d941bc6806b2113007"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
-          "fileName": "ko/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "466f283ed2ab3081cf15b9821ef5ff81b558f93f434eef3f8fbefb793588a6cd"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
-          "fileName": "pt-BR/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "99f11b4444ce8b0e4758131e1d21dc716473659fc4fe43c490686cf19b088231"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
-          "fileName": "ru/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "522b0f8dcb2f1f368ea9b72d744dd5caea692a2c293e99ccc88165c974916b76"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
-          "fileName": "zh/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "0ee59966a75077e82776c7452870e4e5fd6d8932ef9a1de90c704976aa0b7456"
+          "postProcessHash": "35df578f30236e0ce0d96f2a1a5601d64473863188bc5a91c7aecbcb3356b57b"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
+          "updatedAt": "2026-08-24T07:19:32.631Z",
           "fileName": "ar/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "f087524e4921b18a6313e0f9640d86499fc089313cbe9ff456a963e20d480b98"
+          "postProcessHash": "fc2dfb1a9c8cae9b052a22081d7626a2acb7bdb45d78950ff11cce7701c514f5"
+        },
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:32.632Z",
+          "fileName": "ru/concepts/features/interfaces/overview.mdx",
+          "postProcessHash": "4091faba2c9641c37fa7ba5f90524f60d5c02855f171ba120aa09e72db0b8534"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T07:19:32.633Z",
+          "fileName": "pt-BR/concepts/features/interfaces/overview.mdx",
+          "postProcessHash": "9666c38dc1da5eda6b6aa93b2280c733dc2787b2767a835e6ecc97821db1d14c"
+        },
+        "zh": {
+          "updatedAt": "2026-08-24T07:19:32.633Z",
+          "fileName": "zh/concepts/features/interfaces/overview.mdx",
+          "postProcessHash": "6f710df70014caed3d2190759ad71be9570c120547b2581d407636f4e016b666"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.633Z",
+          "fileName": "ko/concepts/features/interfaces/overview.mdx",
+          "postProcessHash": "00fabb80d2f96d13e83f0f2f2e970a04a4a3e693525cd455e063a32f0c5b61a0"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.381Z",
+          "updatedAt": "2026-08-24T07:19:32.636Z",
           "fileName": "fr/concepts/features/interfaces/overview.mdx",
-          "postProcessHash": "9c029ce7b2e66887c61d4eb13c67d6f27dfb7e8c1a53def0675fe66ed43612dc"
+          "postProcessHash": "1f3f7faf5c8fbc27690faa477ff85e910bcb99218a14bed3537b25d3ae4eedea"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T07:19:32.636Z",
+          "fileName": "ja/concepts/features/interfaces/overview.mdx",
+          "postProcessHash": "4fd23e23ce56f31b66ca869a3a0bfc60dc57c62997bc0026f99c72bbace382a8"
         }
       },
       "fileName": "concepts/features/interfaces/overview.mdx",
@@ -83325,47 +83325,47 @@
     },
     {
       "fileId": "1485b59e55065d39944a24a23d30aeace37dd8746b155123e6fd7e2b3b962877",
-      "versionId": "4a53cae42b8cf4feec25121493b4d1336e974318e36c022c5bd64cd110144fc3",
+      "versionId": "d1494d330b320b1a16c3353b89391be2d74de9428f5ae5daf7056ba94f9ba7d5",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-14T11:20:32.272Z",
+          "updatedAt": "2026-08-24T07:19:32.632Z",
           "fileName": "zh/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "d9fd6b249eb9c651860389d9a843c28cfa62155898a59108a5ba1dddebc5fa1d"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T11:20:32.278Z",
-          "fileName": "fr/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "81a3896c8221129f597dd8a75b5b58b8f65418389a63db32f6afac9aeed0f6cc"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T11:20:32.279Z",
-          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "be9117e22bbc4bb738facca4f31c5f94ff66ad955ee4ecb017b8d86396b95cb5"
-        },
-        "es": {
-          "updatedAt": "2026-08-14T11:20:32.281Z",
-          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "59bb42439e5dbf320406b82fcc487971249ed8102ba1be17f7ce965540689737"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T11:20:32.285Z",
-          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "34c809f95812a84ca36060905e038d3b5d95a1b9bbd702cacf15f058f5a5411c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T11:20:32.287Z",
-          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "cfac61e4f1073250ae8a89dcd1d66ba92868dd3b520c23fdf05ef17393d5397f"
+          "postProcessHash": "e5db834c8dac5ceedbf10354757bc98b3bccf8962b397b9b2c8be630bfc7c599"
         },
         "ja": {
-          "updatedAt": "2026-08-14T11:20:32.289Z",
+          "updatedAt": "2026-08-24T07:19:32.634Z",
           "fileName": "ja/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "88e7b7a9237853e5789c1e0fb9f1da8c15c2c0efd2c6a558c824b01ae51cd9c1"
+          "postProcessHash": "ad62b8a5dee452f7ba37b677a4360022a4f22f18ad0f26d6f38a361d01720bbc"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.635Z",
+          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "642f6ba2f03c84c7d51f5aa35e648ec62e570c24ee2ff8651b9e8c1cf28a729b"
+        },
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:32.637Z",
+          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "65fbf0af3cc79f7972b44723c1af253eb6f9ce07c897228dbe4fb252b412b56f"
+        },
+        "es": {
+          "updatedAt": "2026-08-24T07:19:32.638Z",
+          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "e8e71830e04140c89fd4a545059d7e4a961cd8a7d97f84cfa164cfa50fe3fbc2"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T11:20:32.289Z",
+          "updatedAt": "2026-08-24T07:19:32.638Z",
           "fileName": "pt-BR/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "da48d8d5a1edcc950323007dd415e8c950e26bec367281fcd539fd32d1e9fcdc"
+          "postProcessHash": "0d03d9ccbc774eae82dc5b46fc27509a4d5ceb990312e300bf35beac2f6de3f1"
+        },
+        "fr": {
+          "updatedAt": "2026-08-24T07:19:32.639Z",
+          "fileName": "fr/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "2c7011d4435bd17c885bbecca5a08ca29dd8227aebee9068db030b464931e39f"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T07:19:32.639Z",
+          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "56c703049a7357a840206636ba0b0f1c93cd38c288a36f5f367a32aaa1bdd9f1"
         }
       },
       "fileName": "products/cloud/features/infrastructure/replica-aware-routing.mdx",
@@ -134349,47 +134349,47 @@
     },
     {
       "fileId": "ddde78b0dc658e9c5a33d2077eec5541dd95839182ae278658343d34ecc0b151",
-      "versionId": "1d7bd13a14b3d43f7ba541da907b1ac6c8a16c3dc961e830ddb9b091308c1c94",
+      "versionId": "cc93323e24d70ffccc90b3348d7357e53c1c17cfa83d38ea6e469fa04784e055",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
-          "fileName": "es/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "fc068d88bd3ca27181b14c20ae357dc3cc3372be6e4ec133086177e4cf8f11f8"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
-          "fileName": "ja/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "8186c38b1c0d42160daa38fe4111511bae0960e2e728e4daf0f323eff6b8b8c9"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
-          "fileName": "ko/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "a9714dd4b71fb74f3fed4e0c7340aa8b27339fe6f727ad23f1e7e056d36aeff7"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
+          "updatedAt": "2026-08-24T07:19:32.635Z",
           "fileName": "pt-BR/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "7ec73917b5fc983c016ff821c2e3aea3fa7e0e3f4be6149141a3f3ea6767de2d"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
-          "fileName": "ru/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "9e0581cc80c61f19f661a0cec62b09170a2beb524e7ebc18fecfd5e0ee881cae"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
-          "fileName": "zh/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "83a351cf82efcca92b7257a3f8b9f93ba2efc3ca0a5c5f509deffe243e6bbd77"
+          "postProcessHash": "52fb23bb09a499c94aaea40b95b5b60869227a7581d1124e4ffd48b1c244f601"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.555Z",
+          "updatedAt": "2026-08-24T07:19:32.636Z",
           "fileName": "ar/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "e42d87afc954aa9ba90ec7bd23bd7ff3e7baa57f81f1ac7e726daa6408163afe"
+          "postProcessHash": "ce433dbdaa63bf35df54a9b3c4f8d0525e024d695363eb4d62a8be0443f4aee6"
+        },
+        "es": {
+          "updatedAt": "2026-08-24T07:19:32.637Z",
+          "fileName": "es/integrations/clickpipes/networking/gcp-psc.mdx",
+          "postProcessHash": "d11d3e72c535f0c73335134cb255aca98ee712ab193c6d1f76f856e6e0d95439"
+        },
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:32.637Z",
+          "fileName": "ru/integrations/clickpipes/networking/gcp-psc.mdx",
+          "postProcessHash": "4fbb3e03e56fbea8e2326a07daa8b2bc6193a27b4c50acbe676a5502442b2284"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T07:19:32.638Z",
+          "fileName": "ja/integrations/clickpipes/networking/gcp-psc.mdx",
+          "postProcessHash": "6570abbee957b1edb0ab7454c01b5005a33f3ef4f7ac265616b64a83511de487"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
+          "updatedAt": "2026-08-24T07:19:32.639Z",
           "fileName": "fr/integrations/clickpipes/networking/gcp-psc.mdx",
-          "postProcessHash": "7e5271968cd667a05353ee736b1e8c222d1fd1ddca524755f2fb21f32f88bb39"
+          "postProcessHash": "900e7373645a5385a0dca7109297b9391803b5953062cda8c08166927ac671ba"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.639Z",
+          "fileName": "ko/integrations/clickpipes/networking/gcp-psc.mdx",
+          "postProcessHash": "a9e8112c9cd934a169bdd95f6291f54ec865dd73747aa8dbe201a60763c10d3e"
+        },
+        "zh": {
+          "updatedAt": "2026-08-24T07:19:32.640Z",
+          "fileName": "zh/integrations/clickpipes/networking/gcp-psc.mdx",
+          "postProcessHash": "ece2e591c2e73d5c121d90ada944649b644876ad36bbe956e50a19414fac3966"
         }
       },
       "fileName": "integrations/clickpipes/networking/gcp-psc.mdx",
@@ -134397,47 +134397,47 @@
     },
     {
       "fileId": "8a6ced2357a9e8a739f49a7aaf83474b71a9511467da3de85cd232619439c2cd",
-      "versionId": "f547d453eb8a8d2e88276d529f6ce47d5e78841558235533be4483f097648511",
+      "versionId": "55bb88d03abbf0336ca15e15ce5d2f198de46ba52a7901edb089070a6badfc66",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
-          "fileName": "es/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "838f4e19142e8f19daed07aec9f70b0283468aeac88bf10b17a973ef98334322"
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:32.629Z",
+          "fileName": "ru/integrations/clickpipes/networking/index.mdx",
+          "postProcessHash": "5527a1a0164db61e036acad81a91006dac513a87777b646cf8844280777924eb"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
+          "updatedAt": "2026-08-24T07:19:32.629Z",
           "fileName": "ja/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "47bf83be476f1e2403908f45af67e9e4bb0e324d1e17102a3a458fdff51dc56d"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
-          "fileName": "ko/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "6059b3fde831b262471a51a9812a53fa56ec97cab72492bd43fd03d3ee6b89f7"
+          "postProcessHash": "d3a095f2f8b425bba7b259bb3e9cbcadb66aa98ec7f258abcb64f8270636666d"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
+          "updatedAt": "2026-08-24T07:19:32.630Z",
           "fileName": "pt-BR/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "bd86b53c6ea6c94534367dbc1b949dc11b10b2b348e1d70f8c786e425bf3ae63"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
-          "fileName": "ru/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "fd6d70a194dbce54d1fdb03fd0b915ba46085a6cc479db9957298ccecaa52418"
+          "postProcessHash": "70687043b17d6fc9b071d3e6d7f0994268c0819b2d157892ba3e7cbd8843beac"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
+          "updatedAt": "2026-08-24T07:19:32.631Z",
           "fileName": "zh/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "e4c7045b1f9d671f838cdf0f4634756d66daf837bf27b809703545cbabce7fec"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
-          "fileName": "ar/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "0af8b3c9efa563224da363cc2f5c879a8437db9ad09b6e381c380c6526bedc50"
+          "postProcessHash": "52925d58613a02cbd02b03abaec4ce902aada3eadb4b71c3279d2628aa030930"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.556Z",
+          "updatedAt": "2026-08-24T07:19:32.632Z",
           "fileName": "fr/integrations/clickpipes/networking/index.mdx",
-          "postProcessHash": "d89ef45b773692b5a4bfc087cdc89e4a910bd95a895d4bf551a87814eef4a2a9"
+          "postProcessHash": "3af52b103d6549b3e391417deec4ec94bf7d871758a5947c4e1e50b0e873f737"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T07:19:32.634Z",
+          "fileName": "ar/integrations/clickpipes/networking/index.mdx",
+          "postProcessHash": "8ecf5d72baff52091e1aff30b30ecbc308b612a2d62de72a5f165e0c77f5dde5"
+        },
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.634Z",
+          "fileName": "ko/integrations/clickpipes/networking/index.mdx",
+          "postProcessHash": "bc5d3e37803d55d25e3aa0699cdce7f47a68ec3b074dcb77804f0f402a621fc6"
+        },
+        "es": {
+          "updatedAt": "2026-08-24T07:19:32.635Z",
+          "fileName": "es/integrations/clickpipes/networking/index.mdx",
+          "postProcessHash": "f1954539df123aef7d29006dc32abf3daee8fa2b40e43b779e8e911de2c480bf"
         }
       },
       "fileName": "integrations/clickpipes/networking/index.mdx",
@@ -137177,6 +137177,54 @@
         }
       },
       "fileName": "concepts/features/interfaces/web-ui-result-shaping.mdx",
+      "staged": false
+    },
+    {
+      "fileId": "5cce8fe471935df3f9814481dd60db5cb6e2d910baa35066d4943b9dc1e90dda",
+      "versionId": "735173f37d30ba53781e53260a258797f087c3f73a92ae5d3d53f9fe5dcc07f0",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-08-24T07:19:32.628Z",
+          "fileName": "ko/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "7bd80e2ce756000e4112dda4f8cee43427a405688fd49ed1ae6b8679341f9e90"
+        },
+        "ru": {
+          "updatedAt": "2026-08-24T07:19:32.628Z",
+          "fileName": "ru/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "eae03fd3e0a3fe422e161bfe4c7a1790de0d70e6b900e1d402afd8d9d0ccb36d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-24T07:19:32.629Z",
+          "fileName": "pt-BR/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "6f70b783424c583b7b63342e75b396c07df66539da049b52d5d04f084e82f558"
+        },
+        "ar": {
+          "updatedAt": "2026-08-24T07:19:32.630Z",
+          "fileName": "ar/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "a4a302a00f67fb4085865d7771c76659471b94a199402d937544c85f8720a1b7"
+        },
+        "ja": {
+          "updatedAt": "2026-08-24T07:19:32.630Z",
+          "fileName": "ja/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "08c17cf24ed908b7552e4c0baa20c379151e44c61ec9f7c51b56da461ab0f381"
+        },
+        "zh": {
+          "updatedAt": "2026-08-24T07:19:32.631Z",
+          "fileName": "zh/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "7998fa925e74de395c1016bf1b40a017c718f8992d929f4768ad44a0ce5191eb"
+        },
+        "es": {
+          "updatedAt": "2026-08-24T07:19:32.631Z",
+          "fileName": "es/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "f5debce12f49aee66279d837e36cf767d39f475f5bd8223748474e4878aa1374"
+        },
+        "fr": {
+          "updatedAt": "2026-08-24T07:19:32.634Z",
+          "fileName": "fr/concepts/features/interfaces/adbc.mdx",
+          "postProcessHash": "8fe93c2bd6142654b9a2f362478cf5ff1d13e50a5e44a5eab0fa4c05075018bc"
+        }
+      },
+      "fileName": "concepts/features/interfaces/adbc.mdx",
       "staged": false
     }
   ]

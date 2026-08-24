@@ -219,6 +219,7 @@
                 "ko/concepts/features/interfaces/overview",
                 "ko/concepts/features/interfaces/http",
                 "ko/concepts/features/interfaces/tcp",
+                "ko/concepts/features/interfaces/adbc",
                 "ko/concepts/features/interfaces/jdbc",
                 "ko/concepts/features/interfaces/mysql",
                 {

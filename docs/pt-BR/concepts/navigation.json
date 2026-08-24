@@ -219,6 +219,7 @@
                 "pt-BR/concepts/features/interfaces/overview",
                 "pt-BR/concepts/features/interfaces/http",
                 "pt-BR/concepts/features/interfaces/tcp",
+                "pt-BR/concepts/features/interfaces/adbc",
                 "pt-BR/concepts/features/interfaces/jdbc",
                 "pt-BR/concepts/features/interfaces/mysql",
                 {

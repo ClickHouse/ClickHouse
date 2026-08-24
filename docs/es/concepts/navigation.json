@@ -219,6 +219,7 @@
                 "es/concepts/features/interfaces/overview",
                 "es/concepts/features/interfaces/http",
                 "es/concepts/features/interfaces/tcp",
+                "es/concepts/features/interfaces/adbc",
                 "es/concepts/features/interfaces/jdbc",
                 "es/concepts/features/interfaces/mysql",
                 {

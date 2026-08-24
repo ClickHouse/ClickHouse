@@ -219,6 +219,7 @@
                 "ar/concepts/features/interfaces/overview",
                 "ar/concepts/features/interfaces/http",
                 "ar/concepts/features/interfaces/tcp",
+                "ar/concepts/features/interfaces/adbc",
                 "ar/concepts/features/interfaces/jdbc",
                 "ar/concepts/features/interfaces/mysql",
                 {
