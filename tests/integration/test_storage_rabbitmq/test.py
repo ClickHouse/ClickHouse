@@ -2213,10 +2213,17 @@ def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, u
 
     assert channel.queue_declare(queue=queue, passive=True)
 
-    # Both patterns are scoped to this table's own logger, so no other test in this module can
-    # satisfy them, and the close they match is this table's own consumer channel.
+    # All three patterns are scoped to this table's own logger, so no other test in this module can
+    # satisfy them, and the close they match is this table's own consumer channel. The bound in the
+    # wait pattern is what distinguishes the awaiting wait from the unrelated 30000ms ones: the
+    # remaining time shrinks across iterations, so any value below the four-digit ceiling matches
+    # while 30000 cannot.
     closed_pattern = f"StorageRabbitMQ ({table}): Consumer channel .* is closed"
     deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    wait_pattern = (
+        f"StorageRabbitMQ ({table}): "
+        r"Started blocking loop with [0-9]\{1,4\}ms timeout"
+    )
 
     def first_timestamp(lines):
         match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+", lines)
@@ -2224,6 +2231,7 @@ def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, u
         return match.group(0)
 
     assert not instance.grep_in_log(closed_pattern), "consumer channel closed before DROP TABLE"
+    assert not instance.grep_in_log(wait_pattern), "consumer channels awaited before DROP TABLE"
 
     instance.query(f"DROP TABLE {table}")
 
@@ -2240,6 +2248,15 @@ def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, u
     assert closed, "DROP TABLE deleted the queue without awaiting the consumer channel close"
     assert first_timestamp(closed) <= first_timestamp(deleted), (
         f"consumer channel closed after the queue was deleted:\n{closed}\n{deleted}"
+    )
+
+    # The close alone can be ordered first by the reply merely arriving early, so require the wait
+    # itself to have run before the deletion. That edge exists only when the queues are deleted
+    # after awaiting the channels, rather than concurrently with them.
+    waited = instance.grep_in_log(wait_pattern, only_latest=True)
+    assert waited, "DROP TABLE deleted the queue without waiting for the consumer channels"
+    assert first_timestamp(waited) <= first_timestamp(deleted), (
+        f"consumer channels awaited after the queue was deleted:\n{waited}\n{deleted}"
     )
 
     # The queue must be really gone, not merely reported as deleted. Only a 404 means that.

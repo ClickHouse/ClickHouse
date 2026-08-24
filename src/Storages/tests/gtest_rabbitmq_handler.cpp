@@ -7,6 +7,9 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/logger_useful.h>
 
+#include <chrono>
+#include <thread>
+
 using namespace DB;
 
 /// Regression test for the dead-connection hang (issue #108496). When RabbitMQ closes the
@@ -49,6 +52,32 @@ TEST(RabbitMQHandler, BlockingLoopReturnsTrueWhenStopped)
     uv_run(loop.getLoop(), UV_RUN_NOWAIT);
 
     EXPECT_TRUE(finished_naturally);
+}
+
+/// The timeout must span the requested interval no matter how long the loop sat idle beforehand.
+/// libuv derives a timer's deadline from a clock the loop caches while it runs, so an idle loop
+/// holds an arbitrarily old value, and a timer armed against it is already overdue and fires on the
+/// first iteration. A wait that returns immediately is indistinguishable from a broker that never
+/// answered, which turns every bounded wait into a no-op.
+TEST(RabbitMQHandler, BlockingLoopHonoursTimeoutAfterIdlePeriod)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+
+    /// One turn so the loop caches a timestamp, then let that cached value age well past the
+    /// timeout used below. Nothing may drive the loop during the wait, as that would refresh it.
+    uv_run(loop.getLoop(), UV_RUN_NOWAIT);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    /// Nothing calls stopBlockingLoop(), so the only way out is the timeout itself.
+    auto started_at = std::chrono::steady_clock::now();
+    bool finished_naturally = handler.startBlockingLoopWithTimeout(/* timeout_ms = */ 500);
+    auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+    EXPECT_FALSE(finished_naturally);
+    /// Only a lower bound is asserted: a loaded machine can overshoot the timeout, but it cannot
+    /// make the wait end early.
+    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 400);
 }
 
 #endif
