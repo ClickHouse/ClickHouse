@@ -101,12 +101,12 @@ public:
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
     /// Values above this are indistinguishable from each other in
-    /// getNumDistinctMarksCapped(), so it can only answer questions about bounds
+    /// `getNumDistinctMarksCapped`, so it can only answer questions about bounds
     /// strictly below it.
     static constexpr size_t DISTINCT_MARKS_CAP = 3;
 
     /// Number of groups of consecutive equal marks in the array, saturating at
-    /// DISTINCT_MARKS_CAP. Counted over the whole array as stored, so for a
+    /// `DISTINCT_MARKS_CAP`. Counted over the whole array as stored, so for a
     /// multi-column mark file this interleaves the columns and is not the count
     /// for any single column.
     size_t getNumDistinctMarksCapped() const { return num_distinct_marks_capped; }
@@ -142,7 +142,7 @@ public:
         size_t total_marks;
         size_t marks_flushed = 0;
         size_t packed_bits = 0;
-        /// Carried across flushBlock calls so a group of equal marks spanning a
+        /// Carried across `flushBlock` calls so a group of equal marks spanning a
         /// block or chunk boundary is counted once.
         size_t num_distinct_marks_capped = 0;
         MarkInCompressedFile last_mark{UINT64_MAX, UINT64_MAX};

@@ -73,7 +73,7 @@ MarkInCompressedFile mark(size_t x, size_t y = 0)
     return MarkInCompressedFile{.offset_in_compressed_file = x, .offset_in_decompressed_block = y};
 }
 
-/// What MergeTreeReaderStream::hasAtMostNDistinctMarks counts by scanning: groups
+/// What `MergeTreeReaderStream::hasAtMostNDistinctMarks` counts by scanning: groups
 /// of consecutive equal marks, saturated the same way.
 size_t referenceDistinctMarksCapped(const PODArray<MarkInCompressedFile> & plain)
 {
@@ -97,7 +97,7 @@ TEST(Marks, DistinctMarksCapped)
 {
     const size_t block = MarksInCompressedFile::MARKS_PER_BLOCK;
 
-    /// Chunk sizes that straddle MARKS_PER_BLOCK so the count must survive both
+    /// Chunk sizes that straddle `MARKS_PER_BLOCK` so the count must survive both
     /// block flushes and the builder's internal buffering of partial chunks.
     const std::vector<size_t> chunk_sizes{1, 7, 255, 256, 257, 300, 511, 513};
 
