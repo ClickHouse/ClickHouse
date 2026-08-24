@@ -50,8 +50,14 @@ public:
     /// The populating tiers' writers overlapping `range` - the write-up targets for one FETCH read.
     VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
 
-    /// Append the resolution of `[resolvedEnd(), new_end)`. `resolved` is one `PlanTier` per provider,
-    /// fastest-first, matching the existing tier order (and set on the first call).
+    /// Resolve `[resolvedEnd(), new_end)` across EVERY provider in `chain` (one `PlanTier` per provider,
+    /// fastest-first) and append it - so the plan itself guarantees all layers are asked. `object` and
+    /// `object_offset` locate `range` in object space for `resolve`.
+    void extend(size_t new_end, const CacheChain & chain,
+                const StoredObject & object, size_t object_offset, ByteRange range);
+
+    /// Low-level append of a pre-resolved span, matched to the held tiers by `CacheTier`. Used by the
+    /// chain-driving `extend` above and by unit tests that inject residency directly.
     void extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved);
 
     /// The executor-local memory hold - fetched bytes no tier accepted (read-only / detached / rejected

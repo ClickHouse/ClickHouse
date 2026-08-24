@@ -143,6 +143,21 @@ ChainedBuffers ReadPlan::readMemory(ByteRange range) const
     return memory.slice(range);
 }
 
+void ReadPlan::extend(size_t new_end, const CacheChain & chain,
+                      const StoredObject & object, size_t object_offset, ByteRange range)
+{
+    /// Ask EVERY layer, fastest-first, so no tier is ever skipped - the plan owns this invariant.
+    VectorWithMemoryTracking<PlanTier> resolved;
+    for (const auto & cache : chain)
+    {
+        PlanTier pt;
+        pt.tier = cache->tier();
+        pt.cells = cache->resolve(object, object_offset, range);
+        resolved.push_back(std::move(pt));
+    }
+    extend(new_end, std::move(resolved));
+}
+
 void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved)
 {
     if (tiers.empty())
@@ -151,17 +166,22 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
     }
     else
     {
-        /// Append each tier's new cells, dropping any starting before its held end (a segment
-        /// overhanging the previous sub-span is re-returned by the next `resolve`).
-        for (size_t i = 0; i < tiers.size() && i < resolved.size(); ++i)
+        /// Append each tier's new cells, matching resolved tiers to held tiers by `CacheTier` rather
+        /// than by position (a chain has one provider per tier). Drop any cell starting before its held
+        /// end - a segment overhanging the previous sub-span is re-returned by the next `resolve`.
+        for (auto & held : tiers)
         {
-            size_t held_end = tiers[i].cells.empty() ? span_start : tiers[i].cells.back().range.end();
-            for (auto & cell : resolved[i].cells)
+            auto it = std::find_if(resolved.begin(), resolved.end(),
+                [&](const PlanTier & r) { return r.tier == held.tier; });
+            if (it == resolved.end())
+                continue;
+            size_t held_end = held.cells.empty() ? span_start : held.cells.back().range.end();
+            for (auto & cell : it->cells)
             {
                 if (cell.range.offset < held_end)
                     continue;
                 held_end = cell.range.end();
-                tiers[i].cells.push_back(std::move(cell));
+                held.cells.push_back(std::move(cell));
             }
         }
     }

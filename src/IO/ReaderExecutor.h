@@ -31,9 +31,6 @@ namespace DB
 class ReadBufferFromFileBase;
 class EncryptionHeaderCache;
 
-/// Ordered cache chain, front = fastest tier.
-using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
-
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves bytes from an
 /// `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time. Drives the experimental
 /// `use_reader_executor` read path. One instance per column-stream; not thread-safe.

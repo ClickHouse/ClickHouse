@@ -398,16 +398,9 @@ void ReaderExecutor::ensureResolved(size_t pos)
         const auto & piece = pieces.front();
         const size_t hi = lo + piece.size;
 
-        VectorWithMemoryTracking<PlanTier> resolved;
-        for (auto & cache : cache_chain)
-        {
-            stats.add(Stats::CacheGetRequests);
-            PlanTier pt;
-            pt.tier = cache->tier();
-            pt.cells = cache->resolve(piece.object, piece.object_offset, ByteRange{lo, piece.size});
-            resolved.push_back(std::move(pt));
-        }
-        read_plan.extend(hi, std::move(resolved));
+        /// The plan resolves every layer itself (all tiers asked, matched by CacheTier).
+        stats.add(Stats::CacheGetRequests, cache_chain.size());
+        read_plan.extend(hi, cache_chain, piece.object, piece.object_offset, ByteRange{lo, piece.size});
     }
 }
 
