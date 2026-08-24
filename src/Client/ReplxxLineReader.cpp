@@ -704,6 +704,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
+
+    if (options.vim)
+    {
+        rx.set_escdelay(10);
+        setupVimKeybindings();
+    }
 }
 
 bool ReplxxLineReader::isCursorAtEndOfInput()
