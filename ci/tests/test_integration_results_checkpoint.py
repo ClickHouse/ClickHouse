@@ -32,6 +32,7 @@ import ast
 import os
 import subprocess
 import sys
+import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -216,27 +217,20 @@ def test_main_hands_the_checkpoint_its_collected_results():
         bound = dict(zip(params, node.args))
         bound.update({kw.arg: kw.value for kw in node.keywords if kw.arg})
 
-        def name_of(value):
-            if isinstance(value, ast.Name):
-                return value.id
-            if isinstance(value, ast.Attribute):
-                return value.attr
-            return ast.dump(value)
-
-        got = {param: name_of(value) for param, value in bound.items()}
-        assert got.get("test_results") == "test_results", (
-            f"the checkpoint call at line {node.lineno} does not pass `test_results` as "
-            f"`test_results` (binds {got}); anything else can persist an empty report"
-        )
-        assert got.get("is_local_run") == "is_local_run", (
-            f"the checkpoint call at line {node.lineno} does not pass `is_local_run` as "
-            f"`is_local_run` (binds {got}); the guard would then read another value"
-        )
-        assert got.get("job_name") == "job_name", (
-            f"the checkpoint call at line {node.lineno} does not pass `job_name` as "
-            f"`job_name` (binds {got}); the helper reads it as the identity of the "
-            f"result file to update, so any other value writes the wrong report"
-        )
+        # The whole expression, not its trailing attribute: `info.job_name` and
+        # `undefined.job_name` share the attribute, and the second raises before
+        # anything is checkpointed.
+        got = {param: ast.unparse(value) for param, value in bound.items()}
+        for param, expected in (
+            ("test_results", "test_results"),
+            ("is_local_run", "info.is_local_run"),
+            ("job_name", "info.job_name"),
+        ):
+            assert got.get(param) == expected, (
+                f"the checkpoint call at line {node.lineno} passes {got.get(param)!r} as "
+                f"`{param}` rather than `{expected}` (binds {got}); the results would be "
+                f"read from somewhere other than the run that collected them"
+            )
 
 
 def test_the_checkpoint_call_is_unconditional():
@@ -501,6 +495,73 @@ def test_the_on_error_hook_publishes_a_usable_archive_it_could_not_exit_cleanly_
         assert (
             "job.log" in listing.stdout
         ), f"the published archive is missing an input that existed: {listing.stdout}"
+        assert not list(
+            work.glob("ci/tmp/*.tmp")
+        ), "the on_error_hook left its temporary archive behind after publishing"
+
+
+def test_the_on_error_hook_publishes_on_a_real_tar_exit_of_one(tmp_path):
+    """The hook must RUN and publish on `tar` exit 1, not only on the glob's exit 2.
+
+    Exit 1 is "some files differ", which every log the job is still appending to
+    produces, so it is the hook's most-travelled non-zero rc. The other runtime arms
+    both drive exit 2, leaving the `-le 1` half of the rc branch unexecuted: a discard
+    inserted for exit 1 alone would keep them green.
+    """
+    for hook in _hook_literals():
+        work = tmp_path / "rc-one"
+        (work / "ci/tmp").mkdir(parents=True, exist_ok=True)
+        # The `_instances*` glob must expand here, or its unmatched pattern makes tar
+        # exit 2 and rc 1 never surfaces.
+        (work / "tests/integration/test_x/_instances").mkdir(
+            parents=True, exist_ok=True
+        )
+        (work / "tests/integration/test_x/_instances/node.log").write_text(
+            "node\n", encoding="utf-8"
+        )
+        (work / "ci/tmp/host_metrics.jsonl").write_text("{}\n", encoding="utf-8")
+        # Grown while tar reads it, which is what makes tar report 1. Large and
+        # incompressible so the write is still in progress when the appender starts.
+        live = work / "ci/tmp/job.log"
+        live.write_bytes(os.urandom(48 * 1024 * 1024))
+
+        stop = threading.Event()
+
+        def append():
+            with open(live, "ab") as f:
+                while not stop.is_set():
+                    f.write(os.urandom(1024 * 1024))
+                    f.flush()
+
+        appender = threading.Thread(target=append, daemon=True)
+        appender.start()
+        try:
+            proc = _run_hook(work, hook)
+        finally:
+            stop.set()
+            appender.join(timeout=30)
+
+        assert "tar rc [1]" in proc.stdout, (
+            "the hook did not report tar rc 1, so this arm did not exercise the rc-1 "
+            f"path it exists for:\n{proc.stdout}\n{proc.stderr}"
+        )
+        published = work / "ci/tmp/logs.tar.gz"
+        assert published.is_file(), (
+            "the on_error_hook published no archive on a tar exit of 1, which every "
+            f"still-growing log produces:\n{proc.stdout}\n{proc.stderr}"
+        )
+        listing = subprocess.run(
+            ["tar", "-tzf", str(published)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (
+            listing.returncode == 0
+        ), f"the archive published on rc 1 does not read back: {listing.stderr}"
+        assert (
+            "job.log" in listing.stdout
+        ), f"the appended input is not in the archive: {listing.stdout}"
         assert not list(
             work.glob("ci/tmp/*.tmp")
         ), "the on_error_hook left its temporary archive behind after publishing"
