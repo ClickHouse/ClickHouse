@@ -18,6 +18,10 @@ public:
     /// Returns persistent UUID of current clickhouse-server or clickhouse-keeper instance.
     static UUID get();
 
+    /// The UUID is loaded after the global context is created, so a caller that runs before that
+    /// point, or that treats the UUID as optional, cannot use get(). Nil means "not loaded yet".
+    static UUID tryGet();
+
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
 
