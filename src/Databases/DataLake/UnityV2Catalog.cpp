@@ -134,7 +134,8 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     if (effective_oauth_uri.empty())
     {
         Poco::URI base(base_url_str);
-        effective_oauth_uri = base.getScheme() + "://" + base.getHost() + "/oidc/v1/token";
+        base.setPathEtc("/oidc/v1/token");
+        effective_oauth_uri = base.toString();
     }
 
     /// The parameters always go into the request body, as RFC 6749 requires.
