@@ -94,8 +94,9 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 set_size_limits,
                 limit_hint,
                 columns,
-                pre_distinct,
-                build_settings.max_threads,
+                /// The two-level parallel build only helps the single-stream final deduplication; a
+                /// preliminary one runs per stream, so give it one thread to avoid oversubscription.
+                pre_distinct ? 1 : build_settings.max_threads,
                 build_settings.distinct_two_level_threshold,
                 build_settings.distinct_two_level_threshold_bytes,
                 build_settings.distinct_two_level_parallel_build_min_rows);
