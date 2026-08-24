@@ -1,0 +1,140 @@
+---
+description: 'تعرّف على سبب عدم استمرار `SET ROLE` في ClickHouse Cloud SQL Console وكيفية تعيين أذونات دائمة لكل مستخدم.'
+sidebar_label: 'سبب عدم استمرار `SET ROLE` في SQL Console'
+sidebar_position: 6
+slug: /resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console
+title: 'سبب عدم استمرار `SET ROLE` في ClickHouse Cloud SQL Console'
+doc_type: 'guide'
+date: 2026-07-24
+tags: ['الأمان والمصادقة', 'إدارة Cloud', 'استكشاف الأخطاء وإصلاحها']
+keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Access Control']
+---
+
+عند تشغيل `SET ROLE` في ClickHouse Cloud SQL Console، قد يبدو أن الدور يتغير لاستعلام واحد ثم يعود إلى حالته السابقة في الاستعلام التالي. استخدم دور SQL Console مخصصًا لكل مستخدم عندما تحتاج الأذونات إلى الاستمرار عبر الاستعلامات والجلسات.
+
+<div id="symptoms">
+  ## الأعراض
+</div>
+
+قد تلاحظ واحدًا أو أكثر مما يلي:
+
+* بعد تشغيل `SET ROLE sql_console_developer`، تستمر الاستعلامات اللاحقة في التنفيذ باستخدام `sql_console_read_only`.
+* تختلف نتائج `currentRoles` و`enabledRoles` و`defaultRoles` من استعلام إلى آخر.
+* لا يؤدي تشغيل `SET ROLE` مع استعلام آخر إلى الاحتفاظ بالدور المحدد باستمرار.
+* يعرض `SHOW GRANTS` الأدوار المتوقعة، لكن أذوناتها غير مفعّلة.
+
+يمكنك فحص المستخدم الحالي والأدوار باستخدام:
+
+```sql
+SELECT
+    currentUser(),
+    currentRoles(),
+    enabledRoles(),
+    defaultRoles();
+```
+
+<div id="why-this-happens">
+  ## سبب حدوث ذلك
+</div>
+
+ترسل SQL Console الاستعلامات عبر اتصالات HTTP عديمة الحالة إلى خدمة ClickHouse Cloud تضم عدة نُسخ متماثلة. ولا يُضمن أن تستخدم الاستعلامات المتتالية الاتصال نفسه أو النسخة المتماثلة نفسها.
+
+يغيّر `SET ROLE` الأدوار المفعّلة للجلسة الحالية، لكنه لا يحفظ حالة الجلسة هذه لطلبات SQL Console اللاحقة. لذلك، قد يُنفَّذ استعلام لاحق من دون الدور الذي فعّله طلب سابق.
+
+لهذا السبب، لا تستخدم `SET ROLE` كآلية دائمة للتحكم في الوصول في SQL Console.
+
+<div id="how-sql-console-user-roles-work">
+  ## آلية عمل أدوار مستخدمي SQL Console
+</div>
+
+عندما يفتح المستخدم SQL Console، ينشئ ClickHouse Cloud مستخدم قاعدة بيانات وفق اصطلاح التسمية التالي:
+
+```text
+sql-console:user@example.com
+```
+
+يتحقق ClickHouse Cloud أيضًا من وجود دور قاعدة بيانات يتبع اسمه الاصطلاح التالي:
+
+```text
+sql-console-role:user@example.com
+```
+
+عند وجود هذا الدور، يُسنِده ClickHouse Cloud إلى مستخدم SQL Console المقابل. وهذه هي الطريقة المدعومة لمنح أذونات مخصصة دائمة لمستخدم محدد في SQL Console.
+
+| الكيان                                       | الغرض                                                  | دائم                                |
+| -------------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
+| `sql-console:<email>`                        | مستخدم قاعدة بيانات يُنشأ عند فتح المستخدم SQL Console | نعم، يديره ClickHouse Cloud         |
+| `sql_console_admin` و`sql_console_read_only` | أدوار SQL Console المضمّنة                             | نعم، يديرها ClickHouse Cloud        |
+| `sql-console-role:<email>`                   | دور مخصص لكل مستخدم ينشئه مسؤول                        | نعم، يُطبّق عند تسجيل دخول المستخدم |
+
+<div id="configure-persistent-permissions">
+  ## تهيئة الأذونات الدائمة
+</div>
+
+نفّذ العبارات التالية بصفتك مستخدمًا لديه امتيازات إدارية على الخدمة، مثل مستخدم SQL Console لديه دور `sql_console_admin` أو مستخدم آخر لديه امتياز `ACCESS MANAGEMENT`.
+
+<Steps>
+  <Step title="إنشاء الدور المخصص" id="create-the-custom-role">
+    ينشئ المثال التالي دورًا مخصصًا باسم `sql_console_developer` ويمنحه أذونات على `my_database`:
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS sql_console_developer;
+
+    GRANT SELECT, INSERT, CREATE TABLE
+    ON my_database.*
+    TO sql_console_developer;
+    ```
+
+    `sql_console_developer` دورٌ مستخدم في المثال، وليس دورًا مضمّنًا في ClickHouse Cloud. يمكنك بدلًا من ذلك استخدام دور مخصص موجود يتضمن الأذونات التي يحتاج إليها المستخدم.
+  </Step>
+
+  <Step title="إنشاء دور SQL Console لكل مستخدم" id="create-the-per-user-sql-console-role">
+    أنشئ دورًا يتضمن اسمه عنوان البريد الإلكتروني الكامل للمستخدم:
+
+    ```sql
+    CREATE ROLE IF NOT EXISTS `sql-console-role:user@example.com`;
+    ```
+
+    تُعد علامات backticks مطلوبة لأن اسم الدور يحتوي على أحرف خاصة.
+  </Step>
+
+  <Step title="منح الدور المخصص" id="grant-the-custom-role">
+    امنح الدور المطلوب لدور SQL Console الخاص بالمستخدم:
+
+    ```sql
+    GRANT sql_console_developer
+    TO `sql-console-role:user@example.com`;
+    ```
+
+    يمكنك منح أدوار متعددة عند الحاجة:
+
+    ```sql
+    GRANT sql_console_developer, sql_console_read_only
+    TO `sql-console-role:user@example.com`;
+    ```
+  </Step>
+
+  <Step title="بدء جلسة جديدة في SQL Console" id="start-a-new-sql-console-session">
+    اطلب من المستخدم تسجيل الخروج ثم تسجيل الدخول مجددًا إلى SQL Console، أو تحديث علامة تبويب المتصفح. في الجلسة الجديدة، يطبّق ClickHouse Cloud ‏`sql-console-role:user@example.com` على ‏`sql-console:user@example.com`، ولا يلزم تنفيذ عبارة `SET ROLE`.
+
+    تحقق من الأدوار النشطة:
+
+    ```sql
+    SELECT
+        currentUser(),
+        currentRoles(),
+        enabledRoles(),
+        defaultRoles();
+    ```
+
+    يجب أن تتضمن النتائج الأذونات الممنوحة عبر `sql-console-role:user@example.com`.
+  </Step>
+</Steps>
+
+<div id="avoid-modifying-managed-roles">
+  ## تجنب تعديل الأدوار المُدارة
+</div>
+
+لا تعدّل `sql_console_admin` أو `sql_console_read_only` لمنح أذونات مخصصة. يدير ClickHouse Cloud هذه الأدوار المضمنة. استخدم بدلاً من ذلك `sql-console-role:<email>` لتعيين أذونات لكل مستخدم.
+
+للاطلاع على أمثلة عامة لإدارة الأدوار، راجع [استعلامات شائعة لإدارة الوصول](/ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries).

@@ -45,7 +45,7 @@ public:
             return;
 
         /// Check that query has only single table expression
-        auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
+        auto join_tree_node_type = query_node->getJoinTreeNode()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
@@ -81,13 +81,13 @@ public:
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
         auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
-        subquery->getJoinTree() = query_node->getJoinTree();
+        subquery->getJoinTreeNode() = query_node->getJoinTreeNode();
         subquery->getProjection().getNodes().push_back(count_distinct_argument_column);
         subquery->getGroupBy().getNodes().push_back(count_distinct_argument_column);
         subquery->resolveProjectionColumns({count_distinct_argument_column_typed.getColumn()});
 
         /// Put subquery into JOIN TREE of initial query
-        query_node->getJoinTree() = std::move(subquery);
+        query_node->getJoinTreeNode() = std::move(subquery);
 
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();

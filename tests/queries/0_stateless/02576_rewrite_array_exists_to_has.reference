@@ -7,14 +7,13 @@ QUERY id: 0
         ARGUMENTS
           LIST id: 3, nodes: 2
             LAMBDA id: 4
-              ARGUMENTS 
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: x, result_type: UInt8, source_id: 4
+              ARGUMENTS id: 5
+                ARGUMENT id: 0, name: x, type: UInt8
               EXPRESSION 
-                FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 8, nodes: 2
-                      COLUMN id: 6, column_name: x, result_type: UInt8, source_id: 4
+                    LIST id: 7, nodes: 2
+                      COLUMN id: 8, column_name: x, result_type: UInt8, source_id: 5
                       CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
             FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
@@ -39,15 +38,14 @@ QUERY id: 0
         ARGUMENTS
           LIST id: 3, nodes: 2
             LAMBDA id: 4
-              ARGUMENTS 
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: x, result_type: UInt8, source_id: 4
+              ARGUMENTS id: 5
+                ARGUMENT id: 0, name: x, type: UInt8
               EXPRESSION 
-                FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 8, nodes: 2
-                      CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
-                      COLUMN id: 6, column_name: x, result_type: UInt8, source_id: 4
+                    LIST id: 7, nodes: 2
+                      CONSTANT id: 8, constant_value: UInt64_5, constant_value_type: UInt8
+                      COLUMN id: 9, column_name: x, result_type: UInt8, source_id: 5
             FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
                 LIST id: 11, nodes: 1

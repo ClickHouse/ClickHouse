@@ -233,3 +233,85 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     assert_no_eviction(wait_for_stable_system_segments())
 
     node.query("DROP TABLE t0 SYNC")
+
+
+def test_split_cache_mark_files_in_system_segment(started_cluster):
+    """
+    Verify that mark files (.cmrk2, .mrk2, etc.) are classified as System
+    cache segments when their extensions are listed in `system_cache_extensions`.
+    The `split_cache_marks` disk extends the default system extensions with all
+    known mark file suffixes.
+    """
+    filesystem_cache_name = "split_cache_marks"
+    mark_extensions = (".cmrk2", ".cmrk3", ".mrk2", ".mrk3", ".cmrk", ".mrk")
+
+    node.query("DROP TABLE IF EXISTS t_marks")
+    node.query(
+        f"""
+        CREATE TABLE t_marks (
+            key UInt64,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        PRIMARY KEY key
+        SETTINGS
+            storage_policy = '{filesystem_cache_name}',
+            min_bytes_for_wide_part = 0
+        """
+    )
+
+    for _ in range(10):
+        node.query(
+            "INSERT INTO t_marks SELECT rand()%1000, rand()%1000 FROM numbers(100000)"
+        )
+
+    node.query("SYSTEM STOP MERGES t_marks")
+    node.query(f"SYSTEM CLEAR FILESYSTEM CACHE '{filesystem_cache_name}'")
+
+    # Warm the cache via a full scan.
+    node.query("SELECT * FROM t_marks FORMAT NULL")
+
+    mark_ext_condition = " OR ".join(
+        f"endsWith(rdp.local_path, '{ext}')" for ext in mark_extensions
+    )
+
+    system_mark_count = int(
+        node.query(
+            f"""
+            SELECT count()
+            FROM system.remote_data_paths AS rdp
+            INNER JOIN system.filesystem_cache AS fc
+                ON arrayJoin(rdp.cache_paths) = fc.cache_path
+            WHERE fc.cache_name = '{filesystem_cache_name}'
+              AND fc.segment_type = 'System'
+              AND ({mark_ext_condition})
+              AND fc.size > 0
+            """
+        )
+    )
+
+    data_mark_count = int(
+        node.query(
+            f"""
+            SELECT count()
+            FROM system.remote_data_paths AS rdp
+            INNER JOIN system.filesystem_cache AS fc
+                ON arrayJoin(rdp.cache_paths) = fc.cache_path
+            WHERE fc.cache_name = '{filesystem_cache_name}'
+              AND fc.segment_type = 'Data'
+              AND ({mark_ext_condition})
+              AND fc.size > 0
+            """
+        )
+    )
+
+    assert system_mark_count > 0, (
+        "Expected at least one mark-file cache segment classified as System, "
+        f"but got {system_mark_count}"
+    )
+    assert data_mark_count == 0, (
+        "Mark files must not appear in the Data cache segment, "
+        f"but found {data_mark_count}"
+    )
+
+    node.query("DROP TABLE t_marks SYNC")
