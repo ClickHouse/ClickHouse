@@ -166,6 +166,12 @@ GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
     EXPECT_EQ(without_rules, expected_v0);
     ASSERT_GE(with_rules.size(), 2);
     EXPECT_EQ(static_cast<UInt8>(with_rules[1]), 1);
+
+    /// Version 0 is promised for every rule-free JSON, not only the bare default one.
+    const auto typed_paths_without_rules = encodeDataType(DataTypeFactory::instance().get(
+        "JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+    ASSERT_GE(typed_paths_without_rules.size(), 2);
+    EXPECT_EQ(static_cast<UInt8>(typed_paths_without_rules[1]), 0);
 }
 
 GTEST_TEST(DataTypesBinaryEncoding, RejectsMalformedJSONSharedRegexpV1)
