@@ -126,10 +126,10 @@ void RandImpl::execute(char * output, size_t size)
             state[i] = vreinterpretq_u8_u64(vld1q_u64(block_counter));
         }
         for (int r = 0; r + 1 < rounds; ++r)
-            for (int i = 0; i < blocks; ++i)
-                state[i] = vaesmcq_u8(vaeseq_u8(state[i], round_keys[r]));
-        for (int i = 0; i < blocks; ++i)
-            state[i] = veorq_u8(vaeseq_u8(state[i], round_keys[rounds - 1]), round_keys[rounds]);
+            for (auto & block : state)
+                block = vaesmcq_u8(vaeseq_u8(block, round_keys[r]));
+        for (auto & block : state)
+            block = veorq_u8(vaeseq_u8(block, round_keys[rounds - 1]), round_keys[rounds]);
         for (int i = 0; i < blocks; ++i)
             vst1q_u8(reinterpret_cast<uint8_t *>(output) + 16 * i, state[i]);
         output += bytes_per_write;
