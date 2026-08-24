@@ -362,6 +362,47 @@ def test_archive_skips_missing_inputs_without_raising(tmp_path):
     assert "present.txt" in listing, f"the existing input was not archived: {listing!r}"
 
 
+def test_an_internal_failure_kills_the_whole_group_it_started(tmp_path):
+    """An exception inside `Shell.run` must not leave the command's group running.
+
+    The exception handler is the one exit that does not go through the watchdog: the
+    `finally` cancels it, so whatever the handler leaves alive is never signalled by
+    anyone. Killing only the leader therefore lets a background descendant outlive the
+    attempt and keep writing, which is what the bound exists to stop.
+
+    Driven by a 16 MiB stdin write into a command that does not read stdin, which raises
+    after `Popen`. Observed through a marker the descendant writes only if it survived:
+    the leader `exec`s away immediately, so its own liveness says nothing.
+    """
+    marker = tmp_path / "descendant-survived"
+    sleep_s = 6
+    fragment = f"(sleep {sleep_s}; touch {marker}) & exec true"
+
+    # This fragment really does outlive an ordinary Shell.run, so a missing marker below
+    # is the kill and not the fragment failing to run.
+    control = tmp_path / "control-survived"
+    Shell.run(f"(sleep {sleep_s}; touch {control}) & exec true", verbose=False)
+    time.sleep(sleep_s + 3)
+    assert control.exists(), "the control descendant never ran: this arm proves nothing"
+
+    started = time.time()
+    rc = Shell.run(
+        fragment, stdin_str="x" * (16 * 1024 * 1024), timeout=2, verbose=False
+    )
+    elapsed = time.time() - started
+
+    assert rc != 0, "the stdin write did not fail, so no exception path was taken"
+    assert elapsed < sleep_s, (
+        f"Shell.run took {elapsed:.1f}s, as long as the descendant lives: it returned "
+        "normally rather than through the exception path this arm is about"
+    )
+    time.sleep(sleep_s + 4)
+    assert not marker.exists(), (
+        "the descendant outlived the failed attempt: the exception path killed only the "
+        "leader, and the watchdog it cancels can no longer reach the group"
+    )
+
+
 def test_archive_staging_failure_is_reported_not_raised(tmp_path, monkeypatch):
     """A failure while writing the tar manifest must return None, not raise.
 

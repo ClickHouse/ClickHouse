@@ -485,7 +485,17 @@ class Shell:
                         if retry == retries - 1:
                             print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
-                    proc.kill()
+                    # The whole group, not just the leader: `finally` below cancels the
+                    # watchdog, so whatever is left running here is never signalled by
+                    # anyone. Reaped afterwards so the leader leaves no zombie.
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
+                    try:
+                        proc.wait(timeout=10)
+                    except Exception:  # noqa: BLE001
+                        pass
                 if retry == retries - 1:
                     if strict:
                         raise
