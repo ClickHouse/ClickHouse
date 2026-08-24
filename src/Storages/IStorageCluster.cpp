@@ -74,18 +74,36 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
-    /// Listing is one-shot. Recreate only when a real predicate arrives after an
-    /// empty listing (e.g. `initializePipeline` ran before `applyFilters`).
-    if (extension && !(predicate && !extension_has_predicate))
-        return;
+    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+    const UInt64 filter_hash = filter ? filter->getHash() : 0;
+    const bool has_predicate = predicate != nullptr;
+
+    if (extension)
+    {
+        /// Remote sources already hold the iterator; replacing it would be a use-after-free.
+        if (extension_used_in_pipeline)
+            return;
+
+        /// Optimizer `applyFilters` with no extra FilterSteps must not replace a
+        /// listing that already has a predicate with an empty one.
+        if (!has_predicate)
+            return;
+
+        /// Same listing predicate. Recreate when a later `applyFilters` replaces
+        /// `a` with `a AND b` (cluster JOIN wrap applies the copied `WHERE`
+        /// before the optimizer pushes outer filters).
+        if (extension_has_predicate && filter_hash == extension_filter_hash)
+            return;
+    }
 
     extension = storage->getTaskIteratorExtension(
         predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        filter,
         context,
         cluster,
         getStorageSnapshot()->metadata);
-    extension_has_predicate = predicate != nullptr;
+    extension_has_predicate = has_predicate;
+    extension_filter_hash = filter_hash;
 }
 
 /// The code executes on initiator
@@ -169,6 +187,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
     const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     createExtension(predicate);
+    extension_used_in_pipeline = true;
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 

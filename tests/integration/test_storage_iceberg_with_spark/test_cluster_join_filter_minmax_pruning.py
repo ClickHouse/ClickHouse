@@ -44,6 +44,9 @@ def test_cluster_join_filter_minmax_pruning(started_cluster_iceberg_with_spark, 
     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (DATE '2024-01-01', 'AAPL', 1)")
     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (DATE '2024-01-02', 'AAPL', 2)")
     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (DATE '2024-01-03', 'AAPL', 3)")
+    # Passes `bid >= 3`, fails `datetime >= 2024-01-03`. Distinguishes listing
+    # that only saw the inner JOIN `WHERE` from listing that also got the outer `WHERE`.
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (DATE '2024-01-01', 'AAPL', 4)")
 
     iceberg = get_creation_expression(
         storage_type,
@@ -83,7 +86,7 @@ def test_cluster_join_filter_minmax_pruning(started_cluster_iceberg_with_spark, 
             select_expression,
         )
 
-    # Three data files with disjoint bid ranges; bid >= 3 keeps one file.
+    # Four data files: bid 1/2/3/4. `bid >= 3` keeps two files (prunes 2).
     expected_pruned = 2
 
     assert (
@@ -126,4 +129,24 @@ def test_cluster_join_filter_minmax_pruning(started_cluster_iceberg_with_spark, 
             """
         )
         == expected_pruned
+    )
+
+    # Inner `bid >= 3` is copied onto the cluster wrap during planning. The outer
+    # `datetime` predicate is pushed later; listing must be rebuilt or the extra
+    # file with bid=4 / datetime=2024-01-01 is not pruned.
+    assert (
+        check_validity_and_get_prunned_files(
+            f"""
+            SELECT count()
+            FROM
+            (
+                SELECT *
+                FROM {iceberg} AS foo
+                LEFT JOIN `{BAR_NAME}` AS bar ON foo.symbol = bar.symbol
+                WHERE foo.bid >= 3
+            )
+            WHERE datetime >= '2024-01-03'
+            """
+        )
+        == 3
     )
