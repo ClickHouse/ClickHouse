@@ -458,27 +458,9 @@ function run_tests
         fi
     fi
 
-    # For PRs w/o changes in test definitions, test only a subset of queries,
-    # and run them less times. If the corresponding environment variables are
-    # already set, keep those values.
-    #
-    # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    # NOTE: Currently we disabled complete run even for master branch
-    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    #then
-    #    CHPC_RUNS=${CHPC_RUNS:-7}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    #else
-    #    CHPC_RUNS=${CHPC_RUNS:-13}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    #fi
-
     # CHPC_RUNS has no default any more: it is forwarded to perf.py --runs
     # ("at least N runs per query") only when the caller set it; otherwise the
     # adaptive run policy decides the counts.
-    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-
-    export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
@@ -518,16 +500,6 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        max_queries=0
-# TODO: remove?
-#        if rg --quiet "$(basename $test)" changed-test-definitions.txt
-#        then
-#          # Run all queries from changed test files to ensure that all new queries will be tested.
-#          max_queries=0
-#        else
-#          max_queries=$CHPC_MAX_QUERIES
-#        fi
-
         (
             set +x
             argv=(
@@ -541,7 +513,6 @@ function run_tests
                 # Only when the caller explicitly set CHPC_RUNS ("at least N
                 # runs"); otherwise the adaptive run policy decides.
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
-                --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
 
                 "$test"
@@ -1029,7 +1000,7 @@ do
         --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --profile-seconds 0 \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"

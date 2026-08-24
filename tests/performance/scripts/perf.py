@@ -228,7 +228,10 @@ parser.add_argument(
     "--max-queries",
     type=int,
     default=None,
-    help="Test no more than this number of queries, chosen at random.",
+    help="Test no more than this number of queries, chosen at random. Not used "
+    "by the performance comparison, which always runs all queries of a test; "
+    "it exists for profile collection (PGO/BOLT), which only needs to reach the "
+    "code paths inside a time budget.",
 )
 parser.add_argument(
     "--queries-to-run",

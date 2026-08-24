@@ -1020,9 +1020,7 @@ class CHServer:
         )
 
     @classmethod
-    def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
-    ):
+    def run_test(cls, test_file, runs=None, results_path=f"{temp_dir}/perf_wd/"):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
         # --runs ("at least N runs per query") is passed only when explicitly
@@ -1033,7 +1031,7 @@ class CHServer:
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
-                {runs_arg} --max-queries {max_queries} \
+                {runs_arg} \
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
@@ -1669,13 +1667,9 @@ def main():
                         entry.unlink()
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=max_queries,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()
