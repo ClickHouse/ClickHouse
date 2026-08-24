@@ -22,10 +22,9 @@ mkdir -p "${BASE}"
 sqlite3 "${DB_PATH}" "CREATE TABLE tbl(a INTEGER);"
 sqlite3 "${DB_PATH}" "INSERT INTO tbl(a) VALUES (1), (2);"
 
-# Declare a column `missing` that does not exist in the remote SQLite table. The storage quotes identifiers with
-# double quotes, so reading it issues `SELECT "missing" FROM "tbl"`. SQLite must raise "no such column" rather
-# than silently reinterpreting the double-quoted identifier as a string literal (its double-quoted-string
-# compatibility misfeature) and returning the string "missing" for every row - that would be silently wrong data.
+# Declare a column `missing` that does not exist in the remote SQLite table. The storage quotes generated
+# identifiers with strict backquotes, so SQLite raises "no such column" instead of reinterpreting an unresolved
+# double-quoted identifier as a string literal.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04505 (a Nullable(Int64), missing Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'tbl')"
 
 echo 'Reading a column that does not exist in the remote table fails closed instead of returning silently wrong data:'

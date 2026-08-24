@@ -72,6 +72,8 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
         case IdentifierQuotingStyle::DoubleQuotesStandard:
             writeDoubleQuotedStringStandard(s, out);
             break;
+
+        case IdentifierQuotingStyle::BackticksSQLite: writeBackQuotedStringSQLite(s, out); break;
     }
 }
 

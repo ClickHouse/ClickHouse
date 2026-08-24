@@ -36,4 +36,6 @@ String backQuoteIfNeed(std::string_view x);
 /// Quote the identifier with backquotes, for use in MySQL queries.
 String backQuoteMySQL(std::string_view x);
 
+/// Quote the identifier with backquotes, for use in SQLite queries.
+String backQuoteSQLite(std::string_view x);
 }

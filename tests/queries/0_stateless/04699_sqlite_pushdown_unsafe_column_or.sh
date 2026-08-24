@@ -43,7 +43,7 @@ CREATE TABLE t (u UInt8, i Int64) ENGINE = SQLite('${DB_PATH}', 't');
 SELECT u, i FROM t WHERE u = 44 OR i = 2 FORMAT Null;
 SELECT u, i FROM t WHERE u = 44 AND i = 1 FORMAT Null;
 SELECT u, i FROM t WHERE (u = 44 OR i = 2) AND i >= 1 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "[^"]*", "[^"]*" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `[^`]*`, `[^`]*` FROM `t`( WHERE .*)?$'
 
 # Strict mode must reject a query whose filter cannot be fully evaluated by SQLite - both when the whole
 # disjunction stays local and when only a conjunct does.

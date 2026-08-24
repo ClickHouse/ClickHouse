@@ -31,7 +31,7 @@ SELECT s.i FROM sqlite('${DB_PATH}', 't') AS s JOIN (SELECT 1 AS k) AS n ON s.i 
 ${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="
 SELECT s.i FROM sqlite('${DB_PATH}', 't') AS s WHERE s.i = 1 FORMAT Null;
 SELECT s.i FROM sqlite('${DB_PATH}', 't') AS s JOIN (SELECT 1 AS k) AS n ON s.i = n.k WHERE s.i = 1 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "i" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `i` FROM `t`( WHERE .*)?$'
 
 # Strict mode must reject an alias-qualified filter that SQLite cannot evaluate.
 ${CLICKHOUSE_LOCAL} --query="

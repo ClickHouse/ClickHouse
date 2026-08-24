@@ -12,9 +12,9 @@ Int64 over STRICT INTEGER stays pushed down and correct:
 10
 Float64 over STRICT REAL stays pushed down and correct:
 1.5
-Query: SELECT "u8" FROM "t"
-Query: SELECT "i64r" FROM "t"
-Query: SELECT "f64i" FROM "t"
-Query: SELECT "f32r" FROM "t"
-Query: SELECT "i64" FROM "t" WHERE "i64" > 2
-Query: SELECT "f64" FROM "t" WHERE "f64" > 0.5
+Query: SELECT `u8` FROM `t`
+Query: SELECT `i64r` FROM `t`
+Query: SELECT `f64i` FROM `t`
+Query: SELECT `f32r` FROM `t`
+Query: SELECT `i64` FROM `t` WHERE `i64` > 2
+Query: SELECT `f64` FROM `t` WHERE `f64` > 0.5

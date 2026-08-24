@@ -84,6 +84,6 @@ SELECT s FROM st WHERE s > 'B' FORMAT Null;
 SELECT n FROM t WHERE n > 2 FORMAT Null;
 SELECT plain FROM t WHERE plain > 'B' FORMAT Null;
 SELECT x FROM t WHERE x > 2 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "[^"]*" FROM "(t|st)"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `[^`]*` FROM `(t|st)`( WHERE .*)?$'
 
 rm -f "${DB_PATH}"

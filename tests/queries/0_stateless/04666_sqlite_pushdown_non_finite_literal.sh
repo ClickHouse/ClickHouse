@@ -42,4 +42,4 @@ ${CLICKHOUSE_LOCAL} --send_logs_level=trace --multiquery --query="
     SELECT x FROM t WHERE x = inf FORMAT Null;
     SELECT x FROM t WHERE x IN (inf, 1.5) FORMAT Null;
     SELECT x FROM t WHERE x = 1.5 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "x" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `x` FROM `t`( WHERE .*)?$'

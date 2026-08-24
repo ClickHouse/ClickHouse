@@ -140,8 +140,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
     auto maybe_query = tryGetExternalDatabaseQuery(
-        args[1], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite,
-        IdentifierQuotingRule::Always);
+        args[1], context, IdentifierQuotingStyle::BackticksSQLite, LiteralEscapingStyle::SQLite, IdentifierQuotingRule::Always);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)

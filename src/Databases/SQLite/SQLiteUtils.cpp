@@ -1,10 +1,11 @@
 #include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
-#include <Common/logger_useful.h>
-#include <Common/filesystemHelpers.h>
-#include <Interpreters/Context.h>
 #include <filesystem>
+#include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 
 namespace fs = std::filesystem;
 
@@ -20,18 +21,7 @@ static std::mutex init_sqlite_db_mutex;
 
 String quoteSQLiteIdentifier(std::string_view identifier)
 {
-    String result;
-    result.reserve(identifier.size() + 2);
-    result += '"';
-    for (char c : identifier)
-    {
-        if (c == '"')
-            result += "\"\"";
-        else
-            result += c;
-    }
-    result += '"';
-    return result;
+    return backQuoteSQLite(identifier);
 }
 
 static void processSQLiteError(const String & message, bool throw_on_error)
@@ -98,28 +88,9 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         return nullptr;
     }
 
-    auto sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
-
-    /// Disable SQLite's double-quoted-string compatibility misfeature (https://www.sqlite.org/quirks.html#dblquote)
-    /// on every connection. The storage and database engines quote identifiers with double quotes; without this a
-    /// double-quoted identifier that does not resolve to a column - e.g. a stale local metadata column, or a column
-    /// named by an explicit `ENGINE = SQLite(...)` that the remote table no longer has - would be silently
-    /// reinterpreted as a string literal and return wrong data instead of raising an error. Fail closed, matching
-    /// the `SQLite` format reader.
-    if (int config_status = sqlite3_db_config(sqlite_db.get(), SQLITE_DBCONFIG_DQS_DDL, 0, nullptr); config_status != SQLITE_OK)
-    {
-        processSQLiteError(fmt::format("Cannot disable SQLite double-quoted string literals in DDL statements. Error status: {}. Message: {}",
-                                       config_status, sqlite3_errstr(config_status)), throw_on_error);
-        return nullptr;
-    }
-    if (int config_status = sqlite3_db_config(sqlite_db.get(), SQLITE_DBCONFIG_DQS_DML, 0, nullptr); config_status != SQLITE_OK)
-    {
-        processSQLiteError(fmt::format("Cannot disable SQLite double-quoted string literals in DML statements. Error status: {}. Message: {}",
-                                       config_status, sqlite3_errstr(config_status)), throw_on_error);
-        return nullptr;
-    }
-
-    return sqlite_db;
+    /// Keep SQLite's default DQS behavior for stored schema SQL and user-provided `query` text. ClickHouse-generated
+    /// identifiers use strict backquotes, so an unresolved generated projection still fails closed.
+    return std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
 }
 
 }

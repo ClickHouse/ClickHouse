@@ -42,4 +42,4 @@ ${CLICKHOUSE_LOCAL} --query="
         SELECT x FROM not_null_t WHERE x = 1 FORMAT Null;
         SELECT x FROM primary_key_t WHERE x = 1 FORMAT Null;
     " 2>&1
-} | grep -oE 'Query: SELECT "x" FROM "(nullable_t|not_null_t|primary_key_t)"( WHERE .*)?$'
+} | grep -oE 'Query: SELECT `x` FROM `(nullable_t|not_null_t|primary_key_t)`( WHERE .*)?$'

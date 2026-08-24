@@ -74,17 +74,9 @@ inline SQLitePtr openSQLiteDatabaseWithFlags(const String & path, int flags, std
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "{} {}. Status: {}. Message: {}", message, path, status, sqlite_message);
     }
 
-    SQLitePtr result(db, sqlite3_close);
-    checkSQLiteStatus(
-        result.get(),
-        sqlite3_db_config(result.get(), SQLITE_DBCONFIG_DQS_DDL, 0, nullptr),
-        "Cannot disable SQLite DQS in DDL statements");
-    checkSQLiteStatus(
-        result.get(),
-        sqlite3_db_config(result.get(), SQLITE_DBCONFIG_DQS_DML, 0, nullptr),
-        "Cannot disable SQLite DQS in DML statements");
-
-    return result;
+    /// Keep SQLite's default DQS behavior because stored schema SQL (for example a view) may rely on it.
+    /// ClickHouse-generated identifiers use strict backquotes and cannot fall back to string literals.
+    return SQLitePtr(db, sqlite3_close);
 }
 
 inline SQLitePtr openSQLiteDatabase(const String & path)

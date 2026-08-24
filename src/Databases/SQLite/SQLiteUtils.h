@@ -15,7 +15,7 @@ namespace DB
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
 
-/// Quote an SQLite identifier. Embedded double quotes are doubled, while backslashes remain literal.
+/// Quote an SQLite identifier with strict backquotes. Embedded backquotes are doubled, while every other byte stays literal.
 String quoteSQLiteIdentifier(std::string_view identifier);
 
 /// `allow_create` controls whether a missing database file is implicitly created (as `sqlite3_open` does).

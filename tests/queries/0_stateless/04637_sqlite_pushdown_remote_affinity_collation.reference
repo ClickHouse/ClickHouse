@@ -18,9 +18,9 @@ String with NOCASE collation of a STRICT table, s > \'B\' must keep \'a\':
 a
 View columns have no affinity, x > 2 must keep the row storing text 10:
 10
-Query: SELECT "n" FROM "st" WHERE "n" > 2
-Query: SELECT "plain" FROM "st" WHERE "plain" > 'B'
-Query: SELECT "s" FROM "st"
-Query: SELECT "n" FROM "t"
-Query: SELECT "plain" FROM "t"
-Query: SELECT "x" FROM "t"
+Query: SELECT `n` FROM `st` WHERE `n` > 2
+Query: SELECT `plain` FROM `st` WHERE `plain` > 'B'
+Query: SELECT `s` FROM `st`
+Query: SELECT `n` FROM `t`
+Query: SELECT `plain` FROM `t`
+Query: SELECT `x` FROM `t`

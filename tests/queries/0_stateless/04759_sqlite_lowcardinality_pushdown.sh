@@ -37,7 +37,7 @@ CREATE TABLE lc (f LowCardinality(Float64)) ENGINE = SQLite('${DB_PATH}', 't');
 CREATE TABLE plain (f Float64) ENGINE = SQLite('${DB_PATH}', 't');
 SELECT f FROM lc WHERE f = 2.5 FORMAT Null;
 SELECT f FROM plain WHERE f = 2.5 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "f" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `f` FROM `t`( WHERE .*)?$'
 
 # Strict mode must reject a filter over the LowCardinality column: it cannot be fully evaluated by SQLite.
 ${CLICKHOUSE_LOCAL} --query="

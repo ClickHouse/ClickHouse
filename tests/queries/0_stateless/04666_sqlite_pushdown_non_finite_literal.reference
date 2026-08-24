@@ -6,6 +6,6 @@ NaN is also kept local instead of producing invalid SQLite SQL:
 0
 A tuple IN set containing infinity is kept local:
 2
-Query: SELECT "x" FROM "t"
-Query: SELECT "x" FROM "t"
-Query: SELECT "x" FROM "t" WHERE "x" = 1.5
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t` WHERE `x` = 1.5

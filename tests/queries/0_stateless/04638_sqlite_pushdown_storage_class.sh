@@ -52,6 +52,6 @@ SELECT x FROM t WHERE x = 0 FORMAT Null;
 SELECT s FROM t WHERE s = 'abc' FORMAT Null;
 SELECT b FROM st WHERE b = 'abc' FORMAT Null;
 SELECT a FROM st WHERE a = 0 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "[^"]*" FROM "(t|st)"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `[^`]*` FROM `(t|st)`( WHERE .*)?$'
 
 rm -f "${DB_PATH}"

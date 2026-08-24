@@ -53,7 +53,7 @@ private:
   *
   * The subquery form is parsed by the ClickHouse parser and re-serialized before being sent to the external
   * database, so it is formatted with the external database's identifier-quoting and string-literal-escaping
-  * style (e.g. double quotes for PostgreSQL/SQLite, backticks for MySQL). Syntax that cannot be represented as
+  * style (e.g. double quotes for PostgreSQL, backticks for MySQL/SQLite). Syntax that cannot be represented as
   * ClickHouse SQL must use the `query('...')` form instead, which is passed through verbatim.
   */
 std::optional<String> tryGetExternalDatabaseQuery(

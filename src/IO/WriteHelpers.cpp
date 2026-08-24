@@ -142,6 +142,11 @@ void writeProbablyDoubleQuotedStringStandard(std::string_view s, WriteBuffer & b
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringStandard(s_, buf_); });
 }
 
+void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringSQLite(s_, buf_); });
+}
+
 void writePointerHex(const void * ptr, WriteBuffer & buf)
 {
     writeString("0x", buf);

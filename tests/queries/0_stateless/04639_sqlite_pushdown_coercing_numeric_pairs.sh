@@ -63,6 +63,6 @@ SELECT f64i FROM t WHERE f64i = 9007199254740992. FORMAT Null;
 SELECT f32r FROM t WHERE f32r = 16777216. FORMAT Null;
 SELECT i64 FROM t WHERE i64 > 2 FORMAT Null;
 SELECT f64 FROM t WHERE f64 > 0.5 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "[^"]*" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `[^`]*` FROM `t`( WHERE .*)?$'
 
 rm -f "${DB_PATH}"

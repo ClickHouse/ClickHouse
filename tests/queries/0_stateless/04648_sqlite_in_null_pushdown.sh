@@ -41,4 +41,4 @@ ${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="
     SELECT x FROM t WHERE x IN (1, 2) FORMAT Null SETTINGS transform_null_in = 1;
     SELECT x FROM t WHERE x IN (1, 2) FORMAT Null;
     SELECT x FROM t WHERE x = 2 FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "x" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `x` FROM `t`( WHERE .*)?$'

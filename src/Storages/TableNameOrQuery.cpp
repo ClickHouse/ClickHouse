@@ -105,6 +105,8 @@ static String quoteExternalIdentifier(const String & name, IdentifierQuotingStyl
         return doubleQuoteString(name);
     if (identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotesStandard)
         return doubleQuoteStringStandard(name);
+    if (identifier_quoting_style == IdentifierQuotingStyle::BackticksSQLite)
+        return backQuoteSQLite(name);
     return backQuote(name);
 }
 

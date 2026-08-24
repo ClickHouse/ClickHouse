@@ -34,4 +34,4 @@ ${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="
     SELECT s FROM t WHERE s LIKE 'a\_%' FORMAT Null;
     SELECT s FROM t WHERE s NOT LIKE 'a%' FORMAT Null;
     SELECT s FROM t WHERE s = 'abc' FORMAT Null;
-" 2>&1 | grep -oE 'Query: SELECT "s" FROM "t"( WHERE .*)?$'
+" 2>&1 | grep -oE 'Query: SELECT `s` FROM `t`( WHERE .*)?$'

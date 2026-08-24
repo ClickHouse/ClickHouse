@@ -295,7 +295,8 @@ Pipe StorageSQLite::read(
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
             query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID());
-        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotesStandard);
+        query = buildQueryForExternalDatabaseSubquery(
+            remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksSQLite);
     }
     else
     {
@@ -356,7 +357,7 @@ Pipe StorageSQLite::read(
             /// `PostgreSQL` literal style, which still backslash-escapes control characters) would make the
             /// pushed-down query look up a different identifier or match a different literal than the value
             /// actually stored, so a filter such as `WHERE s = 'a\nb'` would silently miss its rows.
-            IdentifierQuotingStyle::DoubleQuotesStandard,
+            IdentifierQuotingStyle::BackticksSQLite,
             LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
@@ -606,7 +607,10 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite,
+            engine_args[1],
+            args.getLocalContext(),
+            IdentifierQuotingStyle::BackticksSQLite,
+            LiteralEscapingStyle::SQLite,
             IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {

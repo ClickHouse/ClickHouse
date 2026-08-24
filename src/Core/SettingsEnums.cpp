@@ -351,7 +351,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
      {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL},
-     {"DoubleQuotesStandard", IdentifierQuotingStyle::DoubleQuotesStandard}})
+     {"DoubleQuotesStandard", IdentifierQuotingStyle::DoubleQuotesStandard},
+     {"BackticksSQLite", IdentifierQuotingStyle::BackticksSQLite}})
 
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingRule,

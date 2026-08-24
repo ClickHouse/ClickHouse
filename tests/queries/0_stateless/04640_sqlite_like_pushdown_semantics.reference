@@ -3,6 +3,6 @@ a_b
 NOT LIKE remains case-sensitive:
 Abc
 zzz
-Query: SELECT "s" FROM "t"
-Query: SELECT "s" FROM "t"
-Query: SELECT "s" FROM "t" WHERE "s" = 'abc'
+Query: SELECT `s` FROM `t`
+Query: SELECT `s` FROM `t`
+Query: SELECT `s` FROM `t` WHERE `s` = 'abc'

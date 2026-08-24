@@ -388,6 +388,12 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
                 writeProbablyDoubleQuotedStringStandard(name, ostr);
             break;
         }
+        case IdentifierQuotingStyle::BackticksSQLite:
+            if (must_quote)
+                writeBackQuotedStringSQLite(name, ostr);
+            else
+                writeProbablyBackQuotedStringSQLite(name, ostr);
+            break;
     }
 }
 
