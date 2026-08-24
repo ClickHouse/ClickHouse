@@ -1,23 +1,32 @@
 --- credentialed collection, url moved to another origin
 refused
 --- same origin, different path: still allowed
-allowed
+payload
 --- credential-free collection keeps full override freedom
-allowed
+reached-s3
 --- explicit OVERRIDABLE wins over the credential binding
-allowed
+payload
 --- query replaces the whole key pair: the collection supplies nothing, so no binding
-allowed
+payload
 --- partial replacement: the stored secret_access_key still signs
 refused
 --- query-supplied role_arn: the collection keys are dropped, the query role authenticates
-allowed
+passed-check
 --- gcp_oauth sends a bearer token, so its ADC secrets bind the destination too
 refused
 --- no_sign_request disables SigV4 only, the bearer token still goes out
 refused
 --- partial ADC replacement keeps the binding
 refused
+--- under gcp_oauth the stored AWS keys are inert, so a complete ADC replacement releases
+allowed
+--- no_sign_request with static keys: nothing signs, so the destination is not bound
+reached-s3
+--- a collection that stores no url authorises no destination for its keys
+refused
+--- filename cannot move the origin: an absolute value is rejected before any request
+no-host
+no-host
 --- backups: BackupInfo does not go through findOverrideForbiddingKey, so the seam is its own
 refused
 --- DatabaseS3: getTableImpl rebuilds positional s3() args, so provenance is gone downstream

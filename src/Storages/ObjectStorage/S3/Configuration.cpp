@@ -137,6 +137,8 @@ namespace
     /// The origin `raw` points at, or nullopt when it declares none (a relative URL: no scheme, no host).
     /// `S3::URI` first so that scheme mappings (`s3://bucket/key` -> `https://bucket.s3.amazonaws.com/key`) are
     /// applied to both sides of a comparison; plain `Poco::URI` for a value it rejects on unrelated grounds.
+    /// `Poco::URI::getPort()` substitutes the scheme's well-known port when the URL writes none, so
+    /// `https://h/` and `https://h:443/` are one origin while `http://h:443` and `https://h:443` are two.
     std::optional<Origin> declaredOrigin(const String & raw, ContextPtr context)
     {
         if (raw.empty())
@@ -184,14 +186,16 @@ namespace
         auto stored = [&](const std::string & key, const String & effective_value)
         { return !effective_value.empty() && !collection.isQueryOverridden(key); };
 
-        if (boost::iequals(auth[S3AuthSetting::http_client].value, "gcp_oauth")
-            && (stored("google_adc_client_id", auth[S3AuthSetting::google_adc_client_id].value)
+        /// Terminal, mirroring `hasEffectiveCredentials()`: under `gcp_oauth` the AWS legs below describe no
+        /// credential at all, since `S3::getCredentialsProvider` installs an anonymous provider and skips the
+        /// STS wrapper on that value.
+        if (boost::iequals(auth[S3AuthSetting::http_client].value, "gcp_oauth"))
+            return stored("google_adc_client_id", auth[S3AuthSetting::google_adc_client_id].value)
                 || stored("google_adc_client_secret", auth[S3AuthSetting::google_adc_client_secret].value)
                 || stored("google_adc_refresh_token", auth[S3AuthSetting::google_adc_refresh_token].value)
                 || stored("service_account", auth[S3AuthSetting::service_account].value)
                 || stored("request_token_path", auth[S3AuthSetting::request_token_path].value)
-                || stored("metadata_service", auth[S3AuthSetting::metadata_service].value)))
-            return true;
+                || stored("metadata_service", auth[S3AuthSetting::metadata_service].value);
 
         if (auth[S3AuthSetting::no_sign_request].value)
             return false;
@@ -207,9 +211,6 @@ namespace
 void validateS3CollectionDestinationBinding(
     const NamedCollection & collection, const S3::S3AuthSettings & effective_auth, const String & effective_url, ContextPtr context)
 {
-    if (!collection.isQueryOverridden("url"))
-        return;
-
     /// An operator who wrote `url = '...' OVERRIDABLE` decided the destination may move. Re-tested here with
     /// `false` as the default because `findOverrideForbiddingKey` accepts the override on the strength of
     /// `allow_named_collection_override_by_default` alone and passes no signal on about which of the two it was.
@@ -219,15 +220,24 @@ void validateS3CollectionDestinationBinding(
     if (!effective_auth.hasEffectiveCredentials() || !hasCollectionDerivedSecret(collection, effective_auth))
         return;
 
-    const auto stored_url = collection.getValueBeforeQueryOverride("url");
-    if (!stored_url)
-        return;
+    /// The authorised destination is whatever the collection's own definition names, which is the value a
+    /// query override replaced rather than the override itself. `markQueryOverridden` records a before-value
+    /// only for a key the collection actually held, so the two cases are distinguished by the stored value
+    /// alone and not by whether an override happened.
+    const String stored_url = collection.isQueryOverridden("url")
+        ? collection.getValueBeforeQueryOverride("url").value_or("")
+        : collection.getOrDefault<String>("url", "");
 
-    /// A relative stored URL declares no origin, so there is nothing for this rule to compare against: the
-    /// origin came from `s3_base`, which is server and profile configuration rather than query input. This is
-    /// also the shape `StorageObjectStorageConfiguration::initialize` persists, where the resolved absolute URL
-    /// is written back as a `url='...'` override and the table is later attached with no `s3_base` set.
-    const auto declared = declaredOrigin(*stored_url, context);
+    /// A collection that names no destination at all authorises none: its credential may not be sent anywhere
+    /// the query picks.
+    if (stored_url.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");
+
+    /// A stored URL that declares no origin (a relative one) is resolved against `s3_base`, so its origin is
+    /// not the collection's to authorise and there is nothing here to compare against. This is also the shape
+    /// `StorageObjectStorageConfiguration::initialize` persists, where the resolved absolute URL is written
+    /// back as a `url='...'` override and the table is later attached with no base set.
+    const auto declared = declaredOrigin(stored_url, context);
     if (!declared)
         return;
 
