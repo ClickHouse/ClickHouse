@@ -68,7 +68,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
-    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -534,14 +533,6 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
         return nullptr;
     }
     return underlying;
-}
-
-size_t StorageView::getMaxReadStreams(size_t num_streams, ContextPtr context)
-{
-    /// A view read ignores the requested stream count: the inner query is planned by the
-    /// interpreter, whose parallelism is derived from the query context rather than from
-    /// this request, so a `Merge` fan-out request does not amplify the inner read.
-    return std::min(num_streams, std::max(1uz, static_cast<size_t>(context->getSettingsRef()[Setting::max_threads])));
 }
 
 void StorageView::readImpl(
