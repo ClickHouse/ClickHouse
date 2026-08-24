@@ -627,11 +627,14 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef APPLY_FOR_SET_VARIANTS_DISTINCT
 
         /// Two-level fixed-width-key families: parallel build when `shouldBuildParallel`, else serial.
+        /// A non-null `lc_mask_ptr` forces the serial path: only it consumes the single-column
+        /// `LowCardinality` first-occurrence mask, so probing in parallel would re-hash every duplicate
+        /// row and turn the O(dictionary size) LC fast path back into O(rows).
 #define DISPATCH_TWO_LEVEL(NAME) \
         case SetVariants::Type::NAME: \
         { \
             auto & set = *data->NAME; \
-            if (shouldBuildParallel(num_rows)) \
+            if (shouldBuildParallel(num_rows) && !lc_mask_ptr) \
             { \
                 ProfileEvents::increment(ProfileEvents::DistinctTwoLevelParallelFilterBuilds); \
                 buildTwoLevelParallelFilter(set, column_ptrs, filter, num_rows, *pool); \
