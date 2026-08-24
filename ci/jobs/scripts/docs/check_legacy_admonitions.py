@@ -7,12 +7,12 @@ from pathlib import Path
 
 
 LEGACY_ADMONITION_RE = re.compile(
-    r"^[ \t]*:::(?:note|warning|tip|info|caution|danger|important)"
+    r"^[ \t]*:{3,}(?:note|warning|tip|info|caution|danger|important)"
     r"(?:[ \t\[].*)?$",
     re.MULTILINE,
 )
 ESCAPED_ADMONITION_RE = re.compile(
-    r":::(?:note|warning|tip|info|caution|danger|important)(?:\\n|[ \t\[])",
+    r":{3,}(?:note|warning|tip|info|caution|danger|important)(?:\\n|[ \t\[])",
 )
 SOURCE_EXTENSIONS = {".cpp", ".h", ".hpp", ".inc"}
 DOC_EXTENSIONS = {".md", ".mdx"}
