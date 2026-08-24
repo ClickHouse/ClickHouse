@@ -194,7 +194,7 @@ void SettingsConstraints::check(
     /// matters is what changes for the entity being altered, which is the diff of its effective settings.
     auto changed = old_elements.findChangedSettings(profile_elements, *access_control);
     for (const auto & change : changed.values)
-        check(current_settings, change, source, /*is_known_change=*/true);
+        check(current_settings, change, changed.sourceOf(change.name, source), /*is_known_change=*/true);
 
     /// A change of the constraints alone carries no value, so only the tier can be checked.
     for (const auto & setting_name : changed.constraints)

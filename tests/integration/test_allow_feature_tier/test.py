@@ -1518,3 +1518,41 @@ def test_redundant_grant_and_assignment_are_not_rejected(start_cluster):
     instance.query("DROP USER IF EXISTS user_already_granted")
     instance.query("DROP ROLE IF EXISTS role_already_granted")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_already_assigned")
+
+
+def test_setting_allowed_only_in_a_profile_can_be_inherited(start_cluster):
+    # `max_sessions_for_user` may only be set through a profile, never on a user directly. Attaching a
+    # profile that carries it is not the user setting it, at any tier
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_with_profile_only_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_profile_only_setting")
+    instance.query(
+        "CREATE SETTINGS PROFILE profile_with_profile_only_setting SETTINGS max_sessions_for_user = 1"
+    )
+
+    for tier in ["0", "1"]:
+        if tier != "0":
+            instance.replace_in_config(feature_tier_path, "0", tier)
+            instance.query("SYSTEM RELOAD CONFIG")
+        assert tier == get_current_tier_value(instance)
+
+        output, error = instance.query_and_get_answer_with_error(
+            "CREATE USER OR REPLACE user_with_profile_only_setting IDENTIFIED WITH no_password "
+            "SETTINGS PROFILE 'profile_with_profile_only_setting'"
+        )
+        assert output == ""
+        assert error == ""
+
+        # Writing it on the user directly is still refused
+        output, error = instance.query_and_get_answer_with_error(
+            "CREATE USER OR REPLACE user_with_profile_only_setting IDENTIFIED WITH no_password "
+            "SETTINGS max_sessions_for_user = 1"
+        )
+        assert output == ""
+        assert "not allowed to be set by user" in error
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_with_profile_only_setting")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_profile_only_setting")

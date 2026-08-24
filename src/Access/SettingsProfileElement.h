@@ -5,8 +5,10 @@
 #include <Core/UUID.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingConstraintWritability.h>
+#include <Common/SettingSource.h>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 
@@ -101,6 +103,15 @@ public:
         SettingsChanges values;
         /// Settings whose effective MIN/MAX/writability/disallowed values change. They carry no value.
         Strings constraints;
+        /// Of the names above, those the entity gets through an attached profile. Their source is that
+        /// profile, which decides whether the setting may be set at all: `max_sessions_for_user` can be
+        /// set in a profile and not on a user.
+        std::unordered_set<String> from_profile;
+
+        SettingSource sourceOf(const String & setting_name, SettingSource entity_source) const
+        {
+            return from_profile.contains(setting_name) ? SettingSource::PROFILE : entity_source;
+        }
     };
 
     /// What `applyChanges(changes)` would change. Effective means alias-resolved and with inherited profiles

@@ -558,24 +558,39 @@ namespace
         std::optional<Field> max_value;
         std::vector<Field> disallowed_values;
         std::optional<SettingConstraintWritability> writability;
+        /// Whether the entity gets this from an attached profile rather than from its own settings. Some
+        /// settings may only be set through a profile (`max_sessions_for_user`), so attaching a profile
+        /// that carries one is allowed while writing it on the user is not.
+        bool from_profile = false;
 
         auto constraints() const { return std::tie(min_value, max_value, disallowed_values, writability); }
     };
 
+    struct FlatElement
+    {
+        SettingsProfileElement element;
+        bool from_profile = false;
+    };
+
     /// The value and the constraints each setting ends up with: profiles substituted as
     /// `SettingsProfilesCache::substituteProfiles` does it, last occurrence winning, names canonical.
-    std::map<String, EffectiveSetting> getEffectiveSettings(SettingsProfileElements elements, const AccessControl & access_control)
+    std::map<String, EffectiveSetting> getEffectiveSettings(const SettingsProfileElements & own_elements, const AccessControl & access_control)
     {
+        std::vector<FlatElement> elements;
+        elements.reserve(own_elements.size());
+        for (const auto & element : own_elements)
+            elements.push_back({element, /*from_profile=*/false});
+
         boost::container::flat_set<UUID> substituted_profiles;
         size_t i = elements.size();
         while (i != 0)
         {
-            auto & element = elements[--i];
-            if (!element.parent_profile)
+            auto & flat = elements[--i];
+            if (!flat.element.parent_profile)
                 continue;
 
-            auto profile_id = *element.parent_profile;
-            element.parent_profile.reset();
+            auto profile_id = *flat.element.parent_profile;
+            flat.element.parent_profile.reset();
             if (!substituted_profiles.insert(profile_id).second)
                 continue;
 
@@ -583,12 +598,17 @@ namespace
             if (!profile)
                 continue;
 
-            elements.insert(elements.begin() + i, profile->elements.begin(), profile->elements.end());
-            i += profile->elements.size();
+            std::vector<FlatElement> substituted;
+            substituted.reserve(profile->elements.size());
+            for (const auto & element : profile->elements)
+                substituted.push_back({element, /*from_profile=*/true});
+
+            elements.insert(elements.begin() + i, substituted.begin(), substituted.end());
+            i += substituted.size();
         }
 
         std::map<String, EffectiveSetting> result;
-        for (const auto & element : elements)
+        for (const auto & [element, from_profile] : elements)
         {
             /// A custom setting has neither a tier nor a compiled default to revert to, so it is not checked here.
             if (element.setting_name.empty() || SettingsProfileElements::isAllowBackupSetting(element.setting_name)
@@ -596,6 +616,7 @@ namespace
                 continue;
 
             auto & effective = result[resolveSettingName(element.setting_name)];
+            effective.from_profile = from_profile;
             if (element.value)
                 effective.value = element.value;
             if (element.min_value)
@@ -661,6 +682,11 @@ SettingsProfileElements::findChangedSettings(const AlterSettingsProfileElements 
             result.values.push_back({name, new_one.value ? *new_one.value : settingGetDefaultValue(name)});
         if (new_one.constraints() != old_one.constraints())
             result.constraints.push_back(name);
+
+        /// The change is the profile's to make if either side of it comes from a profile. Writing the
+        /// setting on the entity itself is checked against the entity's own source by the caller anyway.
+        if (new_one.from_profile || old_one.from_profile)
+            result.from_profile.insert(name);
     }
     return result;
 }
