@@ -55,20 +55,20 @@ show_refs() {
 # EXCHANGE, which the scan reports as an inconsistency warning on stderr, and the harness fails any
 # test that writes to stderr. The oracle reads only `DEPENDS ON` / `TO` / `FROM`, never the schedule.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$OUT\`"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$OUT\`.p REFRESH EVERY 1 YEAR
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$OUT\`.p REFRESH AFTER 1 YEAR
     (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT 1 AS a"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$SRC\`"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE \`$SRC\`.raw (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE \`$SRC\`.dst (a UInt64) ENGINE = MergeTree ORDER BY a;
-    CREATE MATERIALIZED VIEW \`$SRC\`.parent REFRESH EVERY 1 YEAR
+    CREATE MATERIALIZED VIEW \`$SRC\`.parent REFRESH AFTER 1 YEAR
         (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.raw;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child REFRESH EVERY 1 YEAR DEPENDS ON \`$SRC\`.parent
+    CREATE MATERIALIZED VIEW \`$SRC\`.child REFRESH AFTER 1 YEAR DEPENDS ON \`$SRC\`.parent
         (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.parent;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child_to REFRESH EVERY 1 YEAR DEPENDS ON \`$SRC\`.parent
+    CREATE MATERIALIZED VIEW \`$SRC\`.child_to REFRESH AFTER 1 YEAR DEPENDS ON \`$SRC\`.parent
         TO \`$SRC\`.dst EMPTY AS SELECT a FROM \`$SRC\`.parent;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child_out REFRESH EVERY 1 YEAR DEPENDS ON \`$OUT\`.p
+    CREATE MATERIALIZED VIEW \`$SRC\`.child_out REFRESH AFTER 1 YEAR DEPENDS ON \`$OUT\`.p
         (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.raw;
 "
 
