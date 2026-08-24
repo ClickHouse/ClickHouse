@@ -153,6 +153,13 @@ public:
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
+    /// Re-home the small, part-lifetime metadata that build paths may populate outside the
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
+    /// `setMinMaxIndex` / the population sites.
+    void moveMetadataToDedicatedArena();
+
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
     void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
@@ -388,6 +395,8 @@ public:
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
+
+        Block getBlock(const MergeTreeData & data) const;
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;

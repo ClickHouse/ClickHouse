@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -80,6 +81,12 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             if (path.starts_with("/"))
                 path = path.substr(1);
             path = std::filesystem::path(object_namespace) / path;
+
+            /// Iceberg exposes the raw metadata path (an absolute URI possibly pointing outside
+            /// the table location) as `_path`, so the pushdown filter must evaluate the same
+            /// value, otherwise a `_path` predicate would wrongly discard external files.
+            if (auto metadata_path = getMetadataPathFromObjectInfo(object))
+                path = *metadata_path;
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -165,24 +172,28 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 }
             }
 
-            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+            /// An Iceberg external file may live in a different storage than the base one.
+            auto storage_to_use = getResolvedStorageFromObjectInfo(last_object_info, object_storage);
+            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, storage_to_use, getContext(), log);
             size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
             auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
             for (const auto & file_bucket : file_bucket_infos)
             {
-                auto copy_object_info = *last_object_info;
+                /// Clone polymorphically: a plain `ObjectInfo` copy would slice an
+                /// `IcebergDataObjectInfo` and lose its resolved storage and metadata path.
+                auto copy_object_info = last_object_info->clone();
                 if (has_cache_entry)
                 {
                     auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
                         continue;
-                    copy_object_info.file_bucket_info = std::move(filtered);
+                    copy_object_info->file_bucket_info = std::move(filtered);
                 }
                 else
                 {
-                    copy_object_info.file_bucket_info = file_bucket;
+                    copy_object_info->file_bucket_info = file_bucket;
                 }
-                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+                pending_objects_info.push(std::move(copy_object_info));
             }
         }
     }
@@ -194,7 +205,12 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier() const
 {
-    String result = getPath();
+    return getIdentifierForPath(getPath());
+}
+
+String ObjectInfo::getIdentifierForPath(const String & path) const
+{
+    String result = path;
     if (file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;

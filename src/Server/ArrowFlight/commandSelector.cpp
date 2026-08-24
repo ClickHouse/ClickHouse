@@ -343,6 +343,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"HDFS", "REMOTE TABLE"},
     {"Hive", "REMOTE TABLE"},
     {"Hudi", "REMOTE TABLE"},
+    {"Hybrid", "REMOTE TABLE"},
     {"Iceberg", "REMOTE TABLE"},
     {"IcebergAzure", "REMOTE TABLE"},
     {"IcebergHDFS", "REMOTE TABLE"},

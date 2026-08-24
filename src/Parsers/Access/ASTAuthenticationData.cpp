@@ -116,9 +116,29 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
-                prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
-                parameter = true;
-                break;
+                /// JWT carries two independent optional clauses (PROCESSOR and
+                /// CLAIMS), so it does not fit the single-prefix/single-parameter
+                /// shape the rest of this function uses. Emit directly here and
+                /// short-circuit the prefix/parameter pipeline by returning at
+                /// the end of this case.
+                ostr << " " << auth_type_name;
+
+                size_t child_idx = 0;
+                if (has_jwt_processor)
+                {
+                    ostr << " PROCESSOR ";
+                    children[child_idx++]->format(ostr, settings);
+                }
+                if (has_jwt_claims)
+                {
+                    ostr << " CLAIMS ";
+                    children[child_idx++]->format(ostr, settings);
+                }
+
+                if (valid_until)
+                    formatValidUntil(*valid_until, ostr, settings);
+
+                return;
             }
             case AuthenticationType::LDAP:
             {

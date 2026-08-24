@@ -2023,7 +2023,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
@@ -2574,7 +2574,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
         if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
-            || alter->isUnlockSnapshot())
+            || alter->isUnlockSnapshot() || alter->isExportPartOrExportPartitionAlter())
             return false;
 
         // Allowed ALTER operation on KeeperMap still should be replicated

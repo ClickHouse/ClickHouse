@@ -1,0 +1,33 @@
+--- Test 1: CREATE with watermarks
+--- Test 2: SHOW CREATE TABLE
+CREATE TABLE default.t\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\'))\nSETTINGS hybrid_watermark_hot = \'2025-09-01\'
+--- Test 3: First query after CREATE
+1
+1
+--- Test 4: ALTER watermark
+--- Test 5: Query with updated boundary
+1
+--- Test 6: SHOW CREATE after ALTER
+CREATE TABLE default.t\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\'))\nSETTINGS hybrid_watermark_hot = \'2025-10-01\'
+--- Test 7: DETACH/ATTACH persistence
+CREATE TABLE default.t\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\'))\nSETTINGS hybrid_watermark_hot = \'2025-10-01\'
+--- Test 8: Three segments, two watermarks
+CREATE TABLE default.t3\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_warm\'), (ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\')) AND (ts > hybridParam(\'hybrid_watermark_cold\', \'DateTime\')), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_cold\', \'DateTime\'))\nSETTINGS hybrid_watermark_cold = \'2025-07-01\', hybrid_watermark_hot = \'2025-10-01\'
+--- Test 9: Reject non-watermark parameter
+--- Test 10: Missing watermark SETTINGS rejected at CREATE
+--- Test 11: Invalid typed value
+--- Test 12: Reject non-watermark MODIFY SETTING
+--- Test 13: Reject RESET SETTING on Hybrid
+--- Test 14: Alter one preserves the other
+CREATE TABLE default.t3\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_warm\'), (ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\')) AND (ts > hybridParam(\'hybrid_watermark_cold\', \'DateTime\')), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_cold\', \'DateTime\'))\nSETTINGS hybrid_watermark_cold = \'2025-08-01\', hybrid_watermark_hot = \'2025-12-01\'
+1
+--- Test 15: Reject DistributedSettings at CREATE
+--- Test 16: Plain Distributed unaffected
+--- Test 17: Value via SETTINGS
+1
+1
+CREATE TABLE default.t_settings_only\n(\n    `ts` DateTime,\n    `value` UInt64\n)\nENGINE = Hybrid(remote(\'localhost:9000\', \'default\', \'local_hot\'), ts > hybridParam(\'hybrid_watermark_hot\', \'DateTime\'), remote(\'localhost:9000\', currentDatabase(), \'local_cold\'), ts <= hybridParam(\'hybrid_watermark_hot\', \'DateTime\'))\nSETTINGS hybrid_watermark_hot = \'2025-09-01\'
+--- Test 18: Conflicting types rejected
+--- Test 19: Invalid SETTINGS value rejected at CREATE
+--- Test 20: Typo in CREATE SETTINGS rejected
+--- Test 21: Typo in ALTER MODIFY SETTING rejected

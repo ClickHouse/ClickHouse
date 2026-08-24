@@ -31,10 +31,16 @@ public:
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override;
+        size_t max_block_size,
+        size_t num_streams) override;
 
-    ClusterPtr getCluster(ContextPtr context) const;
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    ClusterPtr getCluster(ContextPtr context) const { return getClusterImpl(context, cluster_name); }
 
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(
@@ -54,15 +60,73 @@ public:
 
     const String & getClusterName() const { return cluster_name; }
 
+    const String & getOriginalClusterName() const { return cluster_name; }
+    virtual String getClusterName(ContextPtr /* context */) const { return getOriginalClusterName(); }
+
 protected:
-    virtual void updateBeforeRead(const ContextPtr &) {}
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    virtual void updateQueryToSendIfNeeded(
+        ASTPtr & /*query*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const ContextPtr & /*context*/,
+        bool /*make_cluster_function*/) {}
+    void updateQueryWithJoinToSendIfNeeded(ASTPtr & query_to_send, SelectQueryInfo query_info, const ContextPtr & context);
 
     virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}
 
+    struct RemoteCallVariables
+    {
+        StoragePtr storage;
+        ContextPtr context;
+    };
+
+    RemoteCallVariables convertToRemote(
+        ClusterPtr cluster,
+        ContextPtr context,
+        const std::string & cluster_name_from_settings,
+        ASTPtr query_to_send);
+
+    virtual void readFallBackToPure(
+        QueryPlan & /* query_plan */,
+        const Names & /* column_names */,
+        const StorageSnapshotPtr & /* storage_snapshot */,
+        SelectQueryInfo & /* query_info */,
+        ContextPtr /* context */,
+        QueryProcessingStage::Enum /* processed_stage */,
+        size_t /* max_block_size */,
+        size_t /* num_streams */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readFallBackToPure is not supported by storage {}", getName());
+    }
+    
+    virtual SinkToStoragePtr writeFallBackToPure(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method writeFallBackToPure is not supported by storage {}", getName());
+    }
+
+    NamesAndTypesList getHivePartitionColumnsWithoutVirtuals(const StorageMetadataPtr & metadata_snapshot) const;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
 private:
+    static ClusterPtr getClusterImpl(ContextPtr context, const String & cluster_name_, size_t max_hosts = 0);
+
+    virtual bool isClusterSupported() const { return true; }
+
     LoggerPtr log;
     String cluster_name;
+
+    struct QueryTreeInfo
+    {
+        bool has_join = false;
+        bool has_cross_join = false;
+        bool has_local_columns_in_where = false;
+    };
+
+    static QueryTreeInfo getQueryTreeInfo(QueryTreeNodePtr query_tree, ContextPtr context);
 };
 
 
@@ -83,7 +147,8 @@ public:
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        LoggerPtr log_)
+        LoggerPtr log_,
+        std::optional<Tables> external_tables_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -95,6 +160,7 @@ public:
         , processed_stage(processed_stage_)
         , cluster(std::move(cluster_))
         , log(log_)
+        , external_tables(external_tables_)
     {
     }
 
@@ -106,6 +172,7 @@ private:
     LoggerPtr log;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
+    std::optional<Tables> external_tables;
 
     void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);

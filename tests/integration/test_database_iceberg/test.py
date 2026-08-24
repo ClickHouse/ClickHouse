@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import random
@@ -11,12 +12,13 @@ import pytest
 import requests
 import pytz
 from pyiceberg.catalog import load_catalog
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionField, PartitionSpec, UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -24,10 +26,13 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import get_file_contents
+from helpers.test_tools import TSV
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -64,6 +69,8 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 )
 
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+
+AVAILABLE_ENGINES = ["DataLakeCatalog", "Iceberg"]
 
 
 def list_namespaces(started_cluster):
@@ -117,7 +124,7 @@ def generate_record():
 
 
 def create_clickhouse_iceberg_database(
-    started_cluster, node, name, additional_settings={}
+    started_cluster, node, name, additional_settings={}, engine='DataLakeCatalog'
 ):
     settings = {
         "catalog_type": "rest",
@@ -130,7 +137,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+CREATE DATABASE {name} ENGINE = {engine}('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
         settings={
@@ -200,6 +207,7 @@ def started_cluster():
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -214,7 +222,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_list_tables(started_cluster):
+@pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
+def test_list_tables(started_cluster, engine):
     node = started_cluster.instances["node1"]
 
     root_namespace = f"clickhouse_{uuid.uuid4()}"
@@ -245,7 +254,7 @@ def test_list_tables(started_cluster):
     for namespace in [namespace_1, namespace_2]:
         assert len(catalog.list_tables(namespace)) == 0
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, engine=engine)
 
     tables_list = ""
     for table in namespace_1_tables:
@@ -344,7 +353,8 @@ def test_check_database(started_cluster):
         )
 
 
-def test_many_namespaces(started_cluster):
+@pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
+def test_many_namespaces(started_cluster, engine):
     node = started_cluster.instances["node1"]
     root_namespace_1 = f"A_{uuid.uuid4()}"
     root_namespace_2 = f"B_{uuid.uuid4()}"
@@ -365,7 +375,7 @@ def test_many_namespaces(started_cluster):
         for table in tables:
             create_table(catalog, namespace, table)
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, engine=engine)
 
     for namespace in namespaces:
         for table in tables:
@@ -377,7 +387,8 @@ def test_many_namespaces(started_cluster):
             )
 
 
-def test_select(started_cluster):
+@pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
+def test_select(started_cluster, engine):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_list_tables_{uuid.uuid4()}"
@@ -405,7 +416,7 @@ def test_select(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, engine=engine)
 
     expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
     assert expected == node.query(
@@ -413,13 +424,27 @@ def test_select(started_cluster):
     )
 
     assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        node.query(
+            # Regression test: a session temp table used to be pinned by the query context
+            # captured in the S3 client refresher and cached with the manifest file in the
+            # global IcebergMetadataFilesCache, crashing the graceful restart below with a
+            # use-after-free. The SELECT * is required: it reads a manifest file (count()
+            # alone is served from the snapshot summary). All statements must stay in one
+            # node.query call = one session.
+            f"CREATE TEMPORARY TABLE pin_me (x UInt8) ENGINE = Memory;"
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT Null;"
+            f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
     )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
 
+    # Replays the graceful shutdown; the teardown sanitizer check catches the UAF if it regresses.
+    node.restart_clickhouse()
 
-def test_hide_sensitive_info(started_cluster):
+
+@pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
+def test_hide_sensitive_info(started_cluster, engine):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_hide_sensitive_info_{uuid.uuid4()}"
@@ -443,7 +468,7 @@ def test_hide_sensitive_info(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+                f"""CREATE DATABASE {CATALOG_NAME} ENGINE = {engine}('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}""",
                 settings={
                     "allow_database_iceberg": 1,
@@ -547,7 +572,8 @@ FORMAT JSONEachRow
                 assert minio_secret_key not in val
 
 
-def test_tables_with_same_location(started_cluster):
+@pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
+def test_tables_with_same_location(started_cluster, engine):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_tables_with_same_location_{uuid.uuid4()}"
@@ -578,7 +604,7 @@ def test_tables_with_same_location(started_cluster):
     df = pa.Table.from_pylist(data)
     table_2.append(df)
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, engine=engine)
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
@@ -723,6 +749,52 @@ def test_timestamps(started_cluster):
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
+    # Berlin - UTC+1 at winter
+    # Istanbul - UTC+3 at winter
+
+    # 'UTC' is default value, responce is equal to query above
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS iceberg_timezone_for_timestamptz='UTC'
+                      """) == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
+    # Timezone from setting
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'
+                      """) == "2024-01-01 12:00:00.000000\t2024-01-01 13:00:00.000000\n"
+    # Empty value means session timezone, by default it is 'UTC' too
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS iceberg_timezone_for_timestamptz=''
+                      """) == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
+    # If session timezone is used, `timestamptz` does not changed, 'UTC' by default
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS session_timezone='Asia/Istanbul'
+                      """) == "2024-01-01 15:00:00.000000\t2024-01-01 12:00:00.000000\n"
+    # Setiing `iceberg_timezone_for_timestamptz` does not affect `timestamp` column
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS session_timezone='Asia/Istanbul', iceberg_timezone_for_timestamptz='Europe/Berlin'
+                      """) == "2024-01-01 15:00:00.000000\t2024-01-01 13:00:00.000000\n"
+    # Empty value, used non-default session timezone
+    assert node.query(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS session_timezone='Asia/Istanbul', iceberg_timezone_for_timestamptz=''
+                      """) == "2024-01-01 15:00:00.000000\t2024-01-01 15:00:00.000000\n"
+    # Invalid timezone
+    assert "Invalid time zone: Foo/Bar" in node.query_and_get_error(f"""
+                      SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+                      SETTINGS iceberg_timezone_for_timestamptz='Foo/Bar'
+                      """)
+
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='UTC'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'Europe/Berlin\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+
+    assert node.query(f"SELECT timezoneOf(timestamptz) FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` LIMIT 1") == "UTC\n"
+    assert node.query(f"SELECT timezoneOf(timestamptz) FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` LIMIT 1 SETTINGS iceberg_timezone_for_timestamptz='UTC'") == "UTC\n"
+    assert node.query(f"SELECT timezoneOf(timestamptz) FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` LIMIT 1 SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'") == "Europe/Berlin\n"
+
 
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
@@ -743,6 +815,52 @@ def test_insert(started_cluster):
 
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'Pavel Ivanov (pudge1000-7) pereezhai v amsterdam', 193.24, 193.31, tuple('bot'));", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
+
+
+@pytest.mark.parametrize(
+    "fields_to_remove",
+    [
+        ["snapshots"],
+        ["metadata-log"],
+        ["snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
+    ],
+)
+def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
+    # The Iceberg spec marks snapshots / metadata-log / snapshot-log as optional, so external
+    # engines may create empty-table metadata that omits any of them. Inserting into such a table
+    # must still succeed instead of aborting in the metadata write path.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_insert_no_optional_arrays_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert iceberg_table.metadata_location.startswith("s3://")
+    metadata_bucket, metadata_key = iceberg_table.metadata_location[len("s3://"):].split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+    for field in fields_to_remove:
+        metadata.pop(field, None)
+    metadata_bytes = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(
+        metadata_bucket,
+        metadata_key,
+        io.BytesIO(metadata_bytes),
+        len(metadata_bytes),
+        content_type="application/json",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
 
 
 def test_create(started_cluster):
@@ -800,6 +918,50 @@ def test_table_with_slash(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
+
+
+def test_partition_value_with_slash(started_cluster):
+    """Partition value containing '/' produces object keys with %2F; reading must preserve encoding."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_partition_slash_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=2, field_id=1000, transform=IdentityTransform(), name="symbol"
+        )
+    )
+    schema = DEFAULT_SCHEMA
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        partition_spec=partition_spec,
+        sort_order=DEFAULT_SORT_ORDER,
+    )
+
+    data = [
+        {
+            "datetime": datetime.now(),
+            "symbol": "us/west",
+            "bid": 100.0,
+            "ask": 101.0,
+            "details": {"created_by": "test"},
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert 1 == int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`"))
+    assert "us/west" in node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")
 
 
 def test_cluster_select(started_cluster):
@@ -1087,6 +1249,85 @@ def test_writes_schema_evolution(started_cluster):
     )
 
 
+def test_writes_schema_evolution_drop_last_column(started_cluster):
+    """DROP COLUMN of the highest-id column must not be rejected by the catalog.
+
+    Reproducer for the bug where the REST add-schema update omitted
+    last-column-id, causing the catalog to derive it from the schema's
+    highestFieldId which decreases after dropping the last-added column.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_drop_last_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} DROP COLUMN z;", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "z" not in desc
+
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "abc\t1\n"
+
+    # Add another column after the drop to exercise schema-id allocation when
+    # current-schema-id is not the highest in the schemas list (Fix 1 reproducer).
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN w Nullable(Int64);", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "w" in desc
+    assert "z" not in desc
+
+    node.query(f"INSERT INTO {table_ref} (x, y, w) VALUES ('def', 2, 42);", settings=write_settings)
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY x", settings=write_settings) == "abc\t1\t\\N\ndef\t2\t42\n"
+
+
+def test_writes_alter_when_commit_is_reported_as_failed(started_cluster):
+    """An Iceberg commit can land in the catalog while the client observes a failure
+    (commit state unknown, e.g. a proxy rewriting the response to 5xx). The ALTER retry
+    must notice that the change is already present instead of applying it a second time
+    and failing with `Column already exists`.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_alter_commit_unknown_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
+
+    failpoint = "iceberg_alter_catalog_commit_reported_as_failed"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
+    assert columns.count("z") == 1, f"expected exactly one `z` column in:\n{description}"
+    assert sorted(columns) == sorted(["x", "y", "z"])
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('def', 2, 'zz');", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY x", settings=write_settings)
+        == "abc\t1\t\\N\ndef\t2\tzz\n"
+    )
+
+
+
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1239,6 +1480,224 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_namespace_filter(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    # Use the same table name in all namespaces
+    table_name = f"table_{uuid.uuid4()}"
+    table2_name = f"table2_{uuid.uuid4()}"
+    namespace_prefix = f"namespace_{uuid.uuid4()}_"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    def create_namespace(suffix):
+        namespace = f"{namespace_prefix}{suffix}"
+        catalog.create_namespace(namespace)
+        create_table(catalog, namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    create_namespace("alpha");
+    create_namespace("alpha.a1");
+    create_namespace("alpha.a2");
+    create_namespace("bravo");
+    create_namespace("bravo.b1");
+    create_namespace("charlie");
+    create_namespace("charlie.c1");
+    create_namespace("delta");
+    create_namespace("delta.d1");
+    create_namespace("delta.d2");
+    create_namespace("echo");
+    create_namespace("echo.e1");
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME,
+                                       additional_settings={
+                                           "namespaces": f"{namespace_prefix}alpha,{namespace_prefix}alpha.a1,{namespace_prefix}bravo,{namespace_prefix}bravo.*,{namespace_prefix}charlie,{namespace_prefix}delta.d1,{namespace_prefix}echo.*"
+                                       })
+
+    assert node.query(f"SELECT name FROM system.tables WHERE database='{CATALOG_NAME}' ORDER BY name", settings={"show_data_lake_catalogs_in_system_tables": 1}) == TSV(
+        [
+            [f"{namespace_prefix}alpha.a1.{table_name}"],
+            [f"{namespace_prefix}alpha.{table_name}"],
+            [f"{namespace_prefix}bravo.b1.{table_name}"],
+            [f"{namespace_prefix}bravo.{table_name}"],
+            [f"{namespace_prefix}charlie.{table_name}"],
+            [f"{namespace_prefix}delta.d1.{table_name}"],
+            [f"{namespace_prefix}echo.e1.{table_name}"],
+        ])
+
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`") == "0\n"
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.a1.{table_name}`") == "0\n"
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.a2.{table_name}`")
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`") == "0\n"
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}bravo.b1.{table_name}`") == "0\n"
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}charlie.{table_name}`") == "0\n"
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}charlie.c1.{table_name}`")
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}delta.{table_name}`")
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}delta.d1.{table_name}`") == "0\n"
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}delta.d2.{table_name}`")
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}echo.{table_name}`")
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}echo.e1.{table_name}`") == "0\n"
+
+    node.query(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table2_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{namespace_prefix}alpha/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')",
+         settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    node.query(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a1.{table2_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{namespace_prefix}alpha/a1/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')",
+         settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"CREATE TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a2.{table2_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{namespace_prefix}alpha/a2/{table2_name}/', '{minio_access_key}', '{minio_secret_key}')")
+
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`")
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a1.{table_name}`")
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace_prefix}alpha.a2.{table_name}`")
+
+
+# TODO - turn on after merge alternative syntax
+@pytest.mark.parametrize("join_mode", ["local", "global"])
+def _test_cluster_joins(started_cluster, join_mode):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_join_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    table_name_2 = f"{test_ref}_table_2"
+    table_name_local = f"{test_ref}_table_local"
+
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="tag",
+            field_type=LongType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="name",
+            field_type=StringType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema,
+                         partition_spec=UNPARTITIONED_PARTITION_SPEC, sort_order=UNSORTED_SORT_ORDER)
+    data = [{"tag": 1, "name": "John"}, {"tag": 2, "name": "Jack"}]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    schema2 = Schema(
+        NestedField(
+            field_id=1,
+            name="id",
+            field_type=LongType(),
+            required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="second_name",
+            field_type=StringType(),
+            required=False,
+        ),
+    )
+    table2 = create_table(catalog, root_namespace, table_name_2, schema2,
+                          partition_spec=UNPARTITIONED_PARTITION_SPEC, sort_order=UNSORTED_SORT_ORDER)
+    data = [{"id": 1, "second_name": "Dow"}, {"id": 2, "second_name": "Sparrow"}]
+    df = pa.Table.from_pylist(data)
+    table2.append(df)
+
+    node.query(f"CREATE TABLE `{table_name_local}` (id Int64, second_name String) ENGINE = Memory()")
+    node.query(f"INSERT INTO `{table_name_local}` VALUES (1, 'Silver'), (2, 'Black')")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                JOIN {CATALOG_NAME}.`{root_namespace}.{table_name_2}` AS t2
+                ON t1.tag=t2.id
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='{join_mode}'
+        """
+    )
+
+    assert res == "Jack\tSparrow\nJohn\tDow\n"
+
+    res = node.query(
+        f"""
+            SELECT name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+            WHERE tag in (
+                SELECT id
+                FROM {CATALOG_NAME}.`{root_namespace}.{table_name_2}`
+            )
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='{join_mode}'
+        """
+    )
+
+    assert res == "Jack\nJohn\n"
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                JOIN `{table_name_local}` AS t2
+                ON t1.tag=t2.id
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='{join_mode}'
+        """
+    )
+
+    assert res == "Jack\tBlack\nJohn\tSilver\n"
+
+    res = node.query(
+        f"""
+            SELECT name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`
+            WHERE tag in (
+                SELECT id
+                FROM `{table_name_local}`
+            )
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='{join_mode}'
+        """
+    )
+
+    assert res == "Jack\nJohn\n"
+
+    res = node.query(
+        f"""
+            SELECT t1.name,t2.second_name
+            FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` AS t1
+                CROSS JOIN `{table_name_local}` AS t2
+            WHERE t1.tag < 10 AND t2.id < 20
+            ORDER BY ALL
+            SETTINGS
+                object_storage_cluster='cluster_simple',
+                object_storage_cluster_join_mode='{join_mode}'
+        """
+    )
+
+    assert res == "Jack\tBlack\nJack\tSilver\nJohn\tBlack\nJohn\tSilver\n"
 
 
 def test_partitioning_by_time(started_cluster):

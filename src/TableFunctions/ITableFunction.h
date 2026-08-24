@@ -81,7 +81,7 @@ public:
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
-    virtual bool canBeUsedToCreateTable() const { return true; }
+    virtual void validateUseToCreateTable() const {}
 
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation

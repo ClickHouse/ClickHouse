@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataFileEntry.h>
 
 namespace DB
 {
@@ -24,7 +25,8 @@ public:
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
         const String & write_format_,
-        SharedHeader sample_block_);
+        SharedHeader sample_block_,
+        std::function<void(const std::string &)> new_file_path_callback_ = {});
 
     void consume(const Chunk & chunk);
     void startNewFile();
@@ -52,7 +54,7 @@ public:
 
     const DataFileStatistics & getResultStatistics() const
     {
-        return stats;
+        return aggregate_stats;
     }
 
     const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
@@ -60,12 +62,17 @@ public:
         return completed_file_stats;
     }
 
+    /// Returns one entry per written data file, with the accurate row count, byte size,
+    /// and per-file column statistics collected during finalization.
+    /// Must be called only after finalize().
+    std::vector<IcebergDataFileEntry> getDataFileEntries() const;
+
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
     Poco::JSON::Array::Ptr schema;
-    DataFileStatistics stats;
-    DataFileStatisticsPtr current_file_stats;
+    DataFileStatistics aggregate_stats;   /// accumulates across all files
+    DataFileStatisticsPtr current_file_stats; /// accumulates for the current file only
     std::vector<DataFileStatisticsPtr> completed_file_stats;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
@@ -86,6 +93,7 @@ private:
     const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
+    std::function<void(const std::string &)> new_file_path_callback;
 };
 
 #endif

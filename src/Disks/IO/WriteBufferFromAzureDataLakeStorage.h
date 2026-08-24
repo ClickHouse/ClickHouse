@@ -5,6 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <memory>
+#include <optional>
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
@@ -21,6 +22,9 @@ namespace DB
 class WriteBufferFromAzureDataLakeStorage : public WriteBufferFromFileBase
 {
 public:
+    /// Returns a file client built with refreshed credentials, or an empty value if none are available.
+    using FileClientRefreshCallback = std::function<std::optional<Azure::Storage::Files::DataLake::DataLakeFileClient>()>;
+
     WriteBufferFromAzureDataLakeStorage(
         const AzureBlobStorage::Endpoint & endpoint_,
         const AzureBlobStorage::AuthMethod & auth_method_,
@@ -30,7 +34,8 @@ public:
         const WriteSettings & write_settings_,
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
         const String & container_for_logging_ = {},
-        BlobStorageLogWriterPtr blob_log_ = {});
+        BlobStorageLogWriterPtr blob_log_ = {},
+        FileClientRefreshCallback credentials_refresh_callback_ = {});
 
     ~WriteBufferFromAzureDataLakeStorage() override;
 
@@ -50,12 +55,18 @@ private:
         BlobStorageLogElement::EventType event_type,
         size_t data_size);
 
+    /// On an auth failure, swap in a file client rebuilt with refreshed credentials; returns true to retry.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e);
+
     LoggerPtr log;
 
     Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
     const std::string blob_path;
     const WriteSettings write_settings;
     const size_t max_unexpected_write_error_retries;
+
+    const FileClientRefreshCallback credentials_refresh_callback;
+    bool credentials_refreshed = false;
 
     bool file_created = false;
     bool is_prefinalized = false;

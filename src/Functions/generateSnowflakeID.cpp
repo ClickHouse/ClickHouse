@@ -155,6 +155,11 @@ uint64_t generateSnowflakeID()
     return fromSnowflakeId(snowflake_id);
 }
 
+std::string generateSnowflakeIDString()
+{
+    return std::to_string(generateSnowflakeID());
+}
+
 class FunctionGenerateSnowflakeID final : public IFunction
 {
 public:

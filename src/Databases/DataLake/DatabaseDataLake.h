@@ -97,7 +97,7 @@ private:
     /// front. Guarded by `catalog_mutex` because lazy initialization can race concurrent readers.
     void initialize() const TSA_REQUIRES(catalog_mutex);
 
-    std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
+    StorageObjectStorageConfigurationPtr getConfiguration(
         DatabaseDataLakeStorageType type,
         DataLakeStorageSettingsPtr storage_settings) const;
 

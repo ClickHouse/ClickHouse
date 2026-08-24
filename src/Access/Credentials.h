@@ -16,6 +16,8 @@ namespace Poco::Net
     class SocketAddress;
 }
 
+#include <set>
+
 namespace DB
 {
 
@@ -194,5 +196,48 @@ private:
 };
 #endif
 
+
+class TokenCredentials : public Credentials
+{
+public:
+    explicit TokenCredentials(const String & token_);
+
+    const String & getToken() const
+    {
+        if (token.empty())
+        {
+            throwNotReady();
+        }
+        return token;
+    }
+    void setUserName(const String & user_name_)
+    {
+        user_name = user_name_;
+        if (!user_name.empty())
+        {
+            is_ready = true;
+        }
+    }
+    std::set<String> getGroups() const
+    {
+        return groups;
+    }
+    void setGroups(const std::set<String> & groups_)
+    {
+        groups = groups_;
+    }
+    std::optional<std::chrono::system_clock::time_point> getExpiresAt() const
+    {
+        return expires_at;
+    }
+    void setExpiresAt(std::chrono::system_clock::time_point expires_at_)
+    {
+        expires_at = expires_at_;
+    }
+private:
+    String token;
+    std::set<String> groups;
+    std::optional<std::chrono::system_clock::time_point> expires_at;
+};
 
 }

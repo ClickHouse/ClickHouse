@@ -120,11 +120,23 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
-Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+ClickHouse supports reading Iceberg tables that use the following deletion methods:
 
-The following deletion methods are **not supported**:
-- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+- [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) stored in Puffin files (Iceberg v3, read-only)
+
+The following limitations apply to deletion vectors:
+
+- Only `deletion-vector-v1` Puffin blobs are supported
+- Data files must be in Parquet format
+- Column-scoped deletion vectors (user column ids in puffin `fields`) are not supported. Writers may set `fields` to `[]` or to the Iceberg reserved `_pos` id (`2147483645`) for file-scoped deletion vectors.
+- Writing deletion vectors is not supported
+- `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
+
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; the memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
+
+For [`icebergCluster`](/sql-reference/table-functions/icebergCluster.md) (and `object_storage_cluster`), the initiator loads and materializes each data file's deletion vector while distributing tasks, then sends the resulting row bitmap to workers with the task. Workers apply the bitmap; they do not re-read the Puffin blob for that path. On wide v3 tables this can make the initiator a serialization point for deletion-vector I/O and decode.
 
 ### Basic usage {#basic-usage}
 
@@ -384,8 +396,9 @@ y: 993
 
 ### DELETE {#iceberg-writes-delete}
 
-Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
+Deleting extra rows in the merge-on-read format is also supported in ClickHouse for Iceberg format version 2.
 This query will create a new snapshot with position delete files.
+Mutations on format version 3+ tables are rejected until ClickHouse can write deletion vectors (Iceberg v3 writers must not add new position-delete files).
 
 ### Example {#example-iceberg-writes-delete}
 
@@ -714,6 +727,47 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 - Use `dry_run = 1` to preview orphan files before deletion
 - The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
 :::
+
+## Altinity Antalya branch
+
+### Specify storage type in arguments
+
+Only in the Altinity Antalya branch does the `iceberg` table function support all storage types. The storage type can be specified using the named argument `storage_type`. Supported values are `s3`, `azure`, `hdfs`, and `local`.
+
+```sql
+iceberg(storage_type='s3', url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+iceberg(storage_type='azure', connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+iceberg(storage_type='hdfs', path_to_table, [,format] [,compression_method])
+
+iceberg(storage_type='local', path_to_table, [,format] [,compression_method])
+```
+
+### Specify storage type in named collection
+
+Only in the Altinity Antalya branch can storage_type be included as part of a named collection. This allows for centralized configuration of storage settings.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test<access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+            <storage_type>s3</storage_type>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+iceberg(named_collection[, option=value [,..]])
+```
+
+The default value for `storage_type` is `s3`.
 
 ## See Also {#see-also}
 

@@ -1,0 +1,15 @@
+<clickhouse>
+    <token_processors>
+        <!-- Manual mode + RFC 7662 introspection.
+             Short token_cache_lifetime so the revocation test does not have to wait long. -->
+        <keycloak_manual_introspect>
+            <type>openid</type>
+            <userinfo_endpoint>http://keycloak:8080/realms/clickhouse-test/protocol/openid-connect/userinfo</userinfo_endpoint>
+            <token_introspection_endpoint>http://keycloak:8080/realms/clickhouse-test/protocol/openid-connect/token/introspect</token_introspection_endpoint>
+            <introspection_client_id>clickhouse</introspection_client_id>
+            <introspection_client_secret>test-secret</introspection_client_secret>
+            <username_claim>preferred_username</username_claim>
+            <token_cache_lifetime>3</token_cache_lifetime>
+        </keycloak_manual_introspect>
+    </token_processors>
+</clickhouse>

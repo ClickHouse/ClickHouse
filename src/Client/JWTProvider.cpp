@@ -252,6 +252,21 @@ Poco::Timestamp JWTProvider::getJwtExpiry(const std::string & token)
     }
 }
 
+bool JWTProvider::isJWT(const std::string & token)
+{
+    if (token.empty())
+        return false;
+    try
+    {
+        jwt::decode(token);
+        return true;
+    }
+    catch (const std::exception &)
+    {
+        return false;
+    }
+}
+
 std::unique_ptr<JWTProvider> createJwtProvider(
     const std::string & auth_url,
     const std::string & client_id,

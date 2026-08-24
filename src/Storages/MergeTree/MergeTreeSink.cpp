@@ -5,6 +5,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
@@ -103,7 +104,8 @@ void MergeTreeSink::consume(Chunk & chunk)
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    IColumn::Selector partition_selector;
+    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
     using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
     DelayedPartitions partitions;
@@ -115,12 +117,33 @@ void MergeTreeSink::consume(Chunk & chunk)
     std::vector<UInt128> all_partwriter_hashes;
     all_partwriter_hashes.reserve(part_blocks.size());
 
-    for (auto & current_block : part_blocks)
+    if (deduplication_info && deduplicate && !deduplication_info->isDisabled())
     {
+        /// Preserve the pre-loop interrupt point that used to be the first checkTimeLimit()
+        /// inside the partition loop: a killed or timed-out insert should be noticed before
+        /// the full O(N) prewarm hash pass, not after it.
+        if (auto process_list_element = context->getProcessListElement())
+            process_list_element->checkTimeLimit();
+
+        /// Warm the data hashes once here: the per-partition infos produced by filterToPartition
+        /// below copy these tokens with their cached hash, so a token whose rows span several
+        /// partitions is hashed once instead of once per partition it landed in.
+        /// Time it under DuplicationElapsedMicroseconds like the per-partition dedup below, so
+        /// the profile event still reflects the total deduplication CPU.
+        ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
+        deduplication_info->prewarmDataHashes();
+    }
+
+    for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
+    {
+        auto & current_block = part_blocks[part_index];
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
-        auto current_deduplication_info = deduplication_info->cloneSelf();
+        /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
+        /// insert does not register a token in partitions it never wrote to.
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);

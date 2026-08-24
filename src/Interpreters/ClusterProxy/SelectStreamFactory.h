@@ -42,7 +42,8 @@ ASTPtr rewriteSelectQuery(
     const ASTPtr & query,
     const std::string & remote_database,
     const std::string & remote_table,
-    ASTPtr table_function_ptr = nullptr);
+    ASTPtr table_function_ptr = nullptr,
+    ASTPtr additional_filter = nullptr);
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;

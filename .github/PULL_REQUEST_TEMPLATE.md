@@ -47,6 +47,7 @@ Related: https://github.com/ClickHouse/ClickHouse/pull/NNNNN
 - [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
 - [ ] <!---ci_regression_alter--> Alter (1.5h)
 - [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [ ] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
 - [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
 - [x] <!---ci_regression_iceberg--> Iceberg (2h)
 - [ ] <!---ci_regression_ldap--> LDAP (1h)

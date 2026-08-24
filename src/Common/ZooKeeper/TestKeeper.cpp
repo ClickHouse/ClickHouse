@@ -938,6 +938,15 @@ void TestKeeper::clearExpiredTTLNodes()
 {
     const int64_t now_ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
 
+    /// This is called on every iteration of the processing thread, i.e. before processing every
+    /// request. Scanning the whole container each time would make request processing O(container size),
+    /// which is prohibitively slow when there are many nodes (see TestConcurrentUpdatesFromHints).
+    /// TTL granularity is coarse anyway, so it is enough to sweep at most once per `TTL_CLEANUP_INTERVAL_MS`.
+    static constexpr int64_t TTL_CLEANUP_INTERVAL_MS = 100;
+    if (now_ms - last_ttl_cleanup_ms < TTL_CLEANUP_INTERVAL_MS)
+        return;
+    last_ttl_cleanup_ms = now_ms;
+
     std::vector<String> expired_paths;
     for (const auto & [path, node] : container)
         if (node.is_ttl && now_ms >= node.stat.mtime + node.ttl)

@@ -28,12 +28,15 @@
 #     include <bcrypt.h>
 #endif
 
+#if USE_JWT_CPP
+#include <Access/ParseJSON.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric BcryptCacheBytes;
     extern const Metric BcryptCacheSize;
 }
-
 
 namespace DB
 {
@@ -147,6 +150,13 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
+    /// `MemoryAccessStorage::updateNoLock` short-circuits when the existing
+    /// entity equals the new one, so any field omitted from this comparator
+    /// becomes invisible to ALTER USER -- same-type ALTER would silently
+    /// no-op. JWT users carry two extra fields (`token_processor_name` and
+    /// `jwt_claims`) and they MUST take part in equality, otherwise re-pinning
+    /// a JWT user via ALTER USER is a no-op (CREATE USER OR REPLACE works
+    /// only by accident, via storage->insertOrReplace).
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
 #if USE_SSL
@@ -157,6 +167,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
+        && (lhs.token_processor_name == rhs.token_processor_name)
+        && (lhs.jwt_claims == rhs.jwt_claims)
         && (lhs.valid_until == rhs.valid_until);
 }
 
@@ -411,7 +423,23 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::JWT:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+            /// Round-trip into the same shape the parser produces: PROCESSOR
+            /// child first (when set), CLAIMS child after (when set), with the
+            /// AST flags telling the formatter which slot is which.
+            const auto & processor_name = getTokenProcessorName();
+            if (!processor_name.empty())
+            {
+                node->has_jwt_processor = true;
+                node->children.push_back(make_intrusive<ASTLiteral>(processor_name));
+            }
+
+            const auto & claims = getJWTClaims();
+            if (!claims.empty())
+            {
+                node->has_jwt_claims = true;
+                node->children.push_back(make_intrusive<ASTLiteral>(claims));
+            }
+            break;
         }
         case AuthenticationType::KERBEROS:
         {
@@ -689,6 +717,35 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         auth_data.setHTTPAuthenticationServerName(server);
         auth_data.setHTTPAuthenticationScheme(scheme);
     }
+#if USE_JWT_CPP
+    else if (query.type == AuthenticationType::JWT)
+    {
+        /// `query.has_jwt_processor` and `query.has_jwt_claims` describe which
+        /// of the two optional clauses the parser saw. Children are pushed in
+        /// PROCESSOR-then-CLAIMS order, so we walk them in that order.
+        size_t arg_idx = 0;
+
+        if (query.has_jwt_processor)
+        {
+            String processor_name = checkAndGetLiteralArgument<String>(args[arg_idx++], "processor");
+            if (processor_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT 'PROCESSOR' name must not be empty");
+            auth_data.setTokenProcessorName(processor_name);
+        }
+
+        if (query.has_jwt_claims)
+        {
+            String value = checkAndGetLiteralArgument<String>(args[arg_idx++], "claims");
+            picojson::value json_obj;
+            auto error = parseWholeJSON(json_obj, value);
+            if (!error.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad JWT claims: {}", error);
+            if (!json_obj.is<picojson::object>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad JWT claims: is not an object");
+            auth_data.setJWTClaims(value);
+        }
+    }
+#endif
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");

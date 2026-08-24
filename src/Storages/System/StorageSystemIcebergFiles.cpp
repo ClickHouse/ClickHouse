@@ -24,6 +24,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 
 
@@ -220,13 +221,33 @@ protected:
             if (!lock)
                 return false;
 
+            /// Object storage tables created by the storage factory are `StorageObjectStorageCluster`
+            /// (it falls back to plain object storage reads when no cluster is configured), while some
+            /// code paths still produce a plain `StorageObjectStorage`. Handle both.
             auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get());
-            if (!object_storage_table || !object_storage_table->isIcebergStorage())
+            auto * object_storage_cluster_table = dynamic_cast<StorageObjectStorageCluster *>(storage.get());
+
+            if (object_storage_table)
+            {
+                if (!object_storage_table->isIcebergStorage())
+                    return false;
+            }
+            else if (object_storage_cluster_table)
+            {
+                if (!object_storage_cluster_table->isIcebergStorage())
+                    return false;
+            }
+            else
+            {
                 return false;
+            }
 
             try
             {
-                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+                auto * external_metadata = object_storage_table
+                    ? object_storage_table->getExternalMetadata(context_copy)
+                    : object_storage_cluster_table->getExternalMetadata(context_copy);
+                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(external_metadata);
                 if (!iceberg_metadata)
                     return false;
 

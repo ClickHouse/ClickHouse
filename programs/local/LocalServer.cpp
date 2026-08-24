@@ -46,6 +46,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -130,6 +131,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -172,6 +174,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
     extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
+    extern const ServerSettingsString puffin_files_cache_policy;
+    extern const ServerSettingsUInt64 puffin_files_cache_size;
+    extern const ServerSettingsUInt64 puffin_files_cache_max_entries;
+    extern const ServerSettingsDouble puffin_files_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -358,6 +364,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
         server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
+
+    /// Create the dedicated MergeTree metadata arena pool before any parts are loaded, same as the
+    /// server. Without this `clickhouse-local` would ignore `jemalloc_merge_tree_arenas`.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],
@@ -1539,6 +1549,17 @@ void LocalServer::processConfig()
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
+
+    String puffin_files_cache_policy = server_settings[ServerSetting::puffin_files_cache_policy];
+    size_t puffin_files_cache_size = server_settings[ServerSetting::puffin_files_cache_size];
+    size_t puffin_files_cache_max_entries = server_settings[ServerSetting::puffin_files_cache_max_entries];
+    double puffin_files_cache_size_ratio = server_settings[ServerSetting::puffin_files_cache_size_ratio];
+    if (puffin_files_cache_size > max_cache_size)
+    {
+        puffin_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Puffin files cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(puffin_files_cache_size));
+    }
+    global_context->setPuffinFilesCache(puffin_files_cache_policy, puffin_files_cache_size, puffin_files_cache_max_entries, puffin_files_cache_size_ratio);
 
     Names allowed_disks_table_engines;
     splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);

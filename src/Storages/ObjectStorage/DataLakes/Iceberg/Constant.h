@@ -164,6 +164,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(max_ref_age_ms, history.expire.max-ref-age-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_min_snapshots_to_keep, min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_max_snapshot_age_ms, max-snapshot-age-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_max_ref_age_ms, max-ref-age-ms);
+DEFINE_ICEBERG_FIELD_ALIAS(clickhouse_export_partition_transaction_id, clickhouse.export-partition-transaction-id);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);
@@ -176,6 +177,8 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, null_value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content_offset);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);

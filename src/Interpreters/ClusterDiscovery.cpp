@@ -157,6 +157,13 @@ public:
         cv.notify_one();
     }
 
+    void wakeup()
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        any_need_update = true;
+        cv.notify_one();
+    }
+
 private:
     std::condition_variable cv;
     std::mutex mu;
@@ -295,17 +302,32 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
         auto callback = get_nodes_callbacks.find(cluster_name);
         if (callback == get_nodes_callbacks.end())
         {
-            auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
-                cluster_name,
-                my_clusters_to_update = clusters_to_update,
-                my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
-                ](auto)
-                {
-                    my_discovery_paths_need_update->store(true);
-                    my_clusters_to_update->set(cluster_name);
-                });
-            auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
-            callback = res.first;
+            if (zk_root_index > 0)
+            {
+                auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
+                    cluster_name,
+                    my_clusters_to_update = clusters_to_update,
+                    my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
+                    ](auto)
+                    {
+                        my_discovery_paths_need_update->store(true);
+                        my_clusters_to_update->set(cluster_name);
+                    });
+                auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
+                callback = res.first;
+            }
+            else
+            { // zk_root_index == 0 for static clusters
+                auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
+                    cluster_name,
+                    my_clusters_to_update = clusters_to_update
+                    ](auto)
+                    {
+                        my_clusters_to_update->set(cluster_name);
+                    });
+                auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
+                callback = res.first;
+            }
         }
         nodes = zk->getChildrenWatch(
             getShardsListPath(zk_root),
@@ -449,7 +471,9 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
         return true;
     };
 
-    if (!cluster_info.current_node_is_observer && !contains(node_uuids, current_node_name))
+    if (!cluster_info.current_node_is_observer
+        && context->isSwarmModeEnabled()
+        && !contains(node_uuids, current_node_name))
     {
         LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
         registerInZk(zk, cluster_info);
@@ -518,10 +542,28 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
         return;
     }
 
+    if (!context->isSwarmModeEnabled())
+    {
+        LOG_DEBUG(log, "STOP SWARM MODE called, skip self-registering current node {} in cluster {}", current_node_name, info.name);
+        return;
+    }
+
     LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
 
     zk->createOrUpdate(node_path, info.current_node.serialize(), zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
+}
+
+void ClusterDiscovery::unregisterFromZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
+{
+    if (info.current_node_is_observer)
+        return;
+
+    String node_path = getShardsListPath(info.zk_root) / current_node_name;
+    LOG_DEBUG(log, "Removing current node {} from cluster {}", current_node_name, info.name);
+
+    zk->remove(node_path);
+    LOG_DEBUG(log, "Current node {} removed from cluster {}", current_node_name, info.name);
 }
 
 void ClusterDiscovery::initialUpdate()
@@ -564,6 +606,18 @@ void ClusterDiscovery::initialUpdate()
 
     LOG_DEBUG(log, "Initialized");
     is_initialized = true;
+}
+
+void ClusterDiscovery::registerAll()
+{
+    register_change_flag = RegisterChangeFlag::RCF_REGISTER_ALL;
+    clusters_to_update->wakeup();
+}
+
+void ClusterDiscovery::unregisterAll()
+{
+    register_change_flag = RegisterChangeFlag::RCF_UNREGISTER_ALL;
+    clusters_to_update->wakeup();
 }
 
 void ClusterDiscovery::findDynamicClusters(
@@ -796,6 +850,27 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         if (all_up_to_date)
         {
             up_to_date_callback();
+        }
+
+        RegisterChangeFlag flag = register_change_flag.exchange(RegisterChangeFlag::RCF_NONE);
+
+        if (flag == RegisterChangeFlag::RCF_REGISTER_ALL)
+        {
+            LOG_DEBUG(log, "Register in all dynamic clusters");
+            for (auto & [_, info] : clusters_info)
+            {
+                auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
+                registerInZk(zk, info);
+            }
+        }
+        else if (flag == RegisterChangeFlag::RCF_UNREGISTER_ALL)
+        {
+            LOG_DEBUG(log, "Unregister in all dynamic clusters");
+            for (auto & [_, info] : clusters_info)
+            {
+                auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
+                unregisterFromZk(zk, info);
+            }
         }
     }
     LOG_DEBUG(log, "Worker thread stopped");

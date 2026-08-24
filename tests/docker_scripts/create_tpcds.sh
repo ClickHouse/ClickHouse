@@ -5,7 +5,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INIT_SQL="$REPO_ROOT/tests/benchmarks/tpc-ds/init.sql"
-S3_BASE="https://tpc-ds-sf1.s3.amazonaws.com"
+S3_BASE="http://dockerhub-proxy.dockerhub-proxy-zone:6000/tpc-ds-sf1"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tpcds"
 

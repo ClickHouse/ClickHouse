@@ -240,4 +240,31 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedD
     EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3TablesWithAwsEndpoint)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket/table-uuid/");
+    metadata.setEndpoint("https://s3.us-east-2.amazonaws.com");
+
+    EXPECT_EQ(metadata.getLocation(), "https://s3.us-east-2.amazonaws.com/bucket/table-uuid/");
+
+    const std::string metadata_file =
+        "s3://bucket/table-uuid/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3TablesEmptyPathWithAwsEndpoint)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket");
+    metadata.setEndpoint("https://s3.us-east-2.amazonaws.com");
+
+    EXPECT_EQ(metadata.getLocation(), "https://s3.us-east-2.amazonaws.com/bucket/");
+
+    const std::string metadata_file = "s3://bucket/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
 }

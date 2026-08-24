@@ -5,8 +5,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <base/arithmeticOverflow.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -320,6 +322,42 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
+std::vector<size_t> buildRowGroupGlobalOffsets(const parq::FileMetaData & file_metadata)
+{
+    if (file_metadata.num_rows < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has negative row count: {}", file_metadata.num_rows);
+
+    const size_t num_row_groups = file_metadata.row_groups.size();
+    std::vector<size_t> global_offsets(num_row_groups + 1, 0);
+    UInt64 total_rows = 0;
+
+    for (size_t i = 0; i < num_row_groups; ++i)
+    {
+        const Int64 num_rows = file_metadata.row_groups[i].num_rows;
+        if (num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet row group {} has negative row count: {}", i, num_rows);
+
+        UInt64 next_total = 0;
+        if (common::addOverflow(total_rows, static_cast<UInt64>(num_rows), next_total))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet row group row counts overflow when computing global offsets (at row group {})",
+                i);
+        }
+
+        total_rows = next_total;
+        global_offsets[i + 1] = static_cast<size_t>(total_rows);
+    }
+
+    /// Do not require the row-group sum to equal `FileMetaData.num_rows`. Some writers leave a
+    /// stale or inconsistent file-level count; global offsets and deletion-vector positions are
+    /// defined by the row-group layout. This helper runs on every ParquetV3 read, so rejecting
+    /// mismatches would break previously readable files.
+
+    return global_offsets;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -375,18 +413,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
-    size_t total_rows = 0;
+    const std::vector<size_t> global_offsets = buildRowGroupGlobalOffsets(file_metadata);
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
         if (meta->num_rows == 0)
             continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
-
-        total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -401,7 +435,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.meta = meta;
         row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
         row_group.row_group_idx = row_group_idx;
-        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
+        row_group.start_global_row_idx = global_offsets[row_group_idx];
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
 
@@ -1459,7 +1493,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
@@ -1472,7 +1506,21 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
+        /// the null map is the group null map: defaults fill the struct-null rows.
         subchunk.column->expand(null_map, /*inverted*/ true);
+    }
+
+    if (column_info.group_nullable && subchunk.null_map)
+    {
+        /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
+        /// is the group null map. Move it aside now, before the output_nullable block below can
+        /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
+        /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
+        /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
+        /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
+        subchunk.group_null_map = std::move(subchunk.null_map);
+        subchunk.null_map.reset();
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -2146,7 +2194,26 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
-    TypeIndex kind = output_info.input_type->getColumnType();
+    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
+    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
+    /// the group null map. Every leaf shares the same def-level null map (the subtree is
+    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
+    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
+    /// the unwrapped type.
+    MutableColumnPtr nullable_group_null_map;
+    if (output_info.nullable_group)
+    {
+        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
+        if (first_leaf.group_null_map)
+            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
+        else
+            /// No struct-level nulls (all rows defined): all-non-null map.
+            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
+    }
+
+    TypeIndex kind = output_info.nullable_group
+        ? removeNullable(output_info.input_type)->getColumnType()
+        : output_info.input_type->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -2204,6 +2271,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
+    }
+
+    if (output_info.nullable_group)
+    {
+        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
+        chassert(nullable_group_null_map->size() == res->size());
+        res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());

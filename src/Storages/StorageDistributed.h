@@ -4,10 +4,12 @@
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Columns/IColumn.h>
+#include <Common/MultiVersion.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
+#include <map>
 #include <pcg_random.hpp>
 
 namespace DB
@@ -50,6 +52,27 @@ class StorageDistributed final : public IStorage, WithContext
     friend class StorageSystemDistributionQueue;
 
 public:
+    /// Structure to hold table function AST, predicate, optional StorageID, and cached physical columns for the segment.
+    /// Cached columns let us detect schema mismatches and enable features like hybrid_table_auto_cast_columns without
+    /// re-fetching remote headers on every query.
+    struct HybridSegment
+    {
+        ASTPtr table_function_ast;
+        ASTPtr predicate_ast;
+        std::optional<StorageID> storage_id; // For table identifiers instead of table functions
+
+        HybridSegment(ASTPtr table_function_ast_, ASTPtr predicate_ast_)
+            : table_function_ast(std::move(table_function_ast_))
+            , predicate_ast(std::move(predicate_ast_))
+        {}
+
+        HybridSegment(ASTPtr table_function_ast_, ASTPtr predicate_ast_, StorageID storage_id_)
+            : table_function_ast(std::move(table_function_ast_))
+            , predicate_ast(std::move(predicate_ast_))
+            , storage_id(std::move(storage_id_))
+        {}
+    };
+
     StorageDistributed(
         const StorageID & id_,
         const ColumnsDescription & columns_,
@@ -70,12 +93,21 @@ public:
 
     ~StorageDistributed() override;
 
-    std::string getName() const override { return "Distributed"; }
+    std::string getName() const override
+    {
+        return (segments.empty() && !base_segment_predicate)
+            ? "Distributed"
+            : "Hybrid";
+    }
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    /// Distributed only serializes the query to shards; it never reads columns locally, so rewriting
+    /// functions to subcolumns brings no benefit and breaks shard-side skip-index analysis (a rewritten
+    /// subcolumn no longer matches an index defined on the original expression). Same as IStorageCluster.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -84,6 +116,8 @@ public:
     bool canMoveConditionsToPrewhere() const override { return false; }
 
     bool isRemote() const override { return true; }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -136,6 +170,37 @@ public:
 
     size_t getShardCount() const;
 
+    /// Set optional predicate applied to the base segment
+    void setBaseSegmentPredicate(ASTPtr predicate) { base_segment_predicate = std::move(predicate); }
+
+    /// Set segment definitions for Hybrid engine along with cached schema info
+    void setHybridLayout(std::vector<HybridSegment> segments_);
+    void setCachedColumnsToCast(ColumnsDescription columns);
+
+    using WatermarkParams = std::map<String, String>;
+
+    static constexpr std::string_view HYBRID_WATERMARK_PREFIX = "hybrid_watermark_";
+
+    MultiVersion<WatermarkParams>::Version getHybridWatermarkParams() const
+    { return hybrid_watermark_params.get(); }
+
+    /// Returns (name -> declared type) for every `hybridParam()` call in the
+    /// stored Hybrid predicates. Empty for non-Hybrid tables.
+    ///
+    /// For any attached Hybrid table this returns a consistent map, because
+    /// registerStorageHybrid() rejects conflicting types for the same name at
+    /// factory time. The result is used by system.hybrid_watermarks.
+    std::unordered_map<String, String> getDeclaredHybridParamTypes() const;
+
+    void loadHybridWatermarkParams(SettingsChanges & changes);
+
+    /// Getter methods for ClusterProxy::executeQuery
+    StorageID getRemoteStorageID() const { return remote_storage; }
+    ColumnsDescription getColumnsToCast() const;
+    ExpressionActionsPtr getShardingKeyExpression() const { return sharding_key_expr; }
+    const DistributedSettings * getDistributedSettings() const { return distributed_settings.get(); }
+    bool isRemoteFunction() const { return is_remote_function; }
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
@@ -167,6 +232,46 @@ private:
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
     static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+
+    /// Substitute hybridParam(name, type) calls in `predicate_ast` with literal values from
+    /// `watermarks`. Returns a fresh cloned AST. Pass-through for nullptr.
+    static ASTPtr substituteHybridWatermarks(
+        ASTPtr predicate_ast,
+        const MultiVersion<WatermarkParams>::Version & watermarks);
+
+    /// Hybrid-specific snapshot-time state attached to `StorageSnapshot::data`. Populated
+    /// once in `StorageDistributed::getStorageSnapshot()` so the watermark values seen by
+    /// `getQueryProcessingStage()` and `read()` cannot diverge mid-query under a concurrent
+    /// `ALTER MODIFY SETTING hybrid_watermark_*`. Without this, two independent
+    /// `MultiVersion::get()` calls could observe different versions and produce inconsistent
+    /// pruning verdicts (e.g. a `Complete`-stage plan unioned without final merge).
+    struct HybridSnapshotData : public StorageSnapshot::Data
+    {
+        MultiVersion<WatermarkParams>::Version watermark_snapshot;
+    };
+
+    /// Per-query Hybrid pruning verdict. Recomputed in both `getQueryProcessingStage()`
+    /// (to drive the stage decision and empty `optimized_cluster` when the base is pruned)
+    /// and `read()` (to skip planning of pruned additional segments). The verdict is
+    /// deterministic across both calls because the watermark snapshot it depends on is
+    /// taken once at `getStorageSnapshot()` time and reused via `HybridSnapshotData`.
+    struct HybridPruningVerdict
+    {
+        bool base_pruned = false;
+        std::vector<bool> segments_pruned;
+    };
+
+    HybridPruningVerdict computeHybridPruningVerdict(
+        const SelectQueryInfo & query_info,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & local_context) const;
+
+    /// Read the frozen watermark snapshot attached by `getStorageSnapshot()`. The standard read
+    /// path always attaches `HybridSnapshotData` for Hybrid tables; the fall-through to a live
+    /// `MultiVersion::get()` is for code paths that bypass `getStorageSnapshot()`.
+    MultiVersion<WatermarkParams>::Version getHybridWatermarkSnapshot(
+        const StorageSnapshotPtr & storage_snapshot) const;
+
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -271,6 +376,23 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+
+    MultiVersion<WatermarkParams> hybrid_watermark_params;
+
+    /// Additional filter expression for Hybrid engine
+    ASTPtr base_segment_predicate;
+
+    /// Additional segments for Hybrid engine
+    std::vector<HybridSegment> segments;
+
+    /// Hybrid build the list of columns which need to be casted once during CREATE/ATTACH
+    /// those are columns which type differs from the expected at least on one segment.
+    /// is is used by HybridCastsPass and hybrid_table_auto_cast_columns feature
+    /// without cache that would require reading the headers of the segments before every query
+    /// which may trigger extra DESCRIBE call in case of remote queries.
+    /// Subsequent segment DDL changes are not auto-detected;
+    /// reattach/recreate the Hybrid table to refresh.
+    ColumnsDescription cached_columns_to_cast;
 };
 
 }

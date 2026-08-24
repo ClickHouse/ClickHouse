@@ -81,6 +81,8 @@ public:
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
+    ASTPtr createArgsWithAccessData() const override;
+
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
     void setURL(const std::string & url_);

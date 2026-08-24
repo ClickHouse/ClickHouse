@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import pytest
 
@@ -209,3 +210,60 @@ def test_format_detection(started_cluster):
         "select * from fileCluster('my_cluster', 'file_for_format_detection*', auto, 's String, i UInt32', auto) ORDER BY (i, s)"
     )
     assert result == expected_result
+
+
+def test_hive_partitioning_with_where_condition(started_cluster):
+    test_id = uuid.uuid4().hex[:8]
+    hive_glob = f"hive_file_cluster_{test_id}/date=*/data.csv"
+
+    for node_name in ("s0_0_0", "s0_0_1", "s0_1_0"):
+        node = started_cluster.instances[node_name]
+        for i in range(1, 5):
+            node.query(
+                f"""
+                INSERT INTO TABLE FUNCTION file(
+                    'hive_file_cluster_{test_id}/date=2000-01-0{i}/data.csv', 'CSVWithNames', 'd UInt64')
+                SELECT number FROM numbers(10)
+                SETTINGS engine_file_truncate_on_insert=1
+                """
+            )
+
+    node = started_cluster.instances["s0_0_0"]
+
+    result = node.query(
+        f"""
+        SELECT count() FROM file('{hive_glob}', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-02'
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert result.strip() == "10"
+
+    result = node.query(
+        f"""
+        SELECT date, d FROM file('{hive_glob}', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-02'
+        LIMIT 1
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert "2000-01-02" in result
+
+    result = node.query(
+        f"""
+        SELECT count() FROM fileCluster('my_cluster', '{hive_glob}', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-02'
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert result.strip() == "10"
+
+    result = node.query(
+        f"""
+        SELECT date, d FROM fileCluster('my_cluster', '{hive_glob}', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-02'
+        LIMIT 1
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert "2000-01-02" in result

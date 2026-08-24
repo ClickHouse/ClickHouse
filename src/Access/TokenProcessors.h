@@ -1,0 +1,255 @@
+#pragma once
+
+#include <Access/Credentials.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
+#if USE_JWT_CPP
+#include <Access/Common/JWKSProvider.h>
+#include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/kazuho-picojson/traits.h>
+#endif
+
+namespace DB
+{
+
+class RemoteHostFilter;
+
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
+class ITokenProcessor
+{
+public:
+    explicit ITokenProcessor(const String & processor_name_,
+                             UInt64 token_cache_lifetime_,
+                             const String & username_claim_ = "sub",
+                             const String & groups_claim_ = "groups")
+    : processor_name(processor_name_), token_cache_lifetime(token_cache_lifetime_), username_claim(username_claim_), groups_claim(groups_claim_) {}
+    virtual ~ITokenProcessor() = default;
+
+    virtual bool resolveAndValidate(TokenCredentials &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for ITokenProcessor interface");
+    }
+
+    virtual bool checkClaims(const TokenCredentials &, const String &) const { return true; }
+
+    /// True only for JWT processors (static-key/JWKS). Opaque/access token processors do not use per-user claims.
+    virtual bool supportsJwtClaimsRestriction() const { return false; }
+
+    UInt64 getTokenCacheLifetime() const { return token_cache_lifetime; }
+    String getProcessorName() const { return processor_name; }
+
+    static std::unique_ptr<DB::ITokenProcessor> parseTokenProcessor(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & prefix,
+            const String & processor_name,
+            const ConnectionTimeouts & timeouts);
+
+protected:
+    const String processor_name;
+    const UInt64 token_cache_lifetime;
+    const String username_claim;
+    const String groups_claim;
+};
+
+#if USE_JWT_CPP
+
+struct StaticKeyJwtParams
+{
+    /// Algorithm name (required). Supported: "none", "hs256", "hs384", "hs512",
+    /// "ps256", "ps384", "ps512", "ed25519", "ed448", "rs256", "rs384", "rs512",
+    /// "es256", "es256k", "es384", "es512"
+    String algo;
+
+    /// For HS algorithms (hs256, hs384, hs512): symmetric key (required for HS algorithms)
+    String static_key;
+
+    /// For HS algorithms: whether static_key is base64 encoded (optional, defaults to false)
+    bool static_key_in_base64 = false;
+
+    /// For PS/ED/RSA/ES algorithms: public key (required for PS/ED/RSA/ES algorithms)
+    String public_key;
+
+    /// For PS/ED/RSA/ES algorithms: private key (optional)
+    String private_key;
+
+    /// For PS/ED/RSA/ES algorithms: public key password (optional)
+    String public_key_password;
+
+    /// For PS/ED/RSA/ES algorithms: private key password (optional)
+    String private_key_password;
+
+    /// JWT claims to validate (optional)
+    String claims;
+
+    /// Clock-drift tolerance for `exp`/`nbf`/`iat` checks, in seconds.
+    /// jwt-cpp's default is 0, which rejects tokens on any client/server skew.
+    /// 60 seconds matches the OpenID processor's default and standard
+    /// industry practice (RFC 7519 §4.1.4 hints at "small leeway").
+    UInt64 verifier_leeway = 60;
+};
+
+class StaticKeyJwtProcessor : public ITokenProcessor
+{
+public:
+    explicit StaticKeyJwtProcessor(const String & processor_name_,
+                                   UInt64 token_cache_lifetime_,
+                                   const String & username_claim_,
+                                   const String & groups_claim_,
+                                   const String & expected_issuer_,
+                                   const String & expected_audience_,
+                                   const String & expected_typ_,
+                                   bool allow_no_expiration_,
+                                   const StaticKeyJwtParams & params);
+
+    bool resolveAndValidate(TokenCredentials & credentials) const override;
+    bool checkClaims(const TokenCredentials & credentials, const String & claims_to_check) const override;
+    bool supportsJwtClaimsRestriction() const override { return true; }
+
+private:
+    const String claims;
+    const String expected_issuer;
+    const String expected_audience;
+    /// Required JWT `typ` header (RFC 8725 §3.11). Empty = no enforcement.
+    const String expected_typ;
+    const bool allow_no_expiration;
+    jwt::verifier<jwt::default_clock, jwt::traits::kazuho_picojson> verifier = jwt::verify();
+};
+
+
+class JwksJwtProcessor : public ITokenProcessor
+{
+public:
+    explicit JwksJwtProcessor(const String & processor_name_,
+                              UInt64 token_cache_lifetime_,
+                              const String & username_claim_,
+                              const String & groups_claim_,
+                              const String & expected_issuer_,
+                              const String & expected_audience_,
+                              const String & expected_typ_,
+                              bool allow_no_expiration_,
+                              const String & claims_,
+                              size_t verifier_leeway_,
+                              std::shared_ptr<IJWKSProvider> provider_);
+
+    explicit JwksJwtProcessor(const String & processor_name_,
+                              UInt64 token_cache_lifetime_,
+                              const String & username_claim_,
+                              const String & groups_claim_,
+                              const String & expected_issuer_,
+                              const String & expected_audience_,
+                              const String & expected_typ_,
+                              bool allow_no_expiration_,
+                              const String & claims_,
+                              size_t verifier_leeway_,
+                              const String & jwks_uri_,
+                              size_t jwks_cache_lifetime_,
+                              const ConnectionTimeouts & timeouts_)
+                              : JwksJwtProcessor(processor_name_,
+                                                 token_cache_lifetime_,
+                                                 username_claim_,
+                                                 groups_claim_,
+                                                 expected_issuer_,
+                                                 expected_audience_,
+                                                 expected_typ_,
+                                                 allow_no_expiration_,
+                                                 claims_,
+                                                 verifier_leeway_,
+                                                 std::make_shared<JWKSClient>(jwks_uri_, jwks_cache_lifetime_, timeouts_)) {}
+
+    bool resolveAndValidate(TokenCredentials & credentials) const override;
+    bool checkClaims(const TokenCredentials & credentials, const String & claims_to_check) const override;
+    bool supportsJwtClaimsRestriction() const override { return true; }
+
+private:
+    const String claims;
+    const String expected_issuer;
+    const String expected_audience;
+    /// Required JWT `typ` header (RFC 8725 §3.11). Empty = no enforcement.
+    const String expected_typ;
+    const bool allow_no_expiration;
+    /// Verifier is built fresh per call inside `resolveAndValidate` (it depends
+    /// on the current JWT's `kid` -> JWKS-resolved key, which can rotate). A
+    /// local-per-call verifier also makes the function thread-safe so callers
+    /// can invoke it without holding the global `ExternalAuthenticators::mutex`.
+    std::shared_ptr<IJWKSProvider> provider;
+    const size_t verifier_leeway;
+};
+
+/// Opaque tokens
+
+class GoogleTokenProcessor : public ITokenProcessor
+{
+public:
+    GoogleTokenProcessor(const String & processor_name_,
+                         UInt64 token_cache_lifetime_,
+                         const String & username_claim_,
+                         const String & groups_claim_,
+                         const String & expected_audience_,
+                         const ConnectionTimeouts & timeouts_);
+
+    bool resolveAndValidate(TokenCredentials & credentials) const override;
+
+private:
+    const String expected_audience;
+    const ConnectionTimeouts timeouts;
+};
+
+class OpenIdTokenProcessor : public ITokenProcessor
+{
+public:
+    /// Manual mode: `/userinfo` for identity, plus RFC 7662 introspection
+    /// before it when an introspection endpoint and client credentials are set.
+    OpenIdTokenProcessor(const String & processor_name_,
+                         UInt64 token_cache_lifetime_,
+                         const String & username_claim_,
+                         const String & groups_claim_,
+                         const String & expected_issuer_,
+                         const String & expected_audience_,
+                         const String & userinfo_endpoint_,
+                         const String & token_introspection_endpoint_,
+                         const String & introspection_client_id_,
+                         const String & introspection_client_secret_,
+                         const ConnectionTimeouts & timeouts_);
+
+    /// Obtain endpoints from openid-configuration URL
+    OpenIdTokenProcessor(const String & processor_name_,
+                         UInt64 token_cache_lifetime_,
+                         const String & username_claim_,
+                         const String & groups_claim_,
+                         const String & expected_issuer_,
+                         const String & expected_audience_,
+                         bool allow_no_expiration_,
+                         const String & openid_config_endpoint_,
+                         UInt64 verifier_leeway_,
+                         UInt64 jwks_cache_lifetime_,
+                         const String & introspection_client_id_,
+                         const String & introspection_client_secret_,
+                         const RemoteHostFilter & remote_host_filter_,
+                         bool allow_http_discovery_urls_,
+                         const ConnectionTimeouts & timeouts_);
+
+    bool resolveAndValidate(TokenCredentials & credentials) const override;
+private:
+    /// True on `active=true`; populates `expires_at` from `exp` if present.
+    bool runIntrospection(const String & token, std::chrono::system_clock::time_point & expires_at) const;
+
+    Poco::URI userinfo_endpoint;
+    Poco::URI token_introspection_endpoint;
+    String expected_issuer;
+    String expected_audience;
+    String introspection_client_id;
+    String introspection_client_secret;
+    ConnectionTimeouts timeouts;
+
+    /// Populated only by the discovery constructor when the doc advertises a `jwks_uri`.
+    std::optional<JwksJwtProcessor> jwt_validator = std::nullopt;
+};
+
+#endif
+
+}

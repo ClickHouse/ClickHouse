@@ -71,7 +71,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!filter_actions_dag)
         return;
 
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC"))
+    if (boost::iequals(configuration->getFormat(), "Parquet") || boost::iequals(configuration->getFormat(), "ORC"))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -146,7 +146,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     if (parallelize_output
-        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->getFormat(), context)
         && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 

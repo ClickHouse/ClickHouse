@@ -89,6 +89,9 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+#if USE_JWT_CPP && USE_SSL
+    extern const int AUTHENTICATION_FAILED;
+#endif
 }
 
 Connection::~Connection()
@@ -149,7 +152,29 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
+#if USE_JWT_CPP && USE_SSL
+    /// Skip fetch when current JWT is still usable; opaque tokens and JWTs without
+    /// a usable `exp` claim are refreshed reactively on rejection below.
+    if (jwt_provider && jwt.empty())
+    {
+        jwt = jwt_provider->getJWT();
+    }
+    else if (jwt_provider && JWTProvider::isJWT(jwt))
+    {
+        const Poco::Timestamp expiry = JWTProvider::getJwtExpiry(jwt);
+        const Poco::Timestamp refresh_threshold = Poco::Timestamp() + Poco::Timespan(30, 0);
+        if (expiry > Poco::Timestamp(0) && expiry < refresh_threshold)
+            jwt = jwt_provider->getJWT();
+    }
+
+    bool jwt_retried_on_rejection = false;
+#endif
+
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
+
+#if USE_JWT_CPP && USE_SSL
+retry_handshake_with_fresh_jwt:
+#endif
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -362,6 +387,23 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         e.addMessage("({})", getDescription(/*with_extra*/ true));
         throw;
     }
+#if USE_JWT_CPP && USE_SSL
+    catch (DB::Exception & e)
+    {
+        disconnect();
+
+        if (e.code() == ErrorCodes::AUTHENTICATION_FAILED && jwt_provider && !jwt_retried_on_rejection)
+        {
+            LOG_DEBUG(log_wrapper.get(),
+                "Server rejected JWT during handshake, fetching a fresh token and retrying once");
+            jwt_retried_on_rejection = true;
+            jwt = jwt_provider->getJWT();
+            goto retry_handshake_with_fresh_jwt;
+        }
+
+        throw;
+    }
+#endif
     catch (Poco::Net::NetException & e)
     {
         disconnect();
@@ -868,23 +910,6 @@ void Connection::sendQuery(
 
         client_info = &new_client_info;
     }
-
-#if USE_JWT_CPP && USE_SSL
-    if (jwt_provider && !jwt.empty())
-    {
-        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
-        {
-            String new_jwt = jwt_provider->getJWT();
-            if (!new_jwt.empty())
-            {
-                jwt = new_jwt;
-                // We have a new token, so we need to reconnect.
-                // The current connection is still using the old token.
-                disconnect();
-            }
-        }
-    }
-#endif
 
     if (!connected)
         connect(timeouts);

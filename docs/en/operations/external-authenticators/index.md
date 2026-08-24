@@ -17,3 +17,4 @@ The following external authenticators and directories are supported:
 - [SSL X.509 authentication](/operations/external-authenticators/ssl-x509)
 - HTTP [Authenticator](./http.md)
 - [JWT authentication](/operations/external-authenticators/jwt)
+- Token-based [Authenticator](./tokens.md)

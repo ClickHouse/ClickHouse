@@ -6,14 +6,18 @@
 #include <compare>
 #include <optional>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
@@ -34,6 +38,11 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsTimezone iceberg_partition_timezone;
+}
+
 namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
@@ -44,90 +53,6 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-
-namespace
-{
-    /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
-    /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
-    {
-        auto non_nullable_type = DB::removeNullable(expected_type);
-        auto column = non_nullable_type->createColumn();
-        if (DB::WhichDataType(non_nullable_type).isDecimal())
-        {
-            /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-            /// using the minimum number of bytes for the value
-            /// Our decimal binary representation is little endian
-            /// so we cannot reuse our default code for parsing it.
-            int64_t unscaled_value = 0;
-
-            // Convert from big-endian to signed int
-            for (const auto byte : str)
-                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
-
-            /// Add sign
-            if (str[0] & 0x80)
-            {
-                int64_t sign_extension = -1;
-                sign_extension <<= (str.size() * 8);
-                unscaled_value |= sign_extension;
-            }
-
-            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-            /// are stored rounded, without fractional part. What is more strange
-            /// the integer part is rounded mathematically correctly according to fractional part.
-            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-            /// I've checked two implementations: Spark and Amazon Athena and both of them
-            /// do this.
-            ///
-            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-            ///
-            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-            /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
-            {
-                int64_t scaler = lower_bound ? -10 : 10;
-                while (--scale)
-                    scaler *= 10;
-
-                unscaled_value += scaler;
-            }
-
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
-                return result;
-            }
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
-                return result;
-            }
-            else
-            {
-                return std::nullopt;
-            }
-        }
-        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
-        {
-            return std::nullopt;
-        }
-        else
-        {
-            /// For all other types except decimal binary representation
-            /// matches our internal representation
-            column->insertData(str.data(), str.length());
-            DB::Field result;
-            column->get(0, result);
-            return result;
-        }
-    }
-
-}
 
 const std::vector<ProcessedManifestFileEntryPtr> &
 ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
@@ -161,47 +86,12 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
 
 std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
-    Int64 result = 0;
-    for (const auto & file : getFilesWithoutDeleted(content))
-    {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
+    return getRecordCountInAllFilesExcludingDeleted(getFilesWithoutDeleted(content));
 }
 
 std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    size_t result = 0;
-    for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
-    {
-        /// Have at least one column with bytes count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.bytes_size.has_value())
-            {
-                result += *column_info.bytes_size;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
+    return getBytesSizeInAllDataFilesExcludingDeleted(getFilesWithoutDeleted(FileContentType::DATA));
 }
 
 ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle() const
@@ -232,9 +122,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer_->getMetadataContent(); };
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer_->getMetadataContent(),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -284,7 +175,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(schema_object, context_);
 
     PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
@@ -302,7 +193,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
         partition_spec_vec.emplace_back(source_id, transform_name, partition_name);
-        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
+        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name, context_->getSettingsRef()[Setting::iceberg_partition_timezone]);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
@@ -383,9 +274,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     if (parsed_entry->status == ManifestEntryStatus::DELETED)
     {
+        auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
         insertRowToLogTable(
             context,
-            manifest_file_deserializer->getContent(row_index),
+            dump_metadata,
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -496,9 +388,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
     insertRowToLogTable(
         context,
-        manifest_file_deserializer->getContent(row_index),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,
@@ -605,28 +498,14 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
     return true;
 }
 
+std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+{
+    return getFilesWithoutDeletedHandle().getRowsCountInAllFilesExcludingDeleted(content);
+}
+
 std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    Int64 result = 0;
-    auto handle = getFilesWithoutDeletedHandle();
-    for (const auto & file : handle.getFilesWithoutDeleted(FileContentType::DATA))
-    {
-        /// Have at least one column with bytes count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.bytes_size.has_value())
-            {
-                result += *column_info.bytes_size;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
+    return getFilesWithoutDeletedHandle().getBytesCountInAllDataFilesExcludingDeleted();
 }
 
 }

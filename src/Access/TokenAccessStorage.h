@@ -1,0 +1,105 @@
+#pragma once
+
+#include <Access/MemoryAccessStorage.h>
+#include <Access/Common/AllowedClientHosts.h>
+#include <Access/Credentials.h>
+#include <Access/SettingsProfile.h>
+#include <Common/re2.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
+#include <map>
+#include <mutex>
+#include <set>
+#include <vector>
+
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
+
+
+namespace DB
+{
+class AccessControl;
+
+/// Implementation of IAccessStorage which allows to import user data from oauth server using access token.
+/// Normally, this should be unified with LDAPAccessStorage, but not done to minimize changes to code that is common with upstream.
+class TokenAccessStorage : public IAccessStorage
+{
+public:
+    static constexpr char STORAGE_TYPE[] = "token";
+
+    explicit TokenAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
+    ~TokenAccessStorage() override = default;
+
+    // IAccessStorage implementations.
+    const char * getStorageType() const override;
+    String getStorageParamsJSON() const override;
+    bool isReadOnly() const override { return true; }
+    bool exists(const UUID & id) const override;
+
+private:
+    mutable std::recursive_mutex mutex; // Note: Reentrance possible by internal role lookup via access_control
+    AccessControl & access_control;
+    const Poco::Util::AbstractConfiguration & config;
+    const String & prefix;
+
+    String provider_name;
+    /// Explicit mapping from incoming group (e.g. Entra group object ID) to a ClickHouse role name.
+    /// Applied BEFORE `roles_filter` and `roles_transform`. Groups absent from this map pass through
+    /// unchanged, so the filter stage can be used to drop unmapped entries.
+    std::map<String, String> roles_mapping;
+    std::optional<re2::RE2> roles_filter = std::nullopt;
+    /// `roles_transform` regex compiled once at construction. Storing the
+    /// compiled `re2::RE2` (instead of the pattern string) avoids per-call
+    /// recompilation and -- more importantly -- makes parse-time validation
+    /// possible: an invalid regex now fails the storage construction loudly
+    /// rather than silently no-op'ing every transform at runtime (which would
+    /// admit ungroomed role names; symmetric with the `roles_filter` fail-
+    /// closed handling).
+    std::optional<re2::RE2> roles_transform_pattern = std::nullopt;
+    std::optional<String> roles_transform_replacement = std::nullopt;
+    bool roles_transform_global = false;
+
+    std::set<String> common_role_names;                         // role name that should be granted to all users at all times
+    String default_profile_name;                                // settings profile name that should be assigned to all users
+    /// Optional IP allowlist applied to auto-provisioned users at creation
+    /// time. When unset, auto-created users inherit the default `AnyHostTag`
+    /// (current behavior, no breakage). When set, only clients whose source
+    /// address matches this allowlist can authenticate as a token-auto-created
+    /// user, regardless of the IdP's verdict on the token.
+    std::optional<AllowedClientHosts> auto_user_allowed_hosts;
+    mutable std::map<String, std::set<String>> user_external_roles;
+    mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
+    mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
+    mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name
+    mutable std::map<String, UUID> granted_role_ids;            // (currently granted) role name -> its id
+    mutable MemoryAccessStorage memory_storage;
+    scope_guard role_change_subscription;
+
+    void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
+
+    bool areTokenCredentialsValidNoLock(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+
+    void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
+    void assignRolesNoLock(User & user, const std::set<String> & external_roles) const;
+    void assignProfileNoLock(User & user) const;
+
+protected:
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<AuthResult> authenticateImpl(const Credentials & credentials,
+                                               const Poco::Net::IPAddress & address,
+                                               const ExternalAuthenticators & external_authenticators,
+                                               const ClientInfo & client_info,
+                                               bool throw_if_user_not_exists,
+                                               bool allow_no_password,
+                                               bool allow_plaintext_password) const override;
+};
+}

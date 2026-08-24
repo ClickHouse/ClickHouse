@@ -80,4 +80,33 @@ struct RestoreQualifiedNamesMatcher
 
 using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
 
+
+/// Reset semantic->table for all column identifiers in the AST.
+///
+/// PROBLEM DESCRIPTION:
+/// When an AST is passed through multiple query rewrites (e.g., in Hybrid -> remote),
+/// the semantic->table information attached to ASTIdentifier nodes can become stale and
+/// cause incorrect column qualification. This happens because:
+///
+/// 1. During initial parsing, semantic->table is populated with the original table name
+/// 2. When the query is rewritten (e.g., FROM clause changed from table to remote() function inside Hybrid),
+///    the AST structure is modified but semantic->table information is preserved
+/// 3. Subsequent visitors like RestoreQualifiedNamesVisitor called in remote() function over the same AST
+///    may use this stale semantic->table information to incorrectly qualify column names with the original table name
+///
+/// SOLUTION:
+/// This visitor clears semantic->table for all column identifiers, ensuring that subsequent
+/// visitors work with clean semantic information and don't apply stale table qualifications.
+struct ResetSemanticTableMatcher
+{
+    // No data needed for this visitor
+    struct Data {};
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static void visit(ASTPtr & ast, Data & data);
+    static void visit(ASTIdentifier & identifier, ASTPtr &, Data & data);
+};
+
+using ResetSemanticTableVisitor = InDepthNodeVisitor<ResetSemanticTableMatcher, true>;
+
 }

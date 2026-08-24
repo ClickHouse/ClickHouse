@@ -9,6 +9,7 @@ from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DoubleType,
+    IntegerType,
     NestedField,
     StringType,
 )
@@ -398,4 +399,178 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def get_credentials_profile_events(node, query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    vended = int(node.query(
+        f"SELECT ProfileEvents['DataLakeRestCatalogCredentialsVended'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ))
+    hits = int(node.query(
+        f"SELECT ProfileEvents['DataLakeRestCatalogCredentialsCacheHits'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ))
+    return vended, hits
+
+
+def create_int_table(catalog, namespace, table_name, rows=1):
+    if namespace not in catalog.list_namespaces():
+        catalog.create_namespace(namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(
+        namespace + (table_name,),
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+    table.append(
+        pa.Table.from_pandas(
+            pd.DataFrame({"id": list(range(rows)), "data": ["x"] * rows}).astype(
+                {"id": "int32"}
+            )
+        )
+    )
+
+
+def test_vended_credentials_cache(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    # Caching enabled (default TTL): the second query reuses cached credentials
+    # and does not ask the catalog to vend them again.
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    qid = f"{test_ref}-cache-1-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    qid = f"{test_ref}-cache-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    # Caching disabled (TTL = 0): every query asks the catalog to vend credentials.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 0},
+    )
+
+    qid = f"{test_ref}-nocache-1-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended >= 1 and hits == 0
+
+    qid = f"{test_ref}-nocache-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended >= 1 and hits == 0
+
+
+def test_vended_credentials_cache_invalidated_on_table_replace(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_replace_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    # Populate the cache, then confirm the next query reuses it.
+    node.query(query, query_id=f"{test_ref}-1-{uuid.uuid4()}")
+    qid = f"{test_ref}-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    # Replace the table (new UUID and location) while the cache entry is still valid.
+    catalog.drop_table(namespace + (table_name,))
+    create_int_table(catalog, namespace, table_name, rows=2)
+
+    # The stale entry must be detected, so credentials are re-vended and the new table is read.
+    qid = f"{test_ref}-3-{uuid.uuid4()}"
+    assert node.query(query, query_id=qid).strip() == "2"
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    # The re-vended credentials are cached under the new identity, so the next query reuses them.
+    qid = f"{test_ref}-4-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+
+@pytest.mark.skip(
+    reason="ALTER DATABASE ... MODIFY SETTING is not supported for the DataLakeCatalog "
+    "engine on this branch: DatabaseDataLake does not override "
+    "IDatabase::applySettingsChanges, and the RestCatalog CatalogState / "
+    "prepareSettingsChanges / commitSettingsChanges machinery this test relies on is "
+    "upstream code that is not part of this PR and has not been backported here, so "
+    "the ALTER fails with NOT_IMPLEMENTED before the cache behaviour is ever exercised. "
+    "The credentials cache itself is covered by test_vended_credentials_cache and "
+    "test_vended_credentials_cache_invalidated_on_table_replace. Re-enable this test "
+    "together with the ALTER DATABASE ... MODIFY SETTING backport."
+)
+def test_vended_credentials_cache_cleared_on_auth_change(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_auth_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    # Header-mode database: `auth_header` is the only auth setting that can be altered.
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{BASE_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest',
+            auth_header = 'Authorization: Bearer initial_dummy'
+        """,
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    # Populate the cache and confirm the next query reuses it.
+    node.query(query, query_id=f"{test_ref}-1-{uuid.uuid4()}")
+    qid = f"{test_ref}-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    # Committing new auth settings must drop the cached credentials.
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = 'Authorization: Bearer altered_dummy'"
+    )
+
+    qid = f"{test_ref}-3-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
 

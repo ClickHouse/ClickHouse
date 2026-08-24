@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -1774,8 +1775,11 @@ namespace ErrorCodes
     Name of storage disk. Can be specified instead of storage policy.
     )", 0) \
     DECLARE(Bool, table_disk, false, R"(
-    This is table disk, the path/endpoint should point to the table data, not to
-    the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+    This is table disk: the path/endpoint points to the table data, not the database data.
+    Supported for object-storage disks whose metadata lives on the object storage itself
+    (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
+    variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
+    over the read-only web / web_index disks.
     )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
@@ -2341,11 +2345,19 @@ static void validateTableDisk(const DiskPtr & disk)
 {
     if (!disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!disk_object_storage)
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
 }
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
@@ -2362,25 +2374,12 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            for (auto & [name, value] : changes)
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata);
+
+            for (const auto & [name, value] : changes)
             {
-                CustomType custom;
                 if (name == "disk")
                 {
-                    ASTPtr value_as_custom_ast = nullptr;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-                    {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
-                        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                        value = disk_name;
-                    }
-                    else
-                    {
-                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
-                    }
                     disk = context->getDisk(value.safeGet<String>());
 
                     if (has("storage_policy"))
@@ -2692,14 +2691,59 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChanges(changes);
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChanges(resolved_changes);
 }
 
-void MergeTreeSettings::applyChange(const SettingChange & change)
+void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChange(change);
+    auto resolved_change = change;
+    resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    impl->applyChange(resolved_change);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    for (auto & change : changes)
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    if (change.name != "disk")
+        return;
+
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
+        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+        change.value = disk_name;
+    }
+    else if (!is_loading_from_existing_metadata)
+    {
+        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
+    }
+}
+
+bool MergeTreeSettings::isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes)
+{
+    const Field * new_value = new_changes.tryGet("disk");
+    if (!new_value)
+        return false;
+
+    const Field * old_value = old_changes.tryGet("disk");
+    if (!old_value)
+        return true;
+
+    return applyVisitor(FieldVisitorToString(), *old_value) != applyVisitor(FieldVisitorToString(), *new_value);
 }
 
 void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)

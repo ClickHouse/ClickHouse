@@ -22,11 +22,12 @@ MultipleFileWriter::MultipleFileWriter(
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
     const String & write_format_,
-    SharedHeader sample_block_)
+    SharedHeader sample_block_,
+    std::function<void(const std::string &)> new_file_path_callback_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
-    , stats(schema_)
+    , aggregate_stats(schema_)
     , column_mapper(std::make_shared<ColumnMapper>())
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
@@ -35,6 +36,7 @@ MultipleFileWriter::MultipleFileWriter(
     , format_settings(format_settings_)
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
+    , new_file_path_callback(std::move(new_file_path_callback_))
 {
     column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
 }
@@ -42,7 +44,9 @@ MultipleFileWriter::MultipleFileWriter(
 void MultipleFileWriter::startNewFile()
 {
     if (buffer)
+    {
         finalize();
+    }
 
     current_file_stats = std::make_shared<DataFileStatistics>(schema);
     current_file_num_rows = 0;
@@ -51,6 +55,9 @@ void MultipleFileWriter::startNewFile()
     auto storage_path = path_resolver.resolve(metadata_path);
 
     data_file_names.push_back(metadata_path);
+    if (new_file_path_callback)
+        new_file_path_callback(storage_path);
+
     buffer = object_storage->writeObject(
         StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
@@ -75,7 +82,7 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
-    stats.update(chunk);
+    aggregate_stats.update(chunk);
     current_file_stats->update(chunk);
 }
 
@@ -104,6 +111,31 @@ void MultipleFileWriter::finalize()
         completed_file_stats.push_back(std::move(current_file_stats));
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
+}
+
+std::vector<IcebergDataFileEntry> MultipleFileWriter::getDataFileEntries() const
+{
+    chassert(data_file_names.size() == data_file_row_counts.size());
+    chassert(data_file_names.size() == data_file_byte_counts.size());
+    chassert(data_file_names.size() == completed_file_stats.size());
+
+    std::vector<IcebergDataFileEntry> entries;
+    entries.reserve(data_file_names.size());
+
+    for (size_t i = 0; i < data_file_names.size(); ++i)
+    {
+        std::optional<DataFileStatistics> statistics;
+        if (completed_file_stats[i])
+            statistics = *completed_file_stats[i];
+
+        entries.emplace_back(
+            path_resolver.resolve(data_file_names[i]),
+            static_cast<Int64>(data_file_row_counts[i]),
+            static_cast<Int64>(data_file_byte_counts[i]),
+            std::move(statistics));
+    }
+
+    return entries;
 }
 
 void MultipleFileWriter::release()

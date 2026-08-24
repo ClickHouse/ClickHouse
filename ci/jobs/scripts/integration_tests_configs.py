@@ -58,6 +58,7 @@ TEST_CONFIGS = [
         True,
         "pins azurite to fixed host port 10000 (Spark emulator mode); concurrent --dist=each workers collide on bind",
     ),
+    TC("test_export_replicated_mt_partition_to_object_storage/", True, "ZooKeeper can't handle too many parallel requests"),
 ]
 
 IMAGES_ENV = {

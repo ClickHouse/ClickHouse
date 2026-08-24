@@ -1,0 +1,15 @@
+---- stage: with_mergeable_state (analyzer=1, setting=enable_alias_marker=1) ----
+Header: sum(foo) AggregateFunction(sum, Int64)
+---- stage: with_mergeable_state (analyzer=0) ----
+Expected error: Function __aliasMarker is internal and supported only with the analyzer
+---- stage: complete (analyzer=1) ----
+Header: x Int64
+---- stage: fetch_columns (analyzer=1) ----
+Header: __table1.number UInt64
+---- stage: with_mergeable_state (analyzer=1) ----
+Header: sum(foo) AggregateFunction(sum, Int64)
+---- stage: with_mergeable_state_after_aggregation (analyzer=1) ----
+Header: sum(foo) Int64
+---- stage: with_mergeable_state_after_aggregation_and_limit (analyzer=1) ----
+Header: intDiv(__table1.number, 10_UInt8) UInt64
+        sum(foo) Int64

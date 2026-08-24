@@ -82,6 +82,7 @@ def started_cluster_iceberg_with_spark():
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
@@ -94,6 +95,7 @@ def started_cluster_iceberg_with_spark():
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node3",
@@ -106,6 +108,7 @@ def started_cluster_iceberg_with_spark():
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")

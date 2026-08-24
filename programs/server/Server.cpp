@@ -94,6 +94,7 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Storages/Cache/ObjectStorageListObjectsCache.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
@@ -140,6 +141,7 @@
 
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
+#include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -288,6 +290,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
     extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
+    extern const ServerSettingsString puffin_files_cache_policy;
+    extern const ServerSettingsUInt64 puffin_files_cache_size;
+    extern const ServerSettingsUInt64 puffin_files_cache_max_entries;
+    extern const ServerSettingsDouble puffin_files_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -407,6 +413,7 @@ namespace ServerSetting
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_on_memory_exceeded_interval;
     extern const ServerSettingsString allowed_disks_for_table_engines;
@@ -462,6 +469,9 @@ namespace ServerSetting
     extern const ServerSettingsString hdfs_libhdfs3_conf;
     extern const ServerSettingsString config_file;
     extern const ServerSettingsString users_to_ignore_early_memory_limit_check;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_ttl;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_size;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_max_entries;
 }
 
 namespace ErrorCodes
@@ -472,6 +482,9 @@ namespace ErrorCodes
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_size;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_max_entries;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_ttl;
 }
 
 }
@@ -1761,6 +1774,22 @@ try
     server_settings.loadSettingsFromConfig(config());
     global_context->configureServerWideThrottling();
 
+    /// Create the dedicated MergeTree metadata arena pool. Placed after the ZooKeeper-include reload
+    /// above so a `from_zk` value of the setting is honored, and still well before any parts are loaded.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
+    const size_t created_arenas = JemallocMergeTreeArena::getArenaIndices().size();
+    const size_t intended_arenas = JemallocMergeTreeArena::getIntendedArenaCount();
+    if (created_arenas < intended_arenas)
+    {
+        global_context->addOrUpdateWarningMessage(
+            Context::WarningType::MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
+            PreformattedMessage::create(
+                "Could only create {} of the {} requested dedicated jemalloc arena(s) for MergeTree metadata; {}.",
+                created_arenas, intended_arenas,
+                created_arenas > 0 ? "the pool runs with the created arenas"
+                                   : "MergeTree metadata falls back to the default arenas"));
+    }
+
 #if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
@@ -2277,6 +2306,16 @@ try
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
+    String puffin_files_cache_policy = server_settings[ServerSetting::puffin_files_cache_policy];
+    size_t puffin_files_cache_size = server_settings[ServerSetting::puffin_files_cache_size];
+    size_t puffin_files_cache_max_entries = server_settings[ServerSetting::puffin_files_cache_max_entries];
+    double puffin_files_cache_size_ratio = server_settings[ServerSetting::puffin_files_cache_size_ratio];
+    if (puffin_files_cache_size > max_cache_size)
+    {
+        puffin_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Puffin files cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(puffin_files_cache_size));
+    }
+    global_context->setPuffinFilesCache(puffin_files_cache_policy, puffin_files_cache_size, puffin_files_cache_max_entries, puffin_files_cache_size_ratio);
 
     Names allowed_disks_table_engines;
     splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
@@ -2706,6 +2745,7 @@ try
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
+                global_context->updatePuffinFilesCacheConfiguration(config(), max_cache_size_in_bytes);
             }
 
 #if USE_SSL
@@ -2931,6 +2971,8 @@ try
 
     }
 
+    global_context->startSwarmMode();
+
     {
         std::lock_guard lock(servers_lock);
         /// We should start interserver communications before (and more important shutdown after) tables.
@@ -3113,6 +3155,10 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+
+    ObjectStorageListObjectsCache::instance().setMaxSizeInBytes(server_settings[ServerSetting::object_storage_list_objects_cache_size]);
+    ObjectStorageListObjectsCache::instance().setMaxCount(server_settings[ServerSetting::object_storage_list_objects_cache_max_entries]);
+    ObjectStorageListObjectsCache::instance().setTTL(server_settings[ServerSetting::object_storage_list_objects_cache_ttl]);
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
 
@@ -3331,70 +3377,6 @@ try
         if (config().has("startup_scripts"))
             loadStartupScripts(config(), server_settings, global_context, log);
 
-        {
-            std::lock_guard lock(servers_lock);
-
-            /// Restore the startup log level overrides before accepting connections,
-            /// so that no requests are served with an elevated (startup) log level.
-            /// This must happen before server.start() because the config reload callback
-            /// (ConfigReloader) reads from config() which includes the writable layer
-            /// where startup level overrides are stored.
-            if (should_restore_default_logger_level)
-            {
-                config().setString("logger.level", default_logger_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
-            }
-
-            if (should_restore_console_log_level)
-            {
-                /// If the level was unset just remove the override so the default can be set via
-                /// Loggers::updateLevels again; otherwise restore the configured value.
-                if (console_log_level_was_set)
-                {
-                    config().setString("logger.console_log_level", original_console_log_level_config);
-                    Loggers::updateLevels(config(), logger());
-                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
-                }
-                else
-                {
-                    config().remove("logger.console_log_level");
-                    Loggers::updateLevels(config(), logger());
-                    LOG_INFO(log, "Restored console logger level to logger.level");
-                }
-            }
-
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
-
-            global_context->setServerCompletelyStarted();
-            LOG_INFO(log, "Ready for connections.");
-        }
-
-        startup_watch.stop();
-        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
-
-        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-
-        try
-        {
-            global_context->startClusterDiscovery();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
-        }
-
-#if defined(OS_LINUX)
-        /// Tell the service manager that service startup is finished.
-        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'.
-        systemdNotify("READY=1\n");
-#endif
-
         auto stop_acme_instance = []{
 #if USE_SSL
             /// Stop ACME tasks.
@@ -3447,6 +3429,8 @@ try
             stop_acme_instance();
 
             is_cancelled = true;
+
+            global_context->stopSwarmMode();
 
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
@@ -3510,6 +3494,70 @@ try
                 safeExit(0);
             }
         });
+
+        {
+            std::lock_guard lock(servers_lock);
+
+            /// Restore the startup log level overrides before accepting connections,
+            /// so that no requests are served with an elevated (startup) log level.
+            /// This must happen before server.start() because the config reload callback
+            /// (ConfigReloader) reads from config() which includes the writable layer
+            /// where startup level overrides are stored.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
+            if (should_restore_console_log_level)
+            {
+                /// If the level was unset just remove the override so the default can be set via
+                /// Loggers::updateLevels again; otherwise restore the configured value.
+                if (console_log_level_was_set)
+                {
+                    config().setString("logger.console_log_level", original_console_log_level_config);
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                }
+                else
+                {
+                    config().remove("logger.console_log_level");
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to logger.level");
+                }
+            }
+
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
+            }
+
+            global_context->setServerCompletelyStarted();
+            LOG_INFO(log, "Ready for connections.");
+        }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
+
+        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+        }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
+        systemdNotify("READY=1\n");
+#endif
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

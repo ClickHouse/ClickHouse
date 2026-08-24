@@ -1351,6 +1351,10 @@ String StorageFileSource::FilesIterator::next()
         auto task = getContext()->getClusterFunctionReadTaskCallback()();
         if (!task || task->isEmpty())
             return {};
+
+        /// The read task may come from a client impersonating an initiator server, so validate the path.
+        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+
         return task->path;
     }
 
@@ -2131,6 +2135,15 @@ public:
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
+
+        /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
+        /// start, and not at all when writing through a file descriptor or a partitioned path.
+        if (do_not_write_prefix
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, getContext(), format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to {} because the {} format doesn't support appends",
+                use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
@@ -2213,7 +2226,7 @@ private:
     std::unique_lock<std::shared_timed_mutex> lock;
 };
 
-class PartitionedStorageFileSink : public PartitionedSink
+class PartitionedStorageFileSink : public PartitionedSink::SinkCreator
 {
 public:
     PartitionedStorageFileSink(
@@ -2228,7 +2241,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : partition_strategy(partition_strategy_)
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2244,11 +2257,12 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
+        const auto file_path_generator = std::make_shared<ObjectStorageWildcardFilePathGenerator>(path);
+        std::string filepath = file_path_generator->getPathForWrite(partition_id);
 
         fs::create_directories(fs::path(filepath).parent_path());
 
-        validatePartitionKey(filepath, true);
+        PartitionedSink::validatePartitionKey(filepath, true);
         checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
@@ -2265,6 +2279,7 @@ public:
     }
 
 private:
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
     const String path;
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
@@ -2316,7 +2331,7 @@ SinkToStoragePtr StorageFile::write(
             has_wildcards,
             /* partition_columns_in_data_file */true);
 
-        return std::make_shared<PartitionedStorageFileSink>(
+        auto sink_creator = std::make_shared<PartitionedStorageFileSink>(
             partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
@@ -2328,6 +2343,13 @@ SinkToStoragePtr StorageFile::write(
             format_name,
             context,
             flags);
+
+        return std::make_shared<PartitionedSink>(
+            partition_strategy,
+            sink_creator,
+            context,
+            std::make_shared<const Block>(metadata_snapshot->getSampleBlock())
+        );
     }
 
     String path;
@@ -2353,6 +2375,7 @@ SinkToStoragePtr StorageFile::write(
                 String new_path;
                 do
                 {
+
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
                 }
@@ -2636,7 +2659,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 - Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
 - Supported creating new file by `INSERT` query.
-- If file exists, `INSERT` would append new values in it.
+- If file exists, `INSERT` would append new values in it, but only for formats that support appending. Formats that do not support it, such as `Avro`, `Arrow`, `JSON`, `Npy`, `ORC` and `Parquet`, reject an `INSERT` into a non-empty file with `CANNOT_APPEND_TO_FILE`. For a plain file path, use the `engine_file_truncate_on_insert` or `engine_file_allow_create_multiple_files` settings listed below instead; neither applies when writing through a file descriptor, where the caller owns the descriptor.
 - Not supported:
   - `ALTER`
   - `SELECT ... SAMPLE`

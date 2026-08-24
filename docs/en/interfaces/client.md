@@ -836,7 +836,10 @@ All command-line options can be specified directly on the command line or as def
 | `-d [ --database ] <database>`   | Select the database to default to for this connection.                                                                                                                                                                                                                                                                             | The current database from the server settings (`default` by default)                                             |
 | `-h [ --host ] <host>`           | The hostname of the ClickHouse server to connect to. Can either be a hostname or an IPv4 or IPv6 address. Multiple hosts can be passed via multiple arguments.                                                                                                                                                                    | `localhost`                                                                                                      |
 | `--jwt <value>`                  | Use JSON Web Token (JWT) for authentication. <br/><br/>Server JWT authorization is only available in ClickHouse Cloud.                                                                                                                                                                                                            | -                                                                                                                |
-| `login`                  | Invokes the device grant OAuth flow in order to authenticate via an IDP. <br/><br/>For ClickHouse Cloud hosts, the OAuth variables are inferred otherwise they must be provided with `--oauth-url`, `--oauth-client-id` and `--oauth-audience`.                                                                                                                                                                                                            | -                                                                                                                |
+| `--jwt-command <command>`        | Shell command whose stdout is used as the JWT. Invoked on the first connect, before reconnects when the cached JWT is near expiry, and after the server rejects the cached token. See [`--jwt-command` details](#jwt-command-details) below.                                                                                       | -                                                                                                                |
+| `--jwt-command-timeout <seconds>` | Timeout for `--jwt-command`. Also settable as `<jwt-command-timeout>` in the config file; CLI wins.                                                                                                                                                                                                                                  | `30`                                                                                                            |
+| `--login[=<mode>]`       | Authenticate via OAuth2. Bare `--login` (no `=<mode>`) triggers ClickHouse Cloud automatic login — the provider is inferred from the server. To authenticate against a custom OpenID Connect provider, supply a `mode` and `--oauth-credentials`: `--login=browser` runs the Authorization Code + PKCE flow (opens a browser), `--login=device` runs the Device Authorization flow (prints a URL and short code — no browser needed). | -                                                                                                                |
+| `--oauth-credentials <path>` | Path to an OAuth2 credentials JSON file (Google Cloud Console format). Required when using `--login=browser` or `--login=device` with a custom OpenID Connect provider. See [OAuth credentials file format](#oauth-credentials-file) below. Refresh tokens are cached in `~/.clickhouse-client/oauth_cache.json` (mode `0600`). | `~/.clickhouse-client/oauth_client.json`                                                                        |
 | `--no-warnings`                  | Disable showing warnings from `system.warnings` when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--no-server-client-version-message`                  | Suppress server-client version mismatch message when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--password <password>`          | The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.                                                                                                                                                   | -                                                                                                                |
@@ -850,6 +853,46 @@ All command-line options can be specified directly on the command line or as def
 :::note
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 :::
+
+### OAuth credentials file {#oauth-credentials-file}
+
+When using `--login=browser` or `--login=device` with a custom OpenID Connect provider, the client reads a credentials JSON file. The file uses the same format produced by the Google Cloud Console ("OAuth 2.0 Client IDs" → "Download JSON"):
+
+```json
+{
+  "installed": {
+    "client_id": "YOUR_CLIENT_ID",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "redirect_uris": ["http://127.0.0.1"]
+  }
+}
+```
+
+The top-level key can be `installed` (desktop/CLI apps) or `web`. Required fields: `client_id`, `auth_uri`, `token_uri`. Optional fields:
+
+| Field | Description |
+|---|---|
+| `client_secret` | Confidential-client secret. Omit (or leave empty) for OIDC public clients — the auth-code flow is always protected by PKCE and the device flow by the device code, so a secret is not required by the protocol. When the field is absent the client never sends a `client_secret` form parameter, which is the form public-client registrations require (Auth0, Microsoft Entra ID, Keycloak, Okta and others reject empty secrets with `invalid_client`). |
+| `device_authorization_uri` | Device authorization endpoint. Discovered automatically via OIDC Discovery if absent. |
+| `issuer` | OIDC issuer URL (e.g. `https://accounts.google.com`). Used to locate the discovery document when `device_authorization_uri` is not set. |
+
+The default path is `~/.clickhouse-client/oauth_client.json`. Override it with `--oauth-credentials <path>`.
+
+After a successful login the obtained refresh token is cached in `~/.clickhouse-client/oauth_cache.json` (file mode `0600`). Subsequent runs reuse the cached token silently and only open the browser or print a device code when the refresh token has expired.
+
+### `--jwt-command` details {#jwt-command-details}
+
+The command is executed via `/bin/sh -c`. Stdout is taken as the JWT (one trailing newline stripped); any human-facing output (prompts, URLs, device codes) must go to stderr — it is forwarded unbuffered to the client's stderr. Stdin is closed.
+
+The command runs on the first connect to obtain the initial token. On subsequent (re)connects the client reuses the cached token; it re-invokes the command only when (a) the cached token parses as a JWT whose `exp` claim is within 30 seconds, or (b) the server rejects the cached token with an authentication failure, in which case the client refetches the token and retries the handshake once. Opaque tokens (anything that does not parse as a JWT) and JWTs without a usable `exp` claim are reused until the server rejects them — caching/refresh in those cases is the script's responsibility.
+
+```bash
+clickhouse-client --jwt-command "curl -sS https://idp.example/token | jq -r .access_token"
+```
+
+Cannot be combined with `--jwt`, `--login`, or a non-default `--user`. Non-zero exit, empty output, or exceeding `--jwt-command-timeout` (default `30`s, overridable via `<jwt-command-timeout>` in `~/.clickhouse-client/config.xml`) fails authentication. On timeout the entire helper subprocess tree is terminated.
 
 ### Query options {#command-line-options-query}
 
