@@ -72,6 +72,13 @@ FROM file('$DATA_DIR/packets.pcap', PCAP)
 WHERE ip_protocol = 'TCP' AND src_port IS NULL
 ORDER BY number FORMAT TSV"
 
+echo "--- native IPv6: addresses, next header and ports ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, eth_type, ip_version, src_addr, dst_addr, ip_protocol, ip_ttl, src_port, dst_port, tcp_flags
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_version = 6
+ORDER BY number FORMAT TSV"
+
 echo "--- truncated capture (snaplen 34: original_length > capture_length) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, capture_length, original_length, protocols, ip_protocol, length(raw)

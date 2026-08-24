@@ -22,12 +22,23 @@ def ipv4(protocol, payload, flags_and_offset=0x4000):
     )
 
 
-def ethernet(payload, vlan_id=None):
-    """Ethernet II carrying IPv4, optionally behind a single 802.1Q tag."""
+def ipv6(next_header, payload):
+    """IPv6 header (2001:db8::1 -> 2001:db8::2, hop limit 64) followed by `payload`."""
+    return (
+        bytes.fromhex("60000000")
+        + struct.pack(">HBB", len(payload), next_header, 64)
+        + bytes.fromhex("20010db8000000000000000000000001")
+        + bytes.fromhex("20010db8000000000000000000000002")
+        + payload
+    )
+
+
+def ethernet(payload, vlan_id=None, ether_type=0x0800):
+    """Ethernet II carrying IPv4 (or IPv6 with `ether_type` 0x86DD), optionally behind a single 802.1Q tag."""
     frame = bytes.fromhex("00112233445566778899aabb")
     if vlan_id is not None:
         frame += struct.pack(">HH", 0x8100, vlan_id)
-    return frame + struct.pack(">H", 0x0800) + payload
+    return frame + struct.pack(">H", ether_type) + payload
 
 
 tcp = struct.pack(">HHIIBBHHH", 12345, 80, 1, 0, 0x50, 0x18, 1024, 0, 0) + b"GET / HTTP/1.0\\r\\n\\r\\n"
@@ -43,6 +54,12 @@ packets.append(ethernet(ipv4(6, tcp), vlan_id=42))
 # header is in another fragment, so the transport layer cannot be decoded, but
 # `ip_protocol` still comes from the IPv4 header and reports `TCP`.
 packets.append(ethernet(ipv4(6, b"a fragment of a TCP segment", flags_and_offset=185)))
+
+# Native IPv6: a TCP and a UDP packet, so that the IPv6 branch (addresses taken
+# from the IPv6 header, `ip_protocol` from the `next header` field, ports from
+# the transport layer) is exercised too.
+packets.append(ethernet(ipv6(6, tcp), ether_type=0x86DD))
+packets.append(ethernet(ipv6(17, udp), ether_type=0x86DD))
 
 
 def write_pcap(path, records, snaplen=65535):
