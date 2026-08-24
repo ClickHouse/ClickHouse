@@ -32,6 +32,9 @@
 --     (a merge-tree setting named in the DDL is left alone). The randomized floor of 1024 bytes
 --     splits 1M rows into ~143k marks, and the reader then serves the part with a single stream,
 --     which turns the sharded plan off entirely and takes the whole test with it.
+--   * `use_uncompressed_cache = 0` in the two budgeted queries. Blocks inserted into that cache
+--     are charged to the query that populates it, which on this fixture is 143 MiB, so a run that
+--     draws the cache on exhausts the budget in the reader before either arm's queues are reached.
 
 DROP TABLE IF EXISTS test_116038;
 CREATE TABLE test_116038 (a UInt64, b String) ENGINE = MergeTree ORDER BY tuple()
@@ -68,7 +71,7 @@ ORDER BY a
 SETTINGS enable_sharding_aggregator = 0, max_threads = 4, max_block_size = 1024,
          max_rows_to_group_by = 0, enable_parallel_replicas = 0,
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-         max_streams_to_max_threads_ratio = 1,
+         max_streams_to_max_threads_ratio = 1, use_uncompressed_cache = 0,
          max_memory_usage = 100663296, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT a, uniqCombined(b) > 0, uniqCombined(concat(b, '1')) > 0, uniqCombined(concat(b, '2')) > 0
@@ -78,7 +81,7 @@ ORDER BY a
 SETTINGS enable_sharding_aggregator = 1, max_threads = 4, max_block_size = 1024,
          max_rows_to_group_by = 0, enable_parallel_replicas = 0,
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-         max_streams_to_max_threads_ratio = 1,
+         max_streams_to_max_threads_ratio = 1, use_uncompressed_cache = 0,
          max_memory_usage = 100663296, max_bytes_ratio_before_external_group_by = 0;
 
 -- The cap is honoured on evidence that a consumer is draining, so the case where that
