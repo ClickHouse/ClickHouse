@@ -1,0 +1,57 @@
+---
+description: "Documentation de l'instruction REVOKE"
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: "Instruction REVOKE"
+doc_type: 'reference'
+---
+
+Révoque les privilèges accordés à des utilisateurs ou à des rôles.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+**Révocation des privilèges aux utilisateurs**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**Révocation de rôles à des utilisateurs**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## Description
+</div>
+
+Pour révoquer un privilège donné, vous pouvez utiliser un privilège de portée plus large que le privilège que vous souhaitez révoquer. Par exemple, si un utilisateur possède le privilège `SELECT (x,y)`, un administrateur peut exécuter la requête `REVOKE SELECT(x,y) ...`, ou `REVOKE SELECT * ...`, ou même `REVOKE ALL PRIVILEGES ...` pour révoquer ce privilège.
+
+<div id="partial-revokes">
+  ### Révocations partielles
+</div>
+
+Vous pouvez révoquer une partie d’un privilège. Par exemple, si un utilisateur possède le privilège `SELECT *.*`, vous pouvez lui révoquer le privilège de lire des données dans une table ou une base de données spécifique.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Accordez au compte utilisateur `john` le privilège de sélectionner dans toutes les bases de données, à l’exception de `accounts` :
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+Accordez au compte utilisateur `mira` le privilège de sélectionner toutes les colonnes de la table `accounts.staff`, à l’exception de `wage`.
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[Article d&#39;origine](/fr/reference/settings/session-settings)

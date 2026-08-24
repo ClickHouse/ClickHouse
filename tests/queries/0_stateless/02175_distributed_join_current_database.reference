@@ -1,0 +1,14 @@
+-- { echoOn }
+select * from dist_02175 l join local_02175 r using dummy;
+0
+0
+select * from dist_02175 l global join local_02175 r using dummy;
+0
+0
+-- explicit database for distributed table
+select * from remote('127.1', currentDatabase(), dist_02175) l join local_02175 r using dummy;
+0
+0
+select * from remote('127.1', currentDatabase(), dist_02175) l global join local_02175 r using dummy;
+0
+0

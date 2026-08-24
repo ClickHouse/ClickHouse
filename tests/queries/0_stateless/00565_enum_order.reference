@@ -1,0 +1,9 @@
+INSERT INTO "test_log"("date", "datetime", "path", "gtid", "query_serial", "row_serial",    "reqid", "method", "service", "db", "type", "operation", "old_fields"."name",    "old_fields"."value", "old_fields"."is_null", "new_fields"."name", "new_fields"."value",    "new_fields"."is_null", "record_source_type", "record_source_timestamp", "deleted") FORMAT TabSeparated
+run by native protocol
+run by http protocol
+run by native protocol
+run by http protocol
+run by native protocol
+run by http protocol
+Count:
+6

@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <max_block_size>1000</max_block_size>
+        <enable_named_columns_in_function_tuple>0</enable_named_columns_in_function_tuple>
+        <allow_experimental_variant_type>1</allow_experimental_variant_type>
+        <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
+    </settings>
+
+    <create_query>
+CREATE TABLE variant_squash_performance
+(
+    v Variant(Tuple(v1 Array(UInt64)), Tuple(v2 Array(UInt64)), Tuple(v3 Array(UInt64)), Tuple(v4 Array(UInt64)), Tuple(v5 Array(UInt64)))
+)
+ENGINE = Null;
+    </create_query>
+
+    <create_query>
+CREATE TABLE src_variant_squash_performance
+(
+    v Variant(Tuple(v1 Array(UInt64)), Tuple(v2 Array(UInt64)), Tuple(v3 Array(UInt64)), Tuple(v4 Array(UInt64)), Tuple(v5 Array(UInt64)))
+)
+ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+<![CDATA[insert into src_variant_squash_performance with 'Variant(Tuple(v1 Array(UInt64)), Tuple(v2 Array(UInt64)), Tuple(v3 Array(UInt64)), Tuple(v4 Array(UInt64)), Tuple(v5 Array(UInt64)))' as variant_type select multiIf(number % 15 < 1, CAST(tuple(range(number % 100))::Tuple(v1 Array(UInt64)), variant_type), number % 15 < 3, CAST(tuple(range(number % 100))::Tuple(v2 Array(UInt64)), variant_type), number % 15 < 6, CAST(tuple(range(number % 100))::Tuple(v3 Array(UInt64)), variant_type), number % 15 < 10, CAST(tuple(range(number % 100))::Tuple(v4 Array(UInt64)), variant_type), CAST(tuple(range(number % 100))::Tuple(v5 Array(UInt64)), variant_type)) from numbers(1000000)]]>
+    </fill_query>
+
+    <query>INSERT INTO variant_squash_performance SELECT * FROM src_variant_squash_performance</query>
+
+    <drop_query>DROP TABLE IF EXISTS variant_squash_performance</drop_query>
+    <drop_query>DROP TABLE IF EXISTS src_variant_squash_performance</drop_query>
+</test>
+

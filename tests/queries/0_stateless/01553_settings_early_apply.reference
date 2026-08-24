@@ -1,0 +1,74 @@
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0
+}
+number
+UInt64
+"number"
+"UInt64"
+["number"]
+["UInt64"]
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+	</data>
+	<rows>0</rows>
+</result>
+    number
+
+1.       0 
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9]
+	],
+
+	"rows": 10
+}

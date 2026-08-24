@@ -1,0 +1,40 @@
+---
+slug: /faq/integration/json-import
+title: 'Как импортировать JSON в ClickHouse?'
+toc_hidden: true
+toc_priority: 11
+description: 'На этой странице показано, как импортировать JSON в ClickHouse'
+keywords: ['импорт JSON', 'формат JSONEachRow', 'импорт данных', 'ингестия JSON', 'форматы данных']
+doc_type: 'guide'
+---
+
+ClickHouse поддерживает широкий спектр [форматов данных для ввода и вывода](/ru/reference/formats/index). Среди них есть несколько вариантов JSON, но для ингестии данных чаще всего используется [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow). Этот формат предполагает один объект JSON на строку, при этом каждый объект отделяется переводом строки.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Использование [HTTP-интерфейса](/ru/concepts/features/interfaces/http):
+
+```bash
+$ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+С помощью [интерфейса CLI](/ru/concepts/features/interfaces/cli):
+
+```bash
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+```
+
+Вместо ручной вставки данных можно воспользоваться [инструментом интеграции](/ru/integrations/home).
+
+<div id="useful-settings">
+  ## Полезные настройки
+</div>
+
+* `input_format_skip_unknown_fields` позволяет выполнять вставку JSON, даже если в нём есть дополнительные поля, отсутствующие в схеме таблицы (они будут отброшены).
+* `input_format_import_nested_json` позволяет выполнять вставку вложенных объектов JSON в столбцы типа [Nested](/ru/reference/data-types/nested-data-structures/index).
+
+<Note>
+  Настройки задаются как параметры `GET` для HTTP-интерфейса или как дополнительные аргументы командной строки с префиксом `--` для интерфейса `CLI`.
+</Note>

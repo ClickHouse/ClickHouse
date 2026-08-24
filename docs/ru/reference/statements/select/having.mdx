@@ -1,0 +1,50 @@
+---
+description: 'Документация по оператору HAVING'
+sidebarTitle: 'HAVING'
+slug: /sql-reference/statements/select/having
+title: 'Оператор HAVING'
+doc_type: 'reference'
+---
+
+Позволяет фильтровать результаты агрегации, сформированные с помощью [GROUP BY](/ru/reference/statements/select/group-by). Он похож на оператор [WHERE](/ru/reference/statements/select/where), но отличается тем, что `WHERE` выполняется до агрегации, а `HAVING` — после неё.
+
+В операторе `HAVING` можно ссылаться на результаты агрегации из оператора `SELECT` по их псевдонимам. Кроме того, `HAVING` позволяет фильтровать по результатам дополнительных агрегатных функций, которые не выводятся в результате запроса.
+
+<div id="example">
+  ## Пример
+</div>
+
+Если у вас есть таблица `sales` следующего вида:
+
+```sql
+CREATE TABLE sales
+(
+    region String,
+    salesperson String,
+    amount Float64
+)
+ORDER BY (region, salesperson);
+```
+
+Вы можете выполнить запрос к нему следующим образом:
+
+```sql
+SELECT
+    region,
+    salesperson,
+    sum(amount) AS total_sales
+FROM sales
+GROUP BY
+    region,
+    salesperson
+HAVING total_sales > 10000
+ORDER BY total_sales DESC;
+```
+
+Здесь будут перечислены продавцы, у которых общий объём продаж в регионе превышает 10 000.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+`HAVING` нельзя использовать, если агрегация не используется. Вместо этого используйте `WHERE`.

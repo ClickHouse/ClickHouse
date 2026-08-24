@@ -1,0 +1,25 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster_remove_replica1>
+            <shard>
+                <replica>
+                    <host>not_existing</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>not_existing2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_remove_replica1>
+
+        <test_cluster_remove_replica2>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_remove_replica2>
+    </remote_servers>
+</clickhouse>

@@ -1,0 +1,109 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: 클러스터 스케일링
+keywords: ['kubernetes', '스케일링', '레플리카', '세그먼트', 'Keeper', '쿼럼']
+description: 'ClickHouse 레플리카와 세그먼트, Keeper 쿼럼 멤버를 스케일링하는 방법과 연산자가 자동으로 수행하는 작업을 설명합니다.'
+doc_type: 'guide'
+---
+
+사용자 지정 리소스에서 레플리카와 세그먼트 수를 편집해 클러스터를 스케일링합니다. 연산자는 실행 중인 클러스터를 새 토폴로지에 맞게 조정합니다. 즉, 레플리카별 StatefulSet을 생성하거나 제거하고, 스키마(schema)를 동기화된 상태로 유지하며, 상태 조건을 통해 진행 상황을 표시합니다.
+
+이 가이드에서는 `ClickHouseCluster`의 레플리카와 세그먼트를 스케일링하는 방법, `KeeperCluster` 쿼럼을 안전하게 스케일링하는 방법, 그리고 스케일 작업이 진행되는 동안 어떤 조건을 확인해야 하는지를 설명합니다.
+
+<Note>
+  `ClickHouseCluster`에는 항상 Keeper가 필요하며, 필수 `spec.keeperClusterRef` 필드를 통해 이를 참조합니다. 연산자는 클러스터 크기와 관계없이 이를 통해 클러스터를 조정합니다. 세그먼트당 2개 이상의 레플리카를 실행하려면 데이터도 `ReplicatedMergeTree` 테이블에 있어야 합니다. 복제가 있어야 두 번째 레플리카가 동일한 행을 제공할 수 있기 때문입니다.
+</Note>
+
+<div id="scaling-replicas">
+  ## 레플리카 스케일링
+</div>
+
+`spec.replicas`는 모든 세그먼트의 레플리카 수를 설정합니다. 각 레플리카는 `<cluster>-clickhouse-<shard>-<replica>`라는 이름의 개별 StatefulSet에서 실행되므로, `shards: 2` 및 `replicas: 3`인 클러스터는 총 6개의 StatefulSet을 실행합니다.
+
+다음과 같이 개수를 늘리거나 줄이십시오:
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+확장 시 연산자는 레플리카별 새 StatefulSets를 생성하고, 각 파드가 준비 상태가 될 때까지 기다린 다음 새 레플리카에 스키마(schema)를 동기화합니다([Automatic schema sync](#automatic-schema-sync) 참조). 축소 시에는 초과 StatefulSets를 제거하고, 제거된 레플리카가 남긴 오래된 복제된 데이터베이스의 레플리카 등록 정보를 정리합니다.
+
+<div id="scaling-shards">
+  ## 세그먼트 스케일링
+</div>
+
+`spec.shards`는 세그먼트 수를 설정합니다. 새 세그먼트가 추가될 때마다 각 레플리카에 대한 StatefulSet 전체가 추가되며, 연산자는 세그먼트마다 [파드 중단 예산](/ko/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) 1개를 생성하므로 한 세그먼트의 중단이 다른 세그먼트에 반영되지 않습니다.
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+각 세그먼트는 데이터의 서로 다른 일부를 보유하며, 연산자는 세그먼트 간에 행을 복사하거나 이동하지 않습니다. `Distributed` 테이블 또는 명시적으로 지정된 라우팅 방식이 행이 어느 세그먼트에 저장될지를 결정하므로, 세그먼트를 추가하면 기존 세그먼트에 이미 저장된 행은 건드리지 않은 채 새로 쓰는 데이터가 저장될 위치만 추가됩니다.
+
+<div id="automatic-schema-sync">
+  ## 자동 스키마 동기화
+</div>
+
+`spec.settings.enableDatabaseSync`가 `true`(기본값)로 설정되면 토폴로지가 변경될 때 연산자가 스키마가 계속 일치하도록 유지합니다.
+
+* **스케일 업 시** — 최소 2개의 레플리카가 준비되면 연산자가 새로 생성된 레플리카에 데이터베이스 정의를 복제합니다. 따라서 새 레플리카는 클러스터의 다른 레플리카와 동일한 `Replicated` 및 통합 데이터베이스를 가진 상태로 합류합니다.
+* **스케일 다운 시** — 레플리카가 제거되기 전에 연산자는 `SYSTEM DROP DATABASE REPLICA`를 사용해 각 `Replicated` 데이터베이스에서 해당 레플리카의 등록을 삭제합니다. 따라서 축소된 클러스터는 더 이상 존재하지 않는 `Replicated` 데이터베이스 레플리카를 기다리지 않습니다.
+
+이 동작은 `Replicated` 데이터베이스와 통합 데이터베이스 엔진에 적용됩니다. 테이블 데이터는 이동하지 않습니다. 행 데이터는 `ReplicatedMergeTree` 테이블에 저장되며, 이 스키마 동기화와 별개로 Keeper를 통해 독립적으로 복제됩니다. 준비된 레플리카가 1개뿐이면 복제할 대상이 없으므로 연산자는 이 단계를 건너뛰고 대상이 없다는 내용을 로그에 남깁니다.
+
+예를 들어 외부 도구가 스키마 전파를 관리하는 경우 `enableDatabaseSync: false`로 설정해 이 동작을 끌 수 있습니다. 그러면 연산자는 `SchemaInSync` 조건에 `SchemaSyncDisabled` 사유를 보고합니다.
+
+<div id="scaling-conditions">
+  ## 확인할 상태
+</div>
+
+스케일 조정 작업이 진행되는 동안 사용자 지정 리소스의 진행 상태를 확인하십시오:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| 조건                   | 이유                     | 의미                                              |
+| -------------------- | ---------------------- | ----------------------------------------------- |
+| `ClusterSizeAligned` | `UpToDate`             | 실행 중인 레플리카 수가 요청된 토폴로지와 일치합니다                   |
+| `ClusterSizeAligned` | `ScalingUp`            | 연산자가 레플리카를 추가하고 있습니다                          |
+| `ClusterSizeAligned` | `ScalingDown`          | 연산자가 레플리카를 제거하고 있습니다                          |
+| `SchemaInSync`       | `ReplicasInSync`       | 모든 레플리카에 데이터베이스가 존재하며 오래된 metadata가 정리되었습니다     |
+| `SchemaInSync`       | `DatabasesNotCreated`  | 연산자가 새 레플리카에 데이터베이스를 생성하는 작업을 아직 완료하지 않았습니다   |
+| `SchemaInSync`       | `ReplicasNotCleanedUp` | 스케일 다운으로 인해 남은 오래된 레플리카 metadata가 아직 제거되지 않았습니다 |
+| `SchemaInSync`       | `SchemaSyncDisabled`   | `enableDatabaseSync`가 `false`로 설정되어 있습니다        |
+| `Ready`              | `AllShardsReady`       | 모든 세그먼트에 준비된 레플리카가 있습니다                         |
+| `Ready`              | `SomeShardsNotReady`   | 하나 이상의 세그먼트에 준비된 레플리카가 없습니다                     |
+
+`ClusterSizeAligned`가 `UpToDate`이고, `SchemaInSync`가 `ReplicasInSync`이며, `Ready`가 `AllShardsReady`를 보고하면 스케일 작업이 완료된 것입니다.
+
+<div id="scaling-keeper">
+  ## Keeper 스케일링
+</div>
+
+`KeeperCluster`는 RAFT 쿼럼을 실행하므로, 연산자는 **한 번에 레플리카 하나씩만** 멤버십을 변경하며 클러스터가 안정적인 상태일 때만 이를 수행합니다. 이렇게 하면 쿼럼을 보호할 수 있습니다. `2F+1` 클러스터는 `F`개의 멤버 장애를 허용하므로, 3개 노드 클러스터는 멤버 1개가 없어도 계속 동작하고 5개 노드 클러스터는 2개가 없어도 계속 동작합니다.
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+확장 시 연산자는 사용 가능한 가장 낮은 레플리카 ID를 쿼럼에 추가하고, 축소 시에는 가장 높은 ID를 제거합니다. 각 단계에서는 다음 단계가 시작되기 전에 쿼럼이 안정화될 때까지 기다립니다. [Keeper 파드 중단 예산](/ko/products/kubernetes-operator/guides/configuration#pod-disruption-budgets)의 기본값은 자발적 중단 중 쿼럼을 유지하기 위해 `maxUnavailable: replicas/2`로 설정됩니다.
+
+`ScaleAllowed` 조건은 현재 쿼럼의 멤버 구성을 지금 변경할 수 있는지를 나타냅니다.
+
+| Reason                     | Meaning                                   |
+| -------------------------- | ----------------------------------------- |
+| `ReadyToScale`             | 쿼럼이 안정 상태이며 연산자가 멤버를 추가하거나 제거할 수 있음 |
+| `ReplicaHasPendingChanges` | 레플리카에 아직 적용 대기 중인 구성 변경이 있음               |
+| `ReplicaNotReady`          | 레플리카가 준비되지 않아 멤버 구성 변경을 기다리는 중임           |
+| `NoQuorum`                 | 클러스터에 쿼럼이 없어 멤버 구성을 안전하게 변경할 수 없음     |
+| `WaitingFollowers`         | 연산자가 팔로워가 따라잡기를 기다리는 중임                 |
+
+Keeper는 한 번에 한 단계씩만 조정하고, 각 변경 사이에 `ScaleAllowed`가 `ReadyToScale`로 돌아온 뒤 다음 변경을 진행하십시오. 한 번에 여러 멤버를 변경하더라도 한 번에 하나씩 수행되는 reconcile을 건너뛸 수는 없습니다. 연산자는 여전히 단계마다 쿼럼을 멤버 1개씩 순차적으로 조정합니다.

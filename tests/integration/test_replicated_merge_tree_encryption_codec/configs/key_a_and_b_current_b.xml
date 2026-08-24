@@ -1,0 +1,10 @@
+<clickhouse>
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key remove="1"/>
+            <key id="0">aaaaaaaaaaaaaaaa</key>
+            <key id="1">bbbbbbbbbbbbbbbb</key>
+            <current_key_id>1</current_key_id>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+</clickhouse>

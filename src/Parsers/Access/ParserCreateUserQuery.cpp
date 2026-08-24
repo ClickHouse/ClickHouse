@@ -1,0 +1,906 @@
+#include <Access/IAccessStorage.h>
+#include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
+#include <Parsers/Access/ParserRolesOrUsersSet.h>
+#include <Parsers/Access/ParserSettingsProfileElement.h>
+#include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/Access/ParserPublicSSHKey.h>
+#include <Parsers/Access/parseUserName.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserDatabaseOrNone.h>
+#include <Parsers/ParserStringAndSubstitution.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
+
+#include <base/range.h>
+#include <base/insertAtEnd.h>
+
+#include "config.h"
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
+                return false;
+
+            String maybe_new_name;
+            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
+                return false;
+
+            new_name.emplace(std::move(maybe_new_name));
+            return true;
+        });
+    }
+
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+            {
+                is_interval = false;
+                ParserStringAndSubstitution until_p;
+                return until_p.parse(pos, valid_until, expected);
+            }
+
+            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
+            /// at query execution time and stored in the VALID UNTIL form.
+            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
+            {
+                is_interval = true;
+                ParserExpression interval_p;
+                if (!interval_p.parse(pos, valid_until, expected))
+                    return false;
+
+                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
+                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
+                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
+                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
+                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
+                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
+                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
+                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
+                /// at execution time.
+                if (const auto * maybe_in = valid_until->as<ASTFunction>();
+                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
+                {
+                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
+                    /// `IN memory` and `IN 'memory'` have to be given back.
+                    const auto & storage_ast = maybe_in->arguments->children[1];
+                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
+                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
+                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
+                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
+
+                    if (is_storage_name)
+                    {
+                        /// A short identifier, a string literal and the `IN` keyword are one token each.
+                        /// Verify the rewound position really points at `IN` before acting on it.
+                        IParserBase::Pos in_pos = pos;
+                        --in_pos;
+                        --in_pos;
+                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
+                        {
+                            valid_until = maybe_in->arguments->children[0];
+                            pos = in_pos;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    bool parseAuthenticationData(
+        IParserBase::Pos & pos,
+        Expected & expected,
+        boost::intrusive_ptr<ASTAuthenticationData> & auth_data,
+        bool is_type_specifier_mandatory,
+        bool is_type_specifier_allowed,
+        bool should_parse_no_password)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            std::optional<AuthenticationType> type;
+
+            bool expect_password = false;
+            bool expect_hash = false;
+            bool expect_ldap_server_name = false;
+            bool expect_kerberos_realm = false;
+            bool expect_ssl_cert_subjects = false;
+            bool expect_public_ssh_key = false;
+            bool expect_http_auth_server = false;
+
+            auto parse_non_password_based_type = [&](auto check_type)
+            {
+                if (ParserKeyword{AuthenticationTypeInfo::get(check_type).keyword}.ignore(pos, expected))
+                {
+                    type = check_type;
+
+                    if (check_type == AuthenticationType::NO_AUTHENTICATION)
+                        return true;
+
+                    if (check_type == AuthenticationType::LDAP)
+                        expect_ldap_server_name = true;
+                    else if (check_type == AuthenticationType::KERBEROS)
+                        expect_kerberos_realm = true;
+                    else if (check_type == AuthenticationType::SSL_CERTIFICATE)
+                        expect_ssl_cert_subjects = true;
+                    else if (check_type == AuthenticationType::SSH_KEY)
+                        expect_public_ssh_key = true;
+                    else if (check_type == AuthenticationType::HTTP)
+                        expect_http_auth_server = true;
+                    else if (check_type == AuthenticationType::JWT)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
+                    else if (check_type != AuthenticationType::NO_PASSWORD)
+                        expect_password = true;
+
+                    return true;
+                }
+
+                return false;
+            };
+
+            {
+                const auto first_authentication_type_element_to_check
+                    = should_parse_no_password ? AuthenticationType::NO_PASSWORD : AuthenticationType::PLAINTEXT_PASSWORD;
+
+                for (auto check_type : collections::range(first_authentication_type_element_to_check, AuthenticationType::MAX))
+                {
+                    if (parse_non_password_based_type(check_type))
+                        break;
+                }
+            }
+
+            if (!type)
+            {
+                if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::SHA256_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::SCRAM_SHA256_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (ParserKeyword{Keyword::BCRYPT_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::BCRYPT_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (is_type_specifier_mandatory)
+                    return false;
+            }
+            else if (!is_type_specifier_allowed)
+            {
+                return false;
+            }
+
+            /// If authentication type is not specified, then the default password type is used
+            if (!type)
+                expect_password = true;
+
+            ASTPtr value;
+            ASTPtr parsed_salt;
+            ASTPtr public_ssh_keys;
+            ASTPtr http_auth_scheme;
+            ASTPtr ssl_cert_subjects;
+            std::optional<String> ssl_cert_subject_type;
+
+            if (expect_password || expect_hash)
+            {
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
+                    return false;
+
+                if (expect_hash && (type == AuthenticationType::SHA256_PASSWORD || type == AuthenticationType::SCRAM_SHA256_PASSWORD))
+                {
+                    if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
+                    {
+                        if (!ParserStringAndSubstitution{}.parse(pos, parsed_salt, expected))
+                            return false;
+                    }
+                }
+            }
+            else if (expect_ldap_server_name)
+            {
+                if (!ParserKeyword{Keyword::SERVER}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
+                    return false;
+            }
+            else if (expect_kerberos_realm)
+            {
+                if (ParserKeyword{Keyword::REALM}.ignore(pos, expected))
+                {
+                    if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
+                        return false;
+                }
+            }
+            else if (expect_ssl_cert_subjects)
+            {
+                for (const Keyword &keyword : {Keyword::CN, Keyword::SAN})
+                    if (ParserKeyword{keyword}.ignore(pos, expected))
+                    {
+                        ssl_cert_subject_type = toStringView(keyword);
+                        break;
+                    }
+
+                if (!ssl_cert_subject_type)
+                    return false;
+
+                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ssl_cert_subjects, expected))
+                    return false;
+            }
+            else if (expect_public_ssh_key)
+            {
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected))
+                    return false;
+
+                if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, public_ssh_keys, expected))
+                    return false;
+            }
+            else if (expect_http_auth_server)
+            {
+                if (!ParserKeyword{Keyword::SERVER}.ignore(pos, expected))
+                    return false;
+                if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
+                    return false;
+
+                if (ParserKeyword{Keyword::SCHEME}.ignore(pos, expected))
+                {
+                    if (!ParserStringAndSubstitution{}.parse(pos, http_auth_scheme, expected))
+                        return false;
+                }
+            }
+
+            auth_data = make_intrusive<ASTAuthenticationData>();
+
+            auth_data->type = type;
+            auth_data->contains_password = expect_password;
+            auth_data->contains_hash = expect_hash;
+
+            if (value)
+                auth_data->children.push_back(std::move(value));
+
+            if (parsed_salt)
+                auth_data->children.push_back(std::move(parsed_salt));
+
+            if (ssl_cert_subjects)
+            {
+                auth_data->ssl_cert_subject_type = ssl_cert_subject_type.value();
+                auth_data->children = std::move(ssl_cert_subjects->children);
+            }
+
+            if (public_ssh_keys)
+                auth_data->children = std::move(public_ssh_keys->children);
+
+            if (http_auth_scheme)
+                auth_data->children.push_back(std::move(http_auth_scheme));
+
+            ASTPtr method_valid_until;
+            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
+                auth_data->setValidUntil(std::move(method_valid_until));
+
+            return true;
+        });
+    }
+
+
+    bool parseIdentifiedWith(
+        IParserBase::Pos & pos,
+        Expected & expected,
+        std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods,
+        bool should_parse_no_password)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
+                return false;
+
+            // Parse first authentication method which doesn't come with a leading comma
+            {
+                bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
+
+                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
+
+                if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory, is_type_specifier_mandatory, should_parse_no_password))
+                {
+                    return false;
+                }
+
+                authentication_methods.push_back(ast_authentication_data);
+            }
+
+            // Need to save current position, process comma and only update real position in case there is an authentication method after
+            // the comma. Otherwise, position should not be changed as it needs to be processed by other parsers and possibly throw error
+            // on trailing comma.
+            IParserBase::Pos aux_pos = pos;
+            while (ParserToken{TokenType::Comma}.ignore(aux_pos, expected))
+            {
+                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
+
+                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true, should_parse_no_password))
+                {
+                    break;
+                }
+
+                pos = aux_pos;
+                authentication_methods.push_back(ast_authentication_data);
+            }
+
+            return !authentication_methods.empty();
+        });
+    }
+
+    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
+            {
+                authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
+                authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
+
+                ASTPtr method_valid_until;
+                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
+                    authentication_methods.back()->setValidUntil(std::move(method_valid_until));
+
+                return true;
+            }
+
+            return parseIdentifiedWith(pos, expected, authentication_methods, true);
+        });
+    }
+
+
+    bool parseHostsWithoutPrefix(IParserBase::Pos & pos, Expected & expected, AllowedClientHosts & hosts)
+    {
+        AllowedClientHosts res_hosts;
+
+        auto parse_host = [&]
+        {
+            if (ParserKeyword{Keyword::NONE}.ignore(pos, expected))
+                return true;
+
+            if (ParserKeyword{Keyword::ANY}.ignore(pos, expected))
+            {
+                res_hosts.addAnyHost();
+                return true;
+            }
+
+            if (ParserKeyword{Keyword::LOCAL}.ignore(pos, expected))
+            {
+                res_hosts.addLocalHost();
+                return true;
+            }
+
+            if (ParserKeyword{Keyword::REGEXP}.ignore(pos, expected))
+            {
+                ASTPtr ast;
+                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    return false;
+
+                for (const auto & name_regexp_ast : ast->children)
+                    res_hosts.addNameRegexp(name_regexp_ast->as<const ASTLiteral &>().value.safeGet<String>());
+                return true;
+            }
+
+            if (ParserKeyword{Keyword::NAME}.ignore(pos, expected))
+            {
+                ASTPtr ast;
+                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    return false;
+
+                for (const auto & name_ast : ast->children)
+                    res_hosts.addName(name_ast->as<const ASTLiteral &>().value.safeGet<String>());
+
+                return true;
+            }
+
+            if (ParserKeyword{Keyword::IP}.ignore(pos, expected))
+            {
+                ASTPtr ast;
+                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    return false;
+
+                for (const auto & subnet_ast : ast->children)
+                    res_hosts.addSubnet(subnet_ast->as<const ASTLiteral &>().value.safeGet<String>());
+
+                return true;
+            }
+
+            if (ParserKeyword{Keyword::LIKE}.ignore(pos, expected))
+            {
+                ASTPtr ast;
+                if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    return false;
+
+                for (const auto & pattern_ast : ast->children)
+                    res_hosts.addLikePattern(pattern_ast->as<const ASTLiteral &>().value.safeGet<String>());
+
+                return true;
+            }
+
+            return false;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_host, false))
+            return false;
+
+        hosts = std::move(res_hosts);
+        return true;
+    }
+
+
+    bool parseHosts(IParserBase::Pos & pos, Expected & expected, std::string_view prefix, AllowedClientHosts & hosts)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!prefix.empty() && !ParserKeyword::createDeprecated(prefix).ignore(pos, expected))
+                return false;
+
+            if (!ParserKeyword{Keyword::HOST}.ignore(pos, expected))
+                return false;
+
+            AllowedClientHosts res_hosts;
+            if (!parseHostsWithoutPrefix(pos, expected, res_hosts))
+                return false;
+
+            hosts.add(res_hosts);
+            return true;
+        });
+    }
+
+
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, bool default_roles, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{default_roles ? Keyword::DEFAULT_ROLE : Keyword::ROLE}.ignore(pos, expected))
+                return false;
+
+            ParserRolesOrUsersSet roles_p;
+            roles_p.allowRoles().useIDMode(id_mode);
+            if (default_roles)
+                roles_p.allowAll();
+
+            ASTPtr ast;
+            if (!roles_p.parse(pos, ast, expected))
+                return false;
+
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles->allow_users = false;
+            return true;
+        });
+    }
+
+
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            ParserSettingsProfileElements elements_p;
+            elements_p.useIDMode(id_mode);
+            if (!elements_p.parse(pos, ast, expected))
+                return false;
+
+            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
+            return true;
+        });
+    }
+
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            ParserAlterSettingsProfileElements elements_p;
+            if (!elements_p.parse(pos, ast, expected))
+                return false;
+
+            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
+            return true;
+        });
+    }
+
+    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & grantees)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::GRANTEES}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserRolesOrUsersSet grantees_p;
+            grantees_p.allowAny().allowUsers().allowCurrentUser().allowRoles().useIDMode(id_mode);
+            if (!grantees_p.parse(pos, ast, expected))
+                return false;
+
+            grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            return true;
+        });
+    }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
+
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTDatabaseOrNone> & default_database)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::DEFAULT_DATABASE}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserDatabaseOrNone database_p;
+            if (!database_p.parse(pos, ast, expected))
+                return false;
+
+            default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(ast);
+            return true;
+        });
+    }
+
+    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & auth_data)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::ADD}.ignore(pos, expected))
+            {
+                return false;
+            }
+
+            return parseIdentifiedWith(pos, expected, auth_data, false);
+        });
+    }
+
+    bool parseResetAuthenticationMethods(IParserBase::Pos & pos, Expected & expected)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::RESET_AUTHENTICATION_METHODS_TO_NEW}.ignore(pos, expected);
+        });
+    }
+}
+
+
+bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    bool alter = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{Keyword::ATTACH_USER}.ignore(pos, expected))
+            return false;
+    }
+    else
+    {
+        if (ParserKeyword{Keyword::ALTER_USER}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{Keyword::CREATE_USER}.ignore(pos, expected))
+            return false;
+    }
+
+    bool if_exists = false;
+    bool if_not_exists = false;
+    bool or_replace = false;
+    if (alter)
+    {
+        if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
+            if_exists = true;
+    }
+    else
+    {
+        if (ParserKeyword{Keyword::IF_NOT_EXISTS}.ignore(pos, expected))
+            if_not_exists = true;
+        else if (ParserKeyword{Keyword::OR_REPLACE}.ignore(pos, expected))
+            or_replace = true;
+    }
+
+    ASTPtr names_ast;
+    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
+        return false;
+    auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
+
+    auto pos_after_parsing_names = pos;
+
+    std::optional<String> new_name;
+    std::optional<AllowedClientHosts> hosts;
+    std::optional<AllowedClientHosts> add_hosts;
+    std::optional<AllowedClientHosts> remove_hosts;
+    std::vector<boost::intrusive_ptr<ASTAuthenticationData>> auth_data;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
+    ASTPtr global_valid_until;
+    bool global_valid_until_is_interval = false;
+    String cluster;
+    String storage_name;
+    bool reset_authentication_methods_to_new = false;
+
+    bool parsed_identified_with = false;
+    bool parsed_add_identified_with = false;
+
+    while (true)
+    {
+        if (auth_data.empty() && !reset_authentication_methods_to_new)
+        {
+            parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
+
+            if (parsed_identified_with)
+            {
+                continue;
+            }
+            else if (alter)
+            {
+                parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
+                if (parsed_add_identified_with)
+                {
+                    continue;
+                }
+            }
+        }
+
+        if (!reset_authentication_methods_to_new && alter && auth_data.empty())
+        {
+            reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
+            if (reset_authentication_methods_to_new)
+            {
+                continue;
+            }
+        }
+
+        AllowedClientHosts new_hosts;
+        if (parseHosts(pos, expected, "", new_hosts))
+        {
+            if (!hosts)
+                hosts.emplace();
+            hosts->add(new_hosts);
+            continue;
+        }
+
+        if (alter)
+        {
+            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            if (parseAlterSettings(pos, expected, new_alter_settings))
+            {
+                if (!alter_settings)
+                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
+                alter_settings->add(std::move(*new_alter_settings));
+                continue;
+            }
+        }
+        else
+        {
+            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
+            if (parseSettings(pos, expected, attach_mode, new_settings))
+            {
+                if (!settings)
+                    settings = make_intrusive<ASTSettingsProfileElements>();
+                settings->add(std::move(*new_settings));
+                continue;
+            }
+        }
+
+        if (!roles && !alter && !attach_mode && parseRoles(pos, expected, /* default_roles = */ false, attach_mode, roles))
+            continue;
+
+        if (!default_roles && parseRoles(pos, expected, /* default_roles = */ true, attach_mode, default_roles))
+            continue;
+
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
+            continue;
+
+        if (!default_database && parseDefaultDatabase(pos, expected, default_database))
+            continue;
+
+        if (alter)
+        {
+            if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
+                continue;
+
+            if (parseHosts(pos, expected, toStringView(Keyword::ADD), new_hosts))
+            {
+                if (!add_hosts)
+                    add_hosts.emplace();
+                add_hosts->add(new_hosts);
+                continue;
+            }
+
+            if (parseHosts(pos, expected, toStringView(Keyword::DROP), new_hosts))
+            {
+                if (!remove_hosts)
+                    remove_hosts.emplace();
+                remove_hosts->add(new_hosts);
+                continue;
+            }
+        }
+
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+            continue;
+
+        if (auth_data.empty() && !global_valid_until)
+        {
+            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
+            {
+                continue;
+            }
+        }
+
+        break;
+    }
+
+    if (!alter && !hosts)
+    {
+        String common_host_pattern;
+        if (names->getHostPatternIfCommon(common_host_pattern) && !common_host_pattern.empty())
+            hosts.emplace().addLikePattern(common_host_pattern);
+    }
+
+    bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
+
+    if (alter_query_with_no_changes)
+    {
+        return false;
+    }
+
+    /// `VALID FOR <interval>` is resolved to an absolute deadline at query execution time and stored
+    /// (and shown) in the `VALID UNTIL` form. It therefore never appears in the on-disk (`ATTACH`)
+    /// representation, and it cannot be evaluated during attach anyway: there is no query context, and
+    /// re-resolving `now` on every startup would let the deadline drift forever. Reject it here with a
+    /// clear message instead of failing later, deep inside `deserializeAccessEntity`, while loading a
+    /// hand-written access definition.
+    if (attach_mode)
+    {
+        bool has_valid_for = global_valid_until_is_interval;
+        for (const auto & authentication_method : auth_data)
+            has_valid_for = has_valid_for || authentication_method->valid_until_is_interval;
+
+        if (has_valid_for)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR is not allowed in ATTACH USER queries; the deadline must be stored as an absolute VALID UNTIL value");
+    }
+
+    auto query = make_intrusive<ASTCreateUserQuery>();
+    node = query;
+
+    query->alter = alter;
+    query->attach = attach_mode;
+    query->if_exists = if_exists;
+    query->if_not_exists = if_not_exists;
+    query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
+    query->names = std::move(names);
+    query->new_name = std::move(new_name);
+    query->authentication_methods = std::move(auth_data);
+    query->hosts = std::move(hosts);
+    query->add_hosts = std::move(add_hosts);
+    query->remove_hosts = std::move(remove_hosts);
+    query->roles = std::move(roles);
+    query->default_roles = std::move(default_roles);
+    query->settings = std::move(settings);
+    query->alter_settings = std::move(alter_settings);
+    query->grantees = std::move(grantees);
+    query->default_database = std::move(default_database);
+    query->global_valid_until = std::move(global_valid_until);
+    query->global_valid_until_is_interval = global_valid_until_is_interval;
+    query->storage_name = std::move(storage_name);
+    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
+    query->add_identified_with = parsed_add_identified_with;
+    query->replace_authentication_methods = parsed_identified_with;
+
+    for (const auto & authentication_method : query->authentication_methods)
+    {
+        query->children.push_back(authentication_method);
+    }
+
+    if (query->global_valid_until)
+        query->children.push_back(query->global_valid_until);
+
+    return true;
+}
+}
+
+namespace DB
+{
+
+void registerStatementUser(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE USER",
+    {
+        .description = R"(
+Creates user accounts. A user can be identified by a password, by a certificate, by an SSH key, or by an external
+authentication server, and can be restricted to a set of hosts, roles, settings and grantees.
+
+**Examples**
+
+**Create a user with a password**
+
+```sql title="Query"
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
+```
+)",
+        .syntax = R"(
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash | bcrypt_password | bcrypt_hash | ldap | kerberos | ssl_certificate | ssh_key | http | jwt | scram_sha256_password | scram_sha256_hash}] BY {'password' | 'hash'}} [,...]]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
+    [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+)",
+        .parent = "CREATE",
+        .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER USER",
+    {
+        .description = R"(
+Changes user accounts: renames them, changes their authentication methods, allowed hosts, default roles, default
+database, grantees and settings.
+
+**Examples**
+
+**Change the default roles of a user**
+
+```sql title="Query"
+ALTER USER user DEFAULT ROLE role1, role2;
+```
+)",
+        .syntax = R"(
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {...} [,...]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] ... | PROFILE 'profile_name'] [,...]
+)",
+        .parent = "ALTER",
+        .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
+    });
+}
+
+}

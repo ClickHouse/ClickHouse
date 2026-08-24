@@ -1,0 +1,189 @@
+-- Ensure ALIAS columns are not selected by asterisk
+1970-01-01	0	['zero','one','two']	['zero','one','two']	['zero','one','two']
+-- select DEFAULT and ALIAS arrays
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+-- select DEFAULT and ALIAS nested columns
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+zero	zero
+one	one
+two	two
+zero	['zero','one','two']
+one	['zero','one','two']
+two	['zero','one','two']
+['zero','one','two']	zero
+['zero','one','two']	one
+['zero','one','two']	two
+-- array join, but request the original columns
+['zero','one','two']	['zero','one','two']
+['zero','one','two']	['zero','one','two']
+['zero','one','two']	['zero','one','two']
+-- array join, do not use the result
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+-- select DEFAULT and ALIAS arrays, array joining one at a time
+['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	0	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	1	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	2	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	0	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	1	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	2	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	2
+-- select DEFAULT and ALIAS arrays, array joining one at a time and aliasing result with original name
+['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	0	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	1	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	2	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	0	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	1	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	2	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	2
+-- select DEFAULT and ALIAS arrays and array join result, aliased as `joined`
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+-- select DEFAULT and ALIAS nested columns, array joining one at a time
+['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	0	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	1	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	2	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	0	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	1	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	2	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	2
+-- select DEFAULT and ALIAS nested columns, array joining one at a time and aliasing result with original name
+['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	zero	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	one	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	two	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	0	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	1	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	2	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	0	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	1	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	2	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	2
+-- select DEFAULT and ALIAS nested columns and array join result, aliased as `joined`
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	2
+-- array join whole nested table
+['zero','one','two']	zero	zero	zero	zero	0	0	0
+['zero','one','two']	one	one	one	one	1	1	1
+['zero','one','two']	two	two	two	two	2	2	2
+-- array join whole nested table not using the result
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+-- array join whole nested table, aliasing with original name
+['zero','one','two']	zero	zero	zero	zero	0	0	0
+['zero','one','two']	one	one	one	one	1	1	1
+['zero','one','two']	two	two	two	two	2	2	2
+-- array join whole nested table, aliasing with original name not using the result
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+-- array join whole nested table, aliasing as `class`
+['zero','one','two']	zero	zero	zero	zero	0	0	0
+['zero','one','two']	one	one	one	one	1	1	1
+['zero','one','two']	two	two	two	two	2	2	2
+-- array join whole nested table, aliasing as `class` and not using the result
+['zero','one','two']
+['zero','one','two']
+['zero','one','two']
+-- array join whole nested table, aliasing as `class` but requesting the original columns
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	zero	zero	zero	zero	0	0	0
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	one	one	one	one	1	1	1
+['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['zero','one','two']	['0','1','2']	['0','1','2']	['0','1','2']	two	two	two	two	2	2	2

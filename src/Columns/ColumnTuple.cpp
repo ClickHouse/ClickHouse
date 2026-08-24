@@ -1,0 +1,1079 @@
+#include <Columns/ColumnTuple.h>
+
+#include <Columns/ColumnCompressed.h>
+#include <Columns/IColumnImpl.h>
+#include <Core/Field.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnsCommon.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <base/sort.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
+    extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+
+std::string ColumnTuple::getName() const
+{
+    WriteBufferFromOwnString res;
+    res << "Tuple(";
+    bool is_first = true;
+    for (const auto & column : columns)
+    {
+        if (!is_first)
+            res << ", ";
+        is_first = false;
+        res << column->getName();
+    }
+    res << ")";
+    return res.str();
+}
+
+ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
+{
+    if (mutable_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
+    columns.reserve(mutable_columns.size());
+    for (auto & column : mutable_columns)
+    {
+        if (isColumnConst(*column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+
+        columns.push_back(std::move(column));
+    }
+    column_length = columns[0]->size();
+}
+
+ColumnTuple::ColumnTuple(size_t len) : column_length(len) {}
+
+ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
+{
+    if (columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
+    for (const auto & column : columns)
+        if (isColumnConst(*column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+
+    auto column_tuple = ColumnTuple::create(columns[0]->size());
+    column_tuple->columns.assign(columns.begin(), columns.end());
+
+    return column_tuple;
+}
+
+ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
+{
+    if (columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
+    for (const auto & column : columns)
+        if (isColumnConst(*column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+
+    auto column_tuple = ColumnTuple::create(columns[0]->size());
+    column_tuple->columns = columns;
+
+    return column_tuple;
+}
+
+MutableColumnPtr ColumnTuple::cloneEmpty() const
+{
+    if (columns.empty())
+        return ColumnTuple::create(0);
+
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneEmpty();
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
+MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
+{
+    if (columns.empty())
+        return ColumnTuple::create(new_size);
+
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneResized(new_size);
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
+size_t ColumnTuple::size() const
+{
+    if (columns.empty())
+        return column_length;
+
+    /// It's difficult to maintain a consistent `column_length` because there
+    /// are many places that manipulates sub-columns directly.
+    return columns.at(0)->size();
+}
+
+Field ColumnTuple::operator[](size_t n) const
+{
+    Field res;
+    get(n, res);
+    return res;
+}
+
+void ColumnTuple::get(size_t n, Field & res) const
+{
+    const size_t tuple_size = columns.size();
+
+    res = Tuple();
+    Tuple & res_tuple = res.safeGet<Tuple>();
+    res_tuple.reserve(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        res_tuple.push_back((*columns[i])[n]);
+}
+
+void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+{
+    const size_t tuple_size = columns.size();
+
+    if (options.notFull(name_buf))
+    {
+        if (tuple_size > 1)
+            name_buf << "(";
+        else
+            name_buf << "tuple(";
+    }
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        columns[i]->getValueNameImpl(name_buf, n, options);
+    }
+    if (options.notFull(name_buf))
+        name_buf << ")";
+}
+
+bool ColumnTuple::isDefaultAt(size_t n) const
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        if (!columns[i]->isDefaultAt(n))
+            return false;
+    return true;
+}
+
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    /// Avoid the O(rows * tuple_size) per-row virtual `isDefaultAt` calls of the
+    /// IColumnHelper default: query each element's non-default rows once and union them
+    /// in a bitmap.
+    const size_t num_rows = size();
+    if (num_rows == 0)
+        return 0;
+    if (columns.empty())
+        return num_rows;
+
+    PaddedPODArray<UInt8> non_default_anywhere;
+    non_default_anywhere.resize_fill(num_rows);
+    size_t num_non_default = 0;
+
+    for (const auto & column : columns)
+    {
+        if (num_non_default == num_rows)
+            break;
+
+        const size_t num_defaults_in_column = column->getNumberOfDefaultRows();
+        if (num_defaults_in_column == num_rows)
+            continue;
+        if (num_defaults_in_column == 0)
+        {
+            std::memset(non_default_anywhere.data(), 1, num_rows);
+            num_non_default = num_rows;
+            break;
+        }
+
+        IColumn::Offsets non_default_indices;
+        column->getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
+        for (UInt64 idx : non_default_indices)
+        {
+            if (!non_default_anywhere[idx])
+            {
+                non_default_anywhere[idx] = 1;
+                ++num_non_default;
+            }
+        }
+    }
+    return num_rows - num_non_default;
+}
+
+std::string_view ColumnTuple::getDataAt(size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
+}
+
+void ColumnTuple::insertData(const char *, size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
+}
+
+void ColumnTuple::insert(const Field & x)
+{
+    const auto & tuple = x.safeGet<Tuple>();
+    const size_t tuple_size = columns.size();
+
+    if (tuple.size() != tuple_size)
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            tuple.size(),
+            tuple_size);
+
+    ++column_length;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insert(tuple[i]);
+}
+
+bool ColumnTuple::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Tuple)
+        return false;
+
+    const auto & tuple = x.safeGet<Tuple>();
+
+    const size_t tuple_size = columns.size();
+    if (tuple.size() != tuple_size)
+        return false;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (!columns[i]->tryInsert(tuple[i]))
+        {
+            for (size_t j = 0; j != i; ++j)
+                columns[j]->popBack(1);
+
+            return false;
+        }
+    }
+    ++column_length;
+
+    return true;
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
+#else
+void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
+#endif
+{
+    const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
+    const size_t tuple_size = columns.size();
+
+    if (src.columns.size() != tuple_size)
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src.columns.size(),
+            tuple_size);
+
+    ++column_length;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertFrom(*src.columns[i], n);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
+
+    const size_t tuple_size = columns.size();
+    if (src_tuple.columns.size() != tuple_size)
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src_tuple.columns.size(),
+            tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+
+    column_length += length;
+}
+
+void ColumnTuple::insertDefault()
+{
+    /// Must be exception-safe: if some nested column throws (e.g. on a memory limit),
+    /// the already modified nested columns have to be rolled back, otherwise the tuple
+    /// is left with nested columns of different sizes, which later leads to over-popping
+    /// in popBack during rollback of a partially read row.
+    size_t i = 0;
+    try
+    {
+        for (; i < columns.size(); ++i)
+            columns[i]->insertDefault();
+    }
+    catch (...)
+    {
+        for (size_t rollback = 0; rollback < i; ++rollback)
+            columns[rollback]->popBack(1);
+        throw;
+    }
+
+    ++column_length;
+}
+
+void ColumnTuple::popBack(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    column_length -= n;
+    for (auto & column : columns)
+        column->popBack(n);
+}
+
+ColumnCheckpointPtr ColumnTuple::getCheckpoint() const
+{
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(columns.size());
+
+    for (const auto & column : columns)
+        checkpoints.push_back(column->getCheckpoint());
+
+    return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
+}
+
+void ColumnTuple::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == columns.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->updateCheckpoint(*checkpoints[i]);
+}
+
+void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
+{
+    column_length = checkpoint.size;
+    const auto & checkpoints = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+
+    chassert(columns.size() == checkpoints.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->rollback(*checkpoints[i]);
+}
+
+std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+{
+    if (columns.empty())
+    {
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
+    }
+
+    std::string_view res;
+    for (const auto & column : columns)
+    {
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+    }
+
+    return res;
+}
+
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
+{
+    if (columns.empty())
+    {
+        *memory = 0;
+        return memory + 1;
+    }
+
+    for (const auto & column : columns)
+        memory = column->serializeValueIntoMemory(n, memory, settings);
+
+    return memory;
+}
+
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    if (columns.empty())
+        return 1;
+
+    size_t res = 0;
+    for (const auto & column : columns)
+    {
+        auto element_size = column->getSerializedValueSize(n, settings);
+        if (!element_size)
+            return std::nullopt;
+        res += *element_size;
+    }
+
+    return res;
+}
+
+
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
+{
+    ++column_length;
+
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
+    for (auto & column : columns)
+        column->deserializeAndInsertFromArena(in, settings);
+}
+
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
+{
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
+    for (const auto & column : columns)
+        column->skipSerializedInArena(in);
+}
+
+void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashWithValue(n, hash);
+}
+
+void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashWithValueRange(begin, end, hash);
+}
+
+void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    const size_t n = row_end - row_begin;
+
+    if (columns.empty())
+    {
+        /// Empty tuple: a single fixed per-row hash (all bits set).
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
+        return;
+    }
+
+    if (initial)
+    {
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        for (const auto & column : columns)
+            column->computeHashInto(row_begin, row_end, hash_out, false);
+        return;
+    }
+
+    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash (rather than streaming elements straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
+    for (const auto & column : columns)
+        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
+}
+
+void ColumnTuple::updateHashFast(SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashFast(hash);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
+{
+    column_length += length;
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertRangeFrom(
+            *assert_cast<const ColumnTuple &>(src).columns[i],
+            start, length);
+}
+
+ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
+{
+    if (columns.empty())
+    {
+        size_t bytes = countBytesInFilter(filt);
+        return cloneResized(bytes);
+    }
+
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->filter(filt, result_size_hint);
+
+    return ColumnTuple::create(new_columns);
+}
+
+void ColumnTuple::filter(const Filter & filt)
+{
+    if (columns.empty())
+    {
+        column_length = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t tuple_size = columns.size();
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->filter(filt);
+
+    column_length = columns[0]->size();
+}
+
+void ColumnTuple::expand(const Filter & mask, bool inverted)
+{
+    if (columns.empty())
+    {
+        column_length = mask.size();
+        return;
+    }
+
+    for (auto & column : columns)
+        column->expand(mask, inverted);
+}
+
+ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
+{
+    if (columns.empty())
+    {
+        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
+        if (perm.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
+
+        return cloneResized(result_size);
+    }
+
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->permute(perm, limit);
+
+    return ColumnTuple::create(new_columns);
+}
+
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
+{
+    if (columns.empty())
+    {
+        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
+        if (indexes.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
+
+        return cloneResized(result_size);
+    }
+
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->index(indexes, limit);
+
+    return ColumnTuple::create(new_columns);
+}
+
+ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
+{
+    if (columns.empty())
+    {
+        if (column_length != offsets.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column");
+
+        return cloneResized(offsets.back());
+    }
+
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->replicate(offsets);
+
+    return ColumnTuple::create(new_columns);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+{
+    if (columns.empty())
+    {
+        if (column_length != selector.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
+
+        auto counts = countColumnsSizeInSelector(num_columns, selector);
+
+        VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            res[i] = cloneResized(counts[i]);
+
+        return res;
+    }
+
+    const size_t tuple_size = columns.size();
+    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
+
+    for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
+        scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
+
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+
+    for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
+    {
+        MutableColumns new_columns(tuple_size);
+        for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
+            new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
+        res[scattered_idx] = ColumnTuple::create(std::move(new_columns));
+    }
+
+    return res;
+}
+
+int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        int res = 0;
+        if (collator && columns[i]->isCollationSupported())
+            res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
+        else
+            res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint);
+        if (res)
+            return res;
+    }
+    return 0;
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint);
+}
+
+int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
+}
+
+template <bool positive>
+struct ColumnTuple::Less
+{
+    TupleColumns columns;
+    int nan_direction_hint;
+    const Collator * collator;
+
+    Less(const TupleColumns & columns_, int nan_direction_hint_, const Collator * collator_=nullptr)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_), collator(collator_)
+    {
+    }
+
+    bool operator() (size_t a, size_t b) const
+    {
+        for (const auto & column : columns)
+        {
+            int res = 0;
+            if (collator && column->isCollationSupported())
+                res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
+            else
+                res = column->compareAt(a, b, *column, nan_direction_hint);
+            if (res < 0)
+                return positive;
+            if (res > 0)
+                return !positive;
+        }
+        return false;
+    }
+};
+
+void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
+{
+    size_t rows = size();
+    res.resize(rows);
+    iota(res.data(), rows, IColumn::Permutation::value_type(0));
+
+    if (columns.empty())
+        return;
+
+    if (limit >= rows)
+        limit = 0;
+
+    EqualRanges ranges;
+    ranges.emplace_back(0, rows);
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, ranges, collator);
+}
+
+void ColumnTuple::updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    for (const auto & column : columns)
+    {
+        while (!equal_ranges.empty() && limit && limit <= equal_ranges.back().from)
+            equal_ranges.pop_back();
+
+        if (collator && column->isCollationSupported())
+            column->updatePermutationWithCollation(*collator, direction, stability, limit, nan_direction_hint, res, equal_ranges);
+        else
+            column->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+
+        if (equal_ranges.empty())
+            break;
+    }
+}
+
+void ColumnTuple::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(direction, stability, limit, nan_direction_hint, res, nullptr);
+}
+
+void ColumnTuple::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+}
+
+void ColumnTuple::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(direction, stability, limit, nan_direction_hint, res, &collator);
+}
+
+void ColumnTuple::updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
+{
+    updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges, &collator);
+}
+
+void ColumnTuple::reserve(size_t n)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).reserve(n);
+}
+
+size_t ColumnTuple::capacity() const
+{
+    if (columns.empty())
+        return size();
+
+    return getColumn(0).capacity();
+}
+
+void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> nested_columns;
+        nested_columns.reserve(source_columns.size() * factor);
+        for (const auto & source_column : source_columns)
+            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
+        getColumn(i).prepareForSquashing(nested_columns, factor);
+    }
+}
+
+void ColumnTuple::shrinkToFit()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).shrinkToFit();
+}
+
+void ColumnTuple::ensureOwnership()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).ensureOwnership();
+}
+
+size_t ColumnTuple::byteSize() const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->byteSize();
+    return res;
+}
+
+size_t ColumnTuple::byteSizeAt(size_t n) const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->byteSizeAt(n);
+    return res;
+}
+
+size_t ColumnTuple::allocatedBytes() const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->allocatedBytes();
+    return res;
+}
+
+void ColumnTuple::protect()
+{
+    for (auto & column : columns)
+        column->protect();
+}
+
+void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+{
+    const size_t tuple_size = columns.size();
+
+    Tuple min_tuple(tuple_size);
+    Tuple max_tuple(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i], start, end);
+
+    min = min_tuple;
+    max = max_tuple;
+}
+
+void ColumnTuple::forEachMutableSubcolumn(MutableColumnCallback callback)
+{
+    for (auto & column : columns)
+        callback(column);
+}
+
+void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    for (auto & column : columns)
+    {
+        callback(*column);
+        column->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : columns)
+        callback(column);
+}
+
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : columns)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+}
+
+
+bool ColumnTuple::structureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    return false;
+}
+
+bool ColumnTuple::isCollationSupported() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->isCollationSupported())
+            return true;
+    }
+    return false;
+}
+
+bool ColumnTuple::hasDynamicStructure() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasDynamicStructure())
+            return true;
+    }
+    return false;
+}
+
+bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (!columns[i]->dynamicStructureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
+    nested_source_columns.resize(columns.size());
+    for (size_t i = 0; i != columns.size(); ++i)
+        nested_source_columns[i].reserve(source_columns.size());
+
+    for (const auto & source_column : source_columns)
+    {
+        const auto & nsource_columns = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+        for (size_t i = 0; i != nsource_columns.size(); ++i)
+            nested_source_columns[i].push_back(nsource_columns[i]);
+    }
+
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
+}
+
+void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
+{
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
+}
+
+
+bool ColumnTuple::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasStatistics())
+            return true;
+    }
+    return false;
+}
+
+void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != columns.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
+        elem_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+
+            elem_source_columns.push_back(source_tuple->columns[i]);
+        }
+
+        if (!columns[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
+
+        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+    }
+}
+
+void ColumnTuple::fixDynamicStructure()
+{
+    for (auto & column : columns)
+        column->fixDynamicStructure();
+}
+
+ColumnPtr ColumnTuple::compress(bool force_compression) const
+{
+    if (columns.empty())
+    {
+        return ColumnCompressed::create(size(), 0,
+            [n = column_length]
+            {
+                return ColumnTuple::create(n);
+            });
+    }
+
+    size_t byte_size = 0;
+    Columns compressed;
+    compressed.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        auto compressed_column = column->compress(force_compression);
+        byte_size += compressed_column->byteSize();
+        compressed.emplace_back(std::move(compressed_column));
+    }
+
+    return ColumnCompressed::create(size(), byte_size,
+        [my_compressed = std::move(compressed)]() mutable
+        {
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & column : my_compressed)
+                decompressed.push_back(column->decompress());
+            return ColumnTuple::create(decompressed);
+        });
+}
+
+void ColumnTuple::finalize()
+{
+    for (auto & column : columns)
+        column->finalize();
+}
+
+bool ColumnTuple::isFinalized() const
+{
+    return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
+}
+
+}

@@ -1,0 +1,34 @@
+<clickhouse>
+	<remote_servers>
+		<test_cluster>
+			<shard>
+				<internal_replication>true</internal_replication>
+				<replica>
+					<host>node1</host>
+					<port>9000</port>
+				</replica>
+				<replica>
+					<host>node2</host>
+					<port>9000</port>
+				</replica>
+				<replica>
+					<host>node3</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</test_cluster>
+	</remote_servers>
+	<query_log>
+		<database>system</database>
+		<table>query_log</table>
+		<partition_by>toYYYYMM(event_date)</partition_by>
+		<ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+		<!--
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        -->
+		<flush_interval_milliseconds>100</flush_interval_milliseconds>
+		<reserved_size_rows>8192</reserved_size_rows>
+		<buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+		<flush_on_crash>false</flush_on_crash>
+	</query_log>
+</clickhouse>

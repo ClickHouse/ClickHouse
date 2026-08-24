@@ -1,0 +1,1 @@
+SELECT bitAnd(number, toUInt64(pow(257, 20) - 1048576)) AS k, argMaxIf(k, if((number % 255) = 256, toInt256(65535), number), number > 42), uniq(number) AS u FROM numbers(2) GROUP BY toInt256(-2, NULL), k FORMAT Null

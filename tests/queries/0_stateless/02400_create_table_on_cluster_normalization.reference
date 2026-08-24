@@ -1,0 +1,5 @@
+localhost	9000	0		0	0
+localhost	9000	0		0	0
+1	2	3	4
+5	6	7	8
+CREATE TABLE default.t_l5ydey\n(\n    `c_qv5rv` Int32,\n    `c_rutjs4` Int32,\n    `c_wmj` Int32,\n    `c_m3` String\n)\nENGINE = Distributed(\'test_shard_localhost\', \'default\', \'local_t_l5ydey\', rand())

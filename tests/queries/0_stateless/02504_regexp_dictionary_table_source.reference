@@ -1,0 +1,44 @@
+1	0	Linux/(\\d+[\\.\\d]*).+tlinux	['version','name']	['\\1','TencentOS']
+2	0	(\\d+)/tclwebkit(\\d+[\\.\\d]*)	['comment','version','name']	['test $1 and $2','$1','Android']
+3	2	33/tclwebkit	['version']	['13']
+4	2	3[12]/tclwebkit	['version']	['12']
+5	2	3[12]/tclwebkit	['version']	['11']
+6	2	3[12]/tclwebkit	['version']	['10']
+('TencentOS',101,'nothing')
+('Android',13,'test 33 and 11.10')
+('',NULL,'nothing')
+('',0,'default')
+30/tclwebkit0
+31/tclwebkit1
+32/tclwebkit2
+33/tclwebkit3
+34/tclwebkit4
+35/tclwebkit5
+36/tclwebkit6
+37/tclwebkit7
+38/tclwebkit8
+39/tclwebkit9
+40/tclwebkit10
+41/tclwebkit11
+42/tclwebkit12
+43/tclwebkit13
+44/tclwebkit14
+('Android',30)
+('Android',12)
+('Android',12)
+('Android',13)
+('Android',34)
+('Android',35)
+('Android',36)
+('Android',37)
+('Android',38)
+('Android',39)
+('Android',40)
+('Android',41)
+('Android',42)
+('Android',43)
+('Android',44)
+('Android1',33,'matched 3')
+1	0	(\\d+)/tclwebkit	['version','name']	['$1','Android']
+2	0	33/tclwebkit	['comment','version']	['matched 3','13']
+3	1	33/tclwebkit	['name']	['Android1']

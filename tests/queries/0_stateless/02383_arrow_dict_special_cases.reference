@@ -1,0 +1,31 @@
+dict	LowCardinality(Nullable(String))					
+one
+two
+three
+one
+two
+dict	LowCardinality(Nullable(String))					
+
+one
+two
+three
+
+one
+three
+dict	LowCardinality(Nullable(String))					
+one
+two
+
+three
+one
+two
+three
+lc	LowCardinality(Nullable(String))					
+dict	LowCardinality(Nullable(String))					
+one
+two
+
+three
+one
+\N
+three

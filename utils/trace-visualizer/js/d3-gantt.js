@@ -1,0 +1,675 @@
+/*
+ * d3-gantt.js by @serxa
+ * Based on https://github.com/ydb-platform/ydb/blob/stable-22-2/library/cpp/lwtrace/mon/static/js/d3-gantt.js
+ */
+ d3.gantt = function() {
+    function gantt(input_data) {
+        data = input_data;
+
+        // compute aggregates
+        total_count = data.length;
+        total_runtime = data.reduce((a, d)  => a + d.t2 - d.t1, 0);
+        filtered_count = total_count;
+        filtered_runtime = total_runtime;
+
+        // Compute left margin based on widest band name, capped at 1/4 page width
+        var measureSvg = d3.select("body").append("svg").attr("class", "chart").style("position", "absolute").style("visibility", "hidden");
+        var maxTextWidth = 0;
+        data.bands.forEach(function(name) {
+            var textEl = measureSvg.append("text").attr("class", "axis y").text(name);
+            var w = textEl.node().getBBox().width;
+            if (w > maxTextWidth) maxTextWidth = w;
+            textEl.remove();
+        });
+        measureSvg.remove();
+        var maxMarginLeft = Math.floor(document.body.clientWidth / 4);
+        margin.left = Math.min(maxMarginLeft, Math.max(30, Math.ceil(maxTextWidth + 15)));
+        width = document.body.clientWidth - margin.right - margin.left - 5;
+
+        initAxis();
+
+        // create svg element
+        svg = d3.select(selector)
+          .append("svg")
+            .attr("class", "chart")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+        ;
+
+        // create arrowhead marker
+        defs = svg.append("defs");
+        defs.append("marker")
+            .attr("id", "arrow")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 5)
+            .attr("refY", 0)
+            .attr("markerWidth", 4)
+            .attr("markerHeight", 4)
+            .attr("orient", "auto")
+          .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("class","arrowHead")
+        ;
+
+        zoom = d3.zoom()
+            .scaleExtent([0.1, 1000])
+            //.translateExtent([0, 0], [1000,0])
+            .on("zoom", function() {
+                if (tipShown != null) {
+                    tip.hide(tipShown);
+                    tipShown = null;
+                    tipPinned = false;
+                    if (tipPinnedRect) {
+                        tipPinnedRect.removeAttribute("data-pinned");
+                        tipPinnedRect = null;
+                    }
+                    var cls = tip.attr("class") || "";
+                    tip.attr("class", cls.replace(/\s*pinned/g, ""));
+                }
+                var tr = d3.event.transform;
+                xZoomed = tr.rescaleX(x);
+                svg.select("g.x.axis").call(xAxis.scale(xZoomed));
+
+                var dy = d3.event.sourceEvent.screenY - zoom.startScreenY;
+                var newScrollTop = documentBodyScrollTop() - dy;
+                window.scrollTo(documentBodyScrollLeft(), newScrollTop);
+                documentBodyScrollTop(newScrollTop);
+                zoom.startScreenY = d3.event.sourceEvent.screenY;
+
+                zoomContainer1.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
+                zoomContainer2.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
+            })
+            .on("start", function() {
+                zoom.startScreenY = d3.event.sourceEvent.screenY;
+            })
+            .on("end", function() {
+            })
+        ;
+
+        svgChartContainer = svg.append('g')
+            .attr("transform", "translate(" + margin.left + ", " + margin.top + ")")
+        ;
+        svgChart = svgChartContainer.append("svg")
+            .attr("top", 0)
+            .attr("left", 0)
+            .attr("width", width)
+            .attr("height", height)
+            .attr("viewBox", "0 0 " + width + " " + height)
+        ;
+
+        zoomContainer1 = svgChart.append("g");
+
+        zoomPanel = svgChart.append("rect")
+            .attr("class", "zoom-panel")
+            .attr("width", width)
+            .attr("height", height)
+        ;
+        svgChart.call(zoom);
+
+        zoomContainer2 = svgChart.append("g");
+        bandsSvg = zoomContainer2.append("g");
+
+        // tooltips for bands
+        var maxTipHeight = 130;
+        const tipDirection = d => y(d.band) - maxTipHeight < documentBodyScrollTop()? 's': 'n';
+        function tipText(d) {
+            const runtime = d.t2 - d.t1;
+            const attributeRows = d.attributes
+                ? Object.entries(d.attributes)
+                    .map(([key, value]) => `<tr><td><span class="attribute">${key}</span></td><td>${value}</td></tr>`)
+                    .join('')
+                : '';
+            return `
+                <table>
+                    <tr><td colspan="2">${d.text}</td></tr>
+                    ${attributeRows}
+                    <tr><td><strong>begin</strong></td><td>${d.t1.toFixed(3)}</td></tr>
+                    <tr><td><strong>end</strong></td><td>${d.t2.toFixed(3)}</td></tr>
+                    <tr><td><strong>runtime</strong></td><td>${runtime.toFixed(3)}</td></tr>
+                    <tr><td><strong>share</strong></td><td>${(runtime * 100 / filtered_runtime).toFixed(3)}%</td></tr>
+                </table>
+            `;
+        }
+        tip = d3.tip()
+            .attr("class", "d3-tip")
+            .offset(function(d) {
+                // compute x to return tip in chart region
+                var t0 = (d.t1 + d.t2) / 2;
+                var t1 = Math.min(Math.max(t0, xZoomed.invert(0)), xZoomed.invert(width));
+                var dir = tipDirection(d);
+                return [dir === 'n'? -10 : 10, xZoomed(t1) - xZoomed(t0)];
+            })
+            .direction(tipDirection)
+            .html(d => tipText(d))
+        ;
+
+        bandsSvg.call(tip);
+
+        createRects();
+
+        // container for non-zoomable elements
+        fixedContainer = svg.append("g")
+            .attr("transform", "translate(" + margin.left + ", " + margin.top + ")")
+        ;
+
+        // create x axis
+        fixedContainer.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0, " + (height - margin.top - margin.bottom) + ")")
+          .transition()
+            .call(xAxis)
+        ;
+
+        // ruler should be drawn above x axis and under y axis
+        ruler = fixedContainer.append("g")
+            .attr("id", "ruler")
+            .attr("transform", "translate(0, 0)")
+        ;
+
+        // create y axis
+        fixedContainer.append("g")
+            .attr("class", "y axis")
+          .transition()
+            .call(yAxis)
+        ;
+
+        // make y axis ticks draggable
+        var ytickdrag = d3.drag()
+            .on("drag", function(d) {
+                var ypos = d3.event.y - margin.top;
+                var index = Math.floor((ypos / y.step()));
+                index = Math.min(Math.max(index, 0), this.initDomain.length - 1);
+                if (index != this.curIndex) {
+                    var newDomain = [];
+                    for (var i = 0; i < this.initDomain.length; ++i) {
+                        newDomain.push(this.initDomain[i]);
+                    }
+                    newDomain.splice(this.initIndex, 1);
+                    newDomain.splice(index, 0, this.initDomain[this.initIndex]);
+
+                    this.curIndex = index;
+                    this.curDomain = newDomain;
+                    y.domain(newDomain);
+
+                    // rearange y scale and axis
+                    svg.select("g.y.axis").transition().call(yAxis);
+
+                    // rearrange other stuff
+                    repositionBands(true);
+                }
+            })
+            .on("start", function(d) {
+                var ypos = d3.event.y - margin.top;
+                this.initIndex = Math.floor((ypos / y.step()));
+                this.initDomain = y.domain();
+            })
+            .on("end", function(d) {
+                svg.select("g.y.axis").call(yAxis);
+            })
+        ;
+        svg.selectAll("g.y.axis .tick")
+            .call(ytickdrag)
+        ;
+
+        // right margin
+        var rmargin = fixedContainer.append("g")
+            .attr("id", "right-margin")
+            .attr("transform", "translate(" + width + ", 0)")
+        ;
+        rmargin.append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", 1)
+            .attr("height", height - margin.top - margin.bottom)
+        ;
+
+        // top margin
+        var tmargin = fixedContainer.append("g")
+            .attr("id", "top-margin")
+            .attr("transform", "translate(0, 0)")
+        ;
+        tmargin.append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", width)
+            .attr("height", 1)
+        ;
+
+        // ruler
+        ruler.append("rect")
+            .attr("id", "ruler-line")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", "1")
+            .attr("height", height - margin.top - margin.bottom + 8)
+        ;
+        ruler.append("rect")
+            .attr("id", "bgrect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", 0)
+            .attr("height", 0)
+            .style("fill", "white")
+        ;
+        ruler.append("text")
+            .attr("x", 0)
+            .attr("y", height - margin.top - margin.bottom + 16)
+            .attr("dy", "0.71em")
+            .text("0")
+        ;
+
+        svg.on('mousemove', function() {
+            positionRuler(d3.event.pageX);
+        });
+
+        // scroll handling
+        window.onscroll = function myFunction() {
+            documentBodyScrollLeft(window.scrollX);
+            documentBodyScrollTop(window.scrollY);
+            var scroll = scrollParams();
+            svgChartContainer
+                .attr("transform", "translate(" + margin.left
+                                         + ", " + (margin.top + scroll.y1) + ")");
+            svgChart
+                .attr("viewBox", "0 " + scroll.y1 + " " + width + " " + scroll.h)
+                .attr("height", scroll.h);
+            tmargin
+                .attr("transform", "translate(0," + scroll.y1 + ")");
+            fixedContainer.select(".x.axis")
+                .attr("transform", "translate(0," + scroll.y2 + ")");
+            rmargin.select("rect")
+                .attr("y", scroll.y1)
+                .attr("height", scroll.h);
+            ruler.select("#ruler-line")
+                .attr("y", scroll.y1)
+                .attr("height", scroll.h);
+
+            positionRuler();
+        }
+
+        // render axis
+        svg.select("g.x.axis").call(xAxis);
+        svg.select("g.y.axis").call(yAxis);
+
+        // Add native tooltip to y-axis labels for full text on hover
+        svg.selectAll("g.y.axis .tick").append("title").text(function(d) { return d; });
+
+        // update to initiale state
+        window.onscroll(0);
+
+        return gantt;
+    }
+
+// private:
+
+    var SVG_NS = "http://www.w3.org/2000/svg";
+
+    // Array of rect DOM elements, parallel to data[]
+    var rects = null;
+
+    // Whether tooltip is pinned (click to keep visible)
+    var tipPinned = false;
+    var tipPinnedRect = null;
+    var docClickHandler = null;
+
+    var filterMatch = function(d) {
+        return filter == '' || d.text.toLowerCase().includes(filter);
+    }
+
+    var createRects = function() {
+        var container = bandsSvg.node();
+        // Clear previous content
+        while (container.firstChild) container.removeChild(container.firstChild);
+
+        if (data.length == 0) {
+            var text = document.createElementNS(SVG_NS, "text");
+            text.textContent = "no data to show";
+            container.appendChild(text);
+            rects = [];
+            return;
+        }
+
+        var bw = y.bandwidth();
+        var frag = document.createDocumentFragment();
+        rects = new Array(data.length);
+        for (var i = 0; i < data.length; i++) {
+            var d = data[i];
+            var r = document.createElementNS(SVG_NS, "rect");
+            r.setAttribute("class", "bar bar-f");
+            r.setAttribute("vector-effect", "non-scaling-stroke");
+            r.setAttribute("fill", d.color);
+            r.setAttribute("y", 0);
+            r.setAttribute("transform", "translate(" + x(d.t1) + "," + y(d.band) + ")");
+            r.setAttribute("width", x(d.t2) - x(d.t1));
+            r.setAttribute("height", bw);
+            r.__data__ = d;
+            rects[i] = r;
+            frag.appendChild(r);
+        }
+        container.appendChild(frag);
+
+        // Delegated mouse handlers for tooltips
+        tipPinned = false;
+        tipPinnedRect = null;
+        var setTipPinned = function(pinned, rectEl) {
+            tipPinned = pinned;
+            // Remove highlight from previous pinned rect
+            if (tipPinnedRect) {
+                tipPinnedRect.removeAttribute("data-pinned");
+                tipPinnedRect = null;
+            }
+            // Toggle 'pinned' class on tooltip node for pointer-events control
+            var cls = tip.attr("class") || "";
+            if (pinned) {
+                if (cls.indexOf("pinned") === -1)
+                    tip.attr("class", cls + " pinned");
+                if (rectEl) {
+                    rectEl.setAttribute("data-pinned", "true");
+                    tipPinnedRect = rectEl;
+                }
+            } else {
+                tip.attr("class", cls.replace(/\s*pinned/g, ""));
+            }
+        };
+        container.addEventListener("mouseover", function(evt) {
+            var target = evt.target;
+            if (target.tagName === "rect" && target.__data__ && !tipPinned) {
+                var d = target.__data__;
+                tipShown = d;
+                tip.show(d, target);
+            }
+        });
+        container.addEventListener("mouseout", function(evt) {
+            var target = evt.target;
+            if (target.tagName === "rect" && tipShown != null && !tipPinned) {
+                tip.hide(tipShown);
+                tipShown = null;
+            }
+        });
+        container.addEventListener("click", function(evt) {
+            evt.stopPropagation(); // prevent document click handler from immediately dismissing
+            var target = evt.target;
+            if (target.tagName === "rect" && target.__data__) {
+                if (tipPinned && tipShown === target.__data__) {
+                    // Unpin on click of same rect
+                    setTipPinned(false, null);
+                    tip.hide(tipShown);
+                    tipShown = null;
+                } else {
+                    // Pin tooltip
+                    tipShown = target.__data__;
+                    tip.show(target.__data__, target);
+                    setTipPinned(true, target);
+                }
+            }
+        });
+        // Click anywhere outside a rect or tooltip dismisses pinned tooltip
+        docClickHandler = function(evt) {
+            if (tipPinned) {
+                // Don't dismiss if click is inside the tooltip
+                var tipNode = document.querySelector(".d3-tip");
+                if (tipNode && tipNode.contains(evt.target)) return;
+                setTipPinned(false, null);
+                if (tipShown != null) {
+                    tip.hide(tipShown);
+                    tipShown = null;
+                }
+            }
+        };
+        document.addEventListener("click", docClickHandler);
+    }
+
+    var updateFilter = function() {
+        if (!rects) return;
+        for (var i = 0; i < rects.length; i++) {
+            var cls = filterMatch(rects[i].__data__) ? "bar bar-f" : "bar bar-u";
+            if (rects[i].getAttribute("class") !== cls)
+                rects[i].setAttribute("class", cls);
+        }
+    }
+
+    var repositionBands = function(smooth) {
+        if (!rects) return;
+        var bw = y.bandwidth();
+        if (smooth) {
+            // Use D3 transition for smooth band reordering
+            bandsSvg.selectAll("rect.bar")
+              .transition().duration(250)
+                .attr("transform", function() { var d = this.__data__; return "translate(" + x(d.t1) + "," + y(d.band) + ")"; })
+                .attr("height", bw);
+        } else {
+            for (var i = 0; i < rects.length; i++) {
+                var d = rects[i].__data__;
+                rects[i].setAttribute("transform", "translate(" + x(d.t1) + "," + y(d.band) + ")");
+                rects[i].setAttribute("height", bw);
+            }
+        }
+    }
+
+    function initAxis() {
+        x = d3.scaleLinear()
+            .domain([timeDomainStart, timeDomainEnd])
+            .range([0, width])
+            //.clamp(true); // doesn't work with zoom/pan
+        xZoomed = x;
+        y = d3.scaleBand()
+            .domain([...data.bands])
+            .range([1, height - margin.top - margin.bottom])
+            .padding(1/8);
+        xAxis = d3.axisBottom()
+            .scale(x)
+            .tickSize(8)
+            .tickPadding(8);
+        yAxis = d3.axisLeft()
+            .scale(y)
+            .tickSize(0);
+    }
+
+    // slow function wrapper
+    var documentBodyScrollLeft = function(value) {
+        if (!arguments.length) {
+            if (documentBodyScrollLeft.value === undefined) {
+                documentBodyScrollLeft.value = window.scrollX;
+            }
+            return documentBodyScrollLeft.value;
+        } else {
+            documentBodyScrollLeft.value = value;
+        }
+    }
+
+    // slow function wrapper
+    var documentBodyScrollTop = function(value) {
+        if (!arguments.length) {
+            if (!documentBodyScrollTop.value === undefined) {
+                documentBodyScrollTop.value = window.scrollY;
+            }
+            return documentBodyScrollTop.value;
+        } else {
+            documentBodyScrollTop.value = value;
+        }
+    }
+
+    var scrollParams = function() {
+        var y1 = documentBodyScrollTop();
+        var y2 = y1 + view_height;
+        y2 = Math.min(y2, height - margin.top - margin.bottom);
+        var h = y2 - y1;
+        return {
+            y1: y1,
+            y2: y2,
+            h: h
+        };
+    }
+
+    var posTextFormat = d3.format(".1f");
+
+    var positionRuler = function(pageX) {
+        if (!arguments.length) {
+            pageX = positionRuler.pageX || 0;
+        } else {
+            positionRuler.pageX = pageX;
+        }
+
+        // x-coordinate
+        if (!positionRuler.svgLeft) {
+            positionRuler.svgLeft = svg.node().getBoundingClientRect().x;
+        }
+
+        var xpos = pageX - margin.left + 1 - positionRuler.svgLeft;
+        var tpos = xZoomed.invert(xpos);
+        tpos = Math.min(Math.max(tpos, xZoomed.invert(0)), xZoomed.invert(width));
+        ruler.attr("transform", "translate(" + xZoomed(tpos) + ", 0)");
+        var posText = posTextFormat(tpos);
+
+        // scroll-related
+        var scroll = scrollParams();
+
+        var text = ruler.select("text")
+            .attr("y", scroll.y2 + 16)
+        ;
+
+        // getBBox() is very slow, so compute symbol width once
+        var xpadding = 5;
+        var ypadding = 5;
+        if (!positionRuler.bbox) {
+            positionRuler.bbox = text.node().getBBox();
+        }
+
+        text.text(posText);
+        var textWidth = 10 * posText.length;
+        ruler.select("#bgrect")
+            .attr("x", -textWidth/2 - xpadding)
+            .attr("y", positionRuler.bbox.y - ypadding + window.scrollY)
+            .attr("width", textWidth + (xpadding*2))
+            .attr("height", positionRuler.bbox.height + (ypadding*2))
+        ;
+    }
+
+// public:
+
+    gantt.width = function(value) {
+        if (!arguments.length)
+            return width;
+        width = +value;
+        return gantt;
+    }
+
+    gantt.height = function(value) {
+        if (!arguments.length)
+            return height;
+        height = +value;
+        return gantt;
+    }
+
+    gantt.view_height = function(value) {
+        if (!arguments.length)
+            return view_height;
+        view_height = +value;
+        return gantt;
+    }
+
+    gantt.selector = function(value) {
+        if (!arguments.length)
+            return selector;
+        selector = value;
+        return gantt;
+    }
+
+    gantt.timeDomain = function(value) {
+        if (!arguments.length)
+            return [timeDomainStart, timeDomainEnd];
+        timeDomainStart = value[0];
+        timeDomainEnd = value[1];
+        return gantt;
+    }
+
+    gantt.filter = function(pattern) {
+        if (!arguments.length)
+            return filter;
+        filter = pattern.toLowerCase();
+
+        filtered_count = 0;
+        filtered_runtime = 0;
+        for (const d of data) {
+            if (filterMatch(d)) {
+                filtered_count++;
+                filtered_runtime += d.t2 - d.t1;
+            }
+        }
+
+        updateFilter();
+        return gantt;
+    }
+
+    gantt.filteredCount = function() {
+        return filtered_count;
+    }
+
+    gantt.filteredRuntime = function() {
+        return filtered_runtime;
+    }
+
+    gantt.totalCount = function() {
+        return total_count;
+    }
+
+    gantt.totalRuntime = function() {
+        return total_runtime;
+    }
+
+    gantt.data = function() {
+        return data;
+    }
+
+    gantt.destroy = function() {
+        if (docClickHandler) {
+            document.removeEventListener("click", docClickHandler);
+            docClickHandler = null;
+        }
+        tip.destroy();
+        d3.select(selector).selectAll("svg").remove();
+    }
+
+    // constructor
+
+    // Config
+    var margin = { top: 0, right: 30, bottom: 20, left: 150 },
+        height = document.body.clientHeight - margin.top - margin.bottom - 5,
+        width = document.body.clientWidth - margin.right - margin.left - 5,
+        view_height = window.innerHeight,
+        selector = 'body',
+        timeDomainStart = 0,
+        timeDomainEnd = 1000,
+        filter = '',
+        filtered_count = 0,
+        filtered_runtime = 0,
+        total_count = 0,
+        total_runtime = 0
+    ;
+
+    // View
+    var x = null,
+        xZoomed = null,
+        y = null,
+        xAxis = null,
+        yAxis = null,
+        svg = null,
+        defs = null,
+        svgChartContainer = null,
+        svgChart = null,
+        zoomPanel = null,
+        zoomContainer1 = null,
+        zoomContainer2 = null,
+        fixedContainer = null,
+        zoom = null,
+        bandsSvg = null,
+        tip = null,
+        tipShown = null,
+        ruler = null
+    ;
+
+    // Model
+    var data = null;
+
+    return gantt;
+}

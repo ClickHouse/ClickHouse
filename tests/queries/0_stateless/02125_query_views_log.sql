@@ -1,0 +1,18 @@
+SET output_format_pretty_single_large_number_tip_threshold = 0;
+
+drop table if exists src;
+drop table if exists dst;
+drop table if exists mv1;
+drop table if exists mv2;
+
+create table src (key Int) engine=Null();
+create table dst (key Int) engine=Null();
+create materialized view mv1 to dst as select * from src;
+create materialized view mv2 to dst as select * from src;
+
+insert into src select * from numbers(1e6) settings log_queries=1, max_untracked_memory=0, parallel_view_processing=0;
+system flush logs query_views_log, query_log;
+
+-- { echo }
+select view_name, read_rows, read_bytes, written_rows, written_bytes from system.query_views_log where event_date >= yesterday() AND event_time >= now() - 600 AND startsWith(view_name, currentDatabase() || '.mv') order by view_name format Vertical;
+select read_rows, read_bytes, written_rows, written_bytes from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' and query_kind = 'Insert' and current_database = currentDatabase() format Vertical;

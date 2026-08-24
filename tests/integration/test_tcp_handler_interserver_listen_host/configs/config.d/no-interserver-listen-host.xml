@@ -1,0 +1,3 @@
+<clickhouse>
+    <interserver_listen_host remove="remove"></interserver_listen_host>
+</clickhouse>

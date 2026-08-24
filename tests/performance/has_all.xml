@@ -1,0 +1,53 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>array_type</name>
+            <values>
+                <value>Int8</value>
+                <value>Int16</value>
+                <value>Int32</value>
+                <value>Int64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE test_table_small_{array_type}
+        (
+            `set` Array({array_type}),
+            `subset` Array ({array_type})
+        )
+        ENGINE = MergeTree ORDER BY set;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_table_medium_{array_type}
+        (
+            `set` Array({array_type}),
+            `subset` Array ({array_type})
+        )
+        ENGINE = MergeTree ORDER BY set;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_table_large_{array_type}
+        (
+            `set` Array({array_type}),
+            `subset` Array ({array_type})
+        )
+        ENGINE = MergeTree ORDER BY set;
+    </create_query>
+
+
+    <fill_query>INSERT INTO test_table_small_{array_type} SELECT groupArraySample(5000)(rand64()) AS set, groupArraySample(500)(rand64()) AS subset FROM numbers(10000000) GROUP BY number % 5000;</fill_query>
+    <fill_query>INSERT INTO test_table_medium_{array_type} SELECT groupArraySample(50000)(rand64()) AS set, groupArraySample(5000)(rand64()) AS subset FROM numbers(25000000) GROUP BY number % 50000;</fill_query>
+    <fill_query>INSERT INTO test_table_large_{array_type} SELECT groupArraySample(500000)(rand64()) AS set, groupArraySample(500000)(rand64()) AS subset FROM numbers(50000000) GROUP BY number % 500000;</fill_query>
+
+    <query>SELECT hasAll(set, subset) FROM test_table_small_{array_type} FORMAT Null</query>
+    <query>SELECT hasAll(set, subset) FROM test_table_medium_{array_type} FORMAT Null</query>
+    <query>SELECT hasAll(set, subset) FROM test_table_large_{array_type} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_table_small_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_medium_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_large_{array_type}</drop_query>
+</test>

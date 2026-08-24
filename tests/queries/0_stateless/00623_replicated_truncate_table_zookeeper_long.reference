@@ -1,0 +1,7 @@
+======Before Truncate======
+2015-01-01	10	42
+2015-01-01	10	42
+======After Truncate And Empty======
+======After Truncate And Insert Data======
+2015-01-01	10	42
+2015-01-01	10	42

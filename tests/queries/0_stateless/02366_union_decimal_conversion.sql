@@ -1,0 +1,1 @@
+select sum(a), sum(b) from cluster(test_cluster_two_shards, view(select cast(number as Decimal(7, 2)) a, 0 as b from numbers(2) union all select 0, cast(number as Decimal(7, 2)) as b from numbers(2)));

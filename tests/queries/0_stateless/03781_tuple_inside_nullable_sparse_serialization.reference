@@ -1,0 +1,11 @@
+200
+800
+800	800
+800
+1
+99500
+0	0
+5	5
+10	10
+Nullable(Tuple(x UInt32, y UInt64)), Nullable(size = 10, Tuple(size = 10, UInt32(size = 10), UInt64(size = 10)), UInt8(size = 10))
+Nullable(Tuple(x UInt32, y UInt64)), Nullable(size = 10, Tuple(size = 10, UInt32(size = 10), UInt64(size = 10)), UInt8(size = 10))

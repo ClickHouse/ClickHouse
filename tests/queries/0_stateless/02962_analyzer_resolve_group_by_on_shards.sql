@@ -1,0 +1,20 @@
+SELECT NULL AND (toDate(-2147483647, NULL) AND NULL)
+FROM remote('127.0.0.{1,2}', view(
+    SELECT
+        NULL AND NULL,
+        NULL,
+        toDate(toDate('0.0001048577', toDate(NULL, 10 AND (toDate(257, 9223372036854775807, NULL) AND NULL AND NULL) AND NULL, 7, NULL), NULL, NULL) AND NULL AND -2147483648, NULL, NULL) AND NULL
+    FROM system.one
+    WHERE toDate(toDate(NULL, NULL, NULL), NULL)
+    GROUP BY
+        GROUPING SETS ((NULL))
+));
+
+SELECT NULL AND (toDate(-2147483647, NULL) AND NULL)
+FROM remote('127.0.0.{1,2}', view(
+    SELECT NULL
+    FROM system.one
+    WHERE toDate(toDate(NULL, NULL, NULL), NULL)
+    GROUP BY
+        GROUPING SETS ((''))
+));

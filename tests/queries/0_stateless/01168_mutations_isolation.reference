@@ -1,0 +1,40 @@
+tx2	1	10
+tx2	1	30
+tx1	2	1
+tx1	2	2
+Serialization error
+INVALID_TRANSACTION
+tx3	3	1
+Serialization error
+INVALID_TRANSACTION
+INVALID_TRANSACTION
+tx5	4	2
+tx5	4	5
+tx5	4	6
+tx5	5	2
+tx5	5	5
+tx5	5	6
+SERIALIZATION_ERROR
+tx6	6	2
+tx6	6	6
+tx7	7	20
+tx7	7	40
+tx7	7	60
+tx7	7	80
+tx7	8	20
+tx7	8	40
+tx7	8	60
+tx7	8	80
+Serialization error
+INVALID_TRANSACTION
+tx11	9	21
+tx11	9	41
+tx11	9	61
+tx11	9	81
+1	1	RUNNING
+tx14	10	22
+tx14	10	42
+tx14	10	62
+tx14	10	82
+11	2
+11	10

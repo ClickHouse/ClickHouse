@@ -1,0 +1,7 @@
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (ReadFromMergeTree)
+    Concat 3 → 1
+      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1

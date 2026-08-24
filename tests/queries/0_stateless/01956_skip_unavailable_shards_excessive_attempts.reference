@@ -1,0 +1,10 @@
+255.255.255.255
+ConnectionPoolWithFailover: Connection failed at try №1
+executeQuery: Code: 519.: All attempts to get table structure failed.
+127.2,255.255.255.255
+0
+ConnectionPoolWithFailover: Connection failed at try №1
+255.255.255.255,127.2
+0
+ConnectionPoolWithFailover: Connection failed at try №1
+ConnectionPoolWithFailover: Connection failed at try №1

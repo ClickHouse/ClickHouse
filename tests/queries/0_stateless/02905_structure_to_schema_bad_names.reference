@@ -1,0 +1,7 @@
+
+message Message
+{
+    uint32 col_1 = 1;
+}
+1
+1

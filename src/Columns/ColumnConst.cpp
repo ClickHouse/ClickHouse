@@ -1,0 +1,216 @@
+#include <IO/WriteHelpers.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
+
+#include <base/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
+    : data(data_), s(s_)
+{
+    /// Squash Const of Const.
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))
+        data = const_data->getDataColumnPtr();
+
+    if (data->size() != 1)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
+
+    /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
+#if defined(MEMORY_SANITIZER)
+    if (data->isFixedAndContiguous())
+    {
+        auto value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data(), value.size());
+    }
+#endif
+}
+
+ColumnPtr ColumnConst::convertToFullColumn() const
+{
+    if (s == 1)
+        return data;
+    return data->replicate(Offsets(1, s));
+}
+
+ColumnPtr ColumnConst::convertToFullColumnIfLowCardinality() const
+{
+    return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
+}
+
+ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    size_t new_size = countBytesInFilter(filt);
+    return ColumnConst::create(data, new_size);
+}
+
+void ColumnConst::filter(const Filter & filt)
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    s = countBytesInFilter(filt);
+}
+
+void ColumnConst::expand(const Filter & mask, bool inverted)
+{
+    if (mask.size() < s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+
+    size_t bytes_count = countBytesInFilter(mask);
+    if (inverted)
+        bytes_count = mask.size() - bytes_count;
+
+    if (bytes_count < s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+    if (bytes_count > s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+
+    s = mask.size();
+}
+
+
+ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
+{
+    if (s != offsets.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
+            offsets.size(), toString(s));
+
+    size_t replicated_size = 0 == s ? 0 : offsets.back();
+    return ColumnConst::create(data, replicated_size);
+}
+
+ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
+{
+    limit = getLimitForPermutation(size(), perm.size(), limit);
+    return ColumnConst::create(data, limit);
+}
+
+ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
+{
+    if (limit == 0)
+        limit = indexes.size();
+
+    if (indexes.size() < limit)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})",
+                        indexes.size(), toString(limit));
+
+    return ColumnConst::create(data, limit);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+{
+    if (s != selector.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
+            selector.size(), toString(s));
+
+    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        res[i] = cloneResized(counts[i]);
+
+    return res;
+}
+
+void ColumnConst::popBack(size_t n)
+{
+    if (n > s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    s -= n;
+}
+
+void ColumnConst::gather(ColumnGathererStream &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
+}
+
+void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
+{
+    res.resize_exact(s);
+    iota(res.data(), s, IColumn::Permutation::value_type(0));
+}
+
+void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t, int, Permutation &, EqualRanges &) const
+{
+}
+
+void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    UInt32 value = 0;
+    data->computeHashInto(0, 1, &value, true);
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
+}
+
+void ColumnConst::compareColumn(
+    const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
+    const
+{
+    Int8 res = static_cast<Int8>(compareAt(1, 1, rhs, nan_direction_hint));
+    std::fill(compare_results.begin(), compare_results.end(), res);
+}
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value)
+{
+    auto data = column->cloneEmpty();
+    data->insert(value);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index)
+{
+    auto data = column->cloneEmpty();
+    data->insertFrom(*column, const_value_index);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
+{
+    auto data = column->cloneEmpty();
+    data->insertDefault();
+    return ColumnConst::create(std::move(data), 1);
+}
+
+void intrusive_ptr_add_ref(const ColumnConst * c)
+{
+    intrusive_ptr_add_ref(static_cast<const IColumn *>(c));
+}
+
+void intrusive_ptr_release(const ColumnConst * c)
+{
+    intrusive_ptr_release(static_cast<const IColumn *>(c));
+}
+
+}

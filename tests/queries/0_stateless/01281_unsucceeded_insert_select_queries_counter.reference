@@ -1,0 +1,4 @@
+INSERT INTO table_that_do_not_exists VALUES 	ExceptionBeforeStart	0	1
+INSERT INTO to_insert SELECT throwIf(?);	ExceptionWhileProcessing	0	1
+SELECT * FROM table_that_do_not_exists;	ExceptionBeforeStart	1	0
+SELECT throwIf(?);	ExceptionWhileProcessing	1	0

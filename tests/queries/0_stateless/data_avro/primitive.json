@@ -1,0 +1,2 @@
+{"a_bool":true,"b_int":1,"c_long":2,"d_float":3.4,"e_double":5.6,"f_bytes":"b1","g_string":"s1","h_null": null}
+{"a_bool":false,"b_int":-1,"c_long":9223372036854775807,"d_float":3.00004,"e_double":0.00001,"f_bytes":"","g_string":"","h_null": null}

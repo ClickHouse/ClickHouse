@@ -1,0 +1,105 @@
+0
+0	0	1
+0
+50
+50	50	1
+50
+50
+50	50	50	1	0
+50
+50
+50	50	50	1	0
+50
+0
+0	0	1
+0
+50
+50	50	1
+50
+50
+50	50	50	1	0
+50
+50
+50	50	50	1	0
+50
+QUERY id: 0
+  PROJECTION COLUMNS
+    sumIf(123, equals(modulo(number, 2), 0)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            CONSTANT id: 4, constant_value: UInt64_123, constant_value_type: UInt8
+            FUNCTION id: 5, function_name: countIf, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 6, nodes: 1
+                  FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 8, nodes: 2
+                        FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 10, nodes: 2
+                              COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 12
+                              CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
+                        CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 12, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 15, nodes: 1
+          CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(equals(modulo(number, 2), 0), 123, 0)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            CONSTANT id: 4, constant_value: UInt64_123, constant_value_type: UInt8
+            FUNCTION id: 5, function_name: countIf, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 6, nodes: 1
+                  FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 8, nodes: 2
+                        FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 10, nodes: 2
+                              COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 12
+                              CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
+                        CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 12, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 15, nodes: 1
+          CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(equals(modulo(number, 2), 0), 0, 123)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            CONSTANT id: 4, constant_value: UInt64_123, constant_value_type: UInt8
+            FUNCTION id: 5, function_name: countIf, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 6, nodes: 1
+                  FUNCTION id: 7, function_name: not, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 10, nodes: 2
+                              FUNCTION id: 11, function_name: modulo, function_type: ordinary, result_type: UInt8
+                                ARGUMENTS
+                                  LIST id: 12, nodes: 2
+                                    COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 14
+                                    CONSTANT id: 15, constant_value: UInt64_2, constant_value_type: UInt8
+                              CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 14, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 17, nodes: 1
+          CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8

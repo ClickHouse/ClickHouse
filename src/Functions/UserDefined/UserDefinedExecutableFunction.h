@@ -1,0 +1,104 @@
+#pragma once
+
+#include <string>
+
+#include <DataTypes/IDataType.h>
+#include <Interpreters/IExternalLoadable.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+
+namespace DB
+{
+
+struct UserDefinedExecutableFunctionArgument
+{
+    DataTypePtr type;
+    String name;
+};
+
+struct UserDefinedExecutableFunctionParameter
+{
+    String name;
+    DataTypePtr type;
+};
+
+struct UserDefinedExecutableFunctionConfiguration
+{
+    std::string name;
+    std::string command;
+    VectorWithMemoryTracking<std::string> command_arguments;
+    String command_working_directory;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionArgument> arguments;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
+    DataTypePtr result_type;
+    String result_name;
+    bool is_deterministic;
+};
+
+class UserDefinedExecutableFunction final : public IExternalLoadable
+{
+public:
+
+    UserDefinedExecutableFunction(
+        const UserDefinedExecutableFunctionConfiguration & configuration_,
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
+        const ExternalLoadableLifetime & lifetime_);
+
+    const ExternalLoadableLifetime & getLifetime() const override
+    {
+        return lifetime;
+    }
+
+    std::string getLoadableName() const override
+    {
+        return configuration.name;
+    }
+
+    bool supportUpdates() const override
+    {
+        return true;
+    }
+
+    bool isModified() const override
+    {
+        return true;
+    }
+
+    std::shared_ptr<IExternalLoadable> clone() const override
+    {
+        /// Rebuild the coordinator so a reload starts a fresh process pool instead of
+        /// reusing pooled children that still run the previous version of the script.
+        return std::make_shared<UserDefinedExecutableFunction>(
+            configuration,
+            std::make_shared<ShellCommandSourceCoordinator>(coordinator->getConfiguration()),
+            lifetime);
+    }
+
+    const UserDefinedExecutableFunctionConfiguration & getConfiguration() const
+    {
+        return configuration;
+    }
+
+    std::shared_ptr<ShellCommandSourceCoordinator> getCoordinator() const
+    {
+        return coordinator;
+    }
+
+    std::shared_ptr<UserDefinedExecutableFunction> shared_from_this()
+    {
+        return std::static_pointer_cast<UserDefinedExecutableFunction>(IExternalLoadable::shared_from_this());
+    }
+
+    std::shared_ptr<const UserDefinedExecutableFunction> shared_from_this() const
+    {
+        return std::static_pointer_cast<const UserDefinedExecutableFunction>(IExternalLoadable::shared_from_this());
+    }
+
+private:
+    UserDefinedExecutableFunctionConfiguration configuration;
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
+    ExternalLoadableLifetime lifetime;
+};
+
+}

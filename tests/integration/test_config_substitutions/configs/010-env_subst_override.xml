@@ -1,0 +1,17 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <max_query_size>424242</max_query_size>
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+
+      <include incl="users_1" />
+      <include incl="users_2" />
+  </users>
+</clickhouse>

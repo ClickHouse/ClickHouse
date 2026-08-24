@@ -1,0 +1,6 @@
+<test>
+    <query>SELECT x, sum(DISTINCT y) from (SELECT number % 12 AS x, number % 12321 AS y FROM numbers(10000000)) GROUP BY x</query>
+    <query>SELECT x, sum(y) from (SELECT DISTINCT number % 12 AS x, number % 12321 AS y FROM numbers(10000000)) GROUP BY x</query>
+    <query>SELECT sumIf(DISTINCT number % 10, number % 5 = 2) FROM numbers(100000000)</query>
+    <query>SELECT countIf(DISTINCT number % 10, number % 5 = 2) FROM numbers(100000000)</query>
+</test>

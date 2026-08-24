@@ -1,0 +1,28 @@
+{
+    "a": "a1",
+    "b": {
+        "value": 1,
+        "next": {
+            "LongList": {
+                "value": 2,
+                "next": {
+                    "LongList": {
+                        "value": 3,
+                        "next": null
+                    }
+                }
+            }
+        }
+    },
+    "c": "c1"
+}
+{
+    "a": "a2",
+    "b": {
+        "value": 4,
+        "next": {
+            "fixed_2": "ab"
+        }
+    },
+    "c": "c2"
+}

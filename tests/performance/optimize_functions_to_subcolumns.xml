@@ -1,0 +1,26 @@
+<test>
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_subcolumns (a Array(UInt64), s Nullable(String), m Map(String, UInt64)) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_subcolumns SELECT range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(50000000)
+    </fill_query>
+
+    <fill_query>
+        OPTIMIZE TABLE t_subcolumns FINAL
+    </fill_query>
+
+    <query>SELECT count() FROM t_subcolumns WHERE NOT ignore(length(a))</query>
+    <query>SELECT count() FROM t_subcolumns WHERE notEmpty(a)</query>
+    <query>SELECT count() FROM t_subcolumns WHERE NOT ignore(length(m))</query>
+    <query>SELECT count() FROM t_subcolumns WHERE notEmpty(m)</query>
+    <query>SELECT count() FROM t_subcolumns WHERE isNotNull(s)</query>
+    <query>SELECT count(s) FROM t_subcolumns</query>
+
+    <drop_query>DROP TABLE t_subcolumns</drop_query>
+</test>

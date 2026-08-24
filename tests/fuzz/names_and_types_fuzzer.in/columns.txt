@@ -1,0 +1,4 @@
+columns format version: 1
+2 columns:
+`action_id` UInt32
+`status` String

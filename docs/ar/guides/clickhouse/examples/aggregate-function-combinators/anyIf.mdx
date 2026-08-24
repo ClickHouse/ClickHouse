@@ -1,0 +1,63 @@
+---
+slug: '/examples/aggregate-function-combinators/anyIf'
+title: 'anyIf'
+description: 'مثال على استخدام المُعدِّل anyIf'
+keywords: ['any', 'if', 'مُعدِّل', 'أمثلة', 'anyIf']
+sidebarTitle: 'anyIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُعدِّل [`If`](/ar/reference/functions/aggregate-functions/combinators#-if) على دالة التجميع [`any`](/ar/reference/functions/aggregate-functions/any)
+لاختيار أول عنصر من عمود معيّن
+يستوفي الشرط المحدد.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سننشئ جدولًا يخزّن بيانات المبيعات مع مؤشرات النجاح،
+وسنستخدم `anyIf` لاختيار أول قيم `transaction_id` للسجلات التي يزيد مبلغها على 200 أو يقل عنه.
+
+سننشئ أولًا جدولًا ثم ندرج البيانات فيه:
+
+```sql title="Query"
+CREATE TABLE sales(
+    transaction_id UInt32,
+    amount Decimal(10,2),
+    is_successful UInt8
+) 
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO sales VALUES
+    (1, 100.00, 1),
+    (2, 150.00, 1),
+    (3, 155.00, 0),
+    (4, 300.00, 1),
+    (5, 250.50, 0),
+    (6, 175.25, 1);
+```
+
+```sql
+SELECT
+    anyIf(transaction_id, amount < 200) AS tid_lt_200,
+    anyIf(transaction_id, amount > 200) AS tid_gt_200
+FROM sales;
+```
+
+```response title="Response"
+┌─tid_lt_200─┬─tid_gt_200─┐
+│          1 │          4 │
+└────────────┴────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`any`](/ar/reference/functions/aggregate-functions/any)
+* [`If مُعدِّل`](/ar/reference/functions/aggregate-functions/combinators#-if)

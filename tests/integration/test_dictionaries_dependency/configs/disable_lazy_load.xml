@@ -1,0 +1,14 @@
+<clickhouse>
+    <dictionaries_lazy_load>false</dictionaries_lazy_load>
+
+    <remote_servers>
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
+</clickhouse>

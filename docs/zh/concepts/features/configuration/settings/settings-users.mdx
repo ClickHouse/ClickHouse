@@ -1,0 +1,429 @@
+---
+description: '用于配置用户和角色的设置。'
+sidebarTitle: '用户设置'
+slug: /operations/settings/settings-users
+title: '用户和角色设置'
+doc_type: 'reference'
+---
+
+`users.xml` 配置文件中的 `users` 部分包含用户设置。
+
+<Note>
+  ClickHouse 也支持通过 [SQL 驱动的工作流](/zh/concepts/features/security/access-rights#access-control-usage) 管理用户。我们建议优先使用这种方式。
+</Note>
+
+`users` 部分的结构：
+
+```xml
+<users>
+    <!-- 如果未指定用户名，则使用 'default' 用户。 -->
+    <user_name>
+        <!-- 在 users.user_name 级别只能指定一种身份验证方法。例如： -->
+        <password></password>
+        <!-- 或（exclusive） -->
+        <password_sha256_hex></password_sha256_hex>
+ 
+        <!-- 或（exclusive）（注意：为向后兼容，允许配置多个 SSH 密钥） -->
+        <ssh_keys>
+            <ssh_key>
+                <type>ssh-ed25519</type>
+                <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ecdsa-sha2-nistp256</type>
+                <base64_key>AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNxeV2uN5UY6CUbCzTA1rXfYimKQA5ivNIqxdax4bcMXz4D0nSk2l5E1TkR5mG8EBWtmExSPbcEPJ8V7lyWWbA8=</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ssh-rsa</type>
+                <base64_key>AAAAB3NzaC1yc2EAAAADAQABAAABgQCpgqL1SHhPVBOTFlOm0pu+cYBbADzC2jL41sPMawYCJHDyHuq7t+htaVVh2fRgpAPmSEnLEC2d4BEIKMtPK3bfR8plJqVXlLt6Q8t4b1oUlnjb3VPA9P6iGcW7CV1FBkZQEVx8ckOfJ3F+kI5VsrRlEDgiecm/C1VPl0/9M2llW/mPUMaD65cM9nlZgM/hUeBrfxOEqM11gDYxEZm1aRSbZoY4dfdm3vzvpSQ6lrCrkjn3X2aSmaCLcOWJhfBWMovNDB8uiPuw54g3ioZ++qEQMlfxVsqXDGYhXCrsArOVuW/5RbReO79BvXqdssiYShfwo+GhQ0+aLWMIW/jgBkkqx/n7uKLzCMX7b2F+aebRYFh+/QXEj7SnihdVfr9ud6NN3MWzZ1ltfIczlEcFLrLJ1Yq57wW6wXtviWh59WvTWFiPejGjeSjjJyqqB49tKdFVFuBnIU5u/bch2DXVgiAEdQwUrIp1ACoYPq22HFFAYUJrL32y7RxX3PGzuAv3LOc=</base64_key>
+            </ssh_key>
+        </ssh_keys>
+
+        <!-- 或（exclusive）用于多种身份验证方法： -->
+        <auth_methods>
+            <method1>
+                <password></password>
+            </method1>
+            <method2>
+                <password_sha256_hex></password_sha256_hex>
+            </method2>
+            <!-- ... -->
+            <methodN>
+                <!-- ... -->
+            </methodN>
+        </auth_methods>
+
+        <access_management>0|1</access_management>
+
+        <networks incl="networks" replace="replace">
+        </networks>
+
+        <profile>profile_name</profile>
+
+        <quota>default</quota>
+        <default_database>default</default_database>
+        <databases>
+            <database_name>
+                <table_name>
+                    <filter>expression</filter>
+                </table_name>
+            </database_name>
+        </databases>
+
+        <grants>
+            <query>GRANT SELECT ON system.*</query>
+        </grants>
+    </user_name>
+    <!-- 其他用户设置 -->
+</users>
+```
+
+<div id="user-namepassword">
+  ### user_name/password
+</div>
+
+密码可以指定为明文或 SHA256 (十六进制格式) 。
+
+* 如需将密码设为明文 (**不推荐**) ，请将其放在 `password` 元素中。
+
+  例如：`<password>qwerty</password>`。密码也可以留空。
+
+<a id="password_sha256_hex" />
+
+* 如需使用密码的 SHA256 哈希值，请将其放在 `password_sha256_hex` 元素中。
+
+  例如：`<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`。
+
+  在 shell 中生成密码的示例：
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+  ```
+
+  结果的第一行是密码，第二行是对应的 SHA256 哈希值。
+
+<a id="password_double_sha1_hex" />
+
+* 为兼容 MySQL 客户端，密码也可以指定为 double SHA1 哈希值。请将其放在 `password_double_sha1_hex` 元素中。
+
+  例如：`<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`。
+
+  在 shell 中生成密码的示例：
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+  ```
+
+  结果的第一行是密码，第二行是对应的 double SHA1 哈希值。
+
+<div id="totp-authentication-configuration">
+  ### TOTP 身份验证配置
+</div>
+
+基于时间的一次性密码 (TOTP) 可通过生成在有限时间内有效的临时访问码，用于对 ClickHouse 用户进行身份验证。
+这种 TOTP 身份验证方法符合 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 标准，因此兼容 Google Authenticator、1Password 等常见 TOTP 应用及类似工具。
+除基于密码的身份验证外，还可以通过 `users.xml` 配置文件进行设置。
+目前，SQL 驱动的访问控制尚不支持此功能。
+
+使用 TOTP 进行身份验证时，用户必须提供主密码，以及由其 TOTP 应用生成的一次性密码；可以通过 `--one-time-password` 命令行选项提供，也可以使用 &#39;+&#39; 字符将其拼接到主密码后。
+例如，如果主密码为 `some_password`，生成的 TOTP 代码为 `345123`，则用户在连接到 ClickHouse 时可以指定 `--password some_password+345123` 或 `--password some_password --one-time-password 345123`。如果未指定密码，`clickhouse-client` 会以交互方式提示输入。
+
+要为用户启用 TOTP 身份验证，请在 `users.xml` 中配置 `time_based_one_time_password` 部分。该部分定义了 TOTP 设置，例如 secret、有效期、位数和哈希算法。
+
+**示例**
+
+````xml
+<clickhouse>
+    <!-- ... -->
+    <users>
+        <my_user>
+            <!-- 基于密码的主身份验证： -->
+            <password>some_password</password>
+            <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
+            <!-- ... 或任何其他受支持的身份验证方法 ... -->
+
+            <!-- TOTP 身份验证配置 -->
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32 编码的 TOTP 密钥 -->
+                <period>30</period>                    <!-- 可选：OTP 有效期（秒） -->
+                <digits>6</digits>                     <!-- 可选：OTP 的位数 -->
+                <algorithm>SHA1</algorithm>            <!-- 可选：哈希算法：SHA1、SHA256、SHA512 -->
+            </time_based_one_time_password>
+        </my_user>
+    </users>
+</clickhouse>
+
+Parameters:
+
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
+
+Generating a TOTP Secret
+
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
+
+```bash
+$ base32 -w32 < /dev/urandom | head -1
+````
+
+此命令会生成一个经过 base32 编码的密钥，可将其添加到 users.xml 的 secret 字段中。
+
+要为特定用户启用 TOTP，请在现有任一基于密码的字段 (如 `password` 或 `password_sha256_hex`) 中，额外添加一个 `time_based_one_time_password` 部分。
+
+可以使用 [qrencode](https://linux.die.net/man/1/qrencode) 工具为 TOTP 密钥生成二维码。
+
+```bash
+$ qrencode -t ansiutf8 'otpauth://totp/ClickHouse?issuer=ClickHouse&secret=JBSWY3DPEHPK3PXP'
+```
+
+为用户配置 TOTP 后，如上所述，可将一次性密码用作身份验证流程的一部分。
+
+### 用户名/ssh-key
+
+该设置支持使用 SSH 密钥进行身份验证。
+
+给定一个 SSH 密钥 (例如使用 `ssh-keygen` 生成的密钥) ，如下所示
+
+```text
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj john@example.com
+```
+
+`ssh_key` 元素应为
+
+```xml
+<ssh_key>
+     <type>ssh-ed25519</type>
+     <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+ </ssh_key>
+```
+
+对于其他受支持的算法，将 `ssh-ed25519` 替换为 `ssh-rsa` 或 `ecdsa-sha2-nistp256`。
+
+### 多种身份验证方法
+
+可以使用 `<auth_methods>` 元素为单个用户配置多种身份验证方法。这样，用户可以通过列出的任意一种方法进行身份验证——例如，某个用户既可以同时设置密码和 LDAP 凭据，也可以使用其中任意一种成功登录。
+
+`<auth_methods>` 的每个子元素都是一个可任意命名的包装元素，其中必须且只能包含一种身份验证类型。包装元素的名称 (例如 `<method1>`、`<primary>`、`<a1>`) 并不重要；实际生效的只有内部的身份验证元素。
+
+**示例：多个密码**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <primary>
+                <password>password_one</password>
+            </primary>
+            <secondary>
+                <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+            </secondary>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+**示例：混合身份验证类型**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>plaintext_pass</password>
+            </a1>
+            <a2>
+                <password_sha256_hex>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</password_sha256_hex>
+            </a2>
+            <a3>
+                <ldap>
+                    <server>my_ldap_server</server>
+                </ldap>
+            </a3>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+在 `<auth_methods>` 中支持以下身份验证类型：
+
+* **`password`** — 明文密码
+* **`password_sha256_hex`** — SHA256 密码哈希
+* **`password_scram_sha256_hex`** — SCRAM-SHA-256 密码哈希
+* **`password_double_sha1_hex`** — double SHA1 密码哈希
+* **`ldap`** — LDAP 服务器身份验证
+* **`kerberos`** — Kerberos 身份验证
+* **`ssl_certificates`** — SSL 证书身份验证
+* **`ssh_keys`** — SSH 密钥身份验证
+* **`http_authentication`** — HTTP 身份验证
+
+**规则和限制：**
+
+* `<auth_methods>` **不能**与在用户级别指定的身份验证方法同时使用。请二选一，不要混用。
+* `<auth_methods>` 必须至少包含一种身份验证方法。
+* `<auth_methods>` 中的每个包装元素都必须且只能包含一种身份验证类型 (`<ssh_keys>` 除外；出于向后兼容考虑，它可以包含多个) 。
+* TOTP (`<time_based_one_time_password>`) 在用户级别指定 (即位于 `<auth_methods>` 之外) ，并适用于列表中所有基于密码的身份验证方法。启用 TOTP 时，至少需要一种基于密码的身份验证方法。
+
+**示例：包含 TOTP 的 `auth_methods`**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>my_password</password>
+            </a1>
+            <a2>
+                <ldap>
+                    <server>ldap_server_1</server>
+                </ldap>
+            </a2>
+        </auth_methods>
+        <time_based_one_time_password>
+            <secret>JBSWY3DPEHPK3PXP</secret>
+        </time_based_one_time_password>
+    </my_user>
+</users>
+```
+
+在此示例中，TOTP 验证应用于基于密码的方法 (`<password>`) ，而 LDAP 方法则独立对外部服务器进行身份验证。
+
+### access_management
+
+此设置用于启用或禁用用户对基于 SQL 的[访问控制与账户管理](/zh/concepts/features/security/access-rights#access-control-usage)的使用。
+
+可能的值：
+
+* 0 — 禁用。
+* 1 — 启用。
+
+默认值：0。
+
+### 授权
+
+此设置允许向所选用户授予任意权限。
+列表中的每个元素都应为不指定任何被授权方的 `GRANT` 查询。
+
+示例：
+
+```xml
+<user1>
+    <grants>
+        <query>GRANT SHOW ON *.*</query>
+        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        <query>GRANT SELECT ON system.*</query>
+    </grants>
+</user1>
+```
+
+此设置不能与
+`dictionaries`、`access_management`、`named_collection_control`、`show_named_collections_secrets`
+以及 `allow_databases` 设置同时指定。
+
+### user_name/networks
+
+允许用户连接到 ClickHouse 服务器的网络列表。
+
+列表中的每个元素都可以采用以下形式之一：
+
+* `<ip>` — IP 地址或网络掩码。
+
+  示例：`213.180.204.3`、`10.0.0.1/8`、`10.0.0.1/255.255.255.0`、`2a02:6b8::3`、`2a02:6b8::3/64`、`2a02:6b8::3/ffff:ffff:ffff:ffff::`。
+
+* `<host>` — 主机名。
+
+  示例：`example01.host.ru`。
+
+  检查访问权限时，会执行一次 DNS 查询，并将返回的所有 IP 地址与 peer 地址进行比对。
+
+* `<host_regexp>` — 主机名的正则表达式。
+
+  示例：`^example\d\d-\d\d-\d\.host\.ru$`
+
+  检查访问权限时，会先针对 peer 地址执行一次 [DNS PTR 查询](https://en.wikipedia.org/wiki/Reverse_DNS_lookup)，然后应用指定的正则表达式。接着，会对 PTR 查询结果再次执行 DNS 查询，并将返回的所有地址与 peer 地址进行比对。强烈建议正则表达式以 `$` 结尾。
+
+DNS 请求的所有结果都会被缓存，直到服务器重启。
+
+**示例**
+
+要允许用户从任意网络访问，请指定：
+
+```xml
+<ip>::/0</ip>
+```
+
+<Note>
+  除非已正确配置防火墙，或服务器未直接连接到 Internet，否则允许任何网络访问都是不安全的。
+</Note>
+
+若仅允许从 localhost 访问，请指定：
+
+```xml
+<ip>::1</ip>
+<ip>127.0.0.1</ip>
+```
+
+### user_name/profile
+
+你可以为用户指定一个设置 profile。设置 profile 在 `users.xml` 文件的单独章节中配置。更多信息，请参见 [设置 profile](/zh/concepts/features/configuration/settings/settings-profiles)。
+
+### user_name/quota
+
+配额可用于跟踪或限制一段时间内的资源使用量。配额在 `users.xml` 配置文件的 `quotas`
+部分中进行配置。
+
+您可以为用户分配一组配额。有关配额配置的详细说明，请参阅 [Quotas](/zh/concepts/features/configuration/server-config/quotas)。
+
+### user_name/databases
+
+在本节中，您可以限制 ClickHouse 向当前用户发出的 `SELECT` 查询返回哪些行，从而实现基础的行级安全控制。
+
+**示例**
+
+以下配置会强制用户 `user1` 在 `SELECT` 查询结果中只能看到 `table1` 中 `id` 字段值为 1000 的行。
+
+```xml
+<user1>
+    <databases>
+        <database_name>
+            <table1>
+                <filter>id = 1000</filter>
+            </table1>
+        </database_name>
+    </databases>
+</user1>
+```
+
+`filter` 可以是任何结果为 [UInt8](/zh/reference/data-types/int-uint) 类型值的表达式。它通常包含比较和逻辑运算符。对于此用户，`database_name.table1` 中 `filter` 结果为 0 的行将不会被返回。此过滤器与 `PREWHERE` 操作不兼容，并会禁用 `WHERE→PREWHERE` 优化。
+
+## 角色
+
+你可以通过 `user.xml` 配置文件中的 `roles` 部分创建任意预定义角色。
+
+`roles` 部分的结构：
+
+```xml
+<roles>
+    <test_role>
+        <grants>
+            <query>GRANT SHOW ON *.*</query>
+            <query>REVOKE SHOW ON system.*</query>
+            <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        </grants>
+    </test_role>
+</roles>
+```
+
+也可以在 `users` 部分向用户授予这些角色：
+
+```xml
+<users>
+    <user_name>
+        ...
+        <grants>
+            <query>GRANT test_role</query>
+        </grants>
+    </user_name>
+<users>
+```

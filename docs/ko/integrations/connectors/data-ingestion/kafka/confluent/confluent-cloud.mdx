@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'Confluent Cloud용 Kafka Connector Sink'
+slug: /integrations/kafka/cloud/confluent/sink-connector
+description: 'Confluent Cloud에서 완전 관리형 ClickHouse Connector Sink를 사용하는 가이드'
+title: 'Confluent Cloud와 ClickHouse 통합'
+keywords: ['Kafka', 'Confluent Cloud']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://clickhouse.com/cloud/clickpipes'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/SQAiPVbd3gg"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+다음에 익숙하다고 가정합니다:
+
+* [ClickHouse Connector Sink](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+* Confluent Cloud
+
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-cloud">
+  ## Confluent Cloud용 ClickHouse 공식 Kafka Connector
+</div>
+
+<div id="create-a-topic">
+  #### 토픽 생성
+</div>
+
+Confluent Cloud에서 토픽을 생성하는 것은 비교적 간단하며, 자세한 안내는 [여기](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)에서 확인할 수 있습니다.
+
+<div id="important-notes">
+  #### 중요 참고 사항
+</div>
+
+* Kafka 토픽 이름은 ClickHouse 테이블 이름과 동일해야 합니다. 이를 변경하려면 변환기(transformer)를 사용하면 됩니다(예: [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
+* 파티션이 더 많다고 해서 항상 성능이 더 좋아지는 것은 아닙니다. 자세한 내용과 성능 최적화 팁은 곧 공개될 가이드를 참조하십시오.
+
+<div id="gather-your-connection-details">
+  #### 연결 정보 준비
+</div>
+
+<ConnectionDetails />
+
+<div id="install-connector">
+  #### 커넥터 설치
+</div>
+
+[공식 문서](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html)를 따라 Confluent Cloud에서 완전 관리형 ClickHouse 싱크 커넥터를 설치하십시오.
+
+<div id="configure-the-connector">
+  #### 커넥터 구성
+</div>
+
+ClickHouse 싱크 커넥터를 구성할 때는 다음 정보를 제공해야 합니다:
+
+* ClickHouse 서버의 호스트명
+* ClickHouse 서버의 포트(기본값: 8443)
+* ClickHouse 서버의 사용자 이름과 비밀번호
+* 데이터가 기록될 ClickHouse 데이터베이스 이름
+* ClickHouse에 데이터를 기록하는 데 사용할 Kafka 토픽 이름
+
+Confluent Cloud UI는 성능 최적화를 위해 폴링 주기, 배치 크기 및 기타 매개변수를 조정할 수 있는 고급 구성 옵션을 지원합니다.
+
+<Note>
+  Confluent Cloud에서는 [fetch settings](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#fetch-settings) 및 [poll settings](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#poll-settings)와 같은 일부 설정을 조정하려면 Confluent Cloud를 통해 지원 요청을 열어야 합니다.
+</Note>
+
+<div id="known-limitations">
+  #### 알려진 제한 사항
+</div>
+
+* [공식 문서의 connector 제한 사항 목록](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html#limitations)을 확인하십시오

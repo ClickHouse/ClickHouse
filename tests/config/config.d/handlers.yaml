@@ -1,0 +1,8 @@
+http_handlers:
+    rule:
+        url: '/upyachka'
+        empty_query_string:
+        handler:
+            type: redirect
+            location: "/?query=SELECT+'Pepyaka'"
+    defaults:

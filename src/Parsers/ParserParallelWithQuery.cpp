@@ -1,0 +1,78 @@
+#include <Parsers/ParserParallelWithQuery.h>
+
+#include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
+
+
+namespace DB
+{
+
+ParserParallelWithQuery::ParserParallelWithQuery(IParser & subquery_parser_, ASTPtr first_subquery_)
+    : subquery_parser(subquery_parser_), first_subquery(first_subquery_)
+{
+}
+
+
+bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword keyword_parallel_with{Keyword::PARALLEL_WITH};
+
+    auto old_pos = pos;
+    if (!keyword_parallel_with.ignore(pos, expected))
+        return true;
+
+    ASTs subqueries;
+    subqueries.push_back(first_subquery);
+
+    do
+    {
+        ASTPtr subquery;
+        if (!subquery_parser.parse(pos, subquery, expected))
+        {
+            pos = old_pos;
+            break;
+        }
+        subqueries.push_back(subquery);
+        old_pos = pos;
+    } while (keyword_parallel_with.ignore(pos, expected));
+
+    auto res = make_intrusive<ASTParallelWithQuery>();
+    res->children = std::move(subqueries);
+    node = res;
+
+    return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementParallelWith(StatementFactory & factory)
+{
+    factory.registerStatement("PARALLEL WITH",
+    {
+        .description = R"(
+Executes several statements in parallel. It can be useful for statements which take a long time and do not depend on
+each other, for example the creation of many tables.
+
+**Examples**
+
+**Create two tables in parallel**
+
+```sql title="Query"
+CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
+```
+)",
+        .syntax = R"(
+statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
+)",
+        .related = {"CREATE", "DROP", "SELECT"},
+    });
+}
+
+}

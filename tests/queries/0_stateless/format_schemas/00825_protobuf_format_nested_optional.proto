@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+message Repeated {
+  string foo = 1;
+  int64 bar = 2;
+}
+
+message Message {
+  repeated Repeated messages = 1;
+};

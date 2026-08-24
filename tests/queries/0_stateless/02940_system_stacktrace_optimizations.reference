@@ -1,0 +1,5 @@
+thread = 0
+thread != 0
+Send signal to
+thread_name = 'foo'
+Send signal to 0 threads (total)

@@ -1,0 +1,64 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <good_user>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <access_management>1</access_management>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </good_user>
+        <test_user_1>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </test_user_1>
+        <test_user_2>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </test_user_2>
+        <test_user_3>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </test_user_3>
+        <test_user_4>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </test_user_4>
+    </users>
+</clickhouse>

@@ -1,0 +1,1 @@
+CREATE TABLE default.t_index_3146\n(\n    `a` UInt64,\n    `b` UInt64,\n    INDEX i1 a TYPE minmax GRANULARITY 1,\n    INDEX i2 (a, b) TYPE minmax GRANULARITY 1,\n    INDEX i3 (a, b) TYPE minmax GRANULARITY 1,\n    INDEX i4 a TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

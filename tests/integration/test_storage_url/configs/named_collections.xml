@@ -1,0 +1,8 @@
+<clickhouse>
+    <named_collections>
+        <test_url>
+            <url>http://nginx:80/test_1</url>
+            <format>TSV</format>>
+        </test_url>
+    </named_collections>
+</clickhouse>

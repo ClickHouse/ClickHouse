@@ -1,0 +1,76 @@
+\N	0
+\N	0
+\N	0
+\N	0
+--- DESC NULLS FIRST, ASC
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	1
+28	0
+0	0
+--- DESC NULLS LAST, ASC
+28	0
+0	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	1
+--- ASC NULLS FIRST, ASC
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	1
+0	0
+28	0
+--- ASC NULLS LAST, ASC
+0	0
+28	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+\N	1
+--- DESC NULLS FIRST, DESC
+\N	1
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+28	0
+0	0
+--- DESC NULLS LAST, DESC
+28	0
+0	0
+\N	1
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+--- ASC NULLS FIRST, DESC
+\N	1
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0
+0	0
+28	0
+--- ASC NULLS LAST, DESC
+0	0
+28	0
+\N	1
+\N	0
+\N	0
+\N	0
+\N	0
+\N	0

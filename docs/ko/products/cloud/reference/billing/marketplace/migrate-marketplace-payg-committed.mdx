@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: '클라우드 마켓플레이스에서 종량제(PAYG) 청구를 약정 지출 계약으로 마이그레이션'
+description: '종량제에서 약정 지출 계약으로 마이그레이션합니다.'
+keywords: ['마켓플레이스', '청구', 'PAYG', '종량제', '약정 지출 계약']
+doc_type: 'guide'
+---
+
+현재 ClickHouse 조직이 활성 상태인 클라우드 마켓플레이스 종량제(PAYG) 구독(또는 주문)을 통해 청구되고 있으며, 동일한 클라우드 마켓플레이스를 통해 약정 지출 계약 기반 청구로 마이그레이션하려는 경우 먼저 새 제안을 수락한 다음 클라우드 서비스 제공업체에 따라 아래 단계를 따르십시오.
+
+<div id="important-notes">
+  ## 중요 참고 사항
+</div>
+
+마켓플레이스 PAYG 구독을 취소하더라도 ClickHouse Cloud 계정이 삭제되지는 않으며, 마켓플레이스를 통한 청구 관계만 종료됩니다. 취소가 완료되면 ClickHouse Cloud 서비스에 대한 마켓플레이스 청구가 중단됩니다. (참고: 이 과정은 즉시 완료되지 않으며, 완료까지 몇 분 정도 걸릴 수 있습니다.)
+
+마켓플레이스 구독이 취소된 후 ClickHouse 조직에 등록된 신용카드가 있으면, 그 전에 새 마켓플레이스 구독이 연결되지 않는 한 청구 주기 종료 시 해당 카드로 요금이 청구됩니다.
+
+취소 후 결제 수단이 구성되어 있지 않으면 조직에 유효한 신용카드 또는 새 클라우드 마켓플레이스 구독을 추가할 수 있는 기간이 14일 주어집니다. 이 기간 내에 결제 수단이 구성되지 않으면 서비스가 일시 중단되며, 조직은 [청구 규정 준수](/ko/products/cloud/reference/billing/billing-compliance)를 충족하지 않는 상태로 간주됩니다.
+
+구독이 취소된 이후 발생한 모든 사용량은 다음으로 구성된 유효한 결제 수단에 청구되며, 적용 우선순위는 선불 크레딧, 마켓플레이스 구독, 신용카드 순입니다.
+
+조직을 새 마켓플레이스 구독으로 구성하는 과정에서 문의 사항이 있거나 지원이 필요한 경우 ClickHouse [지원](https://clickhouse.com/support/program)팀에 문의하십시오.
+
+<div id="aws-marketplace">
+  ## AWS Marketplace
+</div>
+
+PAYG 구독을 사용량 약정 지출 계약으로 전환하면서 동일한 AWS Account ID를 사용하려는 경우, 이 변경을 처리하는 가장 권장되는 방법은 [영업팀에 문의](https://clickhouse.com/company/contact)하는 것입니다. 이렇게 하면 추가 단계가 필요 없으며 ClickHouse 조직이나 서비스에도 중단이 발생하지 않습니다.
+
+다른 AWS Account ID를 사용하여 ClickHouse 조직을 PAYG 구독에서 사용량 약정 지출 계약으로 전환하려는 경우, 다음 단계를 따르십시오:
+
+<div id="cancel-aws-payg">
+  ### AWS PAYG 구독 취소 단계
+</div>
+
+1. **[AWS Marketplace](https://us-east-1.console.aws.amazon.com/marketplace)로 이동합니다**
+2. **&quot;Manage Subscriptions&quot; 버튼을 클릭합니다**
+3. **&quot;Your Subscriptions&quot;로 이동합니다:**
+   * &quot;Manage Subscriptions&quot;를 클릭합니다
+4. **목록에서 ClickHouse Cloud를 찾습니다:**
+   * &quot;Your Subscriptions&quot;에서 ClickHouse Cloud를 찾아 클릭합니다
+5. **구독을 취소합니다:**
+   * &quot;Agreement&quot; 아래에서 ClickHouse Cloud 항목 옆의 &quot;Actions&quot; 드롭다운 또는 버튼을 클릭합니다
+   * &quot;Cancel subscription&quot;을 선택합니다
+
+> **참고:** 구독 취소에 도움이 필요하면(예: &quot;Cancel subscription&quot; 버튼을 사용할 수 없는 경우) [AWS 지원](https://support.console.aws.amazon.com/support/home#/)에 문의하십시오.
+
+다음으로, 수락한 새 AWS 약정 지출 계약에 맞게 ClickHouse 조직을 구성하려면 다음 [단계](/ko/products/cloud/reference/billing/marketplace/aws-marketplace-committed)를 따르십시오.
+
+<div id="gcp-marketplace">
+  ## GCP Marketplace
+</div>
+
+<div id="cancel-gcp-payg">
+  ### GCP PAYG 주문 취소 단계
+</div>
+
+1. **[Google Cloud Marketplace Console](https://console.cloud.google.com/marketplace)로 이동하세요:**
+   * 올바른 GCP 계정에 로그인되어 있고 적절한 프로젝트가 선택되어 있는지 확인하세요
+2. **ClickHouse 주문을 찾으세요:**
+   * 왼쪽 메뉴에서 &quot;Your Orders&quot;를 클릭하세요
+   * 활성 주문 목록에서 해당 ClickHouse 주문을 찾으세요
+3. **주문을 취소하세요:**
+   * 주문 오른쪽의 점 3개 메뉴를 찾아 안내에 따라 ClickHouse 주문을 취소하세요
+
+> **참고:** 이 주문 취소에 도움이 필요하면 [GCP support](https://cloud.google.com/support/docs/get-billing-support)에 문의하십시오.
+
+다음으로, 이 [단계](/ko/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)를 따라 ClickHouse 조직을 새 GCP 약정 지출 계약에 맞게 구성하세요.
+
+<div id="azure-marketplace">
+  ## Azure 마켓플레이스
+</div>
+
+<div id="cancel-azure-payg">
+  ### Azure PAYG 구독 취소 단계
+</div>
+
+1. **[Microsoft Azure Portal](http://portal.azure.com)로 이동합니다**
+2. **&quot;Subscriptions&quot;로 이동합니다**
+3. **취소하려는 활성 ClickHouse 구독을 찾습니다**
+4. **구독을 취소합니다:**
+   * ClickHouse Cloud 구독을 클릭하여 구독 세부 정보를 엽니다
+   * &quot;Cancel subscription&quot; 버튼을 선택합니다
+
+> **참고:** 이 주문을 취소하는 데 도움이 필요하면 Azure Portal에서 지원 티켓을 여십시오.
+
+다음으로, ClickHouse 조직을 새 Azure 약정 지출 계약에 맞게 구성하려면 다음 [단계](/ko/products/cloud/reference/billing/marketplace/azure-marketplace-committed)를 따르십시오.
+
+<div id="linking-requirements">
+  ## 약정 지출 계약 연결을 위한 요구 사항
+</div>
+
+> **참고:** 조직을 마켓플레이스 약정 지출 계약에 연결하려면:
+>
+> * 다음 단계를 수행하는 사용자는 구독을 연결할 ClickHouse 조직의 관리자여야 합니다
+> * 조직의 모든 미납 인보이스가 결제되어 있어야 합니다(문의 사항이 있으면 ClickHouse [support](https://clickhouse.com/support/program)로 연락하십시오)

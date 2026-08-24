@@ -1,0 +1,7 @@
+<clickhouse>
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key>0000000000000000</key>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+</clickhouse>

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <function_sleep_max_microseconds_per_block>10G</function_sleep_max_microseconds_per_block>
+        </default>
+    </profiles>
+</clickhouse>

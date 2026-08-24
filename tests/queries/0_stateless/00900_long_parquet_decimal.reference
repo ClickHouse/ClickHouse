@@ -1,0 +1,17 @@
+diff0:
+diff1:
+diff2:
+nothing:
+nulls:
+\N	\N	\N	\N
+full orig:
+1	\N	\N	\N
+\N	1	\N	\N
+\N	\N	1	\N
+\N	\N	\N	\N
+full inserted:
+1	\N	\N	\N
+\N	1	\N	\N
+\N	\N	1	\N
+\N	\N	\N	\N
+diff3:

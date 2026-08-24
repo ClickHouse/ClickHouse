@@ -1,0 +1,1 @@
+CREATE TABLE t (c CODEC(NONE)) ENGINE = Memory -- { clientError SYNTAX_ERROR }

@@ -1,0 +1,4 @@
+<test>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore([[zero], [zero]])</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore([[], [zero]])</query>
+</test>

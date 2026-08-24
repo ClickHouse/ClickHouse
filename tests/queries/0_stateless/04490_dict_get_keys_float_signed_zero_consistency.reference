@@ -1,0 +1,24 @@
+Sanity: the test really uses negative zero (both must be 1)
+1	1
+Float64: query -0.0 matches both stored +0.0 and -0.0 (constant then vector)
+[1,3,4,5]
+[1,3,4,5]
+Float64: query +0.0 matches both stored +0.0 and -0.0 (constant then vector)
+[1,3,4,5]
+[1,3,4,5]
+Float32: query -0.0 matches both stored +0.0 and -0.0 (constant then vector)
+[1,3,4,5]
+[1,3,4,5]
+Non-zero value still matches its single key (constant then vector)
+[2]
+[2]
+Constant path equals vector path for +0.0, -0.0 and a non-zero value (must all be 1)
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1

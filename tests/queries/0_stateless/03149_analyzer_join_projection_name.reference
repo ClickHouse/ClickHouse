@@ -1,0 +1,9 @@
+analyzer=1, join with dictionary
+   ┌──uid─┬─name─┬─gid─┬─gname──┐
+1. │ 1231 │ John │ 1   │ Group1 │
+   └──────┴──────┴─────┴────────┘
+
+analyzer=1, join with table
+   ┌──uid─┬─name─┬─gid─┬─gname──┐
+1. │ 1231 │ John │ 1   │ Group1 │
+   └──────┴──────┴─────┴────────┘

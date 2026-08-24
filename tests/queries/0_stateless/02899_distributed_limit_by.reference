@@ -1,0 +1,52 @@
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=0,distributed_push_down_limit=1
+0
+0
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=0,distributed_push_down_limit=0
+0
+0
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=1,distributed_push_down_limit=1
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=1,distributed_push_down_limit=0
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=2,distributed_push_down_limit=1
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=0,distributed_group_by_no_merge=2,distributed_push_down_limit=0
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=0,distributed_push_down_limit=1
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=0,distributed_push_down_limit=0
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=1,distributed_push_down_limit=1
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=1,distributed_push_down_limit=0
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=2,distributed_push_down_limit=1
+0
+0
+0
+0
+Used settings: prefer_localhost_replica=1,distributed_group_by_no_merge=2,distributed_push_down_limit=0
+0
+0
+0
+0

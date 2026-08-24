@@ -1,0 +1,9 @@
+[libfuzzer]
+timeout = 20
+rss_limit_mb = 8192
+
+[fuzzer_arguments]
+max_parser_depth = 20
+max_parser_backtracks = 1000
+max_object_size = 100
+memory_limit = 536870912

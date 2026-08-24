@@ -1,0 +1,3 @@
+<clickhouse>
+    <allow_zookeeper_write>true</allow_zookeeper_write>
+</clickhouse>
