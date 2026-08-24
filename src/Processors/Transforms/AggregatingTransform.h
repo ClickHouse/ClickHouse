@@ -96,10 +96,6 @@ struct AggregationQueryResultPreviews
 {
     QueryResultPreviewsControl control;
 
-    /// A dedicated merge-only aggregator that merges the per-thread snapshots into one preview
-    /// chunk; created lazily under `control.emit_mutex` by the first emission.
-    std::unique_ptr<Aggregator> merge_aggregator;
-
     AggregationQueryResultPreviews(const QueryResultPreviewsSettings & settings_, size_t num_participants)
         : control(settings_, num_participants)
     {

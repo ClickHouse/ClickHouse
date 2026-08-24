@@ -1316,7 +1316,11 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
         return;
 
     const auto & preview_settings = control.settings;
-    Aggregator::AggregatedChunks snapshots;
+
+    /// The states of every participant are merged into one private snapshot, which is then
+    /// finalized into the preview chunk. Nothing is copied out of a participant: the merge only
+    /// reads its states, and it happens under the participant's lock.
+    AggregatedDataVariants snapshot;
     UInt64 total_result_rows = 0;
     UInt64 total_result_bytes = 0;
 
@@ -1335,18 +1339,18 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
             }
         }
 
-        auto & snapshot_variants = *many_data->variants[i];
-        if (snapshot_variants.empty())
+        auto & participant = *many_data->variants[i];
+        if (participant.empty())
             continue;
 
-        if (snapshot_variants.isTwoLevel())
+        if (participant.isTwoLevel())
         {
             control.disable();
             return;
         }
 
-        total_result_rows += snapshot_variants.sizeWithoutOverflowRow();
-        for (const auto & pool : snapshot_variants.aggregates_pools)
+        total_result_rows += participant.sizeWithoutOverflowRow();
+        for (const auto & pool : participant.aggregates_pools)
             total_result_bytes += pool->usedBytes();
 
         if ((preview_settings.max_result_rows && total_result_rows > preview_settings.max_result_rows)
@@ -1357,39 +1361,17 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
             return;
         }
 
-        auto snapshot = params->aggregator.snapshotToChunkForQueryResultPreview(snapshot_variants);
-        if (snapshot.getNumRows())
-            snapshots.push_back({std::move(snapshot)});
+        params->aggregator.mergeIntoQueryResultPreviewSnapshot(participant, snapshot);
     }
 
     control.startNextRound();
 
-    if (snapshots.empty())
+    Chunk preview = params->aggregator.convertQueryResultPreviewSnapshotToChunk(snapshot);
+    if (!preview.getNumRows())
         return;
 
-    if (!query_result_previews->merge_aggregator)
-    {
-        const auto & aggregator_params = params->params;
-        Aggregator::Params merge_params(
-            aggregator_params.keys,
-            aggregator_params.aggregates,
-            /*overflow_row_=*/false,
-            /*max_threads_=*/1,
-            aggregator_params.max_block_size,
-            aggregator_params.min_hit_rate_to_use_consecutive_keys_optimization,
-            aggregator_params.serialize_string_with_zero_byte,
-            aggregator_params.enable_packed_string_keys);
-        query_result_previews->merge_aggregator
-            = std::make_unique<Aggregator>(params->getCustomHeader(/*final_=*/false), merge_params);
-    }
-
-    auto merged = query_result_previews->merge_aggregator->mergeBlocks(
-        snapshots, /*final=*/true, is_cancelled, /*dataflow_cache_updater=*/nullptr);
-    if (!merged.chunk.getNumRows())
-        return;
-
-    markAsQueryResultPreview(merged.chunk);
-    pending_query_result_preview = std::move(merged.chunk);
+    markAsQueryResultPreview(preview);
+    pending_query_result_preview = std::move(preview);
 }
 
 void AggregatingTransform::initGenerate()
