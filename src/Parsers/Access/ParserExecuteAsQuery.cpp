@@ -5,6 +5,8 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -73,6 +75,36 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     }
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementExecuteAs(StatementFactory & factory)
+{
+    factory.registerStatement("EXECUTE AS",
+    {
+        .description = R"(
+Executes queries on behalf of a different user. The `IMPERSONATE` privilege on the target user is required. Without a
+subquery, the statement switches the current user of the session; with a subquery, only that subquery is executed on
+behalf of the target user.
+
+**Examples**
+
+**Run a query on behalf of another user**
+
+```sql title="Query"
+EXECUTE AS user1 SELECT count() FROM table1;
+```
+)",
+        .syntax = R"(
+EXECUTE AS target_user
+EXECUTE AS target_user subquery
+)",
+        .related = {"GRANT", "CREATE USER", "SET ROLE"},
+    });
 }
 
 }

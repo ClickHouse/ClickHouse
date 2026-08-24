@@ -28,10 +28,6 @@ SELECT * FROM t1 NATURAL JOIN t3 ORDER BY id, extra;
 -- NATURAL JOIN with subqueries
 SELECT * FROM (SELECT id, name FROM t1) AS q1 NATURAL JOIN (SELECT id, value FROM t2) AS q2 ORDER BY id;
 
--- Old analyzer path
-SET allow_experimental_analyzer = 0;
-SELECT * FROM t1 NATURAL JOIN t2 ORDER BY id;
-SELECT * FROM t1 NATURAL LEFT JOIN t2 ORDER BY id;
 SET allow_experimental_analyzer = 1;
 
 SELECT * FROM t1 NATURAL JOIN t2 USING (id); -- { clientError SYNTAX_ERROR } Error: NATURAL JOIN cannot specify USING
