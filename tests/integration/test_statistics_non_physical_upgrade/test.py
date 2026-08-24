@@ -22,7 +22,13 @@ _ZK_PATH = "/clickhouse/databases/rdb_stats"
 
 # One table per ALTER case: each case consumes the grandfathered state, and the current version
 # cannot recreate it, so the cases cannot share a table.
-_ALTER_TABLES = ["t_clear", "t_rename_reuse", "t_rename_plain", "t_drop_readd"]
+_ALTER_TABLES = [
+    "t_clear",
+    "t_rename_reuse",
+    "t_rename_plain",
+    "t_drop_readd",
+    "t_drop_then_rename",
+]
 
 
 def _assert_grandfathered(table):
@@ -167,6 +173,14 @@ def test_alter_keeps_inherited_state_alterable(upgraded):
     # A plain rename carries the whole description across, so the state is still inherited.
     node.query("ALTER TABLE t_rename_plain RENAME COLUMN b TO bb")
     assert "STATISTICS(tdigest)" in node.query("SHOW CREATE TABLE t_rename_plain")
+
+    # Dropping a column and then renaming that same freed name away moves nothing, so the legacy
+    # column keeps its own name and its inherited state. `IF EXISTS` is decided against the
+    # definition before any command ran, so such a rename is not reported as ignored.
+    node.query(
+        "ALTER TABLE t_drop_then_rename DROP COLUMN d, RENAME COLUMN IF EXISTS d TO b"
+    )
+    _assert_grandfathered("t_drop_then_rename")
 
 
 def test_alter_refuses_state_it_produces_itself(upgraded):
