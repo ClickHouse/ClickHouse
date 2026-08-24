@@ -123,10 +123,23 @@ public:
     ///    `joinRuntimeFilter` pass sets it so that `HashJoin` publishes those shared runtime filters -
     ///    the readers of those filters prune rows.
     ///  - `actions_after_join` - on the wire (`serialize` writes it as a DAG node id list).
-    ///  - `join_settings` - on the wire (`JoinSettings::updatePlanSettings` covers every member)
-    ///    except `join_analyze_mode`, which is **extras**: it is not written, and `MergeJoinTransform`
-    ///    and `MatchedRowsStats` branch on it. In practice every construction site takes it from the
-    ///    query context, so it is uniform within a plan; encoded anyway rather than relying on that.
+    ///  - `join_settings` - on the wire (`JoinSettings::updatePlanSettings`) except four members:
+    ///     - `join_analyze_mode` - **extras**. `updatePlanSettings` does not write it at all, and
+    ///       `MergeJoinTransform` and `MatchedRowsStats` branch on it. In practice every construction
+    ///       site takes it from the query context, so it is uniform within a plan; encoded anyway
+    ///       rather than relying on that.
+    ///     - `max_block_size`, `temporary_files_codec`, `temporary_files_buffer_size` - **extras**.
+    ///       `JoinSettings::updatePlanSettings` does assign all three, but `serializeSettings` runs it
+    ///       first and `sorting_settings.updatePlanSettings` second, and
+    ///       `SortingStep::Settings::updatePlanSettings` assigns the same three plan-setting names.
+    ///       `QueryPlanSerializationSettings` is a keyed map, so the later write wins: only the
+    ///       sorting values reach the wire and the join's three are dropped (which is also why
+    ///       `deserialize` reconstructs `JoinSettings` from the sorting values). Encoded fail-closed:
+    ///       the join algorithms read `max_block_size` and the two temporary-file settings when they
+    ///       spill, nothing forces the two settings structs to agree, and per-query uniformity is a
+    ///       property of today's construction sites rather than an invariant. Note that the dropped
+    ///       `join_settings.temporary_files_buffer_size` is still *validated* on assignment, which is
+    ///       why `supportsCascadesIdentity()` below has to check it for zero.
     ///  - `sorting_settings` - on the wire the same way `SortingStep` has it
     ///    (`Settings::updatePlanSettings`), except: `max_bytes_in_query_before_external_sort`, derived
     ///    from the wire-covered ratio and the machine's memory, excluded; and
@@ -144,6 +157,10 @@ public:
     ///    `result_rows_estimation`). Encoded sorted by column name, since the map's own iteration
     ///    order is not part of its value.
     ///  - `imprecise_estimate` - **extras**, read together with the two above by `optimizeJoin`.
+    ///    Follow-up for the three estimation fields above: they are cost-only, and they are in the
+    ///    extras fail-closed. Once a join-rebuild path that clears estimates lands (the feature
+    ///    branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), they must be revisited -
+    ///    otherwise a rebuilt join will never deduplicate against an ingested one.
     ///  - `right_hash_table_cache_key` - **extras**. Read by `buildPhysicalJoin` (it becomes the
     ///    `JoinAlgorithmParams` hash-table key and the `StatsCollectingParams` key that seeds the
     ///    right-side size estimate) and by `joinRuntimeFilter`.

@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
@@ -877,6 +878,35 @@ TEST(CascadesStepIdentity, JoinStepLogicalRightHashTableCacheKeyIsPartOfIdentity
     auto a_step = makeJoinStepLogical();
     auto b_step = makeJoinStepLogical();
     b_step->setRightHashTableCacheKey(42);
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// `JoinSettings::updatePlanSettings` assigns `max_block_size`, `temporary_files_codec` and
+/// `temporary_files_buffer_size`, but `serializeSettings` runs `sorting_settings.updatePlanSettings`
+/// afterwards and that assigns the same three plan-setting names, so the sorting values overwrite
+/// them and the join's three never reach the wire. Both steps below share the same
+/// `sorting_settings`, so only the extras can tell them apart.
+TEST(CascadesStepIdentity, JoinStepLogicalOverwrittenJoinSettingsArePartOfIdentity)
+{
+    auto a_step = makeJoinStepLogical();
+    auto b_step = makeJoinStepLogical();
+    b_step->getJoinSettings().max_block_size = a_step->getJoinSettings().max_block_size + 1;
+
+    /// The settings bytes really are identical: the sorting values, which win, are untouched.
+    QueryPlanSerializationSettings a_settings;
+    QueryPlanSerializationSettings b_settings;
+    a_step->serializeSettings(a_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    b_step->serializeSettings(b_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    WriteBufferFromOwnString a_bytes;
+    WriteBufferFromOwnString b_bytes;
+    a_settings.writeChangedBinary(a_bytes);
+    b_settings.writeChangedBinary(b_bytes);
+    ASSERT_EQ(a_bytes.str(), b_bytes.str());
 
     auto a = std::make_shared<GroupExpression>(std::move(a_step));
     auto b = std::make_shared<GroupExpression>(std::move(b_step));

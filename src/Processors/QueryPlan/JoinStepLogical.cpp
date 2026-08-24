@@ -2182,6 +2182,9 @@ enum JoinStepLogicalIdentityTag : UInt64
     JOIN_ANALYZE_MODE_TAG = 11,
     READ_IN_ORDER_USE_BUFFERING_TAG = 12,
     READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG = 13,
+    JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG = 14,
+    JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG = 15,
+    JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG = 16,
 };
 
 /// Sorted by column name: the map's iteration order is not part of its value.
@@ -2271,6 +2274,14 @@ void JoinStepLogical::appendCascadesIdentityExtras(CascadesIdentityExtras & extr
     /// Not covered by `JoinSettings::updatePlanSettings`; `MergeJoinTransform` and `MatchedRowsStats`
     /// branch on it.
     extras.addVarUInt(JOIN_ANALYZE_MODE_TAG, static_cast<UInt64>(join_settings.join_analyze_mode));
+
+    /// `JoinSettings::updatePlanSettings` assigns these three, but `serializeSettings` then runs
+    /// `sorting_settings.updatePlanSettings`, which assigns the same three plan-setting names, so the
+    /// sorting values overwrite them and the join's never reach the wire. The join algorithms read
+    /// them when they spill, and nothing forces the two settings structs to agree.
+    extras.addVarUInt(JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG, join_settings.max_block_size);
+    extras.addString(JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG, join_settings.temporary_files_codec);
+    extras.addVarUInt(JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG, join_settings.temporary_files_buffer_size);
 
     /// Not covered by `SortingStep::Settings::updatePlanSettings`; handed to the sorting steps the
     /// physical join builds.
