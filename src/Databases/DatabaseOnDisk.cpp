@@ -509,6 +509,7 @@ void DatabaseOnDisk::renameTable(
     detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
+    StorageID original_table_id = StorageID::createEmpty();
     auto db_disk = getDisk();
     try
     {
@@ -538,6 +539,7 @@ void DatabaseOnDisk::renameTable(
         }
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
+        original_table_id = table->getStorageID();
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
     catch (const Exception &)
@@ -554,8 +556,32 @@ void DatabaseOnDisk::renameTable(
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
 
-    /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    /// Now table data are moved to new database, so we must add metadata and attach table to new database.
+    /// If this fails (e.g. a concurrent `CREATE TABLE` filled the destination database `max_tables`
+    /// quota after the preflight check above), roll the rename back: move the data to the old place
+    /// and re-attach the table to this database, so the table is not lost.
+    try
+    {
+        to_database.createTable(local_context, to_table_name, table, attach_query);
+    }
+    catch (...)
+    {
+        try
+        {
+            table->rename(table_data_relative_path, original_table_id);
+            if (from_ordinary_to_atomic)
+                DatabaseCatalog::instance().removeUUIDMappingFinally(attach_query->as<ASTCreateQuery &>().uuid);
+            setDetachedTableNotInUseForce(prev_uuid);
+            attachTable(local_context, table_name, table, table_data_relative_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot rollback the rename of table {} to {} after a failed attach to the destination database",
+                original_table_id.getNameForLogs(), to_table_name));
+        }
+        throw;
+    }
 
     db_disk->removeFileIfExists(table_metadata_path);
 
