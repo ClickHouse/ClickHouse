@@ -25,6 +25,15 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
     "test_ytsaurus/",
+    # Starts 20 server nodes. Under continuous-mode coverage (%c) every node
+    # memory-maps its own ~178 MB profile, and the kernel's writeback of the
+    # dirty counter pages saturates the disk: 48 s on a plain coverage build,
+    # over 2 h under %c (blew the 7800 s sequential backstop).
+    "test_backup_restore_on_cluster/test_huge_concurrent_restore.py",
+    # Asserts wall-clock timing of reconnects with a 5.5 s margin. The %c
+    # writeback load pushed a 967/967-green test over the margin (9.6 s
+    # observed vs 8.5 s allowed).
+    "test_distributed_respect_user_timeouts/",
 ]
 
 TEST_CONFIGS = [
