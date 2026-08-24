@@ -341,12 +341,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
     const auto final_status = executor.getExecutionStatus();
     const bool cancelled
-        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+        = final_status == PipelineExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutionStatus::CancelledByUser;
 
     auto throw_on_cancellation = [&]
     {
-        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+        if (final_status == PipelineExecutionStatus::CancelledByTimeout)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
     };
