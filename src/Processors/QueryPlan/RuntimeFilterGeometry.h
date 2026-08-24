@@ -12,10 +12,14 @@ static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 
+/// First query-plan serialization version that knows `join_runtime_filter_exact_bytes_limit` and
+/// `BuildRuntimeFilterStep` filter-exchange topology. Gates writing the setting in `serializeSettings`.
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES = 7;
+
 /// Sizing and self-disabling parameters of one runtime filter, shared by every party that builds,
 /// transports, merges, or probes it. Partial filter states are only mergeable when built to
 /// identical geometry, and the receiving side validates arrived state against the plan's values,
-/// so the build, send, and receive steps of one filter must carry the same geometry.
+/// so the build step, merge stages, and receive descriptors of one filter must carry the same geometry.
 struct RuntimeFilterGeometry
 {
     /// The filter keeps the exact key set until it exceeds either limit, then degrades to a bloom
@@ -38,14 +42,14 @@ struct RuntimeFilterGeometry
     /// disabling knobs merely mirror their settings' defaults. Every construction site
     /// (`fromSettings`, the join optimizer, tests) sets all fields explicitly; a new one must too.
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
     static RuntimeFilterGeometry fromSettings(const QueryPlanSerializationSettings & settings);
 
     /// Bounds check for a geometry that arrived with a serialized plan. The building side
     /// normalizes and validates in the `BuildRuntimeFilterStep` constructor; a transported
-    /// send/receive step instead rejects a plan whose geometry that constructor and the
-    /// transport sizing (settings floor, `MAX_RUNTIME_BLOOM_FILTER_BYTES` cap) could not have
-    /// produced.
+    /// merge stage or receive descriptor instead rejects a plan whose geometry that constructor
+    /// and the transport sizing (settings floor, `MAX_RUNTIME_BLOOM_FILTER_BYTES` cap) could not
+    /// have produced.
     void validateTransported() const;
 };
 

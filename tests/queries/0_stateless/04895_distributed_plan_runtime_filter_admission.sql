@@ -14,13 +14,72 @@ SET distributed_plan_join_runtime_filters = 1;
 -- More estimated build keys than the probe site has rows: shipping the filter costs at least as
 -- much as it could ever save, so transport is refused and the local build step stays.
 SELECT '-- build side larger than the probe site: transport refused';
-SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM (
-    EXPLAIN SELECT count() FROM t_small, t_large WHERE sid = lid
-) WHERE explain LIKE '%RuntimeFilter%';
-SELECT count() FROM t_small, t_large WHERE sid = lid;
+SELECT count() FROM t_small, t_large WHERE sid = lid SETTINGS log_comment = '04895_refused';
 
 SELECT '-- small build side against a large probe site: transport admitted';
-SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM (
-    EXPLAIN SELECT count() FROM t_large, t_small WHERE lid = sid
-) WHERE explain LIKE '%RuntimeFilter%';
-SELECT count() FROM t_large, t_small WHERE lid = sid;
+SELECT count() FROM t_large, t_small WHERE lid = sid SETTINGS log_comment = '04895_admitted';
+
+SET make_distributed_plan = 0;
+SYSTEM FLUSH LOGS query_log, text_log;
+
+SELECT '-- refused: admission trace and no states sent';
+SELECT
+    (
+        SELECT count() > 0 FROM system.text_log
+        WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%refused at%'
+            AND event_date >= yesterday() AND query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_refused'
+                    AND current_database = currentDatabase() AND event_date >= yesterday())
+    ),
+    (
+        SELECT count() > 0 AND (
+            SELECT count()
+            FROM
+            (
+                SELECT extract(message, 'under key \'([^\']+)\'') AS filter_key
+                FROM system.text_log
+                WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
+                  AND message LIKE 'Registered runtime filter%'
+                  AND query_id IN (
+                      SELECT query_id FROM system.query_log
+                      WHERE type = 'QueryFinish' AND event_date >= yesterday()
+                        AND log_comment = '04895_refused'
+                        AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
+                GROUP BY filter_key
+                HAVING count() >= 2
+            )
+        ) = 0
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= yesterday()
+          AND log_comment = '04895_refused'
+          AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%')
+    );
+
+SELECT '-- admitted: admission trace and states sent';
+SELECT
+    (
+        SELECT count() > 0 FROM system.text_log
+        WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%admitted at%'
+            AND event_date >= yesterday() AND query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_admitted'
+                    AND current_database = currentDatabase() AND event_date >= yesterday())
+    ),
+    (
+        SELECT count() >= 1
+        FROM
+        (
+            SELECT extract(message, 'under key \'([^\']+)\'') AS filter_key
+            FROM system.text_log
+            WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
+              AND message LIKE 'Registered runtime filter%'
+              AND query_id IN (
+                  SELECT query_id FROM system.query_log
+                  WHERE type = 'QueryFinish' AND event_date >= yesterday()
+                    AND log_comment = '04895_admitted'
+                    AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
+            GROUP BY filter_key
+            HAVING count() >= 2
+        )
+    );

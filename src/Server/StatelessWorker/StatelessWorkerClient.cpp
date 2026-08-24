@@ -1,4 +1,5 @@
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -64,9 +65,6 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 }
 
 }
-
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
-
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
 {

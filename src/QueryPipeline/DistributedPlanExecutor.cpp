@@ -26,6 +26,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -810,6 +811,33 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
+    /// Transported runtime filters this task consumes: each descriptor becomes a self-contained
+    /// branch (exchange sources -> union -> sink) attached beside the fragment's pipeline. The
+    /// branch owns its sink so the executor pulls the partial states regardless of data-side
+    /// demand; folding it into the data streams would deadlock a remote worker (data sinks idle
+    /// until the join pulls the probe side, which waits on the build stage, which waits on these
+    /// sources).
+    for (const auto & descriptor : task.runtime_filter_descriptors)
+    {
+        const auto partials_header = runtimeFilterPartialsHeader();
+        Pipes partial_pipes;
+        for (const auto & stream : descriptor.streams)
+            partial_pipes.emplace_back(pipeline_settings.exchange_lookup->createSource(partials_header, stream));
+        auto partials = Pipe::unitePipes(std::move(partial_pipes));
+        partials.addTransform(std::make_shared<MergeRuntimeFiltersTransform>(
+            partials_header,
+            descriptor.streams.size(),
+            MergeRuntimeFiltersTransform::Mode::RegisterUnion,
+            descriptor.filter_name,
+            descriptor.filter_key,
+            descriptor.key_column_type,
+            descriptor.geometry,
+            context->getRuntimeFilterLookup()));
+        QueryPipeline branch(std::move(partials));
+        branch.complete(std::make_shared<EmptySink>(partials_header));
+        pipeline.addCompletedPipeline(std::move(branch));
+    }
+
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
@@ -1089,8 +1117,11 @@ static WorkerAddress resolveWorkerAddress(
     return address;
 }
 
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
+UInt64 chooseTaskSerializationVersion(
+    const DistributedQueryTask & task, const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
 {
+    if (!task.runtime_filter_descriptors.empty())
+        return 3;
     for (const auto & stream : exchange_stream_sources.stream_hosts)
         if (stream.second.port != server_exchange_port)
             return 2;
@@ -1643,7 +1674,7 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
-            task_description.serialization_version = chooseTaskSerializationVersion(task_description.exchange_stream_sources, server_exchange_port);
+            task_description.serialization_version = chooseTaskSerializationVersion(task, task_description.exchange_stream_sources, server_exchange_port);
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.

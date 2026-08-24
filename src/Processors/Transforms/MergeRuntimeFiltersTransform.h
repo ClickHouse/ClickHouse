@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -31,8 +30,12 @@ SharedHeader runtimeFilterPartialsHeader();
 /// `max_received_state_bytes`, nothing is published and rows keep passing unfiltered (fail-open).
 /// An oversized state is rejected before it is copied or parsed. Malformed or duplicate states
 /// still throw: they indicate a bug, not a benign delivery failure.
-/// In `RegisterUnion` mode the output never produces rows; it exists so the branch can end in its
-/// own sink (see `wireRuntimeFilterMergeBranch`).
+/// In `RegisterUnion` mode the output never produces rows; it exists so the receiving branch can
+/// end in its own sink. The pipeline executor seeds scheduling from sinks, so ending the branch in
+/// its own sink makes the sources run eagerly. That is a correctness requirement, not an
+/// optimization: on a remote worker the data sinks stay idle until the join pulls the probe side,
+/// which waits for the build stage to finish, which waits for these very sources to connect and
+/// take the filter -- a branch folded into the data streams deadlocks the whole plan.
 class MergeRuntimeFiltersTransform final : public IProcessor
 {
 public:
@@ -89,15 +92,5 @@ private:
     Chunk output_chunk;
     bool has_output_chunk = false;
 };
-
-/// Wires the filter branch [partial sources -> merge -> sink] as a self-contained cluster next to
-/// the given data ports, which pass through untouched. The pipeline executor seeds scheduling from
-/// sinks, so ending the branch in its own sink makes the sources run eagerly. That is a correctness
-/// requirement, not an optimization: on a remote worker the data sinks stay idle until the join
-/// pulls the probe side, which waits for the build stage to finish, which waits for these very
-/// sources to connect and take the filter -- a branch folded into the data streams deadlocks the
-/// whole plan.
-Processors wireRuntimeFilterMergeBranch(
-    const OutputPortRawPtrs & data_ports, Processors partial_sources, std::shared_ptr<MergeRuntimeFiltersTransform> merge);
 
 }

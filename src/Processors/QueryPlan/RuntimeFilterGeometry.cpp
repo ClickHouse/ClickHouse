@@ -21,10 +21,13 @@ extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_blocks_to_
 extern const QueryPlanSerializationSettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
 }
 
-void RuntimeFilterGeometry::serializeSettings(QueryPlanSerializationSettings & settings) const
+void RuntimeFilterGeometry::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
-    settings[QueryPlanSerializationSetting::join_runtime_filter_exact_bytes_limit] = exact_bytes_limit;
+    /// A peer below this version rejects the unknown name. Omitting it is fail-open to the default
+    /// floor, which is correct for a field-less local step.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
+        settings[QueryPlanSerializationSetting::join_runtime_filter_exact_bytes_limit] = exact_bytes_limit;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions] = bloom_filter_hash_functions;
     settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling] = pass_ratio_threshold_for_disabling;

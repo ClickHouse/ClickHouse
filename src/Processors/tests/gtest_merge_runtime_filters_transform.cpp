@@ -8,10 +8,12 @@
 #include <Processors/ISink.h>
 #include <Processors/ISource.h>
 #include <Processors/ResizeProcessor.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -212,9 +214,8 @@ struct TestPipeline
     RuntimeFilterGeometry geometry = testGeometry();
     UInt64 max_received_state_bytes = MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES;
 
-    /// Builds the production wiring (`wireRuntimeFilterMergeBranch`): the data stream passes
-    /// through next to the self-contained filter branch, then feeds `data_sink` (a counting sink
-    /// by default). `filter_inputs` become the transform's inputs.
+    /// Data ports pass through; partial sources feed the merge, which ends in its own sink so the
+    /// executor schedules the filter branch independently of data-side demand.
     void build(
         Processors filter_inputs,
         ProcessorPtr data_source,
@@ -235,7 +236,25 @@ struct TestPipeline
             max_received_state_bytes);
 
         OutputPortRawPtrs data_ports{&data_source->getOutputs().front()};
-        auto cluster = wireRuntimeFilterMergeBranch(data_ports, std::move(filter_inputs), std::move(transform));
+        Processors cluster;
+        for (auto * port : data_ports)
+        {
+            auto pass = std::make_shared<ResizeProcessor>(port->getSharedHeader(), 1, 1);
+            connect(*port, pass->getInputs().front());
+            cluster.emplace_back(std::move(pass));
+        }
+
+        auto input = transform->getInputs().begin();
+        for (auto & source : filter_inputs)
+        {
+            connect(source->getOutputs().front(), *input++);
+            cluster.emplace_back(std::move(source));
+        }
+
+        auto sink = std::make_shared<EmptySink>(transform->getOutputs().front().getSharedHeader());
+        connect(transform->getOutputs().front(), sink->getPort());
+        cluster.emplace_back(std::move(transform));
+        cluster.emplace_back(std::move(sink));
 
         OutputPort * data_out = nullptr;
         for (const auto & processor : cluster)

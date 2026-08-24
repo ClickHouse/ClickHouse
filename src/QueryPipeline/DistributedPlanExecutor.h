@@ -147,9 +147,11 @@ struct ExchangeStreamSources
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
 
-/// Minimal serialization version: v1 if every producer uses the server-level exchange port (a v1 worker
-/// derives it locally), else v2.
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
+/// Minimal serialization version: v3 if the task carries runtime filter receive descriptors; else v2
+/// if any producer uses a per-replica exchange port; else v1 (a v1 worker derives the server-level
+/// exchange port locally).
+UInt64 chooseTaskSerializationVersion(
+    const DistributedQueryTask & task, const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
 
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription

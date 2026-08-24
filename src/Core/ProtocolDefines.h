@@ -84,7 +84,12 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+/// Version 7 adds filter exchange topology to `BuildRuntimeFilterStep` (runtime filter transport).
+/// An older worker would run the step as a local build and the filter would silently never arrive,
+/// so the serializer throws `SUPPORT_IS_DISABLED` when topology fields are set below version 7.
+/// Version 7 also introduces the `join_runtime_filter_exact_bytes_limit` plan setting and the
+/// `MergeRuntimeFilters` step name, both rejected by older peers.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -99,7 +104,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
+/// Version 3 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

@@ -2,8 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -233,31 +231,6 @@ void MergeRuntimeFiltersTransform::finalize()
     columns.emplace_back(std::move(column));
     output_chunk = Chunk(std::move(columns), 1);
     has_output_chunk = true;
-}
-
-Processors wireRuntimeFilterMergeBranch(
-    const OutputPortRawPtrs & data_ports, Processors partial_sources, std::shared_ptr<MergeRuntimeFiltersTransform> merge)
-{
-    Processors result;
-    for (auto * port : data_ports)
-    {
-        auto pass = std::make_shared<ResizeProcessor>(port->getSharedHeader(), 1, 1);
-        connect(*port, pass->getInputs().front());
-        result.emplace_back(std::move(pass));
-    }
-
-    auto input = merge->getInputs().begin();
-    for (auto & source : partial_sources)
-    {
-        connect(source->getOutputs().front(), *input++);
-        result.emplace_back(std::move(source));
-    }
-
-    auto sink = std::make_shared<EmptySink>(merge->getOutputs().front().getSharedHeader());
-    connect(merge->getOutputs().front(), sink->getPort());
-    result.emplace_back(std::move(merge));
-    result.emplace_back(std::move(sink));
-    return result;
 }
 
 }

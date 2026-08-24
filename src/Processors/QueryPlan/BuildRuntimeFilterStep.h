@@ -35,6 +35,37 @@ public:
     const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     bool allowsNotExactFilter() const { return allow_to_use_not_exact_filter; }
     const RuntimeFilterGeometry & getGeometry() const { return geometry; }
+    void setGeometry(const RuntimeFilterGeometry & geometry_) { geometry = geometry_; }
+
+    struct FilterExchange
+    {
+        String exchange_id;
+        Strings destination_buckets;
+    };
+
+    struct TreeExchange
+    {
+        String exchange_id;
+        /// Ordered buckets of the build stage; a task's parent is `own index / fan_in`.
+        Strings source_buckets;
+        size_t fan_in = 0;
+    };
+
+    /// Destinations are the consuming-stage task buckets. One filter may be applied in several
+    /// stages, so the partials go out over one exchange per receiving stage. Used when the build
+    /// stage has a single task (the task is then the root of the merge tree and broadcasts directly).
+    void addExchange(String exchange_id_, Strings destination_buckets_);
+
+    /// The build stage has several tasks and the partials go through a merge tree: each build task
+    /// sends its partial once, to its parent merge task, computed from the task's position in
+    /// `source_buckets` (the ordered buckets of the build stage) as `index / fan_in`. Mutually
+    /// exclusive with `addExchange`.
+    void setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_);
+
+    bool hasFilterExchanges() const { return !exchanges.empty() || tree_exchange; }
+
+    void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
+    std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
@@ -50,6 +81,7 @@ public:
 
 private:
     void updateOutputHeader() override;
+    void transformPipelineForTransport(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings);
 
     String filter_column_name;
     DataTypePtr filter_column_type;
@@ -69,6 +101,15 @@ private:
 
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     std::optional<UInt64> distinct_keys_hint;
+
+    /// Both empty: local build mode (register in this task's lookup). The distributed split assigns
+    /// the filter exchange(s) afterwards; then exactly one of the two is set.
+    std::vector<FilterExchange> exchanges;
+    std::optional<TreeExchange> tree_exchange;
+
+    /// Row estimate stamped before the plan is cut; consumed only by the initiator when sizing the
+    /// exact phase. Not serialized.
+    std::optional<UInt64> estimated_build_rows;
 };
 
 }

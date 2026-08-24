@@ -119,9 +119,9 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     return pipeline;
 }
 
-void MergeRuntimeFiltersStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void MergeRuntimeFiltersStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    geometry.serializeSettings(settings);
+    geometry.serializeSettings(settings, version);
 }
 
 void MergeRuntimeFiltersStep::serialize(Serialization & ctx) const

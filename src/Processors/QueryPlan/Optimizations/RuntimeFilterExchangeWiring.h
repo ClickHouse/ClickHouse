@@ -1,16 +1,17 @@
 #pragma once
+
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-/// Assigns exchanges to every send/receive runtime filter pair of a distributed plan (matched by
-/// the rendezvous key; see `wireDistributedRuntimeFilters`), once the stages and their task lists
+/// Discovers runtime-filter endpoints in a distributed plan (eligible `BuildRuntimeFilterStep`s and
+/// `__applyFilter` applications, matched by the rendezvous key) once the stages and their task lists
 /// exist. Called at the end of `makeDistributedPlan`; standalone so tests can drive it against
 /// synthetic stage/task sets and assert the exact exchange stream counts.
 ///
 /// A filter built by a single task is broadcast directly: one stream per destination task of every
-/// receiving stage. A filter built by `S > 1` tasks goes through a bounded fan-in merge tree
+/// consuming stage. A filter built by `S > 1` tasks goes through a bounded fan-in merge tree
 /// instead of all-to-all delivery: every build task sends its partial once to its parent merge
 /// task, intermediate merge stages (new stages of `MergeRuntimeFiltersStep` tasks, fan-in
 /// `RUNTIME_FILTER_MERGE_FAN_IN`) merge complete child states, and the single root task broadcasts

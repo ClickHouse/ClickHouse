@@ -24,10 +24,7 @@ SELECT '-- tiny probe side, huge build side: the filter cannot arrive in time, r
 SELECT count() FROM tiny, huge WHERE tid = hid;
 
 SELECT '-- Nullable key is not transportable, the local filter stays';
-SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM (
-    EXPLAIN SELECT count() FROM big_nullable, small_nullable WHERE bid = sid
-) WHERE explain LIKE '%RuntimeFilter%';
-SELECT count() FROM big_nullable, small_nullable WHERE bid = sid;
+SELECT count() FROM big_nullable, small_nullable WHERE bid = sid SETTINGS log_comment = '04892_nullable';
 
 SELECT '-- persisted exchanges';
 SELECT count() FROM huge, tiny WHERE hid = tid SETTINGS distributed_plan_force_exchange_kind = 'Persisted';
@@ -42,7 +39,53 @@ SELECT count() FROM (SELECT hid FROM huge, tiny WHERE hid = tid LIMIT 10);
 -- transitive `mid ⋈ tiny` bushy join. `mid` between `tiny` and `huge` keeps every admission
 -- decision far from its estimate threshold, so randomized index-analysis jitter cannot flip the plan.
 SELECT '-- two joins, each with its own filter';
-SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM (
-    EXPLAIN SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN tiny AS t2 ON h.hid2 = t2.tid
-) WHERE explain LIKE '%SendRuntimeFilter%' OR explain LIKE '%ReceiveRuntimeFilter%';
-SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN tiny AS t2 ON h.hid2 = t2.tid;
+SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN tiny AS t2 ON h.hid2 = t2.tid
+    SETTINGS log_comment = '04892_two_joins';
+
+SET make_distributed_plan = 0;
+SYSTEM FLUSH LOGS query_log, text_log;
+
+-- Local distributed-plan tasks inherit `log_comment` and log as `stage_%` / `rf_merge_%`. A
+-- transported filter is registered under one union key on every consuming task; the same key
+-- repeating in `RuntimeFilter` registrations is the transport signal.
+SELECT '-- Nullable key sent no states';
+SELECT count() > 0 AND (
+    SELECT count()
+    FROM
+    (
+        SELECT extract(message, 'under key \'([^\']+)\'') AS filter_key
+        FROM system.text_log
+        WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
+          AND message LIKE 'Registered runtime filter%'
+          AND query_id IN (
+              SELECT query_id FROM system.query_log
+              WHERE type = 'QueryFinish' AND event_date >= yesterday()
+                AND log_comment = '04892_nullable'
+                AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
+        GROUP BY filter_key
+        HAVING count() >= 2
+    )
+) = 0
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday()
+  AND log_comment = '04892_nullable'
+  AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%');
+
+SELECT '-- two joins, each with a transported filter';
+SELECT uniqExact(filter_name) = 2
+FROM
+(
+    SELECT
+        extract(message, 'Registered runtime filter \'([^\']+)\'') AS filter_name,
+        extract(message, 'under key \'([^\']+)\'') AS filter_key
+    FROM system.text_log
+    WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
+      AND message LIKE 'Registered runtime filter%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE type = 'QueryFinish' AND event_date >= yesterday()
+            AND log_comment = '04892_two_joins'
+            AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
+    GROUP BY filter_name, filter_key
+    HAVING count() >= 2
+);

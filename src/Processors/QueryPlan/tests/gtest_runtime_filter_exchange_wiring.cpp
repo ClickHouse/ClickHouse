@@ -1,13 +1,23 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReceiveRuntimeFilterStep.h>
-#include <Processors/QueryPlan/SendRuntimeFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
+#include <Common/typeid_cast.h>
 
 #include <gtest/gtest.h>
 
@@ -35,7 +45,72 @@ RuntimeFilterGeometry testGeometry()
 
 SharedHeader dataHeader()
 {
-    return std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "x")});
+    return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "x")});
+}
+
+void expectGeometryEq(const RuntimeFilterGeometry & left, const RuntimeFilterGeometry & right)
+{
+    EXPECT_EQ(left.exact_values_limit, right.exact_values_limit);
+    EXPECT_EQ(left.exact_bytes_limit, right.exact_bytes_limit);
+    EXPECT_EQ(left.bloom_filter_bytes, right.bloom_filter_bytes);
+    EXPECT_EQ(left.bloom_filter_hash_functions, right.bloom_filter_hash_functions);
+    EXPECT_DOUBLE_EQ(left.pass_ratio_threshold_for_disabling, right.pass_ratio_threshold_for_disabling);
+    EXPECT_EQ(left.blocks_to_skip_before_reenabling, right.blocks_to_skip_before_reenabling);
+    EXPECT_DOUBLE_EQ(left.max_ratio_of_set_bits_in_bloom_filter, right.max_ratio_of_set_bits_in_bloom_filter);
+}
+
+BuildRuntimeFilterStep * findBuildStep(QueryPlan & fragment)
+{
+    std::vector<QueryPlan::Node *> stack{fragment.getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node)
+            continue;
+        if (auto * build = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+            return build;
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+    return nullptr;
+}
+
+ActionsDAG makeApplyFilterDAG(const String & filter_key, const String & filter_name)
+{
+    tryRegisterFunctions();
+
+    ActionsDAG dag(dataHeader()->getColumnsWithTypeAndName());
+    const auto & key_input = dag.findInOutputs("x");
+
+    auto string_type = std::make_shared<DataTypeString>();
+    auto id_column = string_type->createColumnConst(0, filter_key);
+    const auto & label = dag.addColumn(
+        std::move(id_column),
+        string_type,
+        filter_name,
+        /*is_deterministic_constant=*/false,
+        /*is_masked_secret=*/false,
+        /*is_runtime_filter_id=*/true);
+
+    auto apply_filter = FunctionFactory::instance().get("__applyFilter", /*context*/ nullptr);
+    const auto & application = dag.addFunction(apply_filter, {&label, &key_input}, {});
+
+    auto & outputs = dag.getOutputs();
+    outputs.clear();
+    outputs.push_back(&key_input);
+    outputs.push_back(&application);
+    return dag;
+}
+
+String applyFilterResultName(const ActionsDAG & dag)
+{
+    for (const auto * node : dag.getOutputs())
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__applyFilter")
+            return node->result_name;
+    }
+    return {};
 }
 
 DistributedQueryTask makeTask(const String & stage_name, size_t bucket)
@@ -46,26 +121,35 @@ DistributedQueryTask makeTask(const String & stage_name, size_t bucket)
     return task;
 }
 
-void addSendStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, const String & filter_key)
+void addBuildStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, const String & filter_key)
 {
     DistributedQueryStage stage;
     QueryPlan fragment;
     fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
     fragment.addStep(
-        std::make_unique<SendRuntimeFilterStep>(dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", filter_key, testGeometry()));
+        std::make_unique<BuildRuntimeFilterStep>(
+            dataHeader(),
+            "x",
+            std::make_shared<DataTypeUInt64>(),
+            "f",
+            filter_key,
+            testGeometry(),
+            /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false));
     stage.query_plan_fragment = std::move(fragment);
     for (size_t task = 0; task < num_tasks; ++task)
         stage.tasks.push_back(makeTask(name, task));
     plan.stages[name] = std::move(stage);
 }
 
-void addReceiveStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, const String & filter_key)
+void addConsumerStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, const String & filter_key)
 {
     DistributedQueryStage stage;
     QueryPlan fragment;
     fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
-    fragment.addStep(
-        std::make_unique<ReceiveRuntimeFilterStep>(dataHeader(), "f", filter_key, std::make_shared<DataTypeUInt64>(), testGeometry()));
+    auto dag = makeApplyFilterDAG(filter_key, "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
     stage.query_plan_fragment = std::move(fragment);
     for (size_t task = 0; task < num_tasks; ++task)
         stage.tasks.push_back(makeTask(name, task));
@@ -103,13 +187,57 @@ Strings mergeStageNames(const DistributedQueryPlan & plan)
     return names;
 }
 
+void expectConsumerDescriptors(const DistributedQueryPlan & plan, const String & stage_name, const BuildRuntimeFilterStep & build)
+{
+    for (const auto & task : plan.stages.at(stage_name).tasks)
+    {
+        ASSERT_EQ(task.runtime_filter_descriptors.size(), 1u);
+        const auto & desc = task.runtime_filter_descriptors.front();
+        EXPECT_EQ(desc.filter_key, build.getFilterKey());
+        EXPECT_EQ(desc.filter_name, build.getFilterName());
+        ASSERT_TRUE(desc.key_column_type);
+        EXPECT_TRUE(desc.key_column_type->equals(*build.getFilterColumnType()));
+        expectGeometryEq(desc.geometry, build.getGeometry());
+        desc.geometry.validateTransported();
+
+        std::multiset<String> descriptor_streams;
+        for (const auto & stream : desc.streams)
+            descriptor_streams.insert(stream.toString());
+        std::multiset<String> input_streams;
+        for (const auto & stream : task.input_exchange_streams)
+            input_streams.insert(stream.toString());
+        EXPECT_EQ(descriptor_streams, input_streams);
+        EXPECT_FALSE(desc.streams.empty());
+    }
+}
+
+void expectLocalBuild(DistributedQueryPlan & plan, const String & stage_name)
+{
+    auto * build = findBuildStep(plan.stages.at(stage_name).query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    EXPECT_FALSE(build->hasFilterExchanges());
+    for (const auto & task : plan.stages.at(stage_name).tasks)
+        EXPECT_TRUE(task.runtime_filter_descriptors.empty());
+}
+
+void expectWiredBuild(DistributedQueryPlan & plan, const String & stage_name, bool expect_merge_tree)
+{
+    auto * build = findBuildStep(plan.stages.at(stage_name).query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    EXPECT_TRUE(build->hasFilterExchanges());
+    if (expect_merge_tree)
+        EXPECT_FALSE(mergeStageNames(plan).empty());
+    else
+        EXPECT_TRUE(mergeStageNames(plan).empty());
+}
+
 /// Builds the symmetric case: one build stage of `num_build_tasks` and one receive stage of
 /// `num_receive_tasks`, wires it, and returns the plan.
 DistributedQueryPlan wireSymmetric(size_t num_build_tasks, size_t num_receive_tasks)
 {
     DistributedQueryPlan plan;
-    addSendStage(plan, "build", num_build_tasks, "key");
-    addReceiveStage(plan, "probe", num_receive_tasks, "key");
+    addBuildStage(plan, "build", num_build_tasks, "key");
+    addConsumerStage(plan, "probe", num_receive_tasks, "key");
     size_t next_exchange_id = 100;
     wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
     return plan;
@@ -117,7 +245,28 @@ DistributedQueryPlan wireSymmetric(size_t num_build_tasks, size_t num_receive_ta
 
 }
 
-TEST(RuntimeFilterExchangeWiring, SymmetricTopologyIsLinear)
+/// `__applyFilter` requires a query context whenever the label is non-empty (it looks the filter
+/// up in that context's runtime-filter lookup, and fail-opens on a miss). Constructing a `FilterStep`
+/// computes the output header by executing the DAG on an empty block, so every consumer-fragment
+/// construction and `wireRuntimeFilterExchangeTopology` call must run with the test thread attached
+/// to a query context. Production always has one.
+class RuntimeFilterExchangeWiring : public ::testing::Test
+{
+protected:
+    RuntimeFilterExchangeWiring()
+        : query_context(Context::createCopy(getContext().context))
+    {
+        query_context->makeQueryContext();
+        chassert(&CurrentThread::get() == &thread_status);
+        query_scope = QueryScope::create(query_context);
+    }
+
+    ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    QueryScope query_scope;
+};
+
+TEST_F(RuntimeFilterExchangeWiring, SymmetricTopologyIsLinear)
 {
     /// With `S <= fan_in` build tasks and one receive stage of the same size, the tree is a single
     /// root: S streams into it and S broadcast streams out, i.e. exactly 2 * S, where all-to-all
@@ -143,10 +292,15 @@ TEST(RuntimeFilterExchangeWiring, SymmetricTopologyIsLinear)
         /// The scheduler chain: probe depends on the root merge stage, which depends on build.
         EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
         EXPECT_TRUE(plan.stage_depends_on.at(merge_stages.front()).contains("build"));
+
+        expectWiredBuild(plan, "build", /*expect_merge_tree=*/true);
+        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+        ASSERT_NE(build, nullptr);
+        expectConsumerDescriptors(plan, "probe", *build);
     }
 }
 
-TEST(RuntimeFilterExchangeWiring, SingleBuildTaskBroadcastsDirectly)
+TEST_F(RuntimeFilterExchangeWiring, SingleBuildTaskBroadcastsDirectly)
 {
     auto plan = wireSymmetric(1, 4);
 
@@ -154,9 +308,14 @@ TEST(RuntimeFilterExchangeWiring, SingleBuildTaskBroadcastsDirectly)
     EXPECT_TRUE(mergeStageNames(plan).empty());
     EXPECT_EQ(plan.stages.at("build").tasks.front().output_exchange_streams.size(), 4u);
     EXPECT_TRUE(plan.stage_depends_on.at("probe").contains("build"));
+
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/false);
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    expectConsumerDescriptors(plan, "probe", *build);
 }
 
-TEST(RuntimeFilterExchangeWiring, MultiLevelTree)
+TEST_F(RuntimeFilterExchangeWiring, MultiLevelTree)
 {
     /// 40 build tasks with fan-in 16 need two merge levels: ceil(40 / 16) = 3 tasks, then the
     /// root. Streams: 40 into level one, 3 into the root, 4 broadcast.
@@ -174,14 +333,19 @@ TEST(RuntimeFilterExchangeWiring, MultiLevelTree)
     for (const auto & name : merge_stages)
         for (const auto & task : plan.stages.at(name).tasks)
             EXPECT_LE(task.input_exchange_streams.size(), RUNTIME_FILTER_MERGE_FAN_IN);
+
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/true);
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    expectConsumerDescriptors(plan, "probe", *build);
 }
 
-TEST(RuntimeFilterExchangeWiring, MultipleReceiveStages)
+TEST_F(RuntimeFilterExchangeWiring, MultipleReceiveStages)
 {
     DistributedQueryPlan plan;
-    addSendStage(plan, "build", 8, "key");
-    addReceiveStage(plan, "probe_a", 4, "key");
-    addReceiveStage(plan, "probe_b", 2, "key");
+    addBuildStage(plan, "build", 8, "key");
+    addConsumerStage(plan, "probe_a", 4, "key");
+    addConsumerStage(plan, "probe_b", 2, "key");
     size_t next_exchange_id = 100;
     wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
 
@@ -205,18 +369,33 @@ TEST(RuntimeFilterExchangeWiring, MultipleReceiveStages)
     EXPECT_EQ(exchanges_a.size(), 1u);
     EXPECT_EQ(exchanges_b.size(), 1u);
     EXPECT_NE(*exchanges_a.begin(), *exchanges_b.begin());
+
+    expectWiredBuild(plan, "build", /*expect_merge_tree=*/true);
+    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+    ASSERT_NE(build, nullptr);
+    expectConsumerDescriptors(plan, "probe_a", *build);
+    expectConsumerDescriptors(plan, "probe_b", *build);
 }
 
-TEST(RuntimeFilterExchangeWiring, ReceiveInSendStageStaysLocal)
+TEST_F(RuntimeFilterExchangeWiring, ApplicationInBuildStageStaysLocal)
 {
     DistributedQueryPlan plan;
     DistributedQueryStage stage;
     QueryPlan fragment;
     fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
     fragment.addStep(
-        std::make_unique<SendRuntimeFilterStep>(dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", "key", testGeometry()));
-    fragment.addStep(
-        std::make_unique<ReceiveRuntimeFilterStep>(dataHeader(), "f", "key", std::make_shared<DataTypeUInt64>(), testGeometry()));
+        std::make_unique<BuildRuntimeFilterStep>(
+            dataHeader(),
+            "x",
+            std::make_shared<DataTypeUInt64>(),
+            "f",
+            "key",
+            testGeometry(),
+            /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false));
+    auto dag = makeApplyFilterDAG("key", "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
     stage.query_plan_fragment = std::move(fragment);
     stage.tasks.push_back(makeTask("both", 0));
     plan.stages["both"] = std::move(stage);
@@ -227,15 +406,16 @@ TEST(RuntimeFilterExchangeWiring, ReceiveInSendStageStaysLocal)
     EXPECT_EQ(countStreams(plan), 0u);
     EXPECT_TRUE(plan.exchange_descriptions.empty());
     EXPECT_EQ(next_exchange_id, 100u);
+    expectLocalBuild(plan, "both");
 }
 
-TEST(RuntimeFilterExchangeWiring, PersistedDataEdgeMakesChainPersisted)
+TEST_F(RuntimeFilterExchangeWiring, PersistedDataEdgeMakesChainPersisted)
 {
     for (size_t build_tasks : {1, 8})
     {
         DistributedQueryPlan plan;
-        addSendStage(plan, "build", build_tasks, "key");
-        addReceiveStage(plan, "probe", 4, "key");
+        addBuildStage(plan, "build", build_tasks, "key");
+        addConsumerStage(plan, "probe", 4, "key");
 
         /// A pre-existing Persisted data edge between the same two stages: the scheduler will run
         /// the build stage to completion before the probe stage starts, so the whole filter chain
@@ -260,10 +440,15 @@ TEST(RuntimeFilterExchangeWiring, PersistedDataEdgeMakesChainPersisted)
             EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Persisted) << name;
         }
         EXPECT_GT(filter_exchanges, 0u);
+
+        expectWiredBuild(plan, "build", /*expect_merge_tree=*/build_tasks > 1);
+        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+        ASSERT_NE(build, nullptr);
+        expectConsumerDescriptors(plan, "probe", *build);
     }
 }
 
-TEST(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
+TEST_F(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
 {
     /// The realistic shape: the probe producer stage that receives the filter is a sibling of the
     /// build stage, so there is no data edge between them whose kind could be copied. A Persisted
@@ -272,8 +457,8 @@ TEST(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
     for (size_t build_tasks : {1, 8})
     {
         DistributedQueryPlan plan;
-        addSendStage(plan, "build", build_tasks, "key");
-        addReceiveStage(plan, "probe", 4, "key");
+        addBuildStage(plan, "build", build_tasks, "key");
+        addConsumerStage(plan, "probe", 4, "key");
         ASSERT_TRUE(plan.stage_depends_on.empty()) << "the sibling shape must have no data edge";
 
         size_t next_exchange_id = 100;
@@ -282,16 +467,21 @@ TEST(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
         EXPECT_FALSE(plan.exchange_descriptions.empty()) << "for " << build_tasks << " build tasks";
         for (const auto & [name, exchange] : plan.exchange_descriptions)
             EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Persisted) << name;
+
+        expectWiredBuild(plan, "build", /*expect_merge_tree=*/build_tasks > 1);
+        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+        ASSERT_NE(build, nullptr);
+        expectConsumerDescriptors(plan, "probe", *build);
     }
 }
 
-TEST(RuntimeFilterExchangeWiring, StreamingPlanKindStaysStreaming)
+TEST_F(RuntimeFilterExchangeWiring, StreamingPlanKindStaysStreaming)
 {
     for (size_t build_tasks : {1, 8})
     {
         DistributedQueryPlan plan;
-        addSendStage(plan, "build", build_tasks, "key");
-        addReceiveStage(plan, "probe", 4, "key");
+        addBuildStage(plan, "build", build_tasks, "key");
+        addConsumerStage(plan, "probe", 4, "key");
 
         size_t next_exchange_id = 100;
         wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
@@ -299,17 +489,24 @@ TEST(RuntimeFilterExchangeWiring, StreamingPlanKindStaysStreaming)
         EXPECT_FALSE(plan.exchange_descriptions.empty()) << "for " << build_tasks << " build tasks";
         for (const auto & [name, exchange] : plan.exchange_descriptions)
             EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Streaming) << name;
+
+        expectWiredBuild(plan, "build", /*expect_merge_tree=*/build_tasks > 1);
+        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
+        ASSERT_NE(build, nullptr);
+        expectConsumerDescriptors(plan, "probe", *build);
     }
 }
 
-TEST(RuntimeFilterExchangeWiring, SendWithoutRemoteReceiveStaysPassthrough)
+TEST_F(RuntimeFilterExchangeWiring, BuildWithoutConsumersStaysLocal)
 {
     DistributedQueryPlan plan;
-    addSendStage(plan, "build", 4, "key");
+    addBuildStage(plan, "build", 4, "key");
 
     size_t next_exchange_id = 100;
     wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
 
     EXPECT_EQ(countStreams(plan), 0u);
     EXPECT_TRUE(plan.exchange_descriptions.empty());
+    EXPECT_EQ(next_exchange_id, 100u);
+    expectLocalBuild(plan, "build");
 }
