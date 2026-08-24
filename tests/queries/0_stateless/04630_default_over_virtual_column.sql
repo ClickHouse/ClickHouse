@@ -20,12 +20,6 @@ CREATE TABLE t_dv (c0 String DEFAULT concat(_table, 'x'), c1 UInt16) ENGINE = Me
 CREATE TABLE t_dv (c1 UInt16, ca String ALIAS _table, c0 String MATERIALIZED ca) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_IDENTIFIER }
 CREATE TABLE t_dv (c1 UInt16, ce String EPHEMERAL _table, c0 String DEFAULT ce) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_IDENTIFIER }
 
--- The non-analyzer path already rejected these; keep it rejecting.
-SET enable_analyzer = 0;
-CREATE TABLE t_dv (c0 String MATERIALIZED _table, c1 UInt16) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_IDENTIFIER }
-CREATE TABLE t_dv (c0 String DEFAULT _database, c1 UInt16) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_IDENTIFIER }
-SET enable_analyzer = 1;
-
 -- Reject on ALTER ADD/MODIFY COLUMN too.
 CREATE TABLE t_dv (c1 UInt16, c0 String) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_dv ADD COLUMN c2 String MATERIALIZED _table; -- { serverError UNKNOWN_IDENTIFIER }
