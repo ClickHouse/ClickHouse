@@ -10,6 +10,9 @@ SET join_use_nulls = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
+-- The printed conditions are mirrored when the join order optimizer swaps the sides
+-- (e.g. under randomized `query_plan_optimize_join_order_randomize`); disable it to keep them stable.
+SET query_plan_optimize_join_order_limit = 0;
 
 DROP TABLE IF EXISTS t_sel_l;
 DROP TABLE IF EXISTS t_sel_r;
