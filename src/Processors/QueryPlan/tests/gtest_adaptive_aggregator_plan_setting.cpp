@@ -112,10 +112,11 @@ TEST(AdaptiveAggregatorPlanSetting, NotCarriedTowardsAPeerThatPredatesTheNames)
 
 TEST(AdaptiveAggregatorPlanSetting, DefaultsToPreFeatureBehaviorWhenAbsent)
 {
-    /// A new worker reading a version-6 plan does not receive the two settings at all. Its
+    /// A new worker reading a version-6 plan does not receive the adaptive settings at all. Its
     /// defaults must preserve the behavior of the old initiator instead of enabling a strategy
     /// the initiator could not have selected.
     QueryPlanSerializationSettings settings;
     EXPECT_FALSE(settings[QueryPlanSerializationSetting::enable_adaptive_aggregator]);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold], 0);
+    EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes], 0);
 }
