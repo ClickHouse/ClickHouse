@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.9",
+        {
+            {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
+        });
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
@@ -59,7 +63,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_window_size", 4194304, 4194304, "New experimental ReaderExecutor setting: bytes served per read window."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental ReaderExecutor setting: buffer chunk size for source reads."},
             {"input_format_json_max_string_column_growth_step", 0, 0, "New setting to cap the power-of-two growth of the JSON column's internal String buffers while materializing JSON, bounding over-allocation."},
-            {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"join_algorithm", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
