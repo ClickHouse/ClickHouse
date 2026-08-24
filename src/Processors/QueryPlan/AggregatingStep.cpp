@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -126,6 +127,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     return false;
 }
 
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;
@@ -210,6 +222,11 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
+{
+    params.top_k = std::move(top_k);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -805,6 +822,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// An aggregation without keys produces at most one row, so fanning its output out to
+    /// multiple streams would only add processors and scheduling overhead to every downstream
+    /// step (and to the whole pipeline execution) without any parallelism to gain.
+    const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -846,7 +868,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
+        pipeline.resize(streams_after_aggregation, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
@@ -855,7 +877,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
+        pipeline.resize(streams_after_aggregation);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
