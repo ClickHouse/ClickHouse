@@ -9,13 +9,12 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Core/ProtocolDefines.h>
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanSerializationSetting
@@ -134,12 +133,11 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
-    const bool serialize_filter = element_filter.has_value();
-    if (serialize_filter && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_FILTER)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: serializing an ArrayJoinStep with an element filter requires query "
-            "plan serialization version >= {}; all nodes must run the same version",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_FILTER);
+    /// Fusion is disabled for serialized/distributed plans (fuseFilterIntoArrayJoin), so a serialized step
+    /// never carries an element filter and the wire format stays identical to older versions. Fail closed
+    /// if that ever breaks rather than shipping a filter an older worker can't read.
+    if (element_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ArrayJoinStep with an element filter must not be serialized");
 
     UInt8 flags = 0;
     if (array_join.is_left)
@@ -151,22 +149,12 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     /// eager replication, which is the correct fallback for a performance-only flag.
     if (enable_lazy_columns_replication)
         flags |= 4;
-    if (serialize_filter)
-        flags |= 8;
-    if (serialize_filter && remove_element_filter_column)
-        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
         writeStringBinary(column, ctx.out);
-
-    if (serialize_filter)
-    {
-        writeStringBinary(element_filter_column_name, ctx.out);
-        element_filter->serialize(ctx.out, ctx.registry);
-    }
 }
 
 QueryPlanStepPtr ArrayJoinStep::clone() const
@@ -182,8 +170,6 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
     bool enable_lazy_columns_replication = bool(flags & 4);
-    bool has_element_filter = bool(flags & 8);
-    bool remove_element_filter_column = bool(flags & 16);
 
     UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
@@ -201,14 +187,6 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         is_unaligned,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         enable_lazy_columns_replication);
-
-    if (has_element_filter)
-    {
-        String filter_column_name;
-        readStringBinary(filter_column_name, ctx.in);
-        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
-        step->setElementFilter(std::move(filter_dag), std::move(filter_column_name), remove_element_filter_column);
-    }
 
     return step;
 }

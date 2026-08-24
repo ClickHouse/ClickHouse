@@ -47,7 +47,7 @@ INSERT INTO t_fuse4 SELECT number, arrayMap(x -> if(x % 2 = 0, toNullable(toInt3
 SELECT (SELECT sum(cityHash64(assumeNotNull(elem))) FROM (SELECT elem FROM t_fuse4 ARRAY JOIN arr AS elem WHERE elem IS NOT NULL AND elem > 1) SETTINGS query_plan_fuse_filter_into_array_join = 1)
      = (SELECT sum(cityHash64(assumeNotNull(elem))) FROM (SELECT elem FROM t_fuse4 ARRAY JOIN arr AS elem WHERE elem IS NOT NULL AND elem > 1) SETTINGS query_plan_fuse_filter_into_array_join = 0);
 
--- Plan serialization round-trip preserves the fused element filter.
+-- Fusion is skipped under plan serialization, the result is still correct.
 SELECT (SELECT sum(cityHash64(elem, payload)) FROM (SELECT elem, payload FROM t_fuse ARRAY JOIN arr AS elem WHERE elem = 'e2') SETTINGS query_plan_fuse_filter_into_array_join = 1, serialize_query_plan = 1)
      = (SELECT sum(cityHash64(elem, payload)) FROM (SELECT elem, payload FROM t_fuse ARRAY JOIN arr AS elem WHERE elem = 'e2') SETTINGS query_plan_fuse_filter_into_array_join = 0);
 
