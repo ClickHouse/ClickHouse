@@ -59,12 +59,15 @@ size_t MarksInCompressedFile::approximateMemoryUsage() const
 
 MarksInCompressedFile::MarksInCompressedFile(
     size_t num_marks_,
+    size_t num_distinct_marks_capped_,
     PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
     PODArray<UInt64, 4096, JemallocCacheAllocator> && packed_)
     : num_marks(num_marks_)
+    , num_distinct_marks_capped(static_cast<UInt8>(num_distinct_marks_capped_))
     , blocks(std::move(blocks_))
     , packed(std::move(packed_))
 {
+    chassert(num_distinct_marks_capped_ <= DISTINCT_MARKS_CAP);
 }
 
 MarksInCompressedFile::Builder::Builder(size_t total_marks_)
@@ -138,6 +141,13 @@ void MarksInCompressedFile::Builder::flushBlock(const MarkInCompressedFile * dat
         max_y = std::max(max_y, data[i].offset_in_decompressed_block);
         block.trailing_zero_bits_in_y
             = std::min(block.trailing_zero_bits_in_y, static_cast<UInt8>(getTrailingZeroBits(data[i].offset_in_decompressed_block)));
+
+        if (data[i] != last_mark)
+        {
+            last_mark = data[i];
+            if (num_distinct_marks_capped < MarksInCompressedFile::DISTINCT_MARKS_CAP)
+                ++num_distinct_marks_capped;
+        }
     }
 
     block.bits_for_x = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x));
@@ -192,7 +202,7 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
     packed = std::move(exact_packed);
 
     return std::shared_ptr<MarksInCompressedFile>(
-        new MarksInCompressedFile(total_marks, std::move(blocks), std::move(packed)));
+        new MarksInCompressedFile(total_marks, num_distinct_marks_capped, std::move(blocks), std::move(packed)));
 }
 
 }
