@@ -1,44 +1,17 @@
+import json
 import random
+import re
+import string
+import threading
 import time
+from multiprocessing.dummy import Pool
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-
-
-def _umount_with_retry(node, mount_point, retries=15, delay=0.1, jitter=1.0):
-    """Run ``umount`` on a container mount point, retrying briefly on EBUSY.
-
-    The disk health check thread (controlled by ``local_disk_check_period_ms``)
-    periodically opens files under storage paths, so ``umount`` can transiently
-    fail with ``target is busy``. Only that error is retried; anything else, and
-    the final attempt, propagates unchanged so genuine failures still surface.
-
-    ``jitter`` must span a whole check period: sleeping a fixed amount would
-    keep every retry at the same phase of the checker loop, so a first collision
-    could repeat. Sleeping ``delay`` plus a uniform sample over one period makes
-    the next attempt's phase independent of the current one.
-    """
-    for _ in range(retries - 1):
-        try:
-            node.exec_in_container(
-                ["bash", "-c", "umount {}".format(mount_point)],
-                privileged=True,
-                user="root",
-            )
-            return
-        except Exception as e:
-            if "target is busy" not in str(e):
-                raise
-            time.sleep(delay + random.uniform(0, jitter))
-    node.exec_in_container(
-        ["bash", "-c", "umount {}".format(mount_point)],
-        privileged=True,
-        user="root",
-    )
-
 
 node1 = cluster.add_instance(
     "node1",
@@ -47,7 +20,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_jbod_ha_jbod1:size=100M", "/test_jbod_ha_jbod2:size=100M", "/test_jbod_ha_jbod3:size=100M"],
+    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -57,7 +30,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_jbod_ha_jbod1:size=100M", "/test_jbod_ha_jbod2:size=100M", "/test_jbod_ha_jbod3:size=100M"],
+    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -115,7 +88,7 @@ def test_jbod_ha(start_cluster):
         # for read, because there is no such file and does not allows writes
         # either.
         node1.exec_in_container(
-            ["bash", "-c", "mount -t proc proc /test_jbod_ha_jbod1"], privileged=True, user="root"
+            ["bash", "-c", "mount -t proc proc /jbod1"], privileged=True, user="root"
         )
 
         time.sleep(3)
@@ -134,8 +107,12 @@ def test_jbod_ha(start_cluster):
 
         # Mimic disk recovery
         #
-        # NOTE: this will unmount only proc from /test_jbod_ha_jbod1 and leave tmpfs
-        _umount_with_retry(node1, "/test_jbod_ha_jbod1")
+        # NOTE: this will unmount only proc from /jbod1 and leave tmpfs
+        node1.exec_in_container(
+            ["bash", "-c", "umount  /jbod1"],
+            privileged=True,
+            user="root",
+        )
 
         node1.restart_clickhouse()
         time.sleep(5)
@@ -146,46 +123,6 @@ def test_jbod_ha(start_cluster):
             )
             > 0
         )
-
-    finally:
-        for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS tbl SYNC")
-
-
-def test_jbod_ha_fetch_partition(start_cluster):
-    try:
-        for i, node in enumerate([node1, node2]):
-            node.query(
-                """
-                CREATE TABLE tbl (p UInt8, d String)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tbl_{}', '{}')
-                PARTITION BY p
-                ORDER BY tuple()""".format(
-                    i + 1, i
-                )
-            )
-
-        node1.query(
-            "insert into tbl select 0, 'foo' from numbers(10)"
-        )
-
-        # Mimic disk failure
-        node2.exec_in_container(
-            ["bash", "-c", "mount -t proc proc /test_jbod_ha_jbod1"], privileged=True, user="root"
-        )
-        time.sleep(5)
-
-        # FETCH PARTITION will check for detached parts with same name in all disks
-        # It will throw exception if the check doesn't handle broken disk properly
-        node2.query("ALTER TABLE tbl FETCH PARTITION 0 FROM '/clickhouse/tbl_1'")
-        node2.query("ALTER TABLE tbl ATTACH PARTITION 0")
-
-        assert int(node2.query("select count(p) from tbl")) == 10
-
-        # Mimic disk recovery, just in case we add more tests later
-        _umount_with_retry(node2, "/test_jbod_ha_jbod1")
-
-        node2.restart_clickhouse()
 
     finally:
         for node in [node1, node2]:

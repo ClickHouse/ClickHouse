@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -19,12 +17,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
@@ -73,11 +65,6 @@ namespace
             ASTPtr x;
             if (!parser.parse(pos, x, expected))
                 return false;
-
-            /// This only checks for top-level aliases, nested aliases are always parenthesized so they
-            /// do not cause a formatting inconsistency.
-            if (!x->tryGetAlias().empty())
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Top-level aliases are not allowed in row policy filter expressions.");
 
             expr = x;
             return true;
@@ -187,7 +174,7 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -200,7 +187,7 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -253,7 +240,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!names_parser.parse(pos, names_ast, expected))
         return false;
 
-    auto names = boost::static_pointer_cast<ASTRowPolicyNames>(names_ast);
+    auto names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(names_ast);
     String cluster = std::exchange(names->cluster, "");
 
     String new_short_name;
@@ -268,7 +255,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         if (!is_restrictive)
         {
-            bool new_is_restrictive = false;
+            bool new_is_restrictive;
             if (parseAsRestrictiveOrPermissive(pos, expected, new_is_restrictive))
             {
                 is_restrictive = new_is_restrictive;
@@ -292,13 +279,13 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         break;
     }
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = make_intrusive<ASTCreateRowPolicyQuery>();
+    auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
 
     query->alter = alter;
@@ -316,70 +303,4 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementRowPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROW POLICY",
-    {
-        .description = R"(
-Creates a row policy, i.e. a filter which determines which rows a user can read from a table. Row policies only make
-sense for users with read-only access: a user who can modify a table or copy partitions between tables can defeat the
-restrictions of a row policy.
-
-**Examples**
-
-**Restrict the visible rows of a table**
-
-```sql title="Query"
-CREATE ROW POLICY pol1 ON table1
-    FOR SELECT USING id = 1
-    TO accountant;
-```
-)",
-        .syntax = R"(
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
-    [ON CLUSTER cluster_name]
-    ON { [db.]table | db.* } [, ...]
-    [IN access_storage_type]
-    [FOR SELECT] USING condition
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
-    });
-
-    factory.registerStatement("ALTER ROW POLICY",
-    {
-        .description = R"(
-Changes a row policy: renames it and changes its condition, its kind (permissive or restrictive) and the roles and
-users it applies to.
-
-**Examples**
-
-**Rename a row policy**
-
-```sql title="Query"
-ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
-```
-)",
-        .syntax = R"(
-ALTER [ROW] POLICY [IF EXISTS] name [, ...]
-    ON { [database.]table | database.* } [, ...]
-    [RENAME TO new_name]
-    [ON CLUSTER cluster_name]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
-    });
-}
-
 }

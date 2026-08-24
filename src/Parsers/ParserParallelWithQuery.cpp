@@ -2,8 +2,6 @@
 
 #include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -38,41 +36,11 @@ bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         old_pos = pos;
     } while (keyword_parallel_with.ignore(pos, expected));
 
-    auto res = make_intrusive<ASTParallelWithQuery>();
+    auto res = std::make_shared<ASTParallelWithQuery>();
     res->children = std::move(subqueries);
     node = res;
 
     return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementParallelWith(StatementFactory & factory)
-{
-    factory.registerStatement("PARALLEL WITH",
-    {
-        .description = R"(
-Executes several statements in parallel. It can be useful for statements which take a long time and do not depend on
-each other, for example the creation of many tables.
-
-**Examples**
-
-**Create two tables in parallel**
-
-```sql title="Query"
-CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
-PARALLEL WITH
-CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
-```
-)",
-        .syntax = R"(
-statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
-)",
-        .related = {"CREATE", "DROP", "SELECT"},
-    });
 }
 
 }

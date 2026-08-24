@@ -1,0 +1,125 @@
+220	18	347
+220	18	347
+110	9	173.5
+1970-04-11	1970-01-11	1970-11-21
+2	3
+1	2
+18	347
+110	173.5
+1970-04-11	1970-01-11	1970-11-21
+10	324
+8	23
+324
+23
+101	10	324
+121	8	23
+222	18	347
+111	11	173.5
+1970-04-11	1970-01-11	1970-11-21
+SELECT
+    sum(i),
+    sum(j),
+    sum(k)
+FROM columns_transformers
+SELECT
+    avg(i),
+    avg(j),
+    avg(k)
+FROM columns_transformers
+SELECT
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
+FROM columns_transformers AS a
+SELECT
+    length(toString(j)),
+    length(toString(k))
+FROM columns_transformers
+SELECT
+    sum(j),
+    sum(k)
+FROM columns_transformers
+SELECT
+    avg(i),
+    avg(k)
+FROM columns_transformers
+SELECT
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
+FROM columns_transformers AS a
+SELECT
+    sum(i) + (1 * count(i)),
+    sum(j),
+    sum(k)
+FROM columns_transformers
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Asterisk (children 1)
+     ColumnsTransformerList (children 2)
+      ColumnsReplaceTransformer (children 1)
+       ColumnsReplaceTransformer::Replacement (children 1)
+        Function plus (children 1)
+         ExpressionList (children 2)
+          Identifier i
+          Literal UInt64_1
+      ColumnsApplyTransformer
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier columns_transformers
+SELECT sum(i) + (1 * count(i))
+FROM columns_transformers
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Function sum (children 1)
+     ExpressionList (children 1)
+      Function plus (alias m) (children 1)
+       ExpressionList (children 2)
+        Identifier i
+        Literal UInt64_1
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier columns_transformers
+SELECT
+    avg(i) + 1,
+    avg(j) + 2,
+    avg(k)
+FROM columns_transformers
+SELECT
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
+FROM columns_transformers AS a
+SELECT
+    (i + 1) + 1 AS i,
+    j,
+    k
+FROM columns_transformers
+220	18	347
+SELECT
+    sum(i),
+    sum(j),
+    sum(k)
+FROM columns_transformers
+100	10	100	10	324	10
+120	8	120	8	23	8
+SELECT
+    i,
+    j,
+    toFloat64(i),
+    toFloat64(j),
+    toFloat64(k),
+    j
+FROM columns_transformers
+[110]	[9]	[173.5]
+SELECT
+    quantiles(0.5)(i),
+    quantiles(0.5)(j),
+    quantiles(0.5)(k)
+FROM columns_transformers

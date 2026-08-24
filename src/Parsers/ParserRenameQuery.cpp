@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -52,7 +50,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         rename_elements.back().from.database = from_db;
         rename_elements.back().to.database = to_db;
 
-        auto query = make_intrusive<ASTRenameQuery>(std::move(rename_elements));
+        auto query = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         query->database = true;
         query->cluster = cluster_str;
         node = query;
@@ -101,7 +99,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = make_intrusive<ASTRenameQuery>(std::move(elements));
+    auto query = std::make_shared<ASTRenameQuery>(std::move(elements));
     query->cluster = cluster_str;
     query->exchange = exchange;
     query->dictionary = dictionary;
@@ -109,54 +107,5 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-}
-
-namespace DB
-{
-
-void registerStatementRename(StatementFactory & factory)
-{
-    factory.registerStatement("RENAME",
-    {
-        .description = R"(
-Renames databases, tables or dictionaries. Several entities can be renamed in a single query, but the query is then not
-atomic; to swap the names of two entities atomically, use `EXCHANGE`.
-
-**Examples**
-
-**Rename a table**
-
-```sql title="Query"
-RENAME TABLE table_A TO table_A_new;
-```
-)",
-        .syntax = R"(
-RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
-)",
-        .related = {"EXCHANGE", "CREATE", "ALTER"},
-    });
-
-    factory.registerStatement("EXCHANGE",
-    {
-        .description = R"(
-Exchanges the names of two tables or two dictionaries atomically. The same can be achieved with a `RENAME` query using
-a temporary name, but that operation is not atomic. `EXCHANGE` is supported by the `Atomic` and `Shared` database
-engines only.
-
-**Examples**
-
-**Swap the names of two tables**
-
-```sql title="Query"
-EXCHANGE TABLES table_A AND table_B;
-```
-)",
-        .syntax = R"(
-EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
-)",
-        .related = {"RENAME", "REPLACE TABLE", "CREATE DATABASE"},
-    });
-}
 
 }

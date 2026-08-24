@@ -1,8 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-llvm-coverage, no-flaky-check
--- Tag no-llvm-coverage: `SYSTEM FLUSH LOGS` on `metric_log`, `trace_log`, `query_log`, and
--- `query_thread_log` becomes unreliable under LLVM source-based coverage instrumentation;
--- flushing `trace_log` alone can exceed the 180s server-side timeout. Same pattern as
--- other query-profiler-dependent tests (`00974_query_profiler`, `01569_query_profiler_big_query_id`).
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
 
 -- This file contains tests for the event_time_microseconds field for various tables.
 -- Note: Only event_time_microseconds for asynchronous_metric_log table is tested via
@@ -22,7 +18,6 @@ SELECT '01473_metric_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.metric_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -32,7 +27,6 @@ SELECT '01473_trace_log_table_event_start_time_microseconds_test';
 WITH (
           SELECT event_time_microseconds, event_time
           FROM system.trace_log
-          WHERE event_date >= yesterday() AND event_time >= now() - 600
           ORDER BY event_time DESC
           LIMIT 1
       ) AS time
@@ -42,7 +36,7 @@ SELECT '01473_query_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -52,7 +46,7 @@ SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_thread_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time

@@ -5,8 +5,6 @@
 
 class SipHash;
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -23,8 +21,6 @@ public:
     /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
 
-    ASTPair() : second_with_brackets(false) {}
-
     explicit ASTPair(bool second_with_brackets_)
         : second_with_brackets(second_with_brackets_)
     {
@@ -33,16 +29,14 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     bool hasSecretParts() const override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    void forEachPointerToChild(std::function<void(void**)> f) override
     {
-        f(&second, nullptr);
+        f(reinterpret_cast<void **>(&second));
     }
 
 protected:
@@ -72,8 +66,6 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 

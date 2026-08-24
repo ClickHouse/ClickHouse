@@ -1,12 +1,12 @@
 -- Disabled query_plan_remove_redundant_sorting
 -- ORDER BY clauses in subqueries are untouched
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Expression ((Before ORDER BY + Projection))
       Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+        Expression ((Before ORDER BY + Projection))
           Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Expression (Before ORDER BY)
               ReadFromSystemNumbers
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
@@ -25,9 +25,9 @@ FROM
 )
 ORDER BY number ASC
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))))
+    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
       ReadFromSystemNumbers
 -- execute
 0
@@ -49,12 +49,12 @@ FROM
 )
 ORDER BY number ASC
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Expression ((Before ORDER BY + Projection))
       Filling
         Sorting (Sorting for ORDER BY)
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+          Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
             ReadFromSystemNumbers
 -- execute
 0
@@ -77,13 +77,13 @@ FROM
 )
 ORDER BY number ASC
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
+    Expression ((Before ORDER BY + Projection))
       LimitBy
         Expression (Before LIMIT BY)
           Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
               ReadFromSystemNumbers
 -- execute
 0
@@ -115,17 +115,14 @@ FROM
 ) AS t2
 ORDER BY t1.number, t2.number
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+    Expression (Before ORDER BY)
+      Join (JOIN FillRightFirst)
+        Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+          ReadFromSystemNumbers
+        Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -162,17 +159,14 @@ FROM
 ) AS t2
 ORDER BY t1.number, t2.number
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+    Expression (Before ORDER BY)
+      Join (JOIN FillRightFirst)
+        Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+          ReadFromSystemNumbers
+        Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -200,11 +194,11 @@ FROM
 GROUP BY number
 ORDER BY number
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
+    Expression (Before ORDER BY)
       Aggregating
-        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))))))
+        Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
           ReadFromSystemNumbers
 -- execute
 0
@@ -228,13 +222,13 @@ GROUP BY number
 ORDER BY number
 SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
+    Expression (Before ORDER BY)
       Aggregating
-        Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+        Expression ((Before GROUP BY + Projection))
           Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
               ReadFromSystemNumbers
 -- execute
 0
@@ -250,9 +244,9 @@ FROM
     ORDER BY number DESC
 )
 -- explain
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
+    Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
       ReadFromSystemNumbers
 -- execute
 45
@@ -273,11 +267,11 @@ FROM
 )
 ORDER BY a ASC
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
+        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
           ReadFromSystemNumbers
 -- execute
 0
@@ -300,13 +294,13 @@ FROM
 ORDER BY a ASC
 SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+        Expression ((Before GROUP BY + Projection))
           Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            Expression (Before ORDER BY)
               ReadFromSystemNumbers
 -- execute
 0
@@ -333,16 +327,16 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
-SETTINGS optimize_aggregators_of_group_by_keys=0, enable_optimize_predicate_expression=1, query_plan_merge_filters=1 -- CI may inject False for either; enable_optimize_predicate_expression=False: WHERE a>0 not pushed as HAVING; query_plan_merge_filters=False: WHERE+HAVING not merged into single Filter step; avoid removing any() as it depends on order and we need it for the test
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+    Expression (Before ORDER BY)
+      Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
         Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+          Expression ((Before GROUP BY + Projection))
             Sorting (Sorting for ORDER BY)
-              Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
+              Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
                 ReadFromSystemNumbers
 -- execute
 1
@@ -364,11 +358,11 @@ FROM
 )
 ORDER BY number ASC
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + Projection))))))))))
+    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
       Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
+        Expression (Before GROUP BY)
           ReadFromSystemNumbers
 -- execute
 0
@@ -393,17 +387,17 @@ FROM
     ORDER BY v ASC
 )
 -- explain
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Expression ((Before GROUP BY + Projection))
       Sorting (Sorting for ORDER BY)
         Union
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -425,17 +419,17 @@ FROM
     ORDER BY v ASC
 )
 -- explain
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Expression ((Before GROUP BY + Projection))
       Sorting (Sorting for ORDER BY)
         Union
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -457,17 +451,17 @@ FROM
     ORDER BY v ASC
 )
 -- explain
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Expression ((Before GROUP BY + Projection))
       Sorting (Sorting for ORDER BY)
         Union
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
 -- presence of an inner OFFSET retains the ORDER BY
@@ -491,13 +485,14 @@ FROM (
   OFFSET 1
 ) t2
 -- explain
-Expression ((Project names + Projection))
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
+    Expression (Before GROUP BY)
       Offset
-        Sorting (Sorting for ORDER BY)
-          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
-            ReadFromStorage (Values)
+        Expression (Projection)
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+              ReadFromStorage (Values)
 -- execute
 0
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
@@ -515,17 +510,13 @@ FROM
 ORDER BY number ASC
 SETTINGS allow_deprecated_error_prone_window_functions = 1
 -- explain
-Expression (Project names)
+Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
       Expression (Projection)
-        Expression (Change column names to column identifiers)
-          Expression (Project names)
-            Sorting (Sorting for ORDER BY)
-              Expression (Before ORDER BY)
-                Expression (Projection)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
+        Sorting (Sorting for ORDER BY)
+          Expression (Before ORDER BY)
+            ReadFromSystemNumbers
 -- execute
 0	0
 1	0
@@ -549,15 +540,12 @@ FROM
     ORDER BY number DESC
 )
 -- explain
-Expression (Project names)
-  Expression (Projection)
-    Expression (Change column names to column identifiers)
-      Expression (Project names)
-        Sorting (Sorting for ORDER BY)
-          Expression (Before ORDER BY)
-            Expression (Projection)
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
+Expression (Projection)
+  Expression (Before ORDER BY)
+    Expression (Projection)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromSystemNumbers
 -- execute
 9	11
 8	10

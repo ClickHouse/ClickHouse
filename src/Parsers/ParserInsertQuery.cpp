@@ -1,4 +1,3 @@
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -13,8 +12,6 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -24,26 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-}
-
-
-namespace
-{
-
-/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
-/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
-bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
-        return true;
-    for (const auto & child : ast->children)
-        if (selectReadsInlineDataViaInputFunction(child))
-            return true;
-    return false;
-}
-
 }
 
 
@@ -60,14 +37,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_select(Keyword::SELECT);
-    ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p{false, true};
+    ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
@@ -136,30 +112,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    Pos before_lparen = pos;
-
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-        {
-            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
-            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
-            columns.reset();
-            pos = before_lparen;
-        }
-        else
-        {
-            /// Optional trailing comma
-            ParserToken(TokenType::Comma).ignore(pos);
+            return false;
 
-            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
-            if (!s_rparen.ignore(pos, expected))
-            {
-                columns.reset();
-                pos = before_lparen;
-            }
-        }
+        /// Optional trailing comma
+        ParserToken(TokenType::Comma).ignore(pos);
+
+        if (!s_rparen.ignore(pos, expected))
+            return false;
     }
 
     /// Check if file is a source of data.
@@ -210,12 +173,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_from.ignore(pos, expected) || s_lparen.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected))
     {
-        /// If SELECT is defined (possibly in parentheses), return to position before select and parse
-        /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
-        /// The query can also start with the FROM clause: INSERT INTO t2 FROM t1 |> WHERE x.
-        /// Note that FROM INFILE was already parsed before, so FROM at this position starts a SELECT query.
+        /// If SELECT is defined, return to position before select and parse
+        /// rest of query as SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
@@ -232,9 +193,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Only one WITH should be presented, either before INSERT or SELECT.");
                     child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        ASTPtr(with_expression_list));
-                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
-                    child_select->normalizeChildrenOrder();
+                        std::move(with_expression_list));
                 }
             }
         }
@@ -281,13 +240,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
     }
 
-    /// In case of defined format, data follows it -- but only for inline-data INSERTs.
-    /// An INSERT ... SELECT has no inline data (the rows come from the SELECT), unless the SELECT
-    /// reads them through the `input` table function. Without `input`, anything after the FORMAT
-    /// (including a `;` query terminator) is not insert data, so we must not look for it nor raise
-    /// the "excessive ';'" error. This matters e.g. for `EXPLAIN ... INSERT ... SELECT ... FORMAT
-    /// <name>;`, where the trailing FORMAT is the EXPLAIN output format, not an insert data format.
-    if (format && !infile && (!select || selectReadsInlineDataViaInputFunction(select)))
+    /// In case of defined format, data follows it.
+    if (format && !infile)
     {
         Pos last_token = pos;
         --last_token;
@@ -317,7 +271,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Create query and fill its fields.
-    auto query = make_intrusive<ASTInsertQuery>();
+    auto query = std::make_shared<ASTInsertQuery>();
     node = query;
 
     if (infile)
@@ -369,53 +323,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// ParserQualifiedColumnsMatcher must precede ParserCompoundIdentifier, which would otherwise
-    /// consume the `<qualifier>.COLUMNS` prefix as a plain identifier and leave `(...)` unparsed.
     return ParserColumnsMatcher().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserQualifiedColumnsMatcher().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected);
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementInsert(StatementFactory & factory)
-{
-    factory.registerStatement("INSERT INTO",
-    {
-        .description = R"(
-Inserts data into a table. The data can be given inline with a `VALUES` clause, in an arbitrary input format, or be the
-result of a `SELECT` query or of a table function.
-
-The list of the columns to insert into can be specified explicitly, or with a column matcher such as `*` and the
-`APPLY`, `EXCEPT` and `REPLACE` modifiers. The columns which are not listed are filled with their default values.
-
-**Examples**
-
-**Insert literal values**
-
-```sql title="Query"
-INSERT INTO test VALUES (1, 'a'), (2, 'b');
-```
-
-**Insert the result of a query**
-
-```sql title="Query"
-INSERT INTO test SELECT number, toString(number) FROM numbers(10);
-```
-)",
-        .syntax = R"(
-INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
-INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set
-INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
-)",
-        .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},
-    });
 }
 
 }

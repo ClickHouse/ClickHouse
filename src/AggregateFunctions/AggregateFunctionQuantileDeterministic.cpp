@@ -36,11 +36,6 @@ struct QuantileReservoirSamplerDeterministic
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
-    /// Version 1 adds the skip degree to the serialized state, without which merging states that
-    /// were thinned out to different degrees gives a result that depends on how the rows were
-    /// distributed between them - which defeats the whole point of `quantileDeterministic`.
-    static constexpr size_t state_version = 1;
-
     void add(const Value &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add without determinator is not implemented for ReservoirSamplerDeterministic");
@@ -57,14 +52,14 @@ struct QuantileReservoirSamplerDeterministic
         data.merge(rhs.data);
     }
 
-    void serialize(WriteBuffer & buf, size_t version) const
+    void serialize(WriteBuffer & buf) const
     {
-        data.write(buf, version);
+        data.write(buf);
     }
 
-    void deserialize(ReadBuffer & buf, size_t version)
+    void deserialize(ReadBuffer & buf)
     {
-        data.read(buf, version);
+        data.read(buf);
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
@@ -115,8 +110,8 @@ struct QuantileReservoirSamplerDeterministic
 };
 
 
-template <typename Value, bool float_return> using FuncQuantileDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantileDeterministic, UInt64, std::conditional_t<float_return, Float64, void>, false, false>;
-template <typename Value, bool float_return> using FuncQuantilesDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantilesDeterministic, UInt64, std::conditional_t<float_return, Float64, void>, true, false>;
+template <typename Value, bool float_return> using FuncQuantileDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantileDeterministic, true, std::conditional_t<float_return, Float64, void>, false, false>;
+template <typename Value, bool float_return> using FuncQuantilesDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantilesDeterministic, true, std::conditional_t<float_return, Float64, void>, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -146,89 +141,13 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    FunctionDocumentation::Description description = R"(
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
-
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and deterministic algorithm of sampling.
-The result is deterministic.
-To get an exact quantile, use the [`quantileExact`](/reference/functions/aggregate-functions/quantileExact#quantileExact) function.
-
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-quantileDeterministic(level)(expr, determinator)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Date", "DateTime"}},
-        {"determinator", "Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occurs too often, the function works incorrectly.", {"UInt*"}}
-    };
-    FunctionDocumentation::Parameters parameters = {
-        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an approximate quantile of the specified level.", {"Float64", "Date", "DateTime"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Computing deterministic quantile",
-        R"(
-CREATE TABLE t (val UInt32) ENGINE = Memory;
-INSERT INTO t VALUES (1), (1), (2), (3);
-
-SELECT quantileDeterministic(val, 1) FROM t;
-        )",
-        R"(
-┌─quantileDeterministic(val, 1)─┐
-│                           1.5 │
-└───────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, documentation});
-
-    FunctionDocumentation::Description description_quantiles = R"(
-Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, using deterministic reservoir sampling.
-
-This function is equivalent to [`quantileDeterministic`](/reference/functions/aggregate-functions/quantileDeterministic) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
-    )";
-    FunctionDocumentation::Syntax syntax_quantiles = R"(
-quantilesDeterministic(level1, level2, ...)(expr, determinator)
-    )";
-    FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Date", "DateTime"}},
-        {"determinator", "Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic.", {"UInt*"}}
-    };
-    FunctionDocumentation::Parameters parameters_quantiles = {
-        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
-    FunctionDocumentation::Examples examples_quantiles = {
-    {
-        "Computing multiple deterministic quantiles",
-        R"(
-SELECT quantilesDeterministic(0.25, 0.5, 0.75)(number, number) FROM numbers(10)
-        )",
-        R"(
-┌─quantilesDeterministic(0.25, 0.5, 0.75)(number, number)─┐
-│ [2.25,4.5,6.75]                                         │
-└─────────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};
-    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
-
-    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, documentation_quantiles, properties });
+    factory.registerFunction(NameQuantileDeterministic::name, createAggregateFunctionQuantile<FuncQuantileDeterministic>);
+    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);

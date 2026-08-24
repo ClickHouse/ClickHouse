@@ -48,7 +48,7 @@ struct ReverseUTF8Impl
             {
                 size_t remaining = offsets[i] - j;
 
-                unsigned int char_len = 0;
+                unsigned int char_len;
                 if (data[j] < 0xC0)
                     char_len = 1;
                 else if (data[j] < 0xE0)
@@ -112,7 +112,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionReverseUTF8>(documentation);
 }

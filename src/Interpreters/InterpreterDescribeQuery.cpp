@@ -3,16 +3,9 @@
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
-#include <Analyzer/Utils.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
-#include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -23,7 +16,6 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -36,18 +28,11 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
+    extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool print_pretty_type_names;
-}
-
-namespace ErrorCodes
-{
-
-extern const int UNSUPPORTED_METHOD;
-extern const int UNKNOWN_FUNCTION;
-
 }
 
 InterpreterDescribeQuery::InterpreterDescribeQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -117,7 +102,7 @@ BlockIO InterpreterDescribeQuery::execute()
     else if (table_expression.table_function)
         fillColumnsFromTableFunction(table_expression);
     else
-        fillColumnsFromTable(table_expression, ast.temporary);
+        fillColumnsFromTable(table_expression);
 
     Block sample_block = getSampleBlock(
         settings[Setting::describe_include_subcolumns], settings[Setting::describe_include_virtual_columns], settings[Setting::describe_compact_output]);
@@ -149,14 +134,10 @@ BlockIO InterpreterDescribeQuery::execute()
 
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
+    SharedHeader sample_block;
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
-    fillColumnsFromSubqueryImpl(select_query, current_context);
-}
 
-void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
-{
-    SharedHeader sample_block;
     if (settings[Setting::allow_experimental_analyzer])
     {
         SelectQueryOptions select_query_options;
@@ -174,53 +155,7 @@ void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)
 {
     auto current_context = getContext();
-
-    auto table_function_name = table_expression.table_function->as<ASTFunction>()->name;
-
-    /// A parameterized view takes precedence over a table function with a colliding name, mirroring
-    /// `Context::executeTableFunction`, which does the catalog lookup first and only falls back to the
-    /// table-function factory. Look the name up without throwing: a missing or inaccessible object must
-    /// still produce the `UNKNOWN_FUNCTION` error (with hints) below, not a table-resolution or
-    /// access-check exception.
-    {
-        auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
-        StoragePtr table;
-        if (!table_name.empty())
-            table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, current_context);
-
-        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted) must also fall
-        /// through to the `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak
-        /// the existence of the view.
-        if (auto * storage_view = table ? table->as<StorageView>() : nullptr;
-            storage_view && storage_view->isParameterizedView()
-            && current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
-        {
-            auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
-            auto query = view_metadata->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
-            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
-            /// Analyze the substituted query under the view's SQL security context (`DEFINER`/`INVOKER`),
-            /// matching execution via `Context::buildParameterizedViewStorage`, so that a user with
-            /// `SHOW COLUMNS` on the view but without direct grants on the inner tables can still describe
-            /// a `SQL SECURITY DEFINER` view.
-            auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
-            fillColumnsFromSubqueryImpl(query, view_context);
-            return;
-        }
-    }
-
-    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, current_context);
-
-    if (!table_function_ptr)
-    {
-        auto hints = TableFunctionFactory::instance().getHints(table_function_name);
-        if (!hints.empty())
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function_name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
-    }
-
-    table_function_ptr->parseArguments(table_expression.table_function, current_context);
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
 
     auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
@@ -231,46 +166,67 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(current_context, false);
-            const auto & virtuals = metadata_snapshot->virtuals;
-            for (const auto & column : virtuals)
+            auto virtuals = table->getVirtualsPtr();
+            NameSet column_names;
+            for (const auto & column : *virtuals)
+            {
                 if (!column_descriptions.has(column.name))
+                {
                     virtual_columns.push_back(column);
+                    column_names.insert(column.name);
+                }
+            }
+
+            const auto & common_virtuals = IStorage::getCommonVirtuals();
+            for (const auto & column : common_virtuals)
+            {
+                if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
+                    virtual_columns.push_back(column);
+            }
         }
     }
 }
 
-void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary)
+void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression)
 {
     auto query_context = getContext();
-    auto resolve_type = temporary ? Context::ResolveExternal : Context::ResolveAll;
-    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
+    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-    if (auto * storage_view = table->as<StorageView>())
-    {
-        if (storage_view->isParameterizedView())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Cannot infer table schema for the parameterized view when no query parameters are provided");
-    }
-
-    auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     table->updateExternalDynamicMetadataIfExists(query_context);
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+    auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 
     if (settings[Setting::describe_include_virtual_columns])
     {
-        const auto & virtuals = metadata_snapshot->virtuals;
-        for (const auto & column : virtuals)
+        auto virtuals = table->getVirtualsPtr();
+        NameSet column_names;
+        for (const auto & column : *virtuals)
+        {
             if (!column_descriptions.has(column.name))
+            {
                 virtual_columns.push_back(column);
+                column_names.insert(column.name);
+            }
+        }
+
+        const auto & common_virtuals = IStorage::getCommonVirtuals();
+        for (const auto & column : common_virtuals)
+        {
+            if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
+                virtual_columns.push_back(column);
+        }
     }
+
+    if (settings[Setting::describe_extend_object_types])
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 }
 
 void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
@@ -278,10 +234,11 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
     size_t i = 0;
     res_columns[i++]->insert(column.name);
 
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
     if (settings[Setting::print_pretty_type_names])
-        res_columns[i++]->insert(column.type->getPrettyName());
+        res_columns[i++]->insert(type->getPrettyName());
     else
-        res_columns[i++]->insert(column.type->getName());
+        res_columns[i++]->insert(type->getName());
 
     if (!settings[Setting::describe_compact_output])
     {
@@ -318,6 +275,8 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
+
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -352,10 +311,9 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
         if (settings[Setting::describe_include_virtual_columns])
             res_columns[i++]->insert(is_virtual);
 
-    }, ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
+    }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
 }
 
-void registerInterpreterDescribeQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

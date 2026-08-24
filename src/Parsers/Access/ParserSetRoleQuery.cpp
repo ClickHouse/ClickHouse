@@ -3,15 +3,13 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
 {
 namespace
 {
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -21,13 +19,13 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             roles->allow_users = false;
             return true;
         });
     }
 
-    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTRolesOrUsersSet> & to_users)
+    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & to_users)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -40,7 +38,7 @@ namespace
             if (!users_p.parse(pos, ast, expected))
                 return false;
 
-            to_users = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            to_users = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             to_users->allow_roles = false;
             return true;
         });
@@ -51,7 +49,7 @@ namespace
 bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     using Kind = ASTSetRoleQuery::Kind;
-    Kind kind = {};
+    Kind kind;
     if (ParserKeyword{Keyword::SET_ROLE_DEFAULT}.ignore(pos, expected))
         kind = Kind::SET_ROLE_DEFAULT;
     else if (ParserKeyword{Keyword::SET_ROLE}.ignore(pos, expected))
@@ -61,8 +59,8 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> to_users;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> to_users;
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {
@@ -76,7 +74,7 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
-    auto query = make_intrusive<ASTSetRoleQuery>();
+    auto query = std::make_shared<ASTSetRoleQuery>();
     node = query;
 
     query->kind = kind;
@@ -85,33 +83,4 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementSetRole(StatementFactory & factory)
-{
-    factory.registerStatement("SET ROLE",
-    {
-        .description = R"(
-Activates roles for the current user. `SET DEFAULT ROLE` sets the roles which are activated by default when a user
-logs in. The currently active roles are shown in `system.current_roles`.
-
-**Examples**
-
-**Activate a role**
-
-```sql title="Query"
-SET ROLE accountant;
-```
-)",
-        .syntax = R"(
-SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
-SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
-)",
-        .related = {"CREATE ROLE", "GRANT", "SET", "SHOW"},
-    });
-}
-
 }

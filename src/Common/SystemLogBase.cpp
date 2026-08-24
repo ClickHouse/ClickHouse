@@ -2,12 +2,9 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
-#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -18,8 +15,6 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -33,47 +28,19 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
-#include <Interpreters/PredicateStatisticsLog.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/SelfContained.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
-#include <Core/Field.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/StorageID.h>
-#include <Poco/Net/SocketAddress.h>
 
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
 {
-
-/// Heap-owning value types used inside log elements that are self-contained (own their data, no shared
-/// ownership) but cannot be reflected by boost::pfr. Trusted wholesale by the self-containment gate below.
-///
-/// Field (and Array/Map/Tuple, which are containers of Field) is a known limitation of the gate: its
-/// CustomType alternative is backed by a std::shared_ptr<const CustomTypeImpl>, so the type can carry
-/// shared ownership that the gate cannot see through and will still report as Ok. This is deliberate:
-/// the gate is a cheap compile-time tripwire, not a proof, and Field is pervasive in log elements. The
-/// elements that use these types (CrashLog, MetricLog, ZooKeeperConnectionLog) only ever store scalar
-/// and string values, never a CustomType; the runtime memory-tracking sanitizer covers what the gate
-/// cannot. Do not store a Field that may hold a CustomType in a log element.
-template <> struct SelfContainedLeaf<Field> : std::true_type {};
-template <> struct SelfContainedLeaf<Array> : std::true_type {};
-template <> struct SelfContainedLeaf<Map> : std::true_type {};
-template <> struct SelfContainedLeaf<Tuple> : std::true_type {};
-template <> struct SelfContainedLeaf<ProfileEvents::Counters::Snapshot> : std::true_type {};
-template <> struct SelfContainedLeaf<StorageID> : std::true_type {};
-template <> struct SelfContainedLeaf<Poco::Net::SocketAddress> : std::true_type {};
-template <> struct SelfContainedLeaf<OpenTelemetry::SpanAttribute> : std::true_type {};
-/// Manually audited: after its SocketAddress members became values, ClientInfo holds no shared/borrowed
-/// heap. It is not an aggregate (has a constructor), so it cannot be recursed - keep this audited if new
-/// members are added.
-template <> struct SelfContainedLeaf<ClientInfo> : std::true_type {};
 
 namespace ErrorCodes
 {
@@ -108,9 +75,12 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
-    /// The element is built and this method is called from SystemLogBase::add() while a
-    /// MemoryTrackerBlockerInThread / MemoryTrackerUntrackedAllocationsBlockerInThread are held, so the
-    /// element and the queue growth below are already excluded from the query/user memory accounting.
+
+    /// Queue resize can allocate memory
+    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
     bool buffer_size_rows_flush_threshold_exceeded = false;
@@ -195,18 +165,10 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
     notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
-    // prepared_tables starts from -1, so we need to wait for prepared_tables >= 0 when expected_flushed_index == 0 to make sure the table is created
-    // In theory it should be possible to wait only for prepared_tables, but:
-    // 1. It reflects the logic more precisely
-    // 2. One extra comparison shouldn't matter here
-    auto result = confirm_event.wait_for(
-        lock,
-        std::chrono::seconds(timeout_seconds),
-        [&]
-        {
-            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
-                || is_shutdown;
-        });
+    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+    {
+        return (flushed_index >= expected_flushed_index) || is_shutdown;
+    });
 
     if (!result)
     {
@@ -240,8 +202,6 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
-
     PopResult result;
     size_t prev_ignored_logs = 0;
 
@@ -256,19 +216,6 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (is_shutdown)
             return PopResult{.is_shutdown = true};
 
-        /// Allocate the next batch's buffer outside the lock so a large reallocation
-        /// does not block producers, then hand it over with a cheap swap below.
-        if (!queue.empty())
-        {
-            const auto next_capacity = std::max(settings.reserved_size_rows, queue.size());
-            lock.unlock();
-            result.logs.reserve(next_capacity);
-            lock.lock();
-
-            if (is_shutdown)
-                return PopResult{.is_shutdown = true};
-        }
-
         const auto queue_size = queue.size();
         queue_front_index += queue_size;
         prev_ignored_logs = ignored_logs;
@@ -278,6 +225,10 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (!queue.empty())
             result.logs.swap(queue);
         result.create_table_force = requested_prepare_tables > prepared_tables;
+
+        /// Preallocate same amount of memory for the next batch to minimize reallocations.
+        if (queue_size > queue.capacity())
+            queue.reserve(std::max(settings.reserved_size_rows, queue_size));
     }
 
     if (prev_ignored_logs)
@@ -356,9 +307,15 @@ void SystemLogBase<LogElement>::stopFlushThread()
     saving_thread->join();
 }
 
-#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) \
-    ASSERT_SELF_CONTAINED_LOG_ELEMENT(ELEMENT); \
-    template class SystemLogBase<ELEMENT>;
+template <typename LogElement>
+void SystemLogBase<LogElement>::add(LogElement element)
+{
+    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    queue->push(std::move(element));
+}
+
+#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 #if CLICKHOUSE_CLOUD
     SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_BASE)

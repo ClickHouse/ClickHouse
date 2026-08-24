@@ -57,7 +57,7 @@ void ColumnGathererStream::updateStats(const IColumn & column)
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
-    VectorWithMemoryTracking<ColumnPtr> source_columns;
+    Columns source_columns;
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
@@ -65,7 +65,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
             continue;
 
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(inputs[i].chunk);
+            convertToFullIfSparse(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -79,9 +79,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
-        result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
-    if (result_column->hasStatistics())
-        result_column->takeOrCalculateStatisticsFrom(source_columns);
+        result_column->takeDynamicStructureFromSourceColumns(source_columns, max_dynamic_subcolumns);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -93,28 +91,21 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     if (source_to_fully_copy) /// Was set on a previous iteration
     {
         Chunk res;
-        updateStats(*source_to_fully_copy->column);
-
-        /// For columns with dynamic structure we cannot just take the source column because the resulting
-        /// column may have different dynamic structure (after calling `chooseDynamicStructureForMerge`).
-        /// We need to use `cloneEmpty` + `insertRangeFrom` to properly re-insert data.
+        /// For columns with Dynamic structure we cannot just take column source_to_fully_copy because resulting column may have
+        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
+        /// We should insert into data resulting column using insertRangeFrom.
         if (result_column->hasDynamicStructure())
         {
             auto col = result_column->cloneEmpty();
             col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
             res.addColumn(std::move(col));
         }
-        /// For columns with statistics only, we can reuse the source column but need to preserve merged statistics.
-        else if (result_column->hasStatistics())
-        {
-            auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
-            res.addColumn(std::move(col));
-        }
         else
         {
             res.addColumn(source_to_fully_copy->column);
         }
+
+        updateStats(*source_to_fully_copy->column);
 
         source_to_fully_copy->pos = source_to_fully_copy->size;
         source_to_fully_copy = nullptr;
@@ -163,12 +154,6 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
             col->insertRangeFrom(*source_to_fully_copy->column, 0, source_to_fully_copy->column->size());
             res.addColumn(std::move(col));
         }
-        else if (result_column->hasStatistics())
-        {
-            auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
-            res.addColumn(std::move(col));
-        }
         else
         {
             res.addColumn(source_to_fully_copy->column);
@@ -195,7 +180,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
     if (input.chunk)
     {
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(input.chunk);
+            convertToFullIfSparse(input.chunk);
 
         source.update(input.chunk.getColumns().at(0));
     }

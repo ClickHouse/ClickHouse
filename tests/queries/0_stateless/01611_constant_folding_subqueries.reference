@@ -4,10 +4,24 @@ SELECT * FROM (SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUI
 SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) FORMAT CSV;
 1,10
 EXPLAIN SYNTAX SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n);
-SELECT\n    (\n        SELECT *\n        FROM system.numbers\n        LIMIT 1, 1\n    ) AS n,\n    toUInt64(divide(10, n))\nFROM system.one
+SELECT
+    (
+        SELECT *
+        FROM system.numbers
+        LIMIT 1, 1
+    ) AS n,
+    toUInt64(10 / n)
+FROM system.one
 SELECT * FROM (WITH (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) as q SELECT * FROM system.one WHERE q > 0);
 0
 SELECT * FROM (SELECT (SELECT '\d[a-z]') AS n, extractAll('5abc', assumeNotNull(n))) FORMAT CSV;
 "\d[a-z]","['5a']"
 EXPLAIN SYNTAX SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n);
-SELECT\n    (\n        SELECT *\n        FROM system.numbers\n        LIMIT 1, 1\n    ) AS n,\n    toUInt64(divide(10, n))\nFROM system.one
+SELECT
+    (
+        SELECT *
+        FROM system.numbers
+        LIMIT 1, 1
+    ) AS n,
+    toUInt64(10 / n)
+FROM system.one

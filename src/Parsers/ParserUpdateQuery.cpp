@@ -5,15 +5,13 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserPartition.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
 
 bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = make_intrusive<ASTUpdateQuery>();
+    auto query = std::make_shared<ASTUpdateQuery>();
     node = query;
 
     ParserKeyword s_update(Keyword::UPDATE);
@@ -62,18 +60,6 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp_elem.parse(pos, query->predicate, expected))
         return false;
 
-    /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-    /// does not expect an alias after the expression. However, in certain cases,
-    /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-    /// This is the case when it parses a single expression in parentheses, e.g.,
-    /// it does not allow
-    /// 1 AS x
-    /// but it can parse
-    /// (1 AS x)
-    /// which we should not allow as well.
-    if (!query->predicate->tryGetAlias().empty())
-        return false;
-
     if (s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
@@ -95,37 +81,6 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     add_to_children(query->settings_ast);
 
     return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementUpdate(StatementFactory & factory)
-{
-    factory.registerStatement("UPDATE",
-    {
-        .description = R"(
-Updates the rows matching the filter expression in a table.
-
-It is called a lightweight `UPDATE` to contrast it with `ALTER TABLE ... UPDATE`: the new values are written into patch
-parts and applied on the fly when the data is read, whereas the affected data parts are rewritten later by merges or by
-`ALTER TABLE ... APPLY PATCHES`.
-
-**Examples**
-
-**Update the rows matching a condition**
-
-```sql title="Query"
-UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
-```
-)",
-        .syntax = R"(
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
-)",
-        .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
-    });
 }
 
 }

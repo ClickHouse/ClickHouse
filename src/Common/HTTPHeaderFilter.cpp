@@ -21,10 +21,7 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
     for (auto & entry : entries)
     {
-        /// A bare CR or LF in a header name or value terminates the header line, so a header
-        /// carrying one could smuggle a second header into the request (request/response splitting).
-        if (entry.name.contains('\n') || entry.value.contains('\n')
-            || entry.name.contains('\r') || entry.value.contains('\r'))
+        if (entry.name.contains('\n') || entry.value.contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
         /// Strip whitespace and control characters from header name for validation
         std::string & normalized_name = entry.name;

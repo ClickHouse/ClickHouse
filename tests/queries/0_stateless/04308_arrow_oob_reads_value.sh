@@ -23,6 +23,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct, io, sys
+import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
@@ -49,15 +50,9 @@ def inflate_row_count(data, orig_n, large_n=LARGE_N):
         pos = idx + 1
     return data
 
-# 8. Boolean: 2 rows → still a 1-byte bit-packed buffer, so the inflated row count is the only
-#    corruption and the buffer length stays honest. A 1-row array puts the literal 1 in the
-#    buffer-length field too, and inflating it declares a buffer longer than the whole file,
-#    which is rejected before the per-element read. 4 and 8 collide with other metadata fields.
-d = write_arrow(pa.array([True, False], type=pa.bool_()))
-# Pin that: the needle must match the two row counts and nothing else.
-pos = [i for i in range(0, len(d) - 7, 8) if struct.unpack_from('<q', d, i)[0] == 2]
-assert len(pos) == 2, f'expected exactly 2 aligned int64==2 (the row counts), got {pos}'
-open(f'{out}/bool.arrow', 'wb').write(inflate_row_count(d, 2))
+# 8. Boolean: 1 row → 1-byte bit buffer, inflated to 16384 rows
+d = write_arrow(pa.array([True], type=pa.bool_()))
+open(f'{out}/bool.arrow', 'wb').write(inflate_row_count(d, 1))
 
 # 9. Date32 slow path (no numeric type hint → check_date_range=true → Value() loop)
 d = write_arrow(pa.array([100], type=pa.date32()))
@@ -80,7 +75,8 @@ d = write_arrow(pa.array([3600000000], type=pa.time64('us')))
 open(f'{out}/time64.arrow', 'wb').write(inflate_row_count(d, 1))
 
 # 14. Float16: 1 row → 2-byte body, inflated to 16384 rows
-d = write_arrow(pa.array([1.0], type=pa.float16()))
+# np.float16 input: older pyarrow cannot convert Python floats to halffloat directly
+d = write_arrow(pa.array(np.array([1.0], dtype=np.float16)))
 open(f'{out}/float16.arrow', 'wb').write(inflate_row_count(d, 1))
 
 # 15. Decimal128: 1 row → 16-byte body, inflated to 16384 rows

@@ -7,8 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -27,7 +25,7 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -37,12 +35,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
+            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
             return true;
         });
     }
 
-    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -51,7 +49,7 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
+            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
             return true;
         });
     }
@@ -103,8 +101,8 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
 
     String new_name;
-    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
-    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
     String storage_name;
 
@@ -115,22 +113,22 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
             if (parseAlterSettings(pos, expected, new_alter_settings))
             {
                 if (!alter_settings)
-                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
+                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
                 alter_settings->add(std::move(*new_alter_settings));
                 continue;
             }
         }
         else
         {
-            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
+            std::shared_ptr<ASTSettingsProfileElements> new_settings;
             if (parseSettings(pos, expected, attach_mode, new_settings))
             {
                 if (!settings)
-                    settings = make_intrusive<ASTSettingsProfileElements>();
+                    settings = std::make_shared<ASTSettingsProfileElements>();
                 settings->add(std::move(*new_settings));
                 continue;
             }
@@ -145,7 +143,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
-    auto query = make_intrusive<ASTCreateRoleQuery>();
+    auto query = std::make_shared<ASTCreateRoleQuery>();
     node = query;
 
     query->alter = alter;
@@ -162,61 +160,4 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
-
-namespace DB
-{
-
-void registerStatementRole(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROLE",
-    {
-        .description = R"(
-Creates new roles. A role is a set of privileges; a user assigned a role gets all the privileges of this role.
-
-**Examples**
-
-**Create a role and grant privileges to it**
-
-```sql title="Query"
-CREATE ROLE accountant;
-GRANT SELECT ON db.* TO accountant;
-```
-)",
-        .syntax = R"(
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [IN access_storage_type]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "CREATE",
-        .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
-    });
-
-    factory.registerStatement("ALTER ROLE",
-    {
-        .description = R"(
-Changes roles: renames them and changes their settings and settings profiles.
-
-**Examples**
-
-**Change a setting of a role**
-
-```sql title="Query"
-ALTER ROLE accountant SETTINGS max_memory_usage = 100000000;
-```
-)",
-        .syntax = R"(
-ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
-    [ON CLUSTER cluster_name]
-    [DROP ALL PROFILES]
-    [DROP ALL SETTINGS]
-    [DROP PROFILES 'profile_name' [,...] ]
-    [DROP SETTINGS variable [,...] ]
-    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-)",
-        .parent = "ALTER",
-        .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
-    });
-}
-
 }
