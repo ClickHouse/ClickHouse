@@ -1714,6 +1714,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "as `catalog_credential = '<client_id>:<client_secret>'`");
                 }
 
+                if (!args.create_query.attach && !database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "`oauth_server_use_request_body = 0` is not supported for Unity v2 catalog: "
+                                    "the OAuth client-credentials request always sends parameters in the request body");
+                }
+
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
