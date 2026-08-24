@@ -366,6 +366,11 @@ std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
         join_step.getSortingSettings());
     /// Pin the join layout, but leave `result_rows_estimation` empty: the old estimate
     /// describes the un-aggregated join and would poison `deriveJoinStatistics`.
+    /// `right_hash_table_cache_key` and the relation estimates likewise stay empty (default):
+    /// the originals describe the un-aggregated build side, and a wrong size hint is worse than
+    /// none. Recomputing them the way the join reorderer does for new joins
+    /// (`deriveCacheKeysForNewJoin`) would need reorderer-style subtree hashes, which do not
+    /// exist over memo groups.
     new_join_step->setOptimized();
     new_join_step->setStepDescription(join_step);
     return new_join_step;
@@ -497,6 +502,11 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         partial_input_header->insert({column.column ? column.column : column.type->createColumn(), column.type, column.name});
 
     auto partial_step = cloneStepAs(agg_step);
+    /// The cloned step still carries the hash-table stats identity stamped for the original
+    /// post-join aggregation (`setAggregationHashTableCacheKeys`, pre-Cascades). This step groups
+    /// by a different key set over a different input, so a shared key would cross-contaminate
+    /// `HashTablesStatistics` size hints between unrelated hash-table shapes; disable it here.
+    partial_step->setStatsCacheKey(0);
     if (!full_pushdown)
         partial_step->setFinal(false);
     /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the
@@ -555,6 +565,10 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
     auto merge_params = agg_step.getParams();
     merge_params.only_merge = true;
+    /// Same reasoning as the partial's `setStatsCacheKey(0)` above: this merge consumes
+    /// post-join states of a different shape than the original aggregation the key was stamped
+    /// for, so a shared key would cross-contaminate `HashTablesStatistics`.
+    merge_params.stats_collecting_params.setKey(0);
     auto merge_step = std::make_unique<MergingAggregatedStep>(
         new_join_step->getOutputHeader(),
         std::move(merge_params),
