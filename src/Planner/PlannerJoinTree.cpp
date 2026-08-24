@@ -240,6 +240,40 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
+/// Same outer-join sides as JOIN filter pushdown / `FunctionToSubcolumnsPass`:
+/// do not copy a predicate onto the null-producing side.
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {join_tree};
+    while (!stack.empty())
+    {
+        auto node = std::move(stack.back());
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        if (const auto * join = node->as<JoinNode>())
+        {
+            if (isRightOrFull(join->getKind()) && extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get()))
+                return false;
+            if (isLeftOrFull(join->getKind()) && extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get()))
+                return false;
+            stack.push_back(join->getLeftTableExpression());
+            stack.push_back(join->getRightTableExpression());
+        }
+        else if (const auto * array_join = node->as<ArrayJoinNode>())
+        {
+            stack.push_back(array_join->getTableExpression());
+        }
+        else if (const auto * cross_join = node->as<CrossJoinNode>())
+        {
+            for (const auto & expr : cross_join->getTableExpressions())
+                stack.push_back(expr);
+        }
+    }
+    return true;
+}
+
 /// `IStorageCluster` JOINs wrap the left table in a subquery. Attach dummy-analysis
 /// filters to the wrap source for listing only; do not add a FilterStep, which would
 /// drop unused columns from the wrap header.
@@ -1544,7 +1578,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
         /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
         /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
-        if (const auto * parent_query = select_query_info.query_tree->as<QueryNode>())
+        /// Skip the null-producing side of an outer JOIN (`WHERE isNull(r.x)` on a `LEFT JOIN`).
+        if (const auto * parent_query = select_query_info.query_tree->as<QueryNode>();
+            parent_query && joinTreePreservesRowsForTable(parent_query->getJoinTree(), original_table_expression))
         {
             auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
             {
