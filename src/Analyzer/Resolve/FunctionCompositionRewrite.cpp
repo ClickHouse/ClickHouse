@@ -11,6 +11,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <set>
 
 namespace DB
 {
