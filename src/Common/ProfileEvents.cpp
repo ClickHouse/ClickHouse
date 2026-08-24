@@ -493,6 +493,7 @@
     M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
+    M(UniformMarksCheckFromPrecomputedCount, "Number of times the check for a uniform (single-dictionary) marks stream was answered from the precomputed distinct-mark count instead of scanning the part's marks.", ValueType::Number) \
     M(MarkCacheEvictedBytes, "Number of bytes evicted from the mark cache.", ValueType::Bytes) \
     M(MarkCacheEvictedMarks, "Number of marks evicted from the mark cache.", ValueType::Number) \
     M(MarkCacheEvictedFiles, "Number of mark files evicted from the mark cache.", ValueType::Number) \

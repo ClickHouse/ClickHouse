@@ -108,9 +108,7 @@ TEST(Marks, DistinctMarksCapped)
 
         {
             SCOPED_TRACE("create");
-            PODArray<MarkInCompressedFile> copy;
-            copy.assign(plain);
-            auto marks = MarksInCompressedFile::create(copy);
+            auto marks = MarksInCompressedFile::create(plain);
             ASSERT_EQ(marks->getNumDistinctMarksCapped(), expected);
             /// The value must describe the marks that were actually stored.
             ASSERT_EQ(marks->getNumberOfMarks(), plain.size());
@@ -131,6 +129,8 @@ TEST(Marks, DistinctMarksCapped)
             }
             auto marks = builder.finish();
             ASSERT_EQ(marks->getNumDistinctMarksCapped(), expected);
+            /// The value must describe the marks that were actually stored.
+            ASSERT_EQ(marks->getNumberOfMarks(), plain.size());
             for (size_t i = 0; i < plain.size(); ++i)
                 ASSERT_EQ(marks->get(i), plain[i]) << "at " << i;
         }

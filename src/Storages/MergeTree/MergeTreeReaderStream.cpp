@@ -5,11 +5,17 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event UniformMarksCheckFromPrecomputedCount;
+}
 
 namespace DB
 {
@@ -201,7 +207,10 @@ bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) cons
     /// column per mark. Counts reaching the cap are indistinguishable.
     if (marks->getNumColumns() == 1 && marks->getNumRows() == marks_count
         && max_transitions < MarksInCompressedFile::DISTINCT_MARKS_CAP)
+    {
+        ProfileEvents::increment(ProfileEvents::UniformMarksCheckFromPrecomputedCount);
         return marks->getNumDistinctMarksCapped() <= max_transitions;
+    }
 
     size_t num_transitions = 0;
     MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
