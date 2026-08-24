@@ -84,11 +84,17 @@ Aggregator::Params makeMergingAggregatedParams(size_t max_threads)
 }
 
 std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(
-    size_t max_threads, size_t memory_efficient_merge_threads, bool final = true)
+    size_t max_threads, size_t memory_efficient_merge_threads, bool final = true, size_t bucket_top_k = 0)
 {
+    auto params = makeMergingAggregatedParams(max_threads);
+    /// `bucket_top_k` has no constructor argument on the merge-only `Params` overload; a Cascades
+    /// rule that only copies `AggregatingStep`'s full `Params` (see `TwoStageAggregationTransformation`)
+    /// can still carry it, so mutate the public field directly to reproduce that shape here.
+    params.bucket_top_k = bucket_top_k;
+
     return std::make_unique<MergingAggregatedStep>(
         makeAggregatedHeader(),
-        makeMergingAggregatedParams(max_threads),
+        std::move(params),
         GroupingSetsParamsList{},
         final,
         /*memory_efficient_aggregation=*/false,
@@ -434,5 +440,45 @@ TEST(CascadesStepIdentity, MergingAggregatedStepDifferentFinalFlagIsUnequal)
         makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/false));
 
     EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// `params.bucket_top_k` is not on the wire, but `Aggregator::convertOneBucketToChunk` reads it
+/// unconditionally on `final` (regardless of `only_merge`) from `MergingAggregatedTransform::generate`
+/// via `convertToChunks` - two merge steps differing only here produce different output row counts,
+/// so the wire-serialization "safe to drop" argument does not carry over to identity.
+TEST(CascadesStepIdentity, MergingAggregatedStepBucketTopKIsPartOfIdentity)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto a = std::make_shared<GroupExpression>(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true, /*bucket_top_k=*/0));
+    auto b = std::make_shared<GroupExpression>(
+        makeMergingAggregatedStep(/*max_threads=*/4, /*memory_efficient_merge_threads=*/4, /*final=*/true, /*bucket_top_k=*/100));
+
+    EXPECT_NE(a->globalFingerprint(), b->globalFingerprint());
+    EXPECT_FALSE(a->globallyEqualTo(*b));
+}
+
+/// A correlated `PLACEHOLDER` node makes `ActionsDAG::serialize` throw, even though
+/// `isSerializable()` is unconditionally `true`. `supportsCascadesIdentity()` must additionally
+/// check `hasCorrelatedExpressions()` to keep its "never throws" invariant true by construction.
+TEST(CascadesStepIdentity, ExpressionStepWithCorrelatedExpressionsDoesNotSupportIdentity)
+{
+    auto header = makeHeader();
+    auto type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG dag(NamesAndTypesList{{"x", type}});
+    dag.addPlaceholder("correlated", type);
+
+    ExpressionStep step(header, std::move(dag));
+
+    ASSERT_TRUE(step.hasCorrelatedExpressions());
+    EXPECT_FALSE(step.supportsCascadesIdentity());
+
+    auto a = std::make_shared<GroupExpression>(step.clone());
+    auto b = std::make_shared<GroupExpression>(step.clone());
+
+    EXPECT_EQ(a->getStepIdentity(), nullptr);
     EXPECT_FALSE(a->globallyEqualTo(*b));
 }

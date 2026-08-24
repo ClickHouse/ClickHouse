@@ -50,7 +50,11 @@ public:
     ///    always default for this step.
     ///  - display or runtime instrumentation only: `step_description`, `step_index`,
     ///    `processors`, `dataflow_cache_updater` (only ever set on source reading steps).
-    bool supportsCascadesIdentity() const override { return isSerializable(); }
+    ///
+    /// `isSerializable()` is unconditionally `true`, but a correlated `PLACEHOLDER` node makes
+    /// `actions_dag.serialize` throw ("Unknown node type"), so the predicate also requires
+    /// `!hasCorrelatedExpressions()` to keep the invariant true by construction.
+    bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);

@@ -313,6 +313,12 @@ enum MergingAggregatedStepIdentityTag : UInt64
 {
     MAX_THREADS_TAG = 1,
     MEMORY_EFFICIENT_MERGE_THREADS_TAG = 2,
+    BUCKET_TOP_K_TAG = 3,
+    BUCKET_TOP_K_ASCENDING_TAG = 4,
+    BUCKET_TOP_K_COUNT_INDEX_TAG = 5,
+    MAX_ROWS_TO_GROUP_BY_TAG = 6,
+    GROUP_BY_OVERFLOW_MODE_TAG = 7,
+    PARAMS_MAX_BLOCK_SIZE_TAG = 8,
 };
 }
 
@@ -320,6 +326,25 @@ void MergingAggregatedStep::appendCascadesIdentityExtras(CascadesIdentityExtras 
 {
     extras.addVarUInt(MAX_THREADS_TAG, max_threads);
     extras.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
+
+    /// `Aggregator::convertOneBucketToChunk` reads these unconditionally on `final` (already on
+    /// the wire), regardless of `only_merge` - reachable from `MergingAggregatedTransform::generate`
+    /// via `convertToChunks`. A provably-exact truncation is still a different result set.
+    extras.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    extras.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    extras.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+
+    /// `Aggregator::checkLimits` reads these for the single-level ("unknown bucket") sub-path of
+    /// `mergeBlocks(BucketToChunks, ...)`, i.e. `MergingAggregatedTransform::generate`'s plain merge
+    /// - it can throw, drop rows, or route them to the overflow row depending on the value.
+    extras.addVarUInt(MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    extras.addVarUInt(GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+
+    /// `Aggregator::convertToChunks` calls `prepareChunkAndFillSingleLevel<false>`, i.e. with
+    /// `return_single_block = false`, so `params.max_block_size` (not necessarily equal to this
+    /// step's own, wire-covered `max_block_size` - nothing enforces that the two stay in sync)
+    /// controls how the single-level merge result is split into chunks.
+    extras.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
 }
 
 QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
