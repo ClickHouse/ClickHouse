@@ -15,7 +15,7 @@ FINAL_WAIT_SECONDS = 20
 
 DEBUG_LOG = os.path.join(
     os.environ["CLICKHOUSE_TMP"],
-    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+    os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".debuglog",
 )
 
 # The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
@@ -26,7 +26,7 @@ def make_history_file(name, entries):
     """Write a replxx-format history file with the given entries, oldest first."""
     path = os.path.join(
         os.environ["CLICKHOUSE_TMP"],
-        os.path.basename(os.path.abspath(__file__)).strip(".python")
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0]
         + f".{name}.history",
     )
     with open(path, "w") as f:

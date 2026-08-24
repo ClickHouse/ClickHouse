@@ -23,7 +23,7 @@ FINAL_WAIT_SECONDS = 30
 
 DEBUG_LOG = os.path.join(
     os.environ["CLICKHOUSE_TMP"],
-    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+    os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".debuglog",
 )
 
 # The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
@@ -74,7 +74,7 @@ class CompletionHandler(http.server.BaseHTTPRequestHandler):
 def write_config(port):
     path = os.path.join(
         os.environ["CLICKHOUSE_TMP"],
-        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".config.xml",
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".config.xml",
     )
     with open(path, "w") as f:
         f.write(
@@ -94,7 +94,7 @@ def write_config(port):
 def make_history_file():
     path = os.path.join(
         os.environ["CLICKHOUSE_TMP"],
-        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".history",
+        os.path.splitext(os.path.basename(os.path.abspath(__file__)))[0] + ".history",
     )
     with open(path, "w") as f:
         pass
@@ -138,7 +138,11 @@ def drain(master, debug_log_fd, idle):
     return output
 
 
-def run_case(program, argv, name, keystrokes, check, state=None):
+def run_case(program, argv, name, keystrokes, check, state=None, check_from=0):
+    """Each keystroke is a pair of the bytes to send and an optional predicate to wait for before
+    sending the next one (in place of a fixed idle drain). Only the output produced from the
+    keystroke with index `check_from` on is passed to `check`, so the earlier keystrokes may
+    legitimately pop hints without failing a "no hints" check."""
     shell_pid, master = pty.fork()
     if shell_pid == 0:
         os.environ["TERM"] = "xterm"
@@ -150,9 +154,14 @@ def run_case(program, argv, name, keystrokes, check, state=None):
         read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
         output = ""
-        for keys in keystrokes:
+        for index, (keys, wait_for) in enumerate(keystrokes):
             os.write(master, keys)
-            output += drain(master, debug_log_fd, 0.4)
+            if wait_for is not None:
+                segment = read_until(master, debug_log_fd, wait_for, TIMEOUT_SECONDS)
+            else:
+                segment = drain(master, debug_log_fd, 0.4)
+            if index >= check_from:
+                output += segment
 
         # The prepopulated line only appears after the (faked) generation round trip, which can
         # outlast the inter-keystroke drain on slow builds.
@@ -172,16 +181,16 @@ def run_case(program, argv, name, keystrokes, check, state=None):
         debug_log_fd.close()
 
 
-def run_with_timeout(program, argv, name, keystrokes, check):
+def run_with_timeout(program, argv, name, keystrokes, check, check_from=0):
     for attempt in range(5):
         state = multiprocessing.Value("i", -1)
         process = multiprocessing.Process(
             target=run_case,
             args=(program, argv, name, keystrokes, check),
-            kwargs={"state": state},
+            kwargs={"state": state, "check_from": check_from},
         )
         process.start()
-        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        process.join(TIMEOUT_SECONDS * (1 + len(keystrokes)) + FINAL_WAIT_SECONDS)
         if process.is_alive():
             process.terminate()
         if state.value in (0, 1):
@@ -208,13 +217,36 @@ def main():
         f"--history_file={history}",
     ]
 
+    no_hints = lambda o: GENERATED_QUERY_LAST_WORD in o and (HINT_COLOR + "ive") not in o
+
     try:
         run_with_timeout(
             base[0],
             args,
             "prepopulated_query_no_hints",
-            [b"?? show me a query\r"],
-            lambda o: GENERATED_QUERY_LAST_WORD in o and (HINT_COLOR + "ive") not in o,
+            [(b"?? show me a query\r", None)],
+            no_hints,
+        )
+        # Same-text regression: replxx keeps the hint cache across prompts, so when the generated
+        # query is byte-for-byte equal to the previously displayed line, the hint callback may not
+        # even be called - the stale cached hint must not be reused either. Type the query manually
+        # first (and wait for the hint ghost, which poisons the cache), execute it, then have the
+        # AI "generate" the very same text. The `??` request is kept as short as possible so that
+        # replxx's rapid-refresh throttling (1 ms) can swallow its keystrokes without regenerating
+        # the hint seed - only then does the preloaded line hit the stale cache. Only the output
+        # after the `??` keystroke is checked, as the manually typed line legitimately shows the
+        # hint.
+        run_with_timeout(
+            base[0],
+            args,
+            "same_text_prepopulated_query_no_hints",
+            [
+                (GENERATED_QUERY.encode(), lambda o: (HINT_COLOR + "ive") in o),
+                (b"\r", lambda o: ":)" in o),
+                (b"??q\r", None),
+            ],
+            no_hints,
+            check_from=2,
         )
     finally:
         server.shutdown()
