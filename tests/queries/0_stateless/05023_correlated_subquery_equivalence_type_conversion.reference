@@ -91,3 +91,11 @@ plan: substituted=0
 -0	2
 0	2
 7	1
+-- Case 25: guarded, outer Bool vs inner Int32; accurateCastOrNull to Bool maps any non-zero value to true instead of checking exactness, so true must count only the genuine inner 1 rows (never the 2) and false counts only the 0
+plan: substituted=0
+false	1
+true	2
+-- Case 26: outer Int32 vs inner Bool; the member-side direction is faithful, CAST from Bool to Int32 is lossless (true is 1, false is 0), so 0 and 1 match while 2 must not
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+0
+1

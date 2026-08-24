@@ -353,3 +353,27 @@ SELECT format('plan: substituted={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_24 AS i WHERE i.x = o.x) FROM t_outer_24 AS o);
 -- Ordered by the string form: the relative order of -0.0 and 0.0 under a float ORDER BY is comparator-dependent.
 SELECT x, (SELECT count() FROM t_inner_24 AS i WHERE i.x = o.x) FROM t_outer_24 AS o ORDER BY toString(x);
+
+SELECT '-- Case 25: guarded, outer Bool vs inner Int32; accurateCastOrNull to Bool maps any non-zero value to true instead of checking exactness, so true must count only the genuine inner 1 rows (never the 2) and false counts only the 0';
+CREATE TABLE t_outer_25 (x Bool) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_25 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_25 VALUES (true), (false);
+INSERT INTO t_inner_25 VALUES (0), (1), (1), (2);
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_25 AS i WHERE i.x = o.x) FROM t_outer_25 AS o);
+SELECT x, (SELECT count() FROM t_inner_25 AS i WHERE i.x = o.x) FROM t_outer_25 AS o ORDER BY x;
+
+SELECT '-- Case 26: outer Int32 vs inner Bool; the member-side direction is faithful, CAST from Bool to Int32 is lossless (true is 1, false is 0), so 0 and 1 match while 2 must not';
+CREATE TABLE t_outer_26 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_26 (x Bool) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_26 VALUES (0), (1), (2);
+INSERT INTO t_inner_26 VALUES (true), (false);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_26 AS o WHERE EXISTS (SELECT 1 FROM t_inner_26 AS i WHERE i.x = o.x));
+SELECT x FROM t_outer_26 AS o WHERE EXISTS (SELECT 1 FROM t_inner_26 AS i WHERE i.x = o.x) ORDER BY x;
