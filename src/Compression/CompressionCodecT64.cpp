@@ -265,10 +265,11 @@ TypeIndex typeIdx(const IDataType * data_type)
   * dependent one-byte accesses at stride 64 for every matrix. Both permutations exchange the two
   * indices of an 8x8 tile, which a byte shuffle performs a whole vector at a time.
   *
-  * The kernels are written with generic clang vectors; the shuffles compile to single instructions
-  * on the SSE2 (x86_64) and NEON (AArch64) baselines, so no arch-specific code or runtime dispatch
-  * is needed. Bytes are addressed in native order, so the fast path also requires a little-endian
-  * build to match the little-endian on-disk format; others fall back to the scalar loops.
+  * The kernels are written with generic clang vectors, so no arch-specific code or runtime
+  * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence,
+  * a handful of instructions on the x86-64-v3 baseline and on NEON. Bytes are addressed in native
+  * order, so the fast path also requires a little-endian build to match the little-endian on-disk
+  * format; others fall back to the scalar loops.
   */
 #if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
     && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
