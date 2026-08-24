@@ -56,6 +56,13 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
+bool MutationCommand::requiresInsertBarrier() const
+{
+    return type == MATERIALIZE_INDEX
+        || type == MATERIALIZE_COLUMN
+        || (type == DROP_INDEX && clear);
+}
+
 namespace
 {
 
@@ -384,6 +391,11 @@ bool MutationCommands::containBarrierCommand() const
             return true;
     }
     return false;
+}
+
+bool MutationCommands::requiresInsertBarrier() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.requiresInsertBarrier(); });
 }
 
 NameSet MutationCommands::getAllUpdatedColumns() const

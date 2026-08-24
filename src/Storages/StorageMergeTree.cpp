@@ -500,13 +500,8 @@ void StorageMergeTree::alter(
     /// instead. Drain writes that captured the old metadata and block new ones until the metadata
     /// and its repair mutation are registered atomically from their point of view. Otherwise a
     /// late old-snapshot part can receive a block number above the mutation version and skip it.
-    const bool needs_insert_barrier = std::ranges::any_of(maybe_mutation_commands, [](const auto & command)
-    {
-        return command.type == MutationCommand::MATERIALIZE_INDEX
-            || command.type == MutationCommand::MATERIALIZE_COLUMN;
-    });
     TableLockHolder insert_barrier;
-    if (needs_insert_barrier)
+    if (maybe_mutation_commands.requiresInsertBarrier())
         insert_barrier = tryLockTimed(
             insert_alter_lock, RWLockImpl::Write,
             local_context->getCurrentQueryId(), query_settings[Setting::lock_acquire_timeout]);
