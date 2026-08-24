@@ -25,6 +25,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "إعداد تجريبي جديد."}]}]} />
 
 العدد الافتراضي للمهام اللازمة للقراءة المتوازية في استعلام موزّع. تُوزَّع المهام عبر النسخ المتماثلة.
+يستخدم المخطِّط الموزّع القائم على القواعد هذا الإعداد. ويختار محسن قائم على التكلفة مدى التوزيع للقراءة استنادًا إلى التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
 <div id="distributed_plan_default_shuffle_join_bucket_count">
   ## distributed_plan_default_shuffle_join_bucket_count
@@ -37,6 +38,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "إعداد تجريبي جديد."}]}]} />
 
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
+يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
 <div id="distributed_plan_execute_locally">
   ## distributed_plan_execute_locally
@@ -89,6 +91,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "إعداد تجريبي جديد."}]}]} />
 
 الحد الأقصى لعدد الصفوف لاستخدام broadcast join بدلًا من shuffle join ضمن خطة الاستعلام الموزعة.
+آلية استدلالية للمخطط الموزع القائم على القواعد. عند تمكين المُحسِّن القائم على التكلفة، يُحدَّد الاختيار بين broadcast وshuffle بناءً على التكلفة المقدّرة، ولا يكون لهذا الإعداد أي تأثير.
 
 <div id="distributed_plan_optimize_exchanges">
   ## distributed_plan_optimize_exchanges

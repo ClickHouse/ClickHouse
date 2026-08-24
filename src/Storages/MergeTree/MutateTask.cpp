@@ -1083,7 +1083,8 @@ static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & m
 
     for (const auto & col_desc : columns)
     {
-        if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
+        /// A mutation already in the queue must drain rather than retry forever.
+        if (!col_desc.statistics.empty() && columns.hasPhysical(col_desc.name) && materialized_stats.contains(col_desc.name))
             stats_to_recalc.emplace(col_desc.name, stats_factory.get(col_desc));
     }
     return stats_to_recalc;
@@ -3327,7 +3328,8 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn, std::nullopt);
+        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
+            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
         /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
         /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
         /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
@@ -3904,9 +3906,7 @@ bool MutateTask::prepare()
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
-                ctx->txn,
-                /*patch_part_index=*/ std::nullopt);
-
+                ctx->txn);
             /// Keep the temporary-directory holder alive until the part is renamed/committed, so
             /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
             /// directory, keeping the holder authoritative for every createEmptyPart caller.
