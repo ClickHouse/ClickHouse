@@ -243,6 +243,14 @@ void removeExpressionsThatAreNotDeterministicInScopeOfQuery(
     QueryTreeNodePtr & expression,
     const ContextPtr & context);
 
+/** Remove conjuncts that call stateful functions (`aiEmbed`, `timeSeriesStoreTags`, and similar).
+  * Those can report `isDeterministicInScopeOfQuery` while still having side effects; JOIN filter
+  * pushdown refuses them via `ActionsDAG::hasStatefulFunctions`.
+  */
+void removeExpressionsThatAreStateful(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context);
+
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
 /// Returns true if the subquery's projection matches the storage schema (column count and
