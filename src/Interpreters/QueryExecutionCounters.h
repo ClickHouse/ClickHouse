@@ -39,11 +39,20 @@ struct QueryExecutionCounters
     /// Records that `operator_name` wrote temporary data to disk, e.g. `join` or `aggregation`.
     static void markSpilledToDisk(std::string_view operator_name);
 
-    UInt64 getNumberOfJoins() const;
-    std::vector<String> getJoinKinds() const;
-    std::vector<String> getJoinStrictness() const;
-    std::set<String> getJoinAlgorithms() const;
-    std::set<String> getSpilledToDisk() const;
+    /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned.
+    struct Snapshot
+    {
+        UInt64 number_of_joins = 0;
+        std::set<String> join_algorithms;
+        std::vector<String> join_kinds;
+        std::vector<String> join_strictness;
+        std::set<String> spilled_to_disk;
+    };
+
+    /// Takes all the counters under a single lock, so that the result cannot mix values recorded before
+    /// and after a late update, e.g. by a processor of a dependent view that is still running after the
+    /// main query has nominally finished.
+    Snapshot getSnapshot() const;
 
 private:
 

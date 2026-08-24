@@ -36,38 +36,24 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
     counters->used_join_algorithms.emplace(algorithm);
 }
 
-UInt64 QueryExecutionCounters::getNumberOfJoins() const
-{
-    std::lock_guard lock(mutex);
-    return number_of_joins;
-}
-
-std::vector<String> QueryExecutionCounters::getJoinKinds() const
+QueryExecutionCounters::Snapshot QueryExecutionCounters::getSnapshot() const
 {
     std::lock_guard lock(mutex);
 
-    std::vector<String> kinds;
-    kinds.reserve(used_joins.size());
-    for (const auto & [kind, _] : used_joins)
-        kinds.push_back(kind);
-    return kinds;
-}
+    Snapshot snapshot;
+    snapshot.number_of_joins = number_of_joins;
+    snapshot.join_algorithms = used_join_algorithms;
+    snapshot.spilled_to_disk = spilled_to_disk;
 
-std::vector<String> QueryExecutionCounters::getJoinStrictness() const
-{
-    std::lock_guard lock(mutex);
+    snapshot.join_kinds.reserve(used_joins.size());
+    snapshot.join_strictness.reserve(used_joins.size());
+    for (const auto & [kind, strictness] : used_joins)
+    {
+        snapshot.join_kinds.push_back(kind);
+        snapshot.join_strictness.push_back(strictness);
+    }
 
-    std::vector<String> strictness;
-    strictness.reserve(used_joins.size());
-    for (const auto & [_, join_strictness] : used_joins)
-        strictness.push_back(join_strictness);
-    return strictness;
-}
-
-std::set<String> QueryExecutionCounters::getJoinAlgorithms() const
-{
-    std::lock_guard lock(mutex);
-    return used_join_algorithms;
+    return snapshot;
 }
 
 std::shared_ptr<QueryExecutionCounters> QueryExecutionCounters::getForCurrentQuery()
@@ -98,12 +84,6 @@ void QueryExecutionCounters::markSpilledToDisk(std::string_view operator_name)
         std::lock_guard lock(counters->mutex);
         counters->spilled_to_disk.emplace(operator_name);
     }
-}
-
-std::set<String> QueryExecutionCounters::getSpilledToDisk() const
-{
-    std::lock_guard lock(mutex);
-    return spilled_to_disk;
 }
 
 }

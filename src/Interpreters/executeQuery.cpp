@@ -501,13 +501,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
 
+    /// A single snapshot, for the same reason as for `QueryFactoriesInfo` above: a late update, e.g. by a
+    /// processor of a dependent view, must not be able to land in the middle of these assignments and make
+    /// the logged row self-contradictory.
     if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
     {
-        element.used_number_of_joins = query_execution_counters->getNumberOfJoins();
-        element.used_join_algorithms = query_execution_counters->getJoinAlgorithms();
-        element.used_join_kinds = query_execution_counters->getJoinKinds();
-        element.used_join_strictness = query_execution_counters->getJoinStrictness();
-        element.spilled_to_disk = query_execution_counters->getSpilledToDisk();
+        auto counters = query_execution_counters->getSnapshot();
+        element.used_number_of_joins = counters.number_of_joins;
+        element.used_join_algorithms = std::move(counters.join_algorithms);
+        element.used_join_kinds = std::move(counters.join_kinds);
+        element.used_join_strictness = std::move(counters.join_strictness);
+        element.spilled_to_disk = std::move(counters.spilled_to_disk);
     }
 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
