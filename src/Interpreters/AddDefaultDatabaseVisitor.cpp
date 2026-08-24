@@ -25,9 +25,11 @@ void AddDefaultDatabaseVisitor::appendSettings(SettingsChanges & changes, const 
         return;
 
     /// A clause of a view being stored may hold a query parameter, which has no value yet, so
-    /// only the settings that can decide alias inheritance are taken.
+    /// only the settings that can decide alias inheritance are taken. `profile` can decide it
+    /// too, by naming a group that sets one of the other two.
     for (const SettingChange & change : set_query->changes)
-        if (change.name == "enable_global_with_statement" || change.name == "compatibility")
+        if (change.name == "enable_global_with_statement" || change.name == "compatibility"
+            || change.name == "profile")
             changes.push_back(change);
 }
 
@@ -36,19 +38,21 @@ bool AddDefaultDatabaseVisitor::evaluateWithAliasInheritance(const SettingsChang
     if (changes.empty())
         return inherit_with_aliases;
 
-    /// Replayed from the context rather than searched, so that a repeated setting takes its last
-    /// value and an inner `compatibility` reverts what an outer one derived.
-    Settings settings = context->getSettingsRef();
+    /// Replayed onto a context rather than searched, so that a repeated setting takes its last
+    /// value, an inner `compatibility` reverts what an outer one derived, and `profile` stands for
+    /// the group of settings it names.
+    ContextMutablePtr replay_context = Context::createCopy(context);
     try
     {
-        settings.applyChanges(changes);
+        replay_context->applySettingsChanges(changes);
     }
     catch (const Exception &)
     {
-        /// A value that does not convert is one this pass cannot evaluate.
+        /// A value that does not convert, or a profile that does not resolve, is one this pass
+        /// cannot evaluate.
         return inherit_with_aliases;
     }
-    return settings[Setting::enable_global_with_statement];
+    return replay_context->getSettingsRef()[Setting::enable_global_with_statement];
 }
 
 AddDefaultDatabaseVisitor::AddDefaultDatabaseVisitor(
