@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <DataTypes/DataTypeString.h>
