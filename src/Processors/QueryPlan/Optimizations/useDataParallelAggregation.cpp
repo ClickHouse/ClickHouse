@@ -306,7 +306,8 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     const Names key_names = sorting_step->getPartitionByColumnNames();
 
     std::optional<ActionsDAG> dag;
-    buildKeyDAG(*node.children.front(), dag);
+    if (!buildKeyDAG(*node.children.front(), dag))
+        return;
     if (!dag)
         return;
 
@@ -340,7 +341,8 @@ void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
     const Names key_names = child.step->getOutputHeader()->getNames();
 
     std::optional<ActionsDAG> dag;
-    buildKeyDAG(child, dag);
+    if (!buildKeyDAG(child, dag))
+        return;
     if (!dag)
         return;
 

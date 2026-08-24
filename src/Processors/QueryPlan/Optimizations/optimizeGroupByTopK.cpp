@@ -111,6 +111,15 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         next_node = next_node->children.front();
     }
 
+    /// Never look through or retune the steps that decide which rows a `SQL SECURITY DEFINER` or
+    /// `NONE` view exposes: turning the view's own aggregation into a bounded heap driven by the
+    /// invoker's `LIMIT` (and inserting a synthesized, unmarked sorting below the seal) would make
+    /// the processing inside the view depend on the invoker's query. Fail closed.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (parent_node->step->isSecurityBarrier() || (sorting_step && sorting_step->isSecurityBarrier())
+        || (expression_step && expression_step->isSecurityBarrier()) || next_node->step->isSecurityBarrier())
+        return 0;
+
     auto * aggregating_step = validateAggregatingStep(next_node);
     if (!aggregating_step)
         return 0;
