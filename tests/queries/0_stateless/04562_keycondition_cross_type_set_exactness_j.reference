@@ -89,3 +89,6 @@ dyn String/Dynamic(String) has prunes	1
 dyn String/Dynamic(String) has	1	1
 dyn String/Dynamic(String,Float64) has declines	1
 dyn String/Dynamic(String,Float64) has	1
+var String/Variant(String,UInt8) IN declines	1
+var String/Variant(String,UInt8) IN	1	1
+var String/String IN prunes	1

@@ -440,3 +440,24 @@ SELECT 'dyn String/Dynamic(String,Float64) has declines', count() = 0 FROM (EXPL
 SELECT 'dyn String/Dynamic(String,Float64) has',
     (SELECT count() FROM at_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k));
 DROP TABLE at_dyns; DROP TABLE ao_dyns;
+
+-- A plain `Variant` element stays declined where a `Dynamic` one is recovered, because the declared
+-- alternative set makes the two directions disagree: index preparation casts `Variant(UInt8(3))` into
+-- the key type and gets the `String` '3', while runtime membership casts the key into the `Variant`,
+-- where a `String` key lands in the `String` arm and the element sits in the `UInt8` arm, so they never
+-- compare equal. `Dynamic` declares no alternative set for the key to be cast into.
+DROP TABLE IF EXISTS at_var; DROP TABLE IF EXISTS ao_var;
+CREATE TABLE at_var (k String) ENGINE = MergeTree ORDER BY k PARTITION BY k SETTINGS index_granularity = 1;
+CREATE TABLE ao_var (k String) ENGINE = Memory;
+INSERT INTO at_var VALUES ('3');
+INSERT INTO at_var VALUES ('4');
+INSERT INTO ao_var VALUES ('3'), ('4');
+SELECT 'var String/Variant(String,UInt8) IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_var WHERE k NOT IN (SELECT CAST(toUInt8(3), 'Variant(String, UInt8)'))) WHERE explain ILIKE '%1-element set%';
+-- The wrong-results arm: an exact atom prunes the '3' part away while the runtime predicate keeps it.
+SELECT 'var String/Variant(String,UInt8) IN',
+    (SELECT count() FROM at_var WHERE k IN (SELECT CAST(toUInt8(3), 'Variant(String, UInt8)'))) = (SELECT count() FROM ao_var WHERE k IN (SELECT CAST(toUInt8(3), 'Variant(String, UInt8)'))),
+    (SELECT count() FROM at_var WHERE k NOT IN (SELECT CAST(toUInt8(3), 'Variant(String, UInt8)'))) = (SELECT count() FROM ao_var WHERE k NOT IN (SELECT CAST(toUInt8(3), 'Variant(String, UInt8)')));
+-- The keep-pruning control on the same fixture: a same-typed element still reduces the parts read, so
+-- the decline above is specific to the `Variant` element rather than a property of this table.
+SELECT 'var String/String IN prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_var WHERE k NOT IN (SELECT '3')) WHERE explain ILIKE '%Parts: 1/2%';
+DROP TABLE at_var; DROP TABLE ao_var;
