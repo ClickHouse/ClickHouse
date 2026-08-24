@@ -3,7 +3,7 @@
 -- straight to DateTime64 fails to parse for values such as "0".
 -- https://github.com/ClickHouse/ClickHouse/issues/94612
 
--- The exact serialization lives in the analyzer (ConstantNode::toASTImpl), so force the new analyzer.
+-- The exact serialization lives in the analyzer (ConstantNode::toASTImpl), so force the analyzer.
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS ts_data_94612;
@@ -107,10 +107,10 @@ FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic(max_types
 -- serialized as text, so writing a typed DateTime64 path as local date-time text is ambiguous at a DST
 -- overlap (two distinct UTC instants share one local value, e.g. 2023-10-29 02:30:00 in Europe/Berlin):
 -- the shard reparses the text and picks the earlier instant. The literal below holds the later instant
--- (1698543000000000000 ns), which the exact path serializes as bare integer ticks so the typed path
--- parses it back losslessly; the buggy text path returned 1698539400000000000 instead.
+-- (1698543000 s), which the exact path serializes as a bare number so the typed path parses it back
+-- losslessly; the buggy text path returned 1698539400000000000 instead.
 SELECT DISTINCT toUnixTimestamp64Nano(json.a)
-FROM (SELECT materialize('{"a":1698543000000000000}'::JSON(a DateTime64(9, 'Europe/Berlin'))) AS json FROM remote('127.0.0.{1,2}', system.one));
+FROM (SELECT materialize('{"a":1698543000}'::JSON(a DateTime64(9, 'Europe/Berlin'))) AS json FROM remote('127.0.0.{1,2}', system.one));
 
 DROP TABLE ts_data_94612;
 
