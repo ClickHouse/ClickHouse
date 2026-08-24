@@ -100,6 +100,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
+    M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
+    M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \
     M(BackupsThreads, "Number of threads in the thread pool for BACKUP.") \
     M(BackupsThreadsActive, "Number of threads in thread pool for BACKUP running a task.") \
     M(BackupsThreadsScheduled, "Number of queued or active jobs for BACKUP.") \
@@ -298,6 +301,9 @@
     M(KeeperChangelogReadAheadThreads, "Number of threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
     M(KeeperChangelogReadAheadThreadsActive, "Number of active threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
     M(KeeperChangelogReadAheadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperChangelogStartupReadThreads, "Number of threads in the threadpool for Keeper changelog parallel startup reads.") \
+    M(KeeperChangelogStartupReadThreadsActive, "Number of active threads in the threadpool for Keeper changelog parallel startup reads.") \
+    M(KeeperChangelogStartupReadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog parallel startup reads.") \
     M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
     M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
@@ -324,6 +330,8 @@
     M(PartsCompact, "Compact parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(FiberStacks, "Number of currently allocated fiber stacks (fibers are used for asynchronous communication with remote replicas).") \
+    M(FiberStackBytes, "Sum size of currently allocated fiber stacks.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \

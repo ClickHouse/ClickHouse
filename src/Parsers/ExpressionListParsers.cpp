@@ -36,6 +36,8 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -931,7 +933,8 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     {
         is_like = true;
     }
-    else if (func->name == "match"
+    else if (func->name == "match" || func->name == "notMatch"
+             || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
              || func->name == "extract" || func->name == "extractAll"
              || func->name == "extractGroups" || func->name == "extractAllGroups"
              || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
@@ -1044,6 +1047,7 @@ public:
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
+            ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
             /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
@@ -1055,8 +1059,9 @@ public:
             auto test_pos = pos;
             ++test_pos;
 
-            /// End of query
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
+            /// so a comma in front of it is unambiguously a trailing comma.
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
@@ -3346,6 +3351,10 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
     {toStringView(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
     {toStringView(Keyword::REGEXP),        Operator("match",           9,  2)},
+    {"~",              Operator("match",                    9, 2)},
+    {"~*",             Operator("matchCaseInsensitive",     9, 2)},
+    {"!~",             Operator("notMatch",                 9, 2)},
+    {"!~*",            Operator("notMatchCaseInsensitive",  9, 2)},
     {toStringView(Keyword::IN),            Operator("in",              9,  2)},
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
@@ -3391,7 +3400,8 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::StartNotBetween
                 || op.type == OperatorType::Cast)
                 return;
-            if (op.function_name == "match")
+            if (op.function_name == "match" || op.function_name == "matchCaseInsensitive"
+                || op.function_name == "notMatch" || op.function_name == "notMatchCaseInsensitive")
                 return;
             /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
             /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
@@ -3508,7 +3518,8 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
-        "like", "ilike", "notLike", "notILike", "match"
+        "like", "ilike", "notLike", "notILike",
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
     };
     return predicates.contains(function_name);
 }
@@ -4082,6 +4093,56 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ++layers.back()->between_counter;
 
     return Action::OPERAND;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementIn(StatementFactory & factory)
+{
+    factory.registerStatement("IN",
+    {
+        .description = R"(
+Checks whether the left side of the operator is contained in the right side. The left side is either a single column or
+a tuple, the right side is a set of literals, a table, a subquery, or a table function.
+
+The `GLOBAL IN` and `GLOBAL NOT IN` variants change how the right side is evaluated in a distributed query: the set is
+calculated once on the initiator server and sent to the remote servers, instead of being calculated on every remote
+server.
+
+**Examples**
+
+**Check a single column against a set of literals**
+
+```sql title="Query"
+SELECT number IN (1, 2) FROM numbers(3);
+```
+
+```response title="Response"
+0
+1
+1
+```
+
+**Check a tuple against a subquery**
+
+```sql title="Query"
+SELECT (1, 2) IN (SELECT 1, 2);
+```
+
+```response title="Response"
+1
+```
+)",
+        .syntax = R"(
+expr IN (literal [, ...])
+expr IN table | (subquery) | table_function(...)
+expr [GLOBAL] [NOT] IN ...
+)",
+        .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
+    });
 }
 
 }

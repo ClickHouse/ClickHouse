@@ -28,7 +28,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -575,8 +575,11 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsStatistics() const override { return true; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
+    bool supportsPinnedSnapshot() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -1157,7 +1160,7 @@ public:
         return column_sizes;
     }
 
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {

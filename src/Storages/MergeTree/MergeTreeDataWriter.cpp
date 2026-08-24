@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
@@ -827,9 +828,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
+        const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
+        /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
+        /// statistics during merges instead, avoiding per-insert overhead.
+        /// Setting value = 0 disables the limit.
+        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+            const auto & all_columns = metadata_snapshot->getColumns();
+            statistics = ColumnsStatistics(all_columns);
+            /// A non-physical column is never present in a written block, so `build` below would
+            /// reject it. Every other absence stays an error.
+            std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
+            statistics.build(block);
+        }
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
@@ -949,7 +961,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
