@@ -669,11 +669,12 @@ struct ToDateTime64TransformSigned
             if (from < min_whole || from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        const time_t clamped = std::max<time_t>(from, min_whole);
-        if (clamped > max_whole)
+        if (from > max_whole)
             return maxTicksForDateTime64(scale_multiplier);
+        if (from < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -705,7 +706,8 @@ struct ToDateTime64TransformFloat
 
         if (from > static_cast<FromType>(max_whole))
             return maxTicksForDateTime64(scale_multiplier);
-        from = std::max(from, static_cast<FromType>(min_whole));
+        if (from < static_cast<FromType>(min_whole))
+            return minTicksForDateTime64(scale_multiplier);
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -755,7 +757,8 @@ struct ToDateTime64Transform
         }
         if (dt > max_whole)
             return maxTicksForDateTime64(scale_multiplier);
-        dt = std::max<time_t>(dt, min_whole);
+        if (dt < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -818,8 +821,9 @@ struct ToTime64TransformSigned
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
         if (static_cast<Int64>(from) > MAX_TIME_TIMESTAMP)
             return maxTicksForTime64(scale_multiplier);
-        const auto clamped = std::max<Int64>(static_cast<Int64>(from), -MAX_TIME_TIMESTAMP);
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        if (static_cast<Int64>(from) < -MAX_TIME_TIMESTAMP)
+            return minTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<Int64>(from), 0, scale_multiplier);
     }
 };
 
@@ -848,7 +852,8 @@ struct ToTime64TransformFloat
         /// saturated maximum.
         if (from > static_cast<FromType>(MAX_TIME_TIMESTAMP))
             return maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
-        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
+        if (from < static_cast<FromType>(-MAX_TIME_TIMESTAMP))
+            return minTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };

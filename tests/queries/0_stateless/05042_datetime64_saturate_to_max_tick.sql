@@ -22,8 +22,12 @@ SELECT toTime64(3600000, 9);
 SELECT 'in-range values are untouched';
 SELECT toDateTime64(1, 9), toDateTime64(1::Int64, 6), toTime64(1, 6);
 
-SELECT 'underflow still clamps to the lower bound';
-SELECT toDateTime64(-1e30, 6), toTime64(-3600000, 6), toTime64(-3600000::Int64, 6);
+SELECT 'underflow clamps to the smallest tick too';
+-- At scale 6 the bound is the calendar range, whose minimum starts exactly at a second
+SELECT toDateTime64(-1e30, 6), toDateTime64(-300000000000::Int64, 6);
+SELECT toUnixTimestamp64Nano(toDateTime64(-1e30, 9)) = toInt64('-9223372036854775808'),
+       toUnixTimestamp64Nano(toDateTime64(-300000000000::Int64, 9)) = toInt64('-9223372036854775808');
+SELECT toTime64(-3600000, 6), toTime64(-3600000::Int64, 6), toTime64(-3600000.0, 6), toTime64(-3600000::Int64, 9);
 
 SELECT 'numeric sources still saturate under throw, the transforms are dispatched with Ignore';
 SELECT toTime64(materialize(3600000.0), 6), toTime64(materialize(3600000::Int64), 6), toTime64(materialize(3600000::UInt64), 6)

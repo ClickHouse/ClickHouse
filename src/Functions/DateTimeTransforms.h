@@ -88,10 +88,23 @@ inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
     return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
 }
 
+/// Smallest representable value in ticks; the calendar bound starts exactly at a second, the Int64 one does not
+inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
+{
+    if (minWholeSecondsForDateTime64(scale_multiplier) == MIN_DATETIME64_TIMESTAMP)
+        return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+    return std::numeric_limits<Int64>::min();
+}
+
 /// Time64 caps the scale at 9, so this cannot overflow Int64
 inline Int64 maxTicksForTime64(Int64 scale_multiplier)
 {
     return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+}
+
+inline Int64 minTicksForTime64(Int64 scale_multiplier)
+{
+    return -maxTicksForTime64(scale_multiplier);
 }
 
 /// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale

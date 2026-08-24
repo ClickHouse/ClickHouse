@@ -38,13 +38,13 @@ SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_
 -- Saturation lands on the maximum tick, so compare the whole second here; 05042 covers the subsecond part
 SELECT toStartOfSecond(toDateTime64(300000000000, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
        toStartOfSecond(toDateTime64(300000000000, 8, 'UTC')) = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-400000000000, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- the float numeric path saturates per-scale too (it previously surfaced DECIMAL_OVERFLOW)';
 SELECT toStartOfSecond(toDateTime64(300000000000.0, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
        toStartOfSecond(toDateTime64(300000000000.0, 8, 'UTC')) = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000.0, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+       toDateTime64(-300000000000.0, 9, 'UTC') = toDateTime64(-400000000000.0, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
@@ -55,7 +55,7 @@ SELECT toYear(toDateTime64(253402300799, 0, 'UTC')) = 9999,
 -- so numeric toDateTime64 saturates per-scale in every mode (including 'throw') instead of raising an error.
 SELECT '-- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior';
 SELECT toStartOfSecond(toDateTime64(300000000000, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-400000000000, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'throw';
 
 SELECT '-- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW';
