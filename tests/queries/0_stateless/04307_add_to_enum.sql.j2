@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: the test creates two replicas of a `ReplicatedMergeTree` table with an explicit ZooKeeper path, which is not allowed in a `Replicated` database
-
 {% for NULLABLE_START, NULLABLE_END in {'' : '', 'Nullable(' : ')'}.items() -%}
 SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============';
 {% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
@@ -176,6 +173,11 @@ INSERT INTO enum_rmt1 VALUES (2, 20);
 SYSTEM SYNC REPLICA enum_rmt2;
 SELECT x, v FROM enum_rmt2 ORDER BY v;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'enum_rmt1' AND active AND length(splitByChar('_', name)) > 4;
+-- No unfinished mutations may remain after the alter. Do not count finished ones:
+-- `SharedMergeTree` accounts even a metadata-only alter in `system.mutations`, while
+-- `MergeTree` and `ReplicatedMergeTree` do not. `mutations_sync = 2` on the alter above
+-- makes this deterministic: anything the alter created has finished by this point.
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'enum_rmt1' AND NOT is_done;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'enum_rmt2' AND name = 'x';
 DROP TABLE enum_rmt1 SYNC;
 DROP TABLE enum_rmt2 SYNC;
