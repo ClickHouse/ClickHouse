@@ -1,5 +1,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -16,24 +17,36 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-SerializationNullableWithParentNullMap::SerializationNullableWithParentNullMap(const SerializationPtr & nested_)
+SerializationNullableWithParentNullMap::SerializationNullableWithParentNullMap(
+    const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
     : SerializationWrapper(nested_)
+    , on_disk_type(on_disk_type_)
 {
 }
 
-UInt128 SerializationNullableWithParentNullMap::getHash(const SerializationPtr & nested_)
+UInt128 SerializationNullableWithParentNullMap::getHash(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
 {
     SipHash hash;
     hash.update("NullableWithParentNullMap");
     hash.update(nested_->getHash());
+    /// The on-disk type decides how the deserialization buffer is built, so the two flavours must not share
+    /// a pooled instance.
+    hash.update(on_disk_type_ != nullptr);
+    if (on_disk_type_)
+    {
+        auto on_disk_type_name = on_disk_type_->getName();
+        hash.update(on_disk_type_name.size());
+        hash.update(on_disk_type_name);
+    }
     return hash.get128();
 }
 
-SerializationPtr SerializationNullableWithParentNullMap::create(const SerializationPtr & nested_)
+SerializationPtr SerializationNullableWithParentNullMap::create(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationNullableWithParentNullMap(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationNullableWithParentNullMap(nested_); });
+        return std::shared_ptr<ISerialization>(new SerializationNullableWithParentNullMap(nested_, on_disk_type_));
+    return ISerialization::pooled(
+        getHash(nested_, on_disk_type_), [&] { return new SerializationNullableWithParentNullMap(nested_, on_disk_type_); });
 }
 
 void SerializationNullableWithParentNullMap::enumerateStreams(
@@ -93,7 +106,11 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     /// applied below physically removes the parent-NULL rows from them. A column that is published must
     /// never be mutated afterwards, otherwise a reader of the whole parent column adopts the shortened
     /// substream from the cache while computing its own offsets from the unfiltered row count.
-    ColumnPtr range_column = column->cloneEmpty();
+    /// For a promoted non-nullable `LowCardinality(T)` the result column is `LowCardinality(Nullable(T))`,
+    /// which is not the on-disk representation: build the buffer from the on-disk type instead, so that the
+    /// published substreams are the ones a reader of the whole parent column expects. The promotion of this
+    /// private buffer happens below, in `applyParentNullMapToExtractedSubcolumn`.
+    ColumnPtr range_column = on_disk_type ? on_disk_type->createColumn(*nested_serialization) : column->cloneEmpty();
 
     /// A cached column can contain rows from multiple ranges, so copy only the rows of the current range
     /// from it, keeping `range_column` exactly the size of the current range.

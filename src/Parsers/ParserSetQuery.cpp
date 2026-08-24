@@ -8,9 +8,10 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Core/Names.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -322,22 +323,15 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
     else
     {
-        try
-        {
-            Field type_test = Settings::castValueUtil(name, true);
-            if (type_test.getType() == Field::Types::Which::Bool)
-                node = make_intrusive<ASTLiteral>(Field(true));
-            else
-                return false;
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
+        /// A setting name with no value is shorthand for `= true`. Only a Bool setting can be
+        /// written this way, but the parser does not know the settings schema, so it records that
+        /// the value was omitted and leaves the check to `BaseSettings::applyChange`.
+        node = make_intrusive<ASTLiteral>(Field(true));
     }
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
+    change.shorthand = !have_eq;
 
     return true;
 }
@@ -418,5 +412,36 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+void registerStatementSet(StatementFactory & factory)
+{
+    factory.registerStatement("SET",
+    {
+        .description = R"(
+Assigns a value to a setting for the current session. Server settings cannot be changed this way. Assigning a value to
+the setting `profile` applies all the settings of the given settings profile at once.
+
+The settings of a session are shown in `system.settings`.
+
+**Examples**
+
+**Change a setting for the session**
+
+```sql title="Query"
+SET max_threads = 4;
+```
+)",
+        .syntax = R"(
+SET param = value
+SET profile = 'profile-name-from-the-settings-file'
+)",
+        .related = {"SET ROLE", "CREATE SETTINGS PROFILE", "SHOW", "ALTER TABLE ... MODIFY SETTING"},
+    });
+}
 
 }

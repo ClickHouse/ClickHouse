@@ -11,6 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
@@ -55,6 +57,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -208,20 +211,21 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
+        ///   https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree#settings
         ///
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
         String settings = config.getString(config_prefix + ".settings", "");
-        if (!storage_policy.empty() || !settings.empty())
-        {
-            log_settings.engine += " SETTINGS";
-            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
-            if (!storage_policy.empty())
-                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
-            if (!settings.empty())
-                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
-        }
+        /// Some logs add engine settings to the default table definition
+        /// (e.g. the bucketed Map serialization for the 'bucketed' schema of metric_log).
+        String merged_settings = TSystemLog::getDefaultEngineSettings();
+        if (!storage_policy.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + "storage_policy = " + quoteString(storage_policy);
+        /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+        if (!settings.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + settings;
+        if (!merged_settings.empty())
+            log_settings.engine += " SETTINGS " + merged_settings;
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -234,6 +238,21 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const char * comment_addendum = "\n\nIt is safe to truncate or drop this table at any time.";
     if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
         log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
+
+    /// The optional `create_union_system_log_tables` section requests the creation of `all_...`
+    /// tables querying the set of rotated tables (`query_log`, `query_log_0`, `query_log_1`, ...)
+    /// and/or the corresponding tables across all replicas of a cluster. It applies to all
+    /// system log tables and does not allow a different configuration for different logs.
+    if (config.has("create_union_system_log_tables"))
+    {
+        log_settings.union_table_merge_rotated_tables = config.getBool("create_union_system_log_tables.merge_rotated_tables", false);
+        log_settings.union_table_cluster = config.getString("create_union_system_log_tables.cluster", "");
+
+        if (!log_settings.union_table_merge_rotated_tables && log_settings.union_table_cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If the 'create_union_system_log_tables' section is present in the server configuration,"
+                            " at least one of 'merge_rotated_tables' and 'cluster' has to be specified");
+    }
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
@@ -275,22 +294,29 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
+        if (schema != "transposed" && schema != "transposed_with_wide_view" /* compatibility */ && schema != "bucketed")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'bucketed' are supported", schema);
+
         return {};
     }
-    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+    else if constexpr (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
-        {
             return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema != "wide")
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
-        }
-    }
-    return std::make_shared<TSystemLog>(context, log_settings);
 
+        return {};
+    }
+    else if constexpr (std::is_same_v<TSystemLog, BucketedMetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "bucketed")
+            return std::make_shared<TSystemLog>(context, log_settings);
+
+        return {};
+    }
+    else
+        return std::make_shared<TSystemLog>(context, log_settings);
 }
 
 
@@ -304,6 +330,21 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
     return old_ast;
+}
+
+/// Escapes a table name for use inside a regular expression
+/// (the argument of the `merge` table function).
+String escapeStringForRegexp(const String & s)
+{
+    String result;
+    result.reserve(s.size());
+    for (char c : s)
+    {
+        if (!isWordCharASCII(c))
+            result += '\\';
+        result += c;
+    }
+    return result;
 }
 
 }
@@ -323,11 +364,15 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log")
-        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
+    if (metric_log == nullptr && config.has("metric_log"))
     {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        auto schema = config.getString("metric_log.schema_type", "wide");
+        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
+            transposed_metric_log = createSystemLog<TransposedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        else if (schema == "bucketed")
+            bucketed_metric_log = createSystemLog<BucketedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
@@ -359,6 +404,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+    }
+
+    if (bucketed_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        bucketed_metric_log->startCollect(ThreadName::BUCKETED_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (error_log)
@@ -470,17 +522,36 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     }
     else
     {
-        #define GET_MAP_VALUES(log_type, member, descr) \
-            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
-            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+        std::unordered_map<String, ISystemLog *> logs_map;
 
-        std::unordered_map<String, ISystemLog *> logs_map
+        /// Several logs can be exposed under the same public table name: `system.metric_log` is
+        /// backed by `metric_log`, `transposed_metric_log` or `bucketed_metric_log` depending on
+        /// the configured `schema_type`, and only one of them is instantiated. The name must
+        /// resolve to the instantiated log, so an empty slot never replaces a live one.
+        auto add_log_name = [&](const String & name, ISystemLog * log)
         {
-            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
-            #if CLICKHOUSE_CLOUD
-                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
-            #endif
+            auto [it, inserted] = logs_map.emplace(name, log);
+            if (!inserted && it->second == nullptr)
+                it->second = log;
         };
+
+        /// A live log is registered under the name of the table it writes to as well, so that
+        /// `SYSTEM FLUSH LOGS metric_log` finds the log serving `system.metric_log` regardless
+        /// of which of the alternative implementations is instantiated.
+        #define GET_MAP_VALUES(log_type, member, descr) \
+            add_log_name(getLowerCaseAndRemoveUnderscores(#member), (member).get()); \
+            if ((member)) \
+            { \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().getFullTableName()), (member).get()); \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().table_name), (member).get()); \
+            } \
+            else \
+                add_log_name(getLowerCaseAndRemoveUnderscores("system."#member), nullptr);
+
+        LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+        #endif
         #undef GET_MAP_VALUES
 
         for (const auto & name : names)
@@ -593,10 +664,15 @@ SystemLog<LogElement>::SystemLog(
     , WithContext(context_)
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
+    , union_table_id(settings_.queue_settings.database, "all_" + settings_.queue_settings.table)
     , storage_def(settings_.engine)
+    , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
+    , union_table_cluster(settings_.union_table_cluster)
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
+    if (union_table_merge_rotated_tables || !union_table_cluster.empty())
+        union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
     chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
@@ -901,6 +977,11 @@ void SystemLog<LogElement>::prepareTable()
 
             /// The required table will be created.
             table = nullptr;
+
+            /// The union table (if configured) pins the structure of the current table,
+            /// so it has to be re-checked after the rotation.
+            union_table_check_pending = true;
+            union_table_broken = false;
         }
         else if (!is_prepared)
             LOG_DEBUG(log, "Will use existing table {} for {}", description, LogElement::name());
@@ -926,6 +1007,95 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+
+    prepareUnionTable();
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::prepareUnionTable()
+{
+    if (union_create_query.empty() || union_table_broken)
+        return;
+
+    try
+    {
+        auto union_table = DatabaseCatalog::instance().tryGetTable(union_table_id, getContext());
+
+        /// The definition is verified at the first flush and after each rotation of the log
+        /// table; on other flushes only recreate the union table if it was dropped by a user.
+        if (!union_table_check_pending && union_table)
+            return;
+
+        const auto & database_engine = DatabaseCatalog::instance().getDatabase(union_table_id.database_name)->getEngineName();
+        if (database_engine != "Atomic" && database_engine != "Replicated" && database_engine != "Shared")
+        {
+            LOG_INFO(
+                log,
+                "Not creating {}: it is only supported for the Atomic, Replicated and Shared database engines,"
+                " while the database {} has the engine {}",
+                union_table_id.getNameForLogs(),
+                backQuoteIfNeed(union_table_id.database_name),
+                database_engine);
+            union_table_broken = true;
+            return;
+        }
+
+        if (union_table)
+        {
+            String existing_create_query = getCreateTableQueryClean(union_table_id, getContext())->formatWithSecretsOneLine();
+            if (existing_create_query == union_create_query)
+            {
+                union_table_check_pending = false;
+                return;
+            }
+
+            LOG_DEBUG(
+                log,
+                "Existing table {} has an obsolete or different definition. Recreating it.\nOld: {}\nNew: {}\n.",
+                union_table_id.getNameForLogs(),
+                existing_create_query,
+                union_create_query);
+        }
+        else
+        {
+            LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
+        }
+
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        addSettingsForQuery(query_context, IAST::QueryKind::Create);
+        /// Replacing the union table drops the previous one, and users may have created
+        /// dependencies on it; as with the rotation of the log tables, this automatic
+        /// operation must not fail because of them.
+        query_context->setSetting("check_table_dependencies", Field{false});
+        query_context->setSetting("check_referential_table_dependencies", Field{false});
+
+        ASTPtr create_query_ast = getCreateUnionTableQuery();
+        auto & create = create_query_ast->as<ASTCreateQuery &>();
+        /// The union table has no state, so it is always possible to recreate it.
+        /// CREATE OR REPLACE swaps the old and the new table with an atomic exchange
+        /// and also works when the table does not exist.
+        create.create_or_replace = true;
+        create.replace_table = true;
+
+        InterpreterCreateQuery interpreter(create_query_ast, query_context);
+        interpreter.setInternal(true);
+        interpreter.execute();
+
+        union_table_check_pending = false;
+    }
+    catch (...)
+    {
+        /// The log table must keep flushing even if the union table cannot be created
+        /// (for example, the configured cluster does not exist).
+        union_table_broken = true;
+        tryLogCurrentException(
+            log,
+            fmt::format(
+                "Failed to prepare {}. The creation will not be retried until a restart of the server"
+                " or a rotation of the log table",
+                union_table_id.getNameForLogs()));
+    }
 }
 
 template <typename LogElement>
@@ -969,7 +1139,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
     /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
-    if (!flush_policy->shouldSkipAliasColumns())
+    if (flush_policy->shouldSkipAliasColumns())
+    {
+        /// Some logs keep their user-facing interface only in the alias columns
+        /// (the `bucketed` schema of `system.metric_log` stores everything in a single Map
+        /// column and exposes every metric as an alias). Silently dropping the aliases would
+        /// silently break every query against such a table, so reject the combination instead.
+        if constexpr (requires { LogElement::alias_columns_are_required; })
+            if (LogElement::alias_columns_are_required)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The table {} cannot be created without alias columns, but they are disabled "
+                    "(the storage does not support them, or "
+                    "`default_system_log_flush_policy.skip_alias_columns` is set in the configuration). "
+                    "Use another schema of this table",
+                    table_id.getFullTableName());
+    }
+    else
         ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
@@ -1040,6 +1225,85 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
         storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
+
+    return create;
+}
+
+template <typename LogElement>
+ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
+{
+    auto create = make_intrusive<ASTCreateQuery>();
+
+    create->setDatabase(union_table_id.database_name);
+    create->setTable(union_table_id.table_name);
+
+    /// The columns are specified explicitly (instead of being derived from the table function),
+    /// so that the union table always pins the up-to-date structure of the log table: the
+    /// dynamically derived structure could include obsolete columns of the rotated tables.
+    /// Note: unlike the log table itself, no skipping indices - they are not supported for
+    /// tables created over a table function.
+    auto new_columns_list = make_intrusive<ASTColumns>();
+    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto alias_columns = LogElement::getNamesAndAliases();
+    if (!flush_policy->shouldSkipAliasColumns())
+        ordinary_columns.setAliases(alias_columns);
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
+    create->set(create->columns_list, new_columns_list);
+
+    /// The `merge` table function selects the log table itself along with its rotated
+    /// versions (`query_log`, `query_log_0`, `query_log_1`, ...), but not the union table.
+    ASTPtr merge_table_function;
+    if (union_table_merge_rotated_tables)
+        merge_table_function = makeASTFunction(
+            "merge",
+            make_intrusive<ASTLiteral>(table_id.database_name),
+            make_intrusive<ASTLiteral>(fmt::format("^{}(_[0-9]+)?$", escapeStringForRegexp(table_id.table_name))));
+
+    String comment;
+    ASTPtr table_function;
+    if (!union_table_cluster.empty())
+    {
+        /// Reading from the union table should not fail because some of the replicas
+        /// are unavailable. The setting stored in the table definition is overridable:
+        /// it takes effect only when `skip_unavailable_shards` is not set for the query.
+        auto settings = make_intrusive<ASTSetQuery>();
+        settings->is_standalone = false;
+        settings->changes.emplace_back("skip_unavailable_shards", true);
+
+        if (merge_table_function)
+        {
+            table_function = makeASTFunction(
+                "clusterAllReplicas", make_intrusive<ASTLiteral>(union_table_cluster), merge_table_function, settings);
+            comment = fmt::format(
+                "Union of the {} tables (including the rotated versions) across all replicas of the cluster {}.",
+                backQuote(table_id.table_name),
+                backQuote(union_table_cluster));
+        }
+        else
+        {
+            table_function = makeASTFunction(
+                "clusterAllReplicas",
+                make_intrusive<ASTLiteral>(union_table_cluster),
+                make_intrusive<ASTLiteral>(table_id.database_name),
+                make_intrusive<ASTLiteral>(table_id.table_name),
+                settings);
+            comment = fmt::format(
+                "Union of the {} tables across all replicas of the cluster {}.",
+                backQuote(table_id.table_name),
+                backQuote(union_table_cluster));
+        }
+    }
+    else
+    {
+        table_function = merge_table_function;
+        comment = fmt::format(
+            "Union of the {} table and its rotated versions.", backQuote(table_id.table_name));
+    }
+
+    create->set(create->as_table_function, table_function);
+
+    comment += "\n\nIt is safe to drop this table at any time: it will be recreated automatically.";
+    create->set(create->comment, make_intrusive<ASTLiteral>(comment));
 
     return create;
 }

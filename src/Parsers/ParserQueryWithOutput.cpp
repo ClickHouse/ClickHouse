@@ -31,6 +31,8 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -39,6 +41,37 @@
 
 namespace DB
 {
+
+/** `SHOW GRANTS`, `SHOW CREATE USER` and the rest of the read-only half of access management.
+  * Left out of a `CLICKHOUSE_PARSER_NO_DCL` build - see `ParserQuery.cpp`.
+  */
+#if defined(CLICKHOUSE_PARSER_NO_DCL)
+
+static bool parseShowCreateAccessEntityQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+static bool parseShowAccessQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+
+#else
+
+static bool parseShowCreateAccessEntityQuery(IParser::Pos & pos, ASTPtr & query, Expected & expected)
+{
+    ParserShowCreateAccessEntityQuery show_create_access_entity_p;
+    return show_create_access_entity_p.parse(pos, query, expected);
+}
+
+static bool parseShowAccessQuery(IParser::Pos & pos, ASTPtr & query, Expected & expected)
+{
+    ParserShowAccessQuery show_access_p;
+    ParserShowAccessEntitiesQuery show_access_entities_p;
+    ParserShowGrantsQuery show_grants_p;
+    ParserShowPrivilegesQuery show_privileges_p;
+
+    return show_access_p.parse(pos, query, expected)
+        || show_access_entities_p.parse(pos, query, expected)
+        || show_grants_p.parse(pos, query, expected)
+        || show_privileges_p.parse(pos, query, expected);
+}
+
+#endif
 
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -62,11 +95,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
-    ParserShowAccessQuery show_access_p;
-    ParserShowAccessEntitiesQuery show_access_entities_p;
-    ParserShowCreateAccessEntityQuery show_create_access_entity_p;
-    ParserShowGrantsQuery show_grants_p;
-    ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
     ParserSnapshotQuery snapshot_p;
@@ -76,7 +104,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool parsed =
            explain_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
-        || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
+        || parseShowCreateAccessEntityQuery(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
         || show_columns_p.parse(pos, query, expected)
         || show_engine_p.parse(pos, query, expected)
@@ -96,10 +124,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
-        || show_access_p.parse(pos, query, expected)
-        || show_access_entities_p.parse(pos, query, expected)
-        || show_grants_p.parse(pos, query, expected)
-        || show_privileges_p.parse(pos, query, expected)
+        || parseShowAccessQuery(pos, query, expected)
         || backup_p.parse(pos, query, expected)
         || snapshot_p.parse(pos, query, expected);
 
@@ -235,6 +260,57 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     node = std::move(query);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementQueryWithOutput(StatementFactory & factory)
+{
+    factory.registerStatement("FORMAT",
+    {
+        .description = R"(
+Specifies the format in which the result of the query is serialized. See `system.formats` for the list of the
+supported formats. The format can also be specified by the setting `output_format`, or by the client.
+
+**Examples**
+
+**Return the result as JSON**
+
+```sql title="Query"
+SELECT * FROM numbers(3) FORMAT JSONEachRow;
+```
+)",
+        .syntax = R"(
+SELECT ... FORMAT format
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
+    });
+
+    factory.registerStatement("INTO OUTFILE",
+    {
+        .description = R"(
+Redirects the result of the query to a file on the client side. Compressed files are supported; the compression type is
+detected by the extension of the file name, or specified explicitly in a `COMPRESSION` clause. `AND STDOUT`
+additionally prints the result to the standard output, and `APPEND` appends to an existing file instead of failing.
+
+**Examples**
+
+**Write the result to a compressed file**
+
+```sql title="Query"
+SELECT * FROM numbers(3) INTO OUTFILE 'result.tsv.gz';
+```
+)",
+        .syntax = R"(
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "FORMAT", "INSERT INTO"},
+    });
 }
 
 }

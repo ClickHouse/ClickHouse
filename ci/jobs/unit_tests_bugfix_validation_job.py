@@ -8,9 +8,15 @@ does not contain the new tests.
 
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
 PR's unit-test file changes overlaid on top (the test, but not the fix), and then
-runs the touched test suites on it — at least one must FAIL or crash (or the "before"
-binary must fail to build, which is the strongest possible proof that the test depends
-on the fix).
+runs the touched test suites on it — at least one must FAIL or crash. When the
+"before" binary fails to compile and the failure belongs to the overlaid test files
+alone (every compiler error is inside them, or every translation unit that failed to
+compile is one of them), the changed test code depends on the interface the fix
+introduces (the typical case is a call site adapted to a changed function signature);
+the unit side then has nothing it can judge at runtime, the PR author cannot avoid the
+adaptation, and the job reports the build failure as expected (XFAIL, nothing to
+validate) instead of staying red forever. Any other build failure is an infrastructure
+or attribution problem and stays an ERROR (inconclusive).
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -53,7 +59,11 @@ BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 BUILD_TYPE = BuildTypes.AMD_ASAN_UBSAN
 
 # gtest test-registration macros whose first argument is the test-suite name.
+# `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of
+# each register a suite and both must be listed here.
 _GTEST_MACROS = (
+    "GTEST_TEST",
+    "GTEST_TEST_F",
     "TEST",
     "TEST_F",
     "TEST_P",
@@ -448,6 +458,204 @@ def compile_before_binary():
     return compile_result
 
 
+# A clang/gcc diagnostic line: "path:line[:col]: [fatal] error: ...". Notes and
+# warnings deliberately do not match — only hard errors attribute the build failure.
+_COMPILE_ERROR_LINE_RE = re.compile(
+    r"^(?P<path>[^\s:]+):\d+(?::\d+)?:\s*(?:fatal\s+)?error:", re.MULTILINE
+)
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def attribute_compile_errors(compile_result, test_files):
+    """Split the before-build's compile-error paths into the PR's overlaid test files
+    vs everything else.
+
+    Returns `(overlaid, other)` — sorted lists of error-carrying paths, repo-relative
+    for paths under the before-worktree. Both empty means the ninja failure produced
+    no parsable compiler diagnostic (compiler killed, link failure, ninja internal
+    error) — not attributable either way, so the caller must fail close.
+    """
+    test_file_set = set(test_files)
+    marker = f"{BEFORE_SRC}/"
+    overlaid = set()
+    other = set()
+    for log in compile_result.files or []:
+        try:
+            with open(log, "r", errors="replace") as f:
+                content = _ANSI_ESCAPE_RE.sub("", f.read())
+        except OSError as e:
+            print(f"WARNING: could not read compile log {log}: {e}")
+            continue
+        for m in _COMPILE_ERROR_LINE_RE.finditer(content):
+            path = m.group("path")
+            idx = path.find(marker)
+            rel = path[idx + len(marker) :] if idx != -1 else path
+            (overlaid if rel in test_file_set else other).add(rel)
+    return sorted(overlaid), sorted(other)
+
+
+# ninja prints `FAILED: <outputs>` and then the exact command it ran, so the compiled
+# translation unit of a failed edge is the `-c <source>` argument of the next line.
+_NINJA_FAILED_LINE_RE = re.compile(r"^FAILED:(?:\s|$)")
+_COMPILE_SOURCE_RE = re.compile(r"(?:^|\s)-c\s+(\S+)")
+# The line after `FAILED:` is the command only if it starts with the program ninja ran:
+# a path to a tool or wrapper script, optionally behind cmake's `: && ` or `cd <dir> && `
+# prefix. A diagnostic never takes that shape - it indents, or its first token carries
+# the `path:line:` colons, or it leads with a bare word such as `In` or `clang`.
+_NINJA_COMMAND_LINE_RE = re.compile(r"^(?::\s*&&\s+)?(?:cd|[^\s:]*/[^\s:]*)(?:\s|$)")
+
+
+def failed_compile_edge_sources(compile_result):
+    """Split the before-build's failed ninja edges four ways.
+
+    Returns `(sources, unattributable, unreadable, diagnostic_free)` - sorted lists of,
+    respectively, the compiled translation units of the failed edges (repo-relative for
+    paths under the before-worktree); the outputs of the edges whose command line was
+    read as a command and carries no `-c <source>`, such as a link step, an archive step
+    or a custom command; the outputs of the edges whose command line is absent or is not
+    recognisable as a command, because the log ends there or something else stands in its
+    place; and the translation units of the compile edges that raised no parsable
+    compiler error of their own.
+
+    A non-empty `unattributable` or `diagnostic_free` is evidence that something failed
+    which either is not a translation unit or never said why. A non-empty `unreadable` is
+    only the absence of evidence about that edge, which is why they are kept apart.
+
+    An edge's own diagnostics are the lines up to the next `FAILED:` edge, so one edge's
+    error cannot vouch for another edge's silence.
+    """
+    marker = f"{BEFORE_SRC}/"
+    sources = set()
+    unattributable = set()
+    unreadable = set()
+    diagnostic_free = set()
+    for log in compile_result.files or []:
+        try:
+            with open(log, "r", errors="replace") as f:
+                content = _ANSI_ESCAPE_RE.sub("", f.read())
+        except OSError as e:
+            print(f"WARNING: could not read compile log {log}: {e}")
+            continue
+        lines = content.splitlines()
+        edges = [i for i, line in enumerate(lines) if _NINJA_FAILED_LINE_RE.match(line)]
+        for n, i in enumerate(edges):
+            outputs = lines[i][len("FAILED:") :].strip() or "unnamed edge"
+            command = lines[i + 1] if i + 1 < len(lines) else ""
+            if not command.strip() or not _NINJA_COMMAND_LINE_RE.match(command):
+                unreadable.add(outputs)
+                continue
+            m = _COMPILE_SOURCE_RE.search(command)
+            if not m:
+                unattributable.add(outputs)
+                continue
+            path = m.group(1)
+            idx = path.find(marker)
+            rel = path[idx + len(marker) :] if idx != -1 else path
+            sources.add(rel)
+            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
+            if not any(
+                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
+            ):
+                diagnostic_free.add(rel)
+    return (
+        sorted(sources),
+        sorted(unattributable),
+        sorted(unreadable),
+        sorted(diagnostic_free),
+    )
+
+
+def compile_failure_attribution(compile_result, test_files):
+    """Decide whether the before-build failure belongs to the overlaid test files alone.
+
+    Returns `(reason, other_errors, refusal)`: `reason` is a non-empty sentence naming the
+    attribution basis when the failure is fully attributable to the overlaid tests (the
+    caller then reports XFAIL), and an empty string when it is not (the caller fails
+    close with ERROR). `other_errors` is the error-carrying paths outside the overlaid
+    tests, and `refusal` names what defeated attribution when no such path did, both for
+    the ERROR message.
+
+    Two attribution bases, tried in that order:
+
+    * the path on every `error:` diagnostic is an overlaid test file;
+    * every translation unit that failed to compile is an overlaid test file. This covers
+      the failure clang reports inside a header the overlaid test includes: a
+      construction through a template (`std::make_unique` and friends) is performed on a
+      libcxx line, so the only `error:` line names a contrib path while the overlaid test
+      appears merely on a `note: in instantiation of ...` line. The failing ninja edge
+      names the translation unit instead, which is what attribution really asks, because
+      the before-worktree is merge-base sources with only the PR's test files overlaid:
+      a broken fix source or contrib header is a different translation unit and fails
+      its own edge.
+
+    A failed edge that was read and is not a compile at all (a link step, an archive step,
+    a custom command), or that compiled a translation unit other than an overlaid test
+    file, defeats both bases whatever the diagnostics say: something outside the overlaid
+    tests demonstrably failed.
+
+    An edge whose command line could not be read defeats only the second basis, which
+    claims every failed translation unit is an overlaid test and therefore needs all of
+    them enumerated. The first basis reasons about the diagnostics that are present, so an
+    edge this log does not describe cannot contradict it.
+
+    A compile edge that raised no parsable error of its own is not attributable either: a
+    killed compiler says nothing about why that translation unit failed, and a diagnostic
+    belonging to a different edge cannot answer for it.
+    """
+    overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
+    sources, unattributable, unreadable, diagnostic_free = failed_compile_edge_sources(
+        compile_result
+    )
+    if unattributable:
+        return (
+            "",
+            other_errors,
+            "failed build steps that name no translation unit: "
+            + ", ".join(unattributable),
+        )
+    non_test_sources = [source for source in sources if source not in set(test_files)]
+    if non_test_sources:
+        return (
+            "",
+            other_errors,
+            "translation units outside the PR's changed test files failed to compile: "
+            + ", ".join(non_test_sources),
+        )
+    if diagnostic_free:
+        return (
+            "",
+            other_errors,
+            "failed build steps with no compiler diagnostic of their own: "
+            + ", ".join(diagnostic_free),
+        )
+    if overlaid_errors and not other_errors:
+        return (
+            "every compile error is inside the PR's changed test files ("
+            + ", ".join(overlaid_errors)
+            + ")",
+            other_errors,
+            "",
+        )
+    if not (overlaid_errors or other_errors):
+        return "", other_errors, "the build produced no parsable compiler diagnostic"
+    if unreadable:
+        return (
+            "",
+            other_errors,
+            "failed build steps whose command line could not be read: "
+            + ", ".join(unreadable),
+        )
+    if not sources:
+        return "", other_errors, ""
+    return (
+        "every translation unit that failed to compile is one of the PR's changed test "
+        "files (" + ", ".join(sources) + "), and the compile error is raised inside a "
+        "header they include",
+        other_errors,
+        "",
+    )
+
+
 def run_gtests(binary_path, gtest_filter, name):
     # ASan+UBSan build: do not wrap with gdb (LSan is incompatible with the debugger),
     # and disable the uninstrumented FIPS provider to avoid sanitizer false positives.
@@ -660,26 +868,63 @@ def main():
         return
 
     # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
-    # the overlaid test references *some* code the PR adds (a new header, helper, or
-    # symbol — even in a no-op test), not that it depends on the bug fix or reproduces
-    # the old behavior at runtime. We cannot attribute the failure to the touched
-    # regression case, so report it as inconclusive (fail close) rather than a pass. A
-    # genuine regression test should build against the merge-base and fail at runtime.
+    # the overlaid test references *some* code the PR adds, not that it catches the bug
+    # at runtime. Attribute the failure instead:
+    #  * every compiler error inside the overlaid test files, or every translation unit
+    #    that failed to compile being an overlaid test file (compile_failure_attribution)
+    #    → the changed test code depends on the fix's interface (typically a call site
+    #    adapted to a changed signature). The PR author cannot avoid that adaptation and
+    #    the unit side has nothing left to judge, so report the step as an expected
+    #    failure (XFAIL) with nothing to validate — NOT as a reproduction. When the PR
+    #    also carries functional/integration tests, new_tests_check.py still demands a
+    #    real validation from those jobs; for a unit-only PR the merge gate already
+    #    treats inconclusive as non-blocking, so this changes report truthfulness, not
+    #    gating.
+    #  * anything else (a failed fix-source or contrib translation unit, the linker, no
+    #    parsable diagnostic) → cannot be attributed to the touched test changes; fail
+    #    close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
+        attributed_to, other_errors, refusal = compile_failure_attribution(
+            compile_result, test_files
+        )
+        if attributed_to:
+            compile_result.set_label(Result.Label.XFAIL)
+            compile_result.set_status(Result.Status.XFAIL)
+            compile_result.set_info(
+                "The before-binary cannot compile the overlaid unit-test changes: "
+                + attributed_to
+                + ". The changed test code depends on the interface this PR introduces "
+                "(e.g. a call site adapted to a changed signature), so there is nothing "
+                "the unit side can validate on the merge base. This is expected, not an "
+                "error — and it is not counted as a reproduction either. "
+                + (compile_result.info or "")
+            )
+            results.append(compile_result)
+            finalize(
+                results,
+                "Nothing to validate on the unit side: the changed unit-test files do "
+                "not compile against the merge base because they depend on the fix's "
+                "interface. Regression coverage is judged by the functional/integration "
+                "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
+                "exist).",
+            )
+            return
         compile_result.set_status(Result.Status.ERROR)
         compile_result.set_info(
-            "The before-binary FAILED TO COMPILE the overlaid test. This does not prove "
-            "the test reproduces the bug — it only shows the test depends on code this PR "
-            "adds (a new header/helper/symbol would fail to compile here too). Write a "
-            "regression test that builds against the merge-base and fails at runtime "
-            "without the fix. " + (compile_result.info or "")
+            "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
+            "to the overlaid test files alone"
+            + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
+            + (f" ({refusal})" if refusal else "")
+            + ". This does not prove the test reproduces the bug. Write a regression "
+            "test that builds against the merge-base and fails at runtime without the "
+            "fix. " + (compile_result.info or "")
         )
         results.append(compile_result)
         finalize(
             results,
-            "Bugfix validation inconclusive: the before-binary failed to COMPILE the "
-            "overlaid test, which cannot be attributed to the touched regression case.",
+            "Bugfix validation inconclusive: the before-binary failed to COMPILE and "
+            "the failure cannot be attributed to the touched regression case.",
         )
         return
     build_result = compile_result

@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <IO/Operators.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -89,6 +90,9 @@ public:
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

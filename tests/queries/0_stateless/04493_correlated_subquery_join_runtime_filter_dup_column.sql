@@ -7,6 +7,7 @@
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 -- The runtime filter is only built for hash-family algorithms (supportsRuntimeFilter),
 -- and CI randomizes join_algorithm. Pin it so the repro statements below deterministically
 -- exercise the crashing runtime-filter path (they fail on the pre-fix build) instead of

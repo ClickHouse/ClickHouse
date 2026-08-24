@@ -32,7 +32,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 | Table function | ✅ | ✅ | [`icebergS3()`](/reference/functions/table-functions/iceberg) with variants per backend |
 | Table engine | ✅ | ✅ | [`IcebergS3`](/reference/engines/table-engines/integrations/iceberg) with variants per backend |
 | Cluster-distributed reads | ✅ | ✅ | [`icebergS3Cluster`](/reference/functions/table-functions/icebergCluster), [`icebergAzureCluster`](/reference/functions/table-functions/icebergCluster), [`icebergHDFSCluster`](/reference/functions/table-functions/icebergCluster) |
-| Named collections | ❌ | ✅ | [Named collections aren't supported in ClickHouse Cloud](/whats-new/cloud-compatibility#named-collections). |
+| Named collections | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ✅ | DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. |
 |  |  |  |  |
 | **Read features** | | | |
 | Read support | ✅ | ✅ | Full `SELECT` support with all ClickHouse SQL functions |
@@ -43,7 +43,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 | Type promotion / widening | ✅ | ✅ | `int` → `long`, `float` → `double`, `decimal(P,S)` → `decimal(P',S)` where P' > P. See [Schema evolution](/reference/engines/table-engines/integrations/iceberg#schema-evolution). |
 | Time travel / snapshots | ✅ | ✅ | Via `iceberg_timestamp_ms` or `iceberg_snapshot_id` settings. See [Time travel](/reference/engines/table-engines/integrations/iceberg#time-travel). |
 | Position deletes | ✅ | ✅ | See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
-| Equality deletes | ✅ | ✅ | Table engine only, from v25.8+. See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
+| Equality deletes | ✅ | ✅ | Table functions and table engines, from v25.8+. See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
 | Merge-on-read | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Supported for [delete operations](/reference/functions/table-functions/iceberg#iceberg-writes-delete). |
 | Format versions | ⚠️ Partial | ⚠️ Partial | v1 and v2 are supported. V3 support is partial; deletion vectors and manifest compaction aren't supported. |
 | Column statistics | ✅ | ✅ | |
@@ -86,7 +86,7 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Table function | ✅ | ✅ | [`deltaLake()`](/reference/functions/table-functions/deltalake) with variants per backend |
 | Table engine | ✅ | ✅ | [`DeltaLake`](/reference/engines/table-engines/integrations/deltalake) |
 | Cluster-distributed reads | ✅ | ✅ | [`deltaLakeCluster`](/reference/functions/table-functions/deltalakeCluster), [`deltaLakeAzureCluster`](/reference/functions/table-functions/deltalakeCluster) |
-| Named collections | ❌ | ✅ | [Named collections aren't supported in ClickHouse Cloud](/whats-new/cloud-compatibility#named-collections). |
+| Named collections | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ✅ | DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. |
 | **Read features** | | | |
 | Read support | ✅ | ✅ | Full `SELECT` support with all ClickHouse SQL functions |
 | Partition pruning | ✅ Beta | ✅ Beta | Requires the Delta Kernel. |
@@ -97,7 +97,7 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Change data feed | ✅ Beta | ✅ Beta | Requires the Delta Kernel. |
 | Virtual columns | ✅ | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/deltalake#virtual-columns). |
 | **Write features** | | | |
-| `INSERT` | ✅ Beta | ✅ Beta | Requires `allow_delta_lake_writes = 1` from v26.7; on earlier versions, use `allow_experimental_delta_lake_writes = 1`. See [Delta Lake writes](/reference/functions/table-functions/deltalake#inserting-data). |
+| `INSERT` | ✅ Beta | ✅ Beta | Requires the Delta Kernel. Writes are supported for S3 and GCS; Azure writes aren't supported. Requires `allow_delta_lake_writes = 1` from v26.7; on earlier versions, use `allow_experimental_delta_lake_writes = 1`. See [Delta Lake writes](/reference/functions/table-functions/deltalake#inserting-data). |
 | `DELETE` / `UPDATE` / `MERGE` | ❌ | ❌ | Not supported |
 | Create empty table | ❌ | ❌ | The `CREATE TABLE` operation assumes that the Delta Lake table already exists on object storage. |
 | **Caching** | | | |
@@ -118,7 +118,7 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Table function | ✅ | ✅ | [`hudi()`](/reference/functions/table-functions/hudi) |
 | Table engine | ✅ | ✅ | [`Hudi`](/reference/engines/table-engines/integrations/hudi) |
 | Cluster-distributed reads | ✅ | ✅ | [`hudiCluster`](/reference/functions/table-functions/hudiCluster) (S3 only) |
-| Named collections | ❌ | ✅ | [Named collections aren't supported in ClickHouse Cloud](/whats-new/cloud-compatibility#named-collections). |
+| Named collections | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ✅ | DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. |
 | **Read features** | | | |
 | Read support | ✅ | ✅ | Full `SELECT` support with all ClickHouse SQL functions |
 | Schema evolution | ❌ | ❌ | Not supported |
@@ -144,11 +144,9 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Table function | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`paimon()`](/reference/functions/table-functions/paimon) with variants per backend |
 | Table engine | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`Paimon`](/reference/engines/table-engines/integrations/paimon) with variants per backend. Requires `allow_experimental_paimon_storage_engine = 1`. |
 | Cluster-distributed reads | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`paimonS3Cluster`](/reference/functions/table-functions/paimonCluster), [`paimonAzureCluster`](/reference/functions/table-functions/paimonCluster), [`paimonHDFSCluster`](/reference/functions/table-functions/paimonCluster) |
-| Named collections | ❌ | ⚠️ | Experimental. [Named collections aren't supported in ClickHouse Cloud](/whats-new/cloud-compatibility#named-collections). |
+| Named collections | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. |
 | **Read features** | | | |
 | Read support | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Full `SELECT` support with all ClickHouse SQL functions |
-| Snapshot and incremental reads | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Table engine only. See [Paimon engine capabilities](/reference/engines/table-engines/integrations/paimon#capabilities). |
-| Partition pruning | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Enabled with `use_paimon_partition_pruning`. |
 | Schema evolution | ❌ | ❌ | Not supported |
 | Time travel | ❌ | ❌ | Not supported |
 | Virtual columns | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/paimon#virtual-columns). |
@@ -156,7 +154,6 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | `INSERT` / `DELETE` / `UPDATE` | ❌ | ❌ | Read-only integration |
 | **Caching** | | | |
 | Data caching | ❌ | ❌ | Not supported |
-| Metadata caching | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Controlled by `use_paimon_metadata_files_cache`. See [Paimon settings](/reference/engines/table-engines/integrations/paimon#settings). |
 
 </Tab>
 </Tabs>
@@ -176,5 +173,6 @@ The following catalogs are currently supported. Refer to each catalog's referenc
 | [Lakekeeper](/guides/use-cases/data-warehousing/lakekeeper-catalog) | Iceberg | ✅ Beta | ❌ | ❌ | [Lakekeeper catalog guide](/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | [Project Nessie](/guides/use-cases/data-warehousing/nessie-catalog) | Iceberg | ✅ Experimental | ❌ | ❌ | [Nessie catalog guide](/guides/use-cases/data-warehousing/nessie-catalog) |
 | [Microsoft OneLake](/guides/use-cases/data-warehousing/onelake-catalog) | Iceberg | ✅ Beta | ✅ Beta | ✅ Beta | [OneLake catalog guide](/guides/use-cases/data-warehousing/onelake-catalog) |
+| [SeaweedFS](/guides/use-cases/data-warehousing/seaweedfs-catalog) | Iceberg | ✅ Beta | ✅ Beta | ✅ Beta | [SeaweedFS catalog guide](/guides/use-cases/data-warehousing/seaweedfs-catalog) |
 
-All catalog integrations currently require an experimental or beta setting to be enabled. With the exception of Microsoft OneLake and Databricks Unity Catalog, all catalogs expose **read-only** access — tables can be queried but not created or written to through the catalog connection. To load data from a catalog into ClickHouse for faster analytics, use `INSERT INTO SELECT` as described in the [accelerating analytics guide](/guides/use-cases/data-warehousing/getting-started/accelerating-analytics). To write data back to open table formats, create standalone Iceberg tables as described in the [writing data guide](/guides/use-cases/data-warehousing/getting-started/writing-data).
+All catalog integrations currently require an experimental or beta setting to be enabled. With the exception of Microsoft OneLake, Databricks Unity Catalog, and SeaweedFS, all catalogs expose **read-only** access — tables can be queried but not created or written to through the catalog connection. To load data from a catalog into ClickHouse for faster analytics, use `INSERT INTO SELECT` as described in the [accelerating analytics guide](/guides/use-cases/data-warehousing/getting-started/accelerating-analytics). To write data back to open table formats, create standalone Iceberg tables as described in the [writing data guide](/guides/use-cases/data-warehousing/getting-started/writing-data).

@@ -19,7 +19,6 @@
       "group": "Third-party clients",
       "icon": "users",
       "pages": [
-        "integrations/language-clients/third-party/moose-olap",
         "integrations/language-clients/third-party/client-libraries"
       ]
     }
