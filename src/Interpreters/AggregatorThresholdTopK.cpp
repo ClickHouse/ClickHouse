@@ -1,11 +1,11 @@
+#include <cstring>
 #include <limits>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/JIT/compileFunction.h>
+#include <base/PackedStringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 
@@ -299,11 +299,27 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             candidates.clear();
         };
 
-#if USE_EMBEDDED_COMPILER
-        const bool use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
-#else
-        const bool use_compiled_functions = false;
-#endif
+        /// The packed-string cells hand out an unpacked view, but probing a table needs the raw
+        /// packed key; rebuild it with the method's content hash. The small encoding's `build`
+        /// reads whole words starting at the key, and a view of another cell does not guarantee
+        /// the required padding, so small keys go through a padded copy.
+        const auto find_in = [](Table & table, const TableKey & key)
+        {
+            if constexpr (std::is_same_v<typename Method::Key, PackedStringRef>)
+            {
+                using PackedHash = typename Method::State::Hash;
+                const size_t size = key.size();
+                if (size <= PackedStringRef::MAX_SMALL_LEN)
+                {
+                    char padded[PackedStringRef::MAX_SMALL_LEN + 8] = {};
+                    memcpy(padded, key.data(), size);
+                    return table.find(PackedStringRef::build(padded, size, PackedHash{}));
+                }
+                return table.find(PackedStringRef::build(key.data(), size, PackedHash{}));
+            }
+            else
+                return table.find(key);
+        };
 
         size_t merged_groups = 0;
         /// Every cell is consumed exactly once: either popped while still live, or found by a
@@ -391,7 +407,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     {
                         if (table == entry_table)
                             continue;
-                        auto it = table->find(entry.key);
+                        auto it = find_in(*table, entry.key);
                         if (!it)
                             continue;
                         ++consumed_cells;
@@ -410,29 +426,23 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                         {
                             if (table == entry_table)
                                 continue;
-                            auto it = table->find(entry.key);
+                            auto it = find_in(*table, entry.key);
                             if (!it)
                                 continue;
                             AggregateDataPtr & other = it->getMapped();
                             if (!other)
                                 continue;
                             ++consumed_cells;
-#if USE_EMBEDDED_COMPILER
-                            if (use_compiled_functions)
-                            {
-                                const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                                callJITFunction(compiled_functions.merge_aggregate_states_function, &place, &other, 1);
-                            }
-#endif
+                            /// Always the interpreted merge, even when the accumulation was
+                            /// JIT-compiled: the compiled and the interpreted code share the
+                            /// state layout by contract (spilling and distributed aggregation
+                            /// rely on the same interoperability), and only the few candidate
+                            /// groups pay for it. The per-pair batch entry point handles the
+                            /// functions whose merge may use the thread pool (e.g. `uniqExact`)
+                            /// and destroys the source state.
                             for (size_t f = 0; f < params.aggregates_size; ++f)
-                            {
-                                if (use_compiled_functions && is_aggregate_function_compiled[f])
-                                    continue;
-                                /// Per-pair batch: handles the functions whose merge may use the
-                                /// thread pool (e.g. `uniqExact`) and destroys the source state.
                                 aggregate_functions[f]->mergeAndDestroyBatch(
                                     &place, &other, 1, offsets_of_aggregate_states[f], *thread_pool, is_cancelled, arena);
-                            }
                             other = nullptr;
                         }
 
@@ -509,7 +519,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             if (is_simple_count)
                 chunk = finalizeChunk(params, std::move(out_cols), /*final=*/true);
             else
-                chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, use_compiled_functions);
+                chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, /*use_compiled_functions=*/false);
 
             /// The unseen groups were never merged: destroy their states right in the tables.
             if (!all_aggregates_has_trivial_destructor && !is_simple_count)
