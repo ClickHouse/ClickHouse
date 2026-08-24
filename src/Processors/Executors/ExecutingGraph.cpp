@@ -215,11 +215,26 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
         /// Record removed processors in pending removal queue
         if (!update.to_remove.empty())
         {
+            /// `to_remove` is a set (`IProcessor::PipelineUpdate`). `not_finished` counts every
+            /// entry while `removed_processors` and the graph hold one of each, so a repeated
+            /// unfinished processor would leave a counter that can never reach zero.
+            std::unordered_set<const IProcessor *> distinct_removed;
+            distinct_removed.reserve(update.to_remove.size());
+
             size_t not_finished = 0;
             for (const auto & removed_proc : update.to_remove)
+            {
+                if (!distinct_removed.insert(removed_proc.get()).second)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Processor {} is listed more than once for removal. Graph: {}",
+                        removed_proc->getName(),
+                        dump(false));
+
                 if (const auto * node = processors_map.at(removed_proc.get()))
                     if (node->last_processor_status != IProcessor::Status::Finished)
                         ++not_finished;
+            }
 
             auto group = std::make_shared<PendingRemovalGroup>();
             group->not_finished = not_finished;
@@ -326,16 +341,7 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
         {
             auto * removed_node = findNodeToRemove(removed_proc);
 
-            /// `to_remove` is a set (`IProcessor::PipelineUpdate`), and every node collected here is
-            /// erased exactly once below. A repeated processor has to be rejected while the whole
-            /// group is still alive, because the erase loop cannot detect it any more.
-            if (!result.removed_nodes.insert(removed_node).second)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Processor {} is listed more than once for removal. Graph: {}",
-                    removed_proc->getName(),
-                    dump(false));
-
+            result.removed_nodes.insert(removed_node);
             nodes_to_erase.push_back(removed_node);
             result.removed_edges.insert_range(
                 removed_node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));

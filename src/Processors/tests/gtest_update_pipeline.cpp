@@ -291,6 +291,82 @@ public:
     }
 };
 
+/// Lists the batch it retires twice, so `to_remove` violates the set contract while the batch is
+/// still unfinished.
+class RepeatingRemovalCoordinator final : public IProcessor
+{
+public:
+    explicit RepeatingRemovalCoordinator(SharedHeader header_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+    {
+    }
+
+    String getName() const override { return "RepeatingRemovalCoordinator"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (inputs.empty() || inputs.back().isFinished())
+            return Status::UpdatePipeline;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        auto & input = inputs.back();
+        if (!input.hasData())
+        {
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        output.push(input.pull(/*set_not_needed=*/true));
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!inputs.empty())
+        {
+            disconnect(inputs.back().getOutputPort(), inputs.back());
+            /// The repeated entry is the one that is still unfinished at this point.
+            update.to_remove = current_batch;
+            update.to_remove.push_back(current_batch.back());
+            current_batch.clear();
+            outputs.front().finish();
+            return update;
+        }
+
+        inputs.emplace_back(*header, this);
+
+        /// The closer finishes this processor's input while the transform behind it still owes a
+        /// work call, so the batch is unfinished when it is queued for removal.
+        auto source = std::make_shared<SingleValueSource>(header, 0);
+        auto laggard = std::make_shared<DeferredFinishTransform>(header);
+        auto closer = std::make_shared<EarlyClosingTransform>(header);
+        connect(source->getOutputs().front(), laggard->getInputs().front());
+        connect(laggard->getOutputs().front(), closer->getInputs().front());
+        current_batch = {source, closer, laggard};
+
+        connect(closer->getOutputs().front(), inputs.back());
+        inputs.back().reopen();
+        inputs.back().setNeeded();
+
+        update.to_add = current_batch;
+        return update;
+    }
+
+private:
+    const SharedHeader header;
+    Processors current_batch;
+};
+
 /// Cycles source -> deferred-finish (-> early closer for the first batch) sub-pipelines, retiring each batch via to_remove.
 class BatchCyclingCoordinator final : public IProcessor
 {
@@ -688,6 +764,50 @@ TEST(Processors, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
 
     EXPECT_EQ(coordinator->getInputs().size(), 1u);
 }
+
+namespace
+{
+void runRepeatedRemoval()
+{
+    auto header = makeHeader();
+    auto coordinator = std::make_shared<RepeatingRemovalCoordinator>(header);
+    Pipe pipe(coordinator);
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    while (executor.pull(chunk))
+    {
+    }
+}
+}
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+/// A LOGICAL_ERROR aborts here, hence a death test.
+TEST(ProcessorsDeathTest, UpdatePipelineRepeatedRemovalIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(runRepeatedRemoval(), "listed more than once for removal");
+}
+
+#else
+
+TEST(Processors, UpdatePipelineRepeatedRemovalIsRejected)
+{
+    try
+    {
+        runRepeatedRemoval();
+        ASSERT_TRUE(false) << "Should have thrown.";
+    }
+    catch (Exception & e)
+    {
+        ASSERT_TRUE(e.displayText().find("listed more than once for removal") != std::string::npos)
+            << "Expected 'listed more than once for removal', got: " << e.displayText();
+    }
+}
+
+#endif
 
 /// `updateNode` keeps pending edge updates in a work list that outlives the gaps it makes in
 /// `nodes_mutex`, so a concurrent frame can retire a processor and free edges that are still
