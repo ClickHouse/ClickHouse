@@ -26,8 +26,8 @@ INSERT INTO threshold_top_k_events SELECT intDiv(number, 4), number, number % 4 
 -- is dominated by the heavy keys and the threshold cuts the tail off after them.
 INSERT INTO threshold_top_k_events SELECT 500000 + number % 20, 1e9 + number, number FROM numbers(20000);
 
--- A second aggregate rides along: for the lone count() the conversion-stage bucket selection
--- serves the query instead of the threshold merge.
+-- Ordering by count is served by the conversion-stage bucket selection (the last output
+-- column below), which the threshold merge yields to.
 SELECT k, count() AS c, max(u) FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_a_count' FORMAT Null;
 SELECT k, uniqExact(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
@@ -59,7 +59,8 @@ SELECT
     replaceOne(log_comment, '05043_ttkm_', ''),
     ProfileEvents['AggregationThresholdTopKMerges'] > 0,
     ProfileEvents['AggregationThresholdTopKMergedGroups'] > 0,
-    ProfileEvents['AggregationThresholdTopKPrunedCells'] > 0
+    ProfileEvents['AggregationThresholdTopKPrunedCells'] > 0,
+    ProfileEvents['AggregationBucketTopKConversions'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05043\_ttkm\_%'
 ORDER BY log_comment;

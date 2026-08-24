@@ -1,8 +1,8 @@
-a_count	1	1	1
-b_uniq_exact	1	1	1
-c_max	1	1	1
-d_uniq_estimate	0	0	0
-e_float	0	0	0
-f_having	0	0	0
-g_two_columns	0	0	0
-h_disabled	0	0	0
+a_count	0	0	0	1
+b_uniq_exact	1	1	1	0
+c_max	1	1	1	0
+d_uniq_estimate	0	0	0	0
+e_float	0	0	0	0
+f_having	0	0	0	0
+g_two_columns	0	0	0	0
+h_disabled	0	0	0	1
