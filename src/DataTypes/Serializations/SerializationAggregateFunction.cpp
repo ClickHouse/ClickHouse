@@ -729,6 +729,16 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
         /// `"\\N"`, which otherwise reaches `SerializationNullable::deserializeTextCSV` with the quotes.
         String s;
         readCSV(s, istr, settings.csv);
+        /// Backward compatibility, see `useLegacyQuotedValueParsing`. As in `deserializeWholeText`, this has
+        /// to come before the `Nullable` helper: released parsed an inner-quoted payload, e.g. `"""42"""`
+        /// unwrapped to `"42"`, with the very same CSV parse, which strips the inner quotes, while the
+        /// whole-text parse of the helper would reject `"42"` for a numeric argument and keep the quotes
+        /// for a string one.
+        if (!s.empty() && (s[0] == '\'' || s[0] == '"'))
+        {
+            deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
+            return;
+        }
         deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
         return;
     }
