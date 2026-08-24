@@ -1416,6 +1416,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        {
+            {"max_number_of_parts_in_partition_for_full_part_storage_on_insert", 0, 0, "New setting"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},

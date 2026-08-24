@@ -303,6 +303,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsUInt64 max_number_of_parts_in_partition_for_full_part_storage_on_insert;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
@@ -6213,7 +6214,11 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
-    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    UInt32 part_level,
+    ProjectionDescriptionRawPtr projection,
+    const String & partition_id) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
@@ -6260,6 +6265,41 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
                 storage_type = PartStorageType::Full;
                 break;
             }
+        }
+    }
+
+    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
+    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
+    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
+    /// storage would leave the sidecar existsFile-visible but unopenable, failing
+    /// every subsequent load of the part.
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (metadata_snapshot->hasUniqueKey())
+        return {part_type, PartStorageType::Full};
+
+    if (storage_type == PartStorageType::Full && !partition_id.empty())
+    {
+        const UInt64 max_parts_for_full_storage
+            = (*settings)[MergeTreeSetting::max_number_of_parts_in_partition_for_full_part_storage_on_insert];
+        if (max_parts_for_full_storage)
+        {
+            auto parts_lock = readLockParts();
+            DataPartStateAndPartitionID active_parts{DataPartState::Active, partition_id};
+            auto it = data_parts_by_state_and_info.lower_bound(active_parts);
+            const auto end = data_parts_by_state_and_info.upper_bound(active_parts);
+
+            /// Only committed `Active` parts are counted. Parts from this or concurrent inserts that have not become
+            /// `Active` yet are deliberately excluded: this heuristic describes the partition state visible at format selection time.
+            /// Stop at the threshold to keep the scan bounded regardless of the total number of parts in the partition.
+            UInt64 parts_count = 0;
+            while (it != end && parts_count < max_parts_for_full_storage)
+            {
+                ++it;
+                ++parts_count;
+            }
+
+            if (parts_count >= max_parts_for_full_storage)
+                storage_type = PartStorageType::Packed;
         }
     }
 

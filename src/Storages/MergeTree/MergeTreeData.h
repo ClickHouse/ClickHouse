@@ -340,8 +340,12 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const String & partition_id = {}) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
