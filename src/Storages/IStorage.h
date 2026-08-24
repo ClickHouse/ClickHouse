@@ -258,6 +258,13 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    void setInMemoryMetadataComment(const String & comment)
+    {
+        auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
+        updated->setComment(comment);
+        metadata.set(std::move(updated));
+    }
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;

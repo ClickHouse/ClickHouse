@@ -40,6 +40,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Common/CurrentThread.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -66,6 +67,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueProcessedRows;
     extern const Event ObjectStorageQueueRemoveObjectFailures;
     extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueFailures;
 }
 
 
@@ -1224,32 +1230,53 @@ void StorageObjectStorageQueue::commit(
         std::optional<Coordination::Error> code;
         Coordination::Responses responses;
         size_t try_num = 0;
-        zk_retry.retryLoop([&]
+        try
         {
-            if (zk_retry.isRetry())
+            zk_retry.retryLoop([&]
             {
-                LOG_TRACE(
-                    log, "Failed to commit processed files at try {}/{}, will retry",
-                    try_num, toString(settings[Setting::keeper_max_retries].value));
-            }
-            ++try_num;
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
+                if (zk_retry.isRetry())
+                {
+                    LOG_TRACE(
+                        log, "Failed to commit processed files at try {}/{}, will retry",
+                        try_num, toString(settings[Setting::keeper_max_retries].value));
+                }
+                ++try_num;
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
 
-            auto zk_client = getZooKeeper();
-            code = zk_client->tryMulti(requests, responses);
+                auto zk_client = getZooKeeper();
+                code = zk_client->tryMulti(requests, responses);
 
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-                if (code == Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromMessage(
-                        Coordination::Error::ZCONNECTIONLOSS,
-                        "Simulated connection loss after successful commit");
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                    if (code == Coordination::Error::ZOK)
+                        throw zkutil::KeeperException::fromMessage(
+                            Coordination::Error::ZCONNECTIONLOSS,
+                            "Simulated connection loss after successful commit");
+                });
             });
-        });
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            /// Retries were exhausted on a hardware error (e.g. ZCONNECTIONLOSS repeatedly):
+            /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
+            /// `code` below is never set and this never reaches the `!code.has_value()` branch
+            /// (previously dead code: that branch could never actually be reached).
+            DimensionalMetrics::add(
+                DimensionalMetrics::ObjectStorageQueueFailures,
+                {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+
+            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
+            /// ("failed after operation") - we never received its response, so the commit outcome
+            /// is unknown. Mark all metadata objects so their destructors check ownership before
+            /// removing the processing node, same as the replay-error branch below.
+            for (auto & source : sources)
+                source->setUncertainCommit();
+            throw;
+        }
 
         if (!code.has_value())
         {
@@ -1259,22 +1286,71 @@ void StorageObjectStorageQueue::commit(
                 settings[Setting::keeper_max_retries].value,
                 zk_retry.getLastKeeperErrorMessage());
         }
-
-        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-        if (code.value() != Coordination::Error::ZOK)
+        else
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
+            /// prefer that stored transport error over `code.value()`: this retry may have applied
+            /// the earlier attempt's operation and be replaying into a synthetic ZNODEEXISTS/ZNONODE,
+            /// which would otherwise hide the actual cause behind that replay error.
+            const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
+                ? zk_retry.getLastKeeperErrorCode()
+                : code.value();
+            DimensionalMetrics::add(
+                DimensionalMetrics::ObjectStorageQueueFailures,
+                {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
             if (try_num > 1)
             {
-                /// We had at least one hardware error retry, so the first attempt may have succeeded
-                /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
-                /// before we received the response. Mark all metadata objects so their destructors
-                /// check ownership before removing the processing node instead of asserting.
-                for (auto & source : sources)
-                    source->setUncertainCommit();
+                if (zk_retry.isRetry())
+                {
+                    LOG_TRACE(
+                        log, "Failed to commit processed files at try {}/{}, will retry",
+                        try_num, toString(settings[Setting::keeper_max_retries].value));
+                }
+                ++try_num;
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+                });
+
+                auto zk_client = getZooKeeper();
+                code = zk_client->tryMulti(requests, responses);
+
+                fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                    if (code == Coordination::Error::ZOK)
+                        throw zkutil::KeeperException::fromMessage(
+                            Coordination::Error::ZCONNECTIONLOSS,
+                            "Simulated connection loss after successful commit");
+                });
+            };
+
+        if (!code.has_value())
+            {
+                throw Exception(
+                    ErrorCodes::KEEPER_EXCEPTION,
+                    "Failed to commit files with {} retries, last error message: {}",
+                    settings[Setting::keeper_max_retries].value,
+                    zk_retry.getLastKeeperErrorMessage());
             }
-            throw zkutil::KeeperMultiException(code.value(), requests, responses);
-        }
+
+            chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+            if (code.value() != Coordination::Error::ZOK)
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+                if (try_num > 1)
+                {
+                    /// We had at least one hardware error retry, so the first attempt may have succeeded
+                    /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+                    /// before we received the response. Mark all metadata objects so their destructors
+                    /// check ownership before removing the processing node instead of asserting.
+                    for (auto & source : sources)
+                        source->setUncertainCommit();
+                }
+                throw zkutil::KeeperMultiException(code.value(), requests, responses);
+            }
+    }
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
