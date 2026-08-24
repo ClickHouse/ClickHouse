@@ -481,6 +481,12 @@ bool DatabaseWithOwnTablesBase::mayShadowDeferredTable(const String & table_name
 {
     if (!has_deferred_population.load(std::memory_order_acquire))
         return false;
+    /// A failed population left the database half-filled behind a saved exception. The fast path must not keep
+    /// serving the tables the populator managed to attach before it threw - `system.one` or a lookup that
+    /// succeeded once must not make the failure invisible - so force every access through `ensurePopulated`,
+    /// which rethrows the remembered error.
+    if (deferred_populate_failed.load(std::memory_order_acquire))
+        return true;
     return deferred_shadowing_candidates.contains(table_name);
 }
 
@@ -523,7 +529,9 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
             populating = false;
             populating_thread = {};
             deferred_populate_error = error;
-            if (!error)
+            if (error)
+                deferred_populate_failed.store(true, std::memory_order_release);
+            else
                 has_deferred_population.store(false, std::memory_order_release);
         }
         populated.notify_all();

@@ -123,6 +123,9 @@ private:
     /// A failed population leaves the database half-filled forever, so the error is remembered and reported to
     /// every subsequent access, the way the eager attachment it replaces fails the startup for everybody.
     mutable std::exception_ptr deferred_populate_error TSA_GUARDED_BY(populate_mutex);
+    /// The lock-free mirror of `deferred_populate_error`, see `mayShadowDeferredTable`: after a failure the fast
+    /// path must stop exposing the tables the populator managed to attach before it threw.
+    mutable std::atomic<bool> deferred_populate_failed{false};
     /// Names attached before the population was armed, see `mayShadowDeferredTable`. Filled by
     /// `setDeferredPopulation` before `has_deferred_population` is published and never changed afterwards, so it
     /// may be read without a lock as long as `has_deferred_population` is true.
