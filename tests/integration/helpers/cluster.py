@@ -162,6 +162,11 @@ INTEGRATION_NODE_EXPECTED_STATUSES = {
     "kill": ("exited", "dead", "created"),
 }
 
+# Request timeout for a describe-only Docker call. The shared client is built with a
+# 600s timeout, which is sized for image pulls; a caller that has already exhausted its
+# own budget must not be able to spend that on a description of why it failed.
+CONTAINER_DESCRIBE_TIMEOUT = 5.0
+
 NET_LOCK_PATH = "/tmp/docker_net.lock"
 try:
     os.remove(NET_LOCK_PATH)
@@ -3319,18 +3324,37 @@ class ClickHouseCluster:
             f"issue, you may try to `sudo iptables -P FORWARD ACCEPT`"
         ) from err
 
+    @contextmanager
+    def bounded_docker_requests(self, timeout: float):
+        # docker-py reads `api.timeout` per request, so lowering it bounds every call made
+        # inside the block. Nothing in this module starts a thread, so no concurrent caller
+        # can observe the lowered value.
+        api = getattr(self.docker_client, "api", None)
+        if api is None:
+            yield
+            return
+        previous = api.timeout
+        api.timeout = timeout
+        try:
+            yield
+        finally:
+            api.timeout = previous
+
     def describe_container_state(self, instance_name) -> str:
-        # Diagnostics only: must never raise, or it would mask the failure being reported.
+        # Diagnostics only: must never raise, or it would mask the failure being reported,
+        # and must stay bounded, or a caller past its own deadline would wait on the
+        # daemon's timeout instead of failing.
         container = self.get_instance_docker_id(instance_name)
-        try:
-            state = self.docker_client.containers.get(container).attrs["State"]
-            status = f"status {state['Status']}, exit code {state['ExitCode']}"
-        except Exception as ex:
-            status = f"status unavailable: {ex}"
-        try:
-            ip = self.get_instance_ip(instance_name) or "<empty>"
-        except Exception as ex:
-            ip = f"<unavailable: {ex}>"
+        with self.bounded_docker_requests(CONTAINER_DESCRIBE_TIMEOUT):
+            try:
+                state = self.docker_client.containers.get(container).attrs["State"]
+                status = f"status {state['Status']}, exit code {state['ExitCode']}"
+            except Exception as ex:
+                status = f"status unavailable: {ex}"
+            try:
+                ip = self.get_instance_ip(instance_name) or "<empty>"
+            except Exception as ex:
+                ip = f"<unavailable: {ex}>"
         return f"container {container}, {status}, ip {ip}"
 
     def make_hdfs_api(self, timeout=180):

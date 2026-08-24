@@ -21,7 +21,14 @@ import types
 import pytest  # pylint:disable=import-error; for style check
 
 from helpers import cluster
-from helpers.cluster import INTEGRATION_NODE_EXPECTED_STATUSES, ClickHouseCluster
+from helpers.cluster import (
+    CONTAINER_DESCRIBE_TIMEOUT,
+    INTEGRATION_NODE_EXPECTED_STATUSES,
+    ClickHouseCluster,
+)
+
+# The timeout the shipped shared client is built with, which is sized for image pulls.
+SHARED_CLIENT_TIMEOUT = 600
 
 # Statuses whose `State.Running` is true. It covers three of them, so `Running` cannot
 # distinguish a started container from a paused or restarting one.
@@ -54,12 +61,19 @@ class _FakeDocker:
         self._ips = ips or {}
         # The code under test reaches a fetch as `docker_client.containers.get(...)`.
         self.containers = self
+        # docker-py reads this attribute per request, so the value held at fetch time is
+        # the one that request would have waited on.
+        self.api = types.SimpleNamespace(timeout=SHARED_CLIENT_TIMEOUT)
+        self.fetch_timeouts = []
 
     def set(self, container, status):
         self._states[container] = _state(status)
 
     def get(self, container):
         self._events.append(("inspect", container))
+        # One arm removes the request layer, so this bookkeeping must not be what fails.
+        api = getattr(self, "api", None)
+        self.fetch_timeouts.append(getattr(api, "timeout", None))
         if container not in self._states:
             raise RuntimeError(f"stub: no such container: {container}")
         ip = self._ips.get(container, "")
@@ -245,6 +259,7 @@ class _WaiterStub:
 
     wait_zookeeper_nodes_to_start = ClickHouseCluster.wait_zookeeper_nodes_to_start
     describe_container_state = ClickHouseCluster.describe_container_state
+    bounded_docker_requests = ClickHouseCluster.bounded_docker_requests
     get_instance_ip = ClickHouseCluster.get_instance_ip
     get_instance_docker_id = ClickHouseCluster.get_instance_docker_id
 
@@ -387,3 +402,43 @@ def test_reachable_nodes_return_without_spending_the_budget(monkeypatch):
 
     assert stub.contacted() == ["zoo1", "zoo2", "zoo3"]
     assert clock.now == 0.0
+
+
+def test_every_describing_fetch_is_bounded_below_the_shared_client_timeout(monkeypatch):
+    """The diagnostic runs after a budget is already spent, so each of its fetches has to
+    carry a timeout of its own: on the shared client's, a wedged daemon would hold the
+    caller for minutes past the deadline it advertises."""
+    assert CONTAINER_DESCRIBE_TIMEOUT < SHARED_CLIENT_TIMEOUT
+
+    _fake_clock(monkeypatch)
+    stub = _WaiterStub(
+        {"zoo1": ("exited", 137)}, ips={"zoo1": ""}, unreachable=["zoo1"]
+    )
+    with pytest.raises(Exception):
+        stub.wait_zookeeper_nodes_to_start(["zoo1"], timeout=TIMEOUT)
+
+    # Both fetches: the state lookup and the address lookup behind it.
+    assert stub.docker_client.fetch_timeouts == [CONTAINER_DESCRIBE_TIMEOUT] * 2
+
+
+def test_the_shared_client_timeout_is_restored_after_describing():
+    """The client is shared with every other caller, so a lowered timeout that outlived the
+    diagnostic would silently shorten unrelated calls, including image pulls."""
+    stub = _WaiterStub({"zoo1": ("exited", 137)}, ips={"zoo1": ""})
+    stub.describe_container_state("zoo1")
+    assert stub.docker_client.api.timeout == SHARED_CLIENT_TIMEOUT
+
+    # Restored on the failing path too, which is the only path this runs on in practice.
+    vanished = _WaiterStub({})
+    vanished.describe_container_state("zoo1")
+    assert vanished.docker_client.api.timeout == SHARED_CLIENT_TIMEOUT
+
+
+def test_a_client_without_a_request_layer_is_described_anyway():
+    """Negative control on the bound itself: it must not become the thing that breaks the
+    diagnostic. A stub client carrying no `api` still gets described."""
+    stub = _WaiterStub({"zoo1": ("exited", 137)}, ips={"zoo1": ""})
+    del stub.docker_client.api
+
+    described = stub.describe_container_state("zoo1")
+    assert "status exited, exit code 137" in described, described
