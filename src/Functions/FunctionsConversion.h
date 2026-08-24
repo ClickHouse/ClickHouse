@@ -641,8 +641,9 @@ struct ToDateTime64TransformUnsigned
             /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
             /// `Int64::max` (e.g. `18446744073709551615`) is first converted to a negative `time_t` by `std::min<time_t>`
             /// and the clamp returns a pre-epoch value instead of saturating to `max_whole`.
-            const time_t clamped = static_cast<UInt64>(from) > static_cast<UInt64>(max_whole) ? max_whole : static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+            if (static_cast<UInt64>(from) > static_cast<UInt64>(max_whole))
+                return maxTicksForDateTime64(scale_multiplier);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
     }
 };
@@ -668,10 +669,11 @@ struct ToDateTime64TransformSigned
             if (from < min_whole || from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        from = static_cast<FromType>(std::max<time_t>(from, min_whole));
-        from = static_cast<FromType>(std::min<time_t>(from, max_whole));
+        const time_t clamped = std::max<time_t>(from, min_whole);
+        if (clamped > max_whole)
+            return maxTicksForDateTime64(scale_multiplier);
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
     }
 };
 
@@ -701,8 +703,9 @@ struct ToDateTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
+        if (from > static_cast<FromType>(max_whole))
+            return maxTicksForDateTime64(scale_multiplier);
         from = std::max(from, static_cast<FromType>(min_whole));
-        from = std::min(from, static_cast<FromType>(max_whole));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -750,8 +753,9 @@ struct ToDateTime64Transform
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp value {} is out of bounds of type DateTime64 with this precision", dt);
         }
+        if (dt > max_whole)
+            return maxTicksForDateTime64(scale_multiplier);
         dt = std::max<time_t>(dt, min_whole);
-        dt = std::min<time_t>(dt, max_whole);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -784,8 +788,9 @@ struct ToTime64TransformUnsigned
         }
 
         /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-        auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        if (static_cast<UInt64>(from) > static_cast<UInt64>(MAX_TIME_TIMESTAMP))
+            return maxTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -811,7 +816,9 @@ struct ToTime64TransformSigned
         /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
         /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        const auto clamped = std::max<Int64>(std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP), -static_cast<Int64>(MAX_TIME_TIMESTAMP));
+        if (static_cast<Int64>(from) > MAX_TIME_TIMESTAMP)
+            return maxTicksForTime64(scale_multiplier);
+        const auto clamped = std::max<Int64>(static_cast<Int64>(from), -MAX_TIME_TIMESTAMP);
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
     }
 };
@@ -839,8 +846,9 @@ struct ToTime64TransformFloat
         /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
         /// decimal, producing Time64 values that display correctly but compare as different from the
         /// saturated maximum.
+        if (from > static_cast<FromType>(MAX_TIME_TIMESTAMP))
+            return maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
         from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -2194,6 +2202,16 @@ struct ConvertImpl
             else
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
+        }
+        /// The narrow unsigned types have no Time64 branch of their own, so without this they skip the saturating
+        /// transform entirely and an out-of-range value is stored raw (only clamped when it is printed).
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt8>
+                || std::is_same_v<FromDataType, DataTypeUInt16>
+                || std::is_same_v<FromDataType, DataTypeUInt32>)
+            && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
