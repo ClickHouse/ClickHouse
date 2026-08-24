@@ -651,17 +651,16 @@ endif()
 # ============================================================
 #
 if (ENABLE_XRAY)
-    # XRay archive: common runtime + all three modes (FDR, basic, profiling) +
-    # per-arch trampolines + sanitizer_common (XRay reuses sanitizer_common's
-    # allocator and printing helpers).
+    # XRay archive: common runtime + per-arch trampolines + sanitizer_common
+    # (XRay reuses sanitizer_common's allocator and printing helpers).
     #
-    # Bundle list mirrors the OBJECT_LIBS for clang_rt.xray (STATIC) in
-    # contrib/llvm-project/compiler-rt/lib/xray/CMakeLists.txt:
-    #   RTXray (= XRAY_SOURCES + ${arch}_SOURCES) + RTXrayFDR + RTXrayBASIC +
-    #   RTXrayPROFILING + RTSanitizerCommon[+Libc].
-    # Upstream additionally builds clang_rt.xray-fdr/-basic/-profiling as
-    # separate archives so an application can link only the modes it uses;
-    # ClickHouse always wants all of them, so we collapse into one archive.
+    # The logging modes (FDR, basic, profiling) are deliberately NOT bundled:
+    # ClickHouse compiles with -fxray-modes=none (see
+    # cmake/xray_instrumentation.cmake) and drives instrumentation through
+    # custom handlers only. This archive is linked --whole-archive (the
+    # runtime's init lives in a preinit_array entry nothing references), so
+    # bundling a mode would run its static initializers in every executable;
+    # xray_fdr_logging's initializer crashes at startup on musl.
     set(_xray_arch_cpp "")
     set(_xray_arch_asm "")
     if     (ARCH_AMD64)
@@ -685,8 +684,7 @@ if (ENABLE_XRAY)
     endif()
 
     set(_xray_combined_full "")
-    foreach (s ${XRAY_COMMON_SOURCES} ${XRAY_FDR_SOURCES} ${XRAY_BASIC_SOURCES}
-                ${XRAY_PROFILING_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
+    foreach (s ${XRAY_COMMON_SOURCES} ${_xray_arch_cpp} ${_xray_arch_asm})
         list(APPEND _xray_combined_full "${XRAY_DIR}/${s}")
     endforeach()
     foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES})
