@@ -2116,8 +2116,9 @@ a.version-option:hover,
 }
 
 .search-results em {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 11px;
+  font-weight: 500;
   font-style: normal;
 }
 
