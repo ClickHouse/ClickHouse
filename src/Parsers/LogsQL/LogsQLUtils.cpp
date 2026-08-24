@@ -423,8 +423,16 @@ bool isNumberPrefix(const String & text)
         if (rest.empty())
             return false;
     }
-    if (rest == "inf" || rest == "Inf")
-        return true;
+    /// The same spellings that tryParseNumber accepts, in any case ("INF", "Infinity", "NaN").
+    /// Full-string comparison keeps ordinary words that merely start like them ("info") textual.
+    if (rest.size() <= std::string_view("infinity").size())
+    {
+        String lower;
+        for (char c : rest)
+            lower += toLowerASCII(c);
+        if (lower == "inf" || lower == "infinity" || lower == "nan")
+            return true;
+    }
     return isDigit(rest[0]) || (rest.size() >= 2 && rest[0] == '.' && isDigit(rest[1]));
 }
 

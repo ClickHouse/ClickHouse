@@ -335,7 +335,7 @@ void LogsQLParser::parsePipe(Layer & layer)
                 element->clone());
             auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", element->clone()), decode);
             ASTPtr expression = makeASTFunction("arrayStringConcat",
-                makeASTFunction("arrayMap", lambda, makeASTFunction("JSONExtractArrayRaw", columnExpr(source))),
+                makeASTFunction("arrayMap", lambda, makeASTFunction("JSONExtractArrayRaw", stringValueExpr(source))),
                 makeStringLiteral(delimiter));
             if (columnName(target) == columnName(source))
                 applyColumnReplacement(layer, columnName(target), expression);
@@ -1281,7 +1281,7 @@ void LogsQLParser::parsePipeLen(Layer & layer)
         result_name = parseFieldName();
     }
 
-    appendComputedColumn(layer, makeASTFunction("length", columnExpr(field)), columnName(result_name));
+    appendComputedColumn(layer, makeASTFunction("length", stringValueExpr(field)), columnName(result_name));
 }
 
 void LogsQLParser::parsePipeCoalesce(Layer & layer)
@@ -1327,8 +1327,8 @@ void LogsQLParser::parsePipeCoalesce(Layer & layer)
     for (auto it = fields.rbegin(); it != fields.rend(); ++it)
     {
         expression = makeASTFunction("if",
-            makeASTFunction("notEquals", columnExpr(*it), makeStringLiteral("")),
-            columnExpr(*it),
+            makeASTFunction("notEquals", stringValueExpr(*it), makeStringLiteral("")),
+            stringValueExpr(*it),
             expression);
     }
 
@@ -1345,7 +1345,7 @@ void LogsQLParser::parsePipeDecolorize(Layer & layer)
 
     /// Strips ANSI CSI escape sequences, like VictoriaLogs does.
     ASTPtr expression = makeASTFunction("replaceRegexpAll",
-        columnExpr(field), makeStringLiteral("\x1b\\[[\x30-\x3f]*[\x20-\x2f]*[\x30-\x7e]?"), makeStringLiteral(""));
+        stringValueExpr(field), makeStringLiteral("\x1b\\[[\x30-\x3f]*[\x20-\x2f]*[\x30-\x7e]?"), makeStringLiteral(""));
     applyColumnReplacement(layer, columnName(field), expression);
 }
 
@@ -1382,7 +1382,7 @@ void LogsQLParser::parsePipeSplit(Layer & layer)
 
     /// The result is a JSON array of strings, as in VictoriaLogs.
     ASTPtr expression = makeASTFunction("toJSONString",
-        makeASTFunction("splitByString", makeStringLiteral(separator), columnExpr(source)));
+        makeASTFunction("splitByString", makeStringLiteral(separator), stringValueExpr(source)));
 
     if (columnName(target) == columnName(source))
         applyColumnReplacement(layer, columnName(target), expression);
@@ -1421,7 +1421,7 @@ void LogsQLParser::parsePipeUnpackWords(Layer & layer)
         lex.nextToken();
     }
 
-    ASTPtr words = makeASTFunction("extractAll", columnExpr(source), makeStringLiteral("[0-9A-Za-z_]+"));
+    ASTPtr words = makeASTFunction("extractAll", stringValueExpr(source), makeStringLiteral("[0-9A-Za-z_]+"));
     if (drop_duplicates)
         words = makeASTFunction("arrayDistinct", words);
     ASTPtr expression = makeASTFunction("toJSONString", words);
@@ -1578,7 +1578,7 @@ void LogsQLParser::parsePipeJSONArrayLen(Layer & layer)
     }
 
     appendComputedColumn(layer,
-        makeASTFunction("length", makeASTFunction("JSONExtractArrayRaw", columnExpr(field))),
+        makeASTFunction("length", makeASTFunction("JSONExtractArrayRaw", stringValueExpr(field))),
         columnName(result_name));
 }
 
@@ -1621,9 +1621,9 @@ void LogsQLParser::parsePipeReplace(Layer & layer, bool is_regexp)
         ? (limit == 1 ? "replaceRegexpOne" : "replaceRegexpAll")
         : (limit == 1 ? "replaceOne" : "replaceAll");
 
-    ASTPtr expression = makeASTFunction(function, columnExpr(field), makeStringLiteral(args[0]), makeStringLiteral(args[1]));
+    ASTPtr expression = makeASTFunction(function, stringValueExpr(field), makeStringLiteral(args[0]), makeStringLiteral(args[1]));
     if (condition)
-        expression = makeASTFunction("if", condition, expression, columnExpr(field));
+        expression = makeASTFunction("if", condition, expression, stringValueExpr(field));
 
     applyColumnReplacement(layer, columnName(field), expression);
 }
@@ -1674,7 +1674,7 @@ void LogsQLParser::parsePipeHash(Layer & layer)
 
     /// VictoriaLogs computes xxHash64 of the value, truncated to 53 bits.
     ASTPtr expression = makeASTFunction("bitAnd",
-        makeASTFunction("xxHash64", columnExpr(field)),
+        makeASTFunction("xxHash64", stringValueExpr(field)),
         makeUInt64Literal((1ULL << 53) - 1));
     appendComputedColumn(layer, expression, columnName(result_name));
 }
@@ -1721,7 +1721,7 @@ void LogsQLParser::parsePipeUnroll(Layer & layer)
     /// when no field holds a non-empty array.
     auto array_of = [&](const String & field)
     {
-        return makeASTFunction("JSONExtractArrayRaw", columnExpr(field));
+        return makeASTFunction("JSONExtractArrayRaw", stringValueExpr(field));
     };
 
     ASTPtr rows_count = makeASTFunction("length", array_of(fields[0]));
@@ -2835,7 +2835,7 @@ ASTPtr LogsQLParser::parseMathExprOperand()
         if (!lex.skippedSpace() && isNumberPrefix(lex.getToken()))
             token += sign + lex.nextCompoundToken(math_stop_tokens);
     }
-    if (isNumberPrefix(token) || Poco::toLower(token) == "inf" || Poco::toLower(token) == "nan")
+    if (isNumberPrefix(token))
     {
         /// Integral literals keep their exact 64-bit value; only genuinely
         /// fractional values (and inf/nan) become Float64.

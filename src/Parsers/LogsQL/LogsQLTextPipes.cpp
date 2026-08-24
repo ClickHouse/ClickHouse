@@ -17,8 +17,6 @@
 #include <Common/re2.h>
 #include <Poco/String.h>
 
-#include <charconv>
-
 namespace DB
 {
 
@@ -261,7 +259,7 @@ void LogsQLParser::parsePipeExtract(Layer & layer, bool is_regexp)
 
     /// The inner layer computes the capture groups once; the outer layer projects them into fields.
     wrapLayerIf(layer, !layer.select.empty());
-    ASTPtr groups = makeASTFunction("extractGroups", columnExpr(source), makeString(regexp));
+    ASTPtr groups = makeASTFunction("extractGroups", stringValueExpr(source), makeString(regexp));
     layer.select.push_back(make_intrusive<ASTAsterisk>());
     groups->setAlias("__logsql_extract");
     layer.select.push_back(groups);
@@ -274,7 +272,7 @@ void LogsQLParser::parsePipeExtract(Layer & layer, bool is_regexp)
     for (const auto & [field, group_index] : group_of_field)
     {
         ASTPtr value = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>("__logsql_extract"), makeNumber(group_index));
-        ASTPtr original = makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field)), makeString(""));
+        ASTPtr original = stringValueExpr(field);
         if (skip_empty_results)
             value = makeASTFunction("if", makeASTFunction("notEquals", value, makeString("")), value->clone(), original->clone());
         else if (keep_original_fields)
@@ -409,11 +407,11 @@ void LogsQLParser::parsePipeFormat(Layer & layer)
         if (field == "_" || field == "*" || field.empty())
             return nullptr;
 
-        ASTPtr value = makeASTFunction("toString", columnExpr(field));
+        ASTPtr value = stringValueExpr(field);
         if (option.empty())
             return value;
         if (option == "q")
-            return makeASTFunction("toJSONString", columnExpr(field));
+            return makeASTFunction("toJSONString", stringValueExpr(field));
         if (option == "uc")
             return makeASTFunction("upperUTF8", value);
         if (option == "lc")
@@ -593,7 +591,7 @@ void LogsQLParser::parsePipeUnpack(Layer & layer, bool is_logfmt)
         {
             /// key=value with optionally double-quoted values (approximated with JSON unquoting).
             String key_pattern = fmt::format(R"re((?:^|[ ]){}=("(?:[^"\\]|\\.)*"|[^ ]*))re", escapeRegexp(field));
-            ASTPtr token = makeASTFunction("extract", columnExpr(source), makeString(key_pattern));
+            ASTPtr token = makeASTFunction("extract", stringValueExpr(source), makeString(key_pattern));
             value = makeASTFunction("if",
                 makeASTFunction("startsWith", token, makeString("\"")),
                 makeASTFunction("JSONExtractString", token->clone()),
@@ -603,7 +601,7 @@ void LogsQLParser::parsePipeUnpack(Layer & layer, bool is_logfmt)
         {
             /// JSON: strings are decoded, other values keep their JSON form, null and missing keys become ''.
             ASTs path_arguments;
-            path_arguments.push_back(columnExpr(source));
+            path_arguments.push_back(stringValueExpr(source));
             std::string_view rest = field;
             while (!rest.empty())
             {
@@ -959,7 +957,7 @@ ASTPtr LogsQLParser::parseFilterPatternMatch(const String & field_name, const St
     const String ip4 = fmt::format(R"({0}\.{0}\.{0}\.{0})", number);
     const String time_re = fmt::format("{0}:{0}:{0}(?:[.,]{0})?", number);
     const String date_re = fmt::format("(?:{0}-{0}-{0}|{0}/{0}/{0})", number);
-    const String datetime_re = fmt::format("{0}[T ]{1}(?:Z|[+-]{2}:{2})?", date_re, time_re, number);
+    const String datetime_re = fmt::format("{0}[T ]{1}(?:Z|[+-][0-9]{{2}}:[0-9]{{2}})?", date_re, time_re);
     static constexpr const char * word = R"re((?:"(?:[^"\\]|\\.)*"|`[^`]*`|'(?:[^'\\]|\\.)*'|[0-9A-Za-z_]*))re";
 
     const String & pattern = args[0];
@@ -1017,7 +1015,7 @@ ASTPtr LogsQLParser::parseFilterPatternMatch(const String & field_name, const St
     if (!checked.ok())
         throwSyntaxError(fmt::format("cannot compile the {} pattern {}: {}", func_name, pattern, checked.error()));
 
-    return makeASTFunction("match", columnExpr(field_name), makeString(regexp));
+    return makeASTFunction("match", stringValueExpr(field_name), makeString(regexp));
 }
 
 }
