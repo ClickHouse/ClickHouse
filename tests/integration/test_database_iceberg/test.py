@@ -1128,12 +1128,20 @@ def test_select_manifest_without_snapshot_id(started_cluster, rewrite_manifest_l
 
     assert num_rows == int(node.query(f"SELECT count() FROM (SELECT * FROM {table_ref})"))
     assert num_rows == int(node.query(f"SELECT count() FROM {table_ref} WHERE symbol = 'kek'"))
-    inherited_snapshot_id = node.query(
-        f"SELECT DISTINCT snapshot_id FROM system.iceberg_files "
-        f"WHERE database = '{CATALOG_NAME}' AND table = '{root_namespace}.{table_name}' "
+    files_of_table = (
+        f"FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+        f"AND table = '{root_namespace}.{table_name}' "
         "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert str(snapshot.snapshot_id) == node.query(
+        f"SELECT DISTINCT snapshot_id {files_of_table}"
     ).strip()
-    assert str(snapshot.snapshot_id) == inherited_snapshot_id
+    # The data sequence number is inherited from the manifest list, which this run may have
+    # stripped of its own sequence number; then there is nothing to inherit and 0 is correct.
+    expected_sequence_number = 0 if rewrite_manifest_list else snapshot.sequence_number
+    assert str(expected_sequence_number) == node.query(
+        f"SELECT DISTINCT sequence_number {files_of_table}"
+    ).strip()
 
 
 def test_create(started_cluster):

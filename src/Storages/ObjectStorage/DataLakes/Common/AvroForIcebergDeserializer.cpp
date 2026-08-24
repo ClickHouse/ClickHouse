@@ -142,32 +142,29 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             manifest_file_path,
             has_snapshot_id_column ? "null" : "absent");
 
+    /// `sequence_number` is optional on a v2 manifest entry for the same reason as `snapshot_id`, so a
+    /// missing column is left unresolved rather than substituted with 0. A literal 0 reads as an assigned
+    /// value, which skips inheritance in ManifestFileIterator and makes an ADDED data file look older than
+    /// it is; a manifest rewrite would then persist that 0 as the entry's explicit data sequence number.
     std::optional<Int64> sequence_number;
-
     if (format_version > 1)
     {
-        if (!hasPath(f_sequence_number))
-        {
-            sequence_number = 0;
-        }
-        else
+        const bool has_sequence_number_column = hasPath(f_sequence_number);
+        if (has_sequence_number_column)
         {
             const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
-            if (sequence_number_value.isNull())
-            {
-                if (status == ManifestEntryStatus::EXISTING)
-                {
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
-                        manifest_file_path);
-                }
-            }
-            else
-            {
+            if (!sequence_number_value.isNull())
                 sequence_number = sequence_number_value.safeGet<Int64>();
-            }
         }
+        /// The spec inherits data and file sequence numbers only for ADDED entries; EXISTING and DELETED
+        /// must carry them explicitly (https://iceberg.apache.org/spec/#sequence-number-inheritance).
+        if (!sequence_number.has_value() && status == ManifestEntryStatus::EXISTING)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: manifest file '{}' has an EXISTING entry without a data "
+                "sequence number (the sequence_number column is {})",
+                manifest_file_path,
+                has_sequence_number_column ? "null" : "absent");
     }
 
     /// `file_sequence_number` can differ from the data `sequence_number` and, like it, is inherited from the
