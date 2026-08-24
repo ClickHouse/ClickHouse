@@ -1,0 +1,11 @@
+-- a stored Alias-to-Alias definition loads
+1
+-- CREATE still rejects an Alias target
+-- a full-definition ATTACH still rejects an Alias target
+-- CREATE still rejects a self-reference
+-- a full-definition ATTACH still rejects a self-reference
+-- reading through the chain reaches the target
+1
+2
+-- a stored self-referential definition loads
+-- and reading it is bounded
