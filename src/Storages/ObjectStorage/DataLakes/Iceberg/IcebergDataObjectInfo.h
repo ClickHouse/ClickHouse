@@ -50,6 +50,8 @@ private:
 namespace DB
 {
 
+class ISimpleTransform;
+
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
