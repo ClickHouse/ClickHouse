@@ -29,7 +29,7 @@ doc_type: 'reference'
 **البنية**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **الوسيطات**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - الحرف المستخدَم كفاصل بين المفتاح والقيمة. القيمة الافتراضية هي `:`. [String](/ar/reference/data-types/string) أو [FixedString](/ar/reference/data-types/fixedstring).
 * `pair_delimiters` - مجموعة الأحرف المستخدَمة كفواصل بين الأزواج. القيمة الافتراضية هي `\space` و `,` و `;`. [String](/ar/reference/data-types/string) أو [FixedString](/ar/reference/data-types/fixedstring).
 * `quoting_character` - الحرف المستخدَم كحرف اقتباس. القيمة الافتراضية هي `"`. [String](/ar/reference/data-types/string) أو [FixedString](/ar/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - الاستراتيجية المستخدَمة للتعامل مع أحرف الاقتباس في مواضع غير متوقعة أثناء مرحلتي `read_key` و `read_value`. القيم الممكنة: `invalid` و `accept` و `promote`. تؤدي القيمة `invalid` إلى تجاهل المفتاح/القيمة والعودة إلى حالة `WAITING_KEY`. وتتعامل القيمة `accept` معه بوصفه حرفًا عاديًا. أما القيمة `promote` فتنقل الحالة إلى `READ_QUOTED_{KEY/VALUE}` وتبدأ من الحرف التالي. القيمة الافتراضية هي `INVALID`
+* `unexpected_quoting_character_strategy` - الاستراتيجية المستخدَمة للتعامل مع أحرف الاقتباس في مواضع غير متوقعة أثناء مرحلتي `read_key` و `read_value`. القيم الممكنة: `invalid` و `accept` و `promote`. تؤدي القيمة `invalid` إلى تجاهل المفتاح/القيمة والعودة إلى حالة `WAITING_KEY`. وتتعامل القيمة `accept` معه بوصفه حرفًا عاديًا. أما القيمة `promote` فتنقل الحالة إلى `READ_QUOTED_{KEY/VALUE}` وتبدأ من الحرف التالي. القيمة الافتراضية هي `PROMOTE`
 
 **القيم المُعادة**
 
@@ -144,7 +144,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 └──────────────┘
 ```
 
-**تسلسل الهروب عند عدم دعمها**
+**تسلسلات الهروب دون دعم تسلسلات الهروب**
 
 ```sql
 arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
@@ -161,12 +161,12 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **الصيغة**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **الأسماء المستعارة**: `str_to_map`, `mapFromString`
 
-**الوسائط**
+**وسيطات الدالة**
 
 * لا شيء.
 
@@ -211,10 +211,10 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **الصيغة**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * لا يوجد.
 
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 أُضيفت في: v21.2.0
 
 تعيد مفاتيح قيمة Map معيّنة.
-يمكن تحسين هذه الدالة عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns).
+يمكن تحسين هذه الدالة عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تمكين هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `keys` بدلًا من قيمة Map بالكامل.
 يُحوَّل الاستعلام `SELECT mapKeys(m) FROM table` إلى `SELECT m.keys FROM table`.
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 قُدِّمت في: v21.2.0
 
 تعيد هذه الدالة قيم Map معيّن.
-يمكن تحسين هذه الدالة عبر تفعيل الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns).
+يمكن تحسين هذه الدالة عبر تفعيل الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تفعيل هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `values` بدلًا من قراءة الـ Map بالكامل.
 يُحوَّل الاستعلام `SELECT mapValues(m) FROM table` إلى `SELECT m.values FROM table`.
 

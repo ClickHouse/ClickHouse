@@ -149,14 +149,14 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+## config-file {#config-file}
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
+
 ## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 How often clickhouse will reload config and check for new changes
-
-## config-file {#config-file}
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
 
 ## core_dump {#core_dump}
 
@@ -492,15 +492,18 @@ Changing this setting affects only views created afterwards; the stored definiti
 
 ## include_from {#include_from}
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
 For more information, see the section [Configuration files](/concepts/features/configuration/server-config/configuration-files).
+Empty by default, which means that no substitutions file is used. Before version 26.8 the file `/etc/metrika.xml` was used implicitly whenever it existed; if you rely on it, specify the path explicitly.
+
+Note that configuration files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — read the `include_from` element from their own contents, not from the server configuration. Each such file that relies on substitutions needs its own `include_from` element.
 
 **Example**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 ## insert_deduplication_version {#insert_deduplication_version}
@@ -850,7 +853,7 @@ For more information, see the section [Creating replicated tables](/reference/en
 
 ## message_queue_disable_insertion {#message_queue_disable_insertion}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views
 
 ## metric_log {#metric_log}
 

@@ -1,13 +1,15 @@
+#include <algorithm>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -19,10 +21,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
-#include <Storages/NATS/NATSJetStreamConsumer.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
-#include <Storages/NATS/NATSJetStreamProducer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
+#include <Storages/NATS/NATSJetStreamProducer.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -31,51 +33,52 @@
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
-    extern const SettingsMilliseconds stream_flush_interval_ms;
-    extern const SettingsBool stream_like_engine_allow_direct_select;
-    extern const SettingsString stream_like_engine_insert_queue;
-    extern const SettingsUInt64 output_format_avro_rows_in_file;
+extern const SettingsBool allow_named_collection_override_by_default;
+extern const SettingsNonZeroUInt64 max_insert_block_size;
+extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+extern const SettingsMilliseconds stream_flush_interval_ms;
+extern const SettingsBool stream_like_engine_allow_direct_select;
+extern const SettingsString stream_like_engine_insert_queue;
+extern const SettingsUInt64 output_format_avro_rows_in_file;
 }
 
 namespace NATSSetting
 {
-    extern const NATSSettingsString nats_credentials;
-    extern const NATSSettingsString nats_credential_file;
-    extern const NATSSettingsMilliseconds nats_flush_interval_ms;
-    extern const NATSSettingsBool nats_wait_for_flush_interval;
-    extern const NATSSettingsBool nats_commit_on_select;
-    extern const NATSSettingsString nats_format;
-    extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
-    extern const NATSSettingsUInt64 nats_max_block_size;
-    extern const NATSSettingsUInt64 nats_max_rows_per_message;
-    extern const NATSSettingsString nats_consumer_name;
-    extern const NATSSettingsUInt64 nats_num_consumers;
-    extern const NATSSettingsString nats_password;
-    extern const NATSSettingsString nats_queue_group;
-    extern const NATSSettingsUInt64 nats_reconnect_wait;
-    extern const NATSSettingsString nats_schema;
-    extern const NATSSettingsBool nats_secure;
-    extern const NATSSettingsString nats_server_list;
-    extern const NATSSettingsUInt64 nats_skip_broken_messages;
-    extern const NATSSettingsUInt64 nats_startup_connect_tries;
-    extern const NATSSettingsString nats_subjects;
-    extern const NATSSettingsString nats_token;
-    extern const NATSSettingsString nats_url;
-    extern const NATSSettingsString nats_stream;
-    extern const NATSSettingsString nats_username;
+extern const NATSSettingsString nats_credentials;
+extern const NATSSettingsString nats_credential_file;
+extern const NATSSettingsMilliseconds nats_flush_interval_ms;
+extern const NATSSettingsBool nats_wait_for_flush_interval;
+extern const NATSSettingsBool nats_commit_on_select;
+extern const NATSSettingsString nats_format;
+extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
+extern const NATSSettingsUInt64 nats_max_block_size;
+extern const NATSSettingsUInt64 nats_max_rows_per_message;
+extern const NATSSettingsString nats_consumer_name;
+extern const NATSSettingsUInt64 nats_num_consumers;
+extern const NATSSettingsString nats_password;
+extern const NATSSettingsString nats_queue_group;
+extern const NATSSettingsUInt64 nats_reconnect_wait;
+extern const NATSSettingsString nats_schema;
+extern const NATSSettingsBool nats_secure;
+extern const NATSSettingsString nats_server_list;
+extern const NATSSettingsUInt64 nats_skip_broken_messages;
+extern const NATSSettingsUInt64 nats_startup_connect_tries;
+extern const NATSSettingsString nats_subjects;
+extern const NATSSettingsString nats_token;
+extern const NATSSettingsString nats_url;
+extern const NATSSettingsString nats_stream;
+extern const NATSSettingsString nats_username;
 }
 
 static const uint32_t QUEUE_SIZE = 100000;
@@ -84,11 +87,11 @@ static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CANNOT_CONNECT_NATS;
-    extern const int QUERY_NOT_ALLOWED;
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int CANNOT_CONNECT_NATS;
+extern const int QUERY_NOT_ALLOWED;
 }
 
 
@@ -98,7 +101,8 @@ StorageNATS::StorageNATS(
     const ColumnsDescription & columns_,
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool authentication_determined_by_table_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
@@ -118,34 +122,37 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    /// `libnats` sends every configured authentication method in the `CONNECT` frame, so a table
+    /// authentication method must not be combined with the server-global fallback: inline
+    /// credentials can be used with a query-supplied destination.
+    /// The decision is made on provenance rather than on the resulting values. A query which
+    /// clears the authentication a named collection carries - `nats_username = ''` - would
+    /// otherwise resurrect the global fallback and send the global account to the destination it
+    /// selected. `authentication_determined_by_table` says whether the table definition decided
+    /// its authentication at all, in either direction, including clearing it.
+    const bool has_table_authentication = authentication_determined_by_table_ || !nats_username.empty() || !nats_password.empty()
+        || !nats_token.empty() || !nats_credential_file.empty() || !nats_credentials.empty();
 
-    /// A credential source specified in the table settings overrides both config-level sources
-    /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
-    /// Only when neither is specified in the table settings, fall back to the config,
-    /// where having both sources at once is as ambiguous as in the table settings.
-    if (nats_credential_file.empty() && nats_credentials.empty())
-    {
-        nats_credential_file = getContext()->getConfigRef().getString("nats.credential_file", "");
-        nats_credentials = getContext()->getConfigRef().getString("nats.credentials", "");
-        if (!nats_credential_file.empty() && !nats_credentials.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "You can specify only one of `nats.credential_file` and `nats.credentials` in the server configuration");
-    }
+    const String global_username = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.user", "");
+    const String global_password = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.password", "");
+    const String global_token = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.token", "");
+    /// A path in the server configuration file is an operator-selected source, like the other
+    /// global fallbacks, so it keeps the established behavior of authenticating tables which
+    /// define no authentication of their own.
+    const String global_credential_file
+        = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.credential_file", "");
 
-    configuration =
-    {
-        .url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
-        .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
-        .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
-        .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
-        .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file,
-        .credentials = nats_credentials,
-        .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
-        .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
-        .secure = (*nats_settings)[NATSSetting::nats_secure].value
-    };
+    configuration
+        = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
+           .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
+           .username = nats_username.empty() ? global_username : nats_username,
+           .password = nats_password.empty() ? global_password : nats_password,
+           .token = nats_token.empty() ? global_token : nats_token,
+           .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
+           .credentials = nats_credentials,
+           .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
+           .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
+           .secure = (*nats_settings)[NATSSetting::nats_secure].value};
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -160,7 +167,8 @@ StorageNATS::StorageNATS(
 
     try
     {
-        createConsumersConnection();
+        if (!getContext()->getMessageQueueDisableInsertion())
+            createConsumersConnection();
     }
     catch (...)
     {
@@ -173,10 +181,12 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
+    streaming_task
+        = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool()->createTask(
+        getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
@@ -188,12 +198,18 @@ VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode h
 {
     VirtualColumnsDescription desc;
     desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(
+        "_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral(
+            "_raw_message",
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+            "",
+            VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral(
+            "_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -358,6 +374,12 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
+bool StorageNATS::consumersNeedResubscribe()
+{
+    std::lock_guard lock(consumers_mutex);
+    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+}
+
 void StorageNATS::unsubscribeConsumers()
 {
     std::lock_guard lock(consumers_mutex);
@@ -384,27 +406,30 @@ void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task)
 
 size_t StorageNATS::getMaxBlockSize() const
 {
-    return (*nats_settings)[NATSSetting::nats_max_block_size].changed ? (*nats_settings)[NATSSetting::nats_max_block_size].value
-                                                      : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
+    return (*nats_settings)[NATSSetting::nats_max_block_size].changed
+        ? (*nats_settings)[NATSSetting::nats_max_block_size].value
+        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 
 void StorageNATS::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum /* processed_stage */,
-        size_t /* max_block_size */,
-        size_t /* num_streams */)
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum /* processed_stage */,
+    size_t /* max_block_size */,
+    size_t /* num_streams */)
 {
     if (!consumers_connection || num_created_consumers == 0)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read "
+            "data is removed from the queue.");
 
     if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
@@ -423,7 +448,8 @@ void StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto nats_source = std::make_shared<NATSSource>(
+            *this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         nats_source->setCommitOnSelect((*nats_settings)[NATSSetting::nats_commit_on_select]);
         nats_source->setTimeLimit(modified_context->getSettingsRef()[Setting::rabbitmq_max_wait_ms]);
         nats_source->setWaitForFlushInterval(true);
@@ -458,7 +484,8 @@ void StorageNATS::read(
 }
 
 
-SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr
+StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef()[Setting::stream_like_engine_insert_queue].changed
@@ -469,9 +496,9 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         if (subjects.size() > 1)
         {
             throw Exception(
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "This NATS engine reads from multiple subjects. "
-                            "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "This NATS engine reads from multiple subjects. "
+                "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
 
         subject = subjects[0];
@@ -489,11 +516,23 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, createProducer(std::move(subject)), getName(), modified_context);}
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
+        getFormatName(),
+        max_rows,
+        createProducer(std::move(subject)),
+        getName(),
+        modified_context);
+}
 
 
 void StorageNATS::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     initialize_consumers_task->activateAndSchedule();
 }
 
@@ -584,13 +623,15 @@ INATSConsumerPtr StorageNATS::createConsumer()
     auto stream_name = getStreamName();
     if (stream_name.empty())
     {
-        auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName();
+        auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value
+                                                                                  : getStorageID().getFullTableName();
         return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
     }
 
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
 
-    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+    return std::make_shared<NATSJetStreamConsumer>(
+        consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
 }
 
 INATSProducerPtr StorageNATS::createProducer(String subject)
@@ -657,6 +698,14 @@ void StorageNATS::threadFunc()
 
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
+
+    /// A consumer whose subscription the NATS client has closed never receives another message,
+    /// so drop the subscriptions here and let the cycle below subscribe again.
+    if (consumers_ready && consumersNeedResubscribe())
+    {
+        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
+        unsubscribeConsumers();
+    }
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
@@ -784,14 +833,20 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode], cycle_epoch);
+        auto source = std::make_shared<NATSSource>(
+            *this,
+            storage_snapshot,
+            new_context,
+            column_names,
+            block_size,
+            (*nats_settings)[NATSSetting::nats_handle_error_mode],
+            cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
         const bool flush_interval_set = (*nats_settings)[NATSSetting::nats_flush_interval_ms].changed;
-        Poco::Timespan max_execution_time = flush_interval_set
-            ? (*nats_settings)[NATSSetting::nats_flush_interval_ms]
-            : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
+        Poco::Timespan max_execution_time = flush_interval_set ? (*nats_settings)[NATSSetting::nats_flush_interval_ms]
+                                                               : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
@@ -850,31 +905,207 @@ String StorageNATS::getConsumerName() const
 namespace
 {
 
-/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials, so only one
-/// of them may be specified. A source specified in the query (in the `SETTINGS` clause or as a named-collection
-/// override) is more specific than one stored in the named collection, so it replaces it instead of conflicting
-/// with it - otherwise a named collection with one of the sources could not be reused by a table which provides
-/// the other one.
-void resolveCredentialSource(NATSSettings & nats_settings, bool credential_file_from_collection, bool credentials_from_collection)
+constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
+    = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file. "
+      "Pass the contents of the file in `nats_credentials` instead";
+
+/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials - a path to a
+/// file on the server filesystem, and the contents of that file - so only one of them may be specified.
+/// A source specified in the query (in the `SETTINGS` clause or as a named-collection override) is more
+/// specific than one stored in the named collection, so it replaces it instead of conflicting with it -
+/// otherwise a named collection with one of the sources could not be reused by a table which provides the
+/// other one.
+///
+/// `credential_file_assigned_by_query` and `credentials_assigned_by_query` say whether the query assigned
+/// the key, in either spelling: as a named-collection override, or in the `SETTINGS` clause, which is
+/// applied on top of the collection values. They are about provenance rather than about the resulting
+/// value: an assignment of the empty string is an assignment too, and dropping the credentials the
+/// operator configured is exactly what has to be refused.
+/// Returns whether the table definition decided its authentication itself, so the server-global
+/// fallback must not be applied. This is provenance, not value: a query which clears the
+/// authentication a named collection carries has decided it too, and resurrecting the global
+/// account for the destination that query selected is exactly what has to be prevented.
+bool resolveCredentialSource(
+    NATSSettings & nats_settings,
+    const NamedCollection * named_collection,
+    bool collection_defined_in_config,
+    bool credential_file_assigned_by_query,
+    bool credentials_assigned_by_query,
+    bool username_assigned_by_query,
+    bool password_assigned_by_query,
+    bool token_assigned_by_query,
+    bool destination_assigned_by_query,
+    bool allow_named_collection_override_by_default,
+    bool loading_from_existing_metadata)
 {
-    const bool credential_file_set = !nats_settings[NATSSetting::nats_credential_file].value.empty();
+    /// The value the named collection defines itself, before a query override of the same key.
+    auto value_in_collection = [&](const std::string & key) -> String
+    {
+        if (!named_collection)
+            return {};
+        if (named_collection->isQueryOverridden(key))
+            return named_collection->getValueBeforeQueryOverride(key).value_or("");
+        return named_collection->getOrDefault<String>(key, "");
+    };
+
+    const String credential_file_in_collection = value_in_collection("nats_credential_file");
+    const String credentials_in_collection = value_in_collection("nats_credentials");
+    const String username_in_collection = value_in_collection("nats_username");
+    const String password_in_collection = value_in_collection("nats_password");
+    const String token_in_collection = value_in_collection("nats_token");
+
     const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
 
-    const bool credential_file_from_query = credential_file_set && !credential_file_from_collection;
+    const bool credential_file_from_collection = !credential_file_in_collection.empty() && !credential_file_assigned_by_query;
+    const bool credentials_from_collection = !credentials_in_collection.empty() && !credentials_assigned_by_query;
+    const bool username_from_collection = !username_in_collection.empty() && !username_assigned_by_query;
+    const bool password_from_collection = !password_in_collection.empty() && !password_assigned_by_query;
+    const bool token_from_collection = !token_in_collection.empty() && !token_assigned_by_query;
+    /// Query-supplied inline credentials replace a configured credentials file before `libnats`
+    /// opens the connection. In that case the file is no longer a credential source that needs
+    /// to stay bound to the collection's destination.
+    const bool credential_file_remains_from_collection = credential_file_from_collection && !credentials_assigned_by_query;
+    const bool trusted_credentials_from_collection = collection_defined_in_config
+        && (credential_file_remains_from_collection || credentials_from_collection || username_from_collection || password_from_collection
+            || token_from_collection);
+
+    const bool credential_file_from_query
+        = !nats_settings[NATSSetting::nats_credential_file].value.empty() && !credential_file_from_collection;
     const bool credentials_from_query = credentials_set && !credentials_from_collection;
 
     if (credential_file_from_query && credentials_from_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
 
-    if (credential_file_from_collection && credentials_from_collection)
+    if (!credential_file_in_collection.empty() && !credentials_in_collection.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    /// `libnats` sends all configured authentication fields in its `CONNECT` frame. The final
+    /// effective settings must therefore select exactly one authentication family. This is checked
+    /// independently of provenance: query overrides can otherwise combine methods on an auth-empty
+    /// named collection, and a named collection itself can store the ambiguous configuration.
+    /// A credentials file and inline credentials are the two representations of one family; their
+    /// query-side replacement is handled below.
+    const bool has_inline_credentials = !nats_settings[NATSSetting::nats_credential_file].value.empty() || credentials_set;
+    const bool has_user_info = !nats_settings[NATSSetting::nats_username].value.empty()
+        || !nats_settings[NATSSetting::nats_password].value.empty();
+    const bool has_token = !nats_settings[NATSSetting::nats_token].value.empty();
+
+    if ((has_inline_credentials && (has_user_info || has_token)) || (has_user_info && has_token))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Credentials from different authentication methods cannot be combined");
+
+    /// Credentials read from a named collection in the server configuration are secrets selected
+    /// by the operator. They must not be sent to an endpoint selected by the query. The global
+    /// `nats.user`, `nats.password`, and `nats.token` fallbacks intentionally retain their
+    /// established behavior: they authenticate tables whose destination is defined in SQL.
+    /// Loading an existing table definition is exempt so an upgrade does not make previously valid
+    /// metadata unloadable.
+    if (!loading_from_existing_metadata && trusted_credentials_from_collection && destination_assigned_by_query)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
+            "`nats_url` and `nats_server_list` cannot be overridden when credentials come from the server configuration file");
+
+    /// Credentials the operator explicitly locked (`<nats_credential_file overridable="false">`) cannot be
+    /// replaced from a query. `tryGetNamedCollectionWithOverrides` checks this for the engine-argument
+    /// spelling - `nats_credentials` inherits the permission of the path key it replaces, see
+    /// `findOverrideForbiddingKey` - but the `SETTINGS` clause is applied on top of the collection values
+    /// without passing through that check, so the permission is enforced here for both spellings. It is
+    /// enforced when loading from metadata as well, for the same reason it is enforced there for the
+    /// engine-argument spelling: the lock is a policy on a named collection that is still in use, and the
+    /// alternative is to authenticate with credentials the operator forbade. This must be based on key
+    /// existence, not the value: `tryGetNamedCollectionWithOverrides` also refuses a new key when
+    /// `allow_named_collection_override_by_default` is disabled. When the collection already stores
+    /// `nats_credentials`, this is a same-key override and uses `allow_named_collection_override_by_default`.
+    /// Replacing `nats_credential_file` uses `true`: passing the contents is the only way to supply these
+    /// credentials from SQL, so the operator states the permission with the attribute.
+    if (named_collection)
+    {
+        /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
+        /// file path, but otherwise they are either a same-key override or a new key. The collection
+        /// has already been mutated by the engine-argument override, so use its pre-override state.
+        const auto is_defined_in_collection = [&](const std::string & key)
+        {
+            return named_collection->isQueryOverridden(key) ? named_collection->getValueBeforeQueryOverride(key).has_value()
+                                                            : named_collection->has(key);
+        };
+        const auto check_override_allowed = [&](const char * key, bool default_value)
+        {
+            if (!named_collection->isOverridable(key, default_value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        };
+
+        if (credentials_assigned_by_query)
+        {
+            const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
+                ? "nats_credentials"
+                : "nats_credential_file";
+            check_override_allowed(key, std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default);
+        }
+
+        /// `nats_username`, `nats_password`, and `nats_token` do not have an alternative spelling,
+        /// so their query overrides follow the regular named-collection policy. In particular, this
+        /// prevents a `SETTINGS` clause from clearing operator-provided credentials and bypassing the
+        /// destination-binding check above.
+        if (username_assigned_by_query)
+            check_override_allowed("nats_username", allow_named_collection_override_by_default);
+        if (password_assigned_by_query)
+            check_override_allowed("nats_password", allow_named_collection_override_by_default);
+        if (token_assigned_by_query)
+            check_override_allowed("nats_token", allow_named_collection_override_by_default);
+    }
+
+    /// A path to a credentials file is only accepted from the server configuration file: the server opens
+    /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
+    /// which comes from the same query. So taking a path from SQL would let anyone who can define a `NATS`
+    /// source probe the local filesystem and exfiltrate files the server can read to a NATS server they
+    /// control. Loading previously-validated metadata without a named collection, or with a collection
+    /// defined in the server configuration, is exempt so those tables keep working after an upgrade.
+    /// SQL named collections remain mutable, so their current contents must be validated on every reload.
+    if (!loading_from_existing_metadata)
+    {
+        /// Checked on provenance, before the resulting value below: an override of a configured path with
+        /// the empty string carries no path of its own, so it would pass a check on the value while
+        /// silently dropping the credentials the operator configured.
+        if (credential_file_assigned_by_query
+            && (!nats_settings[NATSSetting::nats_credential_file].value.empty() || !credential_file_in_collection.empty()))
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden or
+            /// not, so the override rejection would name the wrong remedy.
+            if (!collection_defined_in_config)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE);
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`nats_credential_file` cannot be overridden in a query. "
+                "Pass the contents of the file in `nats_credentials` instead");
+        }
+
+        /// An empty `nats_credentials` never replaces the credentials the collection carries with other
+        /// ones - it can only silently drop them, whichever form they are stored in. When the collection
+        /// carries no credentials at all there is nothing to drop, and the empty assignment stays the
+        /// no-op it is for a table which uses no named collection.
+        if (credentials_assigned_by_query && !credentials_set
+            && (!credential_file_in_collection.empty() || !credentials_in_collection.empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
+    }
 
     if (credential_file_from_query && credentials_from_collection)
         nats_settings[NATSSetting::nats_credentials] = String{};
     else if (credentials_from_query && credential_file_from_collection)
         nats_settings[NATSSetting::nats_credential_file] = String{};
+
+    /// Whatever path is left is the one the collection defines, and it is accepted only when the
+    /// collection itself comes from the server configuration file.
+    if (!loading_from_existing_metadata && !nats_settings[NATSSetting::nats_credential_file].value.empty() && !collection_defined_in_config)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE);
+
+    const bool authentication_in_collection = !credential_file_in_collection.empty() || !credentials_in_collection.empty()
+        || !username_in_collection.empty() || !password_in_collection.empty() || !token_in_collection.empty();
+    const bool authentication_assigned_by_query = credential_file_assigned_by_query || credentials_assigned_by_query
+        || username_assigned_by_query || password_assigned_by_query || token_assigned_by_query;
+
+    return authentication_in_collection || authentication_assigned_by_query;
 }
 
 }
@@ -885,17 +1116,28 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        /// Whether a credential source comes from the named collection itself rather than from a query override.
-        bool credential_file_from_collection = false;
-        bool credentials_from_collection = false;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        /// Whether the query assigned a credential source, in either spelling.
+        bool credential_file_assigned_by_query = false;
+        bool credentials_assigned_by_query = false;
+        bool username_assigned_by_query = false;
+        bool password_assigned_by_query = false;
+        bool token_assigned_by_query = false;
+        bool destination_assigned_by_query = false;
+        /// Whether the named collection is defined in the server configuration file rather than created by SQL.
+        bool collection_defined_in_config = false;
+        auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
+        if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
 
-            credential_file_from_collection = !(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
-                && !named_collection->isQueryOverridden("nats_credential_file");
-            credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
-                && !named_collection->isQueryOverridden("nats_credentials");
+            credential_file_assigned_by_query = named_collection->isQueryOverridden("nats_credential_file");
+            credentials_assigned_by_query = named_collection->isQueryOverridden("nats_credentials");
+            username_assigned_by_query = named_collection->isQueryOverridden("nats_username");
+            password_assigned_by_query = named_collection->isQueryOverridden("nats_password");
+            token_assigned_by_query = named_collection->isQueryOverridden("nats_token");
+            destination_assigned_by_query
+                = named_collection->isQueryOverridden("nats_url") || named_collection->isQueryOverridden("nats_server_list");
+            collection_defined_in_config = named_collection->getSourceId() == NamedCollection::SourceId::CONFIG;
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
@@ -910,14 +1152,23 @@ void registerStorageNATS(StorageFactory & factory)
             for (const auto & change : args.storage_def->settings->changes)
             {
                 if (change.name == "nats_credential_file")
-                    credential_file_from_collection = false;
+                    credential_file_assigned_by_query = true;
                 else if (change.name == "nats_credentials")
-                    credentials_from_collection = false;
+                    credentials_assigned_by_query = true;
+                else if (change.name == "nats_username")
+                    username_assigned_by_query = true;
+                else if (change.name == "nats_password")
+                    password_assigned_by_query = true;
+                else if (change.name == "nats_token")
+                    token_assigned_by_query = true;
+                else if (change.name == "nats_url" || change.name == "nats_server_list")
+                    destination_assigned_by_query = true;
             }
         }
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
 
         if (!(*nats_settings)[NATSSetting::nats_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");
@@ -925,12 +1176,42 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
-        resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
+        /// Credential validation makes decisions from the effective settings, so it must see the
+        /// same macro-expanded values that `StorageNATS` passes to `libnats`. In particular, an
+        /// empty macro must not turn a non-empty query credential into an empty replacement after
+        /// the check that prevents dropping credentials from a named collection.
+        auto macros = args.getContext()->getMacros();
+        (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
+        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
+        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
+        (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
+        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
+
+        const bool authentication_determined_by_table = resolveCredentialSource(
+            *nats_settings,
+            named_collection.get(),
+            collection_defined_in_config,
+            credential_file_assigned_by_query,
+            credentials_assigned_by_query,
+            username_assigned_by_query,
+            password_assigned_by_query,
+            token_assigned_by_query,
+            destination_assigned_by_query,
+            args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
+            (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
+                && (!named_collection || collection_defined_in_config));
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
-        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
+        return std::make_shared<StorageNATS>(
+            args.table_id,
+            args.getContext(),
+            args.columns,
+            args.comment,
+            std::move(nats_settings),
+            args.mode,
+            authentication_determined_by_table);
     };
 
     factory.registerStorage(
@@ -975,7 +1256,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
     [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
@@ -1003,11 +1283,11 @@ Optional parameters:
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
 - `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
-- `nats_username` - NATS username.
-- `nats_password` - NATS password.
-- `nats_token` - NATS auth token.
-- `nats_credential_file` - Path to a NATS credentials file.
-- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
+- `nats_username` - NATS username. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
+- `nats_password` - NATS password. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
+- `nats_token` - NATS auth token. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
+- `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
+- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.

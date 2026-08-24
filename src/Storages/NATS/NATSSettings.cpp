@@ -38,7 +38,7 @@ namespace ErrorCodes
     DECLARE(String, nats_username, "", "NATS username", 0) \
     DECLARE(String, nats_password, "", "NATS password", 0) \
     DECLARE(String, nats_token, "", "NATS token", 0) \
-    DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file", 0) \
+    DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
     DECLARE(String, nats_credentials, "", "NATS credentials content with user JWT and seed", 0) \
     DECLARE(UInt64, nats_startup_connect_tries, 5, "Number of connect tries at startup", 0) \
     DECLARE(UInt64, nats_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
