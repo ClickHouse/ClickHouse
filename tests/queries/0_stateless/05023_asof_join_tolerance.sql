@@ -85,6 +85,13 @@ FROM (SELECT 1 AS sym, toUInt8(255) AS t) AS tr
 ASOF JOIN (SELECT 1 AS sym, toUInt8(250) AS t) AS q
 ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 10;
 
+SELECT '-- bounded, wider and unbounded stay distinct when join stats are collected';
+SELECT
+  (SELECT count() FROM (SELECT 1 AS s, toDateTime64('2024-01-01 10:00:00.000',3) AS t) AS l ASOF JOIN (SELECT 1 AS s, toDateTime64('2024-01-01 09:00:00.000',3) AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE INTERVAL 5 SECOND),
+  (SELECT count() FROM (SELECT 1 AS s, toDateTime64('2024-01-01 10:00:00.000',3) AS t) AS l ASOF JOIN (SELECT 1 AS s, toDateTime64('2024-01-01 09:00:00.000',3) AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE INTERVAL 2 HOUR),
+  (SELECT count() FROM (SELECT 1 AS s, toDateTime64('2024-01-01 10:00:00.000',3) AS t) AS l ASOF JOIN (SELECT 1 AS s, toDateTime64('2024-01-01 09:00:00.000',3) AS t) AS r ON l.s = r.s AND l.t >= r.t)
+SETTINGS collect_hash_table_stats_during_joins = 1;
+
 SELECT '-- rejections';
 -- a fractional bound cannot be represented in an integer backed key
 SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 0.5; -- { serverError INVALID_JOIN_ON_EXPRESSION }

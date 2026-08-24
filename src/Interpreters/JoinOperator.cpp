@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
@@ -359,7 +360,7 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 version) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
     serializeNodeList(out, node_to_id, expression);
@@ -372,6 +373,14 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     /// The ASOF `TOLERANCE` bound. Without this a serialized plan executed elsewhere, as on the
     /// distributed paths, would deserialize into an ASOF JOIN with no bound at all and quietly
     /// return matches further away than the query asked for.
+    ///
+    /// Written only from version 9, the version that introduced the clause. Appending it
+    /// unconditionally would change the layout at version 8 as well, and a version 8 reader would
+    /// take the first new byte for the length of the node list that follows, desynchronising the
+    /// stream for every join, including those that never mention TOLERANCE.
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ASOF_TOLERANCE)
+        return;
+
     writeBinary(asof_tolerance.has_value(), out);
     if (asof_tolerance)
         writeFieldBinary(*asof_tolerance, out);
@@ -403,7 +412,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -412,6 +421,13 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     auto kind = deserializeJoinKind(in);
     auto strictness = deserializeJoinStrictness(in);
     auto locality = deserializeJoinLocality(in);
+
+    JoinOperator result(kind, strictness, locality);
+    result.expression = std::move(actions);
+    result.residual_filter = std::move(residual_filter);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ASOF_TOLERANCE)
+        return result;
 
     bool has_tolerance = false;
     readBinary(has_tolerance, in);
@@ -429,9 +445,6 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
         asof_tolerance_interval_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind_value));
     }
 
-    JoinOperator result(kind, strictness, locality);
-    result.expression = std::move(actions);
-    result.residual_filter = std::move(residual_filter);
     result.asof_tolerance = std::move(asof_tolerance);
     result.asof_tolerance_interval_kind = asof_tolerance_interval_kind;
 

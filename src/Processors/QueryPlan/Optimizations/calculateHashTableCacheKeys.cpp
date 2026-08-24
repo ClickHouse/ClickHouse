@@ -1,3 +1,4 @@
+#include <Common/FieldVisitorHash.h>
 #include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -285,7 +286,17 @@ void calculateHashTableCacheKeys(
             /// changes which rows match and thus the output, so the same inputs under different
             /// inequalities must not share collected statistics.
             if (table_join.strictness() == JoinStrictness::Asof)
+            {
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
+                /// A `TOLERANCE` bound changes which rows match just as the inequality does, so an
+                /// unbounded join and a bounded one over the same inputs produce different output and
+                /// must not share collected statistics. The presence bit is mixed in separately from
+                /// the value, so that no bound and a bound that happens to hash to zero stay distinct.
+                const auto & asof_tolerance = table_join.getAsofTolerance();
+                frame.hash.update(asof_tolerance.has_value());
+                if (asof_tolerance)
+                    applyVisitor(FieldVisitorHash(frame.hash), *asof_tolerance);
+            }
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
                 mixed->getActionsDAG().updateHash(frame.hash);

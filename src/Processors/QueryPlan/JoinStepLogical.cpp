@@ -2278,7 +2278,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     auto actions_dag = expression_actions.getActionsDAG();
     actions_dag->serialize(ctx.out, ctx.registry);
 
-    join_operator.serialize(ctx.out, actions_dag.get());
+    join_operator.serialize(ctx.out, actions_dag.get(), ctx.version);
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 }
 
@@ -2326,7 +2326,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto right_header = ctx.input_headers.back();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions, ctx.version);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);

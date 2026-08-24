@@ -53,8 +53,8 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version);
 
     String dump() const;
 };

@@ -23,4 +23,6 @@
 0
 -- a match near the top of the key domain is not lost to overflow
 1
+-- bounded, wider and unbounded stay distinct when join stats are collected
+0	1	1
 -- rejections
