@@ -256,4 +256,9 @@ SELECT 'hasPhrase ngrams', indexed, scanned FROM (
            (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bcd', 'ngrams(3)') ORDER BY id SETTINGS use_skip_indexes = 0)) AS scanned
 ) WHERE indexed != scanned;
 
+-- A gram that spans a separator is not representable as a postprocessed token, and both forms must
+-- agree on rejecting it rather than one of them answering from the index.
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e'); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE tab;
