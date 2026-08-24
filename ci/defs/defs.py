@@ -91,6 +91,16 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
+    Secret.Config(
+        name="loom-url",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="loom-ci-token",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
 ]
 
 DOCKERS = [
