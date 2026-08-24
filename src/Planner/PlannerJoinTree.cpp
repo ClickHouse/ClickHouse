@@ -240,8 +240,10 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-/// Same outer-join sides as JOIN filter pushdown / `FunctionToSubcolumnsPass`:
-/// do not copy a predicate onto the null-producing side.
+/// Same restrictions as JOIN filter pushdown (`filterPushDown.cpp`):
+/// do not prefilter the null-producing side of an outer JOIN, the right side of
+/// an `ASOF JOIN` (nearest-match would change), or either side of a `PASTE JOIN`
+/// (positional alignment).
 bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
 {
     std::vector<QueryTreeNodePtr> stack = {join_tree};
@@ -254,9 +256,16 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
 
         if (const auto * join = node->as<JoinNode>())
         {
-            if (isRightOrFull(join->getKind()) && extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get()))
+            const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpression()).contains(table.get());
+            const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get());
+
+            if (isPaste(join->getKind()) && (table_on_left || table_on_right))
                 return false;
-            if (isLeftOrFull(join->getKind()) && extractTableExpressionsSet(join->getRightTableExpression()).contains(table.get()))
+            if (join->getStrictness() == JoinStrictness::Asof && table_on_right)
+                return false;
+            if (isRightOrFull(join->getKind()) && table_on_left)
+                return false;
+            if (isLeftOrFull(join->getKind()) && table_on_right)
                 return false;
             stack.push_back(join->getLeftTableExpression());
             stack.push_back(join->getRightTableExpression());
@@ -1556,15 +1565,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
+    bool can_prefilter_wrapped_table = false;
 
     if (wrap_read_columns_in_subquery)
     {
         auto original_table_expression = table_expression;
 
+        const auto * parent_query = select_query_info.query_tree
+            ? select_query_info.query_tree->as<QueryNode>()
+            : nullptr;
+        can_prefilter_wrapped_table = parent_query
+            && joinTreePreservesRowsForTable(parent_query->getJoinTree(), original_table_expression);
+
         /// Subqueries inherit the outer GlobalPlannerContext, whose filter map is keyed by
         /// outer table nodes. Collect filters for this JOIN query so icebergCluster listing
-        /// still sees left-only WHERE after the wrap.
-        if (!table_expression_data.getFilterActions() && select_query_info.query_tree)
+        /// still sees left-only WHERE after the wrap. Skip the same join sides as
+        /// `joinTreePreservesRowsForTable` so listing cannot change `ASOF` / `PASTE` matches.
+        if (can_prefilter_wrapped_table && !table_expression_data.getFilterActions())
         {
             auto collected = collectFiltersForAnalysis(select_query_info.query_tree, select_query_options, nullptr);
             auto it = collected.find(table_expression);
@@ -1578,9 +1595,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
         /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
         /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
-        /// Skip the null-producing side of an outer JOIN (`WHERE isNull(r.x)` on a `LEFT JOIN`).
-        if (const auto * parent_query = select_query_info.query_tree->as<QueryNode>();
-            parent_query && joinTreePreservesRowsForTable(parent_query->getJoinTree(), original_table_expression))
+        if (can_prefilter_wrapped_table)
         {
             auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
             {
@@ -2308,7 +2323,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
-            if (wrap_read_columns_in_subquery && till_stage == QueryProcessingStage::FetchColumns)
+            if (wrap_read_columns_in_subquery && till_stage == QueryProcessingStage::FetchColumns && can_prefilter_wrapped_table)
                 tryAddClusterWrapFilter(query_plan, table_expression_data);
         }
 
