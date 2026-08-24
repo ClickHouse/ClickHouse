@@ -14,14 +14,15 @@ public:
 
     void buildPrettyNames();
 
-    void setQueryPlan(QueryPlan plan_) {
-        query_plan.emplace(std::move(plan_));
-    }
+    void setQueryPlan(QueryPlan plan_) { query_plan.emplace(std::move(plan_)); }
 
-    QueryPlan& getQueryPlan() {
+    QueryPlan & getQueryPlan()
+    {
         chassert(query_plan.has_value());
         return query_plan.value();
     }
+
+    bool hasQueryPlan() const { return query_plan.has_value(); }
 
 private:
     std::optional<QueryPlan> query_plan;

@@ -839,7 +839,7 @@ static void logQueryFinishImpl(
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
 
-    if (context->getPlanProfiler())
+    if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
         logQueryPlan(context, elem, QueryPlanLogElement::QUERY_FINISH);
 }
 
@@ -953,6 +953,9 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish(time_now);
     }
+
+    if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
+        logQueryPlan(context, elem, QueryPlanLogElement::EXCEPTION_WHILE_PROCESSING);
 }
 
 void logExceptionBeforeStart(
@@ -1089,6 +1092,9 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+
+    if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
+          logQueryPlan(context, elem, QueryPlanLogElement::EXCEPTION_BEFORE_START);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
