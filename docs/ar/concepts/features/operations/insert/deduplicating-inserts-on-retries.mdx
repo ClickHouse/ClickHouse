@@ -36,7 +36,7 @@ doc_type: 'guide'
 
 **لا تدعم إزالة التكرار عند الإدراج سوى محرّكات `*MergeTree`.**
 
-بالنسبة إلى محرّكات `*ReplicatedMergeTree`، تكون إزالة التكرار عند الإدراج مفعّلة افتراضيًا، ويتحكم فيها الإعدادان [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window) و[`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). أما في محرّكات `*MergeTree` غير المكرّرة، فيتحكم في إزالة التكرار الإعداد [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+بالنسبة إلى محرّكات `*ReplicatedMergeTree`، تكون إزالة التكرار عند الإدراج مفعّلة افتراضيًا، ويتحكم فيها الإعدادان [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) و[`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). أما في محرّكات `*MergeTree` غير المكرّرة، فيتحكم في إزالة التكرار الإعداد [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 تحدّد الإعدادات أعلاه معلمات سجل إزالة التكرار للجدول. ويخزّن سجل إزالة التكرار عددًا محدودًا من `block_id`s&#96;، وهي التي تحدد آلية عمل إزالة التكرار (انظر أدناه).
 
@@ -62,18 +62,18 @@ doc_type: 'guide'
 في الوقت الحالي، يتحكم الإعداد `insert_select_deduplicate` في سلوك `INSERT ... SELECT`. ويحدد هذا الإعداد ما إذا كانت إزالة التكرار ستُطبَّق على البيانات المُدرجة باستخدام استعلامات `INSERT ... SELECT`. راجع الوثائق المرتبطة للحصول على التفاصيل وأمثلة الاستخدام.
 
 <div id="insert-deduplication-with-materialized-views">
-  ## إزالة تكرار الإدراج مع العروض المادية
+  ## إزالة التكرار عند الإدراج مع العروض المادية
 </div>
 
 عندما يحتوي جدول على عرض مادي واحد أو أكثر، تُدرَج البيانات أيضًا في وجهة تلك العروض مع التحويلات المحددة. كما يُزال تكرار البيانات المُحوَّلة عند إعادة المحاولة أيضًا. ويُجري ClickHouse إزالة التكرار للعروض المادية بالطريقة نفسها التي يُجري بها إزالة التكرار للبيانات المُدرجة في الجدول الهدف.
 
 يمكنك التحكم في هذه العملية باستخدام الإعدادات التالية للجدول المصدر:
 
-* [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-يجب أيضًا تمكين إعداد ملف تعريف المستخدم [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+يجب أيضًا تمكين إعداد ملف تعريف المستخدم [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
 عند تمكين الإعداد `insert_deduplicate=1`، يُزال تكرار البيانات المُدرجة في الجدول المصدر. ويؤدي الإعداد `deduplicate_blocks_in_dependent_materialized_views=1` أيضًا إلى تمكين إزالة التكرار في الجداول التابعة. يجب تمكين الإعدادين معًا إذا كان المطلوب هو إزالة التكرار الكامل.
 
 عند إدراج كتل في الجداول التابعة للعروض المادية، يحسب ClickHouse قيمة `block_id` عبر إجراء تجزئة لسلسلة تجمع بين قيم `block_id` من الجدول المصدر ومعرّفات إضافية. ويضمن ذلك إزالة تكرار دقيقة داخل العروض المادية، بحيث يمكن تمييز البيانات استنادًا إلى عملية إدراجها الأصلية، بغض النظر عن أي تحويلات طُبّقت عليها قبل وصولها إلى جدول الوجهة التابع للعرض المادي.

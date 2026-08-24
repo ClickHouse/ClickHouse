@@ -268,7 +268,7 @@ static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, 
     res.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`
+        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
         if (columns[i])
             res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
     }
@@ -311,6 +311,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (dataflow_cache_update_cb)
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
+                first_reader.getReader()->getPartiallyReadColumns(),
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
@@ -348,6 +349,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 // is already set to false, because we still need to update the total bytes seen.
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
+                    range_readers[i].getReader()->getPartiallyReadColumns(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
                     should_continue_sampling);
             }
