@@ -50,6 +50,12 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+
+    /// Must precede `initialize`, which parses the definition and reads this. A short `ATTACH` replays a stored
+    /// statement verbatim, so it is a metadata load even though its strictness level is only `ATTACH`;
+    /// `StorageBuffer` and `StorageDistributed` pair the same two conditions.
+    configuration->is_metadata_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from

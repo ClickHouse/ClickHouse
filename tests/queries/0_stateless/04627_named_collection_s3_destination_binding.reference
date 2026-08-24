@@ -21,8 +21,12 @@ refused
 --- under gcp_oauth the stored AWS keys are inert, so a complete ADC replacement releases
 allowed
 --- no_sign_request with static keys: nothing signs, so the destination is not bound
-reached-s3
+no-key-on-the-wire
+--- control: the same listener does see the key once SigV4 is on, so the arm above can fail
+key-on-the-wire
 --- a collection that stores no url authorises no destination for its keys
+refused
+--- the same rule reaches DatabaseS3, where an absent url means every table name is a full url
 refused
 --- filename cannot move the origin: an absolute value is rejected before any request
 no-host
@@ -33,3 +37,8 @@ refused
 refused
 --- a relative stored url declares no origin, so a materialized s3_base replay still attaches
 1
+--- a definition persisted before this rule loads with a warning instead of aborting startup
+loaded
+payload
+--- the replay exemption is not reachable from a fresh query against the same collection
+refused

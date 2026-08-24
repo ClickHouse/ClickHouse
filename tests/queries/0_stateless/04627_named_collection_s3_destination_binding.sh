@@ -46,6 +46,62 @@ allowed_reaches_s3() {
     ${CLICKHOUSE_CLIENT} -m --query "$1" 2>&1 | grep -qE 'payload|S3_ERROR' && echo "reached-s3" || echo "NOT-REACHED"
 }
 
+# For the `no_sign_request` arm, whose whole claim is that nothing signs: any S3-level outcome is too
+# weak, because those stored keys are valid for the collection's own origin, so a silently re-enabled
+# signature would read the row and still look green. Send the request to a listener instead and assert
+# on the bytes: the key must not appear, and a request must have arrived at all.
+CAPTURE_PY="$CLICKHOUSE_TMP/${CLICKHOUSE_TEST_UNIQUE_NAME}_capture.py"
+cat > "$CAPTURE_PY" <<'PY'
+import socket, sys, threading
+out, portfile = sys.argv[1], sys.argv[2]
+srv = socket.socket()
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("127.0.0.1", 0)); srv.listen(8); srv.settimeout(60)
+with open(portfile, "w") as f:
+    f.write(str(srv.getsockname()[1]))
+sink = open(out, "ab", buffering=0)
+def serve(conn):
+    try:
+        conn.settimeout(5)
+        sink.write(conn.recv(65536))
+        conn.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    except Exception:
+        pass
+    finally:
+        conn.close()
+while True:
+    try:
+        conn, _ = srv.accept()
+    except Exception:
+        break
+    threading.Thread(target=serve, args=(conn,), daemon=True).start()
+PY
+
+# Runs one query against a throwaway listener and reports what reached the wire.
+#   $1 = the stored secret that must NOT appear    $2 = SQL, with __CAPTURE__ standing in for the origin
+capture_must_not_leak() {
+    local secret="$1" sql="$2"
+    local cap="$CLICKHOUSE_TMP/${CLICKHOUSE_TEST_UNIQUE_NAME}_cap.txt"
+    local portfile="$CLICKHOUSE_TMP/${CLICKHOUSE_TEST_UNIQUE_NAME}_port.txt"
+    : > "$cap"; : > "$portfile"
+    python3 "$CAPTURE_PY" "$cap" "$portfile" &
+    local pid=$!
+    local port=""
+    for _ in $(seq 1 80); do
+        port=$(cat "$portfile" 2>/dev/null)
+        [ -n "$port" ] && break
+        sleep 0.25
+    done
+    if [ -z "$port" ]; then kill "$pid" 2>/dev/null; echo "NO-LISTENER"; return; fi
+    ${CLICKHOUSE_CLIENT} -m --query "${sql//__CAPTURE__/http://127.0.0.1:$port}" > /dev/null 2>&1
+    sleep 1
+    kill "$pid" 2>/dev/null
+    # The refusal happens before any client is built, so an empty capture is the check having fired.
+    if [ ! -s "$cap" ]; then echo "NO-REQUEST"
+    elif grep -qF "$secret" "$cap"; then echo "key-on-the-wire"
+    else echo "no-key-on-the-wire"; fi
+}
+
 echo '--- credentialed collection, url moved to another origin'
 ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c keys)"
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c keys) AS
@@ -116,14 +172,32 @@ run "SELECT * FROM s3($(c gcpkeys), url = '$OTHER/x.csv',
 echo '--- no_sign_request with static keys: nothing signs, so the destination is not bound'
 ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c nosign)"
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c nosign) AS
-    url = '$OTHER/', access_key_id = 'test', secret_access_key = 'testtest', no_sign_request = 1"
-allowed_reaches_s3 "SELECT * FROM s3($(c nosign), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
+    url = '$OTHER/', access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest', no_sign_request = 1"
+# Two path segments: `S3::URI` reads the first as the bucket, so a single-segment path leaves no key
+# and no request is ever issued.
+capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
+    "SELECT * FROM s3($(c nosign), url = '__CAPTURE__/test/$DATA', format = 'CSV', structure = 'a String')"
+
+echo '--- control: the same listener does see the key once SigV4 is on, so the arm above can fail'
+# Without this, "no key on the wire" would also be the reading for a listener nothing ever reaches.
+# `OVERRIDABLE` is what lets the destination move at all here; the credentials are otherwise identical.
+${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c signing)"
+${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c signing) AS
+    url = '$OTHER/' OVERRIDABLE, access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest'"
+capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
+    "SELECT * FROM s3($(c signing), url = '__CAPTURE__/test/$DATA', format = 'CSV', structure = 'a String')"
 
 echo '--- a collection that stores no url authorises no destination for its keys'
 ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c keysonly)"
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c keysonly) AS
     access_key_id = 'test', secret_access_key = 'testtest'"
 run "SELECT * FROM s3($(c keysonly), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
+
+echo '--- the same rule reaches DatabaseS3, where an absent url means every table name is a full url'
+# `getFullUrl` returns the bare table name when the collection stores no url prefix, so each query
+# picks the destination for the collection's keys. Refused for the same reason as the arm above; the
+# changelog names this shape because it used to be accepted.
+run "CREATE DATABASE ${CLICKHOUSE_DATABASE}_kodb ENGINE = S3($(c keysonly))"
 
 echo '--- filename cannot move the origin: an absolute value is rejected before any request'
 # `path::operator/` replaces the left operand when the right is absolute, so pin the rejection: were
@@ -154,9 +228,30 @@ ${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.replay"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.replay"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.replay"
 
+echo '--- a definition persisted before this rule loads with a warning instead of aborting startup'
+# Built with supported statements only: create the table while the collection has no credentials (so
+# the cross-origin override is allowed), then add them. That is the upgrade shape - a definition that
+# was legal when written and is not now - and for a table loaded at startup a refusal here is the
+# server failing to start rather than one unreadable table.
+${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c later)"
+${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c later) AS url = '$OTHER/', format = 'CSV'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.persisted (a String) ENGINE = S3($(c later), url = '$OWN/$DATA')"
+${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c later)
+    SET access_key_id = 'test', secret_access_key = 'testtest'"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.persisted"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.persisted" 2>&1 \
+    | grep -qF "Override not allowed for 'url'" && echo "REFUSED" || echo "loaded"
+allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}.persisted"
+
+echo '--- the replay exemption is not reachable from a fresh query against the same collection'
+run "SELECT * FROM s3($(c later), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_kodb"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
-for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign keysonly rel; do
+for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later; do
     ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c $n)"
 done

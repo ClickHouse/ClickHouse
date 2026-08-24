@@ -3,6 +3,8 @@
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -73,6 +75,11 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -209,7 +216,11 @@ namespace
 }
 
 void validateS3CollectionDestinationBinding(
-    const NamedCollection & collection, const S3::S3AuthSettings & effective_auth, const String & effective_url, ContextPtr context)
+    const NamedCollection & collection,
+    const S3::S3AuthSettings & effective_auth,
+    const String & effective_url,
+    ContextPtr context,
+    bool is_metadata_replay)
 {
     /// An operator who wrote `url = '...' OVERRIDABLE` decided the destination may move. Re-tested here with
     /// `false` as the default because `findOverrideForbiddingKey` accepts the override on the strength of
@@ -228,22 +239,43 @@ void validateS3CollectionDestinationBinding(
         ? collection.getValueBeforeQueryOverride("url").value_or("")
         : collection.getOrDefault<String>("url", "");
 
-    /// A collection that names no destination at all authorises none: its credential may not be sent anywhere
-    /// the query picks.
+    String reason;
     if (stored_url.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");
+    {
+        /// A collection that names no destination at all authorises none: its credential may not be sent
+        /// anywhere the query picks.
+        reason = "the collection declares no url";
+    }
+    else
+    {
+        /// A relative stored url has no origin of its own - `s3_base` supplies one - so there is nothing here to
+        /// compare an effective origin against.
+        const auto declared = declaredOrigin(stored_url, context);
+        if (!declared)
+            return;
 
-    /// A stored URL that declares no origin (a relative one) is resolved against `s3_base`, so its origin is
-    /// not the collection's to authorise and there is nothing here to compare against. This is also the shape
-    /// `StorageObjectStorageConfiguration::initialize` persists, where the resolved absolute URL is written
-    /// back as a `url='...'` override and the table is later attached with no base set.
-    const auto declared = declaredOrigin(stored_url, context);
-    if (!declared)
-        return;
+        const auto effective = declaredOrigin(effective_url, context);
+        if (effective && *effective == *declared)
+            return;
+        reason = fmt::format("the collection declares the origin of '{}'", stored_url);
+    }
 
-    const auto effective = declaredOrigin(effective_url, context);
-    if (effective && *effective == *declared)
+    /// Whoever loads a persisted definition did not choose it, and throwing here aborts server startup rather
+    /// than leaving one object inaccessible. Same trade as `getClient` and
+    /// `DatabaseDataLake::initializeOrLeaveUnavailable`, under the same server setting.
+    if (is_metadata_replay
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+    {
+        LOG_WARNING(
+            getLogger("NamedCollectionDestinationBinding"),
+            "Loading a stored definition that sends a named collection's own credentials to '{}', a destination the "
+            "collection does not authorise ({}). A query asking for this now is refused; it is allowed here only "
+            "because refusing a stored definition would stop the server from starting. Set the server setting "
+            "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.",
+            effective_url,
+            reason);
         return;
+    }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");
 }
@@ -325,7 +357,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
-void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context, bool is_metadata_replay)
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -456,7 +488,8 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
 
     /// Last, so the auth is normalized and the URI fully resolved (`s3_base`, `filename`, archive syntax).
-    validateS3CollectionDestinationBinding(collection, s3_settings->auth_settings, url.uri.toString(), context);
+    validateS3CollectionDestinationBinding(
+        collection, s3_settings->auth_settings, url.uri.toString(), context, is_metadata_replay);
 }
 
 static ASTPtr extractExtraCredentials(ASTs & args)
@@ -1298,7 +1331,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     S3StorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
+    parsed_arguments.fromNamedCollection(collection, context, is_metadata_replay);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()

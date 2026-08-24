@@ -289,7 +289,10 @@ void registerBackupEngineS3(BackupFactory & factory)
 
             /// `BackupInfo::getNamedCollection` hand-copies the `NAMED_COLLECTION` check rather than going
             /// through `findOverrideForbiddingKey`, so this seam is not covered by the table-function one.
-            validateS3CollectionDestinationBinding(*collection, auth, s3_uri, params.context);
+            /// Never a metadata replay: the destination is named by the `BACKUP`/`RESTORE` statement being run,
+            /// not read back from a definition persisted before this was checked.
+            validateS3CollectionDestinationBinding(
+                *collection, auth, s3_uri, params.context, /*is_metadata_replay=*/false);
         }
         else
         {
@@ -381,7 +384,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 /// collection there is no collection-derived credential for it to carry.
                 if (location.collection && named_collection_auth)
                     validateS3CollectionDestinationBinding(
-                        *location.collection, *named_collection_auth, full_uri, params.context);
+                        *location.collection, *named_collection_auth, full_uri, params.context,
+                        /*is_metadata_replay=*/false);
                 auto uri_for_lightweight = S3::URI{full_uri};
                 /// We set the prefix to "" because in meta file, object key is absolute path.
                 uri_for_lightweight.key = "";

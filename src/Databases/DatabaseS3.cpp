@@ -214,7 +214,7 @@ void DatabaseS3::shutdown()
 {
 }
 
-DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, bool is_metadata_replay)
 {
     Configuration result;
 
@@ -255,7 +255,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         auth[S3AuthSetting::secret_access_key] = result.secret_access_key.value_or("");
         auth[S3AuthSetting::no_sign_request] = result.no_sign_request;
         auth[S3AuthSetting::use_environment_credentials] = result.use_environment_credentials;
-        validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_);
+        validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_, is_metadata_replay);
     }
     else
     {
@@ -356,7 +356,11 @@ void registerDatabaseS3(DatabaseFactory & factory)
         if (engine->arguments && !engine->arguments->children.empty())
         {
             ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
+            /// A database is replayed from its stored statement with a plain `ATTACH` on startup, not
+            /// `FORCE_ATTACH` as tables are, so `isLoadingFromExistingMetadata` is too narrow here. Keying on
+            /// `internal` keeps a user `ATTACH DATABASE` fail-closed, matching `registerDatabaseDataLake`.
+            const bool is_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+            config = DatabaseS3::parseArguments(engine_args, args.context, is_metadata_replay);
         }
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
