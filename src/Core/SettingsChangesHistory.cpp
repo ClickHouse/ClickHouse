@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.9",
+        {
+            {"cascades_aggregation_pushdown", true, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
+        });
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
@@ -132,7 +136,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_delete_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row."},
             {"run_query_in_background", false, false, "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
-            {"cascades_aggregation_pushdown", true, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"merge_tree_min_bytes_per_read_stream", 0, (64 * 1024), "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."},
             {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},

@@ -111,6 +111,9 @@ SET allow_experimental_correlated_subqueries = 1;
 SET max_rows_in_join = 0;
 SET max_bytes_in_join = 0;
 SET query_plan_join_swap_table = 0;
+-- The Cascades cost model's parallelism input follows `max_threads`, and Q02's
+-- pushdown-on plan sits near a cost boundary that flips with the machine's core count.
+SET max_threads = 32;
 -- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;
