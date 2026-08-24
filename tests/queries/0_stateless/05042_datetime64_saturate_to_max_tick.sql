@@ -1,11 +1,10 @@
--- `saturate` used to clamp to the whole second and drop the subsecond part, landing below the type maximum.
--- The checks below do not assume where the boundary sits, so they hold whatever the supported date range is.
+-- `saturate` used to clamp to the whole second and drop the subsecond part, landing below the type maximum
 SET session_timezone = 'UTC';
 SET date_time_overflow_behavior = 'saturate';
 SET allow_experimental_time_time64_type = 1;
 
 SELECT 'DateTime64 scale 9 saturates to the largest tick';
--- At scale 9 the bound is the Int64 tick range, so the maximum is exactly Int64 max ticks.
+-- At scale 9 the bound is the Int64 tick range, so the maximum is exactly Int64 max ticks
 SELECT toUnixTimestamp64Nano(toDateTime64(253402300800, 9)) = 9223372036854775807;
 SELECT toUnixTimestamp64Nano(toDateTime64(253402300800::Int64, 9)) = 9223372036854775807;
 SELECT toUnixTimestamp64Nano(toDateTime64(2.534023008e11, 9)) = 9223372036854775807;

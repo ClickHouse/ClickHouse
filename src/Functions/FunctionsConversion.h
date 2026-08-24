@@ -2203,8 +2203,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
-        /// The narrow unsigned types have no Time64 branch of their own, so without this they skip the saturating
-        /// transform entirely and an out-of-range value is stored raw (only clamped when it is printed).
+        /// Without this the narrow unsigned types skip the saturating transform and store out-of-range values raw
         else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt8>
                 || std::is_same_v<FromDataType, DataTypeUInt16>
                 || std::is_same_v<FromDataType, DataTypeUInt32>)

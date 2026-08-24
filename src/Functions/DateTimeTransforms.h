@@ -81,15 +81,14 @@ inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
 }
 
-/// Largest representable value, in ticks: the last whole second plus as much of a fraction as the Int64 still holds.
-/// Saturating to `maxWholeSecondsForDateTime64 * scale_multiplier` would drop the subsecond part and land below it.
+/// Largest representable value in ticks: the last whole second plus as much fraction as the Int64 holds
 inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
 {
     const Int64 whole = maxWholeSecondsForDateTime64(scale_multiplier) * scale_multiplier;
     return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
 }
 
-/// Time64 caps the scale at 9, so `MAX_TIME_TIMESTAMP` ticks always fit and no Int64 guard is needed here.
+/// Time64 caps the scale at 9, so this cannot overflow Int64
 inline Int64 maxTicksForTime64(Int64 scale_multiplier)
 {
     return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;

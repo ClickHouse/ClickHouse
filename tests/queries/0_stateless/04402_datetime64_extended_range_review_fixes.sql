@@ -35,7 +35,7 @@ SELECT dateDiff('week', toDateTime64('1850-03-11 00:00:00', 0, 'UTC'), toDateTim
 SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_OVERFLOW (ticks are stored in Int64)';
 -- The whole-seconds range shrinks with the scale: scale 8 tops out near year 4892 and scale 9 near 2262-04-11.
 -- A value past the tick range must clamp (under the non-throwing overflow modes) rather than fail in DecimalUtils.
--- Saturation lands on the maximum tick, so compare the whole second here; 05042 covers the subsecond part.
+-- Saturation lands on the maximum tick, so compare the whole second here; 05042 covers the subsecond part
 SELECT toStartOfSecond(toDateTime64(300000000000, 9, 'UTC')) = toDateTime64(9223372036, 9, 'UTC'),
        toStartOfSecond(toDateTime64(300000000000, 8, 'UTC')) = toDateTime64(92233720368, 8, 'UTC'),
        toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
