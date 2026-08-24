@@ -159,6 +159,20 @@ SELECT count() FROM (
              query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
+-- The stored view reaches the peel through its own plan shape, so it needs its own reordering pair.
+SELECT '-- the parent join of a refused stored view merge is still reordered';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
+) WHERE explain LIKE '%a[%';
+
+SELECT '-- and the same stored view query is not reordered once reordering is off';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
+    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1
+) WHERE explain LIKE '%a[%';
+
 DROP VIEW v_plain_05038;
 DROP VIEW v_shadow_05038;
 DROP TABLE t_b_05038;

@@ -770,9 +770,9 @@ constexpr bool isInnerOrCross(JoinKind kind)
 }
 
 /// `mergeInplace` binds a merged expression's inputs to the graph's outputs by `result_name`, and it
-/// installs only the expression's outputs. An output computed from an input of the same name would
-/// therefore be bound to itself and applied twice, so such an expression must not be merged into a
-/// join graph.
+/// installs only the expression's outputs. An output named like one of its own inputs therefore
+/// leaves a computed node over an input of that name, and resolving the name again applies the
+/// expression a second time, so such an expression must not be merged into a join graph.
 static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 {
     std::unordered_set<std::string_view> input_names;

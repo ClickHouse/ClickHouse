@@ -50,3 +50,7 @@
 0
 -- stored view non-shadowing output is still merged into the join graph
 1
+-- the parent join of a refused stored view merge is still reordered
+1
+-- and the same stored view query is not reordered once reordering is off
+0
