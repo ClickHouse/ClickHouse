@@ -495,7 +495,10 @@ size_t StoragePulsar::getPollMaxBatchSize() const
 
     /// A single `batchReceive` must not prefetch more than one block: a larger prefetch would leave
     /// an unread tail attached to the consumer, which an aborted SELECT then has to negative-ack.
-    return std::min(batch_size, getMaxBlockSize());
+    /// The result also feeds a narrowing cast to `int` in `setBatchReceivePolicy`, and the generic
+    /// `max_block_size` / `max_insert_block_size` defaults are not validated at CREATE, so clamp it:
+    /// a wrapped negative value would silently disable the prefetch cap.
+    return std::min({batch_size, getMaxBlockSize(), static_cast<size_t>(std::numeric_limits<int>::max())});
 }
 
 size_t StoragePulsar::getMaxBlockSize() const
