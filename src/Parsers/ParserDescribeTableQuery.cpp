@@ -8,6 +8,8 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -161,6 +163,36 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     node = query;
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementDescribeTable(StatementFactory & factory)
+{
+    factory.registerStatement("DESCRIBE TABLE",
+    {
+        .description = R"(
+Returns the information about the columns of a table: the name, the type, the kind and the expression of the default
+value, the comment, the compression codec, the `TTL` expression and whether the column is a subcolumn.
+
+The argument can also be a subquery or a table function, in which case the structure of its result is described.
+
+**Examples**
+
+**Describe the columns of a table**
+
+```sql title="Query"
+DESCRIBE TABLE describe_example;
+```
+)",
+        .syntax = R"(
+DESC|DESCRIBE [TABLE] [db.]table | (subquery) | table_function [INTO OUTFILE filename] [FORMAT format]
+)",
+        .related = {"SHOW", "EXISTS", "CREATE TABLE"},
+    });
 }
 
 }
