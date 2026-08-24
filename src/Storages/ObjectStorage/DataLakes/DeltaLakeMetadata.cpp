@@ -406,18 +406,6 @@ struct DeltaLakeMetadataImpl
             LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
                         column_name, type, is_nullable, physical_name);
 
-            /// This parser does not translate logical column names to physical ones. If the table
-            /// uses column mapping, a query by the logical name would find no such column in the
-            /// data files and silently return default values. Only delta-kernel handles the mapping
-            /// correctly, so reject such tables here.
-            if (physical_name != column_name)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Column `{}` of the DeltaLake table uses column mapping (physical name `{}`), "
-                    "which is only supported with delta-kernel. Use S3, Azure or Local storage "
-                    "with `allow_delta_kernel_rs = 1`, and a build with delta-kernel enabled",
-                    column_name, physical_name);
-
             schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
         return schema;
