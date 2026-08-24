@@ -5,8 +5,12 @@
 
 SET allow_experimental_variant_type = 1;
 
+-- `optimize_on_insert` is a setting of the INSERT query (the flaky-check harness randomizes it to 0,
+-- and a `CREATE TABLE ... SETTINGS` clause applies it only to the CREATE query itself).
+SET optimize_on_insert = 1;
+
 DROP TABLE IF EXISTS t_variant_coalescing_insert;
-CREATE TABLE t_variant_coalescing_insert (k UInt64, v Variant(String)) ENGINE = CoalescingMergeTree ORDER BY k SETTINGS optimize_on_insert = 1;
+CREATE TABLE t_variant_coalescing_insert (k UInt64, v Variant(String)) ENGINE = CoalescingMergeTree ORDER BY k;
 
 -- Default: the trailing NULL Variant row is skipped, the previous non-NULL value survives.
 INSERT INTO t_variant_coalescing_insert VALUES (1, 'x'), (1, NULL);
