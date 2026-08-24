@@ -16,8 +16,9 @@ TRUNCATE TABLE t_time64_date_overflow;
 
 SELECT 'throw';
 SET date_time_overflow_behavior = 'throw';
-INSERT INTO t_time64_date_overflow VALUES (CAST(-1 AS Time64(0))); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-INSERT INTO t_time64_date_overflow VALUES (CAST(-1 AS Time)); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- `clickhouse-client` parses inline `VALUES` data on the client side, so the exception is a client one.
+INSERT INTO t_time64_date_overflow VALUES (CAST(-1 AS Time64(0))); -- { clientError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_time64_date_overflow VALUES (CAST(-1 AS Time)); -- { clientError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(CAST(-1 AS Time64(0)) AS Date); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT count() FROM t_time64_date_overflow;
 

@@ -2,6 +2,9 @@
 -- same conversions from both: widening an exact `Time` value to `Time64(0)` cannot make a lossy
 -- conversion lossless.
 
+-- The `DateTime` results are rendered in the session time zone, so pin it.
+SET session_timezone = 'UTC';
+
 SELECT 'accurateCastOrNull to Date';
 SELECT toString(accurateCastOrNull(CAST(v, 'Time'), 'Date')), toString(accurateCastOrNull(CAST(v, 'Time64(0)'), 'Date'))
 FROM (SELECT arrayJoin([0, 3723, 86400, -1, -86400]) AS v) ORDER BY v;
