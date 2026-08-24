@@ -70,6 +70,19 @@
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
     M(DNSError) \
+    M(DNSRequests) \
+    M(DNSRequestMicroseconds) \
+    M(DNSReverseRequests) \
+    M(DNSReverseRequestMicroseconds) \
+    M(DNSReverseError) \
+\
+    M(TLSHandshakes) \
+    M(TLSHandshakeMicroseconds) \
+    M(TLSHandshakeErrors) \
+    M(TLSServerHandshakes) \
+    M(TLSServerHandshakeMicroseconds) \
+    M(TLSServerHandshakeErrors) \
+\
     M(RealTimeMicroseconds) \
     M(UserTimeMicroseconds) \
     M(SystemTimeMicroseconds) \
