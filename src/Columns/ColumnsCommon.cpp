@@ -28,6 +28,12 @@ static UInt64 toBits64(const Int8 * bytes64)
 
     return ~res;
 }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+/// bytes64MaskToBits64Mask returns the same mask as the branch above: bit i is set iff byte i is non-zero.
+static UInt64 toBits64(const Int8 * bytes64)
+{
+    return bytes64MaskToBits64Mask(reinterpret_cast<const UInt8 *>(bytes64));
+}
 #endif
 
 size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
@@ -44,7 +50,7 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64)
@@ -77,7 +83,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64, pos2 += 64)
