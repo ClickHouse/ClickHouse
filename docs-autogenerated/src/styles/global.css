@@ -575,6 +575,10 @@ pre {
   background: var(--selected-background);
 }
 
+.search-trigger.search-trigger-restored-focus:focus-visible {
+  outline: none;
+}
+
 .search-placeholder {
   overflow: hidden;
   text-overflow: ellipsis;

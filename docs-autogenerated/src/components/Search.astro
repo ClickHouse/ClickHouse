@@ -147,6 +147,7 @@
   }
 
   trigger?.addEventListener('click', openSearch, { signal });
+  trigger?.addEventListener('blur', () => trigger.classList.remove('search-trigger-restored-focus'), { signal });
   closeButton?.addEventListener('click', () => dialog?.close(), { signal });
   input?.addEventListener('input', runSearch, { signal });
   input?.addEventListener('keydown', (event) => {
@@ -159,11 +160,16 @@
     } else if (event.key === 'Enter' && activeIndex >= 0) {
       const active = results?.querySelectorAll<HTMLAnchorElement>('a')[activeIndex];
       active?.click();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      trigger?.classList.add('search-trigger-restored-focus');
+      dialog?.close();
     }
   }, { signal });
   dialog?.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
   }, { signal });
+  dialog?.addEventListener('cancel', () => trigger?.classList.add('search-trigger-restored-focus'), { signal });
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
       event.preventDefault();
