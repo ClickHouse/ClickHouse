@@ -384,6 +384,10 @@ class Shell:
             # already be set once attempt 1 was reaped, so every later attempt
             # would run with no timeout enforcement at all.
             finished = Event()
+            # Cleared per attempt for the same reason: an attempt that raises before
+            # its own Popen must not signal the previous attempt's reaped pid, which
+            # may have been recycled as an unrelated process group.
+            proc = None
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -878,8 +882,8 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         return f"{path}.enc"
 
     # Only a clean exit says the archive is whole. `Shell.run` reports an internal
-    # failure of its own as 1 too, and it kills only the shell leader, so on a 1 `tar`
-    # may still be writing.
+    # failure of its own as 1 too, and such a failure can leave the write cut short,
+    # so a 1 is indistinguishable from tar's own and has to be read back.
     TAR_UNCONDITIONALLY_OK_RETURN_CODES = (0,)
 
     @classmethod

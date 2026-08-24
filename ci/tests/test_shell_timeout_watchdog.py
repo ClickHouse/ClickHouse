@@ -34,6 +34,7 @@ since one hoisted out of the retry loop is already set when attempt 2 begins wai
 `TeePopen._check_timeout` had the same blind sleep and was fixed by cfb2ac8ff0c244.
 """
 
+import builtins
 import contextlib
 import errno
 import io
@@ -295,9 +296,9 @@ def test_archive_rc_one_from_an_internal_failure_is_not_published_unread(tmp_pat
     """An rc of 1 must be judged by reading the archive back, not accepted on sight.
 
     `Shell.run` reports an internal failure of its own as 1, the same value `tar` uses
-    for "some files differ", and it kills only the shell leader, so `tar` can still be
-    writing when that 1 is returned. A truncated staging archive must not be renamed
-    into place: the upload only checks that the file exists.
+    for "some files differ", and such a failure can leave the archive cut short. A
+    truncated staging archive must not be renamed into place: the upload only checks
+    that the file exists.
     """
     src = tmp_path / "src"
     src.mkdir()
@@ -400,6 +401,47 @@ def test_an_internal_failure_kills_the_whole_group_it_started(tmp_path):
     assert not marker.exists(), (
         "the descendant outlived the failed attempt: the exception path killed only the "
         "leader, and the watchdog it cancels can no longer reach the group"
+    )
+
+
+def test_a_retry_that_never_started_signals_nothing(monkeypatch):
+    """An attempt that raises before its own `Popen` must signal no group at all.
+
+    Killing the group rather than the leader makes a stale handle dangerous: the pid of
+    a reaped attempt can have been recycled as an unrelated process group, and the
+    signal is a SIGKILL. Driven by letting attempt one exit non-zero and breaking the
+    log-file open on attempt two, so the second attempt raises with no child of its own.
+    """
+    signalled = []
+    real_killpg = os.killpg
+    real_open = open
+    opens = {"n": 0}
+
+    def spy_killpg(pgid, sig):
+        signalled.append((pgid, sig))
+        return real_killpg(pgid, sig)
+
+    def failing_second_open(path, *args, **kwargs):
+        mode = kwargs.get("mode", args[0] if args else "r")
+        if path == "/dev/null" and mode == "w":
+            opens["n"] += 1
+            if opens["n"] >= 2:
+                raise OSError(errno.EACCES, "simulated log open failure")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "killpg", spy_killpg)
+    monkeypatch.setattr(builtins, "open", failing_second_open)
+    rc = Shell.run("exit 7", retries=2, verbose=False, timeout=30)
+    monkeypatch.undo()
+
+    assert opens["n"] >= 2, (
+        f"the second attempt never opened the log ({opens['n']} opens), so it never "
+        "raised and this arm proves nothing"
+    )
+    assert rc != 0, "the command unexpectedly succeeded"
+    assert signalled == [], (
+        f"a group was signalled by an attempt that created no child: {signalled}; that "
+        "pid belongs to an already-reaped attempt and may have been recycled"
     )
 
 
