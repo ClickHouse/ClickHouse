@@ -47,4 +47,4 @@ SELECT arrayMap(plus(1, multiply(_, 2)), [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayMap(plus(5, _300), [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayMap(plus(_0, 1), [1]); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT arrayMap(plus(5, _3x), [1]); -- { serverError UNKNOWN_IDENTIFIER }
-SELECT arrayMap(plus(_1, _2), [1, 2, 3]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT arrayMap(plus(_1, _2), [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
