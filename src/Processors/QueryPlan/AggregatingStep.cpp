@@ -895,7 +895,12 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
     if (params.bucket_top_k)
-        map.add("Bucket Top-K", params.bucket_top_k);
+    {
+        auto bucket_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        bucket_top_k_map->add("Limit", params.bucket_top_k);
+        bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
+        map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
     map.add("Skip merging", skip_merging);
 }
 
