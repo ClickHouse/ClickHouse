@@ -31,7 +31,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
     retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
@@ -161,7 +161,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica

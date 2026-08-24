@@ -6,29 +6,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-# The queries below require the whole table to be in the cache, so it needs a cache large enough to
-# hold it and private to this test: on the shared `s3_cache` another user can hold every segment
-# non-releasable, and a reservation that then finds nothing to evict silently reads past the cache.
-# `test.hits_s3` is too large, hence the 1% sample.
-cache_name="cache_00180_${CLICKHOUSE_DATABASE}"
-
+# Test assumes that the whole table is residing in the cache, but `hits_s3` has only 128Mi of cache.
+# So we need to create a smaller table.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS hits_s3_sampled"
-$CLICKHOUSE_CLIENT -q "
-    CREATE TABLE hits_s3_sampled AS test.hits_s3
-    ENGINE = MergeTree
-    SETTINGS disk = disk(
-        type = cache,
-        name = '$cache_name',
-        path = '$cache_name/',
-        max_size = '1Gi',
-        max_file_segment_size = '5Mi',
-        cache_on_write_operations = 1,
-        load_metadata_asynchronously = 0,
-        disk = 's3_disk')"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE hits_s3_sampled AS test.hits_s3"
 $CLICKHOUSE_CLIENT -q "INSERT INTO hits_s3_sampled SELECT * FROM test.hits_s3 SAMPLE 0.01"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE hits_s3_sampled FINAL"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE '$cache_name'"
+$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE"
 
 # Warm up the cache
 $CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
