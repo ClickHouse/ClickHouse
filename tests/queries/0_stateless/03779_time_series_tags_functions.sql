@@ -275,6 +275,37 @@ FROM
 );  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized all-zero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(toUInt8(0)), group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    FROM numbers(4)
+);
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf negative zero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(CAST('-0.0', 'Float64')), group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    FROM numbers(2)
+);
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized nonzero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(number = 2, group)
+FROM
+(
+    SELECT number,
+           timeSeriesTagsToGroup([('__name__', 'up'), ('instance', toString(number))]) AS group
+    FROM numbers(4)
+);  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+
+SELECT '';
 SELECT 'timeSeriesRemoveTag vectorized dense groups:';
 
 SELECT timeSeriesGroupToTags(new_group)
