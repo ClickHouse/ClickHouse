@@ -152,6 +152,25 @@ def test_nats_certificates_only_from_config(nats_cluster):
     assert "can only be specified in a named collection" in as_override
 
 
+def test_nats_certificates_survive_reload(nats_cluster):
+    # The source checks run when existing metadata is loaded too, so a table which satisfies them
+    # has to keep attaching.
+    # The subject goes in a `SETTINGS` clause rather than a collection override: a streaming table
+    # created without one stores metadata ending in an empty `SETTINGS`, which cannot be parsed back.
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS(nats_tls)
+            SETTINGS nats_subjects = 'reload';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query("DETACH TABLE test.nats")
+    instance.query("ATTACH TABLE test.nats")
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+
 def test_nats_certificates_bound_to_configured_destination(nats_cluster):
     # The operator's certificates must not be presented to a server the query picks.
     error = instance.query_and_get_error(

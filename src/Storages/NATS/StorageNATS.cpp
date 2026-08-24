@@ -931,18 +931,18 @@ constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
 /// defined in it - and never from SQL. This mirrors `nats_credential_file`.
 /// Checked on provenance rather than on the resulting value: an override with the empty string carries no
 /// path of its own but still drops the one the operator configured.
+/// Enforced when loading existing metadata too. The exemption the credential rules need protects tables
+/// stored before those rules existed, and no stored table can carry a setting introduced here. A table
+/// which overrides the destination of a collection that has since been given certificates would
+/// otherwise start presenting them to the server its own definition selected.
 void resolveCertificateSource(
     const NATSSettings & nats_settings,
     bool collection_defined_in_config,
     bool ca_file_assigned_by_query,
     bool client_cert_file_assigned_by_query,
     bool client_key_file_assigned_by_query,
-    bool destination_assigned_by_query,
-    bool loading_from_existing_metadata)
+    bool destination_assigned_by_query)
 {
-    if (loading_from_existing_metadata)
-        return;
-
     const std::tuple<const char *, String, bool> paths[] = {
         {"nats_ca_file", nats_settings[NATSSetting::nats_ca_file].value, ca_file_assigned_by_query},
         {"nats_client_cert_file", nats_settings[NATSSetting::nats_client_cert_file].value, client_cert_file_assigned_by_query},
@@ -1285,9 +1285,7 @@ void registerStorageNATS(StorageFactory & factory)
             ca_file_assigned_by_query,
             client_cert_file_assigned_by_query,
             client_key_file_assigned_by_query,
-            destination_assigned_by_query,
-            (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
-                && (!named_collection || collection_defined_in_config));
+            destination_assigned_by_query);
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
