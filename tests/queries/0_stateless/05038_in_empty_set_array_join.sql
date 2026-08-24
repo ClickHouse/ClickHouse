@@ -46,9 +46,13 @@ CREATE TABLE t_in_empty_set_storage (x Int) ENGINE = Set;
 
 -- A `Set` table can be filled after a query referencing it is planned, so its emptiness must not
 -- be folded into a constant. The plan keeps the function while a literal empty list becomes one.
+-- The old analyzer folds both, so the plan-shape assertions below pin the new one.
+SET enable_analyzer = 1;
 SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN ()) WHERE explain ILIKE '%Filter column: 0%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%Filter column: 0%';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%t_in_empty_set_storage%';
+-- Only the filter column names the set: a `ReadFromRemote*` step echoes the whole remote query,
+-- so an unscoped match counts a second line whenever the read is distributed.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%filter column:%' AND explain ILIKE '%t_in_empty_set_storage%';
 
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
 INSERT INTO t_in_empty_set_storage VALUES (1);
@@ -60,7 +64,7 @@ SET serialize_query_plan = 0, enable_parallel_replicas = 0, prefer_localhost_rep
 SELECT count() FROM (
     EXPLAIN indexes = 1, distributed = 1
     SELECT sum(b) FROM (SELECT * FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk))
-    WHERE a IN (SELECT a FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk) WHERE a < 0)
+    WHERE a IN (SELECT toInt32(number) FROM numbers(0))
 ) WHERE explain ILIKE '%0-element set%';
 
 DROP TABLE t_in_empty_set;
