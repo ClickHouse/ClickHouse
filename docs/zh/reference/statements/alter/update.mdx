@@ -30,6 +30,44 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 * [轻量级 `UPDATE`](/zh/reference/statements/update) - 使用补丁分区片段的轻量级更新替代方案
 * [`APPLY PATCHES`](/zh/reference/statements/alter/apply-patches) - 手动应用轻量级更新中的补丁
 
+<div id="materialized-columns">
+  ## materialized 列
+</div>
+
+表达式引用已更新列的 [`MATERIALIZED`](/zh/reference/statements/create/table#materialized) 列会在变更期间重新计算，因此其存储值将与新数据保持一致。
+
+<div id="columns-calculated-from-ephemeral-columns">
+  ### 基于 EPHEMERAL 列计算的列
+</div>
+
+[`EPHEMERAL`](/zh/reference/statements/create/table#ephemeral) 列仅在执行 `INSERT` 期间存在，且不会被存储。因此，基于该列计算的 `MATERIALIZED` 列无法通过变更重新计算。这类列会保留 `INSERT` 时计算出的值，之后该值将不再与其表达式匹配：
+
+```sql
+CREATE TABLE test
+(
+    x Int32,
+    e Int32 EPHEMERAL 0,
+    m Int32 MATERIALIZED x + e
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test (x, e) VALUES (1, 7);
+
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+
+SELECT x, m FROM test;
+```
+
+```text
+┌─x─┬─m─┐
+│ 2 │ 8 │
+└───┴───┘
+```
+
+`m` 为 `8`，即在 `INSERT` 时计算得出的值，而非 `2 + 7`：`e` 的值在提供该值的
+`INSERT` 之外不可用。因此，变更跳过某列时会在服务器日志中写入一条警告。要更新此类列，请重新 `INSERT` 受影响的行。
+
 <div id="related-content">
   ## 相关内容
 </div>

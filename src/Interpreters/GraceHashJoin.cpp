@@ -8,6 +8,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -36,9 +37,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char grace_hash_join_fail_in_delayed_block_read[];
 }
 
 namespace
@@ -48,10 +55,12 @@ namespace
     public:
         AccumulatedBlockReader(TemporaryBlockStreamReaderHolder reader_,
                                std::mutex & mutex_,
-                               size_t result_block_size_ = 0)
+                               size_t result_block_size_ = 0,
+                               bool inject_read_failure_ = false)
             : reader(std::move(reader_))
             , mutex(mutex_)
             , result_block_size(result_block_size_)
+            , inject_read_failure(inject_read_failure_)
         {
             if (!reader)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader is nullptr");
@@ -66,17 +75,39 @@ namespace
 
             Blocks blocks;
             size_t rows_read = 0;
-            do
+            // One AccumulatedBlockReader is shared between concurrent DelayedJoinedBlocksWorkerTransform
+            // threads. If reader->read() throws (e.g. a mid-read MEMORY_LIMIT_EXCEEDED cancels the
+            // underlying ReadBuffer), mark the reader finished before propagating so a sibling worker
+            // does not re-enter read() on the now-canceled buffer (which trips chassert(!isCanceled())).
+            try
             {
-                Block block = reader->read();
-                rows_read += block.rows();
-                if (block.empty())
+                do
                 {
-                    eof = true;
-                    return concatenateBlocks(blocks);
-                }
-                blocks.push_back(std::move(block));
-            } while (rows_read < result_block_size);
+                    // Only the left (delayed) reader arms this, so the failure can only be injected
+                    // into the reader that several workers share. Canceling the buffer before
+                    // throwing reproduces what ReadBuffer::next does on a real mid-read failure.
+                    if (inject_read_failure)
+                        fiu_do_on(FailPoints::grace_hash_join_fail_in_delayed_block_read,
+                        {
+                            reader.getHolder()->cancel();
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in delayed block read");
+                        });
+
+                    Block block = reader->read();
+                    rows_read += block.rows();
+                    if (block.empty())
+                    {
+                        eof = true;
+                        return concatenateBlocks(blocks);
+                    }
+                    blocks.push_back(std::move(block));
+                } while (rows_read < result_block_size);
+            }
+            catch (...)
+            {
+                eof = true;
+                throw;
+            }
 
             return concatenateBlocks(blocks);
         }
@@ -86,6 +117,7 @@ namespace
         std::mutex & mutex;
 
         const size_t result_block_size;
+        const bool inject_read_failure;
         bool eof = false;
     };
 
@@ -175,7 +207,7 @@ public:
     AccumulatedBlockReader getLeftTableReader()
     {
         ensureState(State::JOINING_BLOCKS);
-        return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex);
+        return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex, 0, /*inject_read_failure_=*/true);
     }
 
     /// Spilled bytes for this bucket. Only called after the join
