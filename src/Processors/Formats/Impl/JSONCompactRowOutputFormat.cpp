@@ -1,4 +1,3 @@
-#include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
@@ -80,16 +79,6 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
     factory.setContentType("JSONCompact", "application/json; charset=UTF-8");
 
-    /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
-    /// when the output adaptor installs the validating buffer, so a non-UTF-8 type name can leak.
-    /// It is knowable from the header, so text framings reject or base64-encode the output.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "JSONCompact",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
-        });
-
     factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -102,18 +91,6 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
     factory.setContentType("JSONCompactStrings", "application/json; charset=UTF-8");
 
-    /// Additionally to the `meta.type` strings, `JSONCompactStrings` serializes the values through
-    /// the plain `serializeText` kind, which writes the `Bool` representations verbatim (see
-    /// `boolRepresentationsMayProduceRawBytesInJSONStrings`). The format always requests UTF-8
-    /// validation, so pass `validate_utf8 = true`.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "JSONCompactStrings",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings)
-                || JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, /*validate_utf8=*/true);
-        });
-
     factory.setDocumentation("JSONCompactStrings", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |
@@ -122,7 +99,7 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
 
 ## Description {#description}
 
-The `JSONCompactStrings` format differs from [JSONStrings](/reference/formats/JSON/JSONStrings) only in that data rows are output as arrays, not as objects.
+The `JSONCompactStrings` format differs from [JSONStrings](./JSONStrings.md) only in that data rows are output as arrays, not as objects.
 
 ## Example usage {#example-usage}
 

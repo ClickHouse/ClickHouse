@@ -32,7 +32,6 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
-    bool precise_float_parsing = true;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -47,9 +46,6 @@ struct FormatSettings
 
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
-
-    /// Cap for power-of-two growth of the JSON column's internal String buffers while materializing (0 = unlimited).
-    size_t json_max_string_column_growth_step = 0;
 
     bool try_infer_integers = true;
     bool try_infer_dates = true;
@@ -107,12 +103,6 @@ struct FormatSettings
     bool schema_inference_allow_nullable_tuple_type = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
-
-    /// Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
-    /// `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
-    /// Restores the pre-26.8 behavior (see the `input_format_read_datetime_number_as_raw_value` setting). Also
-    /// set by the `YTsaurus` reader, whose `timestamp` types are stored as raw ticks, not seconds.
-    bool read_datetime_number_as_raw_value = false;
 
     enum class IntervalOutputFormat : uint8_t
     {
@@ -178,11 +168,6 @@ struct FormatSettings
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
         UInt64 max_object_size = 100000;
-        /// Max number of type nodes when decoding binary types. 0 == unlimited. The guard applies only to
-        /// untrusted input: FormatFactory populates this from input_format_binary_max_type_complexity for real
-        /// input formats. A default-constructed FormatSettings (internal decode of already-stored data) leaves
-        /// it at 0, so stored/background decode is never limited.
-        UInt64 max_binary_type_complexity = 0;
     } binary{};
 
     struct
@@ -242,10 +227,8 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool serialize_tuple_into_separate_columns = true;
-        bool header_serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
-        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
@@ -271,11 +254,7 @@ struct FormatSettings
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
         bool allow_variable_number_of_columns = true;
-        char rows_delimiter = '\n';
         Names input_field_names;
-        /// Transient state used only by the HiveText output serialization to track the current
-        /// Hive separator nesting level (see getHiveTextDelimiter). Not a user-facing setting.
-        size_t nesting_level = 1;
     } hive_text{};
 
     struct Custom
@@ -335,7 +314,6 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
-        size_t max_row_size_for_json_each_row = 0;
     } json{};
 
     struct
@@ -369,7 +347,6 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
-        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -390,7 +367,6 @@ struct FormatSettings
         UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
-        bool output_wide_integer_as_decimal = false;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
@@ -406,7 +382,6 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
-        bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
@@ -553,6 +528,7 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
+        bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
@@ -603,9 +579,6 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
-        UInt64 time_multiplier_seconds = 1;
-        UInt64 time_divisor_seconds = 60;
-        bool streaming_animation = false;
     } image{};
 
     struct
@@ -647,7 +620,6 @@ struct FormatSettings
     struct
     {
         UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
-        bool validate_geometry = true;
     } geojson{};
 
 };

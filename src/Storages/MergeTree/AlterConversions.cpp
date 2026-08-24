@@ -10,8 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <ranges>
 
 namespace ProfileEvents
@@ -381,22 +379,9 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         }
     }
 
-    /// A mutation expression is evaluated with the sample factor its background materialization sees,
-    /// which is 1 (`createMergeTreeSequentialSource`), never the reading query's factor. Only the
-    /// expression's dependency is rebound; the column the step forwards to the query is unaffected.
-    const bool bind_sample_factor = metadata_snapshot->isVirtualColumn("_sample_factor");
-
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
-        if (bind_sample_factor)
-        {
-            DataTypePtr type = std::make_shared<DataTypeFloat64>();
-            auto column = type->createColumnConst(1, Field(1.0));
-            actions.dag.substituteInputForConsumersOnly(
-                "_sample_factor", ColumnWithTypeAndName{column->getPtr(), type, "_sample_factor"});
-        }
-
         /// For mutations before ALTER MODIFY we should not apply conversions
         /// because correctness of ALTER MODIFY may depend on the result of mutation.
         bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;

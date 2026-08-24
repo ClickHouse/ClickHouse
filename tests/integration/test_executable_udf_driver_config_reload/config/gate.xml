@@ -1,3 +1,0 @@
-<clickhouse>
-    <allow_experimental_executable_udf_drivers>0</allow_experimental_executable_udf_drivers>
-</clickhouse>

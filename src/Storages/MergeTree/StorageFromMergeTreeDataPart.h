@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -92,8 +91,7 @@ private:
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {
         auto table_id = part_->storage.getStorageID();
-        table_id.uuid = UUIDHelpers::generateV4();
-        return table_id;
+        return StorageID(table_id.database_name, table_id.table_name + " (part " + part_->name + ")");
     }
 };
 

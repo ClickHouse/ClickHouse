@@ -50,7 +50,7 @@ namespace OpenTelemetry
 {
 
 /// This code can be executed inside fibers, we should use fiber local tracing context.
-static FiberLocal<TracingContextOnThread> & current_trace_context = FiberLocal<TracingContextOnThread>::instance();
+thread_local static FiberLocal<TracingContextOnThread> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -204,10 +204,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         if (log)
         {
             this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch()).count();
-            log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = *this;
-            });
+            log->add(OpenTelemetrySpanLogElement(*this));
         }
     }
     catch (...)
@@ -280,9 +277,7 @@ bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String
     }
 
     ++data;
-    /// Keep only the W3C-defined sampled bit: the header comes from an external client, which
-    /// must not be able to set internal feature flags
-    this->trace_flags = unhex2(data) & TRACE_FLAG_SAMPLED;
+    this->trace_flags = unhex2(data);
     UUIDHelpers::getHighBytes(this->trace_id) = trace_id_higher_64;
     UUIDHelpers::getLowBytes(this->trace_id) = trace_id_lower_64;
     this->span_id = span_id_64;
@@ -437,7 +432,6 @@ TracingContextHolder::TracingContextHolder(
     /// Set up trace context on current thread only when the root span is successfully initialized.
     *current_trace_context = _parent_trace_context;
     current_trace_context->span_id = this->root_span.span_id;
-    /// Reset the flags instead of inheriting them: the parent context may come from an untrusted client
     current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
     current_trace_context->span_log = _span_log;
 }
@@ -469,10 +463,7 @@ TracingContextHolder::~TracingContextHolder()
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-            shared_span_log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = this->root_span;
-            });
+            shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
     }
     catch (...)

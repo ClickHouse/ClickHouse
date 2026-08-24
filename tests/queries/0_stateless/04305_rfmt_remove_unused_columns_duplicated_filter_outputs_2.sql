@@ -40,7 +40,9 @@ SELECT c1 FROM t_106099 ORDER BY c1;
 
 -- The bug was independent of `enable_analyzer` (both 0 and 1 hit it). The
 -- filter must apply under both code paths.
+SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS enable_analyzer = 0;
 SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS enable_analyzer = 1;
+SELECT count() FROM t_106099 SETTINGS enable_analyzer = 0;
 SELECT count() FROM t_106099 SETTINGS enable_analyzer = 1;
 
 -- Wrapping the USING expression (so the filter result is no longer the bare
@@ -64,11 +66,13 @@ SELECT count() FROM t_106099; -- c
 DROP ROW POLICY pol_106099 ON t_106099;
 
 -- Same producer-side dedup also runs for `additional_table_filters`.
+SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 0;
 SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 1;
 -- `count()` previously failed with `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER` because
 -- projection optimization rejected non-`UInt8` filter columns. With the
 -- lenient FilterStep type check the optimizer bails gracefully and the
 -- normal read path runs.
+SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 0;
 SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 1;
 
 DROP TABLE t_106099;
@@ -82,10 +86,14 @@ ALTER TABLE t_106099_u8 MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 CREATE ROW POLICY pol_106099_u8 ON t_106099_u8 USING c0 TO ALL;
 -- Result must be real values, not constant `1` (the projection helper bails
 -- because of the passthrough; the read path returns the original column).
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 0;
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 1;
+SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 0;
 SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 1;
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 0;
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 1;
 -- Same `UInt8` projection trap via `additional_table_filters`.
 DROP ROW POLICY pol_106099_u8 ON t_106099_u8;
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099_u8':'c0'}, enable_analyzer = 0;
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099_u8':'c0'}, enable_analyzer = 1;
 DROP TABLE t_106099_u8;

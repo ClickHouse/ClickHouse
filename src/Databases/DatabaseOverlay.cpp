@@ -554,17 +554,5 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
     }
 }
 
-void DatabaseOverlay::checkTableNameLength(const String & table_name) const
-{
-    /// The limit belongs to the member createTable writes to, which owns the metadata file.
-    for (const auto & db : databases)
-    {
-        if (db->isReadOnly())
-            continue;
-        db->checkTableNameLength(table_name);
-        return;
-    }
-}
-
 
 }

@@ -15,5 +15,6 @@
 -- Plain expression: optimization still applies
 1
 -- Old analyzer, LIMIT 3
+3
 -- ORDER BY arrayJoin output, LIMIT 3
 3

@@ -19,6 +19,38 @@ namespace ErrorCodes
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
+namespace
+{
+String extractProviderError(const String & response_body, int status_code)
+{
+    try
+    {
+        Poco::JSON::Parser err_parser;
+        auto err_json = err_parser.parse(response_body);
+        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
+        if (err_obj && err_obj->has("error"))
+        {
+            auto err = err_obj->getObject("error");
+            if (err)
+            {
+                String msg = err->optValue<String>("message", "");
+                String type = err->optValue<String>("type", "");
+                if (!msg.empty())
+                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    size_t max_len = 256;
+    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
+        response_body.substr(0, std::min(response_body.size(), max_len)));
+}
+}
+
+
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
@@ -85,7 +117,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;
@@ -110,33 +142,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
             "AI chat response is missing output message");
 
     ai_response.result = message->optValue<String>("content", "");
-
-    /// A structured-output safety refusal arrives as a populated `message.refusal` with a null
-    /// `content`, and `finish_reason` stays "stop" because the generation itself ended normally.
-    auto refusal = message->optValue<String>("refusal", "");
-    if (!refusal.empty())
-    {
-        ai_response.result = refusal;
-        ai_response.raw_finish_reason = "refusal";
-        ai_response.finish_reason = FinishReason::ContentFilter;
-    }
-    else
-    {
-        /// Map OpenAI's `finish_reason` onto the canonical `FinishReason`. An absent field means the
-        /// generation completed normally. OpenAI reuses "stop" for both a natural end and a stop-sequence
-        /// hit, so a stop sequence does not look like truncation.
-        ai_response.raw_finish_reason = choice->optValue<String>("finish_reason", "stop");
-        if (ai_response.raw_finish_reason == "stop")
-            ai_response.finish_reason = FinishReason::Complete;
-        else if (ai_response.raw_finish_reason == "length")
-            ai_response.finish_reason = FinishReason::Truncated;
-        else if (ai_response.raw_finish_reason == "content_filter")
-            ai_response.finish_reason = FinishReason::ContentFilter;
-        else if (ai_response.raw_finish_reason == "tool_calls" || ai_response.raw_finish_reason == "function_call")
-            ai_response.finish_reason = FinishReason::RequiresAction;
-        else
-            ai_response.finish_reason = FinishReason::Unknown;
-    }
+    ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
 
     if (json_obj->has("usage"))
     {
@@ -196,7 +202,7 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;

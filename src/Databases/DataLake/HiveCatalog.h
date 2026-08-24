@@ -34,9 +34,7 @@ public:
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
@@ -53,8 +51,6 @@ private:
 
     template <typename Func>
     void executeWithRetry(Func && func) const;
-
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     String base_url;
 

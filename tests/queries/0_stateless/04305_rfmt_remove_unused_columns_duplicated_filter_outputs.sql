@@ -32,6 +32,8 @@ SELECT a FROM t_04305 ORDER BY a SETTINGS enable_analyzer = 1;
 SELECT a, sum(b) FROM t_04305 GROUP BY a ORDER BY a SETTINGS enable_analyzer = 1;
 
 SELECT 'row policy bare column analyzer off';
+SELECT a FROM t_04305 ORDER BY a SETTINGS enable_analyzer = 0;
+SELECT a, sum(b) FROM t_04305 GROUP BY a ORDER BY a SETTINGS enable_analyzer = 0;
 
 DROP ROW POLICY p_04305 ON t_04305;
 DROP TABLE t_04305;

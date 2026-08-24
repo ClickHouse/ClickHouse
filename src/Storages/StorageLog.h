@@ -106,10 +106,6 @@ private:
     /// Saves the marks file.
     void saveMarks(const WriteLock &);
 
-    /// Saves the marks file and the file sizes as one unit: either both are committed, or neither is
-    /// and the number of saved marks is left describing the marks file as it stands.
-    void saveMarksAndFileSizes(const WriteLock &);
-
     /// Removes all unsaved marks.
     void removeUnsavedMarks(const WriteLock &);
 
