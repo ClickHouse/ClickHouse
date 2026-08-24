@@ -36,13 +36,13 @@ node = cluster.add_instance(
 
 session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
-def get_client():
+def get_client(session_id_override=None):
     return FlightSQLClient(
         host=node.ip_address,
         port=8888,
         insecure=True,
         disable_server_verification=True,
-        metadata={'x-clickhouse-session-id': session_id},
+        metadata={'x-clickhouse-session-id': session_id_override or session_id},
         features={'metadata-reflection': 'true'}, # makes the client emit metadata retrieval commands upon connection
     )
 
@@ -403,6 +403,21 @@ def test_set_session_options_persistence():
     assert _query_setting(client, "max_threads") == default_value
 
 
+def test_reset_session_option_respects_settings_constraints():
+    constraint_session_id = 'settings_constraints_' + ''.join(
+        random.choices(string.ascii_letters + string.digits, k=16)
+    )
+    client = get_client(constraint_session_id)
+
+    result = client.set_session_options({"readonly": "2"})
+    assert len(result.errors) == 0
+
+    result = client.set_session_options({"readonly": None})
+    assert "readonly" in result.errors
+
+    assert _query_setting(client, "readonly") == "2"
+
+
 def test_cancel_flight_info():
     client = get_client()
 
@@ -731,6 +746,22 @@ def test_basic_auth_malformed_base64():
     with pytest.raises(
         flight.FlightUnauthenticatedError,
         match="Cannot decode the Base64-encoded credentials",
+    ):
+        client.do_get(flight.Ticket(b"SELECT 1"), options)
+
+
+def test_basic_auth_without_credentials_separator():
+    """Basic credentials without a username/password separator must not authenticate."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    credentials = base64.b64encode(b"default").decode().rstrip("=")
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", f"Basic {credentials}".encode())]
+    )
+
+    with pytest.raises(
+        flight.FlightUnauthenticatedError,
+        match="Malformed credentials in the 'authorization' header",
     ):
         client.do_get(flight.Ticket(b"SELECT 1"), options)
 
