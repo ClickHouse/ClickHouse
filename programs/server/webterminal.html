@@ -88,6 +88,17 @@
     // and cross-origin restrictions prevent reading window.parent.location.
     var trustedParentOrigin = null;
 
+    /// Tell the embedding page that the user pressed Escape, or that the session ended, so that
+    /// it can close the panel the terminal is embedded in.
+    ///
+    /// These notifications carry no data, so they go to `'*'` when the parent origin is not
+    /// (yet) known to be trusted: an embedder learns only that its own iframe is done, which it
+    /// is entitled to know. Credentials still travel only between the terminal and a trusted
+    /// parent - see `isTrustedParentOrigin`, which gates the inbound direction.
+    function notifyParent(type) {
+        window.parent.postMessage({type: type}, trustedParentOrigin || '*');
+    }
+
     function isTrustedParentOrigin(origin) {
         if (origin === window.location.origin) return true;
         try {
@@ -151,9 +162,7 @@
         if (window.parent !== window) {
             term.attachCustomKeyEventHandler(function(e) {
                 if (e.type === 'keydown' && e.key === 'Escape') {
-                    if (trustedParentOrigin) {
-                        window.parent.postMessage({type: 'webterminal-escape'}, trustedParentOrigin);
-                    }
+                    notifyParent('webterminal-escape');
                     return false;
                 }
                 return true;
@@ -342,9 +351,7 @@
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
                     // Inside an iframe - notify parent to deactivate terminal
-                    if (trustedParentOrigin) {
-                        window.parent.postMessage({type: 'webterminal-closed'}, trustedParentOrigin);
-                    }
+                    notifyParent('webterminal-closed');
                 } else {
                     window.location.href = 'https://github.com/ClickHouse/ClickHouse';
                 }
