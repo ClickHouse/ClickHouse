@@ -162,6 +162,10 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
     /// No raw-sample preaggregation is needed (see `Summary` above) - the bucket accumulates `{count, mean, m2}`
     /// directly as samples are added.
     using Bucket = Summary;
+
+    /// Bumped from 1: `Summary`'s serialized layout changed meaning (raw `{sum, sum2}` -> Welford/Chan
+    /// `{mean, m2}`), so old serialized states must not be misread as the new format.
+    static constexpr UInt16 FORMAT_VERSION = 2;
 };
 
 
@@ -201,9 +205,6 @@ public:
         return typename Traits::Aggregator{stack_size};
     }
 
-    /// Bumped from 1: `Summary`'s serialized layout changed meaning (raw `{sum, sum2}` -> Welford/Chan
-    /// `{mean, m2}`), so old serialized states must not be misread as the new format.
-    static constexpr UInt16 FORMAT_VERSION = 2;
     static constexpr bool DateTime64Supported = true;
 };
 
