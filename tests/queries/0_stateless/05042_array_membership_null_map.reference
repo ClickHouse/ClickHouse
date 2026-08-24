@@ -1,0 +1,26 @@
+-- false positive: needle equals the value hidden under the NULL --
+0	0	0	0	0	0
+-- false negative: NULL needle over a non-zero hidden value --
+1	1	1	1	1	1
+-- two arrays that print identically must still answer differently --
+1	0	0	0	0
+-- all eight integer widths --
+0	0	0	0	0	0	0	0
+-- an array long enough to use the vectorised loop, not only the remainder --
+40	0	0	0	1
+-- String and Tuple elements --
+0	0	0	0	0	1
+0	0	0	1
+-- constant, materialized haystack, and materialized needle --
+0	0	0
+-- every startsWith and endsWith name --
+0	0	0	0	0	0	0	0
+-- on a real column rather than a literal --
+1	0	0	0	1
+2	1	1	1	0
+-- controls: no NULL present, non-nullable haystack, needle absent --
+1	1	0	0
+-- controls: NULL matches NULL, and a NULL needle over a haystack without NULL --
+1	1	1	0	0
+-- controls: prefix and suffix still work --
+1	0	1	0
