@@ -10,3 +10,6 @@
 -- a range older than the recent TTL window reads only samples and honors its real flags
 2	1
 2	1
+-- a range crossing the recent TTL boundary degrades like one wholly inside it
+2	0
+2	0

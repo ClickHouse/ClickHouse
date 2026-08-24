@@ -838,6 +838,10 @@ void StorageTimeSeriesSelector::readImpl(
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
     bool range_fits_recent_window = false;
+    /// Whether any part of the range is also covered by the recent samples table. The degrade below keys
+    /// off this, not off the stricter "fits": a row inside the window must read the same way whether or
+    /// not the query happens to start before the boundary.
+    bool range_overlaps_recent_window = false;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
     if (recent_samples_ttl_seconds)
     {
@@ -848,6 +852,7 @@ void StorageTimeSeriesSelector::readImpl(
         Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
             * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
         range_fits_recent_window = config.min_time.value >= min_guaranteed_time;
+        range_overlaps_recent_window = config.max_time.value >= min_guaranteed_time;
     }
     if (range_fits_recent_window && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table]
         && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
@@ -886,12 +891,13 @@ void StorageTimeSeriesSelector::readImpl(
     /// ordinary non-stale sample - so an upgrade does not break existing tables.
     const bool read_table_has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
     bool has_stale_marker_column = read_table_has_stale_marker_column;
-    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) only when the sibling could also serve
-    /// this range - only there can the read paths diverge; an older range reads `samples` either way.
+    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) whenever the sibling also covers part of
+    /// this range - only there can the read paths diverge, and keying off the whole range instead would make
+    /// one and the same row read as stale or not depending on where the query starts.
     if (has_stale_marker_column)
     {
         const auto sibling_kind = (samples_table_kind == ViewTarget::Samples) ? ViewTarget::RecentSamples : ViewTarget::Samples;
-        const bool sibling_can_serve_range = (sibling_kind == ViewTarget::Samples) || range_fits_recent_window;
+        const bool sibling_can_serve_range = (sibling_kind == ViewTarget::Samples) || range_overlaps_recent_window;
         if (sibling_can_serve_range && time_series_storage->hasTarget(sibling_kind))
         {
             auto sibling_metadata = time_series_storage->getTargetTable(sibling_kind, context)->getInMemoryMetadataPtr(context, false);

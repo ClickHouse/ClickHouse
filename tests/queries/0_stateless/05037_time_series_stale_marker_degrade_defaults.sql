@@ -177,3 +177,50 @@ DROP TABLE ts;
 DROP TABLE ts_tags;
 DROP TABLE ts_samples;
 DROP TABLE ts_recent;
+
+SELECT '-- a range crossing the recent TTL boundary degrades like one wholly inside it';
+
+-- The same row must read the same way however far back the query starts. Keying the degrade off
+-- "the whole range fits the window" made the marker at now() - 5m ordinary for the wide range and
+-- stale for the narrow one, even though both read it from `samples`.
+CREATE TABLE ts_tags
+(
+    id UInt64,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time DateTime64(3),
+    max_time DateTime64(3)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE ts_samples
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64,
+    is_stale_marker UInt8
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+CREATE TABLE ts_recent
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
+    (202, 'm', map(), now64(3) - INTERVAL 6 MINUTE, now64(3) - INTERVAL 5 MINUTE);
+INSERT INTO ts_samples (id, timestamp, value, is_stale_marker) VALUES
+    (202, now64(3) - INTERVAL 6 MINUTE, 1., 0),
+    (202, now64(3) - INTERVAL 5 MINUTE, nan, 1);
+
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 3600 SAMPLES ts_samples TAGS ts_tags RECENT SAMPLES ts_recent;
+
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 30 MINUTE, now())
+SETTINGS time_series_prefer_recent_samples_table = 0;
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 2 HOUR, now())
+SETTINGS time_series_prefer_recent_samples_table = 0;
+
+DROP TABLE ts;
+DROP TABLE ts_tags;
+DROP TABLE ts_samples;
+DROP TABLE ts_recent;
