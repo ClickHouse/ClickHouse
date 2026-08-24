@@ -154,6 +154,14 @@ CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
 
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
+# Container statuses that satisfy each `docker compose` action. `State.Running` is not
+# usable instead: it is also true for the `paused` and `restarting` statuses.
+INTEGRATION_NODE_EXPECTED_STATUSES = {
+    "start": ("running",),
+    "stop": ("exited", "dead", "created"),
+    "kill": ("exited", "dead", "created"),
+}
+
 NET_LOCK_PATH = "/tmp/docker_net.lock"
 try:
     os.remove(NET_LOCK_PATH)
@@ -3283,9 +3291,11 @@ class ClickHouseCluster:
     ) -> None:
         start = time.time()
         err = Exception("")
+        blocking_node = nodes[0] if nodes else None
         while time.time() - start < timeout:
             try:
                 for node in nodes:
+                    blocking_node = node
                     # Use low retries/timeout per attempt since the outer loop
                     # already retries. This avoids kazoo's internal thread join
                     # hanging indefinitely (a known kazoo bug where
@@ -3297,13 +3307,31 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper started: %s", nodes)
                 return
             except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper %s: %s", node, ex)
+                logging.debug("Can't connect to ZooKeeper %s: %s", blocking_node, ex)
                 err = ex
                 time.sleep(0.5)
 
         raise Exception(
-            "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
+            f"Cannot connect to ZooKeeper node {blocking_node} "
+            f"({self.describe_container_state(blocking_node)}) "
+            f"after {time.time() - start:.1f}s of {timeout}s. "
+            f"If the container is running and reachable, it may be an `iptables-nft` "
+            f"issue, you may try to `sudo iptables -P FORWARD ACCEPT`"
         ) from err
+
+    def describe_container_state(self, instance_name) -> str:
+        # Diagnostics only: must never raise, or it would mask the failure being reported.
+        container = self.get_instance_docker_id(instance_name)
+        try:
+            state = self.docker_client.containers.get(container).attrs["State"]
+            status = f"status {state['Status']}, exit code {state['ExitCode']}"
+        except Exception as ex:
+            status = f"status unavailable: {ex}"
+        try:
+            ip = self.get_instance_ip(instance_name) or "<empty>"
+        except Exception as ex:
+            ip = f"<unavailable: {ex}>"
+        return f"container {container}, {status}, ip {ip}"
 
     def make_hdfs_api(self, timeout=180):
         self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
@@ -4822,6 +4850,31 @@ class ClickHouseCluster:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
 
+    def check_integration_nodes_state(self, integration: str, nodes: list, action: str):
+        expected = INTEGRATION_NODE_EXPECTED_STATUSES.get(action)
+        if expected is None:
+            return
+
+        for node in nodes:
+            container = self.get_instance_docker_id(node)
+            try:
+                # Fetched after the action: a handle caches its state, so a handle taken
+                # earlier would report the status from before the action.
+                state = self.docker_client.containers.get(container).attrs["State"]
+            except Exception as ex:
+                raise Exception(
+                    f"Cannot inspect {integration} node {node} after {action}: "
+                    f"container {container}: {ex}"
+                ) from ex
+
+            if state["Status"] not in expected:
+                raise Exception(
+                    f"Failed to {action} {integration} node {node}: container {container} "
+                    f"status is {state['Status']}, expected one of {list(expected)} "
+                    f"(exit code {state['ExitCode']}, OOM killed {state['OOMKilled']}). "
+                    f"`docker compose {action}` reported success for {list(nodes)}"
+                )
+
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
         # One `docker compose` invocation for all nodes: concurrent compose commands on
@@ -4829,6 +4882,8 @@ class ClickHouseCluster:
         # action. compose parallelizes the services internally.
         logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
         subprocess_check_call(base_cmd + [action] + list(nodes))
+        # compose can exit 0, and even print `Started`, for a node it did not act on.
+        self.check_integration_nodes_state(integration, nodes, action)
         logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
