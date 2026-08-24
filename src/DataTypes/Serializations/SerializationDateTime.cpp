@@ -43,16 +43,19 @@ namespace
 inline void
 readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
+    const auto overflow = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+        ? DateTimeOverflow::Report
+        : DateTimeOverflow::Saturate;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+            readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, overflow == DateTimeOverflow::Saturate);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
             break;
     }
 
@@ -62,6 +65,9 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
+    const auto overflow = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+        ? DateTimeOverflow::Report
+        : DateTimeOverflow::Saturate;
     bool res = false;
     switch (settings.date_time_input_format)
     {
@@ -69,10 +75,10 @@ inline bool tryReadText(
             res = tryReadDateTimeText(x, istr, time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
             break;
     }
 
@@ -84,6 +90,7 @@ inline bool tryReadText(
 
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
+    , utc_time_zone(DateLUT::instance("UTC"))
 {
 }
 

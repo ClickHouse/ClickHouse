@@ -100,7 +100,8 @@ ReturnType parseDateTimeBestEffortImpl(
     const DateLUTImpl & utc_time_zone,
     DateTimeSubsecondPart * fractional,
     const char * allowed_date_delimiters = nullptr,
-    bool saturate_on_overflow = true)
+    bool * has_explicit_zero_year = nullptr,
+    DateTimeOverflow overflow = DateTimeOverflow::Saturate)
 {
     auto on_error = [&]<typename... FmtArgs>(
                         int error_code [[maybe_unused]],
@@ -115,6 +116,14 @@ ReturnType parseDateTimeBestEffortImpl(
 
     res = 0;
     UInt16 year = 0;
+
+    /// A year field of `0` is indistinguishable from "the year is not specified" in the code below, so an
+    /// explicitly written year of `0000` is silently replaced with the current (or previous) year. Remember
+    /// that this happened, so that a caller which must not accept a value it was not given can reject it -
+    /// see the `has_explicit_zero_year` parameter.
+    bool zero_year_was_read = false;
+    auto note_year_was_read = [&] { zero_year_was_read |= !year; };
+
     UInt8 month = 0;
     UInt8 day_of_month = 0;
     UInt8 hour = 0;
@@ -257,6 +266,7 @@ ReturnType parseDateTimeBestEffortImpl(
             if (engage)
             {
                 year = fp_year;
+                note_year_was_read();
                 month = fp_month;
                 day_of_month = fp_day;
                 if (time_matches)
@@ -395,6 +405,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDDhhmmss
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
                 readDecimalNumber<2>(hour, digits + 8);
@@ -410,6 +421,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDD
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
             }
@@ -423,6 +435,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (!year && !month)
                 {
                     readDecimalNumber<4>(year, digits);
+                    note_year_was_read();
                     readDecimalNumber<2>(month, digits + 4);
                 }
                 else if (!has_time)
@@ -446,6 +459,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 /// YYYY*M*D
 
                 readDecimalNumber<4>(year, digits);
+                note_year_was_read();
 
                 if (!in.eof())
                 {
@@ -640,7 +654,10 @@ ReturnType parseDateTimeBestEffortImpl(
                         num_digits = readDigits(digits, sizeof(digits), in);
 
                         if (num_digits == 4)
+                        {
                             readDecimalNumber<4>(year, digits);
+                            note_year_was_read();
+                        }
                         else if (num_digits == 2)
                         {
                             readDecimalNumber<2>(year, digits);
@@ -915,6 +932,11 @@ ReturnType parseDateTimeBestEffortImpl(
 
     if (!year)
     {
+        /// The year is either absent or explicitly written as `0000`; in the latter case the value returned
+        /// below is not the one the caller asked for, so report it to a caller that wants to know.
+        if (has_explicit_zero_year)
+            *has_explicit_zero_year = zero_year_was_read;
+
         if constexpr (strict)
             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year is required");
 
@@ -977,7 +999,7 @@ ReturnType parseDateTimeBestEffortImpl(
     };
 
     /// `strict` always range-checks, otherwise only when the caller asked not to saturate
-    if (saturate_on_overflow && !(strict && std::is_same_v<ReturnType, bool>))
+    if (overflow == DateTimeOverflow::Saturate && !(strict && std::is_same_v<ReturnType, bool>))
     {
         if (has_time_zone_offset)
         {
@@ -1064,24 +1086,30 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
 }
 
-void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow)
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, saturate_on_overflow);
+    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
 }
 
-void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow)
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool & has_explicit_zero_year)
 {
-    parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, saturate_on_overflow);
+    has_explicit_zero_year = false;
+    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, &has_explicit_zero_year);
 }
 
-bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow)
+void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, saturate_on_overflow);
+    parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
 }
 
-bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow)
+bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    return parseDateTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, saturate_on_overflow);
+    return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
+}
+
+bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
+{
+    return parseDateTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

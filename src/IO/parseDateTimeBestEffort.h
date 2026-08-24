@@ -55,11 +55,26 @@ class ReadBuffer;
   * Mon/Tue/Wed/Thu/Fri/Sat/Sun - simply ignored.
   */
 
-void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow = true);
+/// Whether an out-of-range result saturates to the bounds of the target type or is reported as an error
+enum class DateTimeOverflow : uint8_t { Saturate, Report };
+
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
+
+/// Not defaulted, because the 4-argument form above would then be ambiguous with this one
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow);
+
+/// The same, but additionally reports whether the input contained an explicitly written year of `0000`.
+/// Such a year cannot be represented: internally a year field of `0` means "the year is not specified",
+/// so it is silently replaced with the current (or previous) year, and the returned value is then not the
+/// one the input asked for. This affects every spelling of a zero year the parser accepts - `0000-01-01`,
+/// `01/01/0000`, `00000101`, ... - so a caller that must not silently accept a different point in time
+/// (for example, an access-entity expiration deadline) can reject the value instead.
+void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool & has_explicit_zero_year);
+
 void parseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
-bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow = true);
-void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow = true);
-bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool saturate_on_overflow = true);
+bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow = DateTimeOverflow::Saturate);
+void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow = DateTimeOverflow::Saturate);
+bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow = DateTimeOverflow::Saturate);
 bool tryParseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
 void parseTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);
 bool tryParseTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);

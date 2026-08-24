@@ -1351,6 +1351,7 @@ struct ConvertThroughParsing
         /// Nothing to wrap around when parsing text, so `ignore` behaves like `saturate`
         const bool saturate_on_overflow [[maybe_unused]]
             = settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw;
+        const auto overflow [[maybe_unused]] = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
 
         const IColumn * col_from = arguments[0].column.get();
         const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
@@ -1446,7 +1447,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, saturate_on_overflow);
+                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
@@ -1473,7 +1474,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, saturate_on_overflow);
+                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
@@ -1558,7 +1559,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, saturate_on_overflow);
+                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
@@ -1585,7 +1586,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, saturate_on_overflow);
+                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
