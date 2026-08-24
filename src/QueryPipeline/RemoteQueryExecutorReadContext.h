@@ -117,6 +117,8 @@ private:
 
 #else
 
+#include <Common/OpenTelemetryTraceContext.h>
+
 namespace DB
 {
 class RemoteQueryExecutorReadContext
@@ -124,6 +126,7 @@ class RemoteQueryExecutorReadContext
 public:
     void cancel() {}
     void setTimer() {}
+    void addSpanAttribute(OpenTelemetry::SpanAttribute) {}
 };
 
 }
