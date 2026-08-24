@@ -5,6 +5,7 @@
 SET log_queries = 1;
 SET log_queries_min_type = 'QUERY_FINISH';
 SET parallel_view_processing = 0;
+SET async_insert = 0;
 
 DROP VIEW IF EXISTS mv_metrics_chain_2_mv;
 DROP VIEW IF EXISTS mv_metrics_chain_1_mv;
