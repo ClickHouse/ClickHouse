@@ -1,8 +1,5 @@
 # docker build -t clickhouse/stateless-test .
 ARG FROM_TAG=latest
-ARG REDPANDA_VERSION=v25.1.3
-FROM redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
-
 FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
@@ -25,6 +22,7 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # Install additional packages not included in test-base
 RUN apt-get update -y \
     && apt-get install --yes --no-install-recommends \
+        awscli \
         brotli \
         lz4 \
         expect \
@@ -34,10 +32,12 @@ RUN apt-get update -y \
         mysql-client=8.0* \
         ncdu \
         netcat-openbsd \
-        openssh-client \
         odbcinst \
+        openjdk-11-jre-headless \
         openssl \
         postgresql-client \
+        python3 \
+        python3-pip \
         qemu-user-static \
         sqlite3 \
         tree \
@@ -56,10 +56,11 @@ RUN apt-get update -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
-    && unzip -q awscliv2.zip \
-    && ./aws/install \
-    && rm awscliv2.zip
+# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ARG PROTOC_VERSION=25.1
 RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
@@ -67,7 +68,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -81,68 +82,27 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 ENV NUM_TRIES=1
 
-# Keep SEAWEEDFS_VERSION in sync with the default in setup_seaweedfs.sh
+# Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG SEAWEEDFS_VERSION=4.42
+ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
+ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
-# Download SeaweedFS (the S3 server for stateless tests); the weed binary is a
-# static Go executable. Provisioning (identities, bucket, data upload) is done
-# with the weed binary itself plus curl, so no S3 client is needed.
-# Fetch with --fail (never write an error body as a "binary") and retry with
-# backoff on transient errors/timeouts; otherwise one blip fails the build and
-# the image is never pushed, breaking every downstream stateless job with
-# "image not found".
+# Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
-        "https://github.com/seaweedfs/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_${arch}.tar.gz" -o /tmp/seaweedfs.tar.gz \
-    && tar -xzf /tmp/seaweedfs.tar.gz -C / weed \
-    && rm /tmp/seaweedfs.tar.gz \
-    && chmod +x /weed
+    && curl -L "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o /minio \
+    && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o /mc \
+    && chmod +x /mc /minio
 
-# Pre-bundle the AIStor (licensed MinIO) binaries so AIStor jobs do not each
-# re-fetch them from dl.min.io at runtime: ~22 stateless AIStor jobs start at
-# once, and that per-job download was a thundering herd on the external endpoint
-# that throttled/stalled the fetch. AIStor jobs copy these into place instead of
-# downloading (community jobs use the /weed above).
-#
-# Pin explicit versions and fetch the versioned RELEASE archives rather than the
-# moving `edge` channel: an unpinned URL makes clickhouse/stateless-test
-# non-reproducible - rebuilding the same source could silently change the AIStor
-# version under CI with no Dockerfile diff.
-#
-# Use -f so a failed fetch fails the build rather than shipping a truncated binary,
-# and retry with backoff so a transient dl.min.io throttle during the concurrent
-# multi-arch build does not fail the build and leave the image unpushed.
-ARG AISTOR_SERVER_VERSION=2026-03-20T23-11-32Z
-ARG AISTOR_CLIENT_VERSION=2026-03-12T04-18-55Z
-RUN arch=${TARGETARCH:-amd64} \
-    && mkdir -p /opt/aistor \
-    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
-        "https://dl.min.io/aistor/minio/release/linux-${arch}/archive/minio.RELEASE.${AISTOR_SERVER_VERSION}" -o /opt/aistor/minio \
-    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
-        "https://dl.min.io/aistor/mc/release/linux-${arch}/archive/mc.RELEASE.${AISTOR_CLIENT_VERSION}" -o /opt/aistor/mc \
-    && chmod +x /opt/aistor/minio /opt/aistor/mc
-
-# root credentials for the AIStor bundle above
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
-# a writable HOME for the object storage clients' state to work without root
+# for minio to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
 
-# Download azurite-rs (Azure Blob Storage emulator in Rust)
-# https://github.com/ClickHouse/azurite-rs
-ARG AZURITE_RS_VERSION=v0.1.0-1bc0ba9
-RUN arch=${TARGETARCH:-amd64} \
-    && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
-    && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
-    && chmod +x /usr/local/bin/azurite-rs
-
-# Install Redpanda (Kafka-compatible broker, no JVM required)
-COPY --from=redpanda /opt/redpanda /opt/redpanda
-ENV PATH="/opt/redpanda/bin:${PATH}"
+RUN npm install -g azurite@3.34.0 \
+    && npm install -g tslib
 
 ENV PYTHONPATH=".:./ci"
 

@@ -23,10 +23,9 @@ enum class LoadingStrictnessLevel : uint8_t
 
 LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary);
 
-/// Returns true when a table or database is being loaded from previously-validated metadata
-/// (server startup, force-restore, or UNDROP TABLE) rather than from a fresh user-supplied
-/// query. Only in this case should security checks (e.g. `dynamic_disk_allow_*`) be skipped,
-/// because the disk configuration was already validated when the object was originally created.
+/// Returns true when a table or database is loaded from previously-validated metadata (server
+/// startup or force-restore) rather than from a fresh user-supplied query. Only then should
+/// security checks be skipped, as they already ran when the object was created.
 inline bool isLoadingFromExistingMetadata(LoadingStrictnessLevel level)
 {
     return level == LoadingStrictnessLevel::FORCE_ATTACH || level == LoadingStrictnessLevel::FORCE_RESTORE;

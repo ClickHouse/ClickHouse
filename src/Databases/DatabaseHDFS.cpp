@@ -14,7 +14,6 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
@@ -36,6 +35,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
@@ -65,13 +65,15 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     }
 }
 
-StoragePtr DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
@@ -106,7 +108,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
+    if (loaded_tables.find(name) != loaded_tables.end())
         return true;
 
     return checkUrl(name, context_, false);
@@ -126,7 +128,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
+    auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
@@ -135,7 +137,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
     /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -183,19 +185,19 @@ bool DatabaseHDFS::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -237,7 +239,6 @@ DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const Filt
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseHDFS(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -260,14 +261,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::HDFS,
-    }, Documentation{
-        .description = "A read-only database that exposes files in HDFS as tables.",
-        .syntax = "ENGINE = HDFS([hdfs_host_and_root_path])",
-        .related = {"S3", "Filesystem"}});
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 

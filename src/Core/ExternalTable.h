@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/Connection.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
@@ -38,7 +37,7 @@ public:
     std::string format;     /// Name of the data storage format
 
     /// Description of the table structure: (column name, data type name)
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> structure;
+    std::vector<std::pair<std::string, std::string>> structure;
 
     std::unique_ptr<ReadBuffer> read_buffer;
     Block sample_block;
@@ -50,7 +49,6 @@ public:
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
     ExternalTableDataPtr getData(ContextPtr context);
-    Block getScalar(ContextPtr context);
 
 protected:
     /// Clear all accumulated information

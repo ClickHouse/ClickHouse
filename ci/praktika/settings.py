@@ -33,13 +33,13 @@ class _Settings:
     ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
+    ENABLE_ARTIFACTS_REPORT: bool = False
+
     ######################################
     #    Runtime Settings                #
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
-    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
-    CI_FORCE_ALL_LABEL: str = "ci-force-all"
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -62,42 +62,11 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    ######################################
-    #      Host metrics (CPU/RAM)        #
-    ######################################
-    # Sample whole-VM CPU and RAM usage in the background while a job runs and
-    # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
-    HOST_METRICS_ENABLED: bool = True
-    # Reporting/window interval: one aggregated point (avg + peak) is emitted and
-    # written per window, so the timeline stays ~1 point / this-many-seconds
-    # regardless of the fine cadence.
-    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 5.0
-    # Fine sampling cadence: /proc is read this often within each reporting window
-    # so short bursts are captured as the window's peak instead of being averaged
-    # away. Must be <= the reporting interval.
-    HOST_METRICS_FINE_INTERVAL_SEC: float = 1.0
-    # Upper bound on points kept per series after min/max decimation, so the
-    # payload injected into the Result stays small regardless of job duration.
-    HOST_METRICS_MAX_POINTS: int = 400
-    HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
-    # Filesystem whose used% is tracked as the "disk" series. Defaults to the
-    # working directory, i.e. the disk the job actually writes to.
-    HOST_METRICS_DISK_PATH: str = "."
-    # Jobs are labelled over/under-utilized only when they ran at least this
-    # long OR ran on a host with more than HOST_METRICS_MIN_LABEL_MEM_GB of RAM;
-    # short jobs on small runners are too noisy and not worth right-sizing.
-    HOST_METRICS_MIN_LABEL_DURATION_SEC: int = 1800
-    HOST_METRICS_MIN_LABEL_MEM_GB: int = 15
-
+    USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
-    SECRET_GH_APP_INSTALLATION_ID: str = ""
-    SECRET_GH_APP_REGION: str = ""
-    GH_AUTH_LAMBDA_NAME: str = ""
-    GH_AUTH_LAMBDA_REGION: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
-    WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
@@ -105,16 +74,7 @@ class _Settings:
     ######################################
     #        CI Cache settings           #
     ######################################
-    # If enabled, Config Workflow creates a content-addressed .git/modules/ archive
-    # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
-    ENABLE_SUBMODULE_CACHE: bool = False
-    # If enabled, submodule clones authenticate with the App installation token
-    # (required for private submodules); otherwise they run anonymously.
-    ENABLE_SUBMODULE_CLONE_AUTH: bool = False
-
-    # v2: records carry the producing workflow event, used as the reuse trust
-    # signal instead of the branch (see CacheRunnerHooks.configure).
-    CACHE_VERSION: int = 2
+    CACHE_VERSION: int = 1
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
     CACHE_LOCAL_PATH: str = f"{TEMP_DIR}/ci_cache"
@@ -122,9 +82,7 @@ class _Settings:
     ######################################
     #        Report settings             #
     ######################################
-    S3_REPORT_BUCKET: str = ""
-    # Optional: upstream report bucket to merge issue catalogs from (e.g. "clickhouse-test-reports")
-    S3_UPSTREAM_REPORT_BUCKET: str = ""
+    HTML_S3_PATH: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
@@ -133,8 +91,6 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
-    DOCKER_LAYER_COMPRESSION: str = "zstd"
-    DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
     ######################################
     #        CI DB Settings              #
@@ -144,38 +100,13 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
-    KEEPER_STRESS_METRICS_DB_NAME = "keeper_stress_tests"
-    KEEPER_STRESS_METRICS_TABLE_NAME = "keeper_metrics_ts"
-    CI_DB_INSERT_TIMEOUT_SEC = 20
-    CI_DB_QUERY_TIMEOUT_SEC = 60
-
-    # to post links for reading statistics in html report (with read-only user)
-    CI_DB_READ_USER: str = ""
-    CI_DB_READ_URL: str = ""
-
-    # Substrings to classify test failures. Used to generate helper queries for checking failure history.
-    # Not required to cover all failures, but recommended to maximize coverage.
-    # Choose values wisely to effectively differentiate between different failure types.
-    TEST_FAILURE_PATTERNS: Optional[List[str]] = None
-
-    ######################################
-    #        Infrastructure Settings     #
-    ######################################
-    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
-    AWS_REGION: str = ""
-    # S3 path for Slack feed events storage (format: bucket/prefix)
-    # Used by EventFeed and FeedSubscription for PR notification subscriptions
-    EVENT_FEED_S3_PATH: str = ""
+    CI_DB_INSERT_TIMEOUT_SEC = 5
 
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
-    "S3_REPORT_BUCKET",
-    "S3_UPSTREAM_REPORT_BUCKET",
-    "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
-    "EVENT_FEED_S3_PATH",
-    "AWS_REGION",
+    "HTML_S3_PATH",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",
@@ -194,46 +125,26 @@ _USER_DEFINED_SETTINGS = [
     "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
-    "CI_FORCE_ALL_LABEL",
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
-    "DOCKER_LAYER_COMPRESSION",
-    "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
-    "KEEPER_STRESS_METRICS_DB_NAME",
-    "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
+    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
-    "SECRET_GH_APP_INSTALLATION_ID",
-    "SECRET_GH_APP_REGION",
-    "GH_AUTH_LAMBDA_NAME",
-    "GH_AUTH_LAMBDA_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
+    "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
-    "ENABLE_SUBMODULE_CACHE",
-    "ENABLE_SUBMODULE_CLONE_AUTH",
-    "CI_DB_READ_USER",
-    "CI_DB_READ_URL",
-    "TEST_FAILURE_PATTERNS",
-    "HOST_METRICS_ENABLED",
-    "HOST_METRICS_SAMPLE_INTERVAL_SEC",
-    "HOST_METRICS_FINE_INTERVAL_SEC",
-    "HOST_METRICS_MAX_POINTS",
-    "HOST_METRICS_FILE",
-    "HOST_METRICS_DISK_PATH",
-    "HOST_METRICS_MIN_LABEL_DURATION_SEC",
-    "HOST_METRICS_MIN_LABEL_MEM_GB",
 ]
 
 
@@ -249,7 +160,9 @@ def _get_settings() -> _Settings:
 
     for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}")
+        spec = importlib.util.spec_from_file_location(
+            module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
+        )
         assert spec
         foo = importlib.util.module_from_spec(spec)
         assert spec.loader
@@ -259,7 +172,7 @@ def _get_settings() -> _Settings:
                 value = getattr(foo, setting)
                 res.__setattr__(setting, value)
                 # print(f"- read user defined setting [{setting} = {value}]")
-            except Exception:
+            except Exception as e:
                 # print(f"Exception while read user settings: {e}")
                 pass
 

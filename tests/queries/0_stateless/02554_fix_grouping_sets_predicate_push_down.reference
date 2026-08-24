@@ -1,11 +1,30 @@
 ---Explain Syntax---
-SELECT *\nFROM\n(\n    SELECT\n        day_,\n        if(equals(type_1, \'\'), \'all\', type_1) AS type_1\n    FROM\n    (\n        SELECT\n            day_,\n            type_1\n        FROM test_grouping_sets_predicate\n        WHERE equals(day_, \'2023-01-05\')\n        GROUP BY\n            GROUPING SETS (\n                (day_, type_1),\n                (day_))\n    ) AS t\n)\nWHERE equals(type_1, \'all\')
+SELECT *
+FROM
+(
+    SELECT
+        day_,
+        if(type_1 = \'\', \'all\', type_1) AS type_1
+    FROM
+    (
+        SELECT
+            day_,
+            type_1
+        FROM test_grouping_sets_predicate
+        WHERE day_ = \'2023-01-05\'
+        GROUP BY
+            GROUPING SETS (
+                (day_, type_1),
+                (day_))
+    ) AS t
+)
+WHERE type_1 = \'all\'
 
 ---Explain Pipeline---
 (Expression)
 ExpressionTransform × 8
   (Filter)
-  FilterTransform × 16
+  FilterTransform × 24
     (Aggregating)
     Resize 2 → 8
       ExpressionTransform × 2

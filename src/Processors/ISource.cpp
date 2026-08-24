@@ -19,15 +19,6 @@ ISource::ISource(SharedHeader header, bool enable_auto_progress)
 {
 }
 
-void ISource::cancel(CancelReason) noexcept
-{
-    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-    if (already_cancelled)
-        return;
-
-    onCancel();
-}
-
 ISource::Status ISource::prepare()
 {
     if (finished)
