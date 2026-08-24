@@ -39,6 +39,8 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
+class CascadesIdentityExtras;
+
 using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
@@ -82,6 +84,15 @@ public:
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
+
+    /// Cascades cross-group identity: a step type opts in only after a complete field audit
+    /// (see Optimizations/Cascades/StepIdentity.h). Default is fail-closed: pointer identity.
+    /// MUST return false whenever `isSerializable()` is false, or whenever `serialize` would
+    /// throw for this concrete instance - the identity encoding calls `serialize` directly.
+    virtual bool supportsCascadesIdentity() const { return false; }
+    /// Appends the audited non-wire fields that constrain execution. Called only when
+    /// `supportsCascadesIdentity()`; must append the same tags in the same order every time.
+    virtual void appendCascadesIdentityExtras(CascadesIdentityExtras & /*extras*/) const {}
 
     virtual QueryPlanStepPtr clone() const;
 

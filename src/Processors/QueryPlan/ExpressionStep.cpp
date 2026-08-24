@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -121,6 +122,20 @@ void ExpressionStep::updateOutputHeader()
 void ExpressionStep::serialize(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `ExpressionStep`. Unique within the step; never reused.
+enum ExpressionStepIdentityTag : UInt64
+{
+    PREVENT_INPUT_REMOVAL_TAG = 1,
+};
+}
+
+void ExpressionStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
+{
+    extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 }
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)

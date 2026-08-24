@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepIdentity.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <base/types.h>
@@ -46,6 +47,7 @@ public:
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
         , enforced_property(other_.enforced_property)
+        , step_identity(other_.step_identity)
     {}
 
     String getName() const;
@@ -62,6 +64,17 @@ public:
     /// components the fingerprint hashes, so a fingerprint hash collision does not
     /// silently drop a distinct alternative.
     bool structurallyEqualTo(const GroupExpression & other) const;
+
+    /// Content-based identity of `plan_step`, or nullptr when the step type has not opted in.
+    /// Recomputed when the cached entry was inherited from a copy whose step was then replaced.
+    const StepIdentity * getStepIdentity() const;
+
+    /// Cross-group identity, for deduplication across the whole memo. Stronger than the
+    /// within-group `fingerprint` / `structurallyEqualTo` pair: it compares step content instead
+    /// of step name and description, and it ignores the description entirely. Fails closed - a
+    /// step type that has not opted in compares by pointer.
+    size_t globalFingerprint() const;
+    bool globallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;
@@ -89,6 +102,11 @@ public:
     /// top-N emits up to L rows on each of its nodes while the group stats are trimmed to L.
     /// Set during costing (statistics are derived by then); parents price exchanges on it.
     std::optional<Float64> physical_output_rows;
+
+private:
+    /// Lazily computed by `getStepIdentity`; shared with shallow copies, which is safe because it
+    /// records the step it was computed from and is dropped when that step no longer matches.
+    mutable std::shared_ptr<const StepIdentity> step_identity;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

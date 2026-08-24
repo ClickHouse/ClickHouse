@@ -104,4 +104,83 @@ size_t GroupExpression::fingerprint() const
     return hash_value;
 }
 
+const StepIdentity * GroupExpression::getStepIdentity() const
+{
+    if (!plan_step || !plan_step->supportsCascadesIdentity())
+    {
+        /// Drop an inherited entry so it stops pinning the step it was computed from.
+        step_identity.reset();
+        return nullptr;
+    }
+
+    /// A rule may legally replace `plan_step` on a shallow copy before insertion, so a cached
+    /// identity that was computed for a different step must not be trusted.
+    if (!step_identity || step_identity->step != plan_step)
+        step_identity = std::make_shared<const StepIdentity>(StepIdentity{computeCascadesIdentityHash(*plan_step), plan_step});
+
+    return step_identity.get();
+}
+
+/// `globallyEqualTo` and `globalFingerprint` must cover the same components in the same order:
+/// properties, inputs (group and required properties), strategy, then the step.
+size_t GroupExpression::globalFingerprint() const
+{
+    size_t hash_value = ExpressionPropertiesHash()(properties);
+    for (const auto & input : inputs)
+    {
+        boost::hash_combine(hash_value, input.group_id);
+        boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
+    }
+    if (strategy)
+        boost::hash_combine(hash_value, std::hash<String>()(strategy->getName()));
+
+    if (const auto * identity = getStepIdentity())
+    {
+        boost::hash_combine(hash_value, identity->hash.items[0]);
+        boost::hash_combine(hash_value, identity->hash.items[1]);
+    }
+    else
+    {
+        /// Without an identity the step compares by pointer, so hash the pointer to stay consistent.
+        boost::hash_combine(hash_value, reinterpret_cast<uintptr_t>(plan_step.get()));
+    }
+
+    return hash_value;
+}
+
+bool GroupExpression::globallyEqualTo(const GroupExpression & other) const
+{
+    if (!(properties == other.properties))
+        return false;
+
+    if (inputs.size() != other.inputs.size())
+        return false;
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (inputs[i].group_id != other.inputs[i].group_id)
+            return false;
+        if (!(inputs[i].required_properties == other.inputs[i].required_properties))
+            return false;
+    }
+
+    /// Strategies are per-type singletons (`strategySingleton`), so equal pointers mean the
+    /// same strategy type.
+    if (strategy != other.strategy)
+        return false;
+
+    if (plan_step == other.plan_step)
+        return true;
+
+    const auto * identity = getStepIdentity();
+    const auto * other_identity = other.getStepIdentity();
+    if (!identity || !other_identity)
+        return false;
+
+    if (identity->hash != other_identity->hash)
+        return false;
+
+    /// The hash only narrows the candidates; the bytes decide.
+    return cascadesIdentityEncodingsEqual(*plan_step, *other.plan_step);
+}
+
 }
