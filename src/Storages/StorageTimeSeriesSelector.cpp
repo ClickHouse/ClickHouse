@@ -477,6 +477,16 @@ namespace
             expression,
             static_cast<re2::Regexp::ParseFlags>(options.ParseFlags()),
             &status);
+
+        if (!parsed && status.code() == re2::kRegexpBadUTF8)
+        {
+            options.set_encoding(re2::RE2::Options::EncodingLatin1);
+            parsed = re2::Regexp::Parse(
+                expression,
+                static_cast<re2::Regexp::ParseFlags>(options.ParseFlags()),
+                &status);
+        }
+
         if (!parsed)
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile PromQL regular expression '{}': {}", expression, status.Text());
 

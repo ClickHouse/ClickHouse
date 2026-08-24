@@ -10,6 +10,12 @@ explicit anchors
 2
 dot matches newline
 1
+byte regex matcher
+1
+5
+2
+3
+4
 multiline anchors match the whole label
 0
 5
@@ -23,7 +29,7 @@ literal escapes keep the whole-value anchor
 5
 0
 5
-quoted literal with a backslash before \E
+quoted literal with a backslash before \\E
 1
 4
 quoted literal punctuation keeps alternation anchored
@@ -46,13 +52,14 @@ quantified leading anchor keeps whole-value matching
 3
 4
 5
-metric regex with a character class keeps the plain form
-1
-metric regex with a leading class terminator keeps the plain form
-1
-metric regex with a POSIX class keeps the plain form
-1
+metric regex with a character class
+0
+metric regex with a leading class terminator
+0
+metric regex with a POSIX class
+0
 deeply nested matcher regex stays safe
 1
-simple metric regex keeps the plain form
-1
+metric regex matcher
+5
+0
