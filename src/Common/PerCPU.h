@@ -27,8 +27,8 @@ ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
     /// An rseq TLS read on modern kernels, so cheap enough to call on every `ProfileEvents`
-    /// increment. glibc registers the rseq area during thread setup since 2.35; our musl
-    /// registers it lazily on each thread's first call (see `contrib/musl/src/sched/sched_getcpu.c`).
+    /// increment. Our musl registers the rseq area eagerly during thread setup
+    /// (see `contrib/musl/src/sched/rseq.c`), following the glibc 2.35+ ABI.
     /// Without a registered area this falls back to the `getcpu` vDSO entry, or to a real syscall
     /// on AArch64, which has no such entry - see `haveRSeq` and the startup warning it drives.
     return sched_getcpu();
@@ -54,9 +54,9 @@ ALWAYS_INLINE inline Int32 getCurrentCPU()
 #endif
 }
 
-/// Whether libc registered rseq for the process (glibc 2.35+ with the `glibc.pthread.rseq`
-/// tunable enabled). Without it `sched_getcpu` takes a slower fallback — on AArch64 a real
-/// syscall, since there is no `getcpu` vDSO entry — making per-CPU routing costly.
+/// Whether libc registered rseq for the process. Without it `sched_getcpu` takes a slower
+/// fallback — on AArch64 a real syscall, since there is no `getcpu` vDSO entry — making
+/// per-CPU routing costly.
 bool haveRSeq() noexcept;
 
 }

@@ -891,11 +891,12 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
                 "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
                 "making these counters more expensive and slightly degrading performance. "
-                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
-                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
-                "the sandbox this process runs in blocks the rseq system call; "
-                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help); "
-                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
+                "The bundled C library registers an rseq area automatically at every thread start, "
+                "so this means the registration failed. Possible causes: the kernel does not support "
+                "rseq (it was introduced in Linux 4.18); the sandbox this process runs in blocks the "
+                "rseq system call; another component of the process registered its own rseq area first; "
+                "or, on the platforms still built against glibc, the C library is too old to register it "
+                "(glibc does so since version 2.35)."));
 
     try
     {

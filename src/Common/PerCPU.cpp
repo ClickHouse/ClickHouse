@@ -4,10 +4,10 @@
 #include <sys/sysinfo.h>
 #include <cstddef>
 
-/// The rseq area location, exported by glibc >= 2.35 and by our musl (see
-/// `contrib/musl/src/sched/rseq.c`). Declared weak so the binary also links against older/other
-/// libcs, where the address resolves to null. `__rseq_size` is 0 when registration was disabled
-/// (with glibc, the `glibc.pthread.rseq` tunable) or failed.
+/// The rseq area location, exported by our musl (see `contrib/musl/src/sched/rseq.c`) and by
+/// glibc >= 2.35 on the platforms still built against it. Declared weak so the binary also links
+/// against older libcs, where the address resolves to null. `__rseq_size` is 0 when registration
+/// failed or was disabled (with glibc, the `glibc.pthread.rseq` tunable).
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 extern "C" const ptrdiff_t __rseq_offset __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
