@@ -13,3 +13,6 @@ throw, OrNull and OrZero still fall back
 throw, input formats
 2149-06-06
 2106-02-07 06:28:15
+throw, tentative parsers must not accept a clamped value
+2150-12-31	\N	2150-12-31
+2149-06-06

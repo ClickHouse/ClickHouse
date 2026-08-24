@@ -41,3 +41,8 @@ SELECT * FROM format(TSV, 'v DateTime', '1960-01-01 00:00:00'); -- { serverError
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":"2106-02-07 06:28:16"}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT * FROM format(CSV, 'v Date', '2149-06-06');
 SELECT * FROM format(TSV, 'v DateTime', '2106-02-07 06:28:15');
+
+SELECT 'throw, tentative parsers must not accept a clamped value';
+SELECT v, variantElement(v, 'Date') AS d, variantElement(v, 'String') AS s
+FROM format(CSV, 'v Variant(Date, String)', '2150-12-31') SETTINGS allow_experimental_variant_type = 1;
+SELECT v FROM format(CSV, 'v Variant(Date, String)', '2149-06-06') SETTINGS allow_experimental_variant_type = 1;
