@@ -129,13 +129,6 @@ StorageNATS::StorageNATS(
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
 
-    /// A client certificate and its key are one credential, so they are inherited from the configuration
-    /// together. Inheriting them separately would pair a certificate from the query with a foreign key.
-    if (nats_client_cert_file.empty() && nats_client_key_file.empty())
-    {
-        nats_client_cert_file = getContext()->getConfigRef().getString("nats.client_cert_file", "");
-        nats_client_key_file = getContext()->getConfigRef().getString("nats.client_key_file", "");
-    }
     /// `libnats` sends every configured authentication method in the `CONNECT` frame, so a table
     /// authentication method must not be combined with the server-global fallback: inline
     /// credentials can be used with a query-supplied destination.
@@ -164,7 +157,7 @@ StorageNATS::StorageNATS(
            .token = nats_token.empty() ? global_token : nats_token,
            .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
            .credentials = nats_credentials,
-           .ca_file = nats_ca_file.empty() ? getContext()->getConfigRef().getString("nats.ca_file", "") : nats_ca_file,
+           .ca_file = nats_ca_file,
            .client_cert_file = nats_client_cert_file,
            .client_key_file = nats_client_key_file,
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
@@ -962,7 +955,7 @@ void resolveCertificateSource(
         if (assigned_by_query || (!value.empty() && !collection_defined_in_config))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "`{}` can only be specified in the server configuration file, or in a named collection defined in it. "
+                "`{}` can only be specified in a named collection defined in the server configuration file. "
                 "The server opens the path with its own privileges, so a path taken from SQL would let anyone who can "
                 "define a `NATS` source probe the local filesystem and present the operator's certificates to a server "
                 "of their choosing",
@@ -1386,7 +1379,7 @@ Optional parameters:
 - `nats_token` - NATS auth token. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
 - `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
-- `nats_ca_file` - Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires `nats_secure`. Like `nats_credential_file`, it is accepted only from the server configuration file, or from a named collection defined in it whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges.
+- `nats_ca_file` - Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires `nats_secure`. Like `nats_credential_file`, it is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges.
 - `nats_client_cert_file` - Path to the client certificate presented to the NATS server. Requires `nats_secure` and `nats_client_key_file`. Accepted from the same sources as `nats_ca_file`.
 - `nats_client_key_file` - Path to the private key of `nats_client_cert_file`. Accepted from the same sources as `nats_ca_file`.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
@@ -1403,8 +1396,8 @@ If the certificate is expired, self-signed, missing, or otherwise invalid, disab
 A server certificate signed by a private CA is verified by pointing `nats_ca_file` at the CA certificate,
 which is preferable to turning verification off. When the server requires client certificates,
 supply them with `nats_client_cert_file` and `nats_client_key_file`. All three are operator settings:
-they come from the server configuration file or from a named collection defined in it. Every file is
-read when the table connects, so an unreadable or malformed one fails the query instead of the handshake.
+they come from a named collection defined in the server configuration file. Every file is read when
+the table connects, so an unreadable or malformed one fails the query instead of the handshake.
 
 Writing to NATS table:
 

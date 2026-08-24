@@ -42,7 +42,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
-                    configuration.ca_file, natsStatus_GetText(ca_status), nats_GetLastError(nullptr));
+                    configuration.ca_file, natsStatus_GetText(ca_status), getNATSLastError());
         }
 
         if (!configuration.client_cert_file.empty())
@@ -54,7 +54,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
                     configuration.client_cert_file, configuration.client_key_file,
-                    natsStatus_GetText(cert_status), nats_GetLastError(nullptr));
+                    natsStatus_GetText(cert_status), getNATSLastError());
         }
     }
 

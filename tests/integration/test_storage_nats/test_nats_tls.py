@@ -144,12 +144,12 @@ def test_nats_certificates_only_from_config(nats_cluster):
                      nats_ca_file = '{CA_FILE}';
         """
     )
-    assert "can only be specified in the server configuration file" in in_settings
+    assert "can only be specified in a named collection" in in_settings
 
     as_override = instance.query_and_get_error(
         create_table_query("nats_tls", "as_override", f", nats_ca_file = '{CA_FILE}'")
     )
-    assert "can only be specified in the server configuration file" in as_override
+    assert "can only be specified in a named collection" in as_override
 
 
 def test_nats_certificates_bound_to_configured_destination(nats_cluster):
