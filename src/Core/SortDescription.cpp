@@ -299,16 +299,15 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
             flags |= 2;
         if (desc.collator)
             flags |= 4;
-        if (desc.with_fill)
-            flags |= 8;
+        /// Bit 8 used to mark `WITH FILL`, which the reader below still rejects. It is never written now: the fill
+        /// information is deliberately dropped instead. `WITH FILL` is applied by `FillingStep`, which is not
+        /// serializable and is added only on the finalizing node, so a fragment executed by a remote node never
+        /// fills - it only has to return the rows in the right order, and `with_fill` does not affect ordering.
 
         writeIntBinary(flags, out);
 
         if (desc.collator)
             writeStringBinary(desc.collator->getLocale(), out);
-
-        if (desc.with_fill)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in serialized sort description");
     }
 }
 
