@@ -42,3 +42,13 @@ SELECT count() FROM numbers(128) WHERE number = 100  SETTINGS max_block_size = 1
 SELECT '-- a filter spanning many blocks must agree with the sum of its parts';
 SELECT countIf(number % 7 = 3) = (SELECT count() FROM numbers(100000) WHERE number % 7 = 3)
 FROM numbers(100000) SETTINGS max_block_size = 100000;
+
+-- An -If condition column is forwarded as a raw UInt8, so a byte outside 0/1 reaches these loops.
+-- Each condition byte below keeps a set bit outside the null byte, so `filter & ~null` stays
+-- non-zero on a NULL row while `filter != 0 && null == 0` is false: the two disagree there.
+SELECT '-- non-binary UInt8 condition, block-size independent';
+SELECT countIfOrNull(if(number % 2 = 0, NULL, 1), toUInt8(2)) FROM numbers(100) SETTINGS max_block_size = 63;
+SELECT countIfOrNull(if(number % 2 = 0, NULL, 1), toUInt8(2)) FROM numbers(100) SETTINGS max_block_size = 64;
+SELECT countIfOrNull(if(number % 2 = 0, NULL, 1), toUInt8(2)) FROM numbers(100) SETTINGS max_block_size = 100;
+SELECT countIfOrNull(if(number % 2 = 0, NULL, 1), toUInt8(255)) FROM numbers(63) SETTINGS max_block_size = 63;
+SELECT countIfOrNull(if(number % 2 = 0, NULL, 1), toUInt8(128)) FROM numbers(129) SETTINGS max_block_size = 129;

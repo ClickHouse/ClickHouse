@@ -29,3 +29,9 @@
 1
 -- a filter spanning many blocks must agree with the sum of its parts
 1
+-- non-binary UInt8 condition, block-size independent
+50
+50
+50
+31
+64
