@@ -4,9 +4,13 @@ DROP TABLE IF EXISTS t_in_empty_set;
 DROP TABLE IF EXISTS t_in_empty_set_nullable;
 DROP TABLE IF EXISTS t_in_empty_set_lc;
 DROP TABLE IF EXISTS t_in_empty_set_storage;
+DROP TABLE IF EXISTS t_in_empty_set_pk;
 
 CREATE TABLE t_in_empty_set (a Int, b Int) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_in_empty_set VALUES (1, 2);
+
+CREATE TABLE t_in_empty_set_pk (a Int, b Int) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_in_empty_set_pk VALUES (1, 2);
 
 SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN ();
 SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a NOT IN ();
@@ -50,7 +54,17 @@ SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
 INSERT INTO t_in_empty_set_storage VALUES (1);
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
 
+-- An empty subquery set is not folded either: each shard still runs index analysis against it, which
+-- needs the function in the plan. Folding it away leaves one `0-element set` report instead of two.
+SET serialize_query_plan = 0, enable_parallel_replicas = 0, prefer_localhost_replica = 1, optimize_skip_unused_shards = 0;
+SELECT count() FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT sum(b) FROM (SELECT * FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk))
+    WHERE a IN (SELECT a FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk) WHERE a < 0)
+) WHERE explain ILIKE '%0-element set%';
+
 DROP TABLE t_in_empty_set;
 DROP TABLE t_in_empty_set_nullable;
 DROP TABLE t_in_empty_set_lc;
 DROP TABLE t_in_empty_set_storage;
+DROP TABLE t_in_empty_set_pk;
