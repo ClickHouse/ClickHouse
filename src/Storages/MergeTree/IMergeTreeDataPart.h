@@ -509,10 +509,10 @@ public:
     UInt64 getMarksCount() const;
     IndexSize getIndexSizeFromFile() const;
 
-    /// Compose the Query Condition Cache key (`part_name`) for this part under `name` - the caller
-    /// spells `name`, since projection parts are keyed as `<parent part>:<projection>` - or nullopt
-    /// when the part has no content-version token and so must not be cached.
-    std::optional<String> makeQueryConditionCacheKey(const String & name) const;
+    /// Compose the Query Condition Cache key from `part_name` - which the caller spells, since
+    /// projection parts are keyed as `<parent part>:<projection>` - or nullopt when the part has no
+    /// content-version token and so must not be cached.
+    std::optional<String> makeQueryConditionCacheKey(const String & part_name) const;
     bool hasQueryConditionCacheKey() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }

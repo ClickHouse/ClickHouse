@@ -2165,13 +2165,13 @@ bool IMergeTreeDataPart::hasQueryConditionCacheKey() const
     return !queryConditionCacheToken().empty();
 }
 
-std::optional<String> IMergeTreeDataPart::makeQueryConditionCacheKey(const String & name) const
+std::optional<String> IMergeTreeDataPart::makeQueryConditionCacheKey(const String & part_name) const
 {
     const String & token = queryConditionCacheToken();
     if (token.empty())
         return std::nullopt;
 
-    return QueryConditionCache::makeVersionedPartName(name, token);
+    return QueryConditionCache::makeVersionedPartName(part_name, token);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
