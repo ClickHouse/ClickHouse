@@ -1,6 +1,7 @@
 -- Test for swapping the build and probe sides of a SEMI join
 SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE lhs(a UInt32)
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -28,7 +29,7 @@ FROM (
     ON lhs.a = rhs.a
 )
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0; -- affects hash join plan depth
 
 -- no swapping for PARTIAL_MERGE join
 SELECT trimLeft(explain)
@@ -89,7 +90,7 @@ FROM (
     ON lhs.a = rhs.a
 )
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0; -- affects hash join plan depth
 
 SELECT *
 FROM lhs

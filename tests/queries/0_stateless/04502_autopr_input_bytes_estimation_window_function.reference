@@ -1,0 +1,6 @@
+log_comment	read_boundary_skipped
+04502_autopr_window_function_query	1
+stats_collected	window_result_not_counted_as_output
+1	1
+stats_collected	output_pinned_to_aggregation_boundary
+1	1

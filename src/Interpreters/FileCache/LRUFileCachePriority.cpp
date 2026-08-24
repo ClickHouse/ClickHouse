@@ -525,7 +525,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
-    const EvictionInfo & eviction_info,
+    EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
@@ -719,7 +719,10 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    auto lock = queue_guard.writeLock();
+    auto lock = queue_guard.tryWriteLock();
+    if (!lock.owns_lock())
+        return false;
+
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
 
@@ -817,6 +820,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
 void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 {
     assertValid();
+    chassert(size);
 
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
@@ -827,7 +831,8 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              "Decrement size with {} in LRU queue entry {}",
              size, entry_ptr->toString());
 
-    cache_priority->state->sub(size, 0);
+    const bool became_empty = entry_ptr->size == size;
+    cache_priority->state->sub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }
 

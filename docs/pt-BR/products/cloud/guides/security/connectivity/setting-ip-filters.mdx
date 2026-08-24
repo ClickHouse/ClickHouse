@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'Configurar filtros de IP'
+slug: /cloud/security/setting-ip-filters
+title: 'Configurar filtros de IP'
+description: 'Esta página explica como configurar filtros de IP no ClickHouse Cloud para controlar o acesso aos serviços do ClickHouse.'
+doc_type: 'guide'
+keywords: ['filtros de IP', 'lista de acesso IP']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="setting-ip-filters">
+  ## Configurar filtros de IP
+</div>
+
+As listas de acesso IP filtram o tráfego para serviços do ClickHouse ou chaves de API ao especificar quais endereços de origem têm permissão para se conectar. Essas listas podem ser configuradas para cada serviço e para cada chave de API. Elas podem ser definidas durante a criação do serviço ou da chave de API, ou posteriormente.
+
+<Warning>
+  **Configure a lista de acesso IP do seu serviço**
+
+  Quando você cria um serviço do ClickHouse Cloud, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere.&#39; Recomendamos fortemente restringir o acesso a endereços IP ou intervalos específicos o quanto antes. Serviços configurados como `Allow from anywhere` podem ser periodicamente movidos de um estado inativo para um estado ativo por rastreadores e scanners da internet em busca de IPs públicos, o que pode resultar em custos inesperados.
+</Warning>
+
+<div id="prepare">
+  ## Preparação
+</div>
+
+Antes de começar, reúna os endereços IP ou intervalos que devem ser adicionados à lista de acesso. Leve em consideração equipes remotas, locais de plantão, VPNs etc. A interface da lista de acesso IP aceita endereços individuais e notação CIDR.
+
+A notação Classless Inter-domain Routing (CIDR) permite especificar intervalos de endereços IP menores do que os tamanhos tradicionais de máscara de sub-rede das classes A, B ou C (8, 6 ou 24). A [ARIN](https://account.arin.net/public/cidrCalculator) e várias outras organizações fornecem calculadoras de CIDR, caso você precise de uma. Se quiser mais informações sobre a notação CIDR, consulte a RFC [Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html).
+
+<div id="create-or-modify-an-ip-access-list">
+  ## Criar ou modificar uma lista de acesso IP
+</div>
+
+<Info>
+  **Aplicável apenas a conexões fora do PrivateLink**
+
+  As listas de acesso IP se aplicam apenas a conexões vindas da internet pública, fora do [PrivateLink](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index).
+  Se você quiser permitir apenas tráfego do PrivateLink, defina `DenyAll` na lista de permissões de IP.
+</Info>
+
+<Accordion title="Lista de acesso IP para serviços do ClickHouse">
+  Ao criar um serviço do ClickHouse, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere.&#39;
+
+  Na lista de serviços do ClickHouse Cloud, selecione o serviço e depois **Settings**. Na seção **Security**, você encontrará a lista de acesso IP. Clique no botão Add IPs.
+
+  Uma barra lateral será exibida com opções de configuração:
+
+  * Permitir tráfego de entrada de qualquer lugar para o serviço
+  * Permitir acesso ao serviço a partir de locais específicos
+  * Negar todo o acesso ao serviço
+</Accordion>
+
+<Accordion title="Lista de acesso IP para chaves de API">
+  Ao criar uma chave de API, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere.&#39;
+
+  Na lista de chaves de API, clique nos três pontos ao lado da chave de API na coluna **Actions** e selecione **Edit**. Na parte inferior da tela, você encontrará a lista de acesso IP e as opções de configuração:
+
+  * Permitir tráfego de entrada de qualquer lugar para o serviço
+  * Permitir acesso ao serviço a partir de locais específicos
+  * Negar todo o acesso ao serviço
+</Accordion>
+
+Esta captura de tela mostra uma lista de acesso que permite tráfego de um intervalo de endereços IP, descrito como &quot;faixa do escritório de NY&quot;:
+
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="Lista de acesso existente no ClickHouse Cloud" border />
+
+<div id="possible-actions">
+  ### Ações possíveis
+</div>
+
+1. Para adicionar uma entrada, você pode usar **+ Add new IP**
+
+Este exemplo adiciona um único endereço IP, com a descrição `London server`:
+
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="Adicionando um único IP à lista de acesso no ClickHouse Cloud" border />
+
+2. Exclua uma entrada existente
+
+Clicar no x (x) pode excluir uma entrada
+
+3. Edite uma entrada existente
+
+Modificando a entrada diretamente
+
+4. Alterne para permitir acesso de **Anywhere**
+
+Isso não é recomendado, mas é permitido. Recomendamos que você exponha ao público um aplicativo criado sobre o ClickHouse e restrinja o acesso ao serviço ClickHouse Cloud de back-end.
+
+Para aplicar as alterações feitas, você deve clicar em **Save**.
+
+<div id="verification">
+  ## Verificação
+</div>
+
+Depois de criar seu filtro, confirme a conectividade com um serviço a partir de um endereço dentro da faixa e confirme que conexões de fora da faixa permitida sejam negadas. Um comando `curl` simples pode ser usado para verificar:
+
+```bash title="Attempt rejected from outside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+ou
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+```bash title="Attempt permitted from inside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+Ok.
+```
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* No momento, as listas de acesso IP oferecem suporte apenas a IPv4

@@ -13,6 +13,7 @@ SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; chooseJoinOrder skipped → cardinality estimates not computed → ResultRows: unknown and no [N] row counts in join EXPLAIN output
+SET query_plan_optimize_join_order_randomize = 0;
 
 SELECT '====== Aggregation by 1 column ======';
 SELECT explain FROM

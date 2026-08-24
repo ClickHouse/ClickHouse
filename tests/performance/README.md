@@ -102,5 +102,5 @@ TODO
 
 ```
 pip3 install clickhouse_driver scipy
-../../tests/performance/scripts/perf.py --runs 1 insert_parallel.xml
+../../tests/performance/scripts/perf.py --min-runs 1 --cap 1 --cap-fast 1 insert_parallel.xml
 ```

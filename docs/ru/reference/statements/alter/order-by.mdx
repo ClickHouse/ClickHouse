@@ -1,0 +1,19 @@
+---
+description: 'Документация по работе с ключевыми выражениями'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: 'Работа с ключевыми выражениями'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+Команда изменяет [ключ сортировки](/ru/reference/engines/table-engines/mergetree-family/mergetree) таблицы на `new_expression` (выражение или кортеж выражений). Первичный ключ остаётся прежним.
+
+Команда является легковесной в том смысле, что изменяет только метаданные. Чтобы сохранить свойство, при котором строки в частях данных упорядочены по выражению ключа сортировки, нельзя добавлять в ключ сортировки выражения, содержащие существующие столбцы (допускаются только столбцы, добавленные командой `ADD COLUMN` в том же запросе `ALTER`, без значения по умолчанию для столбца).
+
+<Note>
+  Это работает только для таблиц семейства [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы).
+</Note>

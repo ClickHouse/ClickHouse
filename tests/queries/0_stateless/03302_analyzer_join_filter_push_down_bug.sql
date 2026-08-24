@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE t1 (key Int32, value DateTime) ENGINE = Log;
 INSERT INTO  t1 select number, number from numbers(10000);
 create table t2 ENGINE = Log as select key as key1, value from t1;

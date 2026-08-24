@@ -99,6 +99,8 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
 
+    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
+
     /// Mutate target table
     void mutate(
         const MutationCommands & commands,
@@ -135,6 +137,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getTargetTable()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();
@@ -144,6 +147,11 @@ public:
     {
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToSubcolumns();
+    }
+    bool supportsOptimizationToTupleElementSubcolumns() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
     bool supportsParallelInsert() const override
     {
@@ -186,6 +194,7 @@ public:
     }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+    bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -268,6 +277,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();

@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext")
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)
@@ -60,7 +60,7 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
 
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
+void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;

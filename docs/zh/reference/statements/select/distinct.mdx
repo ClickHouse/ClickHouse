@@ -1,0 +1,118 @@
+---
+description: 'DISTINCT 子句文档'
+sidebarTitle: 'DISTINCT'
+slug: /sql-reference/statements/select/distinct
+title: 'DISTINCT 子句'
+doc_type: 'reference'
+---
+
+如果指定了 `SELECT DISTINCT`，查询结果中将只保留唯一的行。也就是说，对于结果中所有完全相同的行，每组最终只会保留一行。
+
+你可以指定哪些列的值必须唯一：`SELECT DISTINCT ON (column1, column2,...)`。如果未指定列，则会将所有列都纳入考虑。
+
+考虑下表：
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+不指定列时使用 `DISTINCT`：
+
+```sql
+SELECT DISTINCT * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+在指定列上使用 `DISTINCT`：
+
+```sql
+SELECT DISTINCT ON (a,b) * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+<div id="distinct-and-order-by">
+  ## DISTINCT 和 ORDER BY
+</div>
+
+ClickHouse 支持在同一个查询中，对不同的列分别使用 `DISTINCT` 和 `ORDER BY` 子句。`DISTINCT` 子句会在 `ORDER BY` 子句之前执行。
+
+考虑下列表：
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+查询数据：
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b ASC;
+```
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+按不同的排序方向选择数据：
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b DESC;
+```
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+行 `2, 4` 在排序前被截断。
+
+编写查询时，请将这一实现上的特性考虑在内。
+
+<div id="null-processing">
+  ## NULL 处理
+</div>
+
+`DISTINCT` 对 [NULL](/zh/reference/syntax#null) 的处理方式相当于将 `NULL` 视为一个特定值，且 `NULL==NULL`。换句话说，在 `DISTINCT` 的结果中，包含 `NULL` 的不同组合都只会出现一次。这与 `NULL` 在大多数其他场景下的处理方式不同。
+
+<div id="alternatives">
+  ## 替代方案
+</div>
+
+也可以不使用任何聚合函数，而是对 `SELECT` 子句中指定的同一组值应用 [GROUP BY](/zh/reference/statements/select/group-by)，从而获得相同的结果。不过，与 `GROUP BY` 的做法相比，还是有几点不同：
+
+* `DISTINCT` 可以与 `GROUP BY` 一起使用。
+* 省略 [ORDER BY](/zh/reference/statements/select/order-by) 且定义了 [LIMIT](/zh/reference/statements/select/limit) 时，查询在读到所需数量的不同行后就会立即停止执行。
+* 数据块会在处理过程中直接输出，而无需等待整个查询执行完毕。

@@ -19,7 +19,7 @@ CREATE TABLE mt
 )
 ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity = 1, auto_statistics_types = 'minmax, uniq';
+SETTINGS index_granularity = 1, auto_statistics_types = 'basic, uniq';
 
 INSERT INTO mt SELECT 1, 1;
 INSERT INTO mt SELECT 2, 2;

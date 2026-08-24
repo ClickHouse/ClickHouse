@@ -178,7 +178,7 @@ Checks whether the input array is empty.
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for Strings or UUIDs.
@@ -189,7 +189,7 @@ Checks whether the input array is non-empty.
 An array is considered non-empty if it contains at least one element.
 
 :::note
-Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 The function also works for Strings or UUIDs.
@@ -209,12 +209,12 @@ The function also works for Strings or UUIDs.
     FunctionDocumentation::Description description_empty_string = R"(
 Checks whether the input string is empty.
 A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
-The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](/sql-reference/data-types/uuid).
+The function is also available for [arrays](/reference/functions/regular-functions/array-functions#empty) and [UUIDs](/reference/data-types/uuid).
 )";
     FunctionDocumentation::Description description_not_empty_string = R"(
 Checks whether the input string is non-empty.
 A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
-The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](/sql-reference/data-types/uuid).
+The function is also available for [arrays](/reference/functions/regular-functions/array-functions#empty) and [UUIDs](/reference/data-types/uuid).
 )";
     FunctionDocumentation::Syntax syntax_empty_string = "empty(x)";
     FunctionDocumentation::Syntax syntax_not_empty_string = "notEmpty(x)";

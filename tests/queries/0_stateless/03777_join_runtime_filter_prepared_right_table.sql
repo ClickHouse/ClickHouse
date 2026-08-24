@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
 
@@ -17,7 +18,7 @@ SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;
 
 SELECT '============ runtime filters enabled =========';
-SET enable_join_runtime_filters = 1;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 EXPLAIN
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;

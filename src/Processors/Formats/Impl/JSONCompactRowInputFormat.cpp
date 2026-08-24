@@ -87,7 +87,7 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
+Differs from [JSON](/reference/formats/JSON/JSON) only in that data rows are output as arrays, not as objects.
 
 ## Example usage {#example-usage}
 

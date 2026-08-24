@@ -1,0 +1,89 @@
+---
+slug: /managing-data/drop_partition
+sidebarTitle: '删除分区'
+title: '删除分区'
+hide_title: false
+description: '介绍如何删除分区的页面'
+keywords: ['DROP PARTITION', '删除分区', '删除分区', '移除分区', '分区管理']
+doc_type: 'reference'
+---
+
+<div id="background">
+  ## 背景
+</div>
+
+分区是在表初始定义时通过 `PARTITION BY` 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果将决定每一行会被发送到哪个分区。
+
+磁盘上的数据分区片段在逻辑上隶属于各个分区，并且可以单独查询。在下面的示例中，我们使用表达式 `toYear(CreationDate)` 按年份对 `posts` 表进行分区。随着行被插入到 ClickHouse 中，系统会针对每一行计算该表达式，并将其路由到对应的分区；如果该分区尚不存在 (例如某一年份的第一行数据写入时) ，则会创建该分区。
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+有关设置分区表达式，请参见 [如何设置分区表达式](/zh/reference/statements/alter/partition#how-to-set-partition-expression) 一节。
+
+在 ClickHouse 中，用户主要应将分区视为一种数据管理功能，而非查询优化技术。通过按某个键在逻辑上分隔数据，每个分区都可以独立操作，例如删除。这使用户能够按时间高效地在[存储层级](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers)之间移动分区及其对应的数据子集，或者[使数据过期/从集群中高效删除](/zh/reference/statements/alter/partition)。
+
+<div id="drop-partitions">
+  ## 删除分区
+</div>
+
+`ALTER TABLE ... DROP PARTITION` 提供了一种能够以较低成本删除整个分区的方法。
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+此查询会将该分区标记为非活动状态，并在大约 10 分钟后彻底删除数据。该查询会复制到所有副本上执行，因此会删除所有副本中的数据。
+
+在下面的示例中，我们通过删除对应分区，从前面的表中移除 2008 年的帖子数据。
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+0 rows in set. Elapsed: 0.103 sec.
+```

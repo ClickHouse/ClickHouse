@@ -1,0 +1,219 @@
+---
+slug: /use-cases/AI/MCP/remote_mcp
+sidebarTitle: 'Activer le serveur MCP distant'
+title: 'Activer et se connecter au serveur MCP distant de ClickHouse Cloud'
+description: 'Ce guide explique comment activer et utiliser le serveur MCP distant de ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide explique comment activer le ClickHouse Cloud Remote MCP Server et le configurer pour l’utiliser avec les outils de développement courants.
+
+**Prérequis**
+
+* Un [service ClickHouse Cloud](/fr/get-started/setup/cloud) actif
+* Votre IDE ou l’outil de développement agentique de votre choix
+
+<div id="enable-remote-mcp-server">
+  ## Activer le serveur MCP distant dans Cloud
+</div>
+
+Connectez-vous au service ClickHouse Cloud pour lequel vous souhaitez activer le serveur MCP distant.
+Dans le menu de gauche, cliquez sur **Connect**. Une fenêtre contenant les informations de connexion s’ouvre.
+
+Sélectionnez **Connect with MCP** :
+
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Sélectionner MCP dans la fenêtre modale Connect" size="md" />
+
+Activez le bouton pour activer MCP sur le service :
+
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Activer le serveur MCP" size="md" />
+
+Copiez l’URL affichée, qui est identique à celle ci-dessous :
+
+```bash
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="setup-clickhouse-cloud-remote-mcp-server">
+  ## Configurer MCP distant pour le développement
+</div>
+
+Choisissez votre IDE ou votre outil ci-dessous, puis suivez les instructions de configuration correspondantes.
+
+<div id="claude-code">
+  ### Claude Code
+</div>
+
+Depuis votre répertoire de travail, exécutez la commande suivante pour ajouter la configuration du MCP Server de ClickHouse Cloud à Claude Code :
+
+```bash
+claude mcp add --transport http clickhouse-cloud https://mcp.clickhouse.cloud/mcp
+```
+
+Lancez ensuite Claude Code :
+
+```bash
+claude
+```
+
+Exécutez la commande suivante pour afficher la liste des serveurs MCP :
+
+```bash
+/mcp
+```
+
+Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identifiants ClickHouse Cloud.
+
+<div id="claude-web">
+  ### Claude web UI
+</div>
+
+1. Accédez à **Customize** &gt; **Connectors**
+2. Cliquez sur l’icône « + », puis sur **Add custom connector**
+3. Donnez au connecteur personnalisé un nom tel que `clickhouse-cloud`, puis ajoutez-le
+4. Cliquez sur le connecteur `clickhouse-cloud` que vous venez d’ajouter, puis sur **Connect**
+5. Authentifiez-vous avec vos identifiants ClickHouse Cloud via OAuth
+
+<div id="cursor">
+  ### Cursor
+</div>
+
+1. Parcourez et installez des serveurs MCP depuis le [Marketplace de Cursor](https://cursor.com/marketplace).
+2. Recherchez ClickHouse et cliquez sur &quot;Add to Cursor&quot; sur le serveur de votre choix pour l’installer
+3. Authentifiez-vous avec OAuth.
+
+<div id="visual-studio-code">
+  ### Visual Studio Code
+</div>
+
+Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
+
+```json
+{
+  "servers": {
+    "clickhouse-cloud": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+Pour plus d’informations, consultez la [documentation de Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
+
+<div id="windsurf">
+  ### Windsurf
+</div>
+
+Modifiez votre fichier `mcp_config.json` comme suit :
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-cloud": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.clickhouse.cloud/mcp"]
+    }
+  }
+}
+```
+
+Pour en savoir plus, consultez la [documentation Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
+
+<div id="zed">
+  ### Zed
+</div>
+
+Ajoutez ClickHouse comme serveur personnalisé.
+Ajoutez les éléments suivants dans les paramètres de Zed, sous **context&#95;servers** :
+
+```json
+{
+  "context_servers": {
+    "clickhouse-cloud": {
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+Zed devrait alors vous demander de vous authentifier via OAuth lors de sa première connexion au serveur.
+Pour plus de détails, consultez la [documentation de Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
+
+<div id="codex">
+  ### Codex
+</div>
+
+Exécutez la commande suivante pour ajouter le serveur MCP ClickHouse Cloud via le CLI :
+
+```bash
+codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Une fois connecté, vous pouvez interagir avec ClickHouse Cloud à l’aide de prompts en langage naturel.
+Vous trouverez ci-dessous quelques workflows courants, ainsi que les outils que votre client MCP invoquera en arrière-plan.
+Pour obtenir la liste complète des outils disponibles, consultez la [référence des outils](/fr/products/cloud/features/ai-ml/remote-mcp#available-tools).
+
+<div id="exploring-data">
+  ### Explorer vos données
+</div>
+
+Commencez par découvrir ce qui est disponible :
+
+| Prompt                                                                  | Outil appelé                          |
+| ----------------------------------------------------------------------- | ------------------------------------- |
+| &quot;À quelles organisations ai-je accès ?&quot;                       | `get_organizations`                   |
+| &quot;Quelles bases de données sont disponibles sur mon service ?&quot; | `list_databases`                      |
+| &quot;Quelles tables contient la base de données `default` ?&quot;      | `list_tables`                         |
+| &quot;Liste toutes les tables dont le nom commence par `events_`&quot;  | `list_tables` (avec le filtre `like`) |
+
+<div id="running-queries">
+  ### Exécuter des requêtes analytiques
+</div>
+
+Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
+
+| Prompt                                                                                       | Outil invoqué      |
+| -------------------------------------------------------------------------------------------- | ------------------ |
+| &quot;Montre-moi les 10 premières lignes de la table `hits`&quot;                            | `run_select_query` |
+| &quot;Quelle est la durée moyenne des sessions par pays sur les 7 derniers jours ?&quot;     | `run_select_query` |
+| &quot;Combien y a-t-il de lignes dans chaque table de la base de données `analytics` ?&quot; | `run_select_query` |
+
+L&#39;outil `run_select_query` n&#39;autorise que les instructions `SELECT`. Toutes les requêtes sont en lecture seule.
+
+<div id="managing-services">
+  ### Gérer les services et l’infrastructure
+</div>
+
+Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
+
+| Instruction                                                          | Outil invoqué                      |
+| -------------------------------------------------------------------- | ---------------------------------- |
+| &quot;Liste tous mes services&quot;                                  | `get_services_list`                |
+| &quot;Quel est l’état de mon service de production ?&quot;           | `get_service_details`              |
+| &quot;Affiche la planification des sauvegardes pour ce service&quot; | `get_service_backup_configuration` |
+| &quot;Liste les sauvegardes récentes&quot;                           | `list_service_backups`             |
+| &quot;Quels ClickPipes sont configurés sur ce service ?&quot;        | `list_clickpipes`                  |
+
+<div id="monitoring-costs">
+  ### Suivi des coûts
+</div>
+
+| Prompt                                                                   | Outil invoqué                                           |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- |
+| &quot;Quel a été le coût de mon organisation la semaine dernière ?&quot; | `get_organization_cost`                                 |
+| &quot;Affiche-moi les coûts quotidiens du 1er mars au 15 mars&quot;      | `get_organization_cost` (avec `from_date` et `to_date`) |
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

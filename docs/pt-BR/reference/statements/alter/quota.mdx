@@ -1,0 +1,45 @@
+---
+description: 'Documentação sobre QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/alter/quota
+title: 'ALTER QUOTA'
+doc_type: 'reference'
+---
+
+Altera quotas.
+
+Sintaxe:
+
+```sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+As chaves `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address` e `normalized_query_hash` correspondem aos campos da tabela [system.quotas](/pt-BR/reference/system-tables/quotas).
+
+As opções `IPV4_PREFIX_BITS` e `IPV6_PREFIX_BITS` só podem ser usadas quando `KEYED BY` é `ip_address` ou `forwarded_ip_address`. Elas correspondem ao campo da tabela [system.quotas](/pt-BR/reference/system-tables/quotas).
+
+Os parâmetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` correspondem aos campos da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage).
+
+A cláusula `ON CLUSTER` permite criar quotas em um cluster; consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
+
+**Exemplos**
+
+Limite o número máximo de consultas do usuário atual a 123 consultas em 15 meses:
+
+```sql
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+Para o usuário padrão, limite o tempo máximo de execução a meio segundo em 30 minutos e limite o número máximo de queries a 321 e o número máximo de erros a 10 em 5 intervalos de 15 minutos:
+
+```sql
+ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```

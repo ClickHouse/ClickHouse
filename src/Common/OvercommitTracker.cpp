@@ -82,12 +82,12 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     allow_release = true;
 
     required_memory += amount;
-    auto wait_start_time = std::chrono::system_clock::now();
+    auto wait_start_time = std::chrono::steady_clock::now();
     bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
         return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
     });
-    auto wait_end_time = std::chrono::system_clock::now();
+    auto wait_end_time = std::chrono::steady_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
     required_memory -= amount;

@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "drop table if exists country_polygons;"
 ${CLICKHOUSE_CLIENT} -q "create table country_polygons(name String, p Array(Array(Tuple(Float64, Float64)))) engine=Memory()"
 cat ${CURDIR}/country_polygons.tsv | ${CLICKHOUSE_CLIENT} -q "insert into country_polygons format TSV"
-${CLICKHOUSE_CLIENT} -q "SELECT c, d, polygonsIntersectionSpherical(a, b) FROM (SELECT first.p AS a, second.p AS b, first.name AS c, second.name AS d FROM country_polygons AS first CROSS JOIN country_polygons AS second LIMIT 100) format TSV"
+${CLICKHOUSE_CLIENT} -q "SELECT c, d, polygonsIntersectionSpherical(a, b) FROM (SELECT first.p AS a, second.p AS b, first.name AS c, second.name AS d FROM country_polygons AS first CROSS JOIN country_polygons AS second LIMIT 100) ORDER BY c, d format TSV"
 ${CLICKHOUSE_CLIENT} -q "drop table if exists country_polygons;"
 
 

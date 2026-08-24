@@ -1,0 +1,337 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: '适用于 ClickStack 的 AWS Lambda - ClickHouse 可观测性技术栈'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', '可观测性', 'aws-lambda', 'lambda-layers']
+---
+
+**本指南支持以下集成：**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 日志</td>
+      <td className="pe-2">✅ 指标</td>
+      <td className="pe-2">✅ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="installing-the-otel-lambda-layers">
+  ## 安装 OpenTelemetry Lambda layer
+</div>
+
+OpenTelemetry 项目提供了独立的 Lambda layer，分别用于：
+
+1. 使用 OpenTelemetry 自动插桩功能，自动为 Lambda 函数代码添加插桩。
+2. 将采集到的日志、指标和链路追踪转发到 ClickStack。
+
+<div id="adding-language-specific-auto-instrumentation">
+  ### 添加特定语言的自动插桩 layer
+</div>
+
+特定语言的自动插桩 Lambda layer 会使用适用于相应语言的 OpenTelemetry 自动插桩包，自动为你的 Lambda 函数代码启用插桩。
+
+每种语言和区域都有各自对应的 layer ARN。
+
+如果你的 Lambda 已经通过 OpenTelemetry SDK 完成插桩，则可以跳过此步骤。
+
+**开始使用**：
+
+1. 在 Layers 部分中点击 “Add a layer”
+2. 选择 specify an ARN，并根据语言选择正确的 ARN；请确保将 `<region>` 替换为你的区域 (例如 `us-east-2`) ：
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-nodejs-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-python-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-javaagent-0_6_0:1
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-ruby-0_1_0:1
+    ```
+  </Tab>
+</Tabs>
+
+*这些 layer 的最新发布版本可在 [OpenTelemetry Lambda Layers GitHub 仓库](https://github.com/open-telemetry/opentelemetry-lambda/releases)中找到。*
+
+3. 在 Lambda 函数的 “Configuration” &gt; “Environment variables” 下配置以下环境变量。
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+</Tabs>
+
+<div id="installing-the-otel-collector-layer">
+  ### 安装 OpenTelemetry collector Lambda layer
+</div>
+
+collector Lambda layer 可让你将 Lambda function 的日志、指标和链路追踪转发到 ClickStack，且不会因 exporter 延迟而影响响应时间。
+
+**安装 collector layer**：
+
+1. 在 Layers 部分中，点击 &quot;Add a layer&quot;
+2. 选择指定 ARN，并根据架构选择正确的 ARN。请确保将 `<region>` 替换为你的区域 (例如：`us-east-2`) ：
+
+<Tabs>
+  <Tab title="x86_64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-amd64-0_8_0:1
+    ```
+  </Tab>
+
+  <Tab title="arm64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-arm64-0_8_0:1
+    ```
+  </Tab>
+</Tabs>
+
+3. 将以下 `collector.yaml` 文件添加到你的项目中，以将 collector 配置为发送到 ClickStack：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+</Tabs>
+
+4. 添加以下环境变量：
+
+```shell
+OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
+```
+
+<div id="checking-the-installation">
+  ## 检查安装
+</div>
+
+部署这些 layer 后，你现在应该能在 HyperDX 中看到从 Lambda 函数自动收集到的链路追踪。`decouple` 和 `batching`
+处理器可能会导致可观测数据收集出现延迟，因此链路追踪可能不会立即显示。若要发送自定义日志或指标，你需要使用特定语言的
+OpenTelemetry SDK 为代码添加埋点。
+
+<div id="troubleshoting">
+  ## 故障排查
+</div>
+
+<div id="custom-instrumentation-not-sending">
+  ### 自定义插桩未发送
+</div>
+
+如果你看不到手动定义的 链路追踪 或其他遥测数据，可能是因为你使用了与 OpenTelemetry API 包不兼容的版本。请确保你的
+OpenTelemetry API 包版本至少与 AWS Lambda 中包含的版本相同或更低。
+
+<div id="enabling-sdk-debug-logs">
+  ### 启用 SDK 调试日志
+</div>
+
+将 `OTEL_LOG_LEVEL` 环境变量设置为 `DEBUG`，以启用
+OpenTelemetry SDK 的调试日志。这有助于确保自动插桩 layer
+已正确对您的应用程序进行插桩。
+
+<div id="enabling-collector-debug-logs">
+  ### 启用 collector 调试日志
+</div>
+
+要排查 collector 问题，可以修改 collector
+配置文件，添加 `logging` exporter，并将 telemetry 的
+日志级别设置为 `debug`，以启用 collector Lambda layer 的更详细日志。
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+</Tabs>

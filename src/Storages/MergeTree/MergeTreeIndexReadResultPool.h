@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
+#include <functional>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -27,28 +31,49 @@ using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 class MergeTreeSkipIndexReader
 {
 public:
+    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
+    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+
+    /// Whether a dynamic skip index should be applied at read time.
+    using DynamicSkipIndexFilter = std::function<bool(const IMergeTreeIndex &)>;
+
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
-        std::optional<KeyCondition> & key_condition_rpn_template_,
+        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
         bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
         MergeTreeReaderSettings reader_settings_,
+        DynamicPredicateBuilder dynamic_predicate_builder_,
+        bool prune_primary_key_,
+        MergeTreeIndices dynamic_skip_indexes_,
+        DynamicSkipIndexFilter dynamic_skip_index_filter_,
+        ContextPtr context_,
         LoggerPtr log_);
 
     SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+
+    /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
+    /// so its result must not be built before the build side has published the filters.
+    bool hasRuntimeFilters() const;
 
     void cancel() noexcept { is_cancelled = true; }
 
 private:
     UsefulSkipIndexes skip_indexes;
-    std::optional<KeyCondition> key_condition_rpn_template;
+    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
     bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
     MergeTreeReaderSettings reader_settings;
+
+    DynamicPredicateBuilder dynamic_predicate_builder;
+    bool prune_primary_key = false;
+    MergeTreeIndices dynamic_skip_indexes;
+    DynamicSkipIndexFilter dynamic_skip_index_filter;
+    ContextPtr context;
     LoggerPtr log;
 
     std::atomic_bool is_cancelled = false;
@@ -157,10 +182,18 @@ private:
 
 using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionIndexReader>;
 
+class MergeTreeIndexGranularity;
+
 struct MergeTreeIndexReadResult
 {
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
+
+    /// Whether index read result is useful and marks can be skipped.
+    bool canSkipAnyMark() const;
+
+    /// Whether all rows of the granule are filtered out by the present index read results.
+    bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
@@ -205,6 +238,12 @@ public:
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(const DataPartPtr & part);
+
+    /// Whether index read results may include a skip index part (for any part of the query).
+    bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
+
+    /// Whether index read results depend on JOIN runtime filters (see MergeTreeSkipIndexReader::hasRuntimeFilters).
+    bool hasRuntimeFilters() const { return skip_index_reader && skip_index_reader->hasRuntimeFilters(); }
 
     void cancel() noexcept;
 

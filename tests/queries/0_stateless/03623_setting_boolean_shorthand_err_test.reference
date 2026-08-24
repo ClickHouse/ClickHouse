@@ -10,3 +10,12 @@ ok
 -- Test with normal syntax works
 4
 ok
+-- A rejected shorthand leaves the setting alone
+4
+ok
+-- The same check applies to the SETTINGS clause of a query
+1
+4
+ok
+-- An unknown setting is still reported as unknown
+ok

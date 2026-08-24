@@ -1,0 +1,98 @@
+---
+description: 'Seleciona o último valor encontrado, semelhante a `anyLast`, mas pode
+  aceitar NULL.'
+slug: /sql-reference/aggregate-functions/reference/last_value
+title: 'last_value'
+doc_type: 'reference'
+---
+
+Seleciona o último valor encontrado, semelhante a `anyLast`, mas pode aceitar NULL.
+Em geral, deve ser usado com [funções de janela](/pt-BR/reference/functions/window-functions/index).
+Sem funções de janela, o resultado será aleatório se o fluxo de dados não estiver ordenado.
+
+<div id="examples">
+  ## exemplos
+</div>
+
+```sql
+CREATE TABLE test_data
+(
+    a Int64,
+    b Nullable(Int64)
+)
+ENGINE = Memory;
+
+INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null)
+```
+
+<div id="example1">
+  ### Exemplo 1
+</div>
+
+O valor NULL é ignorado por padrão.
+
+```sql
+SELECT last_value(b) FROM test_data
+```
+
+```text
+┌─last_value_ignore_nulls(b)─┐
+│                          5 │
+└────────────────────────────┘
+```
+
+<div id="example2">
+  ### Exemplo 2
+</div>
+
+O valor NULL é ignorado.
+
+```sql
+SELECT last_value(b) ignore nulls FROM test_data
+```
+
+```text
+┌─last_value_ignore_nulls(b)─┐
+│                          5 │
+└────────────────────────────┘
+```
+
+<div id="example3">
+  ### Exemplo 3
+</div>
+
+O valor NULL é aceito.
+
+```sql
+SELECT last_value(b) respect nulls FROM test_data
+```
+
+```text
+┌─last_value_respect_nulls(b)─┐
+│                        ᴺᵁᴸᴸ │
+└─────────────────────────────┘
+```
+
+<div id="example4">
+  ### Exemplo 4
+</div>
+
+Resultado estável usando a subconsulta com `ORDER BY`.
+
+```sql
+SELECT
+    last_value_respect_nulls(b),
+    last_value(b)
+FROM
+(
+    SELECT *
+    FROM test_data
+    ORDER BY a ASC
+)
+```
+
+```text
+┌─last_value_respect_nulls(b)─┬─last_value(b)─┐
+│                        ᴺᵁᴸᴸ │             5 │
+└─────────────────────────────┴───────────────┘
+```

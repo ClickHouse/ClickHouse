@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Amazon DocumentDB'
+description: 'Пошаговое руководство по настройке Amazon DocumentDB в качестве источника для ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/documentdb
+title: 'Руководство по настройке Amazon DocumentDB как источника'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="supported-documentdb-versions">
+  ## Поддерживаемые версии DocumentDB
+</div>
+
+ClickPipes поддерживает версию 5.0 DocumentDB.
+
+<div id="configure-change-stream-log-retention">
+  ## Настройка срока хранения журнала change stream
+</div>
+
+По умолчанию в Amazon DocumentDB срок хранения журнала change stream составляет 3 часа, тогда как начальная загрузка может занять значительно больше времени в зависимости от объема имеющихся данных в DocumentDB. Мы рекомендуем установить срок хранения журнала change stream на 72 часа или более, чтобы журнал не был обрезан до завершения начального снимка.
+
+<div id="update-change-stream-log-retention-via-aws-console">
+  ### Обновление срока хранения журнала change stream в консоли AWS
+</div>
+
+1. В левой панели нажмите `Parameter groups`, затем найдите группу параметров, используемую вашим кластером DocumentDB (если вы используете группу параметров по умолчанию, сначала потребуется создать новую, чтобы можно было вносить изменения).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="Выбор группы параметров" size="lg" border />
+
+2. Найдите `change_stream_log_retention_duration`, выберите этот параметр и измените его значение на `259200` (72 часа)
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="Изменение группы параметров" size="lg" border />
+
+3. Нажмите `Apply Changes`, чтобы немедленно применить изменённую группу параметров к кластеру DocumentDB. Статус группы параметров должен сначала измениться на `applying`, а после применения изменения — на `in-sync`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="Применение группы параметров" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="Статус группы параметров" size="lg" border />
+
+<div id="update-change-stream-log-retention-via-aws-cli">
+  ### Обновление срока хранения журнала change stream через AWS CLI
+</div>
+
+Кроме того, это можно настроить через AWS CLI.
+
+Чтобы проверить текущий срок хранения журнала change stream:
+
+```shell
+aws docdb describe-db-cluster-parameters --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --query "Parameters[?ParameterName=='change_stream_log_retention_duration'].{Name:ParameterName,Value:ParameterValue}"
+```
+
+Чтобы установить срок хранения журнала change stream на 72 часа:
+
+```shell
+aws docdb modify-db-cluster-parameter-group --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --parameters "ParameterName=change_stream_log_retention_duration,ParameterValue=259200,ApplyMethod=immediate"
+```
+
+<div id="configure-database-user">
+  ## Настройка пользователя базы данных
+</div>
+
+Подключитесь к своему кластеру DocumentDB под учетной записью администратора и выполните следующую команду, чтобы создать пользователя базы данных для MongoDB CDC ClickPipes:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  Обязательно замените `clickpipes_user` и `some_secure_password` на нужные вам имя пользователя и пароль.
+</Note>
+
+<div id="whats-next">
+  ## Что дальше?
+</div>
+
+Теперь вы можете [создать ClickPipe](/ru/integrations/clickpipes/mongodb/index) и начать приём данных из экземпляра DocumentDB в ClickHouse Cloud.
+Обязательно сохраните сведения о подключении, которые вы использовали при настройке кластера DocumentDB, так как они понадобятся вам в процессе создания ClickPipe.

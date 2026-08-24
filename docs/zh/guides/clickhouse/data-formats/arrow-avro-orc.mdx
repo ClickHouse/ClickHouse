@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Avro、Arrow 和 ORC'
+slug: /integrations/data-formats/arrow-avro-orc
+title: '在 ClickHouse 中使用 Avro、Arrow 和 ORC 数据'
+description: '介绍如何在 ClickHouse 中使用 Avro、Arrow 和 ORC 数据的页面'
+keywords: ['Apache Avro', 'Apache Arrow', 'ORC 格式', '列式格式', '大数据格式']
+doc_type: 'guide'
+---
+
+Apache 发布了多种在分析环境中广泛使用的数据格式，其中包括常见的 [Avro](https://avro.apache.org/)、[Arrow](https://arrow.apache.org/) 和 [ORC](https://orc.apache.org/)。ClickHouse 支持使用其中任意一种格式导入和导出数据。
+
+<div id="importing-and-exporting-in-avro-format">
+  ## 以 Avro 格式导入和导出
+</div>
+
+ClickHouse 支持读取和写入 [Apache Avro](https://avro.apache.org/) 数据文件，这类文件在 Hadoop 系统中广泛使用。
+
+要从 [avro 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.avro) 导入数据，应在 `INSERT` 语句中使用 [Avro](/zh/reference/formats/Avro/Avro) 格式：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.avro'
+FORMAT Avro
+```
+
+借助 [file()](/zh/reference/functions/regular-functions/files#file) 函数，我们还可以在实际导入数据之前先查看 Avro 文件：
+
+```sql
+SELECT path, hits
+FROM file('data.avro', Avro)
+ORDER BY hits DESC
+LIMIT 5;
+```
+
+```response
+┌─path────────────┬──hits─┐
+│ Amy_Poehler     │ 62732 │
+│ Adam_Goldberg   │ 42338 │
+│ Aaron_Spelling  │ 25128 │
+│ Absence_seizure │ 18152 │
+│ Ammon_Bundy     │ 11890 │
+└─────────────────┴───────┘
+```
+
+导出到 Avro 文件：
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.avro'
+FORMAT Avro;
+```
+
+<div id="avro-and-clickhouse-data-types">
+  ### Avro 和 ClickHouse 数据类型
+</div>
+
+导入或导出 Avro 文件时，请参阅[数据类型匹配](/zh/reference/formats/Avro/Avro#data-type-mapping)。从 Avro 文件加载数据时，请使用显式类型转换：
+
+```sql
+SELECT
+    date,
+    toDate(date)
+FROM file('data.avro', Avro)
+LIMIT 3;
+```
+
+```response
+┌──date─┬─toDate(date)─┐
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+└───────┴──────────────┘
+```
+
+<div id="avro-messages-in-kafka">
+  ### Kafka 中的 Avro 消息
+</div>
+
+当 Kafka 消息采用 Avro 格式时，ClickHouse 可以使用 [AvroConfluent](/zh/reference/formats/Avro/AvroConfluent) 格式和 [Kafka](/zh/reference/engines/table-engines/integrations/kafka) 引擎来读取这类流：
+
+```sql
+CREATE TABLE some_topic_stream
+(
+    field1 UInt32,
+    field2 String
+)
+ENGINE = Kafka() SETTINGS
+kafka_broker_list = 'localhost',
+kafka_topic_list = 'some_topic',
+kafka_group_name = 'some_group',
+kafka_format = 'AvroConfluent';
+```
+
+<div id="working-with-arrow-format">
+  ## 使用 Arrow 格式
+</div>
+
+另一种列式格式是 [Apache Arrow](https://arrow.apache.org/)，ClickHouse 同样支持使用它进行导入和导出。要从 [Arrow 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.arrow) 导入数据，我们使用 [Arrow](/zh/reference/formats/Arrow/Arrow) 格式：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.arrow'
+FORMAT Arrow
+```
+
+导出为 Arrow 文件的方法也是一样的：
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.arrow'
+FORMAT Arrow
+```
+
+此外，请查看[数据类型匹配](/zh/reference/formats/Arrow/Arrow#data-types-matching)，确认是否有任何数据类型需要手动转换。
+
+<div id="arrow-data-streaming">
+  ### Arrow 流式数据
+</div>
+
+[ArrowStream](/zh/reference/formats/Arrow/ArrowStream) 格式可用于处理 Arrow 流式数据 (用于内存中处理) 。ClickHouse 可以读取和写入 Arrow 流。
+
+为了演示 ClickHouse 如何流式传输 Arrow 流式数据，我们将其通过管道传递给下面的 Python 脚本 (该脚本以 Arrow 流式格式读取输入流，并将结果输出为 Pandas 表) ：
+
+```python
+import sys, pyarrow as pa
+
+with pa.ipc.open_stream(sys.stdin.buffer) as reader:
+  print(reader.read_pandas())
+```
+
+现在，我们可以将 ClickHouse 的输出通过管道传给该脚本，从而从 ClickHouse 流式传输数据：
+
+```bash
+clickhouse-client -q "SELECT path, hits FROM some_data LIMIT 3 FORMAT ArrowStream" | python3 arrow.py
+```
+
+```response
+                           path  hits
+0       b'Akiba_Hebrew_Academy'   241
+1           b'Aegithina_tiphia'    34
+2  b'1971-72_Utah_Stars_season'     1
+```
+
+ClickHouse 也可以使用相同的 ArrowStream 格式读取 Arrow 流：
+
+```sql
+arrow-stream | clickhouse-client -q "INSERT INTO sometable FORMAT ArrowStream"
+```
+
+我们使用 `arrow-stream` 作为 Arrow 流式数据的一种可能来源。
+
+<div id="importing-and-exporting-orc-data">
+  ## 导入和导出 ORC 数据
+</div>
+
+[Apache ORC](https://orc.apache.org/) 是一种通常用于 Hadoop 的列式存储格式。ClickHouse 支持使用 [ORC 格式](/zh/reference/formats/ORC) 导入和导出 [ORC 数据](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.orc)：
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'data.orc'
+FORMAT ORC;
+
+INSERT INTO sometable
+FROM INFILE 'data.orc'
+FORMAT ORC;
+```
+
+另外，还请参阅[数据类型匹配](/zh/reference/formats/ORC)以及[其他设置](/zh/reference/formats/Parquet/Parquet#format-settings)，以便调整导入和导出。
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+ClickHouse 支持多种格式，包括文本格式和二进制格式，以满足各种场景和平台的需求。要了解更多格式及其使用方法，请参阅以下文章：
+
+* [CSV 和 TSV 格式](/zh/guides/clickhouse/data-formats/csv-tsv)
+* [JSON 格式](/zh/guides/clickhouse/data-formats/json/intro)
+* [Regex 和 Template 格式](/zh/guides/clickhouse/data-formats/templates-regex)
+* [Native 和二进制格式](/zh/guides/clickhouse/data-formats/binary)
+* [SQL 格式](/zh/guides/clickhouse/data-formats/sql)
+
+另请参阅 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) —— 这是一个便携且功能完整的工具，可在无需 ClickHouse server 的情况下处理本地/远程文件。

@@ -1,0 +1,20 @@
+--- Test 1: Int32 column used as boolean condition in WHERE
+999
+--- Test 2: Float column used as boolean condition in WHERE
+-2.5
+1.5
+--- Test 3: Nullable column used as boolean condition in WHERE
+1	one
+2	two
+--- Test 4: Bool column used as boolean condition in WHERE
+yes
+--- Test 5: WHERE NOT id (negated bare column)
+0	0
+--- Test 6: Minmax skip index with bare column
+1	one
+2	two
+--- Test 7: PREWHERE with bare column
+999
+--- Test 8: indexHint with bare column
+16
+16

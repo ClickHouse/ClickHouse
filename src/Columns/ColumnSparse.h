@@ -215,6 +215,15 @@ public:
         size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
         size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 
+        /// Moves the iterator forward to the given row, which must not be behind the current one.
+        /// Amortized constant time when the visited rows are increasing.
+        void ALWAYS_INLINE advanceToRow(size_t row)
+        {
+            while (current_offset < offsets_size && offsets[current_offset] < row)
+                ++current_offset;
+            current_row = row;
+        }
+
         bool operator==(const Iterator & other) const
         {
             return size == other.size
@@ -264,6 +273,10 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
+
+/// Returns true if `recursiveRemoveSparse` would change `column`, i.e. there is a sparse column
+/// either at the top level or nested inside a Tuple or Replicated column. Does not allocate.
+bool recursiveHasSparse(const ColumnPtr & column);
 
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
+import io
 import json
+import subprocess
 from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
@@ -739,11 +742,32 @@ DEFAULT_CHANGED_THRESHOLD = 0.15
 DEFAULT_UNSTABLE_THRESHOLD = 0.25
 
 
+def read_text_maybe_compressed(path: str) -> str:
+    """Read a file as text, transparently decompressing zstd/gzip content.
+
+    CI stores text artifacts above a size threshold as zstd (see ci/praktika/s3.py), so a saved
+    all-query-metrics.tsv may be either plain or compressed. Detected by magic bytes.
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] == b"\x28\xb5\x2f\xfd":  # zstd magic
+        try:
+            import zstandard  # optional dependency
+            data = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(data)).read()
+        except ImportError:
+            proc = subprocess.run(["zstd", "-dcq"], input=data, capture_output=True, timeout=120)
+            if proc.returncode != 0:
+                raise RuntimeError(f"zstd decompression failed: {proc.stderr.decode('utf-8', 'replace')}")
+            data = proc.stdout
+    elif data[:2] == b"\x1f\x8b":  # gzip magic
+        data = gzip.decompress(data)
+    return data.decode("utf-8")
+
+
 def iter_tsv_dicts(path: str) -> list[dict[str, str]]:
     """Read named TSV or headerless raw all-query-metrics.tsv rows."""
-    with open(path, newline="") as f:
-        reader = csv.reader(f, delimiter="\t")
-        raw_rows = [row for row in reader if row]
+    reader = csv.reader(io.StringIO(read_text_maybe_compressed(path)), delimiter="\t")
+    raw_rows = [row for row in reader if row]
     if not raw_rows:
         return []
     first = raw_rows[0]

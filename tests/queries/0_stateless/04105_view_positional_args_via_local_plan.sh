@@ -9,7 +9,7 @@
 # because the view is expanded on the local node (not on the initiator).
 #
 # When enable_positional_arguments=0 is set explicitly by the user the view's
-# GROUP BY 1 stays as a literal constant.  In the new analyzer this produces
+# GROUP BY 1 stays as a literal constant.  In the analyzer this produces
 # NOT_AN_AGGREGATE (215); in the old analyzer the constant GROUP BY is silently
 # dropped and a global aggregate is returned instead.
 # The two .reference files handle this behavioral difference.
@@ -35,7 +35,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM remote('127.0.0.1', currentDatabase
 SETTINGS prefer_localhost_replica = 1"
 
 # Sanity check: disabling positional arguments must also be respected on the
-# local-plan path.  New analyzer: GROUP BY 1 stays literal -> NOT_AN_AGGREGATE
+# local-plan path.  Analyzer: GROUP BY 1 stays literal -> NOT_AN_AGGREGATE
 # (215) -> no output here.  Old analyzer: constant GROUP BY is dropped,
 # global aggregate returns one row -> prints 1.  See .oldanalyzer.reference.
 echo '--- prefer_localhost_replica=1, positional args disabled: error ---'

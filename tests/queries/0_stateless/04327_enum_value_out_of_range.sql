@@ -44,7 +44,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 200, \'b\' = -200)'));
 -- Dynamic subcolumn detection parses the subcolumn name as a type via tryGet and uses the null
 -- result as the "not a subcolumn" signal; an out-of-range enum value must therefore surface as
 -- UNKNOWN_IDENTIFIER (subcolumn not found), not leak ARGUMENT_OUT_OF_BOUND from the type parse.
--- enable_analyzer=1: Dynamic-subcolumn access by type-name text is a new-analyzer feature; the
+-- enable_analyzer=1: Dynamic-subcolumn access by type-name text is an analyzer feature; the
 -- old analyzer rejects the identifier before tryGet runs, so pin it on these two cases only.
 SELECT d.`Enum8('a' = 200)` FROM (SELECT CAST('42', 'Dynamic') AS d) SETTINGS enable_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }
 -- A valid enum subcolumn name is still parsed fine (the subcolumn simply isn't present -> NULL).

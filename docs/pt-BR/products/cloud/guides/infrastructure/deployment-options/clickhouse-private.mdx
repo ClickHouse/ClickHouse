@@ -1,0 +1,61 @@
+---
+title: 'ClickHouse Private'
+slug: /cloud/infrastructure/clickhouse-private
+keywords: ['private', 'on-prem']
+description: 'Visão geral da oferta do ClickHouse Private'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+ClickHouse Private é um pacote autogerenciado que consiste na mesma versão proprietária do ClickHouse executada no ClickHouse Cloud e no nosso ClickHouse Operator, configurado para a separação entre computação e armazenamento.
+
+<Info>
+  **Observação**
+
+  O ClickHouse Private foi projetado para grandes empresas que implantam mais de 2 TB de memória e exigem controle total sobre sua infraestrutura dedicada. Os clientes são responsáveis por gerenciar toda a infraestrutura e devem ter experiência na operação do ClickHouse em escala. Essa opção só está disponível [ao entrar em contato conosco](https://clickhouse.com/company/contact?loc=nav).
+</Info>
+
+<div id="benefits-over-os">
+  ## Benefícios em relação ao open source
+</div>
+
+Os recursos a seguir diferenciam o ClickHouse Private das implantações open source autogerenciadas:
+
+* Separação nativa de computação e armazenamento
+* Recursos proprietários de Cloud, como a funcionalidade de [shared merge tree](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree) e [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses)
+* Versões do banco de dados ClickHouse e do operador totalmente testadas e validadas no ClickHouse Cloud
+* API para operações programáticas, incluindo backups e operações de escalonamento
+
+<div id="architecture">
+  ## Arquitetura
+</div>
+
+O ClickHouse Private é totalmente autocontido no seu ambiente de implantação, oferecendo nossa arquitetura nativa de nuvem com separação entre computação e armazenamento.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="Arquitetura do ClickHouse Private" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## Configurações suportadas
+</div>
+
+Atualmente, o ClickHouse Private oferece suporte às seguintes configurações:
+
+| Ambiente | Orquestração                     | Armazenamento               | Status     |
+| :------- | :------------------------------- | :-------------------------- | :--------- |
+| AWS      | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Disponível |
+| GCP      | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Prévia     |
+
+<div id="onboarding-process">
+  ## Processo de onboarding
+</div>
+
+Clientes interessados no ClickHouse Private podem [falar conosco](https://clickhouse.com/company/contact) para agendar uma reunião de avaliação do seu caso de uso. As solicitações que atenderem aos requisitos mínimos de porte e às configurações suportadas serão consideradas - observe que a capacidade de onboarding é limitada. O setup envolve seguir um guia de instalação específico do ambiente, usando imagens e charts do Helm obtidos da AWS ECR.

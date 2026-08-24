@@ -31,7 +31,7 @@ protected:
 
     String getDescription() const override
     {
-        return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.";
+        return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.";
     }
 
 private:

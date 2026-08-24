@@ -11,7 +11,7 @@
 --
 -- Bug: https://github.com/ClickHouse/ClickHouse/issues/96445 (STID 2651-2cfd)
 
--- Correlated scalar subqueries are only supported by the new analyzer, so force it on.
+-- Correlated scalar subqueries are only supported by the analyzer, so force it on.
 -- The old-analyzer CI profile sets allow_experimental_analyzer = 0 by default, which makes
 -- the (SELECT arr WHERE 7) scope-capture of the outer-table column fail with
 -- UNKNOWN_IDENTIFIER: Missing columns: 'arr' before the bug can even be exercised.

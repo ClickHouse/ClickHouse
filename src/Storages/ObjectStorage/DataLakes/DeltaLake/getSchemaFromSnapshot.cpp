@@ -83,6 +83,10 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
+    /// `engine` is required by FFI helpers such as `ffi::get_from_string_map`. Pass `nullptr` only
+    /// for visit paths that make no engine-bound FFI calls (e.g. partition column extraction).
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+
     struct SchemaResult
     {
         DB::NamesAndTypesList names_and_types;
@@ -142,6 +146,8 @@ private:
     /// because they are not stored in the actual data,
     /// but instead in data paths directories.
     DB::Names partition_columns;
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    ffi::SharedExternEngine * engine;
 
     std::exception_ptr visitor_exception;
 
@@ -286,12 +292,17 @@ private:
         return id;
     }
 
-    static std::unique_ptr<std::string> extractPhysicalName(const ffi::CStringMap * metadata)
+    static std::unique_ptr<std::string> extractPhysicalName(
+        const ffi::CStringMap * metadata,
+        SchemaVisitorData * state)
     {
-        std::string * physical_name = static_cast<std::string *>(ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString));
+        std::string * physical_name = static_cast<std::string *>(KernelUtils::unwrapResult(
+            ffi::get_from_string_map(
+                metadata,
+                KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
+                KernelUtils::allocateString,
+                state->engine),
+            "get_from_string_map"));
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
@@ -313,7 +324,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -346,7 +357,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -427,7 +438,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -561,38 +572,40 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     return names_and_types;
 }
 
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+    ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
     auto result = data.getSchemaResult();
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
 
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
-    SchemaVisitorData data;
+    /// Partition column extraction makes no engine-bound FFI calls, so no engine is needed.
+    SchemaVisitorData data(nullptr);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
 }

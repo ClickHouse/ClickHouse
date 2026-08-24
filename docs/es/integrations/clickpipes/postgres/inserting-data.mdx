@@ -1,0 +1,16 @@
+---
+slug: /integrations/postgresql/inserting-data
+title: 'Cómo insertar datos desde PostgreSQL'
+keywords: ['postgres', 'postgresql', 'inserciones']
+description: 'Página que describe cómo insertar datos desde PostgreSQL usando ClickPipes, PeerDB o la función de tabla Postgres'
+doc_type: 'guide'
+---
+
+Recomendamos leer [esta guía](/es/concepts/features/operations/insert/inserting-data) para conocer las prácticas recomendadas para insertar datos en ClickHouse y optimizar el rendimiento de las inserciones.
+
+Para la carga masiva de datos desde PostgreSQL, puedes usar:
+
+* [ClickPipes](/es/integrations/clickpipes/postgres/index), el servicio de integración gestionado para ClickHouse Cloud.
+* `PeerDB by ClickHouse`, una herramienta ETL diseñada específicamente para la replicación de bases de datos PostgreSQL tanto en ClickHouse self-hosted como en ClickHouse Cloud.
+* La [función de tabla Postgres](/es/reference/functions/table-functions/postgresql) para leer datos directamente. Esto suele ser adecuado si basta con una replicación por lotes basada en un watermark conocido, por ejemplo, una marca temporal, o si se trata de una migración puntual. Este enfoque puede escalar a decenas de millones de filas. Los usuarios que quieran migrar conjuntos de datos más grandes deberían considerar varias solicitudes, cada una encargándose de un fragmento de los datos. Se pueden usar tablas intermedias para cada fragmento antes de mover sus particiones a una tabla final. Esto permite reintentar las solicitudes fallidas. Para más detalles sobre esta estrategia de carga masiva, consulta aquí.
+* Los datos se pueden exportar desde Postgres en formato CSV. Luego, se pueden insertar en ClickHouse desde archivos locales o mediante almacenamiento de objetos usando funciones de tabla.

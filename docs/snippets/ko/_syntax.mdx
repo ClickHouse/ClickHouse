@@ -1,0 +1,29 @@
+---
+title: 구문
+---
+
+```sql
+-- 핵심 명령어
+BACKUP | RESTORE 
+--- 백업/복원 대상 (또는 제외 대상)
+TABLE [db.]table_name           [AS [db.]table_name_in_backup] |
+DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup] |
+DATABASE database_name          [AS database_name_in_backup] |
+TEMPORARY TABLE table_name      [AS table_name_in_backup] |
+VIEW view_name                  [AS view_name_in_backup] |
+[EXCEPT TABLES ...] |
+ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
+--- 
+[ON CLUSTER 'cluster_name']
+--- 백업 또는 복원 위치
+TO|FROM 
+File('<path>/<filename>') | 
+Disk('<disk_name>', '<path>/') | 
+S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>', '<extra_credentials>') |
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+--- 추가 설정
+[SETTINGS ...]
+[ASYNC]
+```
+
+**각 명령에 대한 자세한 내용은 [&quot;명령 요약&quot;](/ko/concepts/features/backup-restore/overview#command-summary)을 확인하십시오.**
