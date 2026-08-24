@@ -257,6 +257,14 @@ struct MortonNDCompressDecoder
     constexpr auto Decode(UInt64 code) const { return decodeImpl(code, std::make_index_sequence<Dimensions>{}); }
 };
 
+/// Field 0 spans every bit position congruent to 0 mod ND up to bit 63, not just the low
+/// FieldBits of them. These are the dimensions where the two spans differ, and where a
+/// shorter mask decodes a code with the top bit set into the wrong field width.
+static_assert(std::get<0>(MortonNDCompressDecoder<3>().Decode(0x8000000000000000ULL)) == 2097152);
+static_assert(std::get<0>(MortonNDCompressDecoder<5>().Decode(0x1000000000000000ULL)) == 4096);
+static_assert(std::get<0>(MortonNDCompressDecoder<6>().Decode(0x1000000000000000ULL)) == 1024);
+static_assert(std::get<0>(MortonNDCompressDecoder<7>().Decode(0x8000000000000000ULL)) == 512);
+
 /// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. The
 /// compress decoder wins there at every dimension except 4 and 8, where the lookup table's
 /// one shared load amortises over enough output fields to stay ahead.
