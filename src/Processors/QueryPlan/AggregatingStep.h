@@ -20,6 +20,12 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
+/// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
+/// must hand the sorted key through untouched. If such an expression computed a new value and published it under
+/// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -85,6 +91,7 @@ public:
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
+    void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }
@@ -206,6 +213,7 @@ public:
     String getStepGroupName(size_t group) const override;
 
     const Aggregator::Params & getParams() const { return params; }
+
 
 private:
     void updateOutputHeader() override;
