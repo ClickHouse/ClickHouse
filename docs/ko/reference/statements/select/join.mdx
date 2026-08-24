@@ -51,25 +51,25 @@ ClickHouse에서 추가로 지원하는 조인 유형은 다음과 같습니다:
 | `PASTE JOIN`                                        | 두 테이블을 가로로 이어 붙입니다.                                                                  |
 
 <Note>
-  [join&#95;algorithm](/ko/reference/settings/session-settings#join_algorithm)이 `partial_merge`로 설정된 경우, `RIGHT JOIN` 및 `FULL JOIN`은 `ALL` 엄격성에서만 지원됩니다(`SEMI`, `ANTI`, `ANY`, `ASOF`는 지원되지 않음).
+  [join&#95;algorithm](/ko/reference/settings/session-settings/join#join_algorithm)이 `partial_merge`로 설정된 경우, `RIGHT JOIN` 및 `FULL JOIN`은 `ALL` 엄격성에서만 지원됩니다(`SEMI`, `ANTI`, `ANY`, `ASOF`는 지원되지 않음).
 </Note>
 
 <div id="settings">
   ## 설정
 </div>
 
-기본 조인 유형은 [`join_default_strictness`](/ko/reference/settings/session-settings#join_default_strictness) 설정으로 재정의할 수 있습니다.
+기본 조인 유형은 [`join_default_strictness`](/ko/reference/settings/session-settings/join#join_default_strictness) 설정으로 재정의할 수 있습니다.
 
-`ANY JOIN` 작업에서 ClickHouse 서버의 동작은 [`any_join_distinct_right_table_keys`](/ko/reference/settings/session-settings#any_join_distinct_right_table_keys) 설정에 따라 달라집니다.
+`ANY JOIN` 작업에서 ClickHouse 서버의 동작은 [`any_join_distinct_right_table_keys`](/ko/reference/settings/session-settings/other#any_join_distinct_right_table_keys) 설정에 따라 달라집니다.
 
 **관련 항목**
 
-* [`join_algorithm`](/ko/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/ko/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/ko/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/ko/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/ko/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/ko/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/ko/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/ko/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/ko/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/ko/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/ko/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 ClickHouse가 `CROSS JOIN`을 `INNER JOIN`으로 재작성하지 못할 때의 동작은 `cross_to_inner_join_rewrite` 설정으로 지정할 수 있습니다. 기본값은 `1`이며, 이 경우 조인은 계속 수행되지만 더 느려집니다. 오류를 발생시키려면 `cross_to_inner_join_rewrite`를 `0`으로 설정하고, 크로스 조인을 실행하지 않고 대신 모든 쉼표 조인/크로스 조인을 재작성하도록 강제하려면 `2`로 설정하십시오. 값이 `2`일 때 재작성에 실패하면 &quot;Please, try to simplify `WHERE` section&quot;라는 오류 메시지가 표시됩니다.
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## 서로 다른 테이블의 컬럼에 대한 부등 조건 JOIN
 </div>
 
-ClickHouse는 현재 동등 조건뿐 아니라 부등 조건도 포함한 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN`을 지원합니다. 부등 조건은 `hash` 및 `grace_hash` 조인 알고리즘에서만 지원됩니다. 부등 조건은 `join_use_nulls`와 함께는 지원되지 않습니다.
+ClickHouse는 현재 동등 조건뿐 아니라 부등 조건도 포함한 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN`을 지원합니다. 부등 조건은 `hash`, `parallel_hash` 및 `grace_hash` 조인 알고리즘에서만 지원됩니다. 조인 중 평가되는 비동등 조건에는 행 수를 유지해야 하므로 `arrayJoin`을 포함할 수 없습니다. 한쪽에만 적용되는 조건과 `arrayJoin`에 대한 동등 키는 조인 전에 추출되므로 영향을 받지 않습니다. 논리합으로 연결되지 않은 `ALL INNER JOIN` 조건도 조인 후에 적용되므로 영향을 받지 않습니다. 확장이 한쪽에만 의존하는 경우 조인 전에 서브쿼리의 `ARRAY JOIN`으로 이동하십시오. `arrayJoin` 인수가 양쪽의 컬럼을 읽는 조건은 구조를 변경해야 합니다.
 
 **예시**
 
@@ -231,7 +231,7 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## JOIN 키의 NULL 값
+  ## JOIN 키의 NULL 및 NaN 값
 </div>
 
 `NULL`은 자기 자신을 포함해 어떤 값과도 같지 않습니다. 즉, 한 테이블에서 `JOIN` 키의 값이 `NULL`이면 다른 테이블의 `NULL` 값과 일치하지 않습니다.
@@ -285,6 +285,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
+
+float `JOIN` 키의 `NaN` 값에는 위의 `NULL` 규칙이 적용되지 않습니다.
+두 `NaN` 값을 스칼라 방식으로 비교하면(`NaN = NaN`) 결과는 `0`이지만, `JOIN` 키는 스칼라 의미 체계로 비교되지 않으므로 `NaN` 키가 일치할 수 있습니다.
+실제로 일치하는지는 구현 세부 사항이며 조인 알고리즘, 키 유형 및 세션 설정에 따라 달라집니다.
+특정 동작에 의존하지 마십시오.
+`NaN` 행이 일치하지 않아야 한다면 `NULL` 값으로 매핑하십시오: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+`ASOF JOIN`에서는 가장 가까운 일치 항목의 컬럼을 정렬 순서로 비교하는데, `NaN`은 이를 지원하지 않으므로 양쪽에서 이러한 행을 필터링하십시오.
 
 <div id="asof-join-usage">
   ## ASOF JOIN 사용
@@ -465,7 +472,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### 비어 있거나 NULL인 셀 처리
 </div>
 
-테이블을 조인하는 동안 빈 셀이 나타날 수 있습니다. [join&#95;use&#95;nulls](/ko/reference/settings/session-settings#join_use_nulls) 설정은 ClickHouse가 이러한 셀을 어떻게 채울지 결정합니다.
+테이블을 조인하는 동안 빈 셀이 나타날 수 있습니다. [join&#95;use&#95;nulls](/ko/reference/settings/session-settings/join#join_use_nulls) 설정은 ClickHouse가 이러한 셀을 어떻게 채울지 결정합니다.
 
 `JOIN` 키가 [널 허용](/ko/reference/data-types/nullable) 필드인 경우, 키 중 하나 이상이 [NULL](/ko/reference/syntax#null) 값인 행은 조인되지 않습니다.
 
@@ -507,14 +514,14 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### 메모리 제한
 </div>
 
-기본적으로 ClickHouse는 [해시 조인](https://en.wikipedia.org/wiki/Hash_join) 알고리즘을 사용합니다. ClickHouse는 right&#95;table을 가져와 이를 위한 해시 테이블을 RAM에 생성합니다. `join_algorithm = 'auto'`가 활성화되어 있으면, 메모리 사용량이 일정 임계값에 도달한 후 ClickHouse는 [머지](https://en.wikipedia.org/wiki/Sort-merge_join) 조인 알고리즘으로 전환합니다. `JOIN` 알고리즘에 대한 설명은 [join&#95;algorithm](/ko/reference/settings/session-settings#join_algorithm) 설정을 참조하십시오.
+기본적으로 ClickHouse는 [해시 조인](https://en.wikipedia.org/wiki/Hash_join) 알고리즘을 사용합니다. ClickHouse는 right&#95;table을 가져와 이를 위한 해시 테이블을 RAM에 생성합니다. `join_algorithm = 'auto'`가 활성화되어 있으면, 메모리 사용량이 일정 임계값에 도달한 후 ClickHouse는 [머지](https://en.wikipedia.org/wiki/Sort-merge_join) 조인 알고리즘으로 전환합니다. `JOIN` 알고리즘에 대한 설명은 [join&#95;algorithm](/ko/reference/settings/session-settings/join#join_algorithm) 설정을 참조하십시오.
 
 `JOIN` 연산의 메모리 사용량을 제한해야 하는 경우 다음 설정을 사용하십시오.
 
-* [max&#95;rows&#95;in&#95;join](/ko/reference/settings/session-settings#max_rows_in_join) — 해시 테이블의 행 수를 제한합니다.
-* [max&#95;bytes&#95;in&#95;join](/ko/reference/settings/session-settings#max_bytes_in_join) — 해시 테이블의 크기를 제한합니다.
+* [max&#95;rows&#95;in&#95;join](/ko/reference/settings/session-settings/max-rows#max_rows_in_join) — 해시 테이블의 행 수를 제한합니다.
+* [max&#95;bytes&#95;in&#95;join](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_join) — 해시 테이블의 크기를 제한합니다.
 
-이러한 제한 중 하나에 도달하면 ClickHouse는 [join&#95;overflow&#95;mode](/ko/reference/settings/session-settings#join_overflow_mode)
+이러한 제한 중 하나에 도달하면 ClickHouse는 [join&#95;overflow&#95;mode](/ko/reference/settings/session-settings/join#join_overflow_mode)
 설정에 따라 동작합니다.
 
 <div id="examples">

@@ -4,7 +4,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -16,6 +16,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Disks/IDisk.h>
+
+#include <fmt/ranges.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -39,7 +43,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::DropAll)
     {
-        context->getHypotheticalIndexStore().clear();
+        context->getHypotheticalObjectStore().clear();
         return {};
     }
 
@@ -62,7 +66,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             table_id.getDatabaseName(),
             table_id.getTableName());
 
-    auto & store = context->getHypotheticalIndexStore();
+    auto & store = context->getHypotheticalObjectStore();
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
@@ -107,13 +111,19 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
-    /// Well-formed but unimplemented types are rejected here (validate accepts them).
-    auto index_helper = MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
-    if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
+    /// fail closed, a newly registered index type is rejected until someone checks it
+    static constexpr std::string_view supported_types[]
+        {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
+    if (!std::ranges::contains(supported_types, index_desc.type))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Hypothetical indexes of type '{}' are not supported",
-            index_desc.type);
+            "Hypothetical indexes of type '{}' are not supported. Supported types: {}",
+            index_desc.type,
+            fmt::join(supported_types, ", "));
+
+    /// some argument checks live in the creator, not the validator (tokenizer bounds for
+    /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
+    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
 
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
     if (!merge_tree->is_custom_partitioned)

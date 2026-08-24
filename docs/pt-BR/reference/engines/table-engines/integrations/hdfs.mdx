@@ -267,14 +267,15 @@ O libhdfs3 oferece suporte a HA do NameNode do HDFS.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho for desconhecido, o valor será `NULL`.
 * `_time` — Hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a hora for desconhecida, o valor será `NULL`.
+* `_etag` — ETag do arquivo. Tipo: `LowCardinality(String)`. O HDFS não tem ETag nativo; portanto, o valor é gerado a partir do horário de modificação e do tamanho do arquivo, no formato `<mtime_seconds>_<size>`. Como o `libhdfs3` expõe o horário de modificação com precisão de apenas um segundo, uma regravação no mesmo segundo que mantém o mesmo tamanho produz o mesmo valor; por esse motivo, esse ETag gerado não é usado como chave de cache de conteúdo.
 
 <div id="storage-settings">
   ## Configurações de armazenamento
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/pt-BR/reference/settings/session-settings#hdfs_truncate_on_insert) - permite truncar o arquivo antes de inserir dados nele. Desativado por padrão.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/pt-BR/reference/settings/session-settings#hdfs_create_new_file_on_insert) - permite criar um novo arquivo a cada insert se o formato tiver sufixo. Desativado por padrão.
-* [hdfs&#95;skip&#95;empty&#95;files](/pt-BR/reference/settings/session-settings#hdfs_skip_empty_files) - permite ignorar arquivos vazios durante a leitura. Desativado por padrão.
+* [hdfs&#95;truncate&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar o arquivo antes de inserir dados nele. Desativado por padrão.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite criar um novo arquivo a cada insert se o formato tiver sufixo. Desativado por padrão.
+* [hdfs&#95;skip&#95;empty&#95;files](/pt-BR/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - permite ignorar arquivos vazios durante a leitura. Desativado por padrão.
 
 **Veja também**
 
