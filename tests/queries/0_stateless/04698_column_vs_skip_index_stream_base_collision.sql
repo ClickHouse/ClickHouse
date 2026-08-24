@@ -1,4 +1,7 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, long
+-- long: one run of this file goes past the flaky check's 180s per-run budget under ASan
+-- with S3 storage and metadata in Keeper, where every statement pays an object-storage
+-- round trip. Untagged, that budget fails the check outright rather than reporting a flake.
 -- The arms below pin the merge-tree settings that decide whether a colliding stream exists at all
 -- (part type, sparse ratio, packing threshold, hashing), so runner injection would invert them.
 -- packed_skip_index_max_bytes: a fully packed substream lives inside skp_idx.packed and takes no
