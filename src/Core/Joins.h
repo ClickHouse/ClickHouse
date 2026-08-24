@@ -141,10 +141,11 @@ enum class JoinTableSide : uint8_t
 
 const char * toString(JoinTableSide join_table_side);
 
-/** Whether a post-JOIN `WHERE` conjunct on this side can be applied before the JOIN.
-  * Same rules as JOIN filter pushdown: skip the null-producing side of an outer JOIN,
-  * the right side of an `ASOF JOIN`, and both sides of a `PASTE JOIN` or `FULL JOIN`.
-  * Dictionary / lookup fill is a separate check (`JoinStep::allowPushDownToRight`).
+/** Whether ordinary columns from this side of a JOIN can be used as filter inputs
+  * before the JOIN. Skip the null-producing side of an outer JOIN, the right side
+  * of an `ASOF JOIN`, and both sides of a `PASTE JOIN` or `FULL JOIN`.
+  * Attaching an equivalent-key filter to the other child, and dictionary / lookup
+  * fill, are separate (`JoinStep::allowPushDownToRight`).
   */
 constexpr bool canPrefilterJoinSide(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
 {

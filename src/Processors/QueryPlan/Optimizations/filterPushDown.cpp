@@ -664,19 +664,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Right);
     }
 
-    /** We disable push down to the right table when the right side is already filled.
-      * Example: JOIN with Dictionary. `ASOF` is handled by `canPrefilterJoinSide`.
+    /** `canPrefilterJoinSide` only decides whether this side's own columns may be
+      * used as ordinary filter inputs (false on the null-producing outer-JOIN side).
+      * Equivalent-key filters can still be attached to that child. That attach is
+      * gated by `allow_push_down_to_right`:
+      * 1. Right side is already filled. Example: JOIN with Dictionary.
+      * 2. `ASOF` right join is not supported.
       */
+    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr
+        && table_join_ptr->strictness() != JoinStrictness::Asof;
     if (logical_join)
     {
         bool has_logical_lookup = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
-        if (has_logical_lookup)
-            right_stream_filter_push_down_input_columns_available = false;
+        allow_push_down_to_right = !has_logical_lookup
+            && logical_join->getJoinOperator().strictness != JoinStrictness::Asof;
     }
-    else if (!(join && join->allowPushDownToRight()))
-    {
+
+    if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;
-    }
 
     Names equivalent_columns_to_push_down;
 
@@ -899,7 +904,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             JoinKind::Left);
     }
 
-    if (join_filter_push_down_actions.right_stream_filter_to_push_down && right_stream_filter_push_down_input_columns_available)
+    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
         if (logical_join)
         {
