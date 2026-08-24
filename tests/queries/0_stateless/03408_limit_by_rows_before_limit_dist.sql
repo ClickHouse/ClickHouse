@@ -42,12 +42,12 @@ FORMAT JSONCompact SETTINGS max_block_size=1, exact_rows_before_limit = 1, distr
 SELECT '';
 SELECT '-- Assert rows_before_limit for a merge over nested remote streams, exact';
 
--- Reading a Distributed table through remote() nests the merges, so the outer merge over the
--- sequence-number reorder gets one input that finishes while a chunk of it is still buffered.
--- max_threads pins the receive fan-out that produces that shape.
+-- max_threads and prefer_localhost_replica are pinned because the shape this asserts needs a
+-- receive fan-out above 1 and a fixed replica topology; the runner randomizes both, and the
+-- topology decides how many legs the rows_before_limit counter sees.
 SELECT DISTINCT id, max(val) FROM remote('127.0.0.{1,2}', currentDatabase(), 03408_dist)
 GROUP BY GROUPING SETS ((), (id)) ORDER BY ALL ASC LIMIT 1
-FORMAT JSONCompact SETTINGS max_block_size=1, exact_rows_before_limit = 1, distributed_group_by_no_merge=2, max_threads=16;
+FORMAT JSONCompact SETTINGS max_block_size=1, exact_rows_before_limit = 1, distributed_group_by_no_merge=2, max_threads=16, prefer_localhost_replica=1;
 
 DROP TABLE 03408_local;
 DROP TABLE 03408_dist;
