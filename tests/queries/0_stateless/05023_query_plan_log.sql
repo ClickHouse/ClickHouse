@@ -1,5 +1,5 @@
 -- Verifies system.query_plan_log: which queries are captured, which are not, and that the
--- captured row contains the plan and correct metadata.
+-- captured row contains the plan, its runtime statistics and correct metadata.
 --
 -- Rows are matched by joining on query_id against system.query_log restricted to
 -- currentDatabase(), so the assertions only see queries issued by this run of this test.
@@ -18,8 +18,9 @@ SELECT count() FROM numbers(1000) WHERE number > 900 AND '05023_off' != '' FORMA
 
 SET log_query_plans = 1;
 
--- A plain SELECT is captured.
-SELECT number FROM numbers(1000) WHERE number % 7 = 0 AND '05023_finish' != '' ORDER BY number DESC LIMIT 3 FORMAT Null;
+-- A plain SELECT is captured. A million rows keeps the per-step timings well above the
+-- resolution of the clock, so the statistics assertions below are not racing the noise floor.
+SELECT number FROM numbers(1000000) WHERE number % 7 = 0 AND '05023_finish' != '' ORDER BY number DESC LIMIT 3 FORMAT Null;
 
 -- Nested interpreters must not produce one row each.
 SELECT max(x) FROM (SELECT number AS x FROM numbers(100) WHERE number > 10 AND '05023_subquery' != '') FORMAT Null;
@@ -68,6 +69,9 @@ FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_subquery') > 0;
 
+-- `parallelism Unknown` is printed for every step when the per-step wall clocks were never
+-- started, so its absence is what proves the StepWallClockRegistry reached the executor.
+-- Checking for the presence of the word `parallelism` would pass either way.
 SELECT
     'finish',
     count(),
@@ -77,16 +81,22 @@ SELECT
     anyLast(query_start_time_microseconds) > toDateTime64('1971-01-01 00:00:00', 6),
     anyLast(event_time_microseconds) >= anyLast(query_start_time_microseconds),
     anyLast(position(ascii_plan, 'ReadFromSystemNumbers')) > 0,
-    anyLast(position(ascii_plan, 'Filter column')) > 0
+    anyLast(position(ascii_plan, 'Filter column')) > 0,
+    anyLast(position(ascii_plan, 'I/O: rows')) > 0,
+    anyLast(position(ascii_plan, 'parallelism Unknown')) = 0
 FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_finish') > 0;
 
+-- A failed query keeps its plan but has no statistics: BlockIO::onException runs the exception
+-- callbacks and resets the pipeline without ever calling the finalize callback, which is where
+-- the statistics are collected.
 SELECT
     'exception',
     count(),
     anyLast(status),
-    anyLast(length(ascii_plan)) > 0
+    anyLast(length(ascii_plan)) > 0,
+    anyLast(position(ascii_plan, 'I/O: rows')) = 0
 FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_throw') > 0;
