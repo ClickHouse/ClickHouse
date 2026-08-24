@@ -19,11 +19,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsUInt64 query_plan_max_step_description_length;
-}
-
 ColumnsDescription QueryPlanLogElement::getColumnsDescription() {
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
     DataTypeEnum8::Values
@@ -79,8 +74,6 @@ void logQueryPlan(const ContextPtr & context,
     if (!query_plan_log)
         return;
 
-    const auto max_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-
     QueryPlanLogElement plan_elem;
     plan_elem.event_time = elem.event_time;
     plan_elem.event_time_microseconds = elem.event_time_microseconds;
@@ -89,7 +82,7 @@ void logQueryPlan(const ContextPtr & context,
     plan_elem.query_string = elem.query;
     plan_elem.query_duration_ms = elem.query_duration_ms;
     plan_elem.normalized_query_hash = elem.normalized_query_hash;
-    plan_elem.ascii_plan = context->getPlanProfiler()->renderAsciiPlan(max_description_length);
+    plan_elem.ascii_plan = context->getPlanProfiler()->getRenderedPlan();
     plan_elem.status = status;
 
     query_plan_log->add([&](QueryPlanLogElement & element) { element = std::move(plan_elem); });

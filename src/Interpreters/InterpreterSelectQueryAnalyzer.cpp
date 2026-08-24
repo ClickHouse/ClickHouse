@@ -426,8 +426,12 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// IQueryPlanStep::setStepDescription(description, limit), which truncates to `limit` — and the
     /// default 0 discards them entirely. The strings are formatted regardless, so raising the limit
     /// only stops the result being thrown away.
-    if (context->getPlanProfiler())
-        optimization_settings.max_step_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+    if (auto plan_profiler = context->getPlanProfiler())
+    {
+        const size_t limit = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+        optimization_settings.max_step_description_length = limit;
+        plan_profiler->setMaxDescriptionLength(limit);
+    }
 
     /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
@@ -446,7 +450,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     {
         plan_profiler->setQueryPlan(std::move(planner).extractQueryPlan());
         plan_profiler->buildPrettyNames();
-        plan_to_build = &plan_profiler->getQueryPlan(); 
+        plan_to_build = &plan_profiler->getQueryPlan();
     }
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
