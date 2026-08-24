@@ -374,8 +374,8 @@ def test_hung_check_polling_loop_is_throttled():
     )
 
 
-def test_main_embeds_the_head_window_into_test_results():
-    """`main` must keep routing the `info` cell through `build_hung_check_info`.
+def test_call_site_embeds_the_head_window_into_test_results():
+    """The hung-check call site must keep routing `info` through `build_hung_check_info`.
 
     Every other test here calls the helper directly, so reverting the call site
     alone would reinstate the tail read with the whole suite green. Extracting
@@ -384,6 +384,9 @@ def test_main_embeds_the_head_window_into_test_results():
     Shape is not enough - the data flow is pinned too: the helper is handed the
     log, its result is the last write to `info_field`, and the row interpolates
     that name.
+
+    The call site is located by the row it writes, not by function name, so that
+    moving the hung-check block between functions cannot silently unpin it.
     """
     source = (
         Path(__file__).resolve().parents[2]
@@ -394,20 +397,35 @@ def test_main_embeds_the_head_window_into_test_results():
         / "stress.py"
     )
     tree = ast.parse(source.read_text(encoding="utf-8"))
-    mains = [
-        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"
+    owners = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and [
+            a
+            for a in ast.walk(n)
+            if isinstance(a, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "hung_check_status"
+                for t in a.targets
+            )
+        ]
     ]
-    assert len(mains) == 1, f"expected one main() in stress.py, found {len(mains)}"
-    main = mains[0]
+    assert len(owners) == 1, (
+        "expected exactly one function in stress.py to assign hung_check_status,"
+        f" found {len(owners)}: {[n.name for n in owners]}"
+    )
+    call_site = owners[0]
 
     builders = [
         n
-        for n in ast.walk(main)
+        for n in ast.walk(call_site)
         if isinstance(n, ast.Call)
         and getattr(n.func, "id", None) == "build_hung_check_info"
     ]
     assert len(builders) == 1, (
-        "main() must build the hung-check info cell through build_hung_check_info"
+        "the call site must build the hung-check info cell through"
+        " build_hung_check_info"
         f" exactly once, found {len(builders)}"
     )
     builder = builders[0]
@@ -418,10 +436,10 @@ def test_main_embeds_the_head_window_into_test_results():
     ), "build_hung_check_info must be given the hung-check log, not another file"
 
     # The NESTING, not mere co-occurrence: a second, unescaped path would still
-    # satisfy "both names appear somewhere in main()".
+    # satisfy "both names appear somewhere in the function".
     wired = [
         n
-        for n in ast.walk(main)
+        for n in ast.walk(call_site)
         if isinstance(n, ast.Assign)
         and any(isinstance(t, ast.Name) and t.id == "info_field" for t in n.targets)
         and isinstance(n.value, ast.Call)
@@ -432,22 +450,22 @@ def test_main_embeds_the_head_window_into_test_results():
     ]
     assert len(wired) == 1, (
         "expected `info_field = escape_tsv_info(build_hung_check_info(...))` in"
-        f" main(), found {len(wired)} such assignments"
+        f" the call site, found {len(wired)} such assignments"
     )
 
-    # ORDERING, which the assertion above cannot see: main() legitimately
+    # ORDERING, which the assertion above cannot see: the call site legitimately
     # pre-initialises `info_field = ""` for the OSError path, so the nested form
     # existing is not enough - it must also be the write that wins.
     assigns = sorted(
         (
             n
-            for n in ast.walk(main)
+            for n in ast.walk(call_site)
             if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == "info_field" for t in n.targets)
         ),
         key=lambda n: (n.lineno, n.col_offset),
     )
-    assert assigns, "main() must assign info_field"
+    assert assigns, "the call site must assign info_field"
     last = assigns[-1]
     assert (
         isinstance(last.value, ast.Call)
@@ -464,7 +482,7 @@ def test_main_embeds_the_head_window_into_test_results():
     # is the pre-#103551 empty field with extra steps.
     rows = [
         n
-        for n in ast.walk(main)
+        for n in ast.walk(call_site)
         if isinstance(n, ast.Assign)
         and any(
             isinstance(t, ast.Name) and t.id == "hung_check_status" for t in n.targets
@@ -485,16 +503,16 @@ def test_main_embeds_the_head_window_into_test_results():
 
     assert not [
         n
-        for n in ast.walk(main)
+        for n in ast.walk(call_site)
         if isinstance(n, ast.Attribute) and n.attr == "SEEK_END"
-    ], "main() must not seek to the end of the log; reading the head is the fix"
+    ], "the call site must not seek to the end of the log; reading the head is the fix"
     assert not [
         n
-        for n in ast.walk(main)
+        for n in ast.walk(call_site)
         if isinstance(n, ast.Call)
         and isinstance(n.func, ast.Attribute)
         and n.func.attr == "seek"
-    ], "main() must not seek in the log; build_hung_check_info owns the read"
+    ], "the call site must not seek in the log; build_hung_check_info owns the read"
 
 
 def test_small_log_is_embedded_whole_and_round_trips(tmp_path):
