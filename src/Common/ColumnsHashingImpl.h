@@ -252,12 +252,16 @@ public:
             if (!derived.precomputed_hashes_initialized) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
-            if (derived.can_precompute_hashes)
+            /// Only the rows a method has actually prepared have a hash: the region prepares one
+            /// chunk at a time, so `precomputed_hashes` holds live values for that chunk alone and
+            /// the rest of it is whatever `resize` left there. Both the row's own hash and the one
+            /// the look-ahead reaches for have to stay inside that range.
+            if (derived.can_precompute_hashes && row < derived.precomputed_hashes_end)
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
+                if (row + derived.prefetch_look_ahead < derived.precomputed_hashes_end)
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
                 return emplaceImpl<false>(key_holder, data, hashes[row], row);
             }
@@ -298,12 +302,15 @@ public:
             if (!derived.precomputed_hashes_initialized) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
-            if (derived.can_precompute_hashes)
+            /// See `emplaceKey`: a hash exists only for the rows the method has prepared. `findKey`
+            /// asks before it has taken a key holder, so with the region on there may be no chunk
+            /// yet at all - then this is skipped and the ordinary path computes the hash.
+            if (derived.can_precompute_hashes && row < derived.precomputed_hashes_end)
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
+                if (row + derived.prefetch_look_ahead < derived.precomputed_hashes_end)
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
 
                 if (data.isEmptyCell(hashes[row]))

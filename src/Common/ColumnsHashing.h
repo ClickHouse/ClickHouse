@@ -451,6 +451,10 @@ struct HashMethodSerialized
     /// gate when precomputation is statically disabled. It is set to `false` in the constructor only
     /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
     bool precomputed_hashes_initialized = true;
+    /// One past the last row of `precomputed_hashes` that holds a computed value. The region
+    /// prepares one chunk at a time, so this is the chunk's end rather than the block's, and both
+    /// the row's own hash and the one the look-ahead reaches for have to stay below it.
+    size_t precomputed_hashes_end = 0;
     bool can_precompute_hashes = false;
     bool prefetch_enabled = false;
     /// The look-ahead is measured over the first rows of the block. The arena batch runs
@@ -559,6 +563,7 @@ struct HashMethodSerialized
         if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
         {
             can_precompute_hashes = false;
+            precomputed_hashes_end = 0;
             return;
         }
 
@@ -569,6 +574,7 @@ struct HashMethodSerialized
         const size_t end = use_key_region ? chunk_end : rows;
         for (size_t i = begin; i < end; ++i)
             precomputed_hashes[i] = data.hash(serialized_keys[i]);
+        precomputed_hashes_end = end;
     }
 
 
@@ -687,7 +693,9 @@ struct HashMethodSerialized
             region_free = chunk_scratch.data();
             region_end = region_free + bytes;
         }
-        else if (static_cast<size_t>(region_end - region_free) < bytes)
+        /// Both pointers start unset, and subtracting one unset pointer from another is not the
+        /// zero it looks like, so the first chunk asks the question the other way round.
+        else if (!region_free || static_cast<size_t>(region_end - region_free) < bytes)
         {
             const size_t size = std::max(region_bytes, bytes);
             region_free = pool.alloc(size);

@@ -1733,15 +1733,17 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    /// The loop below goes through the block's rows in order, which is all a method needs to prepare
-    /// their keys ahead of it.
-    state.enableKeyRegion();
-
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
 
     /// For all rows.
     if (!no_more_keys)
     {
+        /// The loop below goes through the block's rows in order, which is all a method needs to
+        /// prepare their keys ahead of it. The `no_more_keys` branch does not: it looks a row up
+        /// without taking a key holder first, so it would ask for a hash of a chunk nobody has
+        /// prepared.
+        state.enableKeyRegion();
+
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
         if constexpr (top_k)
         {
