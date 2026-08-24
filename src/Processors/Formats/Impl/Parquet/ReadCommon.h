@@ -23,9 +23,9 @@ struct ReadOptions
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
 
-    /// Not implemented.
-    /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
-    /// chunk are dictionary-encoded). This takes precedence over bloom filter. 0 to disable.
+    /// Use dictionary filter if the dictionary page is at most this size (the maximum is inclusive)
+    /// and all values in the column chunk are dictionary-encoded. This takes precedence over bloom
+    /// filter. 0 to disable.
     size_t dictionary_filter_limit_bytes = 0;
 
     size_t min_bytes_for_seek = 64 << 10;
@@ -189,6 +189,70 @@ public:
 private:
     ReadStage alloc_stage = ReadStage::Deallocated;
     size_t val = 0;
+};
+
+
+/// Live, cross-thread reservation of the memory used by dictionary-filter pruning. Both the decoded
+/// dictionaries (`Reader::decodeDictionaryPage` on the pruning path, held until `clearColumnChunk`) and
+/// the value sets built while evaluating the row-group filter (`Reader::hashDictionaryValues`, held for
+/// the lifetime of the lookup) are charged to the `BloomFilterBlocksOrDictionary` stage counter through
+/// this handle. Unlike a `MemoryUsageToken` - which records its allocation in a per-batch
+/// `MemoryUsageDiff` that is only flushed to the stage counter when the batch finishes - charging the
+/// shared atomic directly makes the allocation visible to every row group pruning in parallel the moment
+/// it is taken, not only after the batch flushes. That matters because pruning runs many row groups
+/// concurrently in the `BloomFilterBlocksOrDictionary` stage: with per-batch accounting two worker
+/// threads could each decode a near-full-budget dictionary (and then reserve value sets) before either
+/// batch flushed, overshooting the watermark. A live reservation keeps every decoded dictionary and
+/// value set visible to all threads for as long as it is alive, so their combined footprint - across
+/// several dictionary-filtered columns in one row group and across several row groups on different
+/// worker threads - stays within the pruning stage's share of `input_format_parquet_memory_high_watermark`.
+/// A reservation is taken before the memory is allocated, so real memory never exceeds it; if it would push
+/// the total past the watermark the allocation is not made and the row group is scanned in full (fail-open,
+/// never a wrong result). A default-constructed reservation (or watermark 0) is unbounded and charges
+/// nothing. The `watermark` is the same per-stage / per-reader budget the scheduler uses
+/// (`SharedResourcesExt::getLimitsPerReader(..., stage.memory_target_fraction)`), not the full query-global
+/// setting, so a single stage - or one of several files read in parallel - cannot reserve the whole limit
+/// (see `ReadManager::pruningMemoryReservation`).
+struct PruningMemoryReservation
+{
+    /// The `BloomFilterBlocksOrDictionary` stage's live memory counter (nullptr == unbounded).
+    std::atomic<size_t> * stage_memory = nullptr;
+    /// The pruning stage's per-reader memory budget: the query-global
+    /// `input_format_parquet_memory_high_watermark` scaled by the stage's `memory_target_fraction` and split
+    /// across `num_streams` (0 == unbounded).
+    size_t watermark = 0;
+    /// This batch's pruning memory charged to its `MemoryUsageDiff` but not yet flushed to `stage_memory`
+    /// (e.g. bloom-filter prefetches of the row group being pruned on this thread), so the reservation
+    /// accounts for them even though other threads cannot see them yet.
+    size_t in_flight = 0;
+
+    /// Reserve `bytes` against the shared budget. Returns true and charges the counter if it fits;
+    /// otherwise charges nothing and returns false (skip pruning). Unbounded reservations always fit.
+    bool tryReserve(size_t bytes) const
+    {
+        if (stage_memory == nullptr || watermark == 0)
+            return true;
+        /// `bytes` (plus this batch's not-yet-flushed pruning memory) already exceeds the budget: it can
+        /// never fit whatever other threads hold. Checked up front so the comparison below cannot
+        /// overflow even for a deliberately huge `bytes` - e.g. the `SIZE_MAX` upper bound reported for a
+        /// dictionary page whose decoded size the header cannot bound (see decodedFootprintUpperBound).
+        if (in_flight >= watermark || bytes > watermark - in_flight)
+            return false;
+        size_t max_before = watermark - in_flight - bytes;
+        size_t before = stage_memory->fetch_add(bytes, std::memory_order_relaxed);
+        if (before > max_before)
+        {
+            stage_memory->fetch_sub(bytes, std::memory_order_relaxed);
+            return false;
+        }
+        return true;
+    }
+
+    void release(size_t bytes) const
+    {
+        if (stage_memory != nullptr && watermark != 0 && bytes != 0)
+            stage_memory->fetch_sub(bytes, std::memory_order_relaxed);
+    }
 };
 
 

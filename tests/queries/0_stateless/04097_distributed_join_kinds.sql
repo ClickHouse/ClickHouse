@@ -1,20 +1,25 @@
--- Tags: long, no-fasttest
+-- Tags: long, no-fasttest, no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 -- Test that the old heuristic-based distributed join (tryMakeDistributedJoin)
 -- supports all join kinds and picks the correct distribution strategy.
 --
 -- dist_items (right side) has 400 rows, well below the broadcast threshold
 -- (20000), so broadcast is chosen when safe.  For RIGHT and FULL joins,
 -- broadcast is blocked because the right side can produce unmatched output
--- rows that would be duplicated across workers — shuffle is used instead.
+-- rows that would be duplicated across workers - shuffle is used instead.
 --
 -- Each join kind is tested with:
 --   1. EXPLAIN to verify the chosen strategy (Broadcast vs Shuffle)
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
+SET enable_cascades_optimizer = 0;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET query_plan_use_new_logical_join_step = 1;
 SET distributed_plan_default_shuffle_join_bucket_count = 2;
 SET distributed_plan_default_reader_bucket_count = 2;
@@ -25,6 +30,7 @@ SET max_rows_to_group_by = 0;
 SET enable_join_runtime_filters = 0;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 DROP TABLE IF EXISTS dist_orders;
 DROP TABLE IF EXISTS dist_items;
@@ -83,7 +89,7 @@ FROM dist_orders LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order
 SETTINGS make_distributed_plan = 0;
 
 
--- RIGHT JOIN: shuffle (broadcast blocked — right side produces unmatched rows)
+-- RIGHT JOIN: shuffle (broadcast blocked - right side produces unmatched rows)
 SELECT '-- RIGHT JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
@@ -96,7 +102,7 @@ FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.orde
 SETTINGS make_distributed_plan = 0;
 
 
--- FULL JOIN: shuffle (broadcast blocked — both sides produce unmatched rows)
+-- FULL JOIN: shuffle (broadcast blocked - both sides produce unmatched rows)
 SELECT '-- FULL JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders FULL JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
@@ -135,7 +141,7 @@ FROM dist_orders LEFT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.
 SETTINGS make_distributed_plan = 0;
 
 
--- RIGHT SEMI JOIN: shuffle (broadcast blocked — kind is RIGHT)
+-- RIGHT SEMI JOIN: shuffle (broadcast blocked - kind is RIGHT)
 SELECT '-- RIGHT SEMI JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
@@ -148,7 +154,7 @@ FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items
 SETTINGS make_distributed_plan = 0;
 
 
--- RIGHT ANTI JOIN: shuffle (broadcast blocked — kind is RIGHT)
+-- RIGHT ANTI JOIN: shuffle (broadcast blocked - kind is RIGHT)
 SELECT '-- RIGHT ANTI JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;

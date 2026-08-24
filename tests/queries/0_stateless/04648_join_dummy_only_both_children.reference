@@ -1,0 +1,21 @@
+both children dummy-only
+4
+4
+12
+1
+1
+1
+1
+UInt64
+UInt64
+UInt64
+UInt64
+4
+reference values from the reordered plan
+4
+4
+12
+shapes that keep real output columns
+9
+4
+1

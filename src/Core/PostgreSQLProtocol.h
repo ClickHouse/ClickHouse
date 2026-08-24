@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -9,6 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -176,8 +179,17 @@ public:
     template<typename TMessage>
     std::unique_ptr<TMessage> receiveWithPayloadSize(Int32 payload_size)
     {
+        if (payload_size < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Negative payload size {} received from client", payload_size);
+
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>(payload_size);
-        message->deserialize(*in);
+
+        /// The message is parsed with a buffer limited to the declared payload size, so that parsing
+        /// cannot read past the end of the message. Otherwise a client could declare a small message
+        /// and then stream data without a terminator, making the parser consume it without a bound.
+        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(payload_size)});
+        message->deserialize(limited_in);
         return message;
     }
 
@@ -414,7 +426,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    std::unordered_map<String, String> parameters;
+    UnorderedMapWithMemoryTracking<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -441,7 +453,9 @@ public:
 
             parameters.insert({std::move(parameter_name), std::move(parameter_value)});
 
-            if (payload_size < 0)
+            /// `payload_size` is the declared size of the message and never changes, so the check
+            /// has to be made against the remaining size instead.
+            if (ps < 0)
             {
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Size of payload is larger than one declared in the message of type {}.",
@@ -761,7 +775,7 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parameters;
+    VectorWithMemoryTracking<String> parameters;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -1001,10 +1015,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const std::vector<FieldDescription> & fields_descr;
+    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1061,10 +1075,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const std::vector<std::shared_ptr<ISerializable>> & row;
+    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1209,9 +1223,9 @@ public:
 
 class CopyOutData : public BackendMessage
 {
-    std::vector<char> data;
+    VectorWithMemoryTracking<char> data;
 public:
-    explicit CopyOutData(std::vector<char> data_)
+    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
         : data(data_)
     {
     }
@@ -1334,6 +1348,14 @@ public:
         }
     }
 
+    /// Construct a CommandComplete carrying an explicit command tag verbatim.
+    /// Used for driver-specific commands (e.g. `RESET ALL`, `UNLISTEN *`) that
+    /// ClickHouse accepts as no-ops and for which no row count applies.
+    explicit CommandComplete(String tag_)
+        : value(std::move(tag_))
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('C');
@@ -1381,7 +1403,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const std::vector<std::pair<String, Command>> query_patterns = {
+        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1654,10 +1676,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1783,11 +1805,11 @@ public:
     }
 
 private:
-    std::unordered_map<String, String> statements;
+    UnorderedMapWithMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const std::vector<String> & arguments)
+    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

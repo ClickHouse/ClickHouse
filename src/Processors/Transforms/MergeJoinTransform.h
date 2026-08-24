@@ -19,6 +19,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -43,7 +44,23 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    Columns row;
+};
+
+struct MatchedRows
+{
+    size_t left = 0;
+    size_t right = 0;
+
+    size_t & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
+struct MatchedRanges
+{
+    JoinKeyRow left;
+    JoinKeyRow right;
+
+    JoinKeyRow & side(size_t source_num) { return source_num == 0 ? left : right; }
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -62,6 +79,10 @@ public:
 
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
+
+    bool count_matches = false;
+    /// key of the last equal range of each side that found a partner on the other side
+    MatchedRanges matched;
 };
 
 /// Accumulate blocks with same key and cross-join them
@@ -231,7 +252,8 @@ public:
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
-                       size_t max_block_size_);
+                       size_t max_block_size_,
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
@@ -244,6 +266,9 @@ public:
 
     void logElapsed(double seconds);
     MergedStats getMergedStats() const override;
+
+    /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -258,6 +283,9 @@ private:
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
     Columns getEmptyResultColumns(size_t pos) const;
+    /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
+    /// used to fill non-joined rows with the proper type default instead of a raw zero.
+    DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
@@ -277,6 +305,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -286,6 +315,9 @@ private:
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
         size_t num_bytes[2] = {0, 0};
+
+        /// Rows of each side that found a partner on the other side.
+        MatchedRows matched_rows;
 
         size_t max_blocks_loaded = 0;
     };
@@ -319,6 +351,8 @@ public:
     String getName() const override { return "MergeJoinTransform"; }
 
     void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
+
+    JoinAnalysisCounters getJoinAnalysisCounters() const { return algorithm.getJoinAnalysisCounters(); }
 
 protected:
     void onFinish() override;

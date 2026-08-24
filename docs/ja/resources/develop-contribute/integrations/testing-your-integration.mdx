@@ -1,0 +1,63 @@
+---
+slug: /integrations/integration-development/testing-your-integration
+sidebarTitle: 'インテグレーションのテスト'
+title: 'ClickHouse 連携のテスト'
+description: 'ClickHouse Cloud とセルフホストのオープンソース版における、インテグレーション向けの初級レベルの検証マトリクス。'
+keywords: ['パートナー', 'インテグレーション', 'テスト', '検証', 'サンプルデータセット', 'ClickHouse Cloud', 'オープンソース']
+doc_type: 'guide'
+---
+
+レビューに提出する前に、両方の ClickHouse デプロイメントモードに対して、さらに ClickHouse の型システムを実用的な規模で十分に検証できるデータセットを使って、インテグレーションを検証してください。このページでは、初級レベルにおいて「テスト済み」と見なされる条件を定義します。正式な検証は、より上位のパートナーシップ階層に進むパートナー向けの別プロセスです。
+
+インジェスト経路と利用経路については [Building integrations](/ja/resources/develop-contribute/integrations/building-integrations) を、結果の公開方法については [Documenting your integration](/ja/resources/develop-contribute/integrations/documenting-your-integration) を参照してください。
+
+<div id="test-matrix">
+  ## テストマトリクス
+</div>
+
+両方のデプロイメントモードを対象にしてください。ほとんどの顧客はどちらか一方を利用しており、挙動が異なる箇所があります (認証、ネットワーク、利用可能な機能など) 。
+
+* **ClickHouse Cloud:** [無料トライアル](https://clickhouse.com/cloud)に登録してください。Developmentティアではクレジットカードは不要です
+* **セルフホスト (オープンソース) :** [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases) から最新の安定版リリースを使用してください。[インストールガイド](/ja/get-started/setup/install) は、Docker を使ってローカルのインスタンスをすばやく用意する最短の方法です
+
+両方を対象にテストし、機能上のギャップがあればインテグレーションページに記載してください。
+
+<div id="what-to-test">
+  ## 何をテストすべきか
+</div>
+
+**機能的な正しさ。** インテグレーションが提供するすべてのコードパス、つまりインジェスト、クエリ、スキーマ検出、エラー処理、再接続を検証してください。製品でエンドユーザーに SQL を公開する場合は、UI が生成するクエリが往復しても正しく処理されることを確認してください。
+
+**型システムの網羅性。** ClickHouse は、Array、Tuple、maps、JSON、nested、LowCardinality、Decimal、Date および DateTime の各種バリアント、UUID、IPv4 と IPv6、enums、aggregate-function 型をサポートしています。インテグレーションでは、ネストした Array、深くネストした Tuple、JSON カラムで問題が発生しがちです。クライアントライブラリと UI はこれらを適切に処理し、少なくとも黙って切り詰めたり誤表示したりするのではなく、わかりやすいエラーを返すべきです。
+
+**スケール。** 顧客が実際に扱う結果セットのサイズと行数でテストしてください。ユーザー向け BI では、これは多くの場合、数億〜数十億行のテーブルと、単一の集計結果から数万行の結果セットまでを意味します。無制限の読み取り (`SELECT *`) は、ハングするのではなく、予測可能に失敗するか、ページネーションされるべきです。
+
+**認証。** 少なくとも 1 つは TLS を有効にした接続を検証してください。認証設定を公開する場合は、ドキュメント化しているすべてのモード (TLS 上の username と password、mTLS、SSL クライアント証明書) をテストしてください。
+
+**接続ライフサイクル。** 接続切断、サーバー再起動、低速なクエリに対して妥当な動作をすることを確認してください。多くのエスカレーションは、クエリの意味論ではなく接続処理に起因します。
+
+<div id="recommended-example-datasets">
+  ## 推奨サンプルデータセット
+</div>
+
+完全な一覧は、[**サンプルデータセット**](/ja/get-started/sample-datasets/index) セクションにあります。以下の 4 つのデータセットで、ほとんどのインテグレーションテスト要件をカバーできます。
+
+* **[GitHub events](/ja/get-started/sample-datasets/github-events):** ネストされたイベントペイロードを含む 31 億行。Array、Tuple、ネスト型の検証に最適
+* **[NYC taxi data](/ja/get-started/sample-datasets/nyc-taxi):** よく知られたスキーマを持つ数十億行のデータ。スループットや読み取りパスのテストに適しています
+* **[Stack Overflow](/ja/get-started/sample-datasets/stackoverflow):** JOIN を多用する BI シナリオ向けの複数テーブルのリレーショナルデータ
+* **[Hacker News](/ja/get-started/sample-datasets/hacker-news):** 2800 万行で、短時間でロードでき、反復的な検証に便利
+
+超大規模での検証には、**[WikiStat](/ja/get-started/sample-datasets/wikistat)** (約 5000 億レコード) を使用してください。
+
+<div id="what-to-capture-from-your-testing">
+  ## テストで確認・記載すべき内容
+</div>
+
+インテグレーションをレビューに提出する際は、以下を共有してください。
+
+* テストした ClickHouse のバージョン (Cloud および open source)
+* データセットとおおよその規模 (行数、ディスク上のサイズ)
+* インテグレーションで対応している型と対応していない型 (これはドキュメントの **Known limits** セクションになります)
+* 結果セットのしきい値を超えると挙動が変わる、といった注意すべきパフォーマンス特性
+
+短いテストレポートがあると、レビューの手戻りを減らせます。1 段落と表 1 つで十分です。

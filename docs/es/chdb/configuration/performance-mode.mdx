@@ -1,0 +1,331 @@
+---
+title: 'Modo de rendimiento (compat_mode)'
+sidebarTitle: 'Modo de rendimiento'
+slug: /chdb/configuration/performance-mode
+description: 'Modo de rendimiento centrado en SQL que desactiva la sobrecarga de compatibilidad con pandas para maximizar el rendimiento'
+keywords: ['chdb', 'DataStore', 'rendimiento', 'modo', 'compat', 'sql-first', 'optimización']
+doc_type: 'guide'
+---
+
+DataStore tiene dos modos de compatibilidad que determinan si la salida se formatea para mantener la compatibilidad con pandas o se optimiza para el rendimiento de Raw SQL.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+| Modo                        | valor de `compat_mode` | Descripción                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pandas** (predeterminado) | `"pandas"`             | Compatibilidad total con el comportamiento de pandas. Se conserva el orden de las filas, así como MultiIndex, set&#95;index, las correcciones de dtype, los criterios de desempate en ordenaciones estables y las envolturas `-If`/`isNaN`. |
+| **Performance**             | `"performance"`        | Ejecución centrada en SQL. Se elimina toda la sobrecarga de compatibilidad con pandas. Máximo rendimiento, pero los resultados pueden diferir estructuralmente de los de pandas.                                                            |
+
+<div id="what-it-disables">
+  ### Qué desactiva modo de rendimiento
+</div>
+
+| Sobrecarga                                           | Comportamiento del modo Pandas                                                    | Comportamiento de modo de rendimiento                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Conservación del orden de las filas**              | inyección de `_row_id`, `rowNumberInAllBlocks()`, subconsultas `__orig_row_num__` | Desactivado — el orden de las filas no está garantizado                                |
+| **Desempate en ordenación estable**                  | se añade `rowNumberInAllBlocks() ASC` a ORDER BY                                  | Desactivado — los empates pueden quedar en un orden arbitrario                         |
+| **Parquet preserve&#95;order**                       | `input_format_parquet_preserve_order=1`                                           | Desactivado — se permite la lectura paralela de Parquet                                |
+| **ORDER BY automático en GroupBy**                   | se añade `ORDER BY group_key` (valor predeterminado de pandas `sort=True`)        | Desactivado — los grupos se devuelven en un orden arbitrario                           |
+| **WHERE dropna en GroupBy**                          | se añade `WHERE key IS NOT NULL` (valor predeterminado de pandas `dropna=True`)   | Desactivado — se incluyen los grupos NULL                                              |
+| **set&#95;index en GroupBy**                         | las claves de grupo se establecen como índice                                     | Desactivado — las claves de grupo se mantienen como columnas                           |
+| **columnas MultiIndex**                              | `agg({'col': ['sum','mean']})` devuelve columnas MultiIndex                       | Desactivado — nombres de columnas planos (`col_sum`, `col_mean`)                       |
+| **envoltorios `-If`/`isNaN`**                        | `sumIf(col, NOT isNaN(col))` para skipna                                          | Desactivado — `sum(col)` simple (ClickHouse omite NULL de forma nativa)                |
+| **`toInt64` en count**                               | `toInt64(count())` para ajustarse a pandas int64                                  | Desactivado — se devuelve el dtype SQL nativo                                          |
+| **`fillna(0)` para sumas con todos los valores NaN** | la suma de valores todos NaN devuelve 0 (comportamiento de pandas)                | Desactivado — devuelve NULL                                                            |
+| **Correcciones de Dtype**                            | `abs()` unsigned→signed, etc.                                                     | Desactivado — dtypes SQL nativos                                                       |
+| **Conservación del índice**                          | restaura el índice original después de ejecutar SQL                               | Desactivado                                                                            |
+| **`first()`/`last()`**                               | `argMin/argMax(col, rowNumberInAllBlocks())`                                      | `any(col)` / `anyLast(col)` — más rápido, pero no determinista                         |
+| **aggregation en una sola consulta SQL**             | ColumnExpr groupby materializa un DataFrame intermedio                            | Inyecta `LazyGroupByAgg` en la cadena de operaciones diferidas — una sola consulta SQL |
+
+***
+
+<div id="enabling">
+  ## Activar modo de rendimiento
+</div>
+
+<div id="using-config">
+  ### Uso del objeto de configuración
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable performance mode
+config.use_performance_mode()
+
+# Back to pandas compatibility
+config.use_pandas_compat()
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+<div id="using-functions">
+  ### Uso de funciones a nivel de módulo
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# Enable performance mode
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# Check
+print(is_performance_mode())  # True
+
+# Back to default
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### Uso de importaciones abreviadas
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... high-performance operations ...
+use_pandas_compat()
+```
+
+<Note>
+  Al activar el modo de rendimiento, el motor de ejecución se establece automáticamente en `chdb`. No es necesario llamar a `config.use_chdb()` por separado.
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## Cuándo usar modo de rendimiento
+</div>
+
+**Usa modo de rendimiento cuando:**
+
+* Procesas grandes conjuntos de datos (cientos de miles o millones de filas)
+* Ejecutas cargas de trabajo con mucha agregación (groupby, sum, mean, count)
+* El orden de las filas no importa (p. ej., resultados agregados, informes, dashboards)
+* Quieres el máximo rendimiento en SQL y una sobrecarga mínima
+* Te preocupa el uso de memoria (lectura paralela de Parquet, sin DataFrames intermedios)
+
+**Mantente en modo pandas cuando:**
+
+* Necesitas el comportamiento exacto de pandas (orden de las filas, MultiIndex, dtypes)
+* Dependes de que `first()`/`last()` devuelvan realmente la primera/última fila
+* Usas `shift()`, `diff()`, `cumsum()` que dependen del orden de las filas
+* Estás escribiendo pruebas que comparan la salida de DataStore con pandas
+
+***
+
+<div id="behavior-differences">
+  ## Diferencias de comportamiento
+</div>
+
+<div id="row-order">
+  ### Orden de las filas
+</div>
+
+En el modo de rendimiento, el orden de las filas **no está garantizado** en ninguna operación. Esto incluye:
+
+* Resultados de filtros
+* Resultados de agregación de GroupBy
+* `head()` / `tail()` sin un `sort_values()` explícito
+* Agregaciones `first()` / `last()`
+
+Si necesitas resultados ordenados, añade un `sort_values()` explícito:
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# Unordered (fast)
+result = ds.groupby("region")["revenue"].sum()
+
+# Ordered (still fast, just adds ORDER BY)
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### Resultados de GroupBy
+</div>
+
+| Aspecto                             | modo Pandas                                     | modo de rendimiento                   |
+| ----------------------------------- | ----------------------------------------------- | ------------------------------------- |
+| Ubicación de la clave de agrupación | Índice (con `set_index`)                        | Columna normal                        |
+| Orden de los grupos                 | Ordenados por clave (predeterminado)            | Orden arbitrario                      |
+| Grupos NULL                         | Excluidos (valor predeterminado: `dropna=True`) | Incluidos                             |
+| Formato de las columnas             | MultiIndex para múltiples agregaciones          | Nombres simples (`col_func`)          |
+| `first()`/`last()`                  | Determinista (orden de las filas)               | No determinista (`any()`/`anyLast()`) |
+
+<div id="aggregation">
+  ### Agregación
+</div>
+
+```python
+config.use_performance_mode()
+
+# Sum of all-NaN group returns NULL (not 0)
+# Count returns native uint64 (not forced int64)
+# No -If wrappers: sum() instead of sumIf()
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### Ejecución con una sola consulta SQL
+</div>
+
+En el modo de rendimiento, la agregación `groupby` de `ColumnExpr` (p. ej., `ds[condition].groupby('col')['val'].sum()`) se ejecuta como una **única consulta SQL** en lugar del proceso de dos pasos utilizado en el modo pandas:
+
+```python
+config.use_performance_mode()
+
+# Pandas mode: two SQL queries (filter → materialize → groupby)
+# Performance mode: one SQL query (WHERE + GROUP BY in same query)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# Generated SQL (single query):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+Esto elimina la materialización intermedia del DataFrame y puede reducir significativamente el uso de memoria y el tiempo de ejecución.
+
+***
+
+<div id="vs-execution-engine">
+  ## Comparación con el motor de ejecución
+</div>
+
+El modo de rendimiento (`compat_mode`) y el motor de ejecución (`execution_engine`) son **ejes de configuración independientes**:
+
+| Configuración      | Controla                                                     | Valores                  |
+| ------------------ | ------------------------------------------------------------ | ------------------------ |
+| `execution_engine` | **Qué motor** ejecuta el cálculo                             | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | **Si** se ajusta la salida para la compatibilidad con pandas | `pandas`, `performance`  |
+
+Establecer `compat_mode='performance'` configura automáticamente `execution_engine='chdb'`, ya que el modo de rendimiento está diseñado para la ejecución de SQL.
+
+```python
+from chdb.datastore.config import config
+
+# These are independent
+config.use_chdb()              # Force chDB engine, keep pandas compat
+config.use_performance_mode()  # Force chDB + remove pandas overhead
+```
+
+***
+
+<div id="testing">
+  ## Pruebas con modo de rendimiento
+</div>
+
+Al escribir pruebas para modo de rendimiento, los resultados pueden diferir de los de pandas en el orden de las filas y en el formato estructural. Utiliza estas estrategias:
+
+<div id="sort-then-compare">
+  ### Ordenar y comparar (agregaciones, filtros)
+</div>
+
+```python
+# Sort both sides by the same columns before comparing
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### Comprobación del rango de valores (primero/último)
+</div>
+
+```python
+# first() with any() returns an arbitrary element from the group
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### Esquema y conteo (LIMIT sin ORDER BY)
+</div>
+
+```python
+# head() without sort_values: row set is non-deterministic
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## Buenas prácticas
+</div>
+
+<div id="enable-early">
+  ### 1. Actívalo al principio de tu script
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# All subsequent operations benefit
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. Añada una ordenación explícita cuando el orden sea importante
+</div>
+
+```python
+# For display or downstream processing that expects order
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. Úselo para cargas de trabajo por lotes/ETL
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETL pipeline — order doesn't matter, throughput does
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. Cambiar entre modos en una sesión
+</div>
+
+```python
+# Performance mode for heavy computation
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# Back to pandas mode for exact-match comparison
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## Documentación relacionada
+</div>
+
+* [Motor de ejecución](/es/chdb/configuration/execution-engine) — Selección del motor (auto/chdb/pandas)
+* [Guía de rendimiento](/es/chdb/guides/pandas-performance) — Consejos generales de optimización
+* [Diferencias clave con pandas](/es/chdb/guides/pandas-differences) — Diferencias de comportamiento

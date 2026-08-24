@@ -1,0 +1,139 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/network-policies
+title: 네트워크 정책
+keywords: ['kubernetes', '네트워크 정책', '보안', '메트릭', '웹훅']
+description: '연산자가 메트릭 및 웹훅 엔드포인트에 대해 Kubernetes NetworkPolicies를 사용해 controller manager 파드로 유입되는 트래픽을 어떻게 제한하는지, 이를 활성화하는 방법, 그리고 레이블을 지정해야 하는 클라이언트 네임스페이스를 설명합니다.'
+doc_type: 'guide'
+---
+
+연산자는 선택적으로 Kubernetes `NetworkPolicy` 리소스를 제공하며, 이를 통해 어떤 트래픽이 **controller manager 파드**에 도달할 수 있는지 제한합니다. 여기서 말하는 대상은 ClickHouse 서버나 Keeper 파드가 아니라 연산자 프로세스 자체입니다. 이 기능은 기본적으로 비활성화되어 있으므로, 연산자의 인그레스를 격리하려는 경우에만 활성화하면 됩니다.
+
+이 정책은 연산자가 다른 클라이언트에 노출하는 두 개의 포트, 즉 메트릭 엔드포인트와 admission webhook을 대상으로 합니다.
+
+<Note>
+  `NetworkPolicy`는 클러스터의 CNI plugin이 이를 구현하는 경우에만 적용됩니다
+  (예: Calico 또는 Cilium). NetworkPolicy 적용을 지원하지 않는 CNI에서는 해당
+  리소스가 생성되더라도 아무런 효과가 없으며, Kubernetes는 오류를 반환하지
+  않습니다. 따라서 이를 사용하기 전에 사용 중인 CNI가 정책을 실제로 적용하는지 확인하십시오.
+</Note>
+
+<div id="what-the-helm-chart-creates">
+  ## Helm 차트가 생성하는 항목
+</div>
+
+활성화하면 이 차트는 최대 2개의 인그레스 전용 정책을 생성하며, 두 정책 모두
+controller manager 파드를 대상으로 합니다:
+
+| 정책                      | 허용된 소스                            | 허용된 포트                          |
+| ----------------------- | --------------------------------- | ------------------------------- |
+| `allow-metrics-traffic` | `metrics: enabled` 레이블이 있는 네임스페이스 | `metrics.port` (기본값 `8080`/TCP) |
+| `allow-webhook-traffic` | `webhook: enabled` 레이블이 있는 네임스페이스 | `webhook.port` (기본값 `9443`/TCP) |
+
+두 정책 모두 `policyTypes: [Ingress]`만 선언합니다. 따라서 연산자의 egress는 제한하지
+않으며, ClickHouse 서버 또는 Keeper 파드에는 적용되지 않습니다.
+
+<div id="default-deny">
+  ## 기본 거부 동작
+</div>
+
+인그레스 `NetworkPolicy`로 파드를 선택하면 해당 파드는 **인그레스 기본 거부**
+상태로 전환됩니다. 즉, 둘 중 하나의 정책이라도 적용되면 명시적으로 허용되지 않은
+controller manager 파드로 들어오는 모든 인바운드 트래픽은 차단됩니다. 활성화 후
+연산자에 도달할 수 있는 인그레스는 다음뿐입니다.
+
+* `metrics: enabled`로 레이블된 네임스페이스에서의 메트릭 스크레이프
+* `webhook: enabled`로 레이블된 네임스페이스에서의 admission webhook 호출
+
+그 외 파드로 들어오는 모든 트래픽은 거부됩니다. 이는 의도된 보안 강화이지만,
+레이블이 없는 scraper 또는 webhook 호출자는 정책이 적용되는 즉시 작동하지
+않게 됩니다.
+
+<div id="enabling">
+  ## 정책 활성화
+</div>
+
+Helm을 사용하는 경우 values에서 게이트를 설정하십시오:
+
+```yaml
+# values.yaml
+networkPolicy:
+  enabled: true
+```
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+`allow-webhook-traffic`에는 추가로 `webhook.enabled: true`(기본값)가 필요하므로,
+웹훅을 비활성화하면 해당 정책도 함께 제거됩니다.
+
+raw `kubectl` 매니페스트를 사용하는 경우,
+[kubectl 설치 가이드](/ko/products/kubernetes-operator/install/kubectl)에 설명된 대로 `[NETWORK POLICY]` 섹션의 주석 처리를 해제하십시오.
+raw 매니페스트에는 동일한 두 개의 정책이 포함되어 있습니다.
+
+<div id="labeling-namespaces">
+  ## 클라이언트 네임스페이스에 레이블 지정
+</div>
+
+두 정책 모두 `namespaceSelector`를 기준으로 소스를 매칭하므로, 연산자에 연결해야 하는 모든 네임스페이스에는 일치하는 레이블이 있어야 합니다. 레이블이 없는 네임스페이스에서 발생한 스크레이프 또는 웹훅 호출은 차단됩니다.
+
+```bash
+# Allow a Prometheus namespace to scrape the metrics endpoint
+kubectl label namespace <prometheus-namespace> metrics=enabled
+
+# Allow webhook callers from a given namespace
+kubectl label namespace <caller-namespace> webhook=enabled
+```
+
+이를 다음에 설명된 메트릭 RBAC와 함께 구성하십시오.
+[모니터링 → 메트릭 엔드포인트 보안](/ko/products/kubernetes-operator/guides/monitoring#securing-the-metrics-endpoint):
+NetworkPolicy는 연결 가능 여부를 제어하고, 클러스터 역할 바인딩은
+권한 부여를 제어합니다. 보안이 적용된 스크레이프가 성공하려면 둘 다 반드시 구성되어 있어야 합니다.
+
+<Warning>
+  admission webhook 요청은 일반 파드가 아니라 Kubernetes API server에서
+  발생합니다. 해당 트래픽에 `NetworkPolicy`가 적용되는지 여부와 어떤
+  소스로 표시되는지는 컨트롤 플레인 토폴로지와 CNI에 따라 달라집니다.
+  특히 관리형 컨트롤 플레인에서는 어떤 `namespaceSelector`로도 일치시킬 수 없는 주소에서
+  웹훅에 도달할 수 있습니다. API server의 트래픽이 `webhook: enabled`
+  네임스페이스에 포함되지 않은 상태에서 `allow-webhook-traffic`를 활성화하면
+  admission이 차단되어 `ClickHouseCluster`/`KeeperCluster` 생성 및 업데이트 요청이
+  시간 초과될 수 있습니다. 활성화한 후에는 프로덕션이 아닌 클러스터에서 admission을 테스트하고,
+  필요한 경우 API server에 대한 명시적인 허용 규칙을 추가하십시오.
+</Warning>
+
+<div id="verifying">
+  ## 확인하기
+</div>
+
+```bash
+NS=clickhouse-operator-system
+
+# The policies exist
+kubectl -n $NS get networkpolicy
+
+# Inspect the selectors and allowed sources
+kubectl -n $NS describe networkpolicy
+```
+
+활성화한 후에는 다음 사항을 확인하십시오:
+
+* Prometheus가 계속해서 메트릭 엔드포인트를 스크레이프하는지 확인하십시오(해당 네임스페이스에
+  `metrics: enabled` 레이블이 지정되어 있고 metrics-reader 클러스터 역할에 바인딩되어 있어야 합니다).
+* `ClickHouseCluster`를 생성하거나 업데이트할 때도 계속 admission을 통과하는지 확인하십시오(웹훅에
+  연결할 수 있어야 합니다).
+
+스크레이프 결과 데이터가 없거나 CR 적용이 멈춘다면, 레이블이 없는 소스 네임스페이스 또는
+위에서 설명한 API 서버 도달성 관련 주의 사항이 가장 가능성 높은 원인입니다.
+
+<div id="related-guides">
+  ## 관련 가이드
+</div>
+
+* [연산자 모니터링](/ko/products/kubernetes-operator/guides/monitoring) — 메트릭 엔드포인트, 해당 RBAC, 그리고 스크레이프를 안전하게 보호하는 방법입니다.
+* [kubectl로 설치](/ko/products/kubernetes-operator/install/kubectl) — 네트워크 policy 섹션의 주석을 해제해야 하는 위치입니다.
+* [Helm으로 설치](/ko/products/kubernetes-operator/install/helm) — 연산자와 관련된 chart values입니다.

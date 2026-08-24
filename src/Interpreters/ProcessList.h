@@ -44,6 +44,11 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
+/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
+/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
+struct MemoryReservation;
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
+
 enum CancelReason
 {
     UNDEFINED,
@@ -101,8 +106,9 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Query slot scheduling for workloads
+    /// Acquired workload resources
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -205,6 +211,7 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
+        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -232,6 +239,11 @@ public:
 
     MemoryTracker * getMemoryTracker() const;
 
+    MemoryReservation * getMemoryReservation() const
+    {
+        return memory_reservation.get();
+    }
+
     bool hasThreadGroup() const
     {
         return bool(thread_group);
@@ -242,7 +254,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
@@ -281,8 +293,17 @@ public:
         return is_internal;
     }
 
-    /// Manually release query slot (if any).
-    void releaseQuerySlot() { query_slot.reset(); }
+    /// Manually release all acquired workload resources.
+    void releaseWorkloadResources();
+
+    /// Release the query slot only. Safe to call while the query pipeline is still running:
+    /// pipeline threads do not access the query slot.
+    void releaseQuerySlot();
+
+    /// Release the memory reservation only. MUST NOT be called while the query pipeline is still
+    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
+    /// in `PipelineExecutor`) and would race with its destruction.
+    void releaseMemoryReservation();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

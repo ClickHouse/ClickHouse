@@ -1,0 +1,273 @@
+---
+description: 'دعم واجهة برمجة تطبيقات HTTP لـ Prometheus في ClickHouse: الكتابة والقراءة عن بُعد، واستعلامات PromQL، ومقاييس الخادم.'
+sidebarTitle: 'Prometheus وPromQL'
+slug: /interfaces/prometheus
+title: 'بروتوكولات Prometheus وPromQL'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="expose">
+  ## كشف مقاييس خادم ClickHouse
+</div>
+
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud، يمكنك كشف المقاييس لـ Prometheus باستخدام [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus).
+</Note>
+
+هيّئ منفذًا مخصصًا عندما يحتاج خادم Prometheus إلى كشط مقاييس ClickHouse الخاصة:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+يمكن استخدام القسم `<prometheus.handlers>` لإنشاء معالجات موسّعة إضافية على المنفذ نفسه.
+This section is similar to [`<http_handlers>`](/ar/concepts/features/interfaces/http) but works for prometheus protocols:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+الإعدادات:
+
+| الاسم                        | الافتراضي  | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | لا شيء     | المنفذ الذي يقدّم مقاييس ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `endpoint`                   | `/metrics` | نقطة نهاية HTTP لكشط المقاييس. تبدأ بـ `/`. يجب عدم استخدامها مع قسم `<handlers>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `url` / `headers` / `method` | لا شيء     | عوامل التصفية المستخدمة للعثور على معالج مطابق للطلب. وهي مشابهة للحقول التي تحمل الأسماء نفسها في قسم [`<http_handlers>`](/ar/concepts/features/interfaces/http).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `info`                       | true       | يعرض مقياس Gauge `ClickHouse_Info` مع تسميات هوية الخادم (`name`، `version`، `version_describe`، `version_major`، `version_minor`، `version_patch`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `metrics`                    | true       | يعرض المقاييس من [`system.metrics`](/ar/reference/system-tables/metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `asynchronous_metrics`       | true       | يعرض المقاييس من [`system.asynchronous_metrics`](/ar/reference/system-tables/asynchronous_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `events`                     | true       | يعرض المقاييس من [`system.events`](/ar/reference/system-tables/events).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `errors`                     | true       | يعرض أعداد الأخطاء من [`system.errors`](/ar/reference/system-tables/errors).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `histograms`                 | true       | يعرض المقاييس من [`system.histogram_metrics`](/ar/reference/system-tables/histogram_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `dimensional_metrics`        | true       | يعرض المقاييس من [`system.dimensional_metrics`](/ar/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `labels`                     | لا شيء     | تسميات ثابتة تُضاف إلى كل مقياس معروض. يحدد كل عنصر تابع تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات استبدالات الإعدادات القياسية مثل السمة `from_env`. يُرفض اسم التسمية عندما يبدأ بـ `__` (محجوز بواسطة Prometheus)، أو عندما يتعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المفعّلة. لذلك تتبع مجموعة الأسماء المحجوزة سطح التصدير النشط لنقطة النهاية: `le` عند تفعيل `histograms`؛ وتسميات `ClickHouse_Info` (`name`، `version`، `version_describe`، `version_major`، `version_minor`، `version_patch`) عند تفعيل `info`؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري أو مقاييس متعددة الأبعاد معروضة (على سبيل المثال، `group` أو `direction` أو `operation_type`) عند تفعيل `histograms` أو `dimensional_metrics`. ولأنه يعتمد على ما تعرضه نقطة النهاية فعليًا، قد يكون الاسم صالحًا في نقطة نهاية ويُرفض في أخرى. |
+
+تحقّق من نقطة النهاية:
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```
+
+<CloudNotSupportedBadge />
+
+<div id="prometheus-http-api-and-promql">
+  ## واجهة Prometheus HTTP واجهة برمجة تطبيقات وPromQL
+</div>
+
+يطبّق ClickHouse واجهة Prometheus HTTP واجهة برمجة تطبيقات على جدول [`TimeSeries`](/ar/reference/engines/table-engines/integrations/time-series). يتولى معالج واحد عمليات الكتابة والقراءة عن بُعد، واستعلامات PromQL الفورية، واستعلامات PromQL للنطاق.
+
+<div id="prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+فعِّل الإعداد [`allow_experimental_time_series_table`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) للمستخدم الذي يُنشئ الجدول ويصل إليه:
+
+```sql
+SET allow_experimental_time_series_table = 1;
+```
+
+أنشئ قاعدة بيانات وجدولًا من نوع `TimeSeries`:
+
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+لطلبات واجهة برمجة تطبيقات HTTP، فعِّل `allow_experimental_time_series_table` في ملف تعريف مستخدم واجهة برمجة التطبيقات.
+
+<div id="configure-prometheus-api">
+  ### تهيئة واجهة برمجة تطبيقات Prometheus
+</div>
+
+هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` يحافظ على المعالجات المضمنة لنقاط النهاية، مثل `/ping` وطلبات SQL. تتيح البادئة أعلاه الوصول إلى هذه النقاط عبر معالج واحد:
+
+| نقطة النهاية                     | الغرض                          |
+| -------------------------------- | ------------------------------ |
+| `/prometheus/api/v1/write`       | الكتابة عن بُعد في Prometheus  |
+| `/prometheus/api/v1/read`        | القراءة عن بُعد من Prometheus  |
+| `/prometheus/api/v1/query`       | استعلامات PromQL الفورية       |
+| `/prometheus/api/v1/query_range` | استعلامات PromQL على نطاق زمني |
+
+يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلَمة الاستعلام `table`. ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
+
+لاستخدام جدول ثابت واحد لكل طلب، هيّئه في المعالج:
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+لا يمكن تجاوز جدول مُهيأ في المعالج باستخدام معاملات الطلب.
+
+إعدادات التوجيه والمعالج:
+
+| الاسم        | الافتراضي | الوصف                                                                                                                                                                      |
+| ------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | none      | قاعدة تصفية تطابق كل مسار طلب يبدأ بالبادئة المُهيأة.                                                                                                                      |
+| `table`      | none      | اسم جدول `TimeSeries`. عند عدم تحديده، يجب أن يتضمن الطلب معامل الاستعلام `table`. ويمكن أن يشمل الاسم المُهيأ قاعدة بيانات.                                               |
+| `database`   | none      | قاعدة البيانات التي تحتوي على الجدول. يمكن للطلب تحديدها كمعامل استعلام. عند عدم تحديدها، يستخدم ClickHouse قاعدة البيانات من قيمة `table` المؤهلة، أو يلجأ إلى `default`. |
+
+<div id="remote-write">
+  ### استيعاب المقاييس عبر الكتابة عن بُعد
+</div>
+
+يدعم ClickHouse [بروتوكول الكتابة عن بُعد لـ Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). هيّئ Prometheus للكتابة إلى المعالج:
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+يرسل Prometheus العينات إلى جدول `prometheus.metrics`.
+
+<div id="promql-query-support">
+  ### الاستعلام باستخدام PromQL
+</div>
+
+استخدم نقطة نهاية الاستعلام الفوري لتقييم تعبير PromQL في نقطة زمنية محددة:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+استخدم نقطة نهاية استعلام النطاق لتقييم تعبير ضمن نطاق زمني:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدالات وعوامل التجميع التي تستخدمها واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
+
+<div id="grafana">
+  #### Grafana
+</div>
+
+هيّئ مصدر بيانات Prometheus باستخدام عنوان URL أساسي ينتهي قبل `/api/v1`:
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: GET
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
+
+<Note>
+  لا تُنفَّذ إلا نقطتا نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range`. أما نقاط نهاية البيانات الوصفية التي يستخدمها مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات (‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values`) فهي غير منفَّذة وتُرجع خطأً. اكتب تعبيرات PromQL في وضع الشيفرة بدلاً من أداة إنشاء الاستعلامات.
+</Note>
+
+<div id="sql-entry-points">
+  #### نقاط إدخال SQL
+</div>
+
+يستخدم ClickHouse محوّل PromQL نفسه لواجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالتي الجدول [`prometheusQuery`](/ar/reference/functions/table-functions/prometheusQuery) و[`prometheusQueryRange`](/ar/reference/functions/table-functions/prometheusQueryRange).
+
+شغّل PromQL مباشرةً باستخدام `clickhouse-client`:
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+استخدم دوال الجداول لتضمين PromQL في استعلام SQL:
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+<div id="remote-read">
+  ### قراءة المقاييس عبر القراءة عن بُعد
+</div>
+
+يدعم ClickHouse [بروتوكول القراءة عن بُعد لـ Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) على المسار `/prometheus/api/v1/read`.
+
+هيّئ خادم Prometheus للقراءة من جدول `TimeSeries` نفسه:
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```

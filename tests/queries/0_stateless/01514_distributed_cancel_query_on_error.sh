@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-llvm-coverage
+# no-llvm-coverage: the test needs the shard allocating `groupArray(repeat('a', 100000))`
+# per row to hit `max_memory_usage=1G` and emit `Query memory limit exceeded` before the
+# other shard cancels. LLVM source-based coverage instrumentation perturbs this
+# memory-tracking cadence, so the expected exception sometimes does not surface on `127.3`
+# before cancellation, leaving an empty `grep` match and a flaky FAIL.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

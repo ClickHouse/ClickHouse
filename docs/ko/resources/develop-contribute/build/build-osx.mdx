@@ -1,0 +1,113 @@
+---
+description: 'macOS 시스템에서 소스 코드로 ClickHouse를 빌드하는 가이드'
+sidebarTitle: 'macOS에서 macOS용 빌드'
+slug: /development/build-osx
+title: 'macOS에서 macOS용 빌드'
+keywords: ['MacOS', 'Mac', 'build']
+doc_type: 'guide'
+---
+
+<Info>
+  **이 빌드 가이드는 ClickHouse 자체를 수정하는 기여자를 위한 것입니다.**
+
+  ClickHouse 소스 코드를 변경하지 않는다면 [Quick Start](/ko/get-started/setup/install)에 설명된 대로 사전 구축된 ClickHouse를 설치할 수 있습니다.
+</Info>
+
+ClickHouse는 macOS 10.15 (Catalina) 이상에서 macOS x86&#95;64 (Intel) 및 arm64 (Apple Silicon)용으로 컴파일할 수 있습니다.
+
+컴파일러는 Homebrew의 Clang만 지원됩니다.
+
+<div id="install-prerequisites">
+  ## 필수 구성 요소 설치
+</div>
+
+먼저, 일반적인 [사전 요구 사항 문서](/ko/resources/develop-contribute/introduction/developer-instruction)를 참조하세요.
+
+다음으로, [Homebrew](https://brew.sh/)를 설치한 후 실행하세요
+
+그런 다음 실행하세요:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  Apple은 기본적으로 대소문자를 구분하지 않는 파일 시스템을 사용합니다. 일반적으로는 컴파일에 영향을 주지 않으며(특히 scratch 빌드는 문제없이 동작함), `git mv`와 같은 파일 작업에서는 혼란을 초래할 수 있습니다.
+  macOS에서 본격적으로 개발하려면 소스 코드가 대소문자를 구분하는 디스크 볼륨에 저장되도록 하십시오. 예를 들어 [이 안내](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830)를 참조하십시오.
+</Note>
+
+<div id="build-clickhouse">
+  ## ClickHouse 빌드
+</div>
+
+빌드하려면 Homebrew의 Clang 컴파일러를 사용해야 합니다:
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# 빌드된 바이너리는 build/programs/clickhouse에 생성됩니다
+```
+
+<Note>
+  링크 중에 `ld: archive member '/' not a mach-o file in ...` 오류가 발생한다면 `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar` 플래그를 설정해 llvm-ar를 사용해야 할 수 있습니다.
+</Note>
+
+<div id="caveats">
+  ## 유의 사항
+</div>
+
+`clickhouse-server`를 실행할 계획이라면 시스템의 `maxfiles` 변수를 늘려야 합니다.
+
+<Note>
+  `sudo`를 사용해야 합니다.
+</Note>
+
+이를 위해 다음 내용으로 `/Library/LaunchDaemons/limit.maxfiles.plist` 파일을 생성하십시오:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+파일 권한을 올바르게 설정하세요:
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+파일이 올바른지 확인하세요:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+파일을 불러오세요(또는 재부팅하세요):
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+정상적으로 작동하는지 확인하려면 `ulimit -n` 또는 `launchctl limit maxfiles` 명령을 실행하십시오.

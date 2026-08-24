@@ -1,0 +1,65 @@
+---
+description: 'Svg のドキュメント'
+sidebarTitle: 'SVG'
+slug: /sql-reference/functions/geo/svg
+title: 'Geo データからSVG画像を生成する関数'
+doc_type: 'reference'
+---
+
+<div id="svg">
+  ## Svg
+</div>
+
+Geo データ から、選択された SVG 要素タグの文字列を返します。
+
+**構文**
+
+```sql
+Svg(geometry,[style])
+```
+
+別名: `SVG`, `svg`
+
+**パラメータ**
+
+* `geometry` — Geo データ。[Geo](/ja/reference/data-types/geo)。
+* `style` — オプションのスタイル名。[String](/ja/reference/data-types/string)。
+
+**戻り値**
+
+* ジオメトリのSVG表現。[String](/ja/reference/data-types/string)。
+  * SVGの円
+  * SVGのポリゴン
+  * SVGのパス
+
+**例**
+
+**円**
+
+```sql title="Query"
+SELECT SVG((0., 0.))
+```
+
+```response title="Response"
+<circle cx="0" cy="0" r="5" style=""/>
+```
+
+**Polygon**
+
+```sql title="Query"
+SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
+```
+
+```response title="Response"
+<polygon points="0,0 0,10 10,10 10,0 0,0" style=""/>
+```
+
+**パス**
+
+```sql title="Query"
+SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
+```
+
+```response title="Response"
+<g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
+```

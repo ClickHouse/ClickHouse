@@ -1,5 +1,6 @@
 import logging
 import random
+import re
 import string
 import time
 import uuid
@@ -8,6 +9,7 @@ from multiprocessing.dummy import Pool
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +76,12 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         enable_vertical_merge_algorithm=0,
         vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
         vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
-        compress_primary_key=0;
+        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds basic
+        -- statistics on freshly-inserted parts, and statistics-based part pruning drops the `d == 12` /
+        -- `c == 12` predicate so no part uses the projection and force_optimize_projection=1 throws.
+        auto_statistics_types='',
+        compress_primary_key=0,
+        merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once=0;
     """
     )
 
@@ -748,3 +755,158 @@ def test_mutation_with_broken_projection(cluster):
     assert not get_broken_projections_info(node, table_name)
 
     check(node, table_name, 1)
+
+
+def test_broken_projection_part_refetched_from_replica(cluster):
+    # Converted from stateless test 02254_projection_broken_part.sh.
+    node = cluster.instances["node"]
+
+    table1 = "projection_broken_parts_1"
+    table2 = "projection_broken_parts_2"
+
+    node.query(f"drop table if exists {table1} sync")
+    node.query(f"drop table if exists {table2} sync")
+
+    node.query(
+        f"""
+        create table {table1} (a int, b int, projection ab (select a, sum(b) group by a))
+        engine = ReplicatedMergeTree('/clickhouse/tables/02254/projection_broken_parts/rmt', 'r1')
+        order by a settings index_granularity = 1
+        """
+    )
+    node.query(
+        f"""
+        create table {table2} (a int, b int, projection ab (select a, sum(b) group by a))
+        engine = ReplicatedMergeTree('/clickhouse/tables/02254/projection_broken_parts/rmt', 'r2')
+        order by a settings index_granularity = 1
+        """
+    )
+
+    node.query(
+        f"insert into {table1} values (1, 1), (1, 2), (1, 3)",
+        settings={"insert_keeper_fault_injection_probability": 0},
+    )
+    node.query(f"system sync replica {table2}")
+
+    assert node.query(f"select 1, *, _part from {table2} order by b") == (
+        "1\t1\t1\tall_0_0_0\n1\t1\t2\tall_0_0_0\n1\t1\t3\tall_0_0_0\n"
+    )
+    assert node.query(f"select 2, sum(b) from {table2} group by a") == "2\t6\n"
+
+    path = node.query(
+        f"select path from system.parts where database = 'default' and table = '{table1}' and name = 'all_0_0_0'"
+    ).strip()
+    # ensure that path is absolute before removing
+    node.query(
+        f"select throwIf(substring('{path}', 1, 1) != '/', 'Path is relative: {path}')"
+    )
+    bash(node, f"rm -f '{path}/ab.proj/data.bin'")
+
+    # The projection data file is gone, so this select most likely fails. The error is
+    # ignored, as in the original test: what matters is that the failed read triggers a
+    # part check, which detects the broken projection and re-fetches the part from the
+    # healthy replica.
+    node.query_and_get_answer_with_error(
+        f"select 3, sum(b) from {table1} group by a format Null"
+    )
+
+    # Wait until the select succeeds again (the original polled it for up to 60 seconds).
+    assert_eq_with_retry(
+        node,
+        f"select 4, sum(b) from {table1} group by a",
+        "4\t6",
+        retry_count=60,
+        sleep_time=1,
+        ignore_error=True,
+    )
+
+    node.query(f"system sync replica {table1}")
+    assert node.query(f"select 5, sum(b) from {table1} group by a") == "5\t6\n"
+
+    node.query(f"drop table {table1} sync")
+    node.query(f"drop table {table2} sync")
+
+
+def test_check_table_broken_projection_columns(cluster):
+    # Converted from stateless test 04511_check_table_broken_projection_columns.sh.
+    #
+    # A projection part that fails to load before its columns are set (here: corrupted
+    # serialization.json) has an empty column list. CHECK TABLE used to compare the
+    # projection's on-disk columns.txt against that empty list and report a misleading
+    # "Columns doesn't match ... Expected: 0 columns" error, hiding the real corruption.
+    # It must report the actual problem.
+    node = cluster.instances["node"]
+
+    table_name = "t_broken_proj_check"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, v UInt64, PROJECTION p1 (SELECT v, count() GROUP BY v))
+        ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0
+        """
+    )
+    node.query(
+        f"INSERT INTO {table_name} SELECT number, number % 10 FROM numbers(1000)"
+    )
+
+    data_path = node.query(
+        f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table_name}' AND active"
+    ).strip()
+
+    node.query(f"DETACH TABLE {table_name}")
+    bash(node, f"printf 'garbage' > '{data_path}p1.proj/serialization.json'")
+    # The attach legitimately logs the broken projection at error level (the original
+    # stateless test had to silence server logs on the client side for that reason).
+    node.query(f"ATTACH TABLE {table_name}")
+
+    result = node.query(
+        f"CHECK TABLE {table_name} SETTINGS check_query_single_value_result = 0"
+    )
+    lines = result.strip().split("\n")
+    # part check passed: 0
+    assert [line.split("\t")[1] for line in lines] == ["0"]
+    # reports the misleading columns mismatch: 0
+    assert not re.search("Columns doesn.t match", result)
+    # reports the real corruption in serialization.json: 1
+    assert sum("serialization.json" in line for line in lines) == 1
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+    # The same, but for a projection part that legitimately lags behind the current
+    # projection schema: after ALTER ADD COLUMN, a SELECT * projection includes the new
+    # column in its metadata while the existing projection parts do not store it (and no
+    # mutation is pending, so nothing rewrites them). The expected columns must come from
+    # the part itself, not from the current projection metadata.
+    table_name = "t_broken_proj_check_lagging"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, v UInt16, PROJECTION p1 (SELECT * ORDER BY v))
+        ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0
+        """
+    )
+    node.query(
+        f"INSERT INTO {table_name} SELECT number, number % 10 FROM numbers(1000)"
+    )
+    node.query(f"ALTER TABLE {table_name} ADD COLUMN extra UInt8")
+
+    data_path = node.query(
+        f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table_name}' AND active"
+    ).strip()
+
+    node.query(f"DETACH TABLE {table_name}")
+    bash(node, f"printf 'garbage' > '{data_path}p1.proj/serialization.json'")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    result = node.query(
+        f"CHECK TABLE {table_name} SETTINGS check_query_single_value_result = 0"
+    )
+    lines = result.strip().split("\n")
+    # lagging part check passed: 0
+    assert [line.split("\t")[1] for line in lines] == ["0"]
+    # lagging part reports the misleading columns mismatch: 0
+    assert not re.search("Columns doesn.t match", result)
+    # lagging part reports the real corruption in serialization.json: 1
+    assert sum("serialization.json" in line for line in lines) == 1
+
+    node.query(f"DROP TABLE {table_name} SYNC")

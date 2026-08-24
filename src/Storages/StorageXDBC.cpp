@@ -94,6 +94,12 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
+        /// The bridge protocol only reports the identifier quoting style, not the literal
+        /// escaping dialect of the remote database, so string literals keep the historical
+        /// `Regular` (backslash-escaping) serialization here. Predicates whose literals such
+        /// a database (e.g. PostgreSQL over ODBC) would read differently should not be pushed
+        /// down until the bridge exposes an escaping style; see the dialect-specific handling
+        /// in `transformQueryForExternalDatabase.cpp`.
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
@@ -201,7 +207,7 @@ Allows ClickHouse to connect to external databases via [JDBC](https://en.wikiped
 
 To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) that should run as a daemon.
 
-This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
+This engine supports the [Nullable](/reference/data-types/nullable) data type.
 
 ## Creating a table {#creating-a-table}
 
@@ -224,7 +230,7 @@ ENGINE = JDBC(datasource, external_database, external_table)
 
 - `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
 
-- These parameters can also be passed using [named collections](operations/named-collections.md).
+- These parameters can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
 
 ## Usage example {#usage-example}
 
@@ -283,7 +289,7 @@ FROM system.numbers
 
 ## See also {#see-also}
 
-- [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
+- [JDBC table function](/reference/functions/table-functions/jdbc).
 )DOCS_MD",
                 .syntax = "ENGINE = JDBC('datasource', 'external_database', 'external_table')",
                 .related = {"ODBC"}}
@@ -299,7 +305,7 @@ Allows ClickHouse to connect to external databases via [ODBC](https://en.wikiped
 
 To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
 
-This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
+This engine supports the [Nullable](/reference/data-types/nullable) data type.
 
 ## Creating a table {#creating-a-table}
 
@@ -313,13 +319,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(datasource, external_database, external_table)
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the source table structure:
 
 - Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#CAST) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](/reference/functions/regular-functions/type-conversion-functions#CAST) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
@@ -327,7 +333,7 @@ The table structure can differ from the source table structure:
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
-These parameters can also be passed using [named collections](operations/named-collections.md).
+These parameters can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
 
 ## Usage example {#usage-example}
 
@@ -420,8 +426,8 @@ SELECT * FROM odbc_t
 
 ## See also {#see-also}
 
-- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
-- [ODBC table function](../../../sql-reference/table-functions/odbc.md)
+- [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
+- [ODBC table function](/reference/functions/table-functions/odbc)
 )DOCS_MD",
                 .syntax = "ENGINE = ODBC('connection_settings', 'external_database', 'external_table')",
                 .related = {"JDBC"}};

@@ -1,0 +1,145 @@
+---
+title: "クエリで PROJECTION が使用されているかを確認する方法"
+date: 2022-07-10
+description: "サンプルデータでテストし、EXPLAIN を使って PROJECTION が使用されているかを確認することで、ClickHouse のクエリで PROJECTION が利用されているかを確認する方法を学びます。"
+tags: ['データモデリング']
+keywords: ['PROJECTION']
+---
+
+<div id="question">
+  ## 質問
+</div>
+
+PROJECTION が使用されているかどうかを確認するにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+1. サンプルデータベースを作成します
+
+```
+CREATE database db1;
+```
+
+2. column1 を主キーとして使用するサンプルテーブルを作成します
+
+```
+CREATE table db1.table1_projections
+(
+ column1 Int32,
+ column2 Int32
+)
+engine = MergeTree()
+order by column1;
+```
+
+3. `column2` を主キーにするPROJECTION `for_column2` を追加します
+
+```
+ALTER table db1.table1_projections add projection for_column2
+(
+  select * 
+  order by column2
+);
+```
+
+4. テストデータを挿入する
+
+*これにより、column1 と column2 にランダムな数値を持つ 100000 行が挿入されます
+
+```
+INSERT INTO db1.table1_projections
+select 
+ floor(randNormal(50, 5)) as column1,
+ floor(randUniform(1, 100)) as column2
+from numbers(100000);
+```
+
+5. サンプルデータを確認する
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_projections limit 5;
+
+SELECT *
+FROM db1.table1_projections
+LIMIT 5
+
+Query id: d6940799-b507-4a5e-9843-df55ebe818ab
+
+┌─column1─┬─column2─┐
+│      28 │      41 │
+│      29 │      12 │
+│      30 │      73 │
+│      30 │      75 │
+│      30 │      70 │
+└─────────┴─────────┘
+```
+
+6. column1 を含む元のテーブルを使用していることを確認します:
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT count() from db1.table1_projections where column1 > 50;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM db1.table1_projections
+WHERE column1 > 50
+
+Query id: e04d5236-1a05-4f1f-9502-7e41986beb44
+
+┌─explain────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))        │
+│   Aggregating                                      │
+│     Expression (Before GROUP BY)                   │
+│       Filter (WHERE)                               │
+│         ReadFromMergeTree (db1.table1_projections) │
+│         Indexes:                                   │
+│           PrimaryKey                               │
+│             Condition: true                        │
+│             Parts: 1/1                             │
+│             Granules: 12/12                        │
+└────────────────────────────────────────────────────┘
+```
+
+*`db1.table1_projections` から読み取っていることに注目してください
+
+7. WHERE句で `column2` を使用して、PROJECTION からの読み取りをテストします
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT * from db1.table1_projections where column2 > 50;
+
+EXPLAIN indexes = 1
+SELECT *
+FROM db1.table1_projections
+WHERE column2 > 50
+
+Query id: d2b20e01-93bf-4b60-a370-4aac7b454267
+
+┌─explain─────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY)) │
+│   Filter                                    │
+│     ReadFromMergeTree (for_column2)         │
+│     Indexes:                                │
+│       PrimaryKey                            │
+│         Keys:                               │
+│           column2                           │
+│         Condition: (column2 in [51, +Inf))  │
+│         Parts: 1/1                          │
+│         Granules: 6/12                      │
+└─────────────────────────────────────────────┘
+```
+
+*現在は `for_column2` の PROJECTION が使用されていることに注意してください。
+
+**詳細情報**
+
+Projections:
+[https://clickhouse.com/docs/sql-reference/statements/alter/projection](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+
+`numbers` テーブル関数: [https://clickhouse.com/docs/sql-reference/table-functions/numbers](https://clickhouse.com/docs/sql-reference/table-functions/numbers)s
+
+ランダムデータを生成するブログ:
+[https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

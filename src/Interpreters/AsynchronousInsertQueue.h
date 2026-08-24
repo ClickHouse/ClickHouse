@@ -12,6 +12,7 @@
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
 
 #include <future>
 #include <variant>
@@ -235,7 +236,8 @@ private:
     /// Ordered container
     /// Key is a timestamp of the first insert into batch.
     /// Used to detect for how long the batch is active, so we can dump it by timer.
-    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    /// Must be a multimap: two queries with different keys may theoretically compute the same deadline.
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
@@ -246,11 +248,11 @@ private:
         mutable std::mutex mutex;
         mutable std::condition_variable are_tasks_available;
 
-        Queue queue;
-        QueueIteratorByKey iterators;
+        Queue queue TSA_GUARDED_BY(mutex);
+        QueueIteratorByKey iterators TSA_GUARDED_BY(mutex);
 
-        OptionalTimePoint last_insert_time;
-        std::chrono::milliseconds busy_timeout_ms{};
+        OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
+        std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
     };
 
     /// Times of the two most recent queue flushes.
@@ -301,7 +303,7 @@ private:
         const Settings & settings,
         const QueueShard & shard,
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
-        std::chrono::steady_clock::time_point now) const;
+        std::chrono::steady_clock::time_point now) const TSA_REQUIRES(shard.mutex);
 
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
@@ -333,8 +335,10 @@ private:
 
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
+    void clear();
+
 public:
-    auto getQueueLocked(size_t shard_num) const
+    auto getQueueLocked(size_t shard_num) const TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);

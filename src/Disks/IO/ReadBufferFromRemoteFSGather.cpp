@@ -64,6 +64,17 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
         current_object = blobs_to_read.front();
 }
 
+std::optional<size_t> ReadBufferFromRemoteFSGather::tryGetFileSize()
+{
+    for (const auto & object : blobs_to_read)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return std::nullopt;
+    }
+
+    return getTotalSize(blobs_to_read);
+}
+
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
     current_object = object;
@@ -281,5 +292,27 @@ bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
     }
 
     return false;
+}
+
+bool ReadBufferFromRemoteFSGather::supportsReadAt()
+{
+    if (blobs_to_read.size() != 1)
+        return false;
+
+    if (!current_buf)
+        initialize();
+
+    /// initialize leaves current_buf empty if the blob is empty or the current offset is at the
+    /// end of the file.
+    return current_buf && current_buf->supportsReadAt();
+}
+
+size_t ReadBufferFromRemoteFSGather::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+{
+    if (blobs_to_read.size() != 1 || !current_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "readBigAt called without a supportsReadAt check");
+
+    /// With a single blob, offsets in the file coincide with offsets in the blob.
+    return current_buf->readBigAt(to, n, range_begin, progress_callback);
 }
 }

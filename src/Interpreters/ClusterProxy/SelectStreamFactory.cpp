@@ -3,6 +3,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -26,6 +27,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
+    extern const Event DistributedShardsSkipped;
 }
 
 namespace DB
@@ -188,8 +190,17 @@ void SelectStreamFactory::createForShardImpl(
                 shard_header = header;
         }
 
+        /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
+        /// from a nested `SETTINGS` clause, and on the analyzer path from `QueryNode::settings_changes`,
+        /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
+        /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
+        /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
+        auto forwarded_query = query_ast->clone();
+        stripInitiatorOnlySettingsFromQuery(forwarded_query);
+
         remote_shards.emplace_back(Shard{
-            .query = query_ast,
+            .query = forwarded_query,
             .query_tree = query_tree,
             .planner_context = planner_context,
             .query_plan = std::move(query_plan),
@@ -243,6 +254,7 @@ void SelectStreamFactory::createForShardImpl(
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
                     main_table.getNameForLogs(), shard_info.shard_num);
+                ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
                 if (unavailable_shard_tracker)
                     unavailable_shard_tracker->onShardSkipped();
             }
@@ -325,7 +337,7 @@ void SelectStreamFactory::createForShard(
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
     /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
     /// Use a clone to keep the original query_tree with specialized functions intact,
     /// since it is reused later for getSampleBlock / plan building.

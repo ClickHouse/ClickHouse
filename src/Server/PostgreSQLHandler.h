@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include "config.h"
+#include <Common/ProfileEvents.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
+
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -38,7 +40,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -68,6 +70,7 @@ private:
     Int32 secret_key = 0;
 
     bool is_query_in_progress = false;
+    bool ignore_until_sync = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
