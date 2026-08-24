@@ -10,6 +10,8 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -52,16 +54,64 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-                return false;
+            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+            {
+                is_interval = false;
+                ParserStringAndSubstitution until_p;
+                return until_p.parse(pos, valid_until, expected);
+            }
 
-            ParserStringAndSubstitution until_p;
+            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
+            /// at query execution time and stored in the VALID UNTIL form.
+            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
+            {
+                is_interval = true;
+                ParserExpression interval_p;
+                if (!interval_p.parse(pos, valid_until, expected))
+                    return false;
 
-            return until_p.parse(pos, valid_until, expected);
+                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
+                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
+                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
+                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
+                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
+                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
+                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
+                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
+                /// at execution time.
+                if (const auto * maybe_in = valid_until->as<ASTFunction>();
+                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
+                {
+                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
+                    /// `IN memory` and `IN 'memory'` have to be given back.
+                    const auto & storage_ast = maybe_in->arguments->children[1];
+                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
+                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
+                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
+                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
+
+                    if (is_storage_name)
+                    {
+                        /// A short identifier, a string literal and the `IN` keyword are one token each.
+                        /// Verify the rewound position really points at `IN` before acting on it.
+                        IParserBase::Pos in_pos = pos;
+                        --in_pos;
+                        --in_pos;
+                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
+                        {
+                            valid_until = maybe_in->arguments->children[0];
+                            pos = in_pos;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            return false;
         });
     }
 
@@ -255,7 +305,9 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            parseValidUntil(pos, expected, auth_data->valid_until);
+            ASTPtr method_valid_until;
+            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
+                auth_data->setValidUntil(std::move(method_valid_until));
 
             return true;
         });
@@ -317,7 +369,9 @@ namespace
                 authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
-                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
+                ASTPtr method_valid_until;
+                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
+                    authentication_methods.back()->setValidUntil(std::move(method_valid_until));
 
                 return true;
             }
@@ -595,6 +649,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
+    bool global_valid_until_is_interval = false;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -705,7 +760,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (auth_data.empty() && !global_valid_until)
         {
-            if (parseValidUntil(pos, expected, global_valid_until))
+            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
             {
                 continue;
             }
@@ -726,6 +781,22 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (alter_query_with_no_changes)
     {
         return false;
+    }
+
+    /// `VALID FOR <interval>` is resolved to an absolute deadline at query execution time and stored
+    /// (and shown) in the `VALID UNTIL` form. It therefore never appears in the on-disk (`ATTACH`)
+    /// representation, and it cannot be evaluated during attach anyway: there is no query context, and
+    /// re-resolving `now` on every startup would let the deadline drift forever. Reject it here with a
+    /// clear message instead of failing later, deep inside `deserializeAccessEntity`, while loading a
+    /// hand-written access definition.
+    if (attach_mode)
+    {
+        bool has_valid_for = global_valid_until_is_interval;
+        for (const auto & authentication_method : auth_data)
+            has_valid_for = has_valid_for || authentication_method->valid_until_is_interval;
+
+        if (has_valid_for)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR is not allowed in ATTACH USER queries; the deadline must be stored as an absolute VALID UNTIL value");
     }
 
     auto query = make_intrusive<ASTCreateUserQuery>();
@@ -750,6 +821,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);
+    query->global_valid_until_is_interval = global_valid_until_is_interval;
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -781,10 +853,10 @@ Syntax:
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
     [IN access_storage_type]
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
@@ -956,8 +1028,14 @@ ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technica
 
 ## VALID UNTIL Clause {#valid-until-clause}
 
-Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime, where `[timezone]` must be a numeric offset such as `+09:00` or one of `UTC`, `GMT`, `Z`, `MSK`, `MSD`; named IANA zones like `Asia/Tokyo` are not recognized (see the note below). By default, this parameter equals `'infinity'`.
-The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
+Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime, where `[timezone]` must be a numeric offset such as `+09:00` or one of `UTC`, `GMT`, `Z`, `MSK`, `MSD`; named IANA zones like `Asia/Tokyo` are not recognized (see the note below). By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
+
+A deadline is stored as an absolute instant, but `SHOW CREATE USER` and [`system.users`](/reference/system-tables/users) render it in the server or session time zone, so the same stored instant appears as different wall-clock text on differently configured servers: the canonicalized expired instant above, for example, renders as `1970-01-01 00:00:01` on a server in `UTC` and as `1970-01-01 14:00:01` on a server in `Pacific/Kiritimati`. Enforcement always uses the stored instant, not its rendering.
+
+The placement of the clause determines which authentication methods it applies to:
+
+- Before the `IDENTIFIED` clause (or when the query specifies no authentication method at all): the deadline is a user-level deadline that applies to every authentication method of the user.
+- After an authentication method: the deadline applies to that method only. A clause written after the whole `IDENTIFIED` list therefore binds to the last method only, leaving the earlier methods non-expiring.
 
 Examples:
 
@@ -965,11 +1043,24 @@ Examples:
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
 - `CREATE USER name1 VALID UNTIL 'infinity'`
-- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+- `CREATE USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
 <Note>
 The datetime string is parsed by `parseDateTimeBestEffort`, which only recognizes the timezone tokens `UTC`, `GMT`, `Z`, `MSK`, `MSD`, and numeric offsets such as `+09:00` or `-05:00`. Named IANA timezones like `Asia/Tokyo` or `Europe/London` are not supported, and a fixed offset is not equivalent to an IANA zone for regions that observe daylight saving time, so you must compute the correct offset for the specific date you are encoding.
 </Note>
+
+## VALID FOR Clause {#valid-for-clause}
+
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time, it accepts an [interval](/reference/data-types/special-data-types/interval), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is then stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It can be used everywhere `VALID UNTIL` can, and it follows the same placement rules: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only. The deadline is stored and enforced with second precision, so sub-second intervals (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) are rejected; the smallest accepted unit is `SECOND`. A negative interval is accepted as a way to mark the credentials as already expired; if the resulting deadline falls before `1970-01-01 00:00:01 UTC`, it is canonicalized to that smallest expired instant, which is what `SHOW CREATE USER` then reports — rendered in the server or session time zone, as described for [`VALID UNTIL`](#valid-until-clause).
+
+Examples:
+
+- `CREATE USER name1 VALID FOR INTERVAL 1 DAY`
+- `CREATE USER name1 VALID FOR INTERVAL 3 MONTH`
+- `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
+- `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
 ## GRANTEES Clause {#grantees-clause}
 
@@ -1025,14 +1116,16 @@ CREATE USER {user:Identifier};
 )DOCS_MD",
         .syntax = R"(
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash | bcrypt_password | bcrypt_hash | ldap | kerberos | ssl_certificate | ssh_key | http | jwt | scram_sha256_password | scram_sha256_hash}] BY {'password' | 'hash'}} [,...]]
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
     [IN access_storage_type]
+    [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 )",
         .parent = "CREATE",
         .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
@@ -1048,10 +1141,11 @@ Syntax:
 ```sql
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
+    [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
@@ -1138,26 +1232,51 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 
 ## VALID UNTIL Clause {#valid-until-clause}
 
-Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
-The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
+Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
+
+A deadline is stored as an absolute instant, but `SHOW CREATE USER` and [`system.users`](/reference/system-tables/users) render it in the server or session time zone, so the same stored instant appears as different wall-clock text on differently configured servers: the canonicalized expired instant above, for example, renders as `1970-01-01 00:00:01` on a server in `UTC` and as `1970-01-01 14:00:01` on a server in `Pacific/Kiritimati`. Enforcement always uses the stored instant, not its rendering.
+
+The placement of the clause determines which authentication methods it applies to:
+
+- Before the `IDENTIFIED` clause (or when the query specifies no authentication method at all): the deadline is a user-level deadline that applies to every authentication method of the user.
+- After an authentication method: the deadline applies to that method only. A clause written after the whole `IDENTIFIED` list therefore binds to the last method only, leaving the earlier methods non-expiring.
 
 Examples:
 
 - `ALTER USER name1 VALID UNTIL '2025-01-01'`
 - `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `ALTER USER name1 VALID UNTIL 'infinity'`
-- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`
+- `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
+
+## VALID FOR Clause {#valid-for-clause}
+
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](/reference/data-types/special-data-types/interval), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It follows the same placement rules as `VALID UNTIL`: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only. The deadline is stored and enforced with second precision, so sub-second intervals (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) are rejected; the smallest accepted unit is `SECOND`. A negative interval is accepted as a way to mark the credentials as already expired; if the resulting deadline falls before `1970-01-01 00:00:01 UTC`, it is canonicalized to that smallest expired instant, which is what `SHOW CREATE USER` then reports — rendered in the server or session time zone, as described for [`VALID UNTIL`](#valid-until-clause).
+
+Examples:
+
+- `ALTER USER name1 VALID FOR INTERVAL 1 DAY`
+- `ALTER USER name1 VALID FOR INTERVAL 3 MONTH`
+- `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 )DOCS_MD",
         .syntax = R"(
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {...} [,...]]
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
+    [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] ... | PROFILE 'profile_name'] [,...]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
 )",
         .parent = "ALTER",
         .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},

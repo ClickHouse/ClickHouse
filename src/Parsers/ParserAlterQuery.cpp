@@ -70,6 +70,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_constraint(Keyword::MODIFY_CONSTRAINT);
 
     ParserKeyword s_add_projection(Keyword::ADD_PROJECTION);
+    ParserKeyword s_modify_projection(Keyword::MODIFY_PROJECTION);
     ParserKeyword s_drop_projection(Keyword::DROP_PROJECTION);
     ParserKeyword s_clear_projection(Keyword::CLEAR_PROJECTION);
     ParserKeyword s_materialize_projection(Keyword::MATERIALIZE_PROJECTION);
@@ -524,6 +525,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
+            }
+            else if (s_modify_projection.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_PROJECTION;
             }
             else if (s_move_part.ignore(pos, expected))
             {
@@ -2891,6 +2902,37 @@ ADD PROJECTION p (
 
 Projection settings override the effective table settings for the projection, subject to validation rules (e.g., invalid or incompatible overrides will be rejected).
 
+### MODIFY PROJECTION {#modify-projection}
+
+Use the statement below to change the [`WITH SETTINGS`](#with-settings) clause of an existing projection without rebuilding its data:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+```
+
+For a [projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index), restate the `INDEX` declaration instead of the `SELECT` query:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+```
+
+The statement restates the full projection definition, but only the `WITH SETTINGS` clause may differ from the existing definition.
+The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
+
+The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
+To rebuild existing parts with the new settings, run [`MATERIALIZE PROJECTION`](#materialize-projection).
+
+Example:
+
+```sql
+ALTER TABLE t
+MODIFY PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 128
+);
+```
+
 ### DROP PROJECTION {#drop-projection}
 
 Use the statement below to remove a projection description from a tables metadata and delete projection files from disk.
@@ -2918,7 +2960,7 @@ This is implemented as a [mutation](/reference/statements/alter/index#mutations)
 ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-The commands `ADD`, `DROP` and `CLEAR` are lightweight in the sense that they only change metadata or remove files.
+The commands `ADD`, `MODIFY`, `DROP` and `CLEAR` are lightweight in the sense that they only change metadata or remove files.
 Additionally, they are replicated, and sync projection metadata via ClickHouse Keeper or ZooKeeper.
 
 <Note>

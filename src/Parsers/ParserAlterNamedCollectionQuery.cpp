@@ -108,11 +108,11 @@ void registerStatementAlterNamedCollection(StatementFactory & factory)
     factory.registerStatement("ALTER NAMED COLLECTION",
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 This query intends to modify already existing named collections.
+
+<Note>
+DDL-created named collections can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability.
+</Note>
 
 **Syntax**
 

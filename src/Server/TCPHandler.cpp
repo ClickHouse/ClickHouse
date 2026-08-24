@@ -45,6 +45,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
@@ -65,7 +66,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
@@ -95,12 +95,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
-    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -130,6 +127,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsString default_session_user;
     extern const ServerSettingsBool validate_tcp_client_information;
     extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
@@ -322,6 +320,7 @@ TCPHandler::TCPHandler(
     bool parse_proxy_protocol_,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -333,6 +332,7 @@ TCPHandler::TCPHandler(
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
 }
 
@@ -343,6 +343,7 @@ TCPHandler::TCPHandler(
     TCPProtocolStackData & stack_data,
     std::string server_display_name_,
     std::string host_name_,
+    std::optional<String> default_session_user_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -357,6 +358,7 @@ TCPHandler::TCPHandler(
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
     , host_name(std::move(host_name_))
+    , default_session_user(std::move(default_session_user_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -1490,8 +1492,9 @@ void TCPHandler::processInsertQuery(QueryState & state)
             state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
-                size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+                auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+                size_t timeout_ms = timeout.count();
+                auto wait_status = result.future.wait_for(timeout);
 
                 if (wait_status == std::future_status::deferred)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
@@ -2096,8 +2099,29 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
     readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
+    /// An empty user name means the default session user: the `default_session_user`
+    /// server setting, possibly overridden for this listener in the `protocols` section.
+    /// The substitution is remembered to make sure that a connection with an empty user name
+    /// can never be treated as an interserver or SSH-marked connection, even if the configured
+    /// default session user is (mis)set to one of the marker values.
+    bool user_substituted_by_default = false;
     if (user.empty())
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+    {
+        user = default_session_user ? *default_session_user
+                                    : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+        user_substituted_by_default = true;
+
+        /// The default session user can be explicitly configured to be empty to prohibit
+        /// connections without a user name. The reject is recorded in `system.session_log` as a
+        /// login failure, so that prohibited anonymous attempts remain auditable.
+        if (user.empty())
+        {
+            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+            session = makeSession();
+            session->onAuthenticationFailure(user, getClientAddress(session->getClientInfo()), exception);
+            throw exception; /// NOLINT
+        }
+    }
 
     auto users_to_ignore_early_memory_limit_check = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
     if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user)))
@@ -2111,7 +2135,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = !user_substituted_by_default && (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -2154,7 +2178,7 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = !user_substituted_by_default && user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
         user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
@@ -2983,11 +3007,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 
     if (compression == Protocol::Compression::Enable)
     {
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
 
         return CompressionCodecFactory::instance().get(method, level);
     }

@@ -1068,6 +1068,10 @@ It is a common operation for tables that contain an array column to produce a ne
 
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
 
+<Note>
+PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL` are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function.
+</Note>
+
 Syntax:
 
 ```sql
