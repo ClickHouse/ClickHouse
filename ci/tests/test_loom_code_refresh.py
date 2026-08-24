@@ -101,6 +101,37 @@ def test_unindexed_release_branch_404_is_a_quiet_skip(monkeypatch, tmp_path):
     assert info.warnings == []
 
 
+def test_master_403_emits_auth_warning(monkeypatch, tmp_path):
+    # The token must always cover master's namespace: a 403 there is auth
+    # drift (expired/revoked token), never an unindexed branch.
+    info = _setup(monkeypatch, tmp_path, "refs/heads/master")
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    loom_code_refresh.refresh()
+
+    assert len(info.warnings) == 1
+    assert "403" in info.warnings[0]
+
+
+def test_release_branch_403_is_a_quiet_skip(monkeypatch, tmp_path):
+    # The token only covers loom-side indexed namespaces, so a 403 on a
+    # release branch is the expected not-indexed case - no warning spam.
+    info = _setup(monkeypatch, tmp_path, "refs/heads/25.8")
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    loom_code_refresh.refresh()
+
+    assert info.warnings == []
+
+
 def test_non_branch_push_sends_no_request(monkeypatch, tmp_path):
     info = _setup(monkeypatch, tmp_path, "refs/tags/v26.9.1.1")
 

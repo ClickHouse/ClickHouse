@@ -1,11 +1,17 @@
 import json
 import os
+import signal
 import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from praktika.info import Info
+
+# Bounds the WHOLE hook, including the SSM fetch: Shell.get_output runs the
+# AWS CLI with no timeout of its own, and a pre_hook blocks every job in the
+# workflow, so a stalled credential path must become a warning, not a hang.
+TOTAL_TIMEOUT_SEC = 30
 
 
 def namespace_for(branch):
@@ -75,6 +81,16 @@ def refresh():
         with urllib.request.urlopen(req, timeout=10) as r:
             print(f"loom code.refresh[{branch}]: HTTP {r.status}")
     except urllib.error.HTTPError as e:
+        if e.code == 403 and branch == "master":
+            # The token must always cover master's namespace, so this is
+            # auth drift (expired/revoked token, ACL change), not an
+            # unindexed branch. Surface it; the index silently going stale
+            # is exactly what this hook exists to prevent.
+            info.add_workflow_warning(
+                "loom code.refresh: HTTP 403 for master - CI token expired,"
+                " revoked, or no longer covers the namespace"
+            )
+            return
         if e.code in (403, 404):
             # loom doesn't index this branch (404), or the token doesn't
             # cover its namespace (403). Expected for most release
@@ -87,7 +103,13 @@ def refresh():
         raise
 
 
+def _timed_out(signum, frame):
+    raise TimeoutError(f"loom code.refresh exceeded {TOTAL_TIMEOUT_SEC}s")
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGALRM, _timed_out)
+    signal.alarm(TOTAL_TIMEOUT_SEC)
     try:
         refresh()
     except Exception:
