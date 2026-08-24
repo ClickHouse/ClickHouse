@@ -37,7 +37,7 @@ To configure JWT providers for a service, you need:
 - A publicly reachable **HTTPS** JWKS URL that publishes at least one **RSA** key (`RS256`) or, for services on version 26.8 or later, an **EC** key (`ES256`, `ES384`, `ES512`).
 
 <Note>
-JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on the P-256, P-384, and P-521 curves. Tokens signed with HMAC (`HS256`) keys cannot be verified against a JWKS endpoint and are rejected. A JWKS document may contain other key types, but at least one usable key must be present.
+JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on the P-256, P-384, and P-521 curves. A JWKS document may contain other key types, but at least one usable key must be present.
 </Note>
 
 ## How it works {#how-it-works}
