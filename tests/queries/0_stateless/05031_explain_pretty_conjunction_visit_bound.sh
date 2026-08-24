@@ -5,10 +5,10 @@
 # a query holding one class only still terminates. Crossing that bound with runtime filters takes one
 # join key per filter and so twice the keys of the per-class quota, and planning a join grows
 # quadratically in its key count: these two arms are eight times the planning of the quota arm in
-# 05025 while asserting the same rendering code, which is a fraction of a second of either. That
+# 05032 while asserting the same rendering code, which is a fraction of a second of either. That
 # planning is what no-sanitizers excludes, since it is instrumented along with everything else and
 # there exceeds the per-test cap. The bound is reached on every other build, and reached far more
-# cheaply through the condition class by the last arm of 05025, which no build skips.
+# cheaply through the condition class by 05025, which no build skips.
 #
 # no-flaky-check because repeating these cannot expose anything the single run does not.
 
@@ -33,8 +33,6 @@ make_join_tables() {
     local n=$1
     local cols
     cols=$(seq 0 $((n - 1)) | sed 's/^/k/;s/$/ UInt64/' | paste -sd,)
-    local vals
-    vals=$(seq 0 $((n - 1)) | sed 's/^/number+/' | paste -sd,)
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS q1_05031"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS q2_05031"
     # Piped rather than passed as an argument: one argv entry is capped well below these lengths.
@@ -42,10 +40,12 @@ make_join_tables() {
         | $CLICKHOUSE_CLIENT --max_query_size 4000000 --max_ast_elements 4000000 --max_expanded_ast_elements 4000000
     echo "CREATE TABLE q2_05031 ($cols) ENGINE = MergeTree ORDER BY k0" \
         | $CLICKHOUSE_CLIENT --max_query_size 4000000 --max_ast_elements 4000000 --max_expanded_ast_elements 4000000
-    echo "INSERT INTO q1_05031 SELECT number, toString(number), $vals FROM numbers(10)" \
-        | $CLICKHOUSE_CLIENT --max_query_size 4000000 --max_ast_elements 4000000 --max_expanded_ast_elements 4000000
-    echo "INSERT INTO q2_05031 SELECT $vals FROM numbers(10)" \
-        | $CLICKHOUSE_CLIENT --max_query_size 4000000 --max_ast_elements 4000000 --max_expanded_ast_elements 4000000
+    # A runtime filter is built per join key whether or not the key column holds anything, and the
+    # tables have to be non-empty for one to reach the source filter at all. Only the columns the
+    # assertions read are given values: one value expression per key column would cost more to
+    # evaluate than the queries under test.
+    $CLICKHOUSE_CLIENT -q "INSERT INTO q1_05031 (a, b) SELECT number, toString(number) FROM numbers(10)"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO q2_05031 (k0) SELECT number FROM numbers(10)"
 }
 
 # Enough keys that the walk over the conjunction runs out of visits before it reaches the condition:
