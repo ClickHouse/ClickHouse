@@ -562,14 +562,42 @@ void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
 
 bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
 {
+    constexpr size_t cancellation_check_interval_ms = 100;
+
     if (cancellation)
-        return cancellation->waitForCancellation(std::chrono::milliseconds(milliseconds));
+    {
+        /// The owner's `cancel` wakes this wait for every cancellation which reaches the
+        /// processors. A soft time limit with the `break` overflow mode does not always reach
+        /// them: it is noticed by the executor's `checkTimeLimitSoft` polls, which happen between
+        /// the execution steps, so when the only executor thread is the one sleeping right here -
+        /// a single-source query under `PullingPipelineExecutor` or `CompletedPipelineExecutor` -
+        /// no one notices the timeout while this wait lasts (`CancellationChecker` only cancels
+        /// the query for the `throw` overflow mode). Poll the time limit as well, on the same
+        /// grid as the token-less wait below, and latch it into the flag, so the deadline is not
+        /// missed by the remainder of the backoff.
+        while (true)
+        {
+            const auto interval = std::min(milliseconds, cancellation_check_interval_ms);
+            if (cancellation->waitForCancellation(std::chrono::milliseconds(interval)))
+                return true;
+            milliseconds -= interval;
+
+            /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode.
+            if (isQueryTimeLimitReached())
+            {
+                cancellation->cancel(/*softly=*/ true);
+                return true;
+            }
+
+            if (!milliseconds)
+                return false;
+        }
+    }
 
     /// Bare HTTP readers have no owner cancellation token, but they can still be executing in a
     /// query. Check for hard query cancellation so `KILL QUERY` and a throwing time limit do not
     /// wait out a long backoff. A soft timeout belongs to the reader's owner, which is the only
     /// component that knows whether returning a partial result is safe.
-    constexpr size_t cancellation_check_interval_ms = 100;
     while (milliseconds)
     {
         const auto interval = std::min(milliseconds, cancellation_check_interval_ms);
