@@ -272,10 +272,6 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
     session.setRequestBodyComplete(true);
 }
 
-void HTTPRequestBodyWriteBuffer::cancelImpl() noexcept
-{
-}
-
 
 HTTPResponseReadBuffer::HTTPResponseReadBuffer(
     Poco::Net::HTTPClientSession & session_,

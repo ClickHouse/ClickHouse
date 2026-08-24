@@ -38,7 +38,6 @@ public:
 protected:
     void nextImpl() override;
     void finalizeImpl() override;
-    void cancelImpl() noexcept override;
 
 private:
     Poco::Net::HTTPClientSession & session;
