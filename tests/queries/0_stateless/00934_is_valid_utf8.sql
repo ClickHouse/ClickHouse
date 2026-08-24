@@ -125,3 +125,67 @@ select 0 = isValidUTF8(toFixedString('123456789012345\xed', 16)) from system.num
 select 0 = isValidUTF8(toFixedString('123456789012345\xf1', 16)) from system.numbers limit 10;
 select 0 = isValidUTF8(toFixedString('123456789012345\xc2', 16)) from system.numbers limit 10;
 select 0 = isValidUTF8(toFixedString('\xC2\x7F', 2)) from system.numbers limit 10;
+
+-- Lengths around the boundaries where the vectorised implementations switch behaviour.
+select n, 1 = isValidUTF8(repeat('a', n)) from (select arrayJoin([0, 1, 2, 3, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]) as n) order by n;
+
+-- A multibyte sequence straddling those boundaries, well-formed and truncated, inside a string long enough to take the vector path.
+select off, 1 = isValidUTF8(repeat('x', off) || '\xE2\x82\xA1' || repeat('y', 100)), 0 = isValidUTF8(repeat('x', off) || '\xE2\x82' || repeat('y', 100)) from (select arrayJoin([0, 13, 14, 15, 16, 17, 47, 61, 62, 63, 64, 65]) as off) order by off;
+
+-- A truncated lead byte at the end of a block followed by a full block of ASCII: an ASCII-only fast path that ignores carried state accepts this.
+select 0 = isValidUTF8(repeat('x', 15) || '\xC2' || repeat('y', 16));
+select 0 = isValidUTF8(repeat('x', 15) || '\xC2' || repeat('y', 48));
+select 0 = isValidUTF8(repeat('x', 63) || '\xC2' || repeat('y', 64));
+select 0 = isValidUTF8(repeat('x', 100) || '\xE0\xA0' || repeat('y', 100));
+select 0 = isValidUTF8(repeat('x', 100) || '\xF0\x90\x80' || repeat('y', 100));
+
+-- Malformed sequences at the end of a string long enough to take the vector path.
+select 0 = isValidUTF8(repeat('a', 100) || '\xC2');
+select 0 = isValidUTF8(repeat('a', 100) || '\xE0\xA0');
+select 0 = isValidUTF8(repeat('a', 100) || '\xF4\x8F\x88');
+
+-- Malformed classes that a range check must reject, embedded in a long string.
+select 0 = isValidUTF8(repeat('a', 64) || '\xC0\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xC1\xBF' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xE0\x80\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xF0\x80\x80\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xED\xA0\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xED\xBF\xBF' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xF4\x90\x80\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xF5\x80\x80\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\x80' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xBF' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xFE' || repeat('a', 64));
+select 0 = isValidUTF8(repeat('a', 64) || '\xFF' || repeat('a', 64));
+
+-- Well-formed sequences of every length must still be accepted in a long string.
+select 1 = isValidUTF8(repeat('a', 64) || '\xC2\x80' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xDF\xBF' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xE0\xA0\x80' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xED\x9F\xBF' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xEE\x80\x80' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xF0\x90\x80\x80' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('a', 64) || '\xF4\x8F\xBF\xBF' || repeat('a', 64));
+select 1 = isValidUTF8(repeat('\xD0\xB0', 100));
+select 1 = isValidUTF8(repeat('\xE2\x82\xAC', 100));
+select 1 = isValidUTF8(repeat('\xF0\x9F\x98\x80', 100));
+
+-- The same boundaries through FixedString, which reaches the implementation via a different caller.
+select 1 = isValidUTF8(toFixedString(repeat('a', 1), 1));
+select 1 = isValidUTF8(toFixedString(repeat('a', 15), 15));
+select 1 = isValidUTF8(toFixedString(repeat('a', 16), 16));
+select 1 = isValidUTF8(toFixedString(repeat('a', 17), 17));
+select 1 = isValidUTF8(toFixedString(repeat('a', 31), 31));
+select 1 = isValidUTF8(toFixedString(repeat('a', 32), 32));
+select 1 = isValidUTF8(toFixedString(repeat('a', 33), 33));
+select 1 = isValidUTF8(toFixedString(repeat('a', 63), 63));
+select 1 = isValidUTF8(toFixedString(repeat('a', 64), 64));
+select 1 = isValidUTF8(toFixedString(repeat('a', 65), 65));
+select 1 = isValidUTF8(toFixedString(repeat('a', 127), 127));
+select 1 = isValidUTF8(toFixedString(repeat('a', 128), 128));
+select 1 = isValidUTF8(toFixedString(repeat('a', 129), 129));
+select 1 = isValidUTF8(toFixedString(repeat('a', 63) || '\xE2\x82\xAC' || repeat('a', 64), 130));
+select 0 = isValidUTF8(toFixedString(repeat('a', 63) || '\xE2\x82' || repeat('a', 65), 130));
+select 0 = isValidUTF8(toFixedString(repeat('x', 15) || '\xC2' || repeat('y', 48), 64));
+select 0 = isValidUTF8(toFixedString(repeat('a', 64) || '\xED\xA0\x80' || repeat('a', 64), 131));
+select 0 = isValidUTF8(toFixedString(repeat('a', 100) || '\xC2', 101));

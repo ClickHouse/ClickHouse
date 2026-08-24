@@ -1,7 +1,13 @@
+#include "config.h"
+
 #include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
+
+#if USE_SIMDUTF && defined(__aarch64__)
+#    include <simdutf.h>
+#endif
 
 namespace DB
 {
@@ -64,9 +70,7 @@ SOFTWARE.
  * +--------------------+------------+-------------+------------+-------------+
  */
 
-#ifndef __SSE4_1__
-    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
-#else
+#if defined(__SSE4_1__)
     static UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
     {
         /*
@@ -217,6 +221,19 @@ SOFTWARE.
 
         return static_cast<UInt8>(_mm_testz_si128(error, error));
     }
+#elif USE_SIMDUTF && defined(__aarch64__)
+    /// simdutf reads its input in blocks of this size, so a shorter input costs a full block either way.
+    static constexpr UInt64 simdutf_block_size = 64;
+
+    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
+    {
+        if (len < simdutf_block_size)
+            return DB::UTF8::isValidUTF8(data, len);
+        /// The _with_errors variant tests for errors after every block, so malformed input stops the scan early.
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+    }
+#else
+    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
 #endif
 
     static constexpr bool is_fixed_to_constant = false;
