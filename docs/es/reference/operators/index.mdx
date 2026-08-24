@@ -13,6 +13,10 @@ ClickHouse transforma los operadores en sus funciones correspondientes durante l
 </div>
 
 `a[N]` – Acceso a un elemento de un array. La función `arrayElement(a, N)`.
+`N` también puede ser un array de enteros; en ese caso, los elementos de todas esas posiciones se devuelven como un array,
+igual que con `arrayMap(i -> a[i], N)`. Las posiciones pueden ser anulables. Una posición `NULL` produce `NULL` cuando el tipo de elemento
+puede envolverse en `Nullable`; para los tipos de elemento que no pueden estar dentro de `Nullable` (como `Array` o `Map`), produce
+el valor predeterminado del tipo de elemento, igual que un índice escalar `NULL`.
 
 `a.N` – Acceso a un elemento de una tupla. La función `tupleElement(a, N)`.
 

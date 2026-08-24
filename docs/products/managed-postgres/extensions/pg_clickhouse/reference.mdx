@@ -25,7 +25,7 @@ docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
 docker exec -it pg_clickhouse psql -U postgres
 ```
 
-See the [tutorial](/products/managed-postgres/extensions/pg_clickhouse/tutorial) 
+See the [tutorial](/products/managed-postgres/extensions/pg_clickhouse/tutorial)
 to get started importing ClickHouse tables and pushing down queries.
 
 ## Usage {#usage}
@@ -957,7 +957,7 @@ should be mapped to the PostgreSQL [TEXT], but when using binary data, map it
 to [BYTEA]. Example:
 
 ```sql
--- Create clickHouse table with String columns.
+-- Create ClickHouse table with String columns.
 CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String
