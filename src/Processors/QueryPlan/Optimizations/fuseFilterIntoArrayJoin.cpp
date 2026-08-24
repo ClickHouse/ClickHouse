@@ -10,8 +10,12 @@ namespace DB::QueryPlanOptimizations
 
 /// Move a filter's element-only conjuncts into the ArrayJoinStep below it, so they run in element
 /// space before expansion. Runs after filterPushDown, which already pushed the non-element conjuncts down
-size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
+    /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out
+    if (settings.make_distributed_plan || settings.serialize_query_plan)
+        return 0;
+
     auto & parent = parent_node->step;
     auto * filter = typeid_cast<FilterStep *>(parent.get());
     if (!filter || parent_node->children.size() != 1)
@@ -19,7 +23,8 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     auto * child_node = parent_node->children.front();
     auto * array_join = typeid_cast<ArrayJoinStep *>(child_node->step.get());
-    if (!array_join || array_join->hasElementFilter())
+    /// skip LEFT: optimizeReadInOrder keeps LIMIT through it, but a fused filter drops rows
+    if (!array_join || array_join->isLeft() || array_join->hasElementFilter())
         return 0;
 
     auto & expression = filter->getExpression();
