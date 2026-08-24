@@ -5438,15 +5438,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 /// A table created before this check stays alterable: the state is only refused when
                 /// this ALTER produced it, not when it was inherited untouched. A rename carries the
-                /// whole column description across, so resolve the pre-ALTER name.
+                /// whole column description across, so resolve the pre-ALTER name. Exactly one hop:
+                /// transitive renames in one statement are rejected earlier, so a second hop would
+                /// only follow another column that happens to reuse a freed name.
                 String old_name = column.name;
-                for (size_t i = 0; i <= renamed_from.size(); ++i)
-                {
-                    auto it = renamed_from.find(old_name);
-                    if (it == renamed_from.end())
-                        break;
+                if (auto it = renamed_from.find(old_name); it != renamed_from.end())
                     old_name = it->second;
-                }
 
                 if (!statistics_named_by_alter.contains(column.name)
                     && old_columns.has(old_name)
