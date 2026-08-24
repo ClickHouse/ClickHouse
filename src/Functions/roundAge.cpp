@@ -16,8 +16,8 @@ struct RoundAgeImpl
     {
         if constexpr (is_big_int_v<A>)
         {
-            /// Wide integers are software-emulated and never vectorise, so the early exits of
-            /// the comparison chain are cheaper than evaluating every threshold.
+            /// Wide integers are software-emulated and have no vector form, so the flat
+            /// accumulation below has no vectorisation gain to offset its extra comparisons.
             return x < 1 ? 0
                 : (x < 18 ? 17
                 : (x < 25 ? 18

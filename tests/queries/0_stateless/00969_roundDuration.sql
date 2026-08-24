@@ -22,6 +22,7 @@ SELECT roundDuration(-128::Int8), roundDuration(-32768::Int16), roundDuration(-2
 SELECT roundDuration(0.5), roundDuration(0.9999), roundDuration(9.5), roundDuration(35999.5);
 SELECT roundDuration(29.999::Float32), roundDuration(30.0::Float32), roundDuration(-0.0::Float32);
 SELECT roundDuration(18446744073709551615::UInt64), roundDuration(170141183460469231731687303715884105727::Int128);
+SELECT roundDuration(1500::Int128), roundDuration(0::UInt256), roundDuration(20000::Int256);
 SELECT roundDuration(toNullable(60)), roundDuration(toNullable(NULL));
 SELECT roundDuration(toLowCardinality(59)), roundDuration(toLowCardinality(60));
 SELECT sum(roundDuration(number)) FROM numbers(40000);
