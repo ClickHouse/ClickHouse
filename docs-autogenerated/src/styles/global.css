@@ -991,9 +991,17 @@ a.version-option:hover,
   font-size: 10px;
 }
 
-.language-selector span:last-child {
+.language-selector-chevron {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
   margin-left: auto;
-  color: var(--text-faint);
+  color: var(--nav-dropdown-chevron);
+  transform: rotate(90deg);
+}
+
+.language-selector:hover .language-selector-chevron {
+  color: var(--nav-dropdown-chevron-hover);
 }
 
 .docs-shell {

@@ -87,9 +87,10 @@ const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.prop
   <VersionSelector stableId={stableId} />
 
   <button class="language-selector" type="button">
-    <span aria-hidden="true">文</span>
     <span>English</span>
-    <span aria-hidden="true">⌄</span>
+    <svg class="language-selector-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6.5 2.75L12.75 9L6.5 15.25"></path>
+    </svg>
   </button>
 </aside>
 
