@@ -120,7 +120,7 @@ SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merg
 INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'ClickHouseCloud' FROM numbers(1024);
-INSERT INTO tab SELECT number, 'ClickhouseSQL' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickHouseSQL' FROM numbers(1024);
 
 SELECT count() FROM tab WHERE tag LIKE '%Cloud%';
 SELECT count() FROM tab WHERE tag LIKE '%Cloud%' ESCAPE '|';
