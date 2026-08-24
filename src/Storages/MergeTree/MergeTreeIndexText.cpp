@@ -1176,7 +1176,9 @@ void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVers
     if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
     {
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
-        writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
+        /// Only a part that has positions carries their codec.
+        if (has_positions)
+            writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
     }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
@@ -1221,12 +1223,15 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
 
-        UInt64 positions_codec = 0;
-        readVarUInt(positions_codec, istr);
-        if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Unknown positions codec {} in text index header", positions_codec);
-        header.positions_codec = static_cast<UInt8>(positions_codec);
+        if (header.has_positions)
+        {
+            UInt64 positions_codec = 0;
+            readVarUInt(positions_codec, istr);
+            if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unknown positions codec {} in text index header", positions_codec);
+            header.positions_codec = static_cast<UInt8>(positions_codec);
+        }
     }
 
     return header;
