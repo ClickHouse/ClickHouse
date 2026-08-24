@@ -115,10 +115,10 @@ struct MockCacheState
     void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
 };
 
-/// A minimal in-memory FILE-LEVEL cache. Two disciplines: whole-block (like the page cache, the
-/// default - a block is a hit only when fully resident and `write` is all-or-nothing) or `incremental`
-/// (like the filesystem cache - a block's committed prefix grows and `write` appends from the frontier).
-/// Retains data and records write ranges so a test can assert what was fetched and cached.
+/// A minimal in-memory FILE-LEVEL cache in one of two disciplines: whole-block (default, like the page
+/// cache - a block hits only when fully resident, `write` is all-or-nothing) or `incremental` (like the
+/// filesystem cache - the committed prefix grows, `write` appends from the frontier). Records writes so
+/// a test can assert what was cached.
 class MockFileCacheProvider : public ICacheProvider
 {
 public:
@@ -987,9 +987,8 @@ TEST_F(ReaderExecutorTest, StackedTiersRefetchFasterHitToFillSlower)
 
 TEST_F(ReaderExecutorTest, LongConnectionReusedThroughPageCache)
 {
-    /// Case A: one whole-segment (page) cache tier, cold forward scan with a long connection. Each
-    /// segment is fetched via `readSource`; successive FETCHes are contiguous-forward, so one long
-    /// connection is opened and reused across the cache path.
+    /// Case A: cold forward scan through a whole-segment (page) tier. The FETCHes are contiguous-forward,
+    /// so one long connection is opened and reused across the cache path.
     constexpr size_t size = 1024 * 1024;
     constexpr size_t win = 128 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
@@ -1015,8 +1014,8 @@ TEST_F(ReaderExecutorTest, LongConnectionReusedThroughPageCache)
 
 TEST_F(ReaderExecutorTest, LongConnectionReusedThroughFilesystemCache)
 {
-    /// Case B: one incremental (filesystem) cache tier, cold forward scan with a long connection.
-    /// Window-capped FETCHes are contiguous-forward, so the connection is reused just like case A.
+    /// Case B: same as A but an incremental (filesystem) tier. The window-capped FETCHes stay
+    /// contiguous-forward, so the connection is reused too.
     constexpr size_t size = 1024 * 1024;
     constexpr size_t win = 128 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
@@ -1043,11 +1042,9 @@ TEST_F(ReaderExecutorTest, LongConnectionReusedThroughFilesystemCache)
 
 TEST_F(ReaderExecutorTest, LongConnectionCorrectAcrossStackedTiers)
 {
-    /// Case C (stacked page + filesystem, long connection enabled): the faster tier holds [0, half), the
-    /// slower tier misses everything. C only needs to be CORRECT here - the data is right - though not
-    /// perfect: filling the slower tier re-reads [0, half) from source (a gather path would avoid it), so
-    /// the whole file is read from source though half was already cached. (Whether the fill opens a long
-    /// connection or a one-shot depends on the fetch pattern; C does not require the efficient path.)
+    /// Case C: stacked page (holds [0, half)) over filesystem (all miss). C must be CORRECT, not optimal:
+    /// filling the slower tier re-reads [0, half) from source, so the whole file is fetched though half
+    /// was already cached.
     constexpr size_t size = 512 * 1024;
     constexpr size_t half = size / 2;
     StoredObjects objects{makeFile("a.bin", size)};
@@ -1072,7 +1069,6 @@ TEST_F(ReaderExecutorTest, LongConnectionCorrectAcrossStackedTiers)
     ASSERT_EQ(data.size(), size);
     for (size_t i = 0; i < size; ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    /// Correct but not perfect: the faster tier's [0, half) is re-read to fill the slower tier.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size)
         << "expected the C-case whole-file read despite the faster-tier hit";
     EXPECT_TRUE(slow->resident.subtract(ByteRange{0, size}).empty()) << "slower tier not fully populated";
