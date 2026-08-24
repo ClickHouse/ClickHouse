@@ -1061,10 +1061,13 @@ def get_transactions_list(args):
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
-    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
-    # debug build with many threads; anything beyond that means lldb itself
-    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
-    # leaves the server process untouched.
+    # The ceiling must accommodate attaching to a multi-gigabyte sanitizer
+    # binary: symbol loading alone takes tens of seconds (attaching to an idle
+    # watchdog process of a 6 GB TSan build took ~17s in CI), and
+    # `thread backtrace all` on a hung server with hundreds of threads takes
+    # minutes. Expiry forfeits the only evidence of a server hang, while
+    # killing lldb leaves the server process untouched either way, so err on
+    # the generous side.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1079,7 +1082,20 @@ def get_stacktraces_from_lldb(pid):
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
         f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
-        timeout=30,
+        timeout=300,
+        keep_output_on_error=True,
+    )
+
+
+# fallback debugger: lldb has died with SIGSEGV while attaching to a
+# multi-gigabyte TSan binary in CI, forfeiting the only evidence of a server
+# hang; gdb (shipped in the CI base images via the `clickhouse/cctools` layer)
+# handles the same binaries.
+def get_stacktraces_from_gdb(pid):
+    return shell_get_output(
+        f"gdb -p {pid} --batch -ex 'set pagination off' "
+        "-ex 'thread apply all backtrace' -ex detach -ex quit",
+        timeout=300,
         keep_output_on_error=True,
     )
 
@@ -1315,6 +1331,12 @@ def print_c_stacktraces(args) -> None:
         label = "main server" if pid == server_pid else "replica"
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
         bt = get_stacktraces_from_lldb(pid)
+        if not bt or len(bt) < 1000:
+            print(
+                f"Got suspiciously small stacktraces from lldb "
+                f"({len(bt)} chars), retrying with gdb:"
+            )
+            bt = get_stacktraces_from_gdb(pid)
         if bt and len(bt) >= 1000:
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
