@@ -1366,6 +1366,23 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
     auto & shared = *many_data->shared_kept_keys;
     const auto & aggregator = params->aggregator;
 
+    if (may_freeze)
+    {
+        /// Claim the freeze before dismantling the hash table (see
+        /// `Aggregator::Params::SharedKeptKeysControl`). When a stream has spilled to disk
+        /// first, the cutoff is abandoned for the whole aggregation and `checkLimits` no
+        /// longer caps the tables: no rows have been dropped yet, so reset the flag and
+        /// continue aggregating without the restriction. When another stream claimed the
+        /// freeze first, fall through and apply its kept keys (the mutex below waits for
+        /// the seed publication).
+        const auto & control = aggregator.getParams().shared_kept_keys_control;
+        if (control && !control->tryFreeze() && control->isAbandoned())
+        {
+            no_more_keys = false;
+            return;
+        }
+    }
+
     /// Move this stream's accumulated states out of the hash table. The chunks keep the states
     /// alive (and destroy the dropped ones) while the table is rebuilt around the kept keys.
     Aggregator::AggregatedChunks own_chunks;

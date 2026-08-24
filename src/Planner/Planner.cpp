@@ -667,9 +667,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
     /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
-    /// External aggregation is disabled together with it: spilled buckets would bypass the
-    /// restriction to the kept keys. Memory stays bounded anyway — the cutoff caps every stream's
-    /// hash table at roughly `LIMIT + OFFSET` keys plus one block of keys before the freeze.
+    /// External aggregation stays configured as usual: at runtime a spill and the cutoff exclude
+    /// each other, decided by whichever fires first (see `Aggregator::Params::SharedKeptKeysControl`),
+    /// so a query that needs to spill keeps spilling exactly as without the optimization.
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -678,10 +678,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         trivial_group_by_limit ? OverflowMode::ANY : settings[Setting::group_by_overflow_mode].value,
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
-        trivial_group_by_limit
-            ? 0
-            : Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-                settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),

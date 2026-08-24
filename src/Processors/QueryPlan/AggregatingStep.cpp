@@ -530,6 +530,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
+    /// The kept-keys cutoff and external aggregation are mutually exclusive at runtime,
+    /// arbitrated through this control shared by every stream and every branch below
+    /// (see `Aggregator::Params::SharedKeptKeysControl`).
+    if (params.shared_kept_keys_for_overflow_any)
+        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
+
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
@@ -847,8 +853,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             chassert(transform_params->params.max_rows_to_group_by
                 && transform_params->params.group_by_overflow_mode == OverflowMode::ANY
-                && !transform_params->params.overflow_row
-                && !transform_params->params.max_bytes_before_external_group_by);
+                && !transform_params->params.overflow_row);
             many_data->enableSharedKeptKeys();
         }
 
@@ -1073,9 +1078,13 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 
     /// See the comment in `AggregatingStep::transformPipeline`: all the streams here are merged
     /// into one result, so the kept-keys cutoff must be shared between them (both the streams
-    /// aggregating the raw parts and the streams merging the pre-aggregated projection parts).
+    /// aggregating the raw parts and the streams merging the pre-aggregated projection parts),
+    /// and both aggregators must arbitrate spilling through one shared control.
     if (params.shared_kept_keys_for_overflow_any)
+    {
+        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
         many_data->enableSharedKeptKeys();
+    }
 
     AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
 

@@ -25,7 +25,6 @@ SET max_block_size = 1000;
 SELECT toString(number), count() FROM numbers(10) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 5; -- { serverError TOO_MANY_ROWS }
 
 -- Aggregate-free projections keep the existing settings-based path, including external aggregation.
--- The shared kept-keys cutoff used for aggregate projections disables spilling, so it must not run here.
 SELECT count() FROM
 (
     SELECT number FROM numbers(100000) GROUP BY number LIMIT 10
@@ -84,12 +83,14 @@ SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k
 -- profile's global cap (the convention of the other `make_distributed_plan` tests), and a
 -- single localhost shard is used because `make_distributed_plan` rejects the fragment a
 -- shard receives from a remote initiator regardless of the cutoff.
+-- `prefer_localhost_replica = 1` is pinned for the same reason: with 0 (randomized in CI)
+-- even the localhost shard receives its fragment over TCP as a remote initiator.
 SELECT count() FROM
 (
     SELECT k, count()
     FROM remote('127.0.0.1', view(SELECT toUInt64(number % 97) AS k FROM numbers(10000)))
     GROUP BY k LIMIT 10
-    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, max_rows_to_group_by = 0
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, max_rows_to_group_by = 0, prefer_localhost_replica = 1
 );
 
 -- Distributed query: the aggregation is split between the shards and the initiator, so the
@@ -104,4 +105,22 @@ SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k
 -- fixed maps also cannot represent a kept key with a zero inline count() state).
 WITH lim AS (SELECT number % 997 AS k, count() AS c FROM numbers_mt(100000) GROUP BY k LIMIT 10),
      tru AS (SELECT number % 997 AS k, count() AS c FROM numbers_mt(100000) GROUP BY k)
+SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k;
+
+-- External aggregation and the cutoff exclude each other at runtime, decided by whichever
+-- fires first. Here the limit is huge, so the cutoff never freezes, and the first spill
+-- (1-byte threshold, forced two-level) abandons it: the aggregation completes exactly,
+-- spilling as it would without the optimization, instead of being forced in-memory.
+SELECT count(), countIf(c != 100) FROM
+(
+    SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(99700) GROUP BY k LIMIT 1000000000
+    SETTINGS max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1
+);
+
+-- The reverse order: the single stream trips the cap on its first block, before any spill
+-- could fire, so spilling is skipped from then on (the table is bounded by the kept keys)
+-- and the kept values stay exact. A single stream keeps the race deterministic.
+WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(100000) GROUP BY k LIMIT 10
+             SETTINGS max_threads = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1),
+     tru AS (SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(100000) GROUP BY k)
 SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k;

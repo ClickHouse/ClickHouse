@@ -211,12 +211,58 @@ public:
         /// stream and rejected by another loses the other stream's rows and comes out of the merge
         /// with an undercounted value. Set by the trivial `GROUP BY ... LIMIT` optimization for
         /// local single-stage aggregation (see `addAggregationStep` in the planner); requires
-        /// `ANY` overflow mode without an overflow row, and external aggregation must be disabled
-        /// because spilled buckets would bypass the restriction to the kept keys.
+        /// `ANY` overflow mode without an overflow row.
         /// For the fixed hash map methods (8/16-bit keys) the cutoff stays inert and the
         /// aggregation is exact and complete — see `Aggregator::shared_kept_keys_cutoff_inert`.
         /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
         bool shared_kept_keys_for_overflow_any = false;
+
+        /// Runtime arbitration between the kept-keys cutoff and external aggregation, shared by
+        /// every stream (and every `Aggregator`) of one aggregation step. Spilled buckets would
+        /// bypass the restriction to the kept keys, and a table emptied by a spill under
+        /// `no_more_keys` would drop the remaining rows of the kept keys, so the two are mutually
+        /// exclusive, decided by whichever fires first:
+        /// - a stream that needs to spill before any freeze permanently abandons the cutoff
+        ///   (`checkLimits` stops capping the tables, no rows have been dropped anywhere, and the
+        ///   aggregation completes exactly, spilling as it would without the optimization);
+        /// - once the kept keys are frozen (or this stream has already stopped admitting keys),
+        ///   spilling is skipped: every table is bounded by the `max_rows_to_group_by` kept keys,
+        ///   which is the memory bound the cutoff provides.
+        /// Created by `AggregatingStep` when the cutoff is armed; null otherwise.
+        struct SharedKeptKeysControl
+        {
+            enum class State : UInt8
+            {
+                Armed,
+                Frozen,
+                Abandoned,
+            };
+
+            std::atomic<State> state{State::Armed};
+
+            /// The freezing stream claims the cutoff before dismantling its hash table.
+            /// Fails when a spill has abandoned the cutoff or another stream froze it first.
+            bool tryFreeze()
+            {
+                State expected = State::Armed;
+                return state.compare_exchange_strong(expected, State::Frozen);
+            }
+
+            /// A stream that needs to spill abandons the cutoff. Fails (the spill must be
+            /// skipped) when the kept keys are already frozen.
+            bool tryAbandon()
+            {
+                State expected = State::Armed;
+                return state.compare_exchange_strong(expected, State::Abandoned) || expected == State::Abandoned;
+            }
+
+            bool isAbandoned() const
+            {
+                return state.load() == State::Abandoned;
+            }
+        };
+
+        std::shared_ptr<SharedKeptKeysControl> shared_kept_keys_control;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -1184,6 +1230,11 @@ private:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    /// Arbitration between an external-aggregation spill and the kept-keys cutoff
+    /// (see `Params::SharedKeptKeysControl`). Always true when the cutoff is not armed.
+    /// May permanently abandon the cutoff, so call it only when the spill would proceed.
+    bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys) const;
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 

@@ -2459,11 +2459,14 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
+      * With the kept-keys cutoff armed, the spill and the cutoff exclude each other:
+      * the spill proceeds only when it abandons the cutoff first (see `spillAllowedUnderKeptKeysCutoff`).
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+        && worth_convert_to_two_level
+        && spillAllowedUnderKeptKeysCutoff(no_more_keys))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
@@ -2915,9 +2918,31 @@ void Aggregator::writeToTemporaryFileImpl(
 }
 
 
+bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys) const
+{
+    if (!params.shared_kept_keys_control)
+        return true;
+
+    /// This stream has already stopped admitting keys (it tripped the cap or applied the frozen
+    /// kept keys): its table is bounded by `max_rows_to_group_by` keys, and a spill would empty
+    /// it, so the remaining rows of the kept keys would be dropped and their values undercounted.
+    if (no_more_keys)
+        return false;
+
+    /// Before any freeze, the spill wins by permanently abandoning the cutoff: no rows have been
+    /// dropped anywhere yet, `checkLimits` stops capping, and the aggregation completes exactly,
+    /// spilling as it would without the optimization. After a freeze, the spill is skipped.
+    return params.shared_kept_keys_control->tryAbandon();
+}
+
 bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
-    if (!no_more_keys && params.max_rows_to_group_by && !shared_kept_keys_cutoff_inert
+    /// A cutoff abandoned in favor of external aggregation stops capping the tables entirely:
+    /// the derived `max_rows_to_group_by` exists only to serve the cutoff (see
+    /// `Params::SharedKeptKeysControl`).
+    const bool cutoff_abandoned = params.shared_kept_keys_control && params.shared_kept_keys_control->isAbandoned();
+
+    if (!no_more_keys && params.max_rows_to_group_by && !shared_kept_keys_cutoff_inert && !cutoff_abandoned
         && result_size > params.max_rows_to_group_by)
     {
         switch (params.group_by_overflow_mode)
@@ -5030,11 +5055,14 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
+      * With the kept-keys cutoff armed, the spill and the cutoff exclude each other:
+      * the spill proceeds only when it abandons the cutoff first (see `spillAllowedUnderKeptKeysCutoff`).
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+        && worth_convert_to_two_level
+        && spillAllowedUnderKeptKeysCutoff(no_more_keys))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
