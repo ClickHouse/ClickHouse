@@ -57,13 +57,13 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 
 경량 업데이트는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) 엔진과 그 [`Replicated`](/ko/reference/engines/table-engines/mergetree-family/replication) 및 [`Shared`](/ko/products/cloud/features/infrastructure/shared-merge-tree) 버전에서 지원됩니다.
 
-경량 업데이트를 사용하려면 테이블 설정 [`enable_block_number_column`](/ko/reference/settings/merge-tree-settings#enable_block_number_column) 및 [`enable_block_offset_column`](/ko/reference/settings/merge-tree-settings#enable_block_offset_column)을 사용하여 `_block_number` 및 `_block_offset` 컬럼의 머티리얼라이즈를 활성화해야 합니다.
+경량 업데이트를 사용하려면 테이블 설정 [`enable_block_number_column`](/ko/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) 및 [`enable_block_offset_column`](/ko/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column)을 사용해 `_block_number` 및 `_block_offset` 컬럼의 머티리얼라이즈를 활성화해야 합니다.
 
 <div id="lightweight-delete">
   ## 경량 DELETE
 </div>
 
-[경량 `DELETE`](/ko/reference/statements/delete) 쿼리는 `ALTER UPDATE` mutation 대신 경량 `UPDATE`로 실행할 수 있습니다. 경량 `DELETE`의 동작 방식은 [`lightweight_delete_mode`](/ko/reference/settings/session-settings#lightweight_delete_mode) 설정으로 제어됩니다.
+[경량 `DELETE`](/ko/reference/statements/delete) 쿼리는 `ALTER UPDATE` 뮤테이션 대신 경량 `UPDATE`로 실행할 수 있습니다. 경량 `DELETE`의 동작 방식은 [`lightweight_delete_mode`](/ko/reference/settings/session-settings/lightweight#lightweight_delete_mode) 설정으로 제어됩니다.
 
 <div id="performance-considerations">
   ## 성능 고려 사항
@@ -88,7 +88,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 </div>
 
 경량 업데이트는 일반적인 뮤테이션과 달리 현재 실행 중인 머지나 뮤테이션이 완료될 때까지 기다리지 않습니다.
-동시에 실행되는 경량 업데이트의 일관성은 설정 [`update_sequential_consistency`](/ko/reference/settings/session-settings#update_sequential_consistency) 및 [`update_parallel_mode`](/ko/reference/settings/session-settings#update_parallel_mode)로 제어됩니다.
+동시에 실행되는 경량 업데이트의 일관성은 설정 [`update_sequential_consistency`](/ko/reference/settings/session-settings/update#update_sequential_consistency) 및 [`update_parallel_mode`](/ko/reference/settings/session-settings/update#update_parallel_mode)로 제어됩니다.
 
 <div id="update-permissions">
   ## `UPDATE` 권한

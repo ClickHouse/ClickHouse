@@ -1,0 +1,43 @@
+shipped side owns the alias
+58
+56
+54
+56
+52
+48
+30	Nullable(Int64)
+29	Nullable(Int64)
+27	Nullable(Int64)
+6	LowCardinality(String)
+6	LowCardinality(String)
+6	LowCardinality(String)
+30	Int32
+29	Int32
+28	Int32
+59
+57
+55
+291
+281
+271
+two aliases with the same body
+9	9
+8	8
+7	7
+alias only in a clause, not in the projection
+29
+28
+27
+0	5
+1	5
+2	4
+870
+9
+a volatile alias body is still one value per row
+0
+0
+parallel replicas pushed into a subquery
+58
+56
+54
+870

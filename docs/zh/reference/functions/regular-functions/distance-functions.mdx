@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 引入版本：v21.11.0
 
-计算给定向量在 `L1` 空间中的单位向量 (Tuple 的元素为坐标)  ([出租车几何](https://en.wikipedia.org/wiki/Taxicab_geometry)) 。
+计算给定向量在 `L1` 空间中的单位向量 (Tuple 或数组的元素为坐标)  ([出租车几何](https://en.wikipedia.org/wiki/Taxicab_geometry)) 。
 
 **语法**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **别名**: `normalizeL1`
 
 **参数**
 
-* `tuple` — 数值类型的元组。[`Tuple(T)`](/zh/reference/data-types/tuple)
+* `vector` — 数值类型的 Tuple 或数组。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回单位向量。[`Tuple(Float64)`](/zh/reference/data-types/tuple)
+返回单位向量。对于 `Array` 输入，若元素类型的最小共同超类型为 `Float32` 或 `BFloat16`，则返回 `Array(Float32)`；否则返回 `Array(Float64)`。对于 `Tuple` 输入，始终返回 `Tuple(Float64)`。[`Tuple(Float64)`](/zh/reference/data-types/tuple) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 引入版本：v21.11.0
 
-计算给定向量在欧几里得空间中的单位向量 (Tuple 中的元素为坐标) ，使用[欧几里得距离](https://en.wikipedia.org/wiki/Euclidean_distance)。
+计算给定向量在欧几里得空间中的单位向量 (Tuple 或数组中的元素为坐标) ，使用[欧几里得距离](https://en.wikipedia.org/wiki/Euclidean_distance)。
 
 **语法**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
-**别名**: `normalizeL2`
+**别名**：`normalizeL2`
 
 **参数**
 
-* `tuple` — 由数值组成的元组。[`Tuple(T)`](/zh/reference/data-types/tuple)
+* `vector` — 数值组成的 Tuple 或数组。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回单位向量。[`Tuple(Float64)`](/zh/reference/data-types/tuple)
+返回单位向量。对于 `Array` 输入，若元素类型的最小共同超类型为 `Float32` 或 `BFloat16`，则返回 `Array(Float32)`；否则返回 `Array(Float64)`。对于 `Tuple` 输入，始终返回 `Tuple(Float64)`。[`Tuple(Float64)`](/zh/reference/data-types/tuple) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 引入版本：v21.11.0
 
-计算给定向量在 `L_{inf}` 空间中的单位向量 (Tuple 中的元素为各坐标) ，使用[最大范数](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))。
+计算给定向量在 `L_{inf}` 空间中的单位向量 (Tuple 或 Array 中的元素为各坐标) ，使用[最大范数](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))。
 
 **语法**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **别名**: `normalizeLinf`
 
 **参数**
 
-* `tuple` — 由数值组成的元组。[`Tuple(T)`](/zh/reference/data-types/tuple)
+* `vector` — 由数值组成的 Tuple 或数组。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-返回单位向量。[`Tuple(Float64)`](/zh/reference/data-types/tuple)
+返回单位向量。对于 `Array` 输入，如果元素类型的最小共同超类型为 `Float32` 或 `BFloat16`，则返回 `Array(Float32)`；否则返回 `Array(Float64)`。对于 `Tuple` 输入，始终返回 `Tuple(Float64)`。[`Tuple(Float64)`](/zh/reference/data-types/tuple) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — 第一个向量。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
 * `vector2` — 第二个向量。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
-* `p` — 幂次。可能的值：`[1; inf)` 范围内的实数。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `p` — 幂。可能的值：`[1; inf)` 范围内的实数。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
@@ -567,7 +567,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * 当 p=1 时，它等价于 L1Norm (曼哈顿距离) 。
 * 当 p=2 时，它等价于 L2Norm (欧几里得距离) 。
-* 当 p=∞ 时，它等价于 LinfNorm (最大范数) 。
+* `p` 的值必须是大于等于 1 的有限值；对于最大范数 (p→∞ 时的极限) ，请改用 `LinfNorm`。
 
 **语法**
 
@@ -579,8 +579,8 @@ LpNorm(vector, p)
 
 **参数**
 
-* `vector` — 由数值组成的向量或元组。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
-* `p` — 幂指数。可能的值为范围 `[1; inf)` 内的实数。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `vector` — 由数值组成的向量或 Tuple。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
+* `p` — 幂。可能的值为范围 `[1; inf)` 内的实数。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
@@ -604,26 +604,26 @@ SELECT LpNorm((1, -2), 2)
   ## LpNormalize
 </div>
 
-在以下版本中引入：v21.11.0
+引入版本：v21.11.0
 
-计算给定向量在 `Lp` 空间中的单位向量 (Tuple 中的元素为坐标) ，使用 [p-norm](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)。
+计算给定向量在 `Lp` 空间中的单位向量 (Tuple 或数组中的元素为坐标) ，使用 [p-范数](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)。
 
 **语法**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
-**别名**: `normalizeLp`
+**别名**：`normalizeLp`
 
 **参数**
 
-* `tuple` — 由数值组成的元组。[`Tuple(T)`](/zh/reference/data-types/tuple)
-* `p` — 幂。可能的值为 `[1; inf)` 范围内的任意数字。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `vector` — 数值 Tuple 或数组。[`Tuple(T)`](/zh/reference/data-types/tuple) 或 [`Array(T)`](/zh/reference/data-types/array)
+* `p` — 幂。可选值为范围 `[1; inf)` 内的实数。[`UInt*`](/zh/reference/data-types/int-uint) 或 [`Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
-返回单位向量。[`Tuple(Float64)`](/zh/reference/data-types/tuple)
+返回单位向量。对于 `Array` 输入，若元素类型的最小共同超类型为 `Float32` 或 `BFloat16`，则返回 `Array(Float32)`；否则返回 `Array(Float64)`。对于 `Tuple` 输入，始终返回 `Tuple(Float64)`。[`Tuple(Float64)`](/zh/reference/data-types/tuple) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
 
 **示例**
 

@@ -437,9 +437,6 @@ private:
         job_context->setInitialUserName(job.origin->initial_user);
         job_context->setAuthenticatedUserName(job.origin->authenticated_user);
 
-        if (cluster_name.empty() && !job.database.empty())
-            job_context->setCurrentDatabase(job.database);
-
         job_context->setCurrentQueryId({});
 
         if (!job.settings_changes.empty())
@@ -449,6 +446,12 @@ private:
                 job_context->checkSettingsConstraints(job.settings_changes, SettingSource::QUERY);
             job_context->applySettingsChanges(job.settings_changes);
         }
+
+        /// After the job's settings, so the database explicitly recorded for the job wins over a
+        /// `database` setting carried by the job's settings changes; `setCurrentDatabase` mirrors it
+        /// back into the setting, keeping the two in sync for `executeQuery`.
+        if (cluster_name.empty() && !job.database.empty())
+            job_context->setCurrentDatabase(job.database);
 
         /// The engine always discards query results, so there is no point in transferring them over the network.
         job_context->setSetting("discard_query_data", true);

@@ -56,6 +56,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace ErrorCodes
@@ -869,13 +870,14 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
     }
-    /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    configuration->drop(drop_context);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

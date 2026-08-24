@@ -500,6 +500,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                 case DataDestinationType::DISK:
                 case DataDestinationType::VOLUME:
                 case DataDestinationType::SHARD:
+                    /// `TO SHARD` exists only in the `MOVE PART` grammar branch, and
+                    /// `movePartitionToShard` reads the part name off an `ASTLiteral`.
+                    if (move_destination_type == DataDestinationType::SHARD && !part)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "move_destination_type 'SHARD' requires the PART form ('part' set) of MOVE "
+                            "during AST JSON deserialization");
                     if (move_destination_name.empty())
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
@@ -508,6 +515,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                             magic_enum::enum_name(move_destination_type));
                     break;
                 case DataDestinationType::TABLE:
+                    /// `TO TABLE` exists only in the `MOVE PARTITION` grammar branch, and
+                    /// `getPartitionIDFromQuery` downcasts `partition` to `ASTPartition`.
+                    if (part)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "move_destination_type 'TABLE' requires the PARTITION form ('part' unset) of MOVE "
+                            "during AST JSON deserialization");
                     if (to_table.empty())
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
@@ -864,6 +878,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             case DataDestinationType::VOLUME:
                 ostr << "VOLUME ";
                 break;
+            case DataDestinationType::SHARD:
+                ostr << "SHARD ";
+                break;
             case DataDestinationType::TABLE:
                 ostr << "TABLE ";
                 if (!to_database.empty())
@@ -1176,9 +1193,11 @@ namespace
 
 /// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
 /// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
-/// routing and the storage fast path agree. Placement (FIRST/AFTER) and
-/// per-column SETTINGS are excluded: they alter the replicated /columns and must
-/// take the full replicated path.
+/// routing and the storage fast path agree. Placement (FIRST/AFTER), per-column
+/// SETTINGS and STATISTICS are excluded: they alter the replicated /columns and
+/// must take the full replicated path. COLLATE and PRIMARY KEY are excluded too:
+/// they parse but are rejected by `AlterCommand::parse`, and the rejection must not
+/// happen after the query has already been routed as a comment-only alter.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
 {
     if (command.type != ASTAlterCommand::MODIFY_COLUMN)
@@ -1194,6 +1213,9 @@ bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
         && col_decl->getDefaultExpression() == nullptr
         && col_decl->getTTL() == nullptr
         && col_decl->getSettings() == nullptr
+        && col_decl->getStatisticsDesc() == nullptr
+        && col_decl->getCollation() == nullptr
+        && !col_decl->primary_key_specifier
         && command.settings_changes == nullptr
         && command.settings_resets == nullptr
         && command.column == nullptr

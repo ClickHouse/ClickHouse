@@ -75,6 +75,37 @@ def kafka_setup_teardown():
 
 
 # Tests
+def test_kafka_no_kerberos_kinit_warning(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(f"""
+        CREATE TABLE test.{kafka_table} (key UInt64)
+            ENGINE = Kafka()
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_group_name = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_format = 'JSONEachRow';
+    """)
+
+    instance.query(f"""
+        CREATE MATERIALIZED VIEW test.{kafka_table}_view
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        AS SELECT * FROM test.{kafka_table}
+    """)
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+    assert not instance.contains_in_log(
+        f"{kafka_table}.*sasl.kerberos.kinit.cmd configuration parameter is ignored."
+    )
+
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [

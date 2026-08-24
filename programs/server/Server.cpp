@@ -12,6 +12,8 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
 #include <Common/ErrorCodes.h>
@@ -27,6 +29,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
+#include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
@@ -53,6 +56,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
+#include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -63,6 +67,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
@@ -1299,8 +1304,88 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
+        ///
+        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
+        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
+        /// synchronous delivery, but anything already queued waits until the threads run again).
+        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
+        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
+        /// during a normal startup.
+        std::exception_ptr remap_exception;
+        size_t remapped_size = 0;
+#if USE_JEMALLOC
+        bool jemalloc_background_threads_were_enabled = false;
+#endif
+        {
+            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
+            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
+            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
+            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
+            BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+#if USE_JEMALLOC
+            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
+            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
+            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
+            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
+            /// joins* every background thread before returning, so after this call they are fully quiesced.
+            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
+            /// left untouched, so re-enabling restores the configured limit.
+            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
+                && jemalloc_background_threads_were_enabled)
+                Jemalloc::setBackgroundThreads(false);
+#endif
+
+            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
+            /// may already have written a record into the signal pipe, and the listener thread would execute the
+            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
+            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
+            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
+            stopSignalListener();
+
+            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
+            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
+            stopAsyncLoggingThreads();
+
+            /// At this point the process is single-threaded again and all handled signals are blocked,
+            /// so no code other than this thread can possibly run while the text segment is rewritten.
+            try
+            {
+                remapped_size = remapExecutable();
+            }
+            catch (...)
+            {
+                remap_exception = std::current_exception();
+            }
+        }
+
+#if USE_JEMALLOC
+        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
+        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
+        /// for the same reason the logging threads are: the allocator must be back in its configured
+        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
+        /// server settings, so a failure to restore would not go unnoticed.
+        if (jemalloc_background_threads_were_enabled)
+            Jemalloc::setBackgroundThreads(true);
+#endif
+
+        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
+        /// running would keep accepting messages into queues that no consumer drains. open() tears the
+        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
+        /// synchronously, so the exception propagating out of Server::main still reaches the log.
+        startAsyncLoggingThreads();
+
+        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
+        /// A pending signal delivered when the mask was restored above only writes a record into the signal
+        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        startSignalListener();
+
+        if (remap_exception)
+            std::rethrow_exception(remap_exception);
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])
@@ -1842,6 +1927,13 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    /// Validate the loaded XML config directly (not the layered config) so that command-line
+    /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
+    /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
+    /// The `skip_check_for_incorrect_settings` escape hatch is resolved from the layered `config()`,
+    /// so it works when supplied from the command line as well as from the config file.
+    ServerSettings::checkUnknownSettings(
+        *loaded_config.configuration, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
@@ -1978,7 +2070,7 @@ try
 
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
-        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+        auto cancellation_task_holder = global_context->getSchedulePool()->createTask(
             StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
@@ -2443,6 +2535,7 @@ try
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
@@ -2514,6 +2607,22 @@ try
         dns_cache_updater->start();
     }
 
+    /// Whether `--skip_check_for_incorrect_settings=1` was passed on the *command line*, captured
+    /// independently of any config file layer. Reusing the layered `config()` here would conflate
+    /// the command-line value with whatever the *previously loaded* file set: a config that once
+    /// contained `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>` would
+    /// leave that flag live in `config()`, so a reload that *removes* the flag while adding an
+    /// unknown key would still be skipped — diverging from a fresh startup with the same file,
+    /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
+    /// populates the command-line layer) reproduces the command-line-only view; the priority is
+    /// irrelevant because the throwaway config has a single layer.
+    bool command_line_skip_check = false;
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
+        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2522,6 +2631,20 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Validate the new config BEFORE installing it into the global layered config, so a
+            /// failed reload does not leave `config()` partially mutated with unvalidated changes.
+            /// The escape hatch is honored when it is either passed on the command line (persisted
+            /// across reloads) or present in the *new* file being validated — never inherited from
+            /// the previously loaded file layer (see `command_line_skip_check` above). This matches
+            /// startup: validating the same file fresh must reach the same accept/reject decision.
+            const bool skip_check
+                = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
+            if (!skip_check)
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+            /// Same as on initial load: validate the reloaded XML config rather than the layered
+            /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
+            ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
+
             /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
@@ -2533,8 +2656,6 @@ try
             }
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
-
-            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
@@ -2749,11 +2870,11 @@ try
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
-            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
-            global_context->getStreamingSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
+            global_context->getBufferFlushSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
+            global_context->getSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
+            global_context->getMessageBrokerSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
+            global_context->getDistributedSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getStreamingSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -3271,10 +3392,21 @@ try
     {
         /// All settings can be changed in the global config
         bool allowed_experimental = true;
+        bool allowed_private_preview = true;
         bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -3644,7 +3776,9 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                safeExit(0);
+                /// No leak check: remaining connection handlers or refresh tasks still own memory
+                /// it would report as leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
         });
 
@@ -3770,7 +3904,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")

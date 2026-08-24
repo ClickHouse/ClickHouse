@@ -124,6 +124,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /UserDefined/
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
+    -e /aiSimilarity.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 

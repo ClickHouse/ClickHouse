@@ -66,6 +66,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_returning(Keyword::RETURNING);
     ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -242,10 +243,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_from.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
         /// If SELECT is defined (possibly in parentheses), return to position before select and parse
         /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
+        /// The query can also start with the FROM clause: INSERT INTO t2 FROM t1 |> WHERE x.
+        /// Note that FROM INFILE was already parsed before, so FROM at this position starts a SELECT query.
         pos = before_values;
         returning_select.reset();
         ParserSelectWithUnionQuery select_p;

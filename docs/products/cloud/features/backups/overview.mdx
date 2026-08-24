@@ -39,7 +39,7 @@ See ["Review and restore backups"](/products/cloud/guides/backups/review-and-res
 
 ClickHouse Cloud allows you to configure the schedule for your backups for **Scale** and **Enterprise** tier services. Backups can be configured along the following dimensions based on your business needs.
 
-- **Retention**: The duration of days, for which each backup will be retained. Retention can be specified as low as 1 day, and as high as 30 days with several values to pick in between.
+- **Retention**: The duration of days, for which each backup will be retained. Retention can be specified as low as 1 day, and as high as 45 days with several values to pick in between.
 - **Frequency**: The frequency allows you to specify the time duration between subsequent backups. For instance, a frequency of "every 12 hours" means that backups will be spaced 12 hours apart. Frequency can range from "every 6 hours" to "every 48 hours" in the following hourly increments: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
 - **Start Time**: The start time for when you want to schedule backups each day. Specifying a start time implies that the backup "Frequency" will default to once every 24 hours.  Clickhouse Cloud will start the backup within an hour of the specified start time.
 

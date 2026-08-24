@@ -1221,7 +1221,7 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotInde
     ChangelogDirTest test("./logs");
 
     auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots", "./logs");
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -1271,7 +1271,7 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesEphemeralTailForClosePreprocess)
     ChangelogDirTest test("./logs");
 
     auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots", "./logs");
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);

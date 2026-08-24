@@ -42,6 +42,8 @@ Cela équivaut à définir une contrainte `readonly` sur toutes les fonctionnali
 
 Interdit la création d’un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WITH no&#95;password&#39; est explicitement indiqué.
 
+* **Par défaut :** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +54,8 @@ Interdit la création d’un utilisateur sans mot de passe, sauf si &#39;IDENTIF
 
 Indique si le type de mot de passe non sécurisé no&#95;password est autorisé ou non.
 
+* **Valeur par défaut :** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +65,8 @@ Indique si le type de mot de passe non sécurisé no&#95;password est autorisé 
 </div>
 
 Indique si les types d’authentification par mot de passe en clair (non sécurisés) sont autorisés ou non.
+
+* **Par défaut :** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>

@@ -19,14 +19,14 @@ Contiene información sobre las vistas dependientes que se ejecutan al lanzar un
 
 Para iniciar el registro:
 
-1. Configure los parámetros en la sección [query&#95;views&#95;log](/es/reference/settings/server-settings/settings#query_views_log).
-2. Establezca [log&#95;query&#95;views](/es/reference/settings/session-settings#log_query_views) en 1.
+1. Configure los parámetros en la sección [query&#95;views&#95;log](/es/reference/settings/server-settings/settings/query#query_views_log).
+2. Establezca [log&#95;query&#95;views](/es/reference/settings/session-settings/log-query#log_query_views) en 1.
 
-El período de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;views&#95;log](/es/reference/settings/server-settings/settings#query_views_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
+El período de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;views&#95;log](/es/reference/settings/server-settings/settings/query#query_views_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
 
 ClickHouse no elimina datos de la tabla automáticamente. Consulte [Introducción](/es/reference/system-tables/overview#system-tables-introduction) para obtener más detalles.
 
-Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings#log_queries_probability)) para reducir el número de consultas registradas en la tabla `query_views_log`.
+Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings/log-queries#log_queries_probability)) para reducir el número de consultas registradas en la tabla `query_views_log`.
 
 <div id="columns">
   ## Columnas

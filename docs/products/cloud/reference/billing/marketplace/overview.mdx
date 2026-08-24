@@ -87,6 +87,10 @@ There is no difference in pricing between marketplace billing and signing up dir
 
 Yes. Multiple ClickHouse organizations can be configured to bill usage in arrears to the same cloud marketplace billing account (AWS, GCP, or Azure). However, prepaid credits aren't shared across organizations by default. If you need to share credits between organizations, please contact [ClickHouse Cloud Support](https://clickhouse.com/support/program).
 
+### Can I bill different services within the same organization to different marketplace subscriptions? {#can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions}
+
+No. Billing is configured at the organization level, so all services within a single ClickHouse Cloud organization are billed to the same marketplace subscription. If you need to bill services separately, create separate organizations for each billing arrangement. You can manage multiple organizations from the same ClickHouse Cloud console user account, each with its own billing configuration.
+
 ### If my ClickHouse Organization is billed through a cloud marketplace committed spend agreement will I automatically move to PAYG billing when I run out of credits? {#automatically-move-to-PAYG-when-running-out-of-credit}
 
 If your marketplace committed spend contract is active and you run out of credits we will automatically move your organization to PAYG billing. However, when your existing contract expires, you will need to link a new marketplace contract to your organization or move your organization to direct billing via credit card. 

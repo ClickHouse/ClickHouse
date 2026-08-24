@@ -292,6 +292,10 @@
     M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperChangelogStartupReadMicroseconds) \
+    M(KeeperChangelogStartupStitchMicroseconds) \
+    M(KeeperChangelogStartupReadEntries) \
+    M(KeeperChangelogStartupReadBytes) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
@@ -325,9 +329,15 @@
     M(InterfacePostgreSQLReceiveBytes) \
 \
     M(KeeperLogsEntryReadFromLatestCache) \
-    M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
-    M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsReadAheadPlanEpochMismatches) \
+    M(KeeperLogsReadAheadScheduleRejected) \
+    M(KeeperLogsReadAheadReadersCreated) \
+    M(KeeperLogsReadAheadTimeoutFallbacks) \
+    M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
@@ -408,6 +418,12 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
+    M(KeeperChangelogReadAheadThreads) \
+    M(KeeperChangelogReadAheadThreadsActive) \
+    M(KeeperChangelogReadAheadThreadsScheduled) \
+    M(KeeperChangelogStartupReadThreads) \
+    M(KeeperChangelogStartupReadThreadsActive) \
+    M(KeeperChangelogStartupReadThreadsScheduled) \
     M(KeeperBlockCacheBytes) \
     M(KeeperBlockCacheBlocks) \
     M(KeeperContainerNodes) \

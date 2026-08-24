@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Universally Unique Identifier (UUID) は、レコードを識別するために使用される 16 バイトの値です。UUID の詳細については、[Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier) を参照してください。
 
-UUIDv4 や UUIDv7 など、異なる UUID バリアントがありますが ([こちら](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)を参照) 、ClickHouse は、挿入された UUID が特定のバリアントに準拠しているかどうかを検証しません。
+UUIDv4 や UUIDv7 など、異なる UUID バリアントがありますが ([RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)を参照) 、ClickHouse は、挿入された UUID が特定のバリアントに準拠しているかどうかを検証しません。
 UUID は内部的には 16 個のランダムなバイト列として扱われ、SQL レベルでは [8-4-4-4-12 の表記形式](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation)が使用されます。
 
 UUID 値の例:

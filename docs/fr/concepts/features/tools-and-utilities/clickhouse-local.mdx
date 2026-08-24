@@ -72,6 +72,13 @@ La fonction de table `file` crée une table, et vous pouvez utiliser `DESCRIBE` 
   ```
 </Tip>
 
+Les données ne doivent pas nécessairement être locales : vous pouvez utiliser une URL à la place d’un nom de fichier, et son schéma sélectionne le moteur de table correspondant (`http://` et `https://` sont lus comme la fonction [url](/fr/reference/functions/table-functions/url), `s3://` comme la fonction [s3](/fr/reference/functions/table-functions/s3), `file://` comme la fonction [file](/fr/reference/functions/table-functions/file)) :
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)

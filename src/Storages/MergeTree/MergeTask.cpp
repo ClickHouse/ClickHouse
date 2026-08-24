@@ -136,6 +136,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -164,7 +165,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -546,13 +546,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ProfileEvents::increment(ProfileEvents::Merge);
     ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
-    String local_tmp_prefix;
-    if (global_ctx->need_prefix)
-    {
-        // projection parts have different prefix and suffix compared to normal parts.
-        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
-    }
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
@@ -586,20 +582,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// dedicated arena (same as `MergeTreeData::loadDataPart` / `DataPartsExchange`). The rest of
     /// `prepare` (storage snapshot, column extraction, pipeline/transform setup) is merge-lifetime
     /// scratch and is deliberately left in the default per-CPU arenas.
+    /// The name is deterministic (`tmp_merge_<part>`), so claim it and reclaim a leftover of an
+    /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
+    if (!global_ctx->parent_part)
+        global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
-            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
+            /// Non-initializing, so nothing is seeded from an existing directory.
+            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
         }
         else
         {
             auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
-            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings()));
+            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
             builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
         }
 
@@ -610,15 +612,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    if (data_part_storage->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
+    /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
+    /// same operation just created, so finding one means a logic bug.
+    if (global_ctx->parent_part && data_part_storage->exists())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
-    /// Background temp dirs cleaner will not touch tmp projection directory because
-    /// it's located inside part's directory
-    if (!global_ctx->parent_part)
-        global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -864,7 +863,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 /// Populate the merged part's minmax index in the parts arena (the object and the
                 /// hyperrectangle/Field allocations of `merge` both land there).
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
+
+                /// The source part may carry an index that has lost the block column ranges: it was loaded
+                /// before `part_minmax_index_columns` was widened (no block column slots at all), or it was
+                /// mutated before the index started to be materialized for mutated parts (whole-universe
+                /// ranges). `merge` truncates to the shorter of the two indices, so an unrepaired narrow
+                /// source would strip the block columns from the merged index too, and the merged part
+                /// would be stored without the block column files. Repair a copy of the source index -
+                /// the source part itself must keep what its on-disk state says.
+                IMergeTreeDataPart::MinMaxIndex repaired_minmax_idx = *part->getMinMaxIndex();
+                repaired_minmax_idx.repairInheritedBlockColumns(*part, global_ctx->metadata_snapshot);
+                global_ctx->new_data_part->getMinMaxIndex()->merge(repaired_minmax_idx);
             }
             const auto & result_statistics = global_ctx->gathered_data.statistics;
 
@@ -1519,7 +1528,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1561,7 +1570,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -2218,7 +2227,6 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->deduplicate_by_columns,
             global_ctx->cleanup,
             projection_merging_params,
-            global_ctx->need_prefix,
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
@@ -2687,6 +2695,7 @@ public:
         UInt64 merge_block_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool blocks_are_granules_size_,
+        SortingQueueStrategy sorting_queue_strategy_,
         bool cleanup_,
         time_t time_of_merge_)
         : ITransformingStep(input_header_, input_header_, getTraits())
@@ -2699,6 +2708,7 @@ public:
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , sorting_queue_strategy(sorting_queue_strategy_)
         , cleanup(cleanup_)
         , time_of_merge(time_of_merge_)
     {}
@@ -2733,7 +2743,7 @@ public:
                     merge_block_size_rows,
                     merge_block_size_bytes,
                     max_dynamic_subcolumns,
-                    SortingQueueStrategy::Default,
+                    sorting_queue_strategy,
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
                     rows_sources_write_buf,
@@ -2825,6 +2835,7 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool blocks_are_granules_size;
+    const SortingQueueStrategy sorting_queue_strategy;
     const bool cleanup{false};
     const time_t time_of_merge{0};
 };
@@ -3346,6 +3357,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
+        const auto sorting_queue_strategy
+            = !global_ctx->merge_may_reduce_rows
+                && !global_ctx->projection
+                && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
+            ? SortingQueueStrategy::Batch
+            : SortingQueueStrategy::Default;
+
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
@@ -3357,6 +3375,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
             is_vertical_merge,
+            sorting_queue_strategy,
             cleanup,
             global_ctx->time_of_merge);
 

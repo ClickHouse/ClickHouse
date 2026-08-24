@@ -1008,19 +1008,29 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
     size_t num_rows = unwrapped.data->size();
 
     Arena temp_arena;
-    auto keys = serializeIDs(*unwrapped.data, nullptr, temp_arena);
 
     VectorWithMemoryTracking<Group> res;
     res.reserve(num_rows);
 
     SharedLockGuard lock{mutex};
 
+    /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
+    Group prev_group = INVALID_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
-        const auto * it = groups_by_id.find(keys[i]);
+        if (i > 0 && prev_group != INVALID_GROUP
+            && unwrapped.data->compareAt(i, i - 1, *unwrapped.data, /* nan_direction_hint = */ 1) == 0)
+        {
+            res.push_back(prev_group);
+            continue;
+        }
+        const char * begin = nullptr;
+        auto key = unwrapped.data->serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
+        const auto * it = groups_by_id.find(key);
         if (!it)
             throwUnknownID(*unwrapped.column, i);
-        res.push_back(it->getMapped());
+        prev_group = it->getMapped();
+        res.push_back(prev_group);
     }
 
     return res;
@@ -1068,22 +1078,54 @@ Group ContextTimeSeriesTagsCollector::transformTags(Group group, TransformFunc &
 template <typename TransformFunc>
 VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(const VectorWithMemoryTracking<Group> & groups_, TransformFunc && transform_func)
 {
+    if (groups_.empty())
+        return {};
+
     auto tags_vector = getTagsByGroup(groups_);
     chassert(tags_vector.size() == groups_.size());
 
-    std::unordered_map<Group, size_t> indices_in_result_vector;
+    VectorWithMemoryTracking<Group> res;
+    res.resize(groups_.size());
+
     size_t num_new_tags = 0;
 
-    for (size_t i = 0; i != groups_.size(); ++i)
+    auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
+    Group min_group = *min_group_it;
+    Group group_range = *max_group_it - min_group;
+
+    /// Groups are dense integer indices, and a block usually contains a compact range of them.
+    /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
+    constexpr size_t max_dense_range_to_input_size_ratio = 4;
+    bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
+
+    if (use_dense_mapping)
     {
-        Group group = groups_[i];
-        auto it = indices_in_result_vector.find(group);
-        if (it == indices_in_result_vector.end())
+        const size_t not_found = groups_.size();
+        VectorWithMemoryTracking<size_t> indices_by_group;
+        indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+
+        for (size_t i = 0; i != groups_.size(); ++i)
         {
-            const auto & old_tags = tags_vector[i];
-            auto new_tags = transform_func(old_tags);
-            indices_in_result_vector[group] = num_new_tags;
-            tags_vector[num_new_tags++] = new_tags;
+            size_t & index = indices_by_group[groups_[i] - min_group];
+            if (index == not_found)
+            {
+                index = num_new_tags;
+                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+            }
+            res[i] = index;
+        }
+    }
+    else
+    {
+        std::unordered_map<Group, size_t> indices_by_group;
+
+        for (size_t i = 0; i != groups_.size(); ++i)
+        {
+            Group group = groups_[i];
+            auto [it, inserted] = indices_by_group.try_emplace(group, num_new_tags);
+            if (inserted)
+                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+            res[i] = it->second;
         }
     }
 
@@ -1091,14 +1133,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
 
     auto new_groups = getGroupForTags(tags_vector);
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(groups_.size());
-
-    for (auto old_group : groups_)
-    {
-        auto new_group = new_groups.at(indices_in_result_vector.at(old_group));
-        res.push_back(new_group);
-    }
+    for (auto & index : res)
+        index = new_groups.at(index);
 
     return res;
 }

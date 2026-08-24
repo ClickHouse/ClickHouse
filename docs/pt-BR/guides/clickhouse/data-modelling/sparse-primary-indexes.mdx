@@ -355,7 +355,7 @@ As primeiras 8192 linhas (com base na ordem física em disco) (seus valores de c
 
     Portanto, todos os grânulos (exceto o último) da nossa tabela de exemplo têm o mesmo tamanho.
 
-  * Para tabelas com granularidade adaptativa do índice (a granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes)), o tamanho de alguns grânulos pode ser menor que 8192 linhas, dependendo do tamanho dos dados das linhas.
+  * Para tabelas com granularidade adaptativa do índice (a granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)), o tamanho de alguns grânulos pode ser menor que 8192 linhas, dependendo do tamanho dos dados das linhas.
 
   * Marcamos alguns valores de coluna das nossas colunas de chave primária (`UserID`, `URL`) em laranja.
     Esses valores de coluna marcados em laranja são os valores das colunas de chave primária da primeira linha de cada grânulo.
@@ -392,7 +392,7 @@ No total, o índice tem 1083 entradas para nossa tabela com 8,87 milhões de lin
 <Accordion title="Inspecionando o conteúdo do índice primário">
   Em um cluster ClickHouse autogerenciado, podemos usar a [função de tabela file](/pt-BR/reference/functions/table-functions/file) para inspecionar o conteúdo do índice primário da nossa tabela de exemplo.
 
-  Para isso, primeiro precisamos copiar o arquivo do índice primário para o [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path) de um nó do cluster em execução:
+  Para isso, primeiro precisamos copiar o arquivo do índice primário para o [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path) de um nó do cluster em execução:
 
   **Etapa 1: Obter o caminho da part que contém o arquivo do índice primário**
 
@@ -513,9 +513,9 @@ Processed 8.19 thousand rows,
 740.18 KB (1.53 million rows/s., 138.59 MB/s.)
 ```
 
-A saída do cliente ClickHouse agora mostra que, em vez de fazer uma varredura completa da tabela, apenas 8,19 mil linhas foram processadas pelo ClickHouse.
+A saída do cliente ClickHouse agora mostra que, em vez de fazer uma varredura completa da tabela, apenas 8,19 mil linhas foram transmitidas por streaming para o ClickHouse.
 
-Se o <a href="/pt-BR/reference/settings/server-settings/settings#logger" target="_blank">logging de trace</a> estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse estava executando uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> nas 1083 marcas do índice UserID, para identificar grânulos que possivelmente podem conter linhas com o valor `749927693` na coluna UserID. Isso requer 19 passos, com complexidade de tempo média de `O(log2 n)`:
+Se o <a href="/pt-BR/reference/settings/server-settings/settings/other#logger" target="_blank">logging de trace</a> estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse estava executando uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> nas 1083 marcas do índice UserID, para identificar grânulos que possivelmente podem conter linhas com o valor `749927693` na coluna UserID. Isso requer 19 passos, com complexidade de tempo média de `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -528,11 +528,15 @@ Se o <a href="/pt-BR/reference/settings/server-settings/settings#logger" target=
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
+:::note
+Em versões recentes do ClickHouse, as mensagens `Running binary search on index range`, `Found (LEFT) boundary mark` e `Found (RIGHT) boundary mark` são registradas no nível `test` (o nível mais detalhado), em vez de `trace`. Para visualizá-las, aumente a verbosidade do log para `test` (por exemplo, `SET send_logs_level = 'test'` no cliente ou `<logger><level>test</level></logger>` na configuração do servidor). As linhas restantes mostradas acima ainda são registradas em `trace`. Isso se aplica a todos os exemplos de log de busca binária neste guia.
+:::
+
 Podemos ver, no log de trace acima, que uma das 1083 marcas existentes atendeu à consulta.
 
 <Accordion title="Detalhes do Log de Trace">
   <p>
-    A marca 176 foi identificada (a &#39;marca do limite esquerdo encontrada&#39; é inclusiva, e a &#39;marca do limite direito encontrada&#39; é exclusiva) e, portanto, todas as 8192 linhas do grânulo 176 (que começa na linha 1.441.792 — veremos isso mais adiante neste guia) são então lidas pelo ClickHouse para encontrar as linhas reais com o valor `749927693` na coluna UserID.
+    A marca 176 foi identificada (a &#39;marca do limite esquerdo encontrada&#39; é inclusiva, e a &#39;marca do limite direito encontrada&#39; é exclusiva) e, portanto, todas as 8192 linhas do grânulo 176 (que começa na linha 1.441.792 — veremos isso mais adiante neste guia) são então transmitidas por streaming para o ClickHouse para encontrar as linhas reais com o valor `749927693` na coluna UserID.
   </p>
 </Accordion>
 
@@ -632,13 +636,13 @@ Cada entrada do arquivo de marcação para uma coluna específica armazena duas 
 Todas as 8192 linhas pertencentes ao grânulo descompactado localizado são então transmitidas ao ClickHouse para processamento adicional.
 
 <Note>
-  * Para tabelas com [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) e sem [granularidade adaptativa do índice](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), o ClickHouse usa arquivos de marcação `.mrk`, como mostrado acima, que contêm entradas com dois endereços de 8 bytes por entrada. Essas entradas são localizações físicas de grânulos que têm todos o mesmo tamanho.
+  * Para tabelas com [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) e sem [adaptive index granularity](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), o ClickHouse usa arquivos de marcação `.mrk`, como mostrado acima, que contêm entradas com dois endereços de 8 bytes por entrada. Essas entradas são localizações físicas de grânulos, todos com o mesmo tamanho.
 
-  A granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes), mas, para a nossa tabela de exemplo, desativamos a granularidade adaptativa do índice (para simplificar as discussões neste guia e também para tornar os diagramas e os resultados reproduzíveis). Nossa tabela usa formato wide porque o tamanho dos dados é maior que [min&#95;bytes&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (que é 10 MB por padrão para clusters autogerenciados).
+  A granularidade do índice é adaptativa por [default](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes), mas, para a nossa tabela de exemplo, desativamos a granularidade adaptativa do índice (para simplificar as discussões neste guia, bem como tornar os diagramas e os resultados reproduzíveis). Nossa tabela está usando formato wide porque o tamanho dos dados é maior que [min&#95;bytes&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (que é 10 MB por padrão para clusters autogerenciados).
 
   * Para tabelas com formato wide e com granularidade adaptativa do índice, o ClickHouse usa arquivos de marcação `.mrk2`, que contêm entradas semelhantes às dos arquivos de marcação `.mrk`, mas com um terceiro valor adicional por entrada: o número de linhas do grânulo ao qual a entrada atual está associada.
 
-  * Para tabelas com [formato compact](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), o ClickHouse usa arquivos de marcação `.mrk3`.
+  * Para tabelas com [compact format](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), o ClickHouse usa arquivos de marcação `.mrk3`.
 </Note>
 
 <Info>
@@ -739,7 +743,7 @@ Processed 8.81 million rows,
 
 A saída do cliente indica que o ClickHouse quase executou uma varredura completa da tabela, apesar de a [coluna URL fazer parte da chave primária composta](#a-table-with-a-primary-key)! O ClickHouse lê 8,81 milhões de linhas das 8,87 milhões de linhas da tabela.
 
-Se [trace&#95;logging](/pt-BR/reference/settings/server-settings/settings#logger) estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse usou uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">busca por exclusão genérica</a> nas 1083 marcas de índice de URL para identificar os grânulos que possivelmente podem conter linhas com um valor na coluna URL igual a &quot;http://public&#95;search&quot;:
+Se [trace&#95;logging](/pt-BR/reference/settings/server-settings/settings/other#logger) estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse usou uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">busca por exclusão genérica</a> nas 1083 marcas de índice de URL para identificar os grânulos que possivelmente podem conter linhas com um valor na coluna URL igual a &quot;http://public&#95;search&quot;:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -894,7 +898,7 @@ A seguir, discutimos essas três opções para criar e usar vários índices pri
 
 <a name="secondary-table" />
 
-Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave primária (em relação à tabela original):
+Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas-chave da chave primária (em relação à tabela original):
 
 ```sql highlight={8}
 CREATE TABLE hits_URL_UserID
@@ -974,10 +978,10 @@ Processed 319.49 thousand rows,
 
 Agora, em vez de [quase fazer uma varredura completa da tabela](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns), ClickHouse executou essa consulta de maneira muito mais eficiente.
 
-Com o índice primário da [tabela original](#a-table-with-a-primary-key), em que UserID era a primeira coluna-chave e URL a segunda, ClickHouse usou uma [busca por exclusão genérica](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre as marcas do índice para executar essa consulta, e isso não foi muito eficaz devido à cardinalidade alta e semelhante de UserID e URL.
+Com o índice primário da [tabela original](#a-table-with-a-primary-key), em que UserID era a primeira coluna-chave e URL a segunda, ClickHouse usou uma [busca por exclusão genérica](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre as marcas de índice para executar essa consulta, e isso não foi muito eficaz devido à cardinalidade alta e semelhante de UserID e URL.
 
-Com URL como a primeira coluna no índice primário, ClickHouse agora está executando <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> sobre as marcas do índice.
-O log de trace correspondente no arquivo de log do servidor ClickHouse confirma isso:
+Com URL como a primeira coluna no índice primário, ClickHouse agora está executando <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> sobre as marcas de índice.
+O log do servidor correspondente confirma isso (em versões recentes, as mensagens de busca binária são registradas no nível `test` — consulte a [observação acima](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1069,7 +1073,7 @@ Ok.
 ```
 
 <Note>
-  * trocamos a ordem das colunas da chave (em comparação com nossa [tabela original](#a-table-with-a-primary-key)) na chave primária da visão
+  * trocamos a ordem das colunas-chave (em comparação com nossa [tabela original](#a-table-with-a-primary-key)) na chave primária da visão
   * a visão materializada usa uma **tabela criada implicitamente**, cuja ordem das linhas e cujo índice primário são baseados na definição de chave primária fornecida
   * a tabela criada implicitamente é listada pela consulta `SHOW TABLES` e tem um nome que começa com `.inner`
   * também é possível primeiro criar explicitamente a tabela subjacente de uma visão materializada; em seguida, a visão pode apontar para essa tabela por meio da [cláusula](/pt-BR/reference/statements/create/view) `TO [db].[table]`
@@ -1118,7 +1122,7 @@ Processed 335.87 thousand rows,
 
 Como, na prática, a tabela criada implicitamente (e seu índice primário) que dá suporte à visão materializada é idêntica à [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), a consulta é executada efetivamente da mesma forma que com a tabela criada explicitamente.
 
-O log de trace correspondente no arquivo de log do servidor ClickHouse confirma que o ClickHouse está executando uma busca binária sobre as marcas do índice:
+O log do servidor correspondente confirma que o ClickHouse está executando uma busca binária sobre as marcas de índice (em versões recentes, as mensagens de busca binária são registradas no nível `test` — consulte a [nota acima](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1202,7 +1206,7 @@ Processed 319.49 thousand rows, 1
 
 Como, na prática, a tabela oculta (e seu índice primário) criada pela projeção é idêntica à [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), a consulta é executada efetivamente da mesma forma que com a tabela criada explicitamente.
 
-O log de trace correspondente no arquivo de log do servidor ClickHouse confirma que o ClickHouse está executando uma busca binária sobre as marcas do índice:
+O log do servidor correspondente confirma que o ClickHouse está executando uma busca binária sobre as marcas de índice (em versões recentes, as mensagens de busca binária são registradas no nível `test` — consulte a [observação acima](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

@@ -64,14 +64,18 @@ const char * __tsan_default_suppressions()
     /// element type's implicitly generated move assignment is a separate, still-instrumented
     /// function, and the attribute additionally prevents it from being inlined.
     ///
-    /// Only `tryPush` is listed. Both Keeper queues have a single consumer thread, so two `tryPop`
-    /// calls never overlap and every reported pair therefore contains the `tryPush` write.
+    /// Of the queue entries, only `tryPush` is listed. Both Keeper queues have a single consumer
+    /// thread, so two `tryPop` calls never overlap and every reported pair contains the `tryPush` write.
     /// Patterns are matched against each frame's function, file and module name, so an unqualified
     /// name would also match this header's file name and the unrelated asynchronous logging queue.
     /// Keep them narrow: a `race:` entry also hides heap-use-after-free reports through the frame
     /// it names.
+    /// The same handoff orders the request: its vptr is written only by the constructor, and the
+    /// payload fields `bytesSize` reads are never assigned after publication. `race_top` matches
+    /// the innermost frame only; the request's other virtual calls are not listed.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
-           "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n";
+           "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
+           "race_top:^DB::getRequestBytesCost\n";
 }
 #endif
 

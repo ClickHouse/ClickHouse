@@ -163,12 +163,14 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/SQLDefinedHandlers)
 add_headers_and_sources(dbms Common/OOMCanary)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+add_headers_and_sources(dbms Storages/BigQuery)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -463,6 +465,7 @@ add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
 add_object_library(clickhouse_processors_formats Processors/Formats)
+add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
@@ -699,6 +702,10 @@ if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
 endif ()
 
+if (TARGET ch_contrib::jieba)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
+endif()
+
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
@@ -904,6 +911,8 @@ endif()
 if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
+
+
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)

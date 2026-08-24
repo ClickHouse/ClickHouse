@@ -1142,6 +1142,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
         if (column_mapping_it == right_table_expression.column_mapping.end())
             return {};
 
+        /// `getByKeys` cannot return a column absent from the storage sample block, and its result is
+        /// re-indexed against this header by position, so that column's slot would get another's data.
+        if (!storage_sample_block.has(column_mapping_it->second))
+            return {};
+
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
         right_table_expression_column_with_storage_column_name.name = column_mapping_it->second;
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);

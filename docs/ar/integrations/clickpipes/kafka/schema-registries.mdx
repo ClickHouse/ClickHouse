@@ -4,11 +4,13 @@ description: 'كيفية دمج ClickPipes مع سجل مخططات لإدارة
 slug: /integrations/clickpipes/kafka/schema-registries
 title: 'سجلات المخططات لـ Kafka ClickPipe'
 doc_type: 'guide'
-keywords: ['سجلات المخططات', 'kafka', 'clickpipes', 'avro', 'confluent']
+keywords: ['سجلات المخططات', 'kafka', 'clickpipes', 'avro', 'confluent', 'aws glue', 'msk']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز موضوعات Kafka المشفّرة بتنسيقَي Avro وProtobuf.
 
@@ -16,31 +18,35 @@ integration:
   ## سجلات المخططات المدعومة لـ Kafka ClickPipes
 </div>
 
-تتوفّر إمكانية دعم سجلات المخططات المتوافقة مع واجهة برمجة التطبيقات الخاصة بـ Confluent Schema Registry. ويشمل ذلك:
+يدعم Kafka ClickPipes فئتين من سجلات المخططات:
 
-* Confluent Schema Registry
-* Redpanda Schema Registry
+* [السجلات المتوافقة مع Confluent](#confluent-compatible-registries): أي سجل متوافق مع واجهة برمجة تطبيقات Confluent Schema Registry، مثل Confluent Schema Registry نفسه وRedpanda Schema Registry. يدعم Avro وProtobuf.
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): لبيانات Avro المُسلسلة باستخدام AWS Glue SerDe، والتي تأتي عادةً من Amazon MSK.
 
-لا يدعم ClickPipes حتى الآن AWS Glue Schema Registry أو Azure Schema Registry. إذا كنت بحاجة إلى دعم سجلات المخططات هذه، [فتواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
+لا يدعم ClickPipes Azure Schema Registry حتى الآن. إذا كنت بحاجة إلى دعمه، [فتواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="confluent-compatible-registries">
+  ## السجلات المتوافقة مع Confluent
+</div>
 
 <div id="schema-registry-configuration">
-  ## الإعداد
+  ### الإعداد
 </div>
 
 للتكامل مع سجل مخططات أثناء إعداد ClickPipes، يجب استخدام أحد الأساليب التالية:
 
-1. توفير مسار كامل إلى subject المخطط (مثل: `https://registry.example.com/subjects/events`)
+1. توفير مسار كامل إلى موضوع المخطط (مثل: `https://registry.example.com/subjects/events`)
    * اختياريًا، يمكن الإشارة إلى إصدار محدد بإضافة `/versions/[version]` إلى URL (وإلا سيسترجع ClickPipes أحدث إصدار).
 2. توفير مسار كامل إلى معرّف المخطط (مثل: `https://registry.example.com/schemas/ids/1000`)
 3. توفير URL الجذر لسجل مخططات (مثل: `https://registry.example.com`)
 
 <div id="network-connectivity">
-  ## اتصال الشبكة
+  ### اتصال الشبكة
 </div>
 
 يتصل ClickPipes بسجل مخططات عبر HTTPS باستخدام عنوان URL الذي توفّره. ولا يشترط أن يكون سجل مخططات متاحًا عبر الإنترنت العام.
 
-إذا كان الوصول إلى وسطاء Kafka يتم عبر [نقطة نهاية خاصة عكسية](/ar/integrations/clickpipes/aws-privatelink) (AWS PrivateLink أو GCP Private Service Connect)، فيمكن لسجل مخططات استخدام الاتصال الخاص نفسه. ويحلّ ClickPipes اسم مضيف السجل عبر DNS الخاص بنقطة النهاية الخاصة العكسية، لذا يمكن الوصول إلى سجل مستضاف بشكل خاص إلى جانب الوسطاء لديك طالما أن اسم مضيفه يُحل إلى عناوين IP الخاصة بنقطة النهاية الخاصة العكسية (عبر دعم DNS الخاص بنقطة النهاية أو عبر [تعيين DNS خاص مخصّص](/ar/integrations/clickpipes/aws-privatelink#custom-private-dns)).
+إذا كان الوصول إلى وسطاء Kafka يتم عبر [نقطة نهاية خاصة عكسية](/ar/integrations/clickpipes/networking/aws-privatelink) (AWS PrivateLink أو GCP Private Service Connect)، فيمكن لسجل مخططات استخدام الاتصال الخاص نفسه. ويحلّ ClickPipes اسم مضيف السجل عبر DNS الخاص بنقطة النهاية الخاصة العكسية، لذا يمكن الوصول إلى سجل مستضاف بشكل خاص إلى جانب الوسطاء لديك طالما أن اسم مضيفه يُحل إلى عناوين IP الخاصة بنقطة النهاية الخاصة العكسية (عبر دعم DNS الخاص بنقطة النهاية أو عبر [تعيين DNS خاص مخصّص](/ar/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)).
 
 ضع ما يلي في اعتبارك:
 
@@ -48,22 +54,166 @@ integration:
 * إذا كان اسم مضيف السجل يُحل إلى عنوان خاص، فيجب أن يكون الوصول إليه ممكنًا عبر نقطة نهاية خاصة عكسية محددة لـ ClickPipe؛ وإلا فسيفشل فحص الاتصال أثناء الإعداد.
 
 <div id="how-schema-registries-work">
-  ## كيف يعمل ذلك
+  ### كيف يعمل ذلك
 </div>
 
 يسترجع ClickPipes المخطط من سجل مخططات المُعدّ ويطبّقه ديناميكيًا.
 
-* إذا كان هناك schema ID مضمن في الرسالة، فسيستخدمه لاسترجاع المخطط.
-* إذا لم يكن هناك schema ID مضمن في الرسالة، فسيستخدم schema ID أو اسم الموضوع المحدد في تهيئة ClickPipe لاسترجاع المخطط.
-* إذا كُتبت الرسالة بدون schema ID مضمن، ولم يتم تحديد schema ID أو اسم الموضوع في تهيئة ClickPipe، فلن يتم استرجاع المخطط وسيتم تخطي الرسالة مع تسجيل `SOURCE_SCHEMA_ERROR` في جدول الأخطاء الخاص بـ ClickPipes.
+* إذا كان هناك معرّف المخطط مضمن في الرسالة، فسيستخدمه لاسترجاع المخطط.
+* إذا لم يكن هناك معرّف المخطط مضمن في الرسالة، فسيستخدم معرّف المخطط أو اسم الموضوع المحدد في تهيئة ClickPipe لاسترجاع المخطط.
+* إذا كُتبت الرسالة بدون معرّف المخطط مضمن، ولم يتم تحديد معرّف المخطط أو اسم الموضوع في تهيئة ClickPipe، فلن يتم استرجاع المخطط وسيتم تخطي الرسالة مع تسجيل `SOURCE_SCHEMA_ERROR` في جدول الأخطاء الخاص بـ ClickPipes.
 * إذا لم تكن الرسالة مطابقة للمخطط، فسيتم تخطيها مع تسجيل `DATA_PARSING_ERROR` في جدول الأخطاء الخاص بـ ClickPipes.
 * بالنسبة إلى مخططات Protobuf فقط: سيحمّل ClickPipes أي مخططات مستوردة مُعرّفة كتبعيات. أما مخططات Avro ذات المراجع الخارجية فليست مدعومة بعد.
+
+<div id="aws-glue-schema-registry">
+  ## AWS Glue Schema Registry
+</div>
+
+إذا كانت مكوّنات الإنتاج لديك تُسلسل بيانات Avro باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue تنسيق wire مختلفًا وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
+
+يتوفر إعداد AWS Glue Schema Registry حاليًا عبر ClickHouse Cloud console فقط. ولا يُدعم عبر واجهة برمجة تطبيقات ClickPipes أو Terraform provider.
+
+<Note>
+  **Avro فقط.** تُدعم سجلات AWS Glue لتنسيق Avro فقط. يمكن لـ Glue SerDe أيضًا تأطير JSON وProtobuf، لكن ClickPipes لا يدعمهما، ويُرفضان عند إنشاء pipe.
+</Note>
+
+<div id="schema-registry-configuration">
+  ### الإعداد
+</div>
+
+في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka واضبط **نوع السجل** على **AWS Glue**:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="لوحة سجل المخططات مع تحديد AWS Glue" size="lg" border />
+
+| الحقل        | مطلوب | الوصف                                                                                                                    | مثال                                                       |
+| ------------ | ----- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| نوع السجل    | نعم   | اختر **AWS Glue**                                                                                                        | `AWS Glue`                                                 |
+| منطقة AWS    | نعم   | المنطقة التي يوجد فيها سجل Glue. يجب أن تطابق منطقة السجل تمامًا.                                                        | `us-east-1`                                                |
+| اسم السجل    | نعم   | اسم سجل Glue. تُرفض المخططات التي يُحلّ مرجعها إلى سجل مختلف، لذا سيظهر أي خطأ مطبعي عند قيام ClickPipes بحل إصدار مخطط. | `my-glue-registry`                                         |
+| ARN لدور IAM | مشروط | دور مخصص للوصول إلى السجل. وهو اختياري إذا كان الوسيط يستخدم مصادقة IAM، ومطلوب في غير ذلك.                              | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+
+لا يوجد URL لسجل لتكوينه. يحمل كل سجل تنتجه Glue SerDe معرّف إصدار مخططه الخاص، ويحلّه ClickPipes باستخدام `glue:GetSchemaVersion` ويخزّنه مؤقتًا، بإجراء استدعاء واحد لواجهة برمجة التطبيقات لكل إصدار مخطط مميز. يُعالَج تطور المخطط تلقائيًا: فعندما تنتقل السجلات إلى إصدار مخطط جديد أثناء التدفق، يُحلّ عند ظهوره أول مرة.
+
+<div id="glue-iam-setup">
+  ### إعداد IAM
+</div>
+
+استخدم الخيار الأنسب لإعدادك من بين الخيارين. الخيار أ هو الخيار الشائع في حالة Amazon MSK.
+
+<div id="glue-iam-option-a">
+  #### الخيار أ: إعادة استخدام هوية IAM الخاصة بالوسيط
+</div>
+
+إذا كان Kafka ClickPipe لديك يستخدم IAM للمصادقة مع MSK بالفعل، فسيستخدم ClickPipes هوية IAM نفسها لقراءة السجل. اترك حقل **IAM role ARN** فارغًا وأضف العبارة التالية إلى أذونات الهوية:
+
+* **IAM role:** أضف العبارة إلى سياسة الأذونات الخاصة بالدور المُعدّ لـ MSK.
+* **IAM credentials:** أضف العبارة إلى سياسة أذونات كيان IAM المرتبط بمفتاح الوصول.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClickPipesGlueSchemaRegistryRead",
+      "Effect": "Allow",
+      "Action": ["glue:GetSchemaVersion"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+بالنسبة إلى المصادقة المستندة إلى الدور، لا حاجة إلى تغيير سياسة الثقة؛ فعلاقة الثقة المُعدّة لـ MSK تغطي هذا الوصول بالفعل. لا تستخدم بيانات اعتماد IAM سياسة ثقة للدور.
+
+<div id="glue-iam-option-b">
+  #### الخيار ب: استخدام دور مخصص للسجل
+</div>
+
+استخدم هذا الخيار إذا كان الوسيط لديك لا يستخدم مصادقة IAM ‏(SASL/SCRAM أو SASL/PLAIN أو mTLS)، أو إذا كان السجل موجودًا في حساب AWS مختلف عن حساب الوسيط.
+
+<Note>
+  **للنشرات على AWS فقط.** يتطلب هذا الخيار خدمة ClickHouse Cloud منشورة على AWS، لأنه يعتمد على دور AWS IAM الخاص بالخدمة. إذا كانت خدمتك تعمل على GCP أو Azure ولم يكن الوسيط يستخدم مصادقة IAM، فلن تتمكن من تكوين دور مخصص للسجل.
+</Note>
+
+<Steps>
+  <Step title="الحصول على ARN لدور IAM لخدمة ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
+    افتح الخدمة، وحدد علامة التبويب **الإعدادات**، ثم مرر إلى قسم **معلومات أمان الشبكة**، وانسخ قيمة **معرّف دور الخدمة (IAM)**، وهي ARN بالصيغة `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. يُشار إلى هذه القيمة أدناه باسم `{ClickHouse_IAM_ARN}`. لكل خدمة ClickHouse منشورة على AWS دور خاص بها، لذا تختلف هذه القيمة من خدمة إلى أخرى.
+
+    <Image img="/images/cloud/security/secures3_arn.webp" alt="معرّف دور الخدمة (IAM)" size="lg" border />
+  </Step>
+
+  <Step title="إنشاء دور IAM للسجل" id="create-registry-iam-role">
+    أنشئ دور IAM في حساب AWS الخاص بك. يجب أن **يبدأ اسم** الدور بـ `ClickHouseAccessRole-`.
+
+    **تكوين سياسة الثقة**
+
+    استبدل `{ClickHouse_IAM_ARN}` بالقيمة من الخطوة السابقة.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "{ClickHouse_IAM_ARN}"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **تكوين سياسة الأذونات**
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ClickPipesGlueSchemaRegistryRead",
+          "Effect": "Allow",
+          "Action": ["glue:GetSchemaVersion"],
+          "Resource": "*"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="تكوين ClickPipe" id="configure-clickpipe-registry-role">
+    الصق ARN للدور الجديد في حقل **ARN لدور IAM** في المعالج.
+  </Step>
+</Steps>
+
+<Note>
+  **نطاق موارد IAM.** تتبع هذه الأمثلة [سياسة AWS الموثقة لمكونات إلغاء التسلسل](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) وسياسة AWS المُدارة [`AWSGlueSchemaRegistryReadonlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html)، وكلتاهما تمنح الإذن `glue:GetSchemaVersion` على `"*"`. يتحقق ClickPipes بشكل مستقل من مطابقة كل مخطط تم حله مع **اسم السجل** الذي كوّنته، ويرفض الإصدارات الواردة من أي سجل آخر.
+</Note>
+
+<div id="glue-troubleshooting">
+  ### استكشاف الأخطاء وإصلاحها
+</div>
+
+| الخطأ                                                                                        | السبب والحل                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | تفتقر هوية IAM المستخدمة للوصول إلى السجل إلى صلاحية `glue:GetSchemaVersion`. بالنسبة إلى الوصول المستند إلى الدور، قد لا تتضمن سياسة الثقة للدور معرّف دور خدمتك أيضًا. أعد التحقق من إعداد IAM أعلاه. |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | تشير سياسة الثقة إلى الكيان الأساسي الخطأ. يتضمن الخطأ الدور المحدد الذي حاول تولّي الدور. استخدم هذه القيمة في سياسة الثقة.                                                                            |
+| `schema version … not found in Glue schema registry`                                         | تشير السجلات إلى إصدار مخطط غير موجود في الحساب أو المنطقة المُعدَّين. تأكد من مطابقة **منطقة AWS** لمنطقة السجل.                                                                                       |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | يسجّل المنتجون لديك المخططات في سجل مختلف عن السجل المحدد في الـ pipe. صحح **اسم السجل**، أو وجّه المنتجين إلى السجل الصحيح.                                                                            |
+| `the AWS Glue schema registry only supports the Avro format`                                 | لا تدعم Glue pipes سوى تنسيق Avro. لا يتم دعم JSON وProtobuf عبر Glue SerDe.                                                                                                                            |
+
+<div id="glue-limitations">
+  ### القيود
+</div>
+
+* Avro فقط. لا يُدعم JSON Schema وProtobuf عبر Glue SerDe.
+* مصادر Kafka فقط. لا يمكن لـ ClickPipes في Kinesis استخدام سجل Glue.
 
 <div id="schema-mapping">
   ## مواءمة المخطط
 </div>
 
-تُطبَّق القواعد التالية على المواءمة بين المخطط المسترجَع وجدول الوجهة في ClickHouse:
+تنطبق القواعد التالية على كلٍّ من السجلات المتوافقة مع Confluent وAWS Glue Schema Registry. وهي تحكم المواءمة بين المخطط المسترجَع وجدول الوجهة في ClickHouse:
 
 * إذا كان المخطط يحتوي على حقل غير مُدرَج في مواءمة وجهة ClickHouse، فسيتم تجاهل هذا الحقل.
 * إذا كان المخطط يفتقد حقلاً مُعرَّفًا في مواءمة وجهة ClickHouse، فسيُملأ عمود ClickHouse بقيمة &quot;صفرية&quot;، مثل 0 أو سلسلة فارغة. لاحظ أن تعبيرات `DEFAULT` غير مدعومة.

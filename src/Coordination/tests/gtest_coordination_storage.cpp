@@ -1874,6 +1874,78 @@ TEST_P(CoordinationTest, TestTTLNodeExpiry)
     EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
 
+/// Eligibility is asserted at exact instants because `collectExpiredTTLPaths` takes the clock as
+/// an argument, while the garbage collector reads it in the caller. An integration test cannot
+/// assert the same ordering without observing a transient window and racing the real collector.
+TEST_P(CoordinationTest, TestTTLSiblingExpiryOrdering)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t create_time = 1000;
+    const int64_t short_ttl_ms = 1000;
+    const int64_t long_ttl_ms = 3000;
+
+    auto create = [&](const std::string & path, bool with_ttl, int64_t ttl_ms)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->include_ttl = with_ttl;
+        request->ttl = ttl_ms;
+        storage.preprocessRequest(request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        auto responses = storage.processRequest(request, session_id, zxid);
+        ASSERT_FALSE(responses.empty());
+        ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Unexpected error creating " << path;
+    };
+
+    create("/root", /*with_ttl=*/false, 0);
+    create("/a", /*with_ttl=*/true, short_ttl_ms);
+    create("/b", /*with_ttl=*/true, long_ttl_ms);
+
+    const auto collected_paths = [&](int64_t now_ms)
+    {
+        std::vector<std::string> paths;
+        for (const auto & [path, _] : storage.collectExpiredTTLPaths(now_ms, 1000000))
+            paths.push_back(path);
+        std::sort(paths.begin(), paths.end());
+        return paths;
+    };
+
+    EXPECT_EQ(collected_paths(create_time + short_ttl_ms - 1), std::vector<std::string>{});
+    EXPECT_EQ(collected_paths(create_time + short_ttl_ms), std::vector<std::string>{"/a"});
+    EXPECT_EQ(collected_paths(create_time + long_ttl_ms - 1), std::vector<std::string>{"/a"});
+    EXPECT_EQ(collected_paths(create_time + long_ttl_ms), (std::vector<std::string>{"/a", "/b"}));
+
+    auto gc_remove = [&](const std::string & path, int64_t at_ms)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        request->version = -1;
+        request->try_remove = true;
+        storage.preprocessRequest(
+            request, keeper_internal_ttl_garbage_collector_session_id, at_ms, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return storage.processRequest(request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+    };
+
+    auto remove_a_responses = gc_remove("/a", create_time + short_ttl_ms);
+    ASSERT_FALSE(remove_a_responses.empty());
+    ASSERT_EQ(remove_a_responses[0].response->error, Error::ZOK);
+
+    EXPECT_FALSE(storage.containsTTLPath("/a"));
+    EXPECT_TRUE(storage.containsTTLPath("/b"));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/b", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/root", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+
+    /// A collection request for /b issued before its destroy_time is refused at commit time.
+    gc_remove("/b", create_time + short_ttl_ms);
+    EXPECT_TRUE(storage.containsTTLPath("/b"));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/b", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+}
+
 TEST_P(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
 {
     using namespace DB;

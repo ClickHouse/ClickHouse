@@ -88,7 +88,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }

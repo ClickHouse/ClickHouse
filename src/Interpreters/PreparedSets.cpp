@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -82,6 +84,24 @@ namespace ErrorCodes
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
 {
     return SizeLimits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]);
+}
+
+/// A distributed plan ships the set's values to worker tasks, so
+/// `use_index_for_in_with_subqueries_max_values` must not drop them; the transfer limits
+/// bound them at task serialization.
+static size_t getMaxSizeForIndex(const Settings & settings)
+{
+    return settings[Setting::make_distributed_plan] ? 0 : settings[Setting::use_index_for_in_with_subqueries_max_values];
+}
+
+/// The build plan has `CreatingSetStep` at its root, which cannot be serialized for remote
+/// execution, so it is never converted to a distributed plan itself; only the source below
+/// it is (`convertSetSourceForDistributedPlan`).
+static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const ContextPtr & context)
+{
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.make_distributed_plan = false;
+    return optimization_settings;
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -369,6 +389,11 @@ DataTypes FutureSetFromSubquery::getTypes() const
     return set_and_key->set->getElementsTypes();
 }
 
+bool FutureSetFromSubquery::hasExternalTable() const
+{
+    return external_table_set != nullptr || (set_and_key && set_and_key->external_table != nullptr);
+}
+
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
@@ -391,6 +416,22 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     return plan;
 }
 
+void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context)
+{
+    if (set_and_key->set->isCreated())
+        return;
+
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return;
+
+    if (!set_and_key->set->hasExplicitSetElements())
+        set_and_key->set->fillSetElements();
+    if (source)
+        convertSetSourceForDistributedPlan(*source, context);
+}
+
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)
@@ -405,12 +446,18 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
+    if (settings[Setting::make_distributed_plan])
+    {
+        prepareForDistributedPlan(context);
+        prepared_sets_cache = nullptr;
+    }
+
     auto plan = build(network_transfer_limits, prepared_sets_cache);
 
     if (!plan)
         return;
 
-    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
@@ -510,6 +557,12 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    /// Run the cloned subquery as a distributed plan; `source` itself stays untouched. The
+    /// fallback below runs locally: a plan that cannot be cloned (e.g. it reads from an
+    /// already-created `Pipe`) cannot be serialized for a worker either.
+    if (plan && context->getSettingsRef()[Setting::make_distributed_plan])
+        convertSetSourceForDistributedPlan(*plan, context);
+
     /// On the non-destructive path the speculative pipeline builds into this temporary set; it is
     /// published into `set_and_key` only after the build fully succeeds (see below). It stays null on the
     /// destructive fallback, which builds directly into the canonical `set_and_key->set`.
@@ -555,6 +608,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
         auto prepared_sets_cache = context->getPreparedSetsCache();
+        /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
+        if (settings[Setting::make_distributed_plan])
+            prepared_sets_cache = nullptr;
         plan = build(network_transfer_limits, prepared_sets_cache);
         if (!plan)
             return nullptr;
@@ -575,7 +631,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
     /// ordering is safe there too.
     {
-        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+        auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
@@ -675,7 +731,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
-        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
+        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -694,7 +750,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(query_tree),
-        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
+        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 

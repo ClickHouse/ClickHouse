@@ -74,11 +74,11 @@ REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
+See also function [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
+        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a group of tags associated with the identifier `id` of a time series.", {"UInt64"}

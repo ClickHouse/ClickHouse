@@ -161,3 +161,13 @@ The following virtual columns are supported for Kafka compatible streaming data 
 Note that the `_raw_message` column is only recommended for JSON data. 
 For use cases where only the JSON string is required (such as using ClickHouse [`JsonExtract*`](/reference/functions/regular-functions/json-functions#jsonextract-functions) functions to
 populate a downstream materialized view), it may improve ClickPipes performance to delete all the "non-virtual" columns.
+
+### Structured message keys {#structured-message-keys}
+
+Mapping `_key` to a `String` column stores the original Kafka message key. This mapping bypasses key decoding and schema lookup. To extract fields from a structured key, map source fields beginning with `_key.`. For example, for the JSON key `{"customer":{"id":42}}`, map `_key.customer.id` to a destination column such as `customer_id`.
+
+For `_key.*` mappings or a direct `_key` mapping to a type other than `String`, ClickPipes first checks whether the key was encoded using the configured schema registry. If it was not, ClickPipes checks whether the key is a JSON object. A registry-encoded key must use the same format and registry family as the record value, but it can use a different schema ID. Key schema changes are detected automatically.
+
+When decoding is enabled, raw keys, JSON scalars or arrays, and malformed JSON do not populate nested key fields; their destination columns receive type defaults. If ClickPipes recognizes a registry-encoded key but cannot retrieve or apply its schema, it writes the Kafka record to the ClickPipes error table.
+
+An Avro key can also have a non-record root schema, such as a primitive, array, map, or fixed type. To decode one, map `_key` directly to a compatible destination type other than `String`. Non-record schemas cannot populate nested key fields.
