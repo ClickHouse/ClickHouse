@@ -249,7 +249,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;

@@ -34,8 +34,23 @@ public:
 
     StackfulCoroutine() = default;
 
+    ~StackfulCoroutine()
+    {
+        unwind();
+    }
+
     StackfulCoroutine(StackfulCoroutine && other) = default;
-    StackfulCoroutine & operator=(StackfulCoroutine && other) = default;
+
+    StackfulCoroutine & operator=(StackfulCoroutine && other) noexcept
+    {
+        if (this != &other)
+        {
+            unwind();
+            impl = std::move(other.impl);
+            coroutine_locals = std::move(other.coroutine_locals);
+        }
+        return *this;
+    }
 
     StackfulCoroutine(const StackfulCoroutine &) = delete;
     StackfulCoroutine & operator =(const StackfulCoroutine &) = delete;
@@ -93,6 +108,23 @@ private:
     Impl && release()
     {
         return std::move(impl);
+    }
+
+    /// Destroying a coroutine that is suspended unwinds its stack: Called from the destructor body, while coroutine_locals is still alive.
+    void unwind() noexcept
+    {
+        if (!impl)
+            return;
+
+        CoroutinePtr & current_coroutine = getCurrentCoroutine();
+        CoroutinePtr parent_coroutine = current_coroutine;
+        current_coroutine = this;
+        FiberLocalStorage::swapCoroutineLocal(*coroutine_locals);
+        {
+            Impl to_destroy = std::move(impl);
+        }
+        FiberLocalStorage::swapCoroutineLocal(*coroutine_locals);
+        current_coroutine = parent_coroutine;
     }
 
     Impl impl;

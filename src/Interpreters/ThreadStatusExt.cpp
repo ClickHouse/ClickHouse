@@ -28,6 +28,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySpillScheduler.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -549,6 +550,8 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
+    progress_in.reset();
+    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
