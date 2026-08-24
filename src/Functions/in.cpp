@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
@@ -86,6 +87,37 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// An empty set makes the result independent of the left operand, so the result is constant
+    /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
+    /// `executeImpl`, which returns a ColumnConst for the same case.
+    ColumnPtr getConstantResultForNonConstArguments(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
+        if (ignore_set || arguments.size() != 2)
+            return nullptr;
+
+        /// A NULL left operand yields NULL whatever the set holds, so a Nullable result is not
+        /// determined by the set alone.
+        if (!isUInt8(removeLowCardinality(result_type)))
+            return nullptr;
+
+        const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
+        if (!column_set)
+            return nullptr;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return nullptr;
+
+        /// A set that is not built yet may still turn out to be non-empty.
+        auto set = future_set->get();
+        if (!set || set->getTotalRowCount() != 0)
+            return nullptr;
+
+        return result_type->createColumnConst(1, static_cast<UInt8>(negative));
+    }
+
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
@@ -101,11 +133,8 @@ public:
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
-        /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
-        const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
-        if (!column_set)
-            column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
+        const ColumnSet * column_set = tryGetColumnSet(column_set_ptr);
         if (!column_set)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
                 getName(), column_set_ptr->getName());
@@ -171,6 +200,14 @@ public:
     }
 
 private:
+    /// The set argument arrives either bare or wrapped in a ColumnConst.
+    static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
+    {
+        if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(column.get()))
+            return column_set;
+        return checkAndGetColumn<const ColumnSet>(column.get());
+    }
+
     String function_name;
     bool negative;
     bool null_is_skipped;
