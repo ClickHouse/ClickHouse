@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+    //extern const SettingsBool make_distributed_plan;
 }
 }
 
@@ -1916,6 +1917,10 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     {
         return 0;
     }
+
+    // TODO: this should not be needed
+    // if (settings[Setting::make_distributed_plan])
+    //     return 0;
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();

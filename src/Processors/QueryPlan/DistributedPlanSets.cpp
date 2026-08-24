@@ -179,10 +179,7 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
 
     QueryPlanOptimizationSettings optimization_settings(context);
     source_plan.optimize(optimization_settings);
-    if (source_plan.supportsDistributed(optimization_settings))
-    {
-        source_plan.convertToDistributed(optimization_settings);
-    }
+    source_plan.convertToDistributed(optimization_settings);
 }
 
 }

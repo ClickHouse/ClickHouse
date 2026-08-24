@@ -9046,6 +9046,9 @@ Enabling it automatically adjusts settings that control features not supported b
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", EXPERIMENTAL) \
+DECLARE(Bool, distributed_plan_fallback_to_local_execution, true, R"(
+When a query plan contains a step that does not support distributed execution, log the reason and execute the query on the initiator instead of throwing an exception. Disable to get an exception instead.
+)", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \

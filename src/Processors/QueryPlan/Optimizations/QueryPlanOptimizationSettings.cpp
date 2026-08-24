@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -289,7 +290,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         force_use_projection = false;
         force_projection_name = {};
     }
-
+    distributed_plan_fallback_to_local_execution = from[Setting::distributed_plan_fallback_to_local_execution];
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];

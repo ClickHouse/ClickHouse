@@ -390,24 +390,25 @@ void optimizeTreeSecondPass(
     /// PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans cannot
     /// be distributed. make_distributed_plan is explicit, so fail rather than silently running
     /// single-node.
-    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
-    /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
-    /// which the exchanges do not preserve.
+    // if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
+    //     throw Exception(ErrorCodes::INCORRECT_DATA,
+    //         "ERROR_OLD: make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+    //
+    // /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
+    // /// which the exchanges do not preserve.
     // if (make_distributed_plan && planHasInOrderAggregation(root))
-    //     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-    //         "make_distributed_plan does not support in-order aggregation");
-
-
-    /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
+    //     throw Exception(ErrorCodes::INCORRECT_DATA,
+    //         "ERROR_OLD: make_distributed_plan does not support in-order aggregation");
+    //
+    //
+    // /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     // if (make_distributed_plan)
     //     checkDistributedReadSupported(root);
-
-    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
-    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    if (make_distributed_plan)
-        validateDistributedPlanBucketCounts(optimization_settings);
+    //
+    // /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    // /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    // if (make_distributed_plan)
+    //     validateDistributedPlanBucketCounts(optimization_settings);
 
     /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.

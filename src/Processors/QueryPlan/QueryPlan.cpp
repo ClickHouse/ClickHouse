@@ -244,7 +244,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (do_optimize)
         optimize(optimization_settings);
 
-    if (!fallback_distributed_to_local && optimization_settings.make_distributed_plan)
+    if (optimization_settings.make_distributed_plan)
         convertToDistributed(optimization_settings);
 
     struct Frame
@@ -818,21 +818,21 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 namespace QueryPlanOptimizations
 {
 
-bool canExecuteRemotely(const QueryPlan::Node & node);
+std::optional<PreformattedMessage> hasUnupportedStepRemoteExecution(const QueryPlan::Node & node, bool allow_subplan_placeholders);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool verifyDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedSettings(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage> tryFindDistributedReadUnSupportedStep(const QueryPlan::Node & root);
 }
 
 
 
-std::optional<PreformattedMessage> hasPlanHasUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
 // if I make change here to only check for optimization_settings.make_distributed_plan and not throw exception in other case
@@ -846,13 +846,13 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
     if (make_distributed_plan)
     {
-        if (auto res = hasPlanHasUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
+        if (auto res = hasPlanUnsupportedStepForDistributed(*root, optimization_settings); res.has_value())
         {
             if (!effective_settings.distributed_plan_fallback_to_local_execution)
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Distributed plan unsupported: {}", res->text);
             }
-            LOG_WARNING(getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
+            LOG_INFO(getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
             effective_settings.make_distributed_plan = false;
             fallback_distributed_to_local = true;
         }
@@ -896,15 +896,14 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
-std::optional<PreformattedMessage> hasPlanHasUnsupportedStepForDistributed(QueryPlan::Node & root,  const QueryPlanOptimizationSettings & optimization_settings)
+std::optional<PreformattedMessage> hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root,  const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::validateDistributedPlanBucketCounts(optimization_settings);
 
-    if (!QueryPlanOptimizations::canExecuteRemotely(root))
+    if (auto res = QueryPlanOptimizations::hasUnupportedStepRemoteExecution(root, true); res.has_value())
     {
-        return PreformattedMessage::create("make_distributed_plan cannot distribute this query: it contains distributed exchange "
-                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
-                "if executed locally (producing wrong results)");
+        return PreformattedMessage::create("make_distributed_plan cannot distribute this query: "
+                                           "it contains the step {} which could not execute remotely", res->text);
     }
 
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
@@ -925,12 +924,12 @@ std::optional<PreformattedMessage> hasPlanHasUnsupportedStepForDistributed(Query
         return PreformattedMessage::create("make_distributed_plan does not support in-order aggregation");
     }
 
-    // what about checkDistributedReadSupported
 
 
-    if (QueryPlanOptimizations::traversePlanForUnsupportedDistributedSettings(root, optimization_settings))
+    // checking aggregation and cascades
+    if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
     {
-        return PreformattedMessage::create("make_distributed_plan does not support aggregation with max_rows_to_group_by");
+        return res;
     }
 
     /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
@@ -941,16 +940,16 @@ std::optional<PreformattedMessage> hasPlanHasUnsupportedStepForDistributed(Query
         return res;
     }
 
-    // TODO check cascades
-
-
     return std::nullopt;
 }
 
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
+    if (fallback_distributed_to_local)
+        return;
+
+    if (auto res = QueryPlanOptimizations::hasUnupportedStepRemoteExecution(*root, false); res.has_value())
     {
         /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
         /// still contains logical exchanges, running it locally would execute them as no-ops and drop
