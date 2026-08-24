@@ -8724,7 +8724,7 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 Serialize the distributed query plan for execution at replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
-Send join runtime filters between stages of a distributed query plan, so that probe-side tasks prune rows before the exchange.
+Send join runtime filters between stages of a distributed query plan. Probe-side tasks prune before the exchange.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.

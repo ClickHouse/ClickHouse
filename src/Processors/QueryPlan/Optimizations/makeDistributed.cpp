@@ -1050,10 +1050,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
     if (optimization_settings.distributed_plan_join_runtime_filters)
     {
-        /// Stamp transport row estimates onto the build steps while the whole logical plan is
-        /// still in one piece: after the cut, a build side that is itself another stage's output
-        /// ends at an exchange source and has nothing to estimate from. This is annotation, not
-        /// shape matching - the transport decision itself happens after the cut.
+        /// Stamp build-side row estimates before the cut. After the cut a build that is another
+        /// stage's output ends at an exchange source and has nothing to estimate from.
         std::vector<QueryPlan::Node *> annotation_stack{root};
         while (!annotation_stack.empty())
         {

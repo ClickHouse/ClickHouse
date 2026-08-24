@@ -1,22 +1,13 @@
-"""
-Runtime filter transport over the distributed plan's bounded merge tree, on real remote workers.
+"""Runtime-filter transport on a 3-node cluster.
 
-Spins up a 3-node cluster and runs shuffle joins whose build side ships partial runtime filters
-through the merge tree (build tasks -> `rf_merge_*` stages -> broadcast to the probe tasks).
-Every distributed query is compared against the same query without `make_distributed_plan`, and
-the per-task `RuntimeFilterState*` ProfileEvents (collected from `system.query_log` on every
-node; worker tasks carry the initiator's `initial_query_id`) pin the exact exchange stream and
-byte counts:
-
-  - the topology is linear: `2 * N` filter states cross the wire for `N` build and `N` probe
-    tasks (all-to-all delivery would cross `N * N`);
-  - every receiving task consumes at most `RUNTIME_FILTER_MERGE_FAN_IN` (16) states, whatever
-    the total task count, so a receiver's buffering cannot scale with the cluster;
-  - the same holds through a multi-level tree (`N = 32` build tasks -> 2 first-level merge
-    tasks -> root), where the peak memory of the merge tasks is also compared across
-    `N = 2 / 8 / 32` with equally sized bloom states;
-  - persisted exchanges deliver the same union without deadlocking, cancellation terminates
-    all worker tasks, and an early-closing query (LIMIT) stays correct.
+Shuffle joins ship partials through the merge tree (build -> `rf_merge_*` -> probe). Result
+equals the same query with `make_distributed_plan` off. Per-task `RuntimeFilterState*`
+ProfileEvents (`system.query_log`; workers share the initiator `initial_query_id`) pin stream
+and byte counts: `2 * N` states for `N` build and `N` probe tasks (all-to-all was `N * N`);
+a receiver consumes at most `RUNTIME_FILTER_MERGE_FAN_IN` (16) states, including through a
+2-level tree (`N = 32` -> 2 first-level merges -> root). Peak merge-task memory compared
+across `N = 2 / 8 / 32` with equal bloom sizes. Persisted exchanges, cancellation, and LIMIT
+early-close are separate cases.
 """
 
 import logging
@@ -349,11 +340,10 @@ def test_exact_states_topology(started_cluster):
 
 
 def test_short_string_keys_arrive_exact(started_cluster):
-    """The trace from review thread r3570749837 on PR #63915: 20000 distinct short `String` keys
-    under default limits. The estimate raises the transported row bound for variable-width keys
-    exactly as for fixed-width ones, so every transported state (partials, the merged union, and
-    the broadcast to the probe tasks) is exact -- sized by the actual key bytes, well below the
-    settings bloom size that any single degraded state would reach."""
+    """20000 distinct short `String` keys under default limits. The estimate raises the
+    transported row bound for variable-width keys as for fixed-width ones, so every
+    transported state (partials, merged union, probe broadcast) stays exact, sized by
+    actual key bytes, well below the settings bloom that any one degraded state would reach."""
     query_id = f"rf_tree_{uuid.uuid4().hex}"
     result = INITIATOR.query(
         f"SELECT count() FROM big INNER JOIN tiny ON bid = tid "

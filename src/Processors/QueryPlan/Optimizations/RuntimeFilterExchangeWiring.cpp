@@ -161,7 +161,7 @@ void wireRuntimeFilterExchangeTopology(
             collectStepApplications(*node->step, applications);
             for (const auto & application : applications)
             {
-                /// The first site found in a stage is also the stage's admission representative —
+                /// The first site found in a stage is also the stage's admission representative,
                 /// arbitrary among multiple sites in the fragment. One delivery per stage: the
                 /// descriptor registers once per task, and extra sites share the registered filter
                 /// through the lookup.
@@ -190,22 +190,15 @@ void wireRuntimeFilterExchangeTopology(
             continue;
 
         /// Estimated count of build-side rows. Do not tighten by column NDV: HyperLogLog
-        /// sketches undershoot, and `exact_values_limit` is a hard cap — a low NDV would
+        /// sketches undershoot, and `exact_values_limit` is a hard cap. A low NDV would
         /// overflow a complete key set into a bloom filter. `exact_bytes_limit` still bounds
         /// the exact phase when there are fewer distinct keys than rows.
         std::optional<UInt64> estimated_keys = producer.step->getEstimatedBuildRows();
 
-        /// A transported filter's exact phase is budgeted at what shipping the estimated key
-        /// set exactly would cost (variable-width keys are budgeted at the width of a 64-bit
-        /// hash each), capped at `MAX_RUNTIME_BLOOM_FILTER_BYTES`, and its row bound is raised
-        /// to the same estimate for every supported key type — `exact_bytes_limit` stays the
-        /// hard cap on the key bytes. A filter whose keys stay within the budget arrives
-        /// exact — no false positives — costing only the actual bytes of its keys; when the
-        /// estimate proves too low the state degrades to the bloom filter of the settings
-        /// geometry, so a degraded partial never costs more on the wire or per stream than a
-        /// settings-sized filter, no matter how far the estimate was off or how many task
-        /// pairs replicate it. The settings remain the floor: a filter without a usable
-        /// estimate transports exactly as before.
+        /// Exact-phase budget = estimated keys * key width (variable-width keys counted as 8-byte hashes),
+        /// capped at `MAX_RUNTIME_BLOOM_FILTER_BYTES`. Row cap raised to the same estimate.
+        /// `exact_bytes_limit` is still the hard cap. Missed estimate -> degrade to the settings bloom;
+        /// a degraded partial never exceeds that size on the wire. No estimate -> settings floor, unchanged.
         RuntimeFilterGeometry geometry = producer.step->getGeometry();
         bool budget_is_upsized = false;
         if (estimated_keys)
@@ -321,13 +314,10 @@ void wireRuntimeFilterExchangeTopology(
                 exchange_description.source_bucket_count = 1;
                 exchange_description.destination_bucket_count = receive_tasks.size();
 
-                /// The plan's own kind, so probe tasks receive the filter while they run whenever
-                /// the data exchanges stream too. A Persisted plan keeps persisted filters: its
-                /// streaming transport is not even started. Additionally, when the scheduler
-                /// already waits for the whole build stage before starting the receiving stage (a
-                /// Persisted edge between the same stages), a streaming sink would wait for a
-                /// consumer that never starts; a persisted filter follows the data and adds no
-                /// ordering.
+                /// Same kind as the data exchanges. Streaming data -> streaming filter (probe gets it while it runs).
+                /// Persisted plan -> persisted filter (streaming transport is never started). A Persisted data
+                /// edge between the same stages already waits for the whole build; a streaming filter sink would
+                /// wait for a consumer that never starts.
                 exchange_description.kind = default_kind;
                 auto dependencies = distributed_plan.stage_depends_on.find(receive_stage);
                 const bool edge_exists
@@ -366,23 +356,9 @@ void wireRuntimeFilterExchangeTopology(
         /// destination task of every receiving stage.
         const size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
 
-        /// The whole chain shares one exchange kind: the plan's own kind, so probe tasks receive
-        /// the filter while they run whenever the data exchanges stream too, and a Persisted plan
-        /// (whose streaming transport is never started) keeps persisted filters. Additionally, when
-        /// the scheduler already waits for the whole build
-        /// stage before starting some receiving stage (a Persisted data edge between the two), a
-        /// streaming chain would deadlock: the build task's filter sink would wait for a merge
-        /// consumer that is only started -- transitively, through the receiving stage -- after the
-        /// build stage completes. A persisted chain follows the same complete-before-consume order
-        /// the scheduler already imposes.
-        ///
-        /// Checking the direct (send stage, receive stage) edges suffices only because exchange
-        /// kinds are homogeneous today: the data edges are all Streaming unless
-        /// `distributed_plan_force_exchange_kind` persists every one of them, so a persisted edge
-        /// anywhere implies a persisted edge on the direct pair too (and implies the build stage
-        /// has no streaming data sinks that could block its completion). If per-exchange kinds
-        /// ever become mixed, this rule must consider transitive persisted ordering between the
-        /// chain's stages instead.
+        /// Whole chain uses one kind: the plan's data-exchange kind. Persisted data edge between
+        /// build and receive -> persisted filter chain. Streaming here deadlocks: the build sink
+        /// waits for a merge consumer that only starts (via the receive stage) after build completes.
         auto chain_kind = default_kind;
         for (const auto & receive_stage : remote_stages)
         {
@@ -395,7 +371,6 @@ void wireRuntimeFilterExchangeTopology(
                 chain_kind = ExchangeDescription::Kind::Persisted;
         }
 
-        /// Merge level sizes: ceil(S / fan_in), then ceil of that, ... down to the single root.
         std::vector<size_t> level_sizes;
         for (size_t tasks = send_tasks.size(); tasks > 1;)
         {
@@ -418,7 +393,6 @@ void wireRuntimeFilterExchangeTopology(
             ++next_exchange_id;
         }
 
-        /// Build tasks feed the first merge level.
         {
             ExchangeDescription exchange_description;
             exchange_description.name = level_exchange[0];

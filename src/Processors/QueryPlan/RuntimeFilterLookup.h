@@ -156,15 +156,10 @@ public:
             return;
 
         exact_values->insertFromColumns({values});
-        /// The byte budget caps the actual key bytes of the exact state, which is what lets a
-        /// receiver of a transported state cap the serialized payload before materializing it
-        /// (see `ApproximateRuntimeFilter::deserialize`). The hash table buffer is deliberately
-        /// not compared against the budget: it holds per-key cells at as little as one-eighth
-        /// fill right after a growth step, so for keys smaller than a cell (short strings, small
-        /// integers) it would trip the byte check far below the row bound, defeating a row bound
-        /// derived from a cardinality estimate. The buffer needs no bound of its own -- the two
-        /// checks below already bound it transitively at a small constant times the caps (at most
-        /// eight 24-byte cells per key).
+        /// Cap actual key bytes, not the hash-table buffer. After growth the table can sit at
+        /// 1/8 fill; short keys would trip the byte check far below the row bound (at most
+        /// eight 24-byte cells per key). Receiver uses this cap to refuse payload before
+        /// materializing (`ApproximateRuntimeFilter::deserialize`).
         is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getSetElementsBytes() > bytes_limit;
     }
 

@@ -1,9 +1,8 @@
 -- Tags: no-old-analyzer
 
--- The reviewer's trace from https://github.com/ClickHouse/clickhouse-private/pull/63915#discussion_r3570749837:
--- 20000 distinct short `String` keys under the default 10000-row exact-values limit. The
--- transported geometry must raise the row bound from the cardinality estimate for variable-width
--- key types too, exactly as it does for fixed-width ones, so the filter can arrive exact.
+-- 20000 distinct short `String` keys under the default 10000-row exact-values limit.
+-- Transport must raise the row bound from the cardinality estimate for variable-width
+-- keys too, so the filter can arrive exact.
 
 CREATE TABLE big (bid String, v UInt64) ENGINE = MergeTree ORDER BY bid;
 CREATE TABLE small (sid String) ENGINE = MergeTree ORDER BY sid;
@@ -26,9 +25,8 @@ SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04517_exa
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log;
 
--- The transport admission trace carries the geometry the filter was admitted with: the exact
--- values limit must be the 20000 estimated build keys, not the 10000-row settings cap that would
--- degrade the exact state to a bloom filter on row 10001.
+-- Admission trace: exact-values limit must be the 20000 estimated build keys, not the
+-- 10000-row settings cap (that would degrade to bloom on row 10001).
 SELECT '-- admitted with the estimate-derived row bound';
 SELECT count() > 0 FROM system.text_log
 WHERE logger_name = 'joinRuntimeFilter'

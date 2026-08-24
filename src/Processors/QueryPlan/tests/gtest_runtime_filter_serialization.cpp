@@ -124,7 +124,7 @@ TEST(RuntimeFilterSerialization, RoundTripBloom)
     EXPECT_TRUE(isBloomState(state));
     auto restored = deserializeFromString(state);
 
-    /// The restored filter must hold bit-identical state, not just equivalent behavior.
+    /// Restored state must be byte-identical, not merely probe-equivalent.
     EXPECT_EQ(serializeToString(*restored), state);
 
     filter->finishInsert();
@@ -420,11 +420,10 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
 
 TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
 {
-    /// The reviewer's trace of the transported geometry: 20000 distinct short `String` keys with
-    /// the exact-values limit raised to the cardinality estimate while the byte budget stays at
-    /// the settings floor. The keys' actual bytes fit the budget, so the state must stay exact
-    /// through serialize -> deserialize -> merge; only the row and key-byte caps bound the exact
-    /// phase, not the hash table buffer, which for short keys is many times their byte size.
+    /// 20000 distinct short `String` keys, row bound raised to the estimate, byte budget at the
+    /// settings floor. Actual key bytes fit, so the state stays exact through serialize,
+    /// deserialize, and merge. Only the row and key-byte caps bound the exact phase; the hash
+    /// table buffer is not a cap (for short keys it is many times the key-byte size).
     auto geometry = makeGeometry(/*bloom_bytes=*/512 * 1024);
     geometry.exact_values_limit = 20000;
 

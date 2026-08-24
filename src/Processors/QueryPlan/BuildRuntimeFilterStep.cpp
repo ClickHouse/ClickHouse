@@ -286,16 +286,10 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
 {
     if (hasFilterExchanges())
     {
-        /// Consumers in other stages were admitted: build per-stream partial filters and send the
-        /// merged partial to the filter exchange instead of registering a local filter.
         transformPipelineForTransport(pipeline, settings);
         return;
     }
 
-    /// A step with no rendezvous key (e.g. a deserialized/placeholder plan — the random key is never
-    /// serialized) can never register a filter that any `__applyFilter` looks up. Skip the build
-    /// transform entirely so the step is a true passthrough: no key casting/insertion, no wasted
-    /// build work for a filter that would never be applied.
     if (filter_key.empty())
         return;
 
@@ -484,8 +478,6 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     if (has_tree_exchange || num_exchanges != 0)
         geometry.validateTransported();
 
-    /// A deserialized step carries no random lookup key (it is never serialized); runtime filters are
-    /// re-derived per plan build. If such a step is ever executed, `finish()` no-ops on the empty key.
     auto step = std::make_unique<BuildRuntimeFilterStep>(
         ctx.input_headers.front(),
         std::move(filter_column_name),
@@ -494,7 +486,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         /*filter_key_=*/String{},
         geometry,
         allow_to_use_not_exact_filter,
-        /*track_key_range_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
+        /*track_key_range_=*/false);
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
     for (size_t i = 0; i < num_exchanges; ++i)

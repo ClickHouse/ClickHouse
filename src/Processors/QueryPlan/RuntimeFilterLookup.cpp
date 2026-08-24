@@ -583,18 +583,10 @@ std::unique_ptr<ApproximateRuntimeFilter> ApproximateRuntimeFilter::deserialize(
                 rows,
                 geometry_.exact_values_limit);
 
-        /// The row cap alone bounds nothing for variable-width keys: a malformed sender could
-        /// declare few rows and still ship an arbitrarily large `Native` block. A compliant
-        /// sender's exact key bytes are bounded by `exact_bytes_limit` (enforced at build time
-        /// against the actual key column bytes, see `RuntimeFilterBase::insert`), so reject a
-        /// bigger state before its payload is consumed: up front when the buffer knows its
-        /// remaining size, and through the limiting wrapper otherwise, which starves the reader
-        /// at the bound instead of letting it read past it. (The reader may still reserve for
-        /// the block header's own declared row count before the bound bites; a hostile count
-        /// then fails on the memory limit, loudly, never with a wrong result.) The slack covers
-        /// the `Native` framing -- block info, column name, serialization kind -- and the type
-        /// name, which is unbounded on its own (e.g. an `Enum` with many entries), so it is
-        /// budgeted at its actual size: the block is typed exactly as the expected element type.
+        /// Declared row count does not bound variable-width keys. Reject before consuming payload if
+        /// remaining bytes exceed `exact_bytes_limit` plus Native framing (block info, column name,
+        /// serialization kind) plus the actual type-name length (`Enum` names are unbounded).
+        /// Hostile row counts still die on the memory limit, loudly.
         const auto element_type = recursiveRemoveLowCardinality(filter_column_target_type_);
         constexpr size_t native_framing_slack_bytes = 64 * 1024;
         const size_t max_state_bytes = geometry_.exact_bytes_limit + element_type->getName().size() + native_framing_slack_bytes;

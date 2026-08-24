@@ -811,12 +811,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    /// Transported runtime filters this task consumes: each descriptor becomes a self-contained
-    /// branch (exchange sources -> union -> sink) attached beside the fragment's pipeline. The
-    /// branch owns its sink so the executor pulls the partial states regardless of data-side
-    /// demand; folding it into the data streams would deadlock a remote worker (data sinks idle
-    /// until the join pulls the probe side, which waits on the build stage, which waits on these
-    /// sources).
+    /// Each receive descriptor is a completed side branch (sources -> union -> sink). Folding it
+    /// into the data streams deadlocks a remote worker: data sinks idle until the join pulls the
+    /// probe, which waits on the build stage, which waits on these sources.
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {
         const auto partials_header = runtimeFilterPartialsHeader();
