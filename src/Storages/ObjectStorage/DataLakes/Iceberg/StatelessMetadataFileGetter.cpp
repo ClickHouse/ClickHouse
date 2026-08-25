@@ -218,8 +218,22 @@ ManifestFileCacheKeys getManifestList(
                 added_sequence_number
                     = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
             if (manifest_list_format_version > 1 && manifest_list_deserializer.hasPath(f_content))
-                content_type = Iceberg::ManifestFileContentType(
-                    manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
+            {
+                /// The value comes from the file: casting an arbitrary integer to the enum and
+                /// comparing it with the enumerators below would be undefined behaviour, and an
+                /// out-of-range value would be silently treated as a data manifest.
+                const auto content_type_value
+                    = manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>();
+                if (content_type_value < Int32(Iceberg::ManifestFileContentType::DATA)
+                    || content_type_value > Int32(Iceberg::ManifestFileContentType::DELETE))
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Manifest list entry at index {} has an unexpected value {} of the field '{}'",
+                        i,
+                        content_type_value,
+                        f_content);
+                content_type = Iceberg::ManifestFileContentType(content_type_value);
+            }
             if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
