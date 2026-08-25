@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -219,7 +220,7 @@ private:
             {
                 if (filter_input_it != filter->filter_input_columns.end() && filter_input_it->name == name_and_type.name)
                 {
-                    block.insert({std::move(*filter_column_it), name_and_type.type, name_and_type.name});
+                    block.insert({*filter_column_it, name_and_type.type, name_and_type.name});
                     ++filter_column_it;
                     ++filter_input_it;
                 }
@@ -421,8 +422,8 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
 
     NameSet filter_input_names;
     for (const auto & step : result->steps)
-        for (const auto & name : step.actions->getRequiredColumns())
-            filter_input_names.insert(name);
+        for (const auto & required_column_name : step.actions->getRequiredColumns())
+            filter_input_names.insert(required_column_name);
 
     for (const auto & name_and_type : physical_columns)
     {
@@ -481,7 +482,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, {}, {}, source_filter, output_header);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows_approx);
         pipes.emplace_back(std::move(source));
