@@ -22,7 +22,6 @@
   var OVERLAY_ID = 'ch-webterminal-overlay';
   var STYLE_ID = 'ch-webterminal-styles';
   var OPEN_CLASS = 'ch-webterminal-open';
-  var PAGE_LOCK_CLASS = 'ch-webterminal-page-locked';
   var STATE_KEY = 'ch-webterminal-height';
 
   var BAR_HEIGHT = 32;
@@ -63,7 +62,6 @@
       + '#' + PANEL_ID + ' { position: fixed; left: 0; right: 0; bottom: 0; height: ' + BAR_HEIGHT + 'px;'
       + ' display: flex; flex-direction: column; background: #0d0d0d; color: #f3f4f6;'
       + ' z-index: 2147483646; box-shadow: 0 -1px 0 #2a2a2a; transition: height 180ms ease; }'
-      + 'html.' + PAGE_LOCK_CLASS + ', html.' + PAGE_LOCK_CLASS + ' body { overflow: hidden !important; }'
       // The spacer puts the fixed tray into the page's layout. At the end of the document the
       // footer can scroll completely above the tray instead of ending underneath it.
       + '#' + SPACER_ID + ' { display: block; width: 100%; height: ' + BAR_HEIGHT + 'px;'
@@ -233,7 +231,6 @@
     if (terminalHeight === null) terminalHeight = Math.round(window.innerHeight * DEFAULT_HEIGHT_RATIO);
     terminalHeight = Math.max(MIN_TERMINAL_HEIGHT, Math.min(terminalHeight, maxTerminalHeight()));
     panel.classList.add(OPEN_CLASS);
-    document.documentElement.classList.add(PAGE_LOCK_CLASS);
     applyPanelGeometry();
     updateControls();
     saveState();
@@ -249,7 +246,6 @@
     var terminalHadFocus = document.activeElement === iframe;
     terminalOpen = false;
     panel.classList.remove(OPEN_CLASS);
-    document.documentElement.classList.remove(PAGE_LOCK_CLASS);
     applyPanelGeometry();
     updateControls();
     if (terminalHadFocus) {
