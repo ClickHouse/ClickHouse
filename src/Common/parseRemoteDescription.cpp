@@ -1,5 +1,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,10 @@ RemoteDescriptionGenerator::RemoteDescriptionGenerator(
     : max_addresses(max_addresses_)
     , func_name(func_name_)
 {
+    /// Groups holding the separator are parsed recursively, and `max_addresses` bounds the number
+    /// of generated addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
+    checkStackSize();
+
     /// An empty substring means a set of an empty string
     if (l >= r)
     {
