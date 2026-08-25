@@ -78,6 +78,16 @@ struct JoinOutputBindings
 /// The rule also bails out when the join condition reads a function non-deterministic in scope
 /// of the query (e.g. `rand`): the multiplicity argument requires the condition to be a pure
 /// function of the pushed side's group keys (see `collectConditionInputs`).
+///
+/// The join under the aggregation is matched against every logical alternative of its group (see
+/// `collectJoinsUnderAggregation`), not just the ingested plan, so e.g. `JoinCommutativity`'s
+/// swapped twin and a join alternative left by a nested aggregation's own pushdown are both
+/// considered - this lets an outer aggregation cascade through an inner one's pushdown. The
+/// swapped twin's pushdown is a mirror image of the original's and is currently accepted as a
+/// duplicate memo group; memo-level dedup of mirror alternatives is left to a separate change.
+/// Like every transformation rule, this one applies once per source group expression
+/// (`setApplied`), so alternatives added to a child group after this rule has already run on the
+/// parent are not revisited.
 class AggregationPushdown : public IOptimizationRule
 {
 public:
@@ -145,35 +155,86 @@ bool isFullPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSi
         && (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti);
 }
 
-/// Resolves the join under the aggregation, descending through at most one single-input
-/// `ExpressionStep`. Looks only at `front()` of the child groups - the ingested plan; other
-/// logical alternatives (e.g. the swapped join) would only produce duplicate memo groups.
-/// Input links with non-empty required properties carry a stripped `Sort`, which the
-/// transformation would silently drop - such shapes do not match.
-std::optional<MatchedJoin> resolveJoinUnderAggregation(const GroupExpression & expression, const Memo & memo)
+/// Turns a `JoinStepLogical` group expression into a candidate, appending it to `result` unless
+/// its `join_expression` pointer was already collected (the same join reachable via more than
+/// one identity-expression path above it).
+void addJoinCandidate(std::vector<MatchedJoin> & result, GroupExpressionPtr join_expression, const ExpressionStep * peeled_expression)
 {
-    if (expression.inputs.size() != 1)
-        return {};
-    if (!(expression.inputs[0].required_properties == ExpressionProperties{}))
-        return {};
+    for (const auto & existing : result)
+        if (existing.join_expression == join_expression)
+            return;
+
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(join_expression->getQueryPlanStep());
+    if (!join_step || join_expression->inputs.size() != 2)
+        return;
 
     MatchedJoin match;
-    match.join_expression = memo.getGroup(expression.inputs[0].group_id)->logical_expressions.front();
+    match.join_expression = std::move(join_expression);
+    match.join_step = join_step;
+    match.peeled_expression = peeled_expression;
+    result.push_back(std::move(match));
+}
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(match.join_expression->getQueryPlanStep()))
+/// Collects every join alternative reachable under the matched aggregation, descending through
+/// at most one single-input `ExpressionStep`. A memo group is a set of logically-equivalent
+/// alternatives, so the rule enumerates ALL `logical_expressions` of the child group (and, behind
+/// an identity `ExpressionStep`, of the grandchild group) instead of looking only at `front()` -
+/// the ingested plan. Child groups are fully explored before this rule runs on the parent
+/// (`scheduleApplicableRules` schedules the child `ExploreGroupTask`s ahead of `ApplyRuleTask` on
+/// the LIFO stack), so at this point the child group already carries e.g. `JoinCommutativity`'s
+/// swapped twin and any join alternative a nested aggregation's own pushdown appended.
+///
+/// No alternative-level deduplication beyond the same-`join_expression`-pointer skip above: the
+/// swapped twin is a distinct `JoinStepLogical` expression and is processed like any other,
+/// producing a mirror-image pushdown that lands in a structurally-distinct duplicate memo group
+/// (fresh input group ids defeat `Group::addLogicalExpression`'s structural dedup). This
+/// duplication is accepted here; memo-level dedup is planned separately, in another PR.
+///
+/// Input links with non-empty required properties carry a stripped `Sort`, which the
+/// transformation would silently drop - such shapes do not match.
+///
+/// `stop_at_first_pushable` short-circuits (for `checkPattern`'s cheap existence check) as soon
+/// as a collected candidate's join kind/strictness allows pushing to either side - no DAG walks,
+/// just the coarse `isPushdownAllowed` test. `applyImpl` passes false to collect every candidate.
+std::vector<MatchedJoin> collectJoinsUnderAggregation(const GroupExpression & expression, const Memo & memo, bool stop_at_first_pushable)
+{
+    std::vector<MatchedJoin> result;
+    if (expression.inputs.size() != 1)
+        return result;
+    if (!(expression.inputs[0].required_properties == ExpressionProperties{}))
+        return result;
+
+    const auto is_pushable = [](const MatchedJoin & match)
     {
-        if (match.join_expression->inputs.size() != 1)
-            return {};
-        if (!(match.join_expression->inputs[0].required_properties == ExpressionProperties{}))
-            return {};
-        match.peeled_expression = expression_step;
-        match.join_expression = memo.getGroup(match.join_expression->inputs[0].group_id)->logical_expressions.front();
-    }
+        const auto & join_operator = match.join_step->getJoinOperator();
+        return isPushdownAllowed(join_operator.kind, join_operator.strictness, JoinTableSide::Left)
+            || isPushdownAllowed(join_operator.kind, join_operator.strictness, JoinTableSide::Right);
+    };
 
-    match.join_step = typeid_cast<const JoinStepLogical *>(match.join_expression->getQueryPlanStep());
-    if (!match.join_step || match.join_expression->inputs.size() != 2)
-        return {};
-    return match;
+    for (const auto & child_expression : memo.getGroup(expression.inputs[0].group_id)->logical_expressions)
+    {
+        const size_t size_before = result.size();
+        if (typeid_cast<const JoinStepLogical *>(child_expression->getQueryPlanStep()))
+        {
+            addJoinCandidate(result, child_expression, /*peeled_expression=*/nullptr);
+        }
+        else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(child_expression->getQueryPlanStep()))
+        {
+            if (child_expression->inputs.size() != 1)
+                continue;
+            if (!(child_expression->inputs[0].required_properties == ExpressionProperties{}))
+                continue;
+            for (const auto & grandchild_expression : memo.getGroup(child_expression->inputs[0].group_id)->logical_expressions)
+                if (typeid_cast<const JoinStepLogical *>(grandchild_expression->getQueryPlanStep()))
+                    addJoinCandidate(result, grandchild_expression, expression_step);
+        }
+
+        if (stop_at_first_pushable)
+            for (size_t i = size_before; i < result.size(); ++i)
+                if (is_pushable(result[i]))
+                    return {result[i]};
+    }
+    return result;
 }
 
 bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
@@ -198,13 +259,10 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
     if (params.keys.empty())
         return false;
 
-    auto match = resolveJoinUnderAggregation(*expression, memo);
-    if (!match)
-        return false;
-
-    const auto & join_operator = match->join_step->getJoinOperator();
-    return isPushdownAllowed(join_operator.kind, join_operator.strictness, JoinTableSide::Left)
-        || isPushdownAllowed(join_operator.kind, join_operator.strictness, JoinTableSide::Right);
+    /// Coarse existence check: match iff any join alternative under the aggregation has a join
+    /// kind/strictness that allows pushing to either side. No DAG walks here - `applyImpl` runs
+    /// the precise per-candidate legality checks.
+    return !collectJoinsUnderAggregation(*expression, memo, /*stop_at_first_pushable=*/true).empty();
 }
 
 /// Nullopt when a reachable `INPUT` cannot be attributed to exactly one side or is missing from
@@ -614,49 +672,53 @@ std::vector<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPt
             "AggregationPushdown::applyImpl called for non-AggregatingStep expression '{}'",
             expression->getDescription());
 
-    auto match = resolveJoinUnderAggregation(*expression, memo);
-    if (!match)
-        return {};
-
-    const auto & join_step = *match->join_step;
-
-    /// `join_use_nulls` type changes and `USING` casts are excluded: an `AggregateFunction`
-    /// state column cannot be made `Nullable`.
-    if (!join_step.typeChangingSides().empty())
-        return {};
-
-    /// When an `ExpressionStep` sits between the aggregation and the join, every needed column
-    /// must trace to an identically-named join output; the transformation then just drops the
-    /// step. A computed column makes the rule inapplicable.
-    if (match->peeled_expression)
-    {
-        Names needed_names = agg_step->getParams().keys;
-        for (const auto & aggregate : agg_step->getParams().aggregates)
-            needed_names.insert(needed_names.end(), aggregate.argument_names.begin(), aggregate.argument_names.end());
-
-        const auto & peeled_dag = match->peeled_expression->getExpression();
-        for (const auto & name : needed_names)
-        {
-            String input_name;
-            if (classifyOutputName(peeled_dag, name, input_name) != TranslatedName::Traced || input_name != name)
-                return {};
-        }
-    }
-
-    auto condition_inputs = collectConditionInputs(join_step);
-    if (!condition_inputs)
-        return {};
-
-    const auto output_bindings = collectOutputBindings(join_step);
-
     std::vector<GroupExpressionPtr> result;
-    const auto & join_operator = join_step.getJoinOperator();
-    for (const auto side : {JoinTableSide::Left, JoinTableSide::Right})
+    for (const auto & match : collectJoinsUnderAggregation(*expression, memo, /*stop_at_first_pushable=*/false))
     {
-        if (!isPushdownAllowed(join_operator.kind, join_operator.strictness, side))
+        const auto & join_step = *match.join_step;
+
+        /// `join_use_nulls` type changes and `USING` casts are excluded: an `AggregateFunction`
+        /// state column cannot be made `Nullable`.
+        if (!join_step.typeChangingSides().empty())
             continue;
-        if (auto alternative = buildPushdownAlternative(expression, *match, *condition_inputs, output_bindings, side, memo))
-            result.push_back(std::move(alternative));
+
+        /// When an `ExpressionStep` sits between the aggregation and the join, every needed
+        /// column must trace to an identically-named join output; the transformation then just
+        /// drops the step. A computed column makes this candidate inapplicable.
+        if (match.peeled_expression)
+        {
+            Names needed_names = agg_step->getParams().keys;
+            for (const auto & aggregate : agg_step->getParams().aggregates)
+                needed_names.insert(needed_names.end(), aggregate.argument_names.begin(), aggregate.argument_names.end());
+
+            const auto & peeled_dag = match.peeled_expression->getExpression();
+            bool traced = true;
+            for (const auto & name : needed_names)
+            {
+                String input_name;
+                if (classifyOutputName(peeled_dag, name, input_name) != TranslatedName::Traced || input_name != name)
+                {
+                    traced = false;
+                    break;
+                }
+            }
+            if (!traced)
+                continue;
+        }
+
+        auto condition_inputs = collectConditionInputs(join_step);
+        if (!condition_inputs)
+            continue;
+
+        const auto output_bindings = collectOutputBindings(join_step);
+        const auto & join_operator = join_step.getJoinOperator();
+        for (const auto side : {JoinTableSide::Left, JoinTableSide::Right})
+        {
+            if (!isPushdownAllowed(join_operator.kind, join_operator.strictness, side))
+                continue;
+            if (auto alternative = buildPushdownAlternative(expression, match, *condition_inputs, output_bindings, side, memo))
+                result.push_back(std::move(alternative));
+        }
     }
     return result;
 }

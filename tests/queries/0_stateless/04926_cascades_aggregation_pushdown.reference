@@ -159,14 +159,14 @@ Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
       MergingAggregated
-        JoinLogical (Local HashJoin  swapped)
-          BuildRuntimeFilter (Build runtime join filter on __table2.key)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (default.t_push_dims_multi)
+        JoinLogical (Local HashJoin  swapped swapped)
           GatherExchange
             Aggregating
               Expression
                 ReadFromMergeTree (ParallelRead default.t_push_facts)
+          BuildRuntimeFilter (Build runtime join filter on __table2.key)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_push_dims_multi)
 0	237
 1	240
 2	240
@@ -345,3 +345,15 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
 -- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit
 1	1
+-- 27. nested aggregation over a variant-B pushdown: outer aggregation reuses the pushed join as-is (no further cascade, see comment above)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+      JoinLogical (Local HashJoin  swapped)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
