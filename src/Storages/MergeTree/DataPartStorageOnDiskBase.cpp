@@ -603,7 +603,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     }
 
     /// Commit the self-created transaction (the whole-part clone commit point for CA). An external
-    /// transaction is committed by its owner, as before.
+    /// transaction is committed by its owner, as before. Before the arena scope below, so the commit's
+    /// own allocations are not attributed to the MergeTree arena.
     if (owned_transaction)
         owned_transaction->commit();
 

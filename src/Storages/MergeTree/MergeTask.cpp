@@ -563,12 +563,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            /// On a content-addressed disk a part is one atomic unit (one manifest + one ref). The projection
-            /// sub-part must therefore be written through the PARENT part's whole-part transaction (mirroring
-            /// the INSERT path, `MergeTreeDataWriter::writeProjectionPartImpl` with `use_parent_transaction =
-            /// true`) so its files land in the parent manifest and survive a reload (B58). On a non-CA disk we
-            /// keep the historical behavior: the projection sub-part opens and commits its own sub-transaction.
-            global_ctx->projection_uses_parent_transaction = global_ctx->parent_part->getDataPartStorage().isContentAddressed();
+            /// On a content-addressed disk a part is one atomic unit (one manifest + one ref), so the
+            /// projection sub-part must be written through the PARENT part's whole-part transaction --
+            /// mirroring the INSERT path -- for its files to land in the parent manifest and survive a
+            /// reload. On any other disk the projection keeps its own sub-transaction, as before.
+            global_ctx->projection_uses_parent_transaction
+                = global_ctx->parent_part->getDataPartStorage().isContentAddressed();
             auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(
                 local_tmp_part_basename, /* use_parent_transaction */ global_ctx->projection_uses_parent_transaction);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());

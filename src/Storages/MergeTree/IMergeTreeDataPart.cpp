@@ -1430,9 +1430,8 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// On a content-addressed disk a part is one atomic unit, so a temp projection sub-part (written
     /// during a merge/mutate rebuild under `<proj>.tmp_proj`) must share the PARENT part's whole-part
-    /// transaction — its files are re-keyed into the parent manifest when `<proj>.tmp_proj` is renamed to
-    /// `<proj>.proj` (B58). On a non-CA disk a temp projection keeps its own sub-transaction (the
-    /// historical behavior): `use_parent_transaction = !is_temp_projection`.
+    /// transaction -- its files are re-keyed into the parent manifest when `<proj>.tmp_proj` is renamed
+    /// to `<proj>.proj`. On any other disk a temp projection keeps its own sub-transaction, as before.
     const bool use_parent_transaction = !is_temp_projection || getDataPartStorage().isContentAddressed();
 
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
