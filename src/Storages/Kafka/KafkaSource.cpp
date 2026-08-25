@@ -47,7 +47,8 @@ KafkaSource::KafkaSource(
     LoggerPtr log_,
     size_t max_block_size_,
     bool commit_in_suffix_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    size_t poll_batch_size_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -55,6 +56,7 @@ KafkaSource::KafkaSource(
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
+    , poll_batch_size(poll_batch_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
@@ -97,6 +99,9 @@ Chunk KafkaSource::generateImpl()
 
         if (!consumer)
             return {};
+
+        /// Before subscribing: `subscribe()` itself polls, and that poll must honour the cap too.
+        consumer->setPollBatchSizeOverride(poll_batch_size);
 
         consumer->subscribe();
 

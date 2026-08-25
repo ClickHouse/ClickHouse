@@ -64,6 +64,10 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
+    /// Caps the number of messages a single poll may return. `0` restores the configured
+    /// `kafka_poll_max_batch_size`. Must be set before `subscribe()`, because subscribing polls too.
+    void setPollBatchSizeOverride(size_t size) { poll_batch_size_override = size; }
+
     bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
@@ -134,6 +138,9 @@ private:
     ConsumerPtr consumer;
     LoggerPtr log;
     const size_t batch_size = 1;
+    /// Consumers are pooled and handed to whichever source needs one, so the cap has to be
+    /// (re)installed on every acquisition rather than fixed at construction.
+    size_t poll_batch_size_override = 0;
     const size_t poll_timeout = 0;
     const size_t skip_bytes = 0;
     size_t offsets_stored = 0;

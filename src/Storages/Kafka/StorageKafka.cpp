@@ -39,6 +39,8 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <limits>
+
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
@@ -57,6 +59,7 @@ namespace ProfileEvents
     extern const Event KafkaBackgroundReads;
     extern const Event KafkaWrites;
     extern const Event KafkaMVNotReady;
+    extern const Event KafkaBatchSizeReductions;
 }
 
 
@@ -104,6 +107,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
     extern const int ABORTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
+
+namespace
+{
+
+bool isMemoryLimitError(int code)
+{
+    return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY;
+}
+
+/// Never returns 0: a batch of zero messages would stall consumption completely.
+size_t halveTimes(size_t value, size_t times)
+{
+    if (times >= std::numeric_limits<size_t>::digits)
+        return 1;
+    return std::max<size_t>(value >> times, 1);
+}
+
 }
 
 class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
@@ -708,7 +731,19 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    size_t block_size = getMaxBlockSize();
+    /// `kafka_max_block_size` bounds the block only between polls: `KafkaSource` always drains the
+    /// whole polled batch first, so the poll size is the floor of a block and both have to shrink.
+    const size_t used_level = reduction_level.load();
+    const size_t block_size = halveTimes(getMaxBlockSize(), used_level);
+    const size_t poll_batch_size = halveTimes(getPollMaxBatchSize(), used_level);
+
+    if (used_level)
+        LOG_DEBUG(
+            log,
+            "Reading with reduced batch sizes after a memory limit error: block size {}, poll batch size {}. "
+            "Re-attach the table to go back to the configured sizes.",
+            block_size,
+            poll_batch_size);
 
     auto kafka_context = Context::createCopy(getContext());
     kafka_context->makeQueryContext();
@@ -734,7 +769,16 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
+        auto source = std::make_shared<KafkaSource>(
+            *this,
+            storage_snapshot,
+            kafka_context,
+            block_io.pipeline.getHeader().getNames(),
+            log,
+            block_size,
+            false,
+            cycle_epoch,
+            poll_batch_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -764,7 +808,27 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
 
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
-        executor.execute();
+        try
+        {
+            executor.execute();
+        }
+        catch (const Exception & e)
+        {
+            /// With `kafka_commit_every_batch` the offsets of a partially consumed block are already
+            /// committed and are not rewound here, so the messages that did not make it into the views
+            /// are lost rather than retried and a smaller batch would not help.
+            const bool can_reduce = block_size > 1 || poll_batch_size > 1;
+            if (!isMemoryLimitError(e.code()) || intermediate_commit || !can_reduce)
+                throw;
+
+            /// A concurrent cycle (`kafka_thread_per_consumer`) may have already halved the size this
+            /// one used; then the failure is about a size nobody uses any more and must not halve again.
+            size_t expected_level = used_level;
+            if (reduction_level.compare_exchange_strong(expected_level, used_level + 1))
+                ProfileEvents::increment(ProfileEvents::KafkaBatchSizeReductions);
+
+            throw;
+        }
     }
 
     bool some_stream_is_stalled = false;

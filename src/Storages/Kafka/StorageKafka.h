@@ -153,6 +153,11 @@ private:
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
 
+    /// Number of times `kafka_max_block_size` and `kafka_poll_max_batch_size` are halved for the
+    /// streaming cycles. It only ever increases: a success cannot be attributed to the consumer that
+    /// failed, because consumers are pooled and handed to whichever source asks for one.
+    std::atomic<size_t> reduction_level{0};
+
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     /// For memory accounting in the librdkafka threads.
