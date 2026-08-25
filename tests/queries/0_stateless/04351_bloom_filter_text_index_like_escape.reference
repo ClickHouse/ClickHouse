@@ -7,7 +7,7 @@ Results are the same with and without an ESCAPE clause when the escape character
 ESCAPE used to match a literal LIKE wildcard
 1024
 0
-The index is used for the folded query just like for the plain 2-argument LIKE: force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms (a direct NOT LIKE is recognized but cannot reject a granule, as with 2 arguments)
+force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms, just like the plain 2-argument LIKE
 1024
 1024
 4096
@@ -57,13 +57,11 @@ Parts: 1 | Granules: 8
 Granules: 24/24
 Name: idx
 Granules: 8/24
-A non-ASCII ESCAPE byte is rejected at planning time so a granule cannot be skipped for a query that must raise
-An unknown backslash escape in the folded 3-argument form is not pruned by the bloom-filter text index
-Correctness check (3-argument ESCAPE form): the row containing the literal backslash is returned
+A non-ASCII ESCAPE byte is rejected, also by EXPLAIN
+A pattern containing a literal backslash matches, and no granule is skipped
+Only the row containing the literal backslash is returned
 1
-Index analysis declines the 3-argument condition: all 3 granules are scanned
+All 3 granules are scanned
 Parts: 1 | Granules: 3
 Granules: 3/3
-A trailing escape character in a 3-argument LIKE ESCAPE raises at index-analysis time (the fold rejects it, so a granule cannot be skipped for a query that must raise)
-Index analysis raises instead of pruning
-Correctness check: the query raises instead of silently returning an empty result
+A pattern ending in a lone escape character is rejected, also by EXPLAIN

@@ -25,8 +25,8 @@ abc
 abc%
 abcd
 xyz
-A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer
-Unknown backslash escape in the folded pattern: primary key keeps the literal backslash, so matching rows are not pruned
+A non-ASCII ESCAPE byte is rejected, also by EXPLAIN
+The primary-key range covers the literal backslash, so matching rows are not pruned
 Condition: (s in [\'a\\\\b\', \'a\\\\c\'))
 Correctness check: all four rows starting with a literal backslash are returned
 a\\b01

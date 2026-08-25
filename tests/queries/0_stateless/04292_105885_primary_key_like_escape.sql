@@ -1,14 +1,10 @@
 -- Tags: no-parallel-replicas
 -- ^ EXPLAIN indexes = 1 prints the local primary-key analysis; a parallel-replicas plan changes the output.
 
--- Tests that the primary key (`KeyCondition`) is still used when the predicate
--- uses `LIKE pattern ESCAPE 'c'` or `NOT LIKE pattern ESCAPE 'c'`. The escape
--- character is folded into the pattern (rewritten to standard backslash
--- escapes) before `KeyCondition::extractAtomFromTree` dispatches it through
--- the existing 2-argument handler. `ILIKE ... ESCAPE` and `NOT ILIKE ... ESCAPE`
--- are not pruned by the primary key because `ilike`/`notILike` are not in
--- `KeyCondition::atom_map`; case-insensitive forms fall back to row-level
--- evaluation. The text index covers the two positive forms (see test 04277).
+-- Tests that the primary key is still used when the predicate uses
+-- `LIKE pattern ESCAPE 'c'` or `NOT LIKE pattern ESCAPE 'c'`. The
+-- case-insensitive forms `ILIKE ... ESCAPE` and `NOT ILIKE ... ESCAPE` are
+-- never pruned by the primary key, with or without an ESCAPE clause.
 --
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/105885
 
@@ -60,20 +56,15 @@ SELECT 'Correctness check: NOT LIKE ... ESCAPE excludes rows starting with abc% 
 
 SELECT * FROM tab WHERE s NOT LIKE 'abc|%done%' ESCAPE '|' ORDER BY s;
 
-SELECT 'A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer';
+SELECT 'A non-ASCII ESCAPE byte is rejected, also by EXPLAIN';
 
--- Mirrors the execution-layer validation in `FunctionsStringSearch::executeImpl`:
--- a single non-ASCII byte is not a valid ESCAPE, so the predicate must be rejected
--- by `KeyCondition::extractAtomFromTree` before any optimization can drop it.
 SELECT * FROM tab WHERE like(s, 'abc%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 EXPLAIN indexes = 1 SELECT * FROM tab WHERE like(s, 'abc%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
 
--- An unknown backslash escape keeps the literal backslash at row level.
--- `extractFixedPrefixFromLikePattern` folds the escape the same way, so the fixed prefix is the
--- literal `a\b` and the primary key narrows to the range [a\b, a\c) that contains the matching
--- rows. ('a\\b01' is the literal four-byte string a, backslash, b, 0, 1.)
+-- `\b` is not an escape sequence, so the pattern matches a literal backslash followed by `b`.
+-- ('a\\b01' below is the five-byte string a, backslash, b, 0, 1.)
 
 DROP TABLE IF EXISTS tab2;
 
@@ -83,7 +74,7 @@ INSERT INTO tab2 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ')
 
 OPTIMIZE TABLE tab2 FINAL;
 
-SELECT 'Unknown backslash escape in the folded pattern: primary key keeps the literal backslash, so matching rows are not pruned';
+SELECT 'The primary-key range covers the literal backslash, so matching rows are not pruned';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1

@@ -1,16 +1,12 @@
 -- Tags: no-parallel-replicas
 
 -- Tests that the text index is still used when the predicate uses
--- `LIKE pattern ESCAPE 'c'` or `ILIKE pattern ESCAPE 'c'`. The escape
--- character is folded into the pattern (rewritten to standard backslash
--- escapes) before the index dispatches it through the existing 2-argument
--- handlers.
+-- `LIKE pattern ESCAPE 'c'` or `ILIKE pattern ESCAPE 'c'`.
 
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
--- The exact granule counts below are only meaningful while the query condition cache cannot
--- serve a verdict recorded under a different skip-index profile.
+-- The cache would answer a repeated query without reporting granule counts.
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
@@ -23,11 +19,6 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
--- A moderate index_granularity keeps the text index small (few granules) so the
--- flaky check stays well under its per-run time limit; the six single-value parts
--- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
--- The granule counts below hold only for this exact layout: index_granularity_bytes = 0 keeps
--- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the six parts separate.
 SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
@@ -35,9 +26,7 @@ INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1
 INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
--- Holds `50` and `token` but not `off`, so the folded pattern prunes this part while the
--- same pattern read without its ESCAPE clause keeps it. That difference is what makes the
--- plan assertions below fail if the escape argument is ever dropped during index analysis.
+-- This row matches the pattern below only when the ESCAPE clause is ignored.
 INSERT INTO tab SELECT number, 'literal 50 discount token' FROM numbers(1024);
 
 SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
@@ -57,13 +46,13 @@ SELECT 'ESCAPE used to match a literal LIKE wildcard returns the expected zero r
 SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
 SELECT count() FROM tab WHERE message LIKE '%fast#%' ESCAPE '#';
 
-SELECT 'A consumed escape character is folded before matching: the escaped % is a literal, so the same pattern read without the ESCAPE clause matches nothing';
+SELECT 'The escaped % is a literal, so the same pattern without its ESCAPE clause matches nothing';
 
 SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%' ESCAPE '#';
 SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%';
 SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%';
 
-SELECT 'The index prunes for that folded pattern to 8 of 48 granules, the same as the equivalent standard-escape pattern';
+SELECT 'The index selects 8 of 48 granules for that pattern, the same as for the equivalent backslash-escaped pattern';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -75,7 +64,7 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%'
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
-SELECT 'Reading the same pattern without its ESCAPE clause selects 16 of 48 granules, so the two plans above cannot agree unless the escape argument reached index analysis';
+SELECT 'The same pattern without its ESCAPE clause matches a second part and selects 16 of 48 granules';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -129,7 +118,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;  -- see the note above
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);
@@ -145,17 +134,11 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 3, 4;
 
-SELECT 'A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call';
+SELECT 'An ESCAPE argument that is not a single ASCII character is rejected, also by EXPLAIN';
 
--- Without the validation in `MergeTreeIndexConditionText`, the text-index analyzer accepts a
--- single non-ASCII byte and the direct-read optimization replaces the `like` call with a
--- virtual-column reference. The execution-layer BAD_ARGUMENTS check never runs and the query
--- silently returns rows. Mirroring the validation in the analyzer makes the error appear at
--- planning time, before any optimization can drop the predicate.
 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 
--- An escape argument that is not exactly one byte is rejected on the same path.
 SELECT count() FROM tab WHERE like(tag, '%Cloud%', ''); -- { serverError BAD_ARGUMENTS }
 EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', ''); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab WHERE like(tag, '%Cloud%', 'ab'); -- { serverError BAD_ARGUMENTS }

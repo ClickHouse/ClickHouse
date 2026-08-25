@@ -9,11 +9,11 @@ Results are the same with and without an ESCAPE clause when the escape character
 ESCAPE used to match a literal LIKE wildcard returns the expected zero rows
 0
 0
-A consumed escape character is folded before matching: the escaped % is a literal, so the same pattern read without the ESCAPE clause matches nothing
+The escaped % is a literal, so the same pattern without its ESCAPE clause matches nothing
 1024
 0
 1024
-The index prunes for that folded pattern to 8 of 48 granules, the same as the equivalent standard-escape pattern
+The index selects 8 of 48 granules for that pattern, the same as for the equivalent backslash-escaped pattern
 Parts: 1 | Granules: 8
 Granules: 48/48
 Name: idx
@@ -22,7 +22,7 @@ Parts: 1 | Granules: 8
 Granules: 48/48
 Name: idx
 Granules: 8/48
-Reading the same pattern without its ESCAPE clause selects 16 of 48 granules, so the two plans above cannot agree unless the escape argument reached index analysis
+The same pattern without its ESCAPE clause matches a second part and selects 16 of 48 granules
 Parts: 2 | Granules: 16
 Granules: 48/48
 Name: idx
@@ -56,4 +56,4 @@ Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 8/32
-A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call
+An ESCAPE argument that is not a single ASCII character is rejected, also by EXPLAIN

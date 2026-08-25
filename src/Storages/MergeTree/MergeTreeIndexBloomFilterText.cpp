@@ -406,8 +406,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                         "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
                         function_name, escape_str);
 
-                /// The unknown/trailing backslash divergence is handled centrally in `traverseTreeEquals`
-                /// for both the 2-argument and this folded 3-argument form.
                 Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]));
                 if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
