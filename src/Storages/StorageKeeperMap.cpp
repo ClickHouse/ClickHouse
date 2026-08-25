@@ -179,6 +179,16 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
     return std::string(expression);
 }
 
+std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
+{
+    auto primary_key = formattedAST(ast);
+    if (const auto canonical_primary_key = tryCanonicalPrimaryKey(primary_key + '\n'))
+        return *canonical_primary_key;
+
+    /// Preserve unsupported metadata spelling rather than guessing at equivalence.
+    return primary_key;
+}
+
 void verifyTableId(const StorageID & table_id)
 {
     if (!table_id.hasUUID())
@@ -438,7 +448,7 @@ StorageKeeperMap::StorageKeeperMap(
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
         << "columns: " << metadata.columns.toString(true)
-        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+        << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
     if (zk_root_path.empty())
