@@ -184,7 +184,11 @@ void registerDeltaTableInCatalog(
             }
             catch (...)
             {
-                /// Ok: the create error above is the important one; ignore a failure to probe existence.
+                /// The original create error is the important one; a failed existence probe must not mask it.
+                LOG_DEBUG(
+                    getLogger("DeltaLakeCatalogRegistration"),
+                    "Could not probe catalog existence for {}.{} while handling IF NOT EXISTS; surfacing the original create error",
+                    namespace_name, table_name);
             }
         }
         if (already_registered)

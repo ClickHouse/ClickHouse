@@ -12,6 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <string_view>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -642,6 +643,7 @@ struct DeltaJSONSchemaVisitor
     /// List id 0 is reserved by the kernel FFI for "None", so allocate ids starting from 1.
     size_t counter = 1;
     std::exception_ptr exception;
+    bool has_char_varchar = false;
 
     std::vector<Node> & listAt(size_t id)
     {
@@ -741,6 +743,23 @@ uintptr_t deltaMakeFieldList(void * data, uintptr_t reserve)
     }
 }
 
+/// True if the field metadata carries the Spark `__CHAR_VARCHAR_TYPE_STRING` annotation (a CHAR(n)/VARCHAR(n)
+/// column stored physically as `string`).
+bool fieldIsCharVarchar(const ffi::CStringMap * metadata)
+{
+    if (!metadata)
+        return false;
+    bool found = false;
+    ffi::visit_string_map(
+        metadata, &found,
+        [](ffi::NullableCvoid ctx, ffi::KernelStringSlice key, ffi::KernelStringSlice)
+        {
+            if (std::string_view(key.ptr, key.len) == "__CHAR_VARCHAR_TYPE_STRING")
+                *static_cast<bool *>(ctx) = true;
+        });
+    return found;
+}
+
 void deltaPushPrimitive(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, std::string type)
 {
     deltaVisitGuarded(data, [&](DeltaJSONSchemaVisitor & v)
@@ -774,7 +793,12 @@ void deltaVisitInteger(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu,
 void deltaVisitLong(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "long"); }
 void deltaVisitFloat(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "float"); }
 void deltaVisitDouble(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "double"); }
-void deltaVisitString(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "string"); }
+void deltaVisitString(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap * metadata)
+{
+    if (fieldIsCharVarchar(metadata))
+        static_cast<DeltaJSONSchemaVisitor *>(d)->has_char_varchar = true;
+    deltaPushPrimitive(d, s, n, nu, "string");
+}
 void deltaVisitBinary(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "binary"); }
 void deltaVisitDate(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "date"); }
 void deltaVisitTimestamp(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp"); }
@@ -830,6 +854,15 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * sn
     uintptr_t top_level_list_id = ffi::visit_schema(schema.get(), &ffi_visitor);
     if (visitor.exception)
         std::rethrow_exception(visitor.exception);
+
+    /// CHAR(n)/VARCHAR(n) columns are stored as `string` with a field-metadata annotation the raw-schema
+    /// helper drops, so the registered catalog schema would differ from the `_delta_log`. Reject onboarding
+    /// such tables (mirrors the column-mapping rejection).
+    if (visitor.has_char_varchar)
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Registering a DeltaLake table with CHAR/VARCHAR columns into a catalog is not supported "
+            "(the char/varchar annotation cannot be preserved in the catalog schema)");
 
     return visitor.buildFields(top_level_list_id);
 }
