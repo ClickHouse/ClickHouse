@@ -5970,6 +5970,21 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             return cursor;
         };
+        /// WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL n MILLISECOND]. `setWatermark`
+        /// registers `expression` as a child of the ASTStreamSettings node, so any caller that
+        /// clears or replaces an existing watermark must erase that child itself first.
+        auto make_random_watermark = [&]() -> WatermarkSettingsPtr
+        {
+            auto expr = getRandomColumnLike();
+            if (!expr)
+                return nullptr;
+            auto watermark = std::make_shared<WatermarkSettings>();
+            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->expression = expr;
+            if (fuzz_rand() % 2 == 0)
+                watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);
+            return watermark;
+        };
         if (table_expr->stream_settings)
         {
             if (fuzz_rand() % 50 == 0)
@@ -5994,16 +6009,36 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// turns the read into a tail that only ends at `max_execution_time`, so it is rare.
                 if (fuzz_rand() % 4 == 0)
                     stream.setSubscribeForUpdates(fuzz_rand() % 16 == 0);
+                /// UNORDERED only relaxes intra-snapshot ordering, so toggling it is always safe
+                if (fuzz_rand() % 4 == 0)
+                    stream.setUnordered(!stream.unordered);
+                if (stream.watermark && fuzz_rand() % 10 == 0)
+                {
+                    auto & wch = stream.children;
+                    wch.erase(std::remove(wch.begin(), wch.end(), stream.watermark->expression), wch.end());
+                    stream.watermark.reset();
+                }
+                else if (!stream.watermark && fuzz_rand() % 20 == 0)
+                {
+                    if (auto watermark = make_random_watermark())
+                        stream.setWatermark(watermark);
+                }
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 50 == 0)
         {
-            /// Add STREAM [BOUNDED] [CURSOR {...}], preferring BOUNDED: an unbounded stream tails
-            /// new data until `max_execution_time`, so that form stays as rare as it was before.
+            /// Add STREAM [BOUNDED] [UNORDERED] [CURSOR {...}], preferring BOUNDED: an unbounded
+            /// stream tails new data until `max_execution_time`, so that form stays as rare as before.
             auto stream_node = make_intrusive<ASTStreamSettings>();
             stream_node->setSubscribeForUpdates(fuzz_rand() % 5 == 0);
+            stream_node->setUnordered(fuzz_rand() % 4 == 0);
             if (fuzz_rand() % 2 == 0)
                 stream_node->setCursor(buildCursorTree(make_random_cursor()));
+            if (fuzz_rand() % 3 == 0)
+            {
+                if (auto watermark = make_random_watermark())
+                    stream_node->setWatermark(watermark);
+            }
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
         }
