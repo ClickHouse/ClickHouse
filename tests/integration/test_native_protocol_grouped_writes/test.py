@@ -177,6 +177,7 @@ def test_select_groups_terminal_packets(compression):
             "compression": compression,
             "interactive_delay": INTERACTIVE_DELAY_ONE_HOUR,
             "send_logs_level": "trace",
+            "send_profile_events": 1,
         },
     )
     assert answer == "1\n"
