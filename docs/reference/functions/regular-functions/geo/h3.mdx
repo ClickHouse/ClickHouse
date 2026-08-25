@@ -864,13 +864,13 @@ h3ExactEdgeLengthM(index)
 **Example**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthM─┐
-│    195449.631634 │
-└──────────────────┘
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
 ```
 
 ## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
@@ -894,13 +894,13 @@ h3ExactEdgeLengthKm(index)
 **Example**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthKm─┐
-│      195.44963163 │
-└───────────────────┘
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
 ```
 
 ## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
@@ -924,13 +924,13 @@ h3ExactEdgeLengthRads(index)
 **Example**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthRads─┐
-│      0.030677980119 │
-└─────────────────────┘
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
 ```
 
 ## h3NumHexagons {#h3numhexagons}
@@ -989,9 +989,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌───────h3PointDistM─┐
-│ 2223901.0395045886 │
-└────────────────────┘
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
 ```
 
 ## h3PointDistKm {#h3pointdistkm}
@@ -1020,9 +1020,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌──────h3PointDistKm─┐
-│ 2223.9010395045884 │
-└────────────────────┘
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
 ```
 
 ## h3PointDistRads {#h3pointdistrads}
@@ -1172,7 +1172,7 @@ Returns a negative number if finding the distance fails.
 
 ```text title="Response"
 ┌─distance─┐
-│        6 │
+│        7 │
 └──────────┘
 ```
 
@@ -1211,7 +1211,7 @@ h3HexRing(index, k)
 
 ## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
 
-Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin and destination). Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting). For valid cells that are not neighbors (including the same cell twice), returns `0`.
+Returns a unidirectional edge H3 index based on the provided origin and destination and returns 0 on error.
 
 **Syntax**
 
@@ -1247,7 +1247,7 @@ Determines if the provided H3Index is a valid unidirectional edge index. Returns
 **Syntax**
 
 ```sql
-h3UnidirectionalEdgeIsValid(index)
+h3UnidirectionalEdgeisValid(index)
 ```
 
 **Parameter**
@@ -1273,7 +1273,7 @@ h3UnidirectionalEdgeIsValid(index)
 
 ## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
 
-Returns the origin hexagon index from the unidirectional edge H3Index. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `0` only when that setting is enabled.
+Returns the origin hexagon index from the unidirectional edge H3Index.
 
 **Syntax**
 
@@ -1288,23 +1288,22 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 **Returned value**
 
 - Origin Hexagon Index number. [UInt64](/reference/data-types/int-uint).
-- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355775 │
+│ 599686042433355773 │
 └────────────────────┘
 ```
 
 ## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
 
-Returns the destination hexagon index from the unidirectional edge H3Index. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `0` only when that setting is enabled.
+Returns the destination hexagon index from the unidirectional edge H3Index.
 
 **Syntax**
 
@@ -1319,17 +1318,16 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **Returned value**
 
 - Destination Hexagon Index number. [UInt64](/reference/data-types/int-uint).
-- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097599 │
+│ 599686043507097597 │
 └────────────────────┘
 ```
 
@@ -1354,7 +1352,7 @@ A tuple consisting of two values `tuple(origin,destination)`:
 - `origin` — Origin Hexagon index number. [UInt64](/reference/data-types/int-uint).
 - `destination` — Destination Hexagon index number. [UInt64](/reference/data-types/int-uint).
 
-Throws an exception if the provided input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `(0,0)` only when that setting is enabled.
+Returns `(0,0)` if the provided input is not valid.
 
 **Example**
 
@@ -1370,7 +1368,7 @@ Throws an exception if the provided input is not a valid directed edge (controll
 
 ## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
 
-Provides all of the unidirectional edges from the provided H3Index. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.
+Provides all of the unidirectional edges from the provided H3Index.
 
 **Syntax**
 
@@ -1380,17 +1378,16 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **Parameter**
 
-- `index` — Hexagon index number that represents a cell. [UInt64](/reference/data-types/int-uint).
+- `index` — Hexagon index number that represents a unidirectional edge. [UInt64](/reference/data-types/int-uint).
 
 **Returned value**
 
-- Array of h3 indexes representing each unidirectional edge. [Array](/reference/data-types/array)([UInt64](/reference/data-types/int-uint)).
-- Throws `INCORRECT_DATA` on invalid cells by default; returns `[]` when `functions_h3_default_if_invalid = 1`.
+Array of h3 indexes representing each unidirectional edge. [Array](/reference/data-types/array)([UInt64](/reference/data-types/int-uint)).
 
 **Example**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
 ```
 
 ```text title="Response"
@@ -1401,7 +1398,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 ## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
 
-Returns the coordinates defining the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.
+Returns the coordinates defining the unidirectional edge.
 
 **Syntax**
 
@@ -1415,8 +1412,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **Returned value**
 
-- Array of pairs '(lat, lon)'. [Array](/reference/data-types/array)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
-- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `[]` when `functions_h3_default_if_invalid = 1`.
+- Array of pairs '(lon, lat)'. [Array](/reference/data-types/array)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
 
 **Example**
 

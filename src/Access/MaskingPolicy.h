@@ -2,6 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
+#include <Common/quoteString.h>
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <memory>
@@ -18,7 +19,10 @@ struct MaskingPolicyName
     String table_name;
 
     bool empty() const { return short_name.empty(); }
-    String toString() const;
+    String toString() const
+    {
+        return backQuoteIfNeed(short_name) + " ON " + (database.empty() ? String() : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table_name);
+    }
     auto toTuple() const { return std::tie(short_name, database, table_name); }
     friend bool operator ==(const MaskingPolicyName & left, const MaskingPolicyName & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator !=(const MaskingPolicyName & left, const MaskingPolicyName & right) { return left.toTuple() != right.toTuple(); }

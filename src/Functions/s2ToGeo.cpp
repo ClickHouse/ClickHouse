@@ -116,7 +116,7 @@ public:
 REGISTER_FUNCTION(S2ToGeo)
 {
     FunctionDocumentation::Description description = R"(
-Returns coordinates (longitude, latitude) corresponding to the provided S2 point index. This is the inverse of [`geoToS2`](/reference/functions/regular-functions/geo/s2#geotos2).
+Returns coordinates (longitude, latitude) corresponding to the provided S2 point index. This is the inverse of [`geoToS2`](/sql-reference/functions/geo/s2#geotos2).
     )";
     FunctionDocumentation::Syntax syntax = "s2ToGeo(s2index)";
     FunctionDocumentation::Arguments arguments = {

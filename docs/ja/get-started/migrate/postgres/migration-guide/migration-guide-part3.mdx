@@ -302,8 +302,8 @@ PROJECTIONは、データの挿入に伴って自動的に維持されるため�
   ## 非正規化
 </div>
 
-Postgres はリレーショナルデータベースであるため、そのデータモデルは [正規化](https://en.wikipedia.org/wiki/Database_normalization) が高度に進んでおり、数百もの table に分かれることも少なくありません。ClickHouse では、JOIN のパフォーマンスを最適化するために、場合によっては非正規化が有効です。
+Postgres はリレーショナルデータベースであるため、そのデータモデルは高度に[正規化](https://en.wikipedia.org/wiki/Database_normalization)されており、多くの場合、数百ものテーブルにまたがっています。ClickHouse では、JOIN のパフォーマンスを最適化するために、状況によっては非正規化が有効です。
 
-ClickHouse で Stack Overflow dataset を非正規化する利点については、この[ガイド](/ja/guides/clickhouse/data-modelling/denormalization)を参照してください。
+ClickHouse で Stack Overflow データセットを非正規化するメリットを示したこの[ガイド](/ja/guides/clickhouse/data-modelling/denormalization)も参照してください。
 
-これで、Postgres から ClickHouse へ移行する方向けの基本ガイドは終了です。ClickHouse の高度な機能についてさらに学ぶには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。
+以上で、Postgres から ClickHouse へ移行する方向けの基本ガイドは終了です。ClickHouse の高度な機能についてさらに学ぶには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。

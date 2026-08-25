@@ -909,7 +909,7 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 h3ExactEdgeLengthM(index)
 ```
 
-**معلمة**
+**المعامل**
 
 * `index` — رقم فهرس الخلية السداسية. [UInt64](/ar/reference/data-types/int-uint).
 
@@ -920,13 +920,13 @@ h3ExactEdgeLengthM(index)
 **مثال**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthM─┐
-│    195449.631634 │
-└──────────────────┘
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -935,13 +935,13 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 
 يُرجِع الطول الدقيق للحافة أحادية الاتجاه التي يمثّلها `فهرس H3` المُدخَل، بالكيلومترات.
 
-**صيغة**
+**البنية**
 
 ```sql
 h3ExactEdgeLengthKm(index)
 ```
 
-**معلمة**
+**المعامل**
 
 * `index` — رقم فهرس الخلية السداسية. [UInt64](/ar/reference/data-types/int-uint).
 
@@ -952,13 +952,13 @@ h3ExactEdgeLengthKm(index)
 **مثال**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthKm─┐
-│      195.44963163 │
-└───────────────────┘
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -973,7 +973,7 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 h3ExactEdgeLengthRads(index)
 ```
 
-**معلمة**
+**المعامل**
 
 * `index` — رقم فهرس الخلية السداسية. [UInt64](/ar/reference/data-types/int-uint).
 
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **مثال**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthRads─┐
-│      0.030677980119 │
-└─────────────────────┘
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1031,7 +1031,7 @@ SELECT h3NumHexagons(3) AS numHexagons;
 
 تعيد مسافة &quot;الدائرة العظمى&quot; أو &quot;هافرسين&quot; بين كل زوج من نقاط GeoCoord ‏(خط العرض/خط الطول)، بالمتر.
 
-**صيغة**
+**البنية**
 
 ```sql
 h3PointDistM(lat1, lon1, lat2, lon2)
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌───────h3PointDistM─┐
-│ 2223901.0395045886 │
-└────────────────────┘
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1064,13 +1064,13 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 
 يعيد مسافة &quot;الدائرة العظمى&quot; أو مسافة &quot;هافرسين&quot; بين أزواج من نقاط GeoCoord (خط العرض/خط الطول) بالكيلومترات.
 
-**صيغة**
+**البنية**
 
 ```sql
 h3PointDistKm(lat1, lon1, lat2, lon2)
 ```
 
-**وسيط**
+**المعاملات**
 
 * `lat1`, `lon1` — خط العرض وخط الطول للنقطة 1 بالدرجات. [Float64](/ar/reference/data-types/float).
 * `lat2`, `lon2` — خط العرض وخط الطول للنقطة 2 بالدرجات. [Float64](/ar/reference/data-types/float).
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌──────h3PointDistKm─┐
-│ 2223.9010395045884 │
-└────────────────────┘
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1221,7 +1221,7 @@ h3Line(start,end)
   ## h3Distance
 </div>
 
-تعيد المسافة، بوحدة خلايا الشبكة، بين الفهرسين المُقدَّمين.
+تعيد المسافة، بوحدة خلايا الشبكة، بين المؤشرين المُقدَّمين.
 
 **الصيغة**
 
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        6 │
+│        7 │
 └──────────┘
 ```
 
@@ -1291,7 +1291,7 @@ h3HexRing(index, k)
   ## h3GetUnidirectionalEdge
 </div>
 
-يعيد فهرس H3 لحافة أحادية الاتجاه لفهرسي خليتي H3 متجاورتين (الأصل والوجهة). يطرح استثناءً إذا لم يكن أيٌّ من الإدخالين خلية H3 صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`). بالنسبة إلى الخلايا الصالحة غير المتجاورة (بما في ذلك الخلية نفسها مرتين)، يعيد `0`.
+يعيد فهرس H3 لحافة أحادية الاتجاه استنادًا إلى الأصل والوجهة المحدَّدين، ويعيد 0 عند حدوث خطأ.
 
 **الصيغة**
 
@@ -1329,7 +1329,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 **البنية**
 
 ```sql
-h3UnidirectionalEdgeIsValid(index)
+h3UnidirectionalEdgeisValid(index)
 ```
 
 **المعلمة**
@@ -1357,7 +1357,7 @@ h3UnidirectionalEdgeIsValid(index)
   ## h3GetOriginIndexFromUnidirectionalEdge
 </div>
 
-يعيد مؤشر السداسي الأصلي من H3Index الخاص بالحافة أحادية الاتجاه. يطرح استثناءً إذا لم يكن الإدخال حافة موجهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد `0` إلا عند تمكين هذا الإعداد.
+يعيد مؤشر السداسي الأصلي من H3Index الخاص بالحافة أحادية الاتجاه.
 
 **الصياغة**
 
@@ -1371,18 +1371,17 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 
 **القيمة المُعادة**
 
-* رقم فهرس الخلية السداسية للمنشأ. [UInt64](/ar/reference/data-types/int-uint).
-* يطرح `INCORRECT_DATA` للحواف الموجّهة غير الصالحة افتراضياً؛ ويعيد `0` عندما يكون `functions_h3_default_if_invalid = 1`.
+* رقم فهرس الخلية السداسية المصدر. [UInt64](/ar/reference/data-types/int-uint).
 
 **مثال**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355775 │
+│ 599686042433355773 │
 └────────────────────┘
 ```
 
@@ -1390,7 +1389,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
   ## h3GetDestinationIndexFromUnidirectionalEdge
 </div>
 
-يعيد فهرس الخلية السداسية للوجهة من H3Index للحافة أحادية الاتجاه. يطرح استثناءً إذا لم يكن الإدخال حافة موجهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد `0` إلا عند تمكين هذا الإعداد.
+يعيد فهرس الخلية السداسية للوجهة من H3Index للحافة أحادية الاتجاه.
 
 **الصياغة**
 
@@ -1405,17 +1404,16 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **القيمة المُعادة**
 
 * رقم فهرس الخلية السداسية للوجهة. [UInt64](/ar/reference/data-types/int-uint).
-* يُطلق `INCORRECT_DATA` عند وجود حواف موجّهة غير صالحة افتراضيًا؛ ويعيد `0` عندما يكون `functions_h3_default_if_invalid = 1`.
 
 **مثال**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097599 │
+│ 599686043507097597 │
 └────────────────────┘
 ```
 
@@ -1442,7 +1440,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 * `origin` — رقم فهرس الخلية السداسية للمنشأ. [UInt64](/ar/reference/data-types/int-uint).
 * `destination` — رقم فهرس الخلية السداسية للوجهة. [UInt64](/ar/reference/data-types/int-uint).
 
-يطرح استثناءً إذا كانت قيمة الإدخال المقدَّمة ليست حافة موجَّهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يُرجِع `(0,0)` إلا عند تمكين ذلك الإعداد.
+تُرجِع `(0,0)` إذا كانت قيمة الإدخال المقدَّمة غير صالحة.
 
 **مثال**
 
@@ -1460,7 +1458,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
   ## h3GetUnidirectionalEdgesFromHexagon
 </div>
 
-يوفّر جميع الحواف أحادية الاتجاه الخارجة من قيمة H3Index المقدَّمة. يُطلق استثناءً إذا لم يكن الإدخال خلية H3 صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد مصفوفة فارغة إلا عند تفعيل هذا الإعداد.
+يوفّر جميع الحواف أحادية الاتجاه الخارجة من قيمة H3Index المقدَّمة.
 
 **الصيغة**
 
@@ -1470,17 +1468,16 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **المعلمة**
 
-* `index` — رقم فهرس الخلية السداسية الذي يمثّل خلية. [UInt64](/ar/reference/data-types/int-uint).
+* `index` — رقم فهرس الخلية السداسية الذي يمثّل حافة أحادية الاتجاه. [UInt64](/ar/reference/data-types/int-uint).
 
 **القيمة المُعادة**
 
-* مصفوفة من فهارس H3 تمثّل كل حافة أحادية الاتجاه. [Array](/ar/reference/data-types/array)([UInt64](/ar/reference/data-types/int-uint)).
-* يُطلق الخطأ `INCORRECT_DATA` للخلايا غير الصالحة افتراضيًا؛ ويعيد `[]` عندما يكون `functions_h3_default_if_invalid = 1`.
+مصفوفة من فهارس H3 تمثّل كل حافة أحادية الاتجاه. [Array](/ar/reference/data-types/array)([UInt64](/ar/reference/data-types/int-uint)).
 
 **مثال**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
 ```
 
 ```text title="Response"
@@ -1493,7 +1490,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
   ## h3GetUnidirectionalEdgeBoundary
 </div>
 
-تُرجِع الإحداثيات التي تُعرِّف الحافة أحادية الاتجاه. تطرح استثناءً إذا لم يكن الإدخال حافة موجّهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا تُرجِع مصفوفة فارغة إلا عندما يكون هذا الإعداد مُفعّلًا.
+تُرجِع الإحداثيات التي تُعرِّف الحافة أحادية الاتجاه.
 
 **البنية**
 
@@ -1507,8 +1504,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **القيمة المُعادة**
 
-* [مصفوفة](/ar/reference/data-types/array) من الأزواج &#39;(lat, lon)&#39;. ([Float64](/ar/reference/data-types/float), [Float64](/ar/reference/data-types/float)).
-* يُطلق `INCORRECT_DATA` للحواف الموجّهة غير الصالحة افتراضيًا؛ ويُرجع `[]` عندما يكون `functions_h3_default_if_invalid = 1`.
+* [مصفوفة](/ar/reference/data-types/array) من الأزواج &#39;(lon, lat)&#39;. ([Float64](/ar/reference/data-types/float), [Float64](/ar/reference/data-types/float)).
 
 **مثال**
 

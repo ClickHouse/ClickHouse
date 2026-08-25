@@ -1,0 +1,338 @@
+---
+title: 'تصحيح أخطاء DataStore'
+sidebarTitle: 'نظرة عامة'
+slug: /chdb/debugging
+description: 'استكشف أخطاء عمليات DataStore وأصلحها باستخدام explain() وتحليل الأداء والتسجيل'
+keywords: ['chdb', 'datastore', 'استكشاف الأخطاء وإصلاحها', 'explain', 'تحليل الأداء', 'التسجيل']
+doc_type: 'guide'
+---
+
+يوفّر DataStore أدوات شاملة لتصحيح الأخطاء لمساعدتك على فهم مسارات معالجة البيانات وتحسينها.
+
+<div id="overview">
+  ## نظرة عامة على أدوات تصحيح الأخطاء
+</div>
+
+| الأداة        | الغرض              | متى تُستخدم                    |
+| ------------- | ------------------ | ------------------------------ |
+| `explain()`   | عرض خطة التنفيذ    | لفهم استعلام SQL الذي سيُنفَّذ |
+| محلّل الأداء  | قياس الأداء        | لتحديد العمليات البطيئة        |
+| التسجيل       | عرض تفاصيل التنفيذ | لتشخيص السلوك غير المتوقع      |
+
+<div id="decision-matrix">
+  ## مصفوفة اتخاذ القرار السريعة
+</div>
+
+| الحاجة                    | الأداة         | الأمر                       |
+| ------------------------- | -------------- | --------------------------- |
+| عرض خطة التنفيذ           | `explain()`    | `ds.explain()`              |
+| قياس الأداء               | محلّل الأداء   | `config.enable_profiling()` |
+| تصحيح أخطاء استعلامات SQL | التسجيل        | `config.enable_debug()`     |
+| كل ما سبق                 | مجتمعة         | انظر أدناه                  |
+
+<div id="quick-setup">
+  ## الإعداد السريع
+</div>
+
+<div id="enable-all">
+  ### تمكين جميع خيارات تصحيح الأخطاء
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable all debugging
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# View execution plan
+result.explain()
+
+# Get profiler report
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## الدالة explain()
+</div>
+
+اطّلع على خطة التنفيذ قبل تشغيل الاستعلام.
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+راجع [توثيق explain()](/ar/products/chdb/debugging/explain) لمزيد من التفاصيل.
+
+***
+
+<div id="profiling">
+  ## تحليل الأداء
+</div>
+
+قِس زمن تنفيذ كل عملية.
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Performance Report
+==================
+Step                          Duration    Calls
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Total                         1.939s      7
+```
+
+راجع [دليل تحليل الأداء](/ar/products/chdb/debugging/profiling) لمزيد من التفاصيل.
+
+***
+
+<div id="logging">
+  ## التسجيل
+</div>
+
+اطّلع على سجلات التنفيذ التفصيلية.
+
+```python
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Run operations - logs will show:
+# - SQL queries generated
+# - Execution engine used
+# - Cache hits/misses
+# - Timing information
+```
+
+مثال على مخرجات السجل:
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+راجع [إعدادات التسجيل](/ar/products/chdb/debugging/logging) لمزيد من التفاصيل.
+
+***
+
+<div id="scenarios">
+  ## سيناريوهات شائعة لتصحيح الأخطاء
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. الاستعلام لا يُرجع النتائج المتوقعة
+</div>
+
+```python
+# Step 1: View the execution plan
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Step 2: Enable logging to see SQL
+config.enable_debug()
+
+# Step 3: Run and check logs
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. الاستعلام يعمل ببطء
+</div>
+
+```python
+# Step 1: Enable profiling
+config.enable_profiling()
+
+# Step 2: Run your query
+result = process_data()
+
+# Step 3: Check profiler report
+profiler = get_profiler()
+profiler.report()
+
+# Step 4: Identify slow operations and optimize
+```
+
+<div id="scenario-engine">
+  ### 3. فهم آلية اختيار المحرّك
+</div>
+
+```python
+# Enable verbose logging
+config.enable_debug()
+
+# Run operations
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# Logs will show which engine was used for each operation:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. تصحيح أخطاء مشكلات ذاكرة التخزين المؤقت
+</div>
+
+```python
+# Enable debug to see cache operations
+config.enable_debug()
+
+# First run
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache miss, executing query
+
+# Second run (should use cache)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache hit, returning cached result
+
+# If not caching when expected, check:
+# - Are operations identical?
+# - Is cache enabled? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="best-practice-1">
+  ### 1. أجرِ تصحيح الأخطاء في Development، لا في بيئة الإنتاج
+</div>
+
+```python
+# Development
+config.enable_debug()
+config.enable_profiling()
+
+# Production
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. استخدم explain() قبل تشغيل الاستعلامات الكبيرة
+</div>
+
+```python
+# Build query
+query = ds.filter(...).groupby(...).agg(...)
+
+# Check plan first
+query.explain()
+
+# If plan looks good, execute
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. حلّل الأداء قبل التحسين
+</div>
+
+```python
+# Don't guess what's slow - measure it
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. تحقّق من استعلام SQL عندما تكون النتائج غير صحيحة
+</div>
+
+```python
+# View generated SQL
+print(query.to_sql())
+
+# Compare with expected SQL
+# Run SQL directly in ClickHouse to verify
+```
+
+***
+
+<div id="summary">
+  ## ملخص أدوات تصحيح الأخطاء
+</div>
+
+| الأداة             | الأمر                       | المخرجات            |
+| ------------------ | --------------------------- | ------------------- |
+| شرح خطة التنفيذ    | `ds.explain()`              | خطوات التنفيذ + SQL |
+| شرح مفصل           | `ds.explain(verbose=True)`  | + البيانات الوصفية  |
+| عرض SQL            | `ds.to_sql()`               | سلسلة استعلام SQL   |
+| تمكين التصحيح      | `config.enable_debug()`     | السجلات التفصيلية   |
+| تمكين تحليل الأداء | `config.enable_profiling()` | بيانات التوقيت      |
+| تقرير محلّل الأداء | `get_profiler().report()`   | ملخص الأداء         |
+| مسح محلّل الأداء   | `get_profiler().reset()`    | مسح بيانات التوقيت  |
+
+***
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [الدالة explain()](/ar/products/chdb/debugging/explain) - توثيق مفصل لخطة التنفيذ
+* [دليل تحليل الأداء](/ar/products/chdb/debugging/profiling) - قياس الأداء
+* [تهيئة التسجيل](/ar/products/chdb/debugging/logging) - إعداد مستوى السجل والتنسيق

@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### Указание значений ключей родительского объекта
 </div>
 
-Допустим, мы также хотим сохранять в таблице значения из ключей родительского объекта. В этом случае можно использовать [следующую настройку](/ru/reference/settings/formats/format#format_json_object_each_row_column_for_object_name), чтобы указать имя столбца, в который будут сохраняться значения ключей:
+Допустим, мы также хотим сохранять в таблице значения из ключей родительского объекта. В этом случае можно использовать [следующую настройку](/ru/reference/settings/formats#format_json_object_each_row_column_for_object_name), чтобы указать имя столбца, в который будут сохраняться значения ключей:
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## Доступ к вложенным JSON-объектам
 </div>
 
-Мы можем обращаться к [ключам вложенных JSON-объектов](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json), включив [следующий параметр настройки](/ru/reference/settings/formats/input-format#input_format_import_nested_json):
+Мы можем обращаться к [ключам вложенных JSON-объектов](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json), включив [следующий параметр настройки](/ru/reference/settings/formats#input_format_import_nested_json):
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse будет игнорировать неизвестные столбцы при импорте. Это поведение можно отключить с помощью параметра [input&#95;format&#95;skip&#95;unknown&#95;fields](/ru/reference/settings/formats/input-format#input_format_skip_unknown_fields):
+ClickHouse будет игнорировать неизвестные столбцы при импорте. Это поведение можно отключить с помощью параметра [input&#95;format&#95;skip&#95;unknown&#95;fields](/ru/reference/settings/formats#input_format_skip_unknown_fields):
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

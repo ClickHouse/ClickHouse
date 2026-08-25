@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-echo "--- projection-served query reports a not_applicable candidate ---"
+echo "--- projection-served query is rejected ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_proj;
     CREATE TABLE t_hypo_proj (a UInt64, b UInt64, PROJECTION p (SELECT a, b ORDER BY b))
@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT -n -q "
     INSERT INTO t_hypo_proj SELECT number, number FROM numbers(1000);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proj (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj WHERE b = 5 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
-" 2>&1 | grep -m1 -o 'served from projection'
+" 2>&1 | grep -m1 -o 'served from a projection'
 
 
 echo "--- empty table reports a clean baseline ---"

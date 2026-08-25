@@ -308,9 +308,7 @@ UPDATE posts SET AnswerCount = AnswerCount + 1 WHERE Id = 404346
 
 詳細: [Lightweight UPDATE](/ja/reference/statements/update)
 
-<div id="on-the-fly-mutations-summary">
-  ### オンザフライミューテーション
-</div>
+### オンザフライミューテーション
 
 オンザフライミューテーションは、行を更新した際に、その後の`SELECT`クエリでバックグラウンド処理の完了を待たずに変更後の値が自動的に返される仕組みです。これにより、通常のミューテーションにおけるアトミック性の制約を実質的に解消できます。
 
@@ -327,10 +325,10 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
 ```sql
--- Increment the count
+-- カウントをインクリメントする
 ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
 
--- The updated value is immediately visible
+-- 更新された値は即座に反映される
 SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
@@ -342,7 +340,7 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 
 ミューテーションと、それに続く `SELECT` クエリの両方で、`apply_mutations_on_fly = 1` 設定を有効にする必要があります。ミューテーションの条件は ClickHouse Keeper に保存され、Keeper はそれらをすべてメモリ内に保持し、クエリ実行時にオンザフライで適用します。
 
-データの更新には引き続きミューテーションが使用される点に注意してください。違うのは、すぐにはマテリアライズされないということだけです。ミューテーションは非同期プロセスとしてバックグラウンドで引き続き適用され、通常のミューテーションと同じ大きなオーバーヘッドが発生します。また、この操作で使用できる式にも制限があります ([詳細](#support-for-subqueries-and-non-deterministic-functions)を参照) 。
+データの更新には引き続きミューテーションが使用される点に注意してください。違うのは、すぐには実体化されないということだけです。ミューテーションは非同期プロセスとしてバックグラウンドで引き続き適用され、通常のミューテーションと同じ大きなオーバーヘッドが発生します。また、この操作で使用できる式にも制限があります ([詳細](#support-for-subqueries-and-non-deterministic-functions)を参照) 。
 
 <Warning>
   オンザフライミューテーションは、ごく少数の操作にのみ使用してください。多くても数十件程度までに抑えるべきです。Keeper は条件をメモリ内に保存するため、過剰に使用するとクラスターの安定性に影響します。Keeper に高い負荷がかかると、無関係なテーブルにも影響するセッションタイムアウトが発生する可能性があります。

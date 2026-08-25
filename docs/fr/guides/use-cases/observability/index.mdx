@@ -1,13 +1,10 @@
 ---
 slug: /use-cases/observability
-title: 'observabilité'
-sidebarTitle: 'Vue d’ensemble'
-description: 'Page d’accueil du guide sur le cas d’usage observabilité'
+title: 'Observability'
+description: 'Page d’accueil du guide sur le cas d’usage Observability'
 keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
-
-import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse offre une vitesse, une scalabilité et une efficacité économique inégalées pour l’observabilité. Ce guide propose deux options selon vos besoins :
 
@@ -45,11 +42,3 @@ Pour les utilisateurs ayant des **besoins spécifiques** — tels que des pipeli
 | [Intégration d’OpenTelemetry](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Collecte et export des logs et des traces à l’aide d’OpenTelemetry avec ClickHouse.                                                                                                             |
 | [Utilisation des outils de visualisation](/fr/guides/use-cases/observability/build-your-own/grafana)       | Découvrez comment utiliser les outils de visualisation pour l’observabilité avec ClickHouse, notamment HyperDX et Grafana.                                                                      |
 | [Application de démonstration](/fr/guides/use-cases/observability/build-your-own/demo-application)         | Découvrez l’OpenTelemetry demo application adaptée pour fonctionner avec ClickHouse pour les logs et les traces.                                                                                |
-
-<div id="prometheus-metrics">
-  ## Métriques Prometheus
-</div>
-
-<CloudNotSupportedBadge />
-
-ClickHouse peut stocker des métriques Prometheus dans une table [`TimeSeries`](/fr/reference/engines/table-engines/integrations/time-series) et exécuter des requêtes PromQL. Consultez [Protocoles Prometheus et PromQL](/fr/concepts/features/interfaces/prometheus) pour configurer l’ingestion, les requêtes et les visualisations.

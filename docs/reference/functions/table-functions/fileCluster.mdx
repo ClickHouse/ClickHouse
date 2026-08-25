@@ -29,12 +29,12 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | Argument             | Description                                                                                                                                                                        |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cluster_name`       | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                  |
-| `path`               | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings/user#user_files_path). Path to file also supports [globs](#globs-in-path). |
+| `path`               | The relative path to the file from [user_files_path](/reference/settings/server-settings/settings#user_files_path). Path to file also supports [globs](#globs-in-path). |
 | `format`             | [Format](/reference/formats/index) of the files. Type: [String](/reference/data-types/string).                                                                           |
 | `structure`          | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).                             |
 | `compression_method` | Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                     |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table with the specified format and structure and with data from files matching the specified path.
 

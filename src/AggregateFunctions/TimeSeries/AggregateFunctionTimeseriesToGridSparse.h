@@ -48,13 +48,6 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
             }
         }
 
-        /// Bulk `add`, for the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
-        ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
-        {
-            for (size_t i = 0; i < count; ++i)
-                add(timestamps[i], values[i]);
-        }
-
         void merge(const Summary & other)
         {
             if (other.has_value)
@@ -138,7 +131,7 @@ public:
         return {};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 4;
+    static constexpr UInt16 FORMAT_VERSION = 3;
     static constexpr bool DateTime64Supported = true;
 };
 

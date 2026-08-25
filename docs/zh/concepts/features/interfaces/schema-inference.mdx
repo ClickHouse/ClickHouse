@@ -149,7 +149,7 @@ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM
 这样可以提升插入性能，因为 schema 推断 可能会耗费一些时间。此外，当表具有优化后的 schema 时，这种方式也很有帮助，因此
 无需执行类型转换。
 
-有一个特殊设置 [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/zh/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)
+有一个特殊设置 [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/zh/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
 用于控制此行为。它有 3 个可能的值：
 
 * 0 - 表函数将从数据中提取结构。
@@ -195,7 +195,7 @@ CREATE TABLE hobbies2
 ORDER BY id;
 ```
 
-并从文件 `hobbies.jsonl` 中插入数据：
+并从 `hobbies.jsonl` 文件中插入数据：
 
 ```sql
 INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -219,7 +219,7 @@ CREATE TABLE hobbies3
 ORDER BY identifier;
 ```
 
-并从文件 `hobbies.jsonl` 中插入数据：
+并从 `hobbies.jsonl` 文件中插入数据：
 
 ```sql
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -242,13 +242,13 @@ CREATE TABLE hobbies4
 ORDER BY id;
 ```
 
-并从文件 `hobbies.jsonl` 中插入数据：
+然后从文件 `hobbies.jsonl` 插入数据：
 
 ```sql
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
 ```
 
-在这种情况下，`SELECT` 查询中对列 `hobbies` 做了一些处理后再将其插入表中，因此 ClickHouse 无法使用插入表的结构，而会使用 schema 推断。
+在这种情况下，`SELECT` 查询中对列 `hobbies` 做了一些处理后再将其插入表中，因此 ClickHouse 无法使用插入目标表的结构，而会使用 schema 推断。
 
 <div id="schema-inference-cache">
   ## schema 推断缓存
@@ -1825,7 +1825,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-注意：在 schema 推断期间解析日期时间时，会遵循 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats/date-time#date_time_input_format) 设置
+注意：在 schema 推断期间解析日期时间时，会遵循 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats#date_time_input_format) 设置
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2000,7 +2000,7 @@ $$)
   ### Avro
 </div>
 
-在 Avro 格式中，ClickHouse 会从数据中读取 schema，并根据以下类型映射将其转换为 ClickHouse schema：
+在 Avro 格式中，ClickHouse 会从数据中读取 schema，并根据以下类型对应关系将其转换为 ClickHouse schema：
 
 | Avro 数据类型                          | ClickHouse 数据类型                                                       |
 | ---------------------------------- | --------------------------------------------------------------------- |
@@ -2019,7 +2019,7 @@ $$)
 | `string (uuid)` *                  | [UUID](/zh/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/zh/reference/data-types/decimal)                        |
 
-* [Avro 逻辑类型](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
+* [Avro 逻辑类型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 不支持其他 Avro 类型。
 
@@ -2089,7 +2089,7 @@ $$)
 
 在 ORC 格式中，ClickHouse 会从数据中读取 schema，并按照以下类型映射将其转换为 ClickHouse schema：
 
-| ORC data type                        | ClickHouse 数据类型                           |
+| ORC data type                        | ClickHouse data type                           |
 | ------------------------------------ | ---------------------------------------------- |
 | `Boolean`                            | [Bool](/zh/reference/data-types/boolean)          |
 | `Tinyint`                            | [Int8](/zh/reference/data-types/int-uint)         |
@@ -2105,7 +2105,6 @@ $$)
 | `List`                               | [Array](/zh/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/zh/reference/data-types/tuple)           |
 | `Map`                                | [Map](/zh/reference/data-types/map)               |
-| `Union`                              | [Variant](/zh/reference/data-types/variant)       |
 
 不支持其他 ORC 类型。
 

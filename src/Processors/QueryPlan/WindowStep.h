@@ -53,14 +53,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
     const WindowDescription & getWindowDescription() const;
-
-    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
 
     QueryPlanStepPtr clone() const override;
 

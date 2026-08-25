@@ -44,7 +44,7 @@ Cuando la ingestión continua está habilitada, ClickPipes ingesta datos de form
 
 El ClickPipe de ABS asume que los archivos se añaden a un contenedor en orden lexicográfico y se basa en ese orden implícito para ingestar los archivos secuencialmente. Esto significa que cualquier archivo nuevo **debe** ser lexicográficamente mayor que el último archivo ingestado. Por ejemplo, los archivos llamados `file1`, `file2` y `file3` se ingestarán secuencialmente, pero si se añade un nuevo `file 0` al contenedor, se **ignorará** porque su nombre no es lexicográficamente mayor que el del último archivo ingestado.
 
-En este modo, el ClickPipe de ABS realiza una carga inicial de **todos los archivos** de la ruta especificada y luego sondea periódicamente para detectar archivos nuevos en un intervalo configurable (30 segundos de forma predeterminada). Para iniciar la ingestión continua después de un archivo específico, configure **Start after**. ClickPipes omitirá los archivos que sean lexicográficamente menores o iguales que el valor configurado y continuará ingestando archivos más recientes a partir de ese punto.
+En este modo, el ClickPipe de ABS realiza una carga inicial de **todos los archivos** de la ruta especificada y luego sondea periódicamente para detectar archivos nuevos en un intervalo configurable (30 segundos de forma predeterminada). **No es posible** iniciar la ingestión desde un archivo específico o desde un momento concreto: ClickPipes siempre cargará todos los archivos de la ruta especificada.
 
 <div id="file-pattern-matching">
   ### Coincidencia de patrones de archivos
@@ -152,7 +152,7 @@ Los ClickPipes de ABS usan dos rutas de red distintas para el descubrimiento de 
   El control de acceso basado en IP **no funciona** si su contenedor de Azure Blob Storage está en la misma región de Azure que su servicio de ClickHouse Cloud. Cuando ambos servicios están en la misma ubicación, el tráfico se enruta a través de la red interna de Azure, en lugar de a través de la Internet pública.
 </Warning>
 
-* Para el **control de acceso basado en IP**, las [reglas de red IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) del firewall de Azure Storage deben permitir las IP estáticas de la región del servicio ClickPipes indicadas [aquí](/es/integrations/clickpipes/networking/static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio de ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
+* Para el **control de acceso basado en IP**, las [reglas de red IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) del firewall de Azure Storage deben permitir las IP estáticas de la región del servicio ClickPipes indicadas [aquí](/es/integrations/clickpipes/home#list-of-static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio de ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
 
   ```bash
   # Reemplace <your-region> por su región de ClickHouse Cloud
@@ -165,19 +165,18 @@ Los ClickPipes de ABS usan dos rutas de red distintas para el descubrimiento de 
 
 ClickPipes proporciona valores predeterminados razonables que cubren los requisitos de la mayoría de los casos de uso. Si tu caso de uso requiere un ajuste adicional más preciso, puedes modificar la siguiente configuración:
 
-| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                         |
-| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                      |
-| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                            |
-| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings/max-threads#max_threads) para el procesamiento de archivos.                           |
-| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings/max-insert#max_insert_threads) para el procesamiento de archivos.        |
-| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que puede insertarse en una tabla.              |
-| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings/max-download#max_download_threads).                                       |
-| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                          |
-| `Start after`                        | None                 | Para la ingestión continua ordenada, omite los archivos cuyo nombre o ruta sea lexicográficamente menor o igual que el nombre de archivo o la ruta configurados.    |
-| `Parallel distributed insert select` | 2                    | [Configuración de Parallel distributed insert select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                         |
-| `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing). |
-| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                            |
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                             |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                          |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                |
+| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                              |
+| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.          |
+| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que puede insertarse en una tabla.                |
+| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                           |
+| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                              |
+| `Parallel distributed insert select` | 2                    | [Configuración de Parallel distributed insert select](/es/reference/settings/session-settings#parallel_distributed_insert_select).                         |
+| `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 

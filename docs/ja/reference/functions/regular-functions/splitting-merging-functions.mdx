@@ -6,7 +6,7 @@ title: '文字列分割関数'
 doc_type: 'reference'
 ---
 
-import { DeprecatedBadge } from "/snippets/ja/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import DeprecatedBadge from "/snippets/ja/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <Note>
   以下のドキュメントは、`system.functions` system table から生成されています。
@@ -138,74 +138,6 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ```response title=Response
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
-```
-
-<div id="naiveBayesNgrams">
-  ## naiveBayesNgrams
-</div>
-
-導入バージョン: v26.7.0
-
-Naive Bayes Dictionary ([`NAIVE_BAYES`](/ja/reference/statements/create/dictionary/layouts/naive-bayes) レイアウト) と同じトークン化方式でテキストを N-gram に分割します。`byte`、`codepoint`、`token` モードに対応し、必要に応じて境界パディングも指定できます。これを使うと、その Dictionary が取り込む事前集計済みの `(ngram, class_id, count)` 学習データを作成できるため、学習用 N-gram を [`naiveBayesClassifier`](/ja/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) がクエリ時に生成するものと完全に一致させられます。
-
-**構文**
-
-```sql
-naiveBayesNgrams(text, n, mode[, start_token, end_token])
-```
-
-**引数**
-
-* `text` — N-gram に分割するテキスト。[`String`](/ja/reference/data-types/string)
-* `n` — N-gram のサイズ。1 ～ 1024。[`const UInt`](/ja/reference/data-types/int-uint)
-* `mode` — トークン化モード: &#39;byte&#39;、&#39;codepoint&#39;、または &#39;token&#39;。[`const String`](/ja/reference/data-types/string)
-* `start_token` — 任意。入力の先頭に境界トークンを (n-1) 回追加します。&#39;byte&#39;/&#39;codepoint&#39; では数値、&#39;token&#39; ではリテラルです。空文字列の場合、パディングは行われません。[`const String`](/ja/reference/data-types/string)
-* `end_token` — 任意。入力の末尾に境界トークンを (n-1) 回追加します。[`const String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-入力テキストの N-gram。[`Array(String)`](/ja/reference/data-types/array)
-
-**例**
-
-**トークンのバイグラム**
-
-```sql title=Query
-SELECT naiveBayesNgrams('the cat sat', 2, 'token');
-```
-
-```response title=Response
-['the cat','cat sat']
-```
-
-**境界パディング付きトークンバイグラム**
-
-```sql title=Query
-SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
-```
-
-```response title=Response
-['<s> cat','cat </s>']
-```
-
-**境界パディング付きバイトバイグラム (結果は16進数で表示)&#x20;**
-
-```sql title=Query
-SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
-```
-
-```response title=Response
-['0178','7879','79FF']
-```
-
-**境界パディング付きのコードポイントバイグラム (結果は16進数で表示)&#x20;**
-
-```sql title=Query
-SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
-```
-
-```response title=Response
-['F48FBFBE61','6162','62F48FBFBF']
 ```
 
 <div id="ngrams">
@@ -347,7 +279,7 @@ SELECT reverseBySeparator('abcde', '')
 区切り文字が文字列の先頭または末尾にある場合や、区切り文字が連続して複数出現する場合は、空の部分文字列が生成されることがあります。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 次の場合、空の部分文字列が生成されることがあります。
@@ -370,7 +302,7 @@ splitByChar(separator, s[, max_substrings])
 
 **戻り値**
 
-抽出された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
+選択された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -395,7 +327,7 @@ SELECT splitByChar(',', '1,2,3,abcde');
 空白文字および句読点で区切って、文字列を部分文字列の配列に分割します。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -432,7 +364,7 @@ SELECT splitByNonAlpha('user@domain.com');
 導入バージョン: v21.6.0
 
 指定された正規表現で区切られた文字列を、部分文字列の配列に分割します。
-指定された正規表現が空の場合、文字列は1文字ずつの配列に分割されます。
+指定された正規表現が空の場合、文字列は1文字ごとの配列に分割されます。
 正規表現に一致する箇所が見つからない場合、文字列は分割されません。
 
 次の場合、空の部分文字列が選択されることがあります。
@@ -442,7 +374,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * 正規表現が空でなく、元の文字列 string が空の場合。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string)  (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -503,7 +435,7 @@ SELECT splitByRegexp('', 'abcde');
 * 区切り文字が空でなく、元の文字列 `s` が空の場合
 
 <Note>
-  [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) 設定 (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) 設定 (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -557,7 +489,7 @@ SELECT splitByString('', 'abcde');
 空白文字で区切られた文字列を、部分文字列の配列に分割します。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` のときに、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` のときに、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -573,7 +505,7 @@ splitByWhitespace(s[, max_substrings])
 
 **戻り値**
 
-`s` から抽出された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
+`s` から選択された部分文字列の配列を返します。[`Array(String)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -600,9 +532,6 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 * `splitByNonAlpha` は、ASCII の英数字以外の文字で文字列を分割します (関数 [splitByNonAlpha](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) も参照) 。
 * `splitByString(S)` は、ユーザー定義の区切り文字列 `S` で文字列を分割します (関数 [splitByString](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByString) も参照) 。区切り文字は省略可能なパラメーターで指定できます。たとえば `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])` のように指定します。なお、各区切り文字列は複数文字で構成できます (例では `', '`) 。明示的に指定しない場合、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
 * `asciiCJK` は、Unicode の単語境界規則 (UAX #29 に類似) を使用して文字列をトークンに分割します。ASCII の英数字およびアンダースコアは、コネクタ (文字には `:`、同種の文字には `.` と `'`) とともにトークンを形成します。非 ASCII の Unicode 文字は 1 文字単位のトークンになります。
-* `chinese` は、辞書と隠れマルコフモデルを使用して中国語テキストを単語に分割します (アルゴリズムは [jieba](https://github.com/fxsjy/jieba) に従い、埋め込み辞書とモデルデータは [cppjieba](https://github.com/yanyiwu/cppjieba) から派生しています) 。非 ASCII 文字をすべて 1 文字単位のトークンとして扱う `asciiCJK` とは異なり、`chinese` は連続する中国語文字を単語にまとめるため、中国語テキストではより意味のあるトークンと高い検索品質が得られます。省略可能な `granularity` 引数には、`coarse_grained` (デフォルト) または `fine_grained` を指定します。後者は重複する部分単語も列挙するため、索引が大きくなる代わりに再現率が向上します。
-* `icu(locale)` は、ICU ライブラリの Unicode 単語分割 (UAX #29) を使用して文字列を単語トークンに分割します。単語間に空白のない文字体系 (中国語、日本語、タイ語など) では、ICU は辞書ベースの分割を適用するため、そのようなテキストは意味のある単語に分割されます。`locale` はセグメンターに渡される ICU ロケールです (分割は主に文字体系と辞書に基づいて行われ、ロケールは ICU のロケール固有の調整を選択します) 。これは必須であり、たとえば `tokens(value, 'icu', 'ja')` のように個別の引数として渡します。
-* `japanese` は、MeCab 形態素解析器を使用して日本語テキストを単語に分割します。サーバー設定で構成された辞書が必要です ([テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) のドキュメントを参照) 。
 * `ngrams(N)` は、文字列を同じ長さの `N`-gram に分割します (関数 [ngrams](/ja/reference/functions/regular-functions/splitting-merging-functions#ngrams) も参照) 。N-gram の長さは、1 から 8 までの省略可能な整数パラメーターで指定できます。たとえば `tokens(value, 'ngrams', 3)` のように指定します。明示的に指定しない場合、デフォルトの ngram サイズは 3 です。
 * `sparseGrams(min_length, max_length, min_cutoff_length)` は、文字数が `min_length` 以上 `max_length` 以下 (両端含む) の可変長 n-gram に文字列を分割します (関数 [sparseGrams](/ja/reference/functions/regular-functions/string-functions#sparseGrams) も参照) 。明示的に指定しない場合、`min_length` と `max_length` のデフォルト値はそれぞれ 3 と 100 です。パラメーター `min_cutoff_length` を指定すると、長さが `min_cutoff_length` 以上の n-gram のみが返されます。`ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。たとえば `tokens(value, 'sparseGrams', 3, 5, 4)` は、入力文字列から内部的に 3-, 4-, 5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
 * `array` はトークン化を行いません。つまり、各行の値全体が 1 つのトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) も参照) 。
@@ -614,29 +543,24 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 **構文**
 
 ```sql
-tokens(value) -- 'splitByNonAlpha' tokenizer
+tokens(value) -- 'splitByNonAlpha' トークナイザー
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
-tokens(value, 'chinese'[, granularity])
-tokens(value, 'icu', locale)
-tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
 tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
 tokens(value, 'array')
 ```
 
-**Arguments**
+**引数**
 
 * `value` — 入力文字列です。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
-* `locale` — 引数 `tokenizer` が `icu` の場合にのみ使用します。たとえば `'ja'` のような必須のロケールです。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 * `n` — 引数 `tokenizer` が `ngrams` の場合にのみ使用します。N-gram の長さを指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `separators` — 引数 `tokenizer` が `split` の場合にのみ使用します。区切り文字列を指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `[' ']` です。[`const Array(String)`](/ja/reference/data-types/array)
 * `min_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最小グラム長を指定する省略可能なパラメータで、デフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `max_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最大グラム長を指定する省略可能なパラメータで、デフォルトは `100` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `min_cutoff_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最小カットオフ長を指定する省略可能なパラメータです。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `granularity` — 引数 `tokenizer` が `chinese` の場合にのみ使用します。セグメンテーションの粒度を制御する省略可能なパラメータで、`coarse_grained` (デフォルト) または `fine_grained` のいずれかです。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -676,15 +600,8 @@ SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 (先頭および末尾のワイルドカード文字など) を考慮し、パターンマッチングに有用な
 トークンを抽出するための、トークナイザー固有のルールを適用します。
 
-この関数は `tokens` 関数と同じ引数セットをサポートしますが、一部例外があります。
-`chinese` および `icu` トークナイザーはここではサポートされません。
-LIKE パターンのトークン化が意味を持つのは、LIKE のセマンティクスを明示的にサポートする
-(`supportsStringLike()`) トークナイザーに限られます。サポートされていないトークナイザーで
-`tokensForLikePattern` を呼び出すと `BAD_ARGUMENTS` がスローされます。
-代わりに通常の `tokens` を使用してください。
-
-`tokenizer` の後に続く追加の引数は、選択した
-トークナイザーに応じて解釈されます
+この関数は `tokens` 関数と同じ引数セットをサポートします。`tokenizer` の後に続く
+追加の引数は、選択したトークナイザーに応じて解釈されます
 (たとえば、`ngrams` の `n`、`splitByString` の `separators`、
 `sparseGrams` の `min_length` / `max_length` [/ `min_cutoff_length`]) 。
 
@@ -701,13 +618,11 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 
 * `value` — 入力文字列です。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
 * `tokenizer` — 使用するトークナイザーです。有効な値は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
-* `locale` — 引数 `tokenizer` が `icu` の場合にのみ使用されます。たとえば `'ja'` のような、必須のロケールです。[`const String`](/ja/reference/data-types/string)
 * `n` — 引数 `tokenizer` が `ngrams` の場合にのみ使用されます。N-gram の長さを指定する省略可能なパラメーターです。明示的に設定しない場合のデフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `separators` — 引数 `tokenizer` が `split` の場合にのみ使用されます。区切り文字列を指定する省略可能なパラメーターです。明示的に設定しない場合のデフォルトは `[' ']` です。[`const Array(String)`](/ja/reference/data-types/array)
 * `min_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小グラム長を指定する省略可能なパラメーターで、デフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `max_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最大グラム長を指定する省略可能なパラメーターで、デフォルトは `100` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `min_cutoff_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小カットオフ長を指定する省略可能なパラメーターです。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `granularity` — 引数 `tokenizer` が `chinese` の場合にのみ使用されます。セグメンテーションの粒度を制御する、省略可能なパラメーターです。`coarse_grained` (デフォルト) または `fine_grained` を指定できます。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 

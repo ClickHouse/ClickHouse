@@ -106,7 +106,7 @@ ClickHouse Cloud では、組織レベルのロール (Admin、Developer、Billi
   ### ユーザーライフサイクル管理の制限事項
 </div>
 
-ClickHouse Cloud は、[Okta](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) および [Microsoft Entra ID](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 向けの SCIM provisioning を提供しています。SCIM ではユーザーとグループのライフサイクル管理が自動化されるため、ID プロバイダー で割り当てや割り当て解除を行うと、ユーザーは自動的に作成または削除されます。SCIM を使用していない場合、ID プロバイダー から削除しただけでは不十分で、ClickHouse Cloud コンソール からもユーザーを手動で削除する必要があります。その場合は、手動でのユーザー管理プロセスを考慮してください。
+ClickHouse Cloud は、Okta をサポートする [SCIM provisioning](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) をプライベートプレビューで提供しています。SCIM ではユーザーとグループのライフサイクル管理が自動化されるため、IdP で割り当てや割り当て解除を行うと、ユーザーは自動的に作成または削除されます。SCIM を使用していない場合、IdP から削除しただけでは不十分で、ClickHouse Cloud コンソール からもユーザーを手動で削除する必要があります。その場合は、手動でのユーザー管理プロセスを考慮してください。
 
 [クラウドアクセス管理](/ja/products/cloud/guides/security/cloud-access-management/index) と [SAML SSO の設定](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) について詳しくは、こちらをご覧ください。
 

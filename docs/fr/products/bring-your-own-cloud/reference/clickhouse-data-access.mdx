@@ -15,11 +15,11 @@ Par défaut, les employés de ClickHouse n’ont pas accès à vos données. Vos
 
 Le plan de contrôle de ClickHouse Cloud exécute votre déploiement BYOC sans lire les données client. Les composants qui envoient des données hors de votre VPC ne transportent que des métadonnées opérationnelles :
 
-| Composant                 | Ce qui sort de votre VPC                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Exportateur d’état        | État du service et des sauvegardes (santé, statut — événements opérationnels, et non contenu des sauvegardes) vers une file d’attente `SQS` appartenant à ClickHouse Cloud. |
-| Collecteur de facturation | Métriques CPU et mémoire vers un bucket de stockage d’objets appartenant à ClickHouse Cloud.                                                                                |
-| AlertManager              | Alertes sur l’état de santé du cluster vers ClickHouse Cloud.                                                                                                               |
+| Composant                 | Ce qui sort de votre VPC                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| Exportateur d’état        | État du service (santé, statut) vers une file d’attente `SQS` appartenant à ClickHouse Cloud. |
+| Collecteur de facturation | Métriques CPU et mémoire vers un bucket S3 appartenant à ClickHouse Cloud.                    |
+| AlertManager              | Alertes sur l’état de santé du cluster vers ClickHouse Cloud.                                 |
 
 Le trafic des requêtes, le contenu des tables et les schémas ne transitent jamais par ces canaux. Les log et les métriques restent à l’intérieur de votre VPC BYOC.
 

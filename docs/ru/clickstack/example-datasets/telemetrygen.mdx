@@ -15,11 +15,15 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
 <Tabs>
   <Tab title="Управляемый ClickStack">
     <Steps>
-      <Step title="Предварительные требования" id="prerequisites-managed">
+      <Step>
+        ### Предварительные требования
+
         В этом руководстве предполагается, что вы уже выполнили [руководство «Начало работы» для Управляемого ClickStack](/ru/clickstack/deployment/managed) и что у вас запущен OpenTelemetry Collector, а его конечные точки OTLP gRPC (`4317`) и HTTP (`4318`) доступны с машины, на которой вы запускаете `telemetrygen`. Если вы [защитили collector](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью `OTLP_AUTH_TOKEN`, держите это значение под рукой.
       </Step>
 
-      <Step title="Установите telemetrygen" id="install-telemetrygen-managed">
+      <Step>
+        ### Установите telemetrygen
+
         Запустите `telemetrygen` из его Docker-образа (установка не требуется). Задайте небольшую обёртку, чтобы команды ниже оставались читаемыми; `--add-host` позволяет контейнеру подключаться к коллектору, который прослушивает хост:
 
         ```shell
@@ -38,7 +42,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Задайте переменные среды" id="set-env-vars-managed">
+      <Step>
+        ### Задайте переменные среды
+
         Если collector защищён, экспортируйте токен аутентификации:
 
         ```shell
@@ -61,7 +67,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Сгенерируйте журналы" id="generate-logs-managed">
+      <Step>
+        ### Генерация журналов
+
         Отправляйте журналы как реалистичный набор записей с разными уровнями серьёзности для разных сервисов: в основном информационные, с одним предупреждением и одной ошибкой, а не как единый однородный поток:
 
         ```shell
@@ -85,7 +93,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         * `--telemetry-attributes` задаёт атрибуты для каждой записи.
       </Step>
 
-      <Step title="Сгенерируйте трассировки" id="generate-traces-managed">
+      <Step>
+        ### Сгенерируйте трассировки
+
         Отправьте трассировки из нескольких спанов от нескольких работоспособных сервисов и одной неисправной зависимости. Это придаст карте сервисов реалистичный вид: в целом всё будет работать нормально, но один сервис будет выдавать ошибки, а представления ошибок заполнятся:
 
         ```shell
@@ -111,7 +121,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         * `--workers` запускает несколько генераторов параллельно, чтобы получить больший и более разнообразный объём данных.
       </Step>
 
-      <Step title="Сгенерируйте метрики" id="generate-metrics-managed">
+      <Step>
+        ### Сгенерируйте метрики
+
         Отправьте три распространённых типа метрик, чтобы на панелях мониторинга появились Counter, Gauge и распределение. В отличие от некоторых генераторов, `telemetrygen` учитывает параметр `--duration` при генерации метрик, поэтому вручную останавливать его не нужно:
 
         ```shell
@@ -123,7 +135,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         `--metric-type` принимает значения `Gauge`, `Sum`, `Histogram` или `ExponentialHistogram`. `--otlp-metric-name` задаёт имя серии, чтобы вы могли найти её в интерфейсе, а `--aggregation-temporality` может иметь значение `delta` или `cumulative`.
       </Step>
 
-      <Step title="Проверьте в ClickStack" id="verify-managed">
+      <Step>
+        ### Проверьте в ClickStack
+
         Откройте интерфейс ClickStack из консоли ClickHouse Cloud. В представлении `Search` установите диапазон времени `Last 15 minutes` и переключайтесь между источниками `Logs` и `Traces`. Отфильтруйте по `ServiceName`, чтобы увидеть сервисы `frontend`, `checkout`, `cart` и `payment`, а по `SeverityText` — чтобы найти записи журнала с предупреждениями и ошибками. Откройте трассировку `payment`, чтобы увидеть дочерние спаны и статус ошибки. Откройте `Chart Explorer`, выберите `Metrics` и постройте график для одной из метрик, которые вы указали выше (например, `http.server.requests`), чтобы проверить ингестию метрик.
       </Step>
     </Steps>
@@ -131,12 +145,16 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
 
   <Tab title="ClickStack с открытым исходным кодом">
     <Steps>
-      <Step title="Предварительные требования" id="prerequisites-oss">
+      <Step>
+        ### Предварительные требования
+
         В этом руководстве предполагается, что вы запустили Open Source ClickStack, следуя [инструкциям для универсального образа](/ru/clickstack/getting-started/oss), и что конечные точки OTLP (`4317` gRPC и `4318` HTTP) доступны. Вам также понадобится ключ API для приёма данных, который можно найти в интерфейсе HyperDX в разделе `Team Settings > API Keys`.
       </Step>
 
-      <Step title="Установите telemetrygen" id="install-telemetrygen-oss">
-        Запустите `telemetrygen` из его Docker-образа (установка не требуется). Задайте небольшую обёртку, чтобы команды ниже оставались читаемыми; `--add-host` позволяет контейнеру подключаться к коллектору, который прослушивает хост:
+      <Step>
+        ### Установите telemetrygen
+
+        Запустите `telemetrygen` из Docker-образа (установка не требуется). Определите небольшую обёртку, чтобы команды ниже оставались читаемыми; `--add-host` позволяет контейнеру подключаться к коллектору, прослушивающему хост:
 
         ```shell
         telemetrygen() {
@@ -146,7 +164,7 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         export OTEL_ENDPOINT=host.docker.internal:4317
         ```
 
-        Или установите бинарный файл с помощью Go и используйте `localhost` в качестве цели:
+        Или установите бинарный файл через Go и используйте `localhost`:
 
         ```shell
         go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
@@ -154,14 +172,16 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Задайте переменные среды" id="set-env-vars-oss">
+      <Step>
+        ### Установите переменные окружения
+
         Экспортируйте ключ API для приёма данных:
 
         ```shell
         export CLICKSTACK_API_KEY=<your_ingestion_api_key>
         ```
 
-        Определите небольшой вспомогательный `tg`, чтобы в каждой команде указывать только изменяющиеся параметры (сервис, уровень, status, атрибуты):
+        Определите небольшой хелпер `tg`, чтобы в каждой команде указывать только изменяющиеся параметры (service, severity, status, attributes):
 
         ```shell
         tg() { local signal=$1; shift; telemetrygen "$signal" \
@@ -171,8 +191,10 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Генерация журналов" id="generate-logs-oss">
-        Отправляйте журналы как реалистичный набор записей с разными уровнями серьёзности для разных сервисов: в основном информационные, с одним предупреждением и одной ошибкой, а не как единый однородный поток:
+      <Step>
+        ### Сгенерируйте журналы
+
+        Отправляйте журналы с реалистичным распределением уровней важности между сервисами: в основном информационные, с отдельными предупреждениями и ошибками, а не в виде одного равномерного потока:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -187,7 +209,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Сгенерируйте трассировки" id="generate-traces-oss">
+      <Step>
+        ### Сгенерируйте трассировки
+
         Отправьте трассировки с несколькими спанами от нескольких исправно работающих сервисов и одной сбойной зависимости. Это придаст карте сервисов реалистичный вид: большинство сервисов будут работать нормально, а один — выдавать ошибки, что также заполнит представления ошибок:
 
         ```shell
@@ -205,7 +229,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         ```
       </Step>
 
-      <Step title="Сгенерируйте метрики" id="generate-metrics-oss">
+      <Step>
+        ### Сгенерируйте метрики
+
         Отправьте три распространённых типа метрик, чтобы на графиках были Counter, Gauge и распределение:
 
         ```shell
@@ -217,7 +243,9 @@ keywords: ['clickstack', 'telemetrygen', 'синтетические данны�
         Параметр `--metric-type` принимает значения `Gauge`, `Sum`, `Histogram` или `ExponentialHistogram`.
       </Step>
 
-      <Step title="Проверьте в ClickStack" id="verify-oss">
+      <Step>
+        ### Проверка в ClickStack
+
         Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс ClickStack. В представлении `Search` задайте диапазон времени `Last 15 minutes` и переключайте источник данных между `Logs` и `Traces`. Отфильтруйте по `ServiceName`, чтобы увидеть сервисы `frontend`, `checkout`, `cart` и `payment`, а по `SeverityText` — чтобы найти строки журнала с предупреждениями и ошибками. Откройте трейс `payment`, чтобы увидеть дочерние спаны и статус ошибки. Откройте `Chart Explorer`, выберите `Metrics` и постройте график для одной из метрик, которые вы задали выше (например, `http.server.requests`), чтобы проверить ингестию метрик.
       </Step>
     </Steps>

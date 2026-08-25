@@ -254,7 +254,7 @@ SELECT serverUUID();
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](/concepts/features/interfaces/tcp) TCP port number listened to by the server.
+Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -316,7 +316,7 @@ SELECT timezone()
 REGISTER_FUNCTION(ServerTimezone)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings/other#timezone) setting.
+Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "serverTimezone()";
@@ -491,7 +491,7 @@ SELECT getOSKernelVersion();
 REGISTER_FUNCTION(DisplayName)
 {
     FunctionDocumentation::Description description = R"(
-Returns the value of `display_name` from [config](/concepts/features/configuration/server-config/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
+Returns the value of `display_name` from [config](/operations/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
 )";
     FunctionDocumentation::Syntax syntax = "displayName()";
     FunctionDocumentation::Arguments arguments = {};

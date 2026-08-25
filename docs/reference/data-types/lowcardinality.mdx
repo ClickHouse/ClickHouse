@@ -17,7 +17,7 @@ LowCardinality(data_type)
 
 **Parameters**
 
-- `data_type` — [String](/reference/data-types/string), [FixedString](/reference/data-types/fixedstring), [Date](/reference/data-types/date), [DateTime](/reference/data-types/datetime), and numbers excepting [Decimal](/reference/data-types/decimal). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) setting description.
+- `data_type` — [String](/reference/data-types/string), [FixedString](/reference/data-types/fixedstring), [Date](/reference/data-types/date), [DateTime](/reference/data-types/datetime), and numbers excepting [Decimal](/reference/data-types/decimal). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](/reference/settings/session-settings#allow_suspicious_low_cardinality_types) setting description.
 
 ## Description {#description}
 
@@ -45,11 +45,11 @@ ORDER BY id
 
 Settings:
 
-- [low_cardinality_max_dictionary_size](/reference/settings/session-settings/low-cardinality#low_cardinality_max_dictionary_size)
-- [low_cardinality_use_single_dictionary_for_part](/reference/settings/session-settings/low-cardinality#low_cardinality_use_single_dictionary_for_part)
-- [low_cardinality_allow_in_native_format](/reference/settings/session-settings/low-cardinality#low_cardinality_allow_in_native_format)
-- [allow_suspicious_low_cardinality_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types)
-- [output_format_arrow_low_cardinality_as_dictionary](/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary)
+- [low_cardinality_max_dictionary_size](/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+- [low_cardinality_use_single_dictionary_for_part](/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+- [low_cardinality_allow_in_native_format](/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+- [allow_suspicious_low_cardinality_types](/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+- [output_format_arrow_low_cardinality_as_dictionary](/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
 
 Functions:
 

@@ -76,15 +76,15 @@ ClickPipes は Postgres 12 以降をサポートしています。
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされるテーブルの集合を定義します。すべてのテーブルをレプリケーションする予定でない限り、`FOR ALL TABLES` は使用しないことをお勧めします。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
+`clickpipes` publication には、指定したテーブルから生成される変更イベントのセットが含まれ、後でレプリケーションストリームを取り込むために使用されます。
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes の IP をファイアウォールに追加
 </div>
 
-以下の手順に従って、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) をネットワークで許可してください。
+以下の手順に従って、[ClickPipes の IP](/ja/integrations/clickpipes/home#list-of-static-ips) をネットワークで許可してください。
 
-1. **Networking** タブに移動し、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) を Azure Flexible Server Postgres のファイアウォールに追加します。SSH トンネリングを使用している場合は、Jump Server/Bastion に追加してください。
+1. **Networking** タブに移動し、[ClickPipes の IP](/ja/integrations/clickpipes/home#list-of-static-ips) を Azure Flexible Server Postgres のファイアウォールに追加します。SSH トンネリングを使用している場合は、Jump Server/Bastion に追加してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Azure Flexible Server for Postgres で ClickPipes の IP をファイアウォールに追加" size="lg" />
 

@@ -25,14 +25,18 @@ Ambos os casos de uso abaixo partem do mesmo catálogo (um inventário de servi�
 Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot;qual serviço está com problemas?&quot;. Clicar em uma linha pode abrir um dashboard específico do serviço que responde à pergunta &quot;o que está acontecendo dentro dele?&quot;, restrito ao serviço em que você clicou. O padrão abaixo combina uma tabela de inventário de serviços com um dashboard `Service Detail`.
 
 <Steps>
-  <Step title="Crie o dashboard de detalhes" id="detail-dashboard">
-    Crie um dashboard chamado `Service Detail` e adicione um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) com a expressão `ServiceName` na sua fonte de traces. O filtro no nível do dashboard redefine o escopo de cada tile para um único serviço, para que os próprios tiles não fixem um serviço nas consultas. Adicione as visualizações por serviço que você quiser: indicadores RED principais (requisições, erros, duração P95), um gráfico de percentis de latência (P50, P95, P99), taxa de requisições ao longo do tempo e um detalhamento por endpoint com group-by em `SpanName`.
+  <Step>
+    ### Crie o dashboard de detalhes
+
+    Crie um dashboard chamado `Service Detail` e adicione um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) com a expressão `ServiceName` na sua source de traces. O filtro no nível do dashboard redefine o escopo de cada tile para um único serviço, para que os próprios tiles não fixem um serviço nas consultas. Adicione as visualizações por serviço que você quiser: indicadores RED principais (requisições, erros, duração P95), um gráfico de percentis de latência (P50, P95, P99), taxa de requisições ao longo do tempo e um detalhamento por endpoint agrupado por `SpanName`.
 
     Salve esse dashboard primeiro para poder selecioná-lo como destino na próxima etapa.
   </Step>
 
-  <Step title="Crie o inventário de serviços" id="service-inventory">
-    Em um dashboard de visão geral, adicione um tile de **Table** na sua fonte de traces agrupado por `ServiceName`. Dê a ele as colunas RED que avaliam cada serviço, cada uma como uma série com alias:
+  <Step>
+    ### Crie o inventário de serviços
+
+    Em um dashboard de visão geral, adicione um tile de **Table** na sua source de traces agrupado por `ServiceName`. Dê a ele as colunas RED que avaliam cada serviço, cada uma como uma série com alias:
 
     * `Requests`: contagem de spans (taxa).
     * `Errors`: contagem de spans com status de erro.
@@ -43,13 +47,15 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
     <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Tabela de inventário de serviços com colunas RED (Requests, Errors, P95 Duration) para cada serviço, ordenada por volume de requisições, acima de uma tendência de requisições ao longo do tempo" size="lg" />
 
     <Tip>
-      **Coloque a coluna de group-by primeiro**
+      **Coloque a coluna de agrupamento primeiro**
 
-      Por padrão, uma tabela renderiza sua coluna de group-by (aqui `ServiceName`) à direita, depois da série. Um catálogo fica melhor quando a identidade de cada linha aparece primeiro. Abra as **Display Settings** do tile e ative **Display Group By Columns on Left** para mover a coluna de group-by para o início.
+      Por padrão, uma tabela renderiza sua coluna de agrupamento (aqui `ServiceName`) à direita, depois da série. Um catálogo fica melhor quando a identidade de cada linha aparece primeiro. Abra as **Display Settings** do tile e ative **Display Group By Columns on Left** para mover a coluna de agrupamento para o início.
     </Tip>
   </Step>
 
-  <Step title="Configure o clique na linha" id="wire-dashboard">
+  <Step>
+    ### Configure o clique na linha
+
     Na tabela de inventário, abra **Row Click Action**, selecione **Dashboard** e escolha `Service Detail` na lista de dashboards. Selecionar o dashboard diretamente o fixa pelo ID. O link continua funcionando se o dashboard for renomeado depois e continua válido após a exportação e importação do dashboard. (Reserve a opção **Template** para escolher um dashboard diferente por linha; veja [Configurar uma ação de clique na linha](#set-up).)
 
     Como `Service Detail` declara um filtro personalizado `ServiceName`, o painel lateral pré-preenche um filtro vazio para essa expressão. Preencha o template:
@@ -60,8 +66,10 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
     Clique em **Apply** e salve. O serviço da linha clicada agora é passado para o filtro `ServiceName` do dashboard.
   </Step>
 
-  <Step title="Clique em uma linha" id="click-dashboard">
-    Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard \"Service Detail\"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
+  <Step>
+    ### Clique em uma linha
+
+    Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard "Service Detail"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
 
     <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Dashboard Service Detail após um clique em uma linha, com o filtro Service definido para o serviço clicado e os indicadores RED principais, percentis de latência e detalhamento por endpoint todos restritos a ele" size="lg" />
   </Step>
@@ -76,17 +84,21 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
 Partindo da mesma tabela de inventário de serviços, direcione o clique da linha para os próprios traces em vez do dashboard de detalhes.
 
 <Steps>
-  <Step title="Direcione o clique da linha para a Busca" id="wire-search">
+  <Step>
+    ### Direcione o clique da linha para a Busca
+
     Na tabela de inventário, abra **Row Click Action** e selecione **Busca**. Escolha sua fonte de traces (apenas fontes de log e trace são listadas). Adicione um filtro:
 
-    * **Expression**: `ServiceName`
+    * **Expressão**: `ServiceName`
     * **Template**: `{{ServiceName}}`
 
     Clique em **Aplicar** e salve.
   </Step>
 
-  <Step title="Clique em uma linha" id="click-search">
-    Ao clicar em uma linha de serviço, a página Busca é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
+  <Step>
+    ### Clique em uma linha
+
+    Ao clicar em uma linha de serviço, a página Busca agora é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
 
     <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Página Busca aberta na fonte de traces após um clique na linha, filtrada para o serviço clicado" size="lg" />
   </Step>

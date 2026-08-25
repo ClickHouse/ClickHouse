@@ -234,57 +234,6 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### Exemplo de projeção com cláusula WHERE
-</div>
-
-As projeções podem incluir uma cláusula `WHERE` para armazenar apenas um subconjunto de linhas. Isso é útil quando as consultas filtram com frequência por um predicado conhecido — a projeção materializa apenas as linhas correspondentes, reduzindo o uso de armazenamento e melhorando o desempenho das consultas.
-
-Criando uma tabela e adicionando uma projeção filtrada:
-
-```sql
-CREATE TABLE events
-(
-    `event_type` String,
-    `time` DateTime,
-    `message` String
-)
-ENGINE = MergeTree()
-ORDER BY time;
-
-ALTER TABLE events ADD PROJECTION proj_pageview (
-    SELECT event_type, time, message
-    WHERE event_type = 'pageview'
-    ORDER BY time
-);
-
-ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
-```
-
-Inserindo dados:
-
-```sql
-INSERT INTO events VALUES
-    ('pageview', '2024-01-01', 'homepage'),
-    ('click', '2024-01-02', 'button'),
-    ('pageview', '2024-01-03', 'about');
-```
-
-Quando a cláusula `WHERE` de uma consulta **implica** a cláusula `WHERE` da projeção (ou seja, toda condição no filtro da projeção também está presente no filtro da consulta), o otimizador pode usar a projeção automaticamente quando determinar que isso é vantajoso:
-
-```sql
--- This query implies the projection's WHERE, so the projection may be used:
-SELECT time, message FROM events WHERE event_type = 'pageview';
-
--- A stricter query also implies the projection's WHERE:
-SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
-
--- This query does NOT imply the projection, so the base table is scanned:
-SELECT time, message FROM events WHERE event_type = 'click';
-```
-
-A verificação de implicação é conservadora — usa correspondência exata de conjunções na forma canônica da expressão. Ela pode deixar de identificar algumas oportunidades válidas de otimização (por exemplo, implicações de intervalo), mas nunca produzirá resultados incorretos.
-
 <div id="manipulating-projections">
   ## Manipulação de projeções
 </div>
@@ -295,19 +244,11 @@ As seguintes operações com [projeções](/pt-BR/reference/engines/table-engine
   ### ADD PROJECTION
 </div>
 
-Use a instrução abaixo para adicionar uma descrição de projeção aos metadados de uma tabela:
+Use a instrução abaixo para adicionar uma descrição da projeção aos metadados de uma tabela:
 
 ```sql
--- Normal projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
-
--- Aggregate projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
-
-<Note>
-  Quando uma projeção define uma cláusula `WHERE`, apenas as linhas que atendem ao predicado são materializadas. O otimizador pode usar essa projeção quando o `WHERE` da consulta implica logicamente o `WHERE` da projeção e ela é vantajosa para o plano de consulta. Isso se aplica tanto a projeções normais quanto a projeções agregadas.
-</Note>
 
 <div id="with-settings">
   #### Cláusula `WITH SETTINGS`
@@ -390,9 +331,9 @@ Da mesma forma, se a tabela for armazenada usando o mecanismo de tabela `Aggrega
 
 Antes do ClickHouse v24.8, as partes de projeção ou ficavam silenciosamente dessincronizadas em relação aos dados principais, ou determinadas operações, como atualizações e exclusões, simplesmente não podiam ser executadas, já que o banco de dados lançava automaticamente uma exceção se a tabela tivesse projeções.
 
-Desde a v24.8, uma nova configuração no nível da tabela [`deduplicate_merge_projection_mode`](/pt-BR/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) controla o comportamento caso as operações de mesclagem em segundo plano não triviais mencionadas acima ocorram em partes da tabela original.
+Desde a v24.8, uma nova configuração no nível da tabela [`deduplicate_merge_projection_mode`](/pt-BR/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) controla o comportamento caso as operações de mesclagem em segundo plano não triviais mencionadas acima ocorram em partes da tabela original.
 
-Mutações de exclusão são outro exemplo de operações de mesclagem de partes que removem linhas nas partes da tabela original. Desde a v24.7, também temos uma configuração para controlar o comportamento em relação às mutações de exclusão acionadas por exclusões leves: [`lightweight_mutation_projection_mode`](/pt-BR/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
+Mutações de exclusão são outro exemplo de operações de mesclagem de partes que removem linhas nas partes da tabela original. Desde a v24.7, também temos uma configuração para controlar o comportamento em relação às mutações de exclusão acionadas por exclusões leves: [`lightweight_mutation_projection_mode`](/pt-BR/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
 
 Abaixo estão os valores possíveis para `deduplicate_merge_projection_mode` e `lightweight_mutation_projection_mode`:
 

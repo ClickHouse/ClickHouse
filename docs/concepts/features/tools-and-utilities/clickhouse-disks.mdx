@@ -1,8 +1,8 @@
 ---
-description: 'Documentation for clickhouse-disks'
+description: 'Documentation for Clickhouse-disks'
 sidebarTitle: 'clickhouse-disks'
 slug: /operations/utilities/clickhouse-disks
-title: 'clickhouse-disks'
+title: 'Clickhouse-disks'
 doc_type: 'reference'
 ---
 
@@ -12,7 +12,7 @@ A utility providing filesystem-like operations for ClickHouse disks. It can work
 
 * `--config-file, -C` -- path to ClickHouse config, defaults to `/etc/clickhouse-server/config.xml`.
 * `--save-logs` -- Log progress of invoked commands to `/var/log/clickhouse-server/clickhouse-disks.log`.
-* `--log-level` -- What [type](/reference/settings/server-settings/settings/other#logger) of events to log, defaults to `none`.
+* `--log-level` -- What [type](/reference/settings/server-settings/settings#logger) of events to log, defaults to `none`.
 * `--disk` -- what disk to use for `mkdir, move, read, write, remove` commands. Defaults to `default`.
 * `--query, -q` -- single query that can be executed without launching interactive mode
 * `--help, -h` -- print all the options and commands with description
@@ -27,7 +27,7 @@ After launching, there are two disks that are not specified in the configuration
 
 2. **`default` Disk**: This disk is mounted to the local file system in the directory specified by the `clickhouse/path` parameter in the configuration (the default value is `/var/lib/clickhouse`). Its initial path is set to `/`.
 
-## clickhouse-disks state {#clickhouse-disks-state}
+## Clickhouse-disks state {#clickhouse-disks-state}
 For each disk that was added the utility stores current directory (as in a usual filesystem). User can change current directory and switch between disks.
 
 State is reflected in a prompt "`disk_name`:`path_name`"

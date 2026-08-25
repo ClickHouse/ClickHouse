@@ -51,13 +51,17 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
 <br />
 
 <Steps>
-  <Step title="Requisitos previos" id="prerequisites">
+  <Step>
+    ### Requisitos previos
+
     * [Helm](https://helm.sh/) v3+
     * Clúster de Kubernetes (se recomienda la versión 1.20 o superior)
     * `kubectl` configurado para interactuar con su clúster
   </Step>
 
-  <Step title="Agrega el repositorio de Helm de ClickStack" id="add-the-clickstack-helm-repository">
+  <Step>
+    ### Agrega el repositorio de Helm de ClickStack
+
     Agrega el repositorio de Helm de ClickStack:
 
     ```shell
@@ -66,7 +70,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Instala los operadores" id="install-the-operators">
+  <Step>
+    ### Instala los operadores
+
     Instala primero el chart del operador. Esto registra los CRD necesarios para el chart principal:
 
     ```shell
@@ -80,7 +86,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Instalar ClickStack" id="installing-clickstack">
+  <Step>
+    ### Instalar ClickStack
+
     Una vez que los operadores estén en funcionamiento, instale el chart principal:
 
     ```shell
@@ -88,7 +96,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Verifique la instalación" id="verify-the-installation">
+  <Step>
+    ### Verifique la instalación
+
     Verifique la instalación:
 
     ```shell
@@ -98,7 +108,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     Cuando todos los pods estén listos, continúe.
   </Step>
 
-  <Step title="Reenvío de puertos" id="forward-ports">
+  <Step>
+    ### Reenvío de puertos
+
     El reenvío de puertos nos permite acceder a HyperDX y configurarlo. En los despliegues en producción, en su lugar, se debe exponer el servicio mediante un Ingreso o un balanceador de carga para garantizar un acceso de red adecuado, la terminación de TLS y la escalabilidad. El reenvío de puertos es más adecuado para el desarrollo local o para tareas administrativas puntuales, no para entornos de larga duración ni de alta disponibilidad.
 
     ```shell
@@ -114,7 +126,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     </Tip>
   </Step>
 
-  <Step title="Accede a la UI" id="navigate-to-the-ui">
+  <Step>
+    ### Accede a la UI
+
     Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Crea un usuario con un nombre de usuario y una contraseña que cumplan los requisitos.
@@ -130,7 +144,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     </Info>
   </Step>
 
-  <Step title="Personalización de valores (opcional)" id="customizing-values">
+  <Step>
+    ### Personalización de valores (opcional)
+
     Puede personalizar la configuración con las opciones `--set`. Por ejemplo:
 
     ```shell
@@ -172,7 +188,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Uso de secretos (opcional)" id="using-secrets">
+  <Step>
+    ### Uso de secretos (opcional)
+
     El chart v2.x utiliza un secreto unificado (`clickstack-secret`) que se rellena a partir de `hyperdx.secrets` en tus values. Todas las variables de entorno sensibles —incluidas las contraseñas de ClickHouse, las contraseñas de MongoDB y la API key de HyperDX— se gestionan a través de este único secreto.
 
     Para sobrescribir los valores del secreto:

@@ -44,7 +44,7 @@ doc_type: 'guide'
   [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 一次只能运行一条查询。由于查询结果缓存没有实际意义，因此 clickhouse-local 中默认禁用查询结果缓存。
 </Note>
 
-可通过设置 [use&#95;query&#95;cache](/zh/reference/settings/session-settings/use-query#use_query_cache) 来控制某个特定查询或当前会话中的所有查询
+可通过设置 [use&#95;query&#95;cache](/zh/reference/settings/session-settings#use_query_cache) 来控制某个特定查询或当前会话中的所有查询
 是否使用查询缓存。例如，首次执行该查询时
 
 ```sql
@@ -62,8 +62,8 @@ SETTINGS use_query_cache = true;
   语句在运行时指定了 `SETTINGS use_query_cache = true`。
 </Note>
 
-还可以通过设置 [enable&#95;writes&#95;to&#95;query&#95;cache](/zh/reference/settings/session-settings/enable#enable_writes_to_query_cache)
-和 [enable&#95;reads&#95;from&#95;query&#95;cache](/zh/reference/settings/session-settings/enable#enable_reads_from_query_cache) (两者默认值均为 `true`) 更细致地配置缓存的使用方式。前者
+还可以通过设置 [enable&#95;writes&#95;to&#95;query&#95;cache](/zh/reference/settings/session-settings#enable_writes_to_query_cache)
+和 [enable&#95;reads&#95;from&#95;query&#95;cache](/zh/reference/settings/session-settings#enable_reads_from_query_cache) (两者默认值均为 `true`) 更细致地配置缓存的使用方式。前者
 控制是否将查询结果写入缓存，而后者则决定数据库是否尝试从缓存中读取查询
 结果。例如，下面这个查询只会被动使用缓存，也就是说，它会尝试从中读取，但不会将其
 结果写入缓存：
@@ -97,7 +97,7 @@ use_query_cache = true`) ，但需要注意的是，这样一来，所有 `SELEC
 如果查询因异常或被用户取消而中止，则不会向查询缓存写入任何条目。
 
 查询缓存的字节大小、缓存条目的最大数量，以及单个缓存条目的最大大小 (按字节和
-记录数计) ，都可以通过不同的[服务器配置选项](/zh/reference/settings/server-settings/settings/query#query_cache)进行配置。
+记录数计) ，都可以通过不同的[服务器配置选项](/zh/reference/settings/server-settings/settings#query_cache)进行配置。
 
 ```xml
 <query_cache>
@@ -110,8 +110,8 @@ use_query_cache = true`) ，但需要注意的是，这样一来，所有 `SELEC
 
 也可以使用 [profile](/zh/concepts/features/configuration/settings/settings-profiles) 和 [设置约束](/zh/concepts/features/configuration/settings/constraints-on-settings) 来限制单个用户的缓存使用量。更具体地说，你可以限制用户在查询缓存中可
 分配的最大内存量 (以字节为单位) ，以及可存储的查询结果的最大数量。为此，首先在 `users.xml` 的用户 profile 中配置
-[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/zh/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) 和
-[query&#95;cache&#95;max&#95;entries](/zh/reference/settings/session-settings/query-cache#query_cache_max_entries)，然后将这两个设置都设为
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/zh/reference/settings/session-settings#query_cache_max_size_in_bytes) 和
+[query&#95;cache&#95;max&#95;entries](/zh/reference/settings/session-settings#query_cache_max_entries)，然后将这两个设置都设为
 只读：
 
 ```xml
@@ -135,7 +135,7 @@ use_query_cache = true`) ，但需要注意的是，这样一来，所有 `SELEC
 ```
 
 要指定查询至少运行多长时间，其结果才可被缓存，可以使用设置
-[query&#95;cache&#95;min&#95;query&#95;duration](/zh/reference/settings/session-settings/query-cache#query_cache_min_query_duration)。例如，对于查询
+[query&#95;cache&#95;min&#95;query&#95;duration](/zh/reference/settings/session-settings#query_cache_min_query_duration)。例如，对于查询
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -144,10 +144,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 仅当查询运行时间超过 5 秒时，其结果才会被缓存。还可以指定查询需要运行多少次后，其结果才会被
-缓存——为此请使用设置 [query&#95;cache&#95;min&#95;query&#95;runs](/zh/reference/settings/session-settings/query-cache#query_cache_min_query_runs)。
+缓存——为此请使用设置 [query&#95;cache&#95;min&#95;query&#95;runs](/zh/reference/settings/session-settings#query_cache_min_query_runs)。
 
 查询缓存中的条目会在一定时间后变为过期 (生存时间 (TTL)) 。默认情况下，这个时间为 60 秒，但也可以在会话、profile 或查询级别
-使用设置 [query&#95;cache&#95;ttl](/zh/reference/settings/session-settings/query-cache#query_cache_ttl) 指定其他值。查询
+使用设置 [query&#95;cache&#95;ttl](/zh/reference/settings/session-settings#query_cache_ttl) 指定其他值。查询
 缓存会“惰性”驱逐条目，也就是说，当某个条目过期后，它不会立即从缓存中移除。相反，当一个新条目
 准备插入查询缓存时，数据库会检查缓存是否有足够的可用空间容纳该新条目。如果
 没有，数据库会尝试移除所有已过期的条目。如果查询缓存仍然没有足够的可用空间，则不会插入新条目。
@@ -156,10 +156,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 缓存条目的缓存时长 (以秒为单位) 和过期时间戳。
 
 查询缓存中的条目默认会被压缩。这样可以减少总体内存占用，但代价是写入查询缓存 / 从查询缓存读取
-的速度会变慢。要禁用压缩，请使用设置 [query&#95;cache&#95;compress&#95;entries](/zh/reference/settings/session-settings/query-cache#query_cache_compress_entries)。
+的速度会变慢。要禁用压缩，请使用设置 [query&#95;cache&#95;compress&#95;entries](/zh/reference/settings/session-settings#query_cache_compress_entries)。
 
 有时，让同一查询的多个结果同时保留在缓存中会很有用。这可以通过设置
-[query&#95;cache&#95;tag](/zh/reference/settings/session-settings/query-cache#query_cache_tag) 来实现，它充当查询缓存条目的标签 (或命名空间) 。查询缓存
+[query&#95;cache&#95;tag](/zh/reference/settings/session-settings#query_cache_tag) 来实现，它充当查询缓存条目的标签 (或命名空间) 。查询缓存
 会将带有不同标签的同一查询结果视为不同结果。
 
 为同一查询创建三个不同查询缓存条目的示例：
@@ -206,16 +206,16 @@ SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 子查询缓存条目在 [system.query&#95;cache](/zh/reference/system-tables/query_cache) 中可见，其中 `is_subquery = 1`。`query_cache_ttl` 设置也适用于子查询缓存条目，并且可以为每个子查询单独设置。
 
-ClickHouse 按 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 行一块读取表数据。由于过滤、aggregation
+ClickHouse 按 [max&#95;block&#95;size](/zh/reference/settings/session-settings#max_block_size) 行一块读取表数据。由于过滤、aggregation
 等操作，结果块通常会比 &#39;max&#95;block&#95;size&#39; 小得多，但在某些情况下也可能大得多。设置
-[query&#95;cache&#95;squash&#95;partial&#95;results](/zh/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) (默认启用) 用于控制结果块
+[query&#95;cache&#95;squash&#95;partial&#95;results](/zh/reference/settings/session-settings#query_cache_squash_partial_results) (默认启用) 用于控制结果块
 在插入查询结果
 缓存 之前，是否会被压缩合并 (如果块很小) 或拆分 (如果块很大) 为大小为 &#39;max&#95;block&#95;size&#39; 的块。这会降低写入 查询缓存 的性能，但能提高缓存条目的压缩率，并在之后从 查询缓存 返回查询结果时提供更合理的
 块粒度。
 
 因此，对于每个查询，查询缓存 都会存储多个 (部分)
 结果块。虽然这种行为作为默认设置是合理的，但也可以通过设置
-[query&#95;cache&#95;squash&#95;partial&#95;results](/zh/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) 关闭。
+[query&#95;cache&#95;squash&#95;partial&#95;results](/zh/reference/settings/session-settings#query_cache_squash_partial_results) 关闭。
 
 此外，包含非确定性函数的查询结果默认不会被缓存。这类函数包括
 
@@ -237,15 +237,15 @@ ClickHouse 按 [max&#95;block&#95;size](/zh/reference/settings/session-settings/
   [`getMacro()`](/zh/reference/functions/regular-functions/other-functions#getMacro) 等。
 
 如果无论如何都要强制缓存包含非确定性函数的查询结果，请使用设置
-[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/zh/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling)。
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/zh/reference/settings/session-settings#query_cache_nondeterministic_function_handling)。
 
 涉及系统表的查询结果 (例如 [system.processes](/zh/reference/system-tables/processes)&#96; 或
 [information&#95;schema.tables](/zh/reference/system-tables/information_schema)) 默认不会被缓存。如果无论如何都要强制缓存包含
-系统表的查询结果，请使用设置 [query&#95;cache&#95;system&#95;table&#95;handling](/zh/reference/settings/session-settings/query-cache#query_cache_system_table_handling)。
+系统表的查询结果，请使用设置 [query&#95;cache&#95;system&#95;table&#95;handling](/zh/reference/settings/session-settings#query_cache_system_table_handling)。
 
 最后，出于安全原因，查询缓存 中的条目不会在用户之间共享。例如，用户 A 不应通过执行与另一位用户 B 相同的查询来绕过
 表上的 ROW POLICY，因为用户 B 可能并不存在这样的策略。不过，如有需要，可以通过提供设置
-[query&#95;cache&#95;share&#95;between&#95;users](/zh/reference/settings/session-settings/query-cache#query_cache_share_between_users)，将缓存条目标记为其他用户也可访问 (即共享) 。
+[query&#95;cache&#95;share&#95;between&#95;users](/zh/reference/settings/session-settings#query_cache_share_between_users)，将缓存条目标记为其他用户也可访问 (即共享) 。
 
 <div id="related-content">
   ## 相关内容

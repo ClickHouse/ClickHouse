@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "استراتيجية النسخ الاحتياطي لـ ClickHouse Private"
+sidebarTitle: "استراتيجية النسخ الاحتياطي"
+description: "يوضح هذا المستند آلية النسخ الاحتياطي والقيود الخاصة بـ ClickHouse Private."
+---
+
+يوضح هذا المستند آلية النسخ الاحتياطي والقيود الخاصة بـ ClickHouse Private. للاطلاع على المفاهيم العامة للنسخ الاحتياطي في ClickHouse (النسخ الكامل مقابل التزايدي، وسلاسل النسخ الاحتياطي، وصياغة SQL)، راجع [وثائق ClickHouse الأصلية للنسخ الاحتياطي](https://clickhouse.com/docs/operations/backup/overview). وللاطلاع على الإجراءات خطوة بخطوة، راجع [النسخ الاحتياطي والاستعادة (يدويًا)](/ar/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) أو [إدارة النسخ الاحتياطية عبر API](/ar/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="backup-location">
+  ## موقع النسخ الاحتياطية
+</div>
+
+تُخزَّن النسخ الاحتياطية في **Amazon S3**. وتُنظَّم النسخ الاحتياطية لكل عنقود ضمن بادئة مفتاح S3 الخاصة به (الموجودة في CR عند `spec.s3.keyPrefix`)، مما يضمن بقاء النسخ الاحتياطية الخاصة بالعناقيد المختلفة معزولة حتى عند مشاركة حاوية S3 نفسها.
+
+<div id="manual-vs-api-driven-backups">
+  ## النسخ الاحتياطية اليدوية مقابل النسخ الاحتياطية عبر API
+</div>
+
+يدعم ClickHouse Private أسلوبين للنسخ الاحتياطي:
+
+* **يدوي (SQL)** -- نفّذ عبارات `BACKUP`/`RESTORE` مباشرةً على بود الخادم. تحكّم كامل في النطاق ومسارات S3. راجع [النسخ الاحتياطي والاستعادة (يدويًا)](/ar/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+* **عبر API** -- استخدم نقطة نهاية REST الخاصة بـ Private API، والتي تُنشئ موارد `Backup` مخصصة يديرها المشغّل. راجع [إدارة النسخ الاحتياطية عبر API](/ar/products/clickhouse-private/guides/manage-backups-via-the-private-api) و[مرجع API](/ar/products/clickhouse-private/reference/clickhouse-private-api-reference).
+
+<div id="backup-pod-designation">
+  ## تعيين بود النسخ الاحتياطي
+</div>
+
+في بنية MultiSTS، تُخصَّص نسخة متماثلة واحدة فقط لتكون **بود النسخ الاحتياطي** (`isBackupPod: true` in the ReplicaStateMap). تُنفَّذ عمليات النسخ الاحتياطي دائمًا على هذا البود. ويتجنب المُشغِّل وضع علامة Condemned على بود النسخ الاحتياطي أثناء تقليص عدد النسخ، وذلك لتجنّب تعطيل عمليات النسخ الاحتياطي.
+
+<div id="restore-limitation">
+  ## قيود الاستعادة
+</div>
+
+لا تسمح Private API **باستعادة نسخة احتياطية إلى العنقود نفسه** الذي أُخذت منه (`instance_id == target_instance_id`). ويمنع ذلك إضافة حملٍ إضافي على عنقود إنتاج قيد التشغيل، كما يقلّل من خطر الكتابة فوق البيانات. والنهج الموصى به هو إنشاء عنقود جديد ثم الاستعادة إليه.
+
+إذا كان لا بد من الاستعادة إلى العنقود نفسه (على سبيل المثال، لاستعادة جدول محدد)، فاستخدم أوامر SQL يدوية مباشرةً على بود خادم.
+
+<div id="incremental-backup-chain-integrity">
+  ## سلامة سلسلة النسخ الاحتياطي التزايدي
+</div>
+
+عند استخدام سياسات دورة الحياة في S3 مع النسخ الاحتياطية التزايدية، تأكد من أن قواعد انتهاء الصلاحية لا تحذف نسخة احتياطية كاملة ما دامت لا تزال هناك نسخ احتياطية تزايدية تعتمد عليها. إذا حُذفت نسخة احتياطية كاملة، تصبح جميع النسخ الاحتياطية التزايدية في سلسلتها غير قابلة للاستعادة.

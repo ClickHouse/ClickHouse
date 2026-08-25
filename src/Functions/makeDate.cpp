@@ -257,8 +257,8 @@ struct Date32Traits
     static constexpr auto YYYYMMDDName = "YYYYMMDDToDate32";
     using ReturnDataType = DataTypeDate32;
 
-    static constexpr auto MIN_YEAR = 0;
-    static constexpr auto MAX_YEAR = 9999;
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
     static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
 };
 
@@ -878,7 +878,7 @@ SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
 
     FunctionDocumentation::Description description_yyyymmddtodate = R"(
 Converts a number containing the year, month and day number to a `Date`.
-This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid Date value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate = R"(
@@ -907,7 +907,7 @@ SELECT YYYYMMDDToDate(20230911);
 
     FunctionDocumentation::Description description_yyyymmddtodate32 = R"(
 Converts a number containing the year, month and day number to a `Date32`.
-This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid `Date32` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate32 = R"(
@@ -935,7 +935,7 @@ SELECT YYYYMMDDToDate32(20000507);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime = R"(
@@ -965,7 +965,7 @@ SELECT YYYYMMDDToDateTime(20230911131415);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime64 = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime64`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime64 = R"(
