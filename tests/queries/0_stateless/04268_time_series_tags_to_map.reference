@@ -1,0 +1,16 @@
+Combine the tags array with separate tags, sorted, including __name__:
+{'__name__':'http_requests_count','env':'dev','region':'eu'}
+A Map is accepted as the tags array:
+{'__name__':'http_requests_count','env':'dev','region':'eu'}
+Only the tags array, no separate pairs:
+{'a':'1','b':'2'}
+A duplicate tag name is removed:
+{'job':'api'}
+A tag with an empty value is dropped:
+{'region':'eu'}
+A NULL tag value means the tag is absent:
+{'region':'eu'}
+An empty separate value does not conflict with the same tag in the array (the array value wins):
+{'__name__':'bar','x':'1'}
+Empty input produces an empty map:
+{}

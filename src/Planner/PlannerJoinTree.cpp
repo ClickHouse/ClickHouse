@@ -35,6 +35,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -350,9 +351,12 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -483,8 +487,16 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (!columns_with_sizes.empty())
         result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
     else
+    {
+        /// A table expression can resolve to no columns at all, for example a table function over a
+        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+        if (column_names_and_types.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read from table expression with no columns");
+
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
+    }
 
     return result;
 }
