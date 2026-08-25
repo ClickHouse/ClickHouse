@@ -31,6 +31,9 @@ Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is depl
 Ensure your VPC has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
+<Note>
+Before provisioning, run [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#validate-cloud-setup) from the console to confirm your customized VPC and account meet the requirements — it surfaces subnet, permission, and quota issues up front so you can fix them before setup begins.
+</Note>
 
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
 
