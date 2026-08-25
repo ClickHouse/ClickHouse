@@ -21,6 +21,8 @@ public:
     void resetParser() override;
 
 private:
+    void readPrefix() override;
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     bool readGame(MutableColumns & columns, RowReadExtension & ext);

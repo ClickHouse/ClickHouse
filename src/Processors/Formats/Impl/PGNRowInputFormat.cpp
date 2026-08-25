@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/PGNRowInputFormat.h>
 
 namespace DB
@@ -154,6 +155,21 @@ private:
         in.ignore();
     }
 
+    /// The escape mechanism of the standard: a percent sign in the first column of a line
+    /// means that the rest of the line is ignored. The column is determined by looking at
+    /// the previously consumed byte, which is available as long as the current buffer is
+    /// not positioned exactly at a refill boundary.
+    static bool isEscapeLine(ReadBuffer & in)
+    {
+        if (in.eof() || *in.position() != '%')
+            return false;
+
+        if (in.count() == 0)
+            return true;
+
+        return in.position() > in.buffer().begin() && *(in.position() - 1) == '\n';
+    }
+
     static void skipVariation(ReadBuffer & in)
     {
         int depth = 1;
@@ -197,6 +213,11 @@ private:
             {
                 /// Skip block comment
                 skipBlockComment(in);
+            }
+            else if (c == '%' && isEscapeLine(in))
+            {
+                /// Skip escape line
+                skipLineComment(in);
             }
             else
             {
@@ -343,6 +364,10 @@ private:
             {
                 in.ignore();
             }
+            else if (isEscapeLine(in))
+            {
+                skipLineComment(in);
+            }
             else
             {
                 String token;
@@ -396,6 +421,11 @@ static void insertInt32(MutableColumnPtr & column, Int32 value, const String & c
 PGNRowInputFormat::PGNRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_)
     : IRowInputFormat(header_, in_, std::move(params_))
 {
+}
+
+void PGNRowInputFormat::readPrefix()
+{
+    skipBOMIfExists(*in);
 }
 
 void PGNRowInputFormat::resetParser()
@@ -554,6 +584,8 @@ that is not in the table above is filled with the default value.
 Only the mainline moves are put into `moves`: move numbers, comments (`; ...` until the end of the line and
 `{ ... }`), variations in parentheses, and numeric annotation glyphs (`$1`) are skipped, and so is the result
 token at the end of the move text. A move number written together with the move, as in `1.e4`, is understood.
+Escape lines (a line whose first character is `%`) and a byte order mark at the beginning of the file are
+skipped as well.
 
 When a tag is not present in a game, the corresponding column is reported as absent, so that a `DEFAULT`
 expression of the target table is applied to it. An Elo rating that the file spells as unknown (an empty value,

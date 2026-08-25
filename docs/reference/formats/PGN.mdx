@@ -47,6 +47,8 @@ that is not in the table above is filled with the default value.
 Only the mainline moves are put into `moves`: move numbers, comments (`; ...` until the end of the line and
 `{ ... }`), variations in parentheses, and numeric annotation glyphs (`$1`) are skipped, and so is the result
 token at the end of the move text. A move number written together with the move, as in `1.e4`, is understood.
+Escape lines (a line whose first character is `%`) and a byte order mark at the beginning of the file are
+skipped as well.
 
 When a tag is not present in a game, the corresponding column is reported as absent, so that a `DEFAULT`
 expression of the target table is applied to it. An Elo rating that the file spells as unknown (an empty value,

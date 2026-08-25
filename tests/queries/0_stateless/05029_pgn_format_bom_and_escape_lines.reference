@@ -1,0 +1,7 @@
+Test 1: A file with a UTF-8 BOM is read without a phantom row
+1
+BOM Event	Player A	Player B	1-0	e4 e5 Nf3 Nc6
+Test 2: Escape lines are skipped in all positions
+2
+Escape Event	0-1	d4 d5 c4 e6
+Second Game	1/2-1/2	c4 c5 Nc3 Nc6
