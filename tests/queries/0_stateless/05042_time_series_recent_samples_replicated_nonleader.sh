@@ -13,8 +13,9 @@ ZK_PATH="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/05042_recent_sam
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "
     CREATE TABLE ts_recent_r1 ENGINE = TimeSeries
     SETTINGS recent_samples_ttl_seconds = 3600, recent_samples_partition_by = 'toStartOfHour(timestamp)'
-    SAMPLES INNER ENGINE = ReplicatedMergeTree('${ZK_PATH}/samples', 'r1') ORDER BY (id, timestamp)
-    RECENT SAMPLES ENGINE = ReplicatedMergeTree('${ZK_PATH}/recent', 'r1')
+    SAMPLES INNER ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05042_recent_samples/samples', 'r1')
+        ORDER BY (id, timestamp)
+    RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05042_recent_samples/recent', 'r1')
         PARTITION BY toStartOfHour(timestamp) ORDER BY (id, timestamp)"
 
 SAMPLES_R1=$(${CLICKHOUSE_CLIENT} -q "
@@ -36,9 +37,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT throwIf(engine_full LIKE '% TTL %') FROM system.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "
     CREATE TABLE ts_recent_r2 ENGINE = TimeSeries
     SETTINGS recent_samples_ttl_seconds = 3600, recent_samples_partition_by = 'toStartOfHour(timestamp)'
-    SAMPLES INNER ENGINE = ReplicatedMergeTree('${ZK_PATH}/samples', 'r2')
+    SAMPLES INNER ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05042_recent_samples/samples', 'r2')
         ORDER BY (id, timestamp) SETTINGS replicated_can_become_leader = 0
-    RECENT SAMPLES ENGINE = ReplicatedMergeTree('${ZK_PATH}/recent', 'r2')
+    RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05042_recent_samples/recent', 'r2')
         PARTITION BY toStartOfHour(timestamp) ORDER BY (id, timestamp) SETTINGS replicated_can_become_leader = 0"
 
 RECENT_R2=$(${CLICKHOUSE_CLIENT} -q "
