@@ -2837,26 +2837,15 @@ customElements.define('query-progress', QueryProgressElement);
 
 
 /// Per-column color coding modes chosen by the user, keyed by column name. Only columns with
-/// an explicit (non-default) choice are stored. These modes are PER TAB: each tab keeps its own
-/// `colorModes` object (see `makeTab`), and its result element(s) hold the same object via
-/// `_colorModes`, so a toggle in one tab never repaints another tab's columns. They are persisted
-/// with the tab's result snapshot and mirrored into the URL / history for the active tab.
-function activeColorModes() {
-    const tab = getActiveTab();
-    return tab ? tab.colorModes : {};
-}
-
-/// Names of the columns the user pinned, kept as a set (`{name: true}`). A pinned column sticks
-/// to the left/right edge of the result while it is scrolled horizontally instead of scrolling
-/// away; several pinned columns stack against the edge. Like the color modes, the pinned set is
-/// PER TAB: each tab keeps its own `pinnedColumns` object (see `makeTab`), and its result
-/// element(s) hold the same object via `_pinnedColumns`, so pinning a column in one tab never
-/// re-lays-out another tab's result. They are persisted with the tab's result snapshot and
-/// mirrored into the URL / history for the active tab, exactly like the color modes.
-function activePinnedColumns() {
-    const tab = getActiveTab();
-    return tab ? tab.pinnedColumns : {};
-}
+/// an explicit (non-default) choice are stored. These modes are PER NOTEBOOK CELL: each cell keeps
+/// its own `colorModes` object (see `makeQueryCell`), and its result element(s) hold the same
+/// object via `_colorModes`, so a toggle in one cell (or tab) never repaints another cell's
+/// columns, while the several tables of one cell's "Run all" stay in sync. They are persisted with
+/// the cell's result snapshot and mirrored into the URL / history for the active cell.
+///
+/// Names of the columns the user pinned are kept the same way, as a set (`{name: true}`) in each
+/// cell's `pinnedColumns`. A pinned column sticks to the left/right edge of the result while it is
+/// scrolled horizontally instead of scrolling away; several pinned columns stack against the edge.
 
 /// How many streamed server log lines a result retains, and how many of them are built into the DOM
 /// per animation frame. The retention budget covers the rendered lines AND the ones still queued for
@@ -4196,10 +4185,21 @@ class QueryResultElement extends HTMLElement
         th.appendChild(toggle);
     }
 
-    /// Toggle whether a column is pinned. The pinned set is shared by column name WITHIN a tab
-    /// (mirroring `_cycleColorMode`), so re-lay-out every result table of the same tab that has
-    /// this column - scoped to this tab's panel, so other tabs keep their own independent pins -
-    /// then persist the change onto the active tab.
+    /// The result elements a color-mode / pin toggle of this result must repaint: the ones sharing
+    /// its state objects, which are the results of the owning notebook cell (a single result, or
+    /// one per statement of a "Run all"). A result with no owning cell - none is created outside
+    /// the notebook paths - falls back to the tab's panel, and one outside a tab to itself.
+    _sharedColorScope()
+    {
+        const cell = this._ownerCell;
+        const scope = (cell && cell.el) ? cell.el : this.closest('.tab-panel');
+        return scope ? scope.querySelectorAll('query-result') : [this];
+    }
+
+    /// Toggle whether a column is pinned. The pinned set is shared by column name WITHIN one
+    /// notebook cell (mirroring `_cycleColorMode`), so re-lay-out every result table of that cell
+    /// which has this column - other cells and tabs keep their own independent pins - then persist
+    /// the change onto the cell that owns this result.
     _togglePin(name)
     {
         if (this._pinnedColumns[name])
@@ -4210,12 +4210,11 @@ class QueryResultElement extends HTMLElement
         {
             this._pinnedColumns[name] = true;
         }
-        const scope = this.closest('.tab-panel');
-        for (const el of (scope ? scope.querySelectorAll('query-result') : [this]))
+        for (const el of this._sharedColorScope())
         {
             el.applyPinnedColumns();
         }
-        persistPinnedColumns();
+        persistPinnedColumns(this._ownerCell);
     }
 
     _updatePinToggle(toggle, name)
@@ -4493,15 +4492,16 @@ class QueryResultElement extends HTMLElement
             this._colorModes[name] = next;
         }
 
-        /// The modes are shared by column name WITHIN a tab, so every result table of the same
-        /// tab that has this column must be repainted (not just the clicked one) to stay in sync.
-        /// Scope to this tab's panel: other tabs keep their own independent modes.
-        const scope = this.closest('.tab-panel');
-        for (const el of (scope ? scope.querySelectorAll('query-result') : [this]))
+        /// The modes are shared by column name WITHIN one notebook cell, so every result table of
+        /// that cell which has this column must be repainted (not just the clicked one) to stay in
+        /// sync: a "Run all" renders one table per statement, all sharing the cell's mode object.
+        /// Scope to the owning cell (falling back to the tab's panel for a result with no cell, and
+        /// to this element alone outside a tab): other cells and tabs keep their own modes.
+        for (const el of this._sharedColorScope())
         {
             el.refreshColumnColor(name);
         }
-        persistColorModes();
+        persistColorModes(this._ownerCell);
     }
 
     /// Repaint one column for the current (shared) mode and refresh its header toggle title.
@@ -6561,9 +6561,14 @@ function handleResultProgress(cell, detail) {
 /// switching to another cell or tab does not carry this selection over. The view is replayed by
 /// `syncActiveTabChrome` when the cell is shown again. Falls back to the tab's panel, then to all
 /// results, when there is no cell yet (before the first run).
+///
+/// The toggles belong to the cell the shared row is DOCKED under (`chromeCell`), not to the active
+/// one: while a run is in flight that is the running cell, so switching the editor to another cell
+/// mid-run leaves the row - and these toggles - describing and acting on the query that is still
+/// going, instead of silently retargeting them at the newly active cell's result.
 progressEl.addEventListener('set-view', (e) => {
     const tab = getActiveTab();
-    const cell = tab ? activeCell(tab) : null;
+    const cell = tab ? chromeCell(tab) : null;
     if (cell) cell.view = e.detail.view;
     const scope = (cell && cell.el) ? cell.el : (tab && tab.panel) ? tab.panel : document;
     for (const el of scope.querySelectorAll('query-result'))
@@ -11047,13 +11052,17 @@ async function renderSnapshotIntoElement(el, snap, cell, matToken) {
 }
 
 /// Persist the per-column color coding modes so reloads, shares, and Back/Forward keep them.
-/// The modes belong to the active tab's displayed result, so record them on the tab's result
-/// snapshot (persisted to IndexedDB and re-applied when the tab is re-activated) and re-stamp the
-/// current history entry + URL in place, without creating a new record.
-function persistColorModes() {
+/// The modes belong to ONE notebook cell's displayed result, so record them on THAT cell's result
+/// snapshot (persisted to IndexedDB and re-applied when the cell is re-shown). The URL and the
+/// current history entry describe the active cell only, so they are re-stamped in place - without
+/// creating a new record - just for a toggle made in the active cell; a toggle in another cell of
+/// the notebook still travels with that cell's own snapshot.
+function persistColorModes(cell) {
     const tab = getActiveTab();
-    const modes = tab ? tab.colorModes : {};
-    if (tab && tab.result) tab.result.color_modes = modes;
+    cell = cell || (tab ? activeCell(tab) : null);
+    const modes = cell ? cell.colorModes : {};
+    if (cell && cell.result) cell.result.color_modes = modes;
+    if (!tab || activeCell(tab) !== cell) { scheduleSave(); return; }
     const url = new URL(window.location);
     if (Object.keys(modes).length > 0) {
         url.searchParams.set('color_modes', JSON.stringify(modes));
@@ -11078,13 +11087,16 @@ function persistColorModes() {
 }
 
 /// Persist the pinned columns the same way `persistColorModes` persists the color modes: onto the
-/// active tab's result snapshot, the URL, and the current history entry, so reloads, shares, and
-/// Back/Forward keep them. The pinned set is PER TAB (`getActiveTab().pinnedColumns`), so a toggle
-/// updates only the active tab's persisted set.
-function persistPinnedColumns() {
+/// owning cell's result snapshot, and - only when that cell is the active one, which is what the
+/// URL and the history entry describe - onto the URL and the current history entry, so reloads,
+/// shares, and Back/Forward keep them. The pinned set is PER CELL (`cell.pinnedColumns`), so a
+/// toggle updates only that cell's persisted set.
+function persistPinnedColumns(cell) {
     const tab = getActiveTab();
-    const pins = tab ? tab.pinnedColumns : {};
-    if (tab && tab.result) tab.result.pinned_columns = pins;
+    cell = cell || (tab ? activeCell(tab) : null);
+    const pins = cell ? cell.pinnedColumns : {};
+    if (cell && cell.result) cell.result.pinned_columns = pins;
+    if (!tab || activeCell(tab) !== cell) { scheduleSave(); return; }
     const url = new URL(window.location);
     if (Object.keys(pins).length > 0) {
         url.searchParams.set('pinned_columns', JSON.stringify(pins));
@@ -12594,12 +12606,22 @@ function editCell(tab, cell) {
 
 /// ----- Markdown ---------------------------------------------------------------------------
 
-/// Only `http`, `https`, `mailto` and same-document links are allowed through: the rendered
-/// Markdown is inserted as HTML, so a `javascript:` URL in a link would execute on click.
+/// The rendered Markdown is inserted as HTML, so a `javascript:` (or `data:`) URL in a link would
+/// execute on click. Everything that names a scheme must therefore be `http`, `https` or `mailto`;
+/// everything that names no scheme is an ordinary relative target of the page (`guide.md`,
+/// `images/pic.png`, `?q=1`, `#section`, `/absolute`) and is allowed, which is the contract text
+/// cells document. A protocol-relative `//host/...` names another origin rather than a relative
+/// target, so it is rejected with the bad schemes.
 function safeMarkdownUrl(url) {
     const trimmed = url.trim();
-    if (/^(https?:|mailto:|#|\/|\.{1,2}\/)/i.test(trimmed)) return trimmed;
-    return '';
+    /// Browsers ignore ASCII whitespace and control characters inside a scheme (`java\tscript:`
+    /// navigates), so the scheme is decided on a stripped copy - while the URL itself is passed
+    /// through unchanged, exactly as before.
+    const probe = trimmed.replace(/[\u0000-\u0020\u007f]/g, '');
+    if (probe.startsWith('//')) return '';
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(probe);
+    if (scheme) return /^(https?|mailto)$/i.test(scheme[1]) ? trimmed : '';
+    return trimmed;
 }
 
 /// The inline rules operate on already-escaped text, so `&`, `<` and `>` are handled; putting a
@@ -12881,7 +12903,10 @@ function syncActiveTabChrome() {
     if (run_cell.resources)
         progressEl.adoptResourceState(run_cell.resources);
 
-    logoEl.style.display = tab.logoVisible ? 'block' : 'none';
+    /// The logo is part of the same shared row, so it follows the chrome cell too: a mid-run cell
+    /// switch must not regrow the idle logo over a running `Run all` row (a multi-query run hides
+    /// it, see `postMulti`).
+    logoEl.style.display = run_cell.logoVisible ? 'block' : 'none';
 
     /// Replay the chrome CELL's Logs/Metrics availability and selected view: reveal the shared
     /// toggles only for what that cell produced, and switch its own result element(s) to its view.

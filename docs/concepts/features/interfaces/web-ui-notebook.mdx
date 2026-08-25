@@ -48,7 +48,9 @@ Results are shown more compactly in notebook mode: a smaller font, with the cell
 
 Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
 
-The `Logs` and `Metrics` views and the resource meters in the progress line belong to the cell whose result they describe: each cell keeps its own selection and its own meters, and the shared toggles show what the active cell produced. Switching cells brings that cell's own logs, metrics and meters back.
+The `Logs` and `Metrics` views and the resource meters in the progress line belong to the cell whose result they describe: each cell keeps its own selection and its own meters, and the shared toggles show what the active cell produced. Switching cells brings that cell's own logs, metrics and meters back. While a query is running, the row stays with the cell it is running in — moving the editor to another cell to write the next query neither blanks the live progress nor retargets those toggles at the other cell's result.
+
+Column color coding and pinned columns belong to a cell too: they are chosen on a result, so they follow that result. A cell whose `Run all` produced several tables shares one choice across them, and every cell keeps its own; the shared link and the browser history carry the active cell's choice, while the others travel with their own cell.
 
 ## Text cells {#text-cells}
 
@@ -58,7 +60,7 @@ Leaving the text area (clicking elsewhere, `Escape`, or `Ctrl/Cmd+Enter`) finish
 
 Text cells are set in the same monospace face as queries, in both states, so the notebook reads as one document and the font does not jump when a cell switches between its source and the rendered result.
 
-Headings, emphasis, inline and fenced code, links and images, autolinked URLs, ordered and unordered lists, block quotes, horizontal rules and pipe tables are supported. Raw HTML in a text cell is escaped rather than rendered, and link and image URLs are restricted to `http`, `https`, `mailto` and relative targets.
+Headings, emphasis, inline and fenced code, links and images, autolinked URLs, ordered and unordered lists, block quotes, horizontal rules and pipe tables are supported. Raw HTML in a text cell is escaped rather than rendered, and link and image URLs are restricted to `http`, `https`, `mailto` and relative targets — an ordinary relative link such as `[guide](guide.md)` or `![pic](images/pic.png)` works, while a scheme like `javascript:` or `data:`, and a protocol-relative `//host/...` (which is another origin, not a relative target), is left as plain text.
 
 ## Persistence {#persistence}
 

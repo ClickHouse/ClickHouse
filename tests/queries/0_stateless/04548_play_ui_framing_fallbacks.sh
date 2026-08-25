@@ -262,9 +262,26 @@ echo "$page" | grep -q -F 'this._log_buffer.length - queue_budget' && echo 'log 
 echo "$page" | grep -q -F 'const queue_budget = Math.max(MAX_LOG_DOM_LINES - rendered, MAX_LOG_LINES_PER_FRAME);' && echo 'log budget shared with the DOM: OK'
 echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric history bounded: OK'
 # The Logs/Metrics view and toggle availability are cell-owned, not global: the `set-view` handler
-# records the view on the active cell and applies it only to that cell's results, `_markLogsAvailable`
-# marks availability on the owning cell, and `syncActiveTabChrome` replays both via `setViewState`.
+# records the view on the cell the shared row is docked under and applies it only to that cell's
+# results, `_markLogsAvailable` marks availability on the owning cell, and `syncActiveTabChrome`
+# replays both via `setViewState`. That cell is `chromeCell`, not the active one, so using the
+# toggles after moving the editor off a still-running cell still acts on the running query's result.
 echo "$page" | grep -q -F 'if (cell) cell.view = e.detail.view;' && echo 'view is cell-owned: OK'
+echo "$page" | grep -q -F 'const cell = tab ? chromeCell(tab) : null;' && echo 'toggles act on the chrome cell: OK'
+# The shared logo belongs to the same row, so it is repainted from the chrome cell too: a mid-run
+# cell switch cannot regrow the idle logo over a running multi-query row.
+echo "$page" | grep -q -F "logoEl.style.display = run_cell.logoVisible ? 'block' : 'none';" && echo 'logo follows the chrome cell: OK'
+# Color modes and pinned columns are per CELL: a toggle repaints the result tables of the owning
+# cell (a "Run all" has one per statement, all sharing the cell's objects) and persists onto that
+# cell's own snapshot, instead of reaching into other cells or writing through the active one.
+echo "$page" | grep -q -F 'const scope = (cell && cell.el) ? cell.el : this.closest(' && echo 'color scope is the owning cell: OK'
+echo "$page" | grep -q -F 'persistColorModes(this._ownerCell);' && echo 'color modes persist onto the owning cell: OK'
+echo "$page" | grep -q -F 'persistPinnedColumns(this._ownerCell);' && echo 'pins persist onto the owning cell: OK'
+# Markdown link/image targets: anything naming a scheme must be `http`, `https` or `mailto`, and a
+# protocol-relative `//host` is rejected with them; everything scheme-less is an ordinary relative
+# target of the page and is allowed, which is what text cells document.
+echo "$page" | grep -q -F "if (scheme) return /^(https?|mailto)\$/i.test(scheme[1]) ? trimmed : '';" && echo 'markdown schemes restricted: OK'
+echo "$page" | grep -q -F "if (probe.startsWith('//')) return '';" && echo 'protocol-relative markdown URLs rejected: OK'
 echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
 # The realtime resource meters are cell-owned too: CPU counters in `profile_events` packets are
 # per-packet increments, so a backgrounded cell's batches keep accumulating on the cell

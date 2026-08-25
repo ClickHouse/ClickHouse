@@ -54,6 +54,13 @@ log queue bounded: OK
 log budget shared with the DOM: OK
 metric history bounded: OK
 view is cell-owned: OK
+toggles act on the chrome cell: OK
+logo follows the chrome cell: OK
+color scope is the owning cell: OK
+color modes persist onto the owning cell: OK
+pins persist onto the owning cell: OK
+markdown schemes restricted: OK
+protocol-relative markdown URLs rejected: OK
 toggles replayed per tab: OK
 background meter batches accumulate: OK
 meter state re-adopted on tab open: OK
