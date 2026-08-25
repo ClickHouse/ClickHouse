@@ -272,7 +272,6 @@ static ActionsDAG substituteIdentityPartitionColumns(
         const auto & constant
             = substitution.addColumn(required.type->createColumnConst(0, *it->second), required.type, required.name);
         substitution.getOutputs().push_back(&substitution.materializeNode(constant));
-        values_by_name.erase(it);
     }
 
     return ActionsDAG::merge(std::move(substitution), dag.clone());
@@ -1170,6 +1169,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto row_level_filter = format_filter_info->row_level_filter;
             auto prewhere_info = format_filter_info->prewhere_info;
             bool filters_substituted = false;
+            /// A filter evaluated inside the reader must see the identity-partitioned columns of this
+            /// data file as the manifest defines them, because the file itself need not store them.
             if (format_supports_prewhere && !identity_partition_columns.empty()
                 && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
             {

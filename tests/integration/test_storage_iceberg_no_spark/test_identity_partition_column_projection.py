@@ -10,7 +10,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import DateType, LongType, StringType, TimestampType
+from pyiceberg.types import DateType, LongType, StringType, StructType, TimestampType
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -398,4 +398,239 @@ def test_identity_partition_column_types_written_by_clickhouse(
             f"SELECT id, toString(ts, 'UTC'), toString(d), n FROM {table_function} ORDER BY id"
         ).strip()
         == "1\t2024-05-17 10:20:30.000000\t2024-05-17\t42\n2\t2020-01-02 03:04:05.000000\t2020-01-02\t-7"
+    )
+
+
+DOTTED_SCHEMA = Schema(
+    NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    NestedField(field_id=2, name="a.b", field_type=StringType(), required=False),
+    NestedField(field_id=3, name="s", field_type=StructType(
+        NestedField(field_id=4, name="c", field_type=StringType(), required=False),
+    ), required=False),
+)
+
+DOTTED_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("id", pa.int64(), nullable=True),
+        pa.field("a.b", pa.string(), nullable=True),
+        pa.field("s", pa.struct([pa.field("c", pa.string(), nullable=True)]), nullable=True),
+    ]
+)
+
+
+def test_identity_partition_column_name_with_period(started_cluster_iceberg_no_spark):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    table = catalog.create_table(
+        identifier=f"{namespace}.t_dotted",
+        schema=DOTTED_SCHEMA,
+        location="s3://warehouse-rest/data",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="a.b"),
+            PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="s.c"),
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "a.b": "East", "s": {"c": "x"}},
+                {"id": 2, "a.b": "West", "s": {"c": "y"}},
+            ],
+            schema=DOTTED_ARROW_SCHEMA,
+        )
+    )
+
+    files = data_file_paths(table)
+    assert len(files) == 2
+    for path in files:
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "a_x2Eb")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{namespace}.t_dotted`"
+
+    assert (
+        instance.query(f"SELECT id, `a.b`, s.c FROM {table_expression} ORDER BY id").strip()
+        == "1\tEast\tx\n2\tWest\ty"
+    )
+
+
+NESTED_SCHEMA = Schema(
+    NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    NestedField(field_id=2, name="s", field_type=StructType(
+        NestedField(field_id=3, name="c", field_type=StringType(), required=False),
+        NestedField(field_id=4, name="d", field_type=LongType(), required=False),
+    ), required=False),
+)
+
+NESTED_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("id", pa.int64(), nullable=True),
+        pa.field(
+            "s",
+            pa.struct(
+                [
+                    pa.field("c", pa.string(), nullable=True),
+                    pa.field("d", pa.int64(), nullable=True),
+                ]
+            ),
+            nullable=True,
+        ),
+    ]
+)
+
+
+def test_identity_partition_column_nested_field(started_cluster_iceberg_no_spark):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    table = catalog.create_table(
+        identifier=f"{namespace}.t_nested",
+        schema=NESTED_SCHEMA,
+        location="s3://warehouse-rest/data",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="s.c"),
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "s": {"c": "x", "d": 10}},
+                {"id": 2, "s": {"c": "y", "d": 20}},
+            ],
+            schema=NESTED_ARROW_SCHEMA,
+        )
+    )
+
+    files = data_file_paths(table)
+    assert len(files) == 2
+    for path in files:
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "s")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{namespace}.t_nested`"
+
+    projection = instance.query(
+        f"SELECT id, s.c, s.d FROM {table_expression} ORDER BY id"
+    ).strip()
+    filtered = instance.query(
+        f"SELECT id FROM {table_expression} WHERE s.c = 'x' ORDER BY id",
+        settings={"optimize_move_to_prewhere": 1},
+    ).strip()
+    whole_struct = instance.query(
+        f"SELECT id, s FROM {table_expression} ORDER BY id"
+    ).strip()
+    assert (projection, filtered, whole_struct) == (
+        "1\tx\t\\N\n2\ty\t\\N",
+        "1",
+        "1\t(NULL,NULL)\n2\t(NULL,NULL)",
+    )
+
+
+
+def test_identity_partition_column_with_row_policy(started_cluster_iceberg_no_spark):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_row_policy_" + get_uuid_str()
+    policy_name = "policy_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, region String)",
+        format_version=2,
+        partition_by="region",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1, 'East'), (2, 'West'), (3, 'East'), (4, 'North')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    for object in started_cluster_iceberg_no_spark.minio_client.list_objects(
+        bucket, prefix, recursive=True
+    ):
+        if object.object_name.endswith(".parquet"):
+            drop_column_from_data_file(
+                started_cluster_iceberg_no_spark,
+                f"s3://{bucket}/{object.object_name}",
+                "region",
+            )
+
+    instance.query(
+        f"CREATE ROW POLICY {policy_name} ON {table_name} USING region = 'East' TO ALL"
+    )
+    try:
+        plan = instance.query(f"EXPLAIN actions=1 SELECT id FROM {table_name}")
+        assert "Row-level security filter" not in plan, plan
+        assert instance.query(f"SELECT id FROM {table_name} ORDER BY id").strip() == "1\n3"
+        assert (
+            instance.query(f"SELECT id, region FROM {table_name} ORDER BY id").strip()
+            == "1\tEast\n3\tEast"
+        )
+    finally:
+        instance.query(f"DROP ROW POLICY {policy_name} ON {table_name}")
+
+
+def test_identity_partition_column_renamed_after_write(started_cluster_iceberg_no_spark):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    table = catalog.create_table(
+        identifier=f"{namespace}.t_renamed",
+        schema=SCHEMA,
+        location="s3://warehouse-rest/data",
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=2,
+                field_id=1000,
+                transform=IdentityTransform(),
+                name="region",
+            )
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "region": "East", "val": "a"},
+                {"id": 2, "region": "West", "val": "b"},
+                {"id": 3, "region": "East", "val": "c"},
+            ],
+            schema=ARROW_SCHEMA,
+        )
+    )
+
+    for path in data_file_paths(table):
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "region")
+
+    with table.update_schema() as update:
+        update.rename_column("region", "area")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{namespace}.t_renamed`"
+
+    assert (
+        instance.query(
+            f"SELECT id, area, val FROM {table_expression} ORDER BY id"
+        ).strip()
+        == "1\tEast\ta\n2\tWest\tb\n3\tEast\tc"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_expression} WHERE area = 'East' ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "1\n3"
+        ), move_to_prewhere
+    assert (
+        instance.query(
+            f"SELECT id FROM {table_expression} PREWHERE area = 'East' ORDER BY id"
+        ).strip()
+        == "1\n3"
     )

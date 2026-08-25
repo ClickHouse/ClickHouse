@@ -1596,15 +1596,13 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         if (!name_and_type.has_value())
             continue;
 
-        if (name_and_type->name.contains('.'))
-            continue;
-
-        Field value = convertFieldToType(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
         if (value.isNull())
             continue;
 
         result.emplace_back(name_and_type->name, std::move(value));
     }
+
     return result;
 }
 
