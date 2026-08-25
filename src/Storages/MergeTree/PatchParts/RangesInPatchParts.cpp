@@ -10,10 +10,14 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <base/range.h>
 
 namespace ProfileEvents
 {
@@ -52,6 +56,26 @@ MarkRanges optimizeRanges(const MarkRanges & ranges)
     }
 
     return result_ranges;
+}
+
+/// Splits ranges into subranges with at most `max_granules_in_range` granules each.
+MarkRanges splitRanges(const MarkRanges & ranges, size_t max_granules_in_range)
+{
+    MarkRanges split_ranges;
+
+    for (const auto & range : ranges)
+    {
+        size_t begin = range.begin;
+
+        while (begin < range.end)
+        {
+            size_t next = std::min<size_t>(range.end, begin + max_granules_in_range);
+            split_ranges.emplace_back(begin, next);
+            begin = next;
+        }
+    }
+
+    return split_ranges;
 }
 
 MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & original_ranges)
@@ -135,6 +159,111 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
+MarkRanges getRangesInPatchPartMergeOnKey(
+    const DataPartPtr & original_part,
+    const PatchPartInfoForReader & patch,
+    const MarkRanges & original_ranges)
+{
+    chassert(patch.mode == PatchMode::MergeOnKey);
+    const size_t patch_marks_count = patch.part->getIndexGranularity().getMarksCount();
+
+    if (patch_marks_count == 0)
+        return {};
+
+    auto emit_all_patch_ranges = [&]() -> MarkRanges
+    {
+        MarkRanges all;
+        all.emplace_back(0, patch_marks_count);
+        return all;
+    };
+
+    if (original_ranges.empty())
+        return {};
+
+    const size_t main_marks_count = original_part->index_granularity->getMarksCount();
+    auto main_index = original_part->getIndex();
+    auto patch_index = patch.part->getIndexPtr();
+
+    if (!main_index || main_index->empty() || !patch_index || patch_index->empty())
+        return emit_all_patch_ranges();
+
+    if (!patch.sorting_key)
+        return emit_all_patch_ranges();
+
+    const auto & reverse_flags = patch.sorting_key->reverse_flags;
+    const size_t patch_sorting_key_prefix_size = patch.sorting_key->column_names.size();
+    const size_t common_prefix_size = std::min(main_index->size(), patch_sorting_key_prefix_size);
+
+    if (common_prefix_size == 0)
+        return emit_all_patch_ranges();
+
+    Columns main_sorting_key_columns(common_prefix_size);
+    Columns patch_sorting_key_columns(common_prefix_size);
+
+    for (size_t i = 0; i < common_prefix_size; ++i)
+    {
+        /// After an ALTER like LowCardinality(T) <-> T on a key column the main index is loaded
+        /// with the current type while the patch index keeps the type the patch was written with.
+        main_sorting_key_columns[i] = recursiveRemoveLowCardinality(removeSpecialRepresentations((*main_index)[i]->convertToFullColumnIfConst()));
+        patch_sorting_key_columns[i] = recursiveRemoveLowCardinality(removeSpecialRepresentations((*patch_index)[i]->convertToFullColumnIfConst()));
+    }
+
+    auto compare_patch = [&](size_t patch_row, size_t main_row) -> int
+    {
+        for (size_t i = 0; i < common_prefix_size; ++i)
+        {
+            int cmp = patch_sorting_key_columns[i]->compareAt(patch_row, main_row, *main_sorting_key_columns[i], /*nan_direction_hint=*/ 1);
+            if (cmp != 0)
+                return (i < reverse_flags.size() && reverse_flags[i]) ? -cmp : cmp;
+        }
+        return 0;
+    };
+
+    MarkRanges patch_part_ranges;
+    const auto patch_marks = collections::range(patch_marks_count);
+
+    for (const auto & range : original_ranges)
+    {
+        if (range.begin >= main_marks_count)
+            continue;
+
+        const size_t main_end = std::min(range.end, main_marks_count);
+
+        /// Find the first patch granule whose first-row key is >= the first key of the main range.
+        /// Take one granule before it as well: the index stores only first-row keys, and the rows
+        /// of the previous granule may contain the main key too.
+        auto lower_it = std::lower_bound(
+            patch_marks.begin(), patch_marks.end(), range.begin,
+            [&](size_t patch_row, size_t main_row) { return compare_patch(patch_row, main_row) < 0; });
+
+        const size_t lower_mark = lower_it - patch_marks.begin();
+        const size_t patch_lo = lower_mark > 0 ? lower_mark - 1 : 0;
+        size_t patch_hi = 0;
+
+        if (main_end == main_marks_count)
+        {
+            /// There is no index entry after the last mark, take all the remaining patch granules.
+            patch_hi = patch_marks_count;
+        }
+        else
+        {
+            /// Find the first patch granule whose first-row key is strictly greater than the key at main row `main_end`.
+            /// Keys equal to it may still belong to the main range, so patch granules starting with that key are required.
+            auto upper_it = std::upper_bound(
+                patch_marks.begin() + patch_lo, patch_marks.end(), main_end,
+                [&](size_t main_row, size_t patch_row) { return compare_patch(patch_row, main_row) > 0; });
+
+            patch_hi = upper_it - patch_marks.begin();
+        }
+
+        if (patch_lo < patch_hi)
+            patch_part_ranges.emplace_back(patch_lo, patch_hi);
+    }
+
+    std::ranges::sort(patch_part_ranges, std::less{}, &MarkRange::begin);
+    return optimizeRanges(patch_part_ranges);
+}
+
 MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & ranges)
 {
     switch (patch.mode)
@@ -143,6 +272,8 @@ MarkRanges getRangesInPatchPart(const DataPartPtr & original_part, const PatchPa
             return getRangesInPatchPartMerge(original_part, patch, ranges);
         case PatchMode::Join:
             return getRangesInPatchPartJoin(patch);
+        case PatchMode::MergeOnKey:
+            return getRangesInPatchPartMergeOnKey(original_part, patch, ranges);
     }
 }
 
@@ -168,6 +299,11 @@ void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchP
 
     for (const auto & patch_part : patch_parts)
     {
+        /// Ranges are accumulated only for `Join` patches: `PatchJoinCache` is keyed by the chunks built from them.
+        /// For other modes `getRanges` builds tight per-task ranges without using `ranges_by_name`.
+        if (patch_part.mode != PatchMode::Join)
+            continue;
+
         auto patch_ranges = getRangesInPatchPart(original_part, patch_part, original_ranges);
 
         if (!patch_ranges.empty())
@@ -184,22 +320,8 @@ void RangesInPatchParts::optimize()
 
     for (auto & [_, ranges] : ranges_by_name)
     {
-        MarkRanges split_ranges;
-
         std::sort(ranges.begin(), ranges.end(), [](const auto & lhs, const auto & rhs) { return lhs.begin < rhs.begin; });
-        auto optimized_ranges = optimizeRanges(ranges);
-
-        for (auto & range : optimized_ranges)
-        {
-            size_t num_full_splits = (range.end - range.begin) / max_granules_in_range;
-            for (size_t i = 0; i < num_full_splits; ++i)
-                split_ranges.emplace_back(range.begin + max_granules_in_range * i, range.begin + max_granules_in_range * (i + 1));
-
-            if ((range.end - range.begin) % max_granules_in_range != 0)
-               split_ranges.emplace_back(range.begin + max_granules_in_range * num_full_splits, range.end);
-        }
-
-        ranges = std::move(split_ranges);
+        ranges = splitRanges(optimizeRanges(ranges), max_granules_in_range);
     }
 }
 
@@ -213,7 +335,14 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
     std::vector<MarkRanges> optimized_ranges(raw_ranges.size());
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
-        optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
+    {
+        /// `Join` patches must use whole chunks of `ranges_by_name` because `PatchJoinCache` is keyed by them.
+        /// Other modes have no caches shared between tasks and use the tight per-task ranges directly.
+        if (patch_parts[i].mode == PatchMode::Join)
+            optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
+        else
+            optimized_ranges[i] = splitRanges(raw_ranges[i], max_granules_in_range);
+    }
 
     return optimized_ranges;
 }

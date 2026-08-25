@@ -1166,6 +1166,17 @@ bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
+size_t IStorageURLBase::getMaxReadStreams(size_t num_streams, ContextPtr context)
+{
+    if (distributed_processing)
+        return num_streams;
+
+    if (!urlWithGlobs(uri))
+        return 1;
+
+    return std::min(num_streams, static_cast<size_t>(context->getSettingsRef()[Setting::glob_expansion_max_elements]));
+}
+
 class ReadFromURL : public SourceStepWithFilter
 {
 public:
