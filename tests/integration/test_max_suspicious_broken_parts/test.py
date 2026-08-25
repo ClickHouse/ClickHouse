@@ -112,12 +112,8 @@ def test_max_suspicious_broken_parts_bytes():
     PARTITION BY key%10
     SETTINGS
         max_suspicious_broken_parts = 10,
-        serialization_info_version = 'basic',
-        /* one part takes ~1010 byte, so we allow failure of one part with these limit */
-        max_suspicious_broken_parts_bytes = 1500,
-        /* Disable implicit index and statistics as they'd change the size */
-        add_minmax_index_for_numeric_columns=0,
-        auto_statistics_types='';
+        /* one part takes ~751 byte, so we allow failure of one part with these limit */
+        max_suspicious_broken_parts_bytes = 1000;
     """
     )
     check_table("test_max_suspicious_broken_parts_bytes")
@@ -151,13 +147,9 @@ def test_max_suspicious_broken_parts_bytes__wide():
     PARTITION BY key%10
     SETTINGS
         min_bytes_for_wide_part = 0,
-        serialization_info_version = 'basic',
         max_suspicious_broken_parts = 10,
-        /* one part takes ~1009 byte, so we allow failure of one part with these limit */
-        max_suspicious_broken_parts_bytes = 1500,
-        /* Disable implicit index and statistics as they'd change the size */
-        add_minmax_index_for_numeric_columns=0,
-        auto_statistics_types='';
+        /* one part takes ~750 byte, so we allow failure of one part with these limit */
+        max_suspicious_broken_parts_bytes = 1000;
     """
     )
     check_table("test_max_suspicious_broken_parts_bytes__wide")

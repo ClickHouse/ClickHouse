@@ -1,4 +1,0 @@
-login	Nullable(String)					
-id	Nullable(Int64)					
-node_id	Nullable(String)					
-avatar_url	Nullable(String)					

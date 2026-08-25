@@ -11,8 +11,10 @@ class ExecutableFunctionDynamicAdaptor final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionDynamicAdaptor(
-        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-        size_t dynamic_argument_index_);
+        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, size_t dynamic_argument_index_)
+        : function_overload_resolver(std::move(function_overload_resolver_)), dynamic_argument_index(dynamic_argument_index_)
+    {
+    }
 
     String getName() const override { return function_overload_resolver->getName(); }
 
@@ -34,11 +36,6 @@ private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     size_t dynamic_argument_index;
-    /// When true, throw an exception if a dynamic variant type is incompatible with the function.
-    /// When false (default), return NULL for incompatible rows instead.
-    /// Resolved at construction time from the `dynamic_throw_on_type_mismatch` setting or the strictness
-    /// override pinned by the caller, see `TypeMismatchStrictness.h`.
-    bool throw_on_type_mismatch = true;
 };
 
 class FunctionBaseDynamicAdaptor final : public IFunctionBase
@@ -69,8 +66,6 @@ public:
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function_overload_resolver->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.

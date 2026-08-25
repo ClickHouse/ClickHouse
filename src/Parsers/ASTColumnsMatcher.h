@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -22,19 +21,9 @@ public:
     void setPattern(String pattern);
     const String & getPattern() const;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr expression;
     ASTPtr transformers;
-
-    /// When set, format this matcher as the equivalent `[expr.]* LIKE/ILIKE '<asterisk_like_pattern>'`
-    /// syntax instead of `COLUMNS('<regexp>')`. Only the query fuzzer sets this, to exercise the
-    /// asterisk LIKE/ILIKE parser path; the parser never sets it, so normal query round-trips are
-    /// unaffected (a parsed `* LIKE ...` still becomes a plain regexp matcher).
-    bool format_as_asterisk_like = false;
-    bool asterisk_like_case_insensitive = false;
-    String asterisk_like_pattern;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -50,8 +39,6 @@ public:
     String getID(char) const override { return "ColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr expression;
     ASTPtr column_list;
@@ -72,16 +59,9 @@ public:
     void setPattern(String pattern_);
     const String & getPattern() const;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr qualifier;
     ASTPtr transformers;
-
-    /// See ASTColumnsRegexpMatcher: format as `<qualifier>.* LIKE/ILIKE '<asterisk_like_pattern>'`.
-    bool format_as_asterisk_like = false;
-    bool asterisk_like_case_insensitive = false;
-    String asterisk_like_pattern;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -97,8 +77,6 @@ public:
     String getID(char) const override { return "QualifiedColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr qualifier;
     ASTPtr column_list;

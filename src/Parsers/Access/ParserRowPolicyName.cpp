@@ -140,8 +140,8 @@ namespace
             if (allow_on_cluster && res_cluster.empty())
                 parseOnCluster(pos, expected, res_cluster);
 
-            chassert(!short_names.empty());
-            chassert(!database_and_table_names.empty());
+            assert(!short_names.empty());
+            assert(!database_and_table_names.empty());
             full_names.clear();
             for (const String & short_name : short_names)
                 for (const auto & [database, table_name] : database_and_table_names)
@@ -161,8 +161,8 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!parseRowPolicyNamesAroundON(pos, expected, false, false, allow_on_cluster, full_names, cluster))
         return false;
 
-    chassert(full_names.size() == 1);
-    auto result = make_intrusive<ASTRowPolicyName>();
+    assert(full_names.size() == 1);
+    auto result = std::make_shared<ASTRowPolicyName>();
     result->full_name = std::move(full_names.front());
     result->cluster = std::move(cluster);
     node = result;
@@ -196,7 +196,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
         return false;
 
-    auto result = make_intrusive<ASTRowPolicyNames>();
+    auto result = std::make_shared<ASTRowPolicyNames>();
     result->full_names = std::move(full_names);
     result->cluster = std::move(cluster);
     node = result;

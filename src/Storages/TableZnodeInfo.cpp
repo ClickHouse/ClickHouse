@@ -1,7 +1,6 @@
 #include <Storages/TableZnodeInfo.h>
 
 #include <Common/Macros.h>
-#include <Common/quoteString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Databases/IDatabase.h>
@@ -9,124 +8,16 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Core/UUID.h>
-#include <base/hex.h>
-
-#include <optional>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// The path and the replica name are separate engine arguments, so a message names the one that failed.
-enum class ZnodeString : UInt8
-{
-    Path,
-    ReplicaName,
-};
-
-constexpr std::string_view toString(ZnodeString what)
-{
-    switch (what)
-    {
-        case ZnodeString::Path: return "ZooKeeper path";
-        case ZnodeString::ReplicaName: return "replica name";
-    }
-}
-
-constexpr std::string_view howToOverride(ZnodeString what)
-{
-    switch (what)
-    {
-        case ZnodeString::Path: return "specify the ZooKeeper path explicitly";
-        case ZnodeString::ReplicaName: return "specify the replica name explicitly";
-    }
-}
-
-/// A substituted {database}/{table} is spliced in verbatim, so the value itself must stay a single path
-/// component: '/' adds components, and a brace is expanded again by the next macro pass (which can mint
-/// components out of the value, or complete a brace opened by a configured macro).
-void checkSubstitutedValues(ZnodeString what, const Macros::MacroExpansionInfo & info)
-{
-    auto check = [what](std::string_view macro_name, const String & value)
-    {
-        const size_t bad_pos = value.find_first_of("/{}");
-        if (bad_pos == String::npos)
-            return;
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Macro '{{{}}}' in the {} of a replicated table expands to {}, "
-            "which contains '{}' and so is not a single ZooKeeper path component. "
-            "Rename the {} or {}",
-            macro_name, toString(what), quoteString(value), value[bad_pos], macro_name, howToOverride(what));
-    };
-
-    if (info.expanded_database)
-        check("database", info.table_id.database_name);
-    if (info.expanded_table)
-        check("table", info.table_id.table_name);
-}
-
-/// '.', '..' and control characters are not valid znode names. Unlike the check above, this one runs on
-/// the fully expanded string, because a legal component can be assembled from a substituted value plus
-/// the surrounding template, possibly only in a later macro pass.
-void checkPathComponents(ZnodeString what, const String & str)
-{
-    std::string_view remaining = str;
-    while (true)
-    {
-        const size_t slash_pos = remaining.find('/');
-        const std::string_view component = remaining.substr(0, slash_pos);
-
-        if (component == "." || component == "..")
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The {} of a replicated table expands to {}, which has '{}' as a ZooKeeper path component. "
-                "Rename the table or the database, or {}",
-                toString(what), quoteString(str), component, howToOverride(what));
-
-        for (size_t i = 0; i < component.size(); ++i)
-        {
-            const auto byte = static_cast<unsigned char>(component[i]);
-            const auto next_byte = i + 1 < component.size() ? static_cast<unsigned char>(component[i + 1]) : 0;
-            std::optional<UInt16> code_point;
-            if (byte < 0x20 || byte == 0x7F)
-                code_point = byte;
-            /// UTF-8 encodes U+0080-U+009F only as C2 80..C2 9F, so the pair test cannot match a
-            /// continuation byte of some other character.
-            else if (byte == 0xC2 && next_byte >= 0x80 && next_byte <= 0x9F)
-                code_point = next_byte;
-            if (!code_point)
-                continue;
-
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The {} of a replicated table expands to a string containing the control character U+{}, "
-                "which is not valid in a ZooKeeper path. Rename the table or the database, or {}",
-                toString(what), getHexUIntUppercase(*code_point), howToOverride(what));
-        }
-
-        if (slash_pos == std::string_view::npos)
-            break;
-
-        remaining.remove_prefix(slash_pos + 1);
-    }
-}
-
-}
-
-TableZnodeInfo TableZnodeInfo::resolve(
-    const String & requested_path, const String & requested_replica_name,
-    const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode,
-    const ContextPtr & context, bool validate_substitutions)
+TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const String & requested_replica_name, const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode, const ContextPtr & context)
 {
     bool is_on_cluster = context->isDDLOrOnClusterInternal();
     bool is_replicated_database = context->isDDLOrOnClusterInternal() &&
@@ -140,46 +31,21 @@ TableZnodeInfo TableZnodeInfo::resolve(
     res.full_path = requested_path;
     res.replica_name = requested_replica_name;
 
-    /// Whether {database}/{table} reached this output, accumulated over both expansion passes below:
-    /// the substitution and the resulting illegal component may appear in different passes.
-    bool path_substituted = false;
-    bool replica_substituted = false;
-    auto note_substitution = [](const Macros::MacroExpansionInfo & info, bool & substituted)
-    {
-        substituted = substituted || info.expanded_database || info.expanded_table;
-    };
-
     /// Unfold {database} and {table} macro on table creation, so table can be renamed.
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
-        /// Each output gets its own info: the expansion flags are not reset for a string without macros,
-        /// so a shared one would attribute the path's substitutions to the replica name too.
-        Macros::MacroExpansionInfo path_info;
+        Macros::MacroExpansionInfo info;
         /// NOTE: it's not recursive
-        path_info.expand_special_macros_only = true;
-        path_info.table_id = table_id;
+        info.expand_special_macros_only = true;
+        info.table_id = table_id;
         /// Avoid unfolding {uuid} macro on this step.
         /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
         /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
-        path_info.table_id.uuid = UUIDHelpers::Nil;
-        res.full_path = context->getMacros()->expand(res.full_path, path_info);
-        note_substitution(path_info, path_substituted);
+        info.table_id.uuid = UUIDHelpers::Nil;
+        res.full_path = context->getMacros()->expand(res.full_path, info);
 
-        Macros::MacroExpansionInfo replica_info = path_info;
-        replica_info.level = 0;
-        replica_info.expanded_database = false;
-        replica_info.expanded_table = false;
-        replica_info.expanded_uuid = false;
-        replica_info.expanded_other = false;
-        replica_info.has_unknown = false;
-        res.replica_name = context->getMacros()->expand(res.replica_name, replica_info);
-        note_substitution(replica_info, replica_substituted);
-
-        if (validate_substitutions)
-        {
-            checkSubstitutedValues(ZnodeString::Path, path_info);
-            checkSubstitutedValues(ZnodeString::ReplicaName, replica_info);
-        }
+        info.level = 0;
+        res.replica_name = context->getMacros()->expand(res.replica_name, info);
     }
 
     res.full_path_for_metadata = res.full_path;
@@ -197,32 +63,20 @@ TableZnodeInfo TableZnodeInfo::resolve(
     }
     if (!allow_uuid_macro)
         info.table_id.uuid = UUIDHelpers::Nil;
-    Macros::MacroExpansionInfo replica_info = info;
     res.full_path = context->getMacros()->expand(res.full_path, info);
     bool expanded_uuid_in_path = info.expanded_uuid;
-    note_substitution(info, path_substituted);
 
-    replica_info.table_id.uuid = UUIDHelpers::Nil;
-    res.replica_name = context->getMacros()->expand(res.replica_name, replica_info);
-    note_substitution(replica_info, replica_substituted);
-
-    if (validate_substitutions)
-    {
-        checkSubstitutedValues(ZnodeString::Path, info);
-        checkSubstitutedValues(ZnodeString::ReplicaName, replica_info);
-        if (path_substituted)
-            checkPathComponents(ZnodeString::Path, res.full_path);
-        if (replica_substituted)
-            checkPathComponents(ZnodeString::ReplicaName, res.replica_name);
-    }
+    info.level = 0;
+    info.table_id.uuid = UUIDHelpers::Nil;
+    res.replica_name = context->getMacros()->expand(res.replica_name, info);
 
     /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
     /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
     /// or if one of these macros is recursively expanded from some other macro.
     /// Also do not allow to move table from Atomic to Ordinary database if there's {uuid} macro
-    if (info.expanded_database || info.expanded_table || replica_info.expanded_database || replica_info.expanded_table)
+    if (info.expanded_database || info.expanded_table)
         res.renaming_restrictions = RenamingRestrictions::DO_NOT_ALLOW;
-    else if (info.expanded_uuid || replica_info.expanded_uuid)
+    else if (info.expanded_uuid)
         res.renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
 
     res.zookeeper_name = zkutil::extractZooKeeperName(res.full_path);

@@ -17,7 +17,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        MergeTreeSettingsPtr storage_settings_,
+        const MergeTreeSettingsPtr & storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
@@ -25,13 +25,7 @@ public:
 
     virtual ~IMergedBlockOutputStream() = default;
 
-
-    struct GatheredData
-    {
-        MergeTreeData::DataPart::Checksums checksums;
-        ColumnsSubstreams columns_substreams;
-        ColumnsStatistics statistics;
-    };
+    using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
@@ -41,19 +35,9 @@ public:
         return writer->getIndexGranularity();
     }
 
-    MergeTreeWriterSettings getWriterSettings() const
-    {
-        return writer->getWriterSettings();
-    }
-
     PlainMarksByName releaseCachedMarks()
     {
         return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
-    }
-
-    PlainMarksByName releaseCachedIndexMarks()
-    {
-        return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
     }
 
     size_t getNumberOfOpenStreams() const
@@ -61,15 +45,8 @@ public:
         return writer->getNumberOfOpenStreams();
     }
 
-    /// See IMergeTreeDataPartWriter::getSkipIndicesPackedWriter.
-    class PackedFilesWriter * getSkipIndicesPackedWriter()
-    {
-        return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
-    }
-
 protected:
-    /// Remove all columns in @empty_columns, except that one column is always kept, because a
-    /// part with no columns cannot be loaded. Also, clears checksums
+    /// Remove all columns in @empty_columns. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
@@ -87,8 +64,7 @@ protected:
     MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
-    SerializationInfo::Settings info_settings;
-    SerializationInfoByName new_serialization_infos{{}};
+    SerializationInfoByName new_serialization_infos;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

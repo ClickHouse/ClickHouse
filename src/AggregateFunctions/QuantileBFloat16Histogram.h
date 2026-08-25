@@ -119,7 +119,7 @@ private:
     {
         if constexpr (!std::is_floating_point_v<T>)
         {
-            if (x >= static_cast<Float32>(std::numeric_limits<T>::max())) [[unlikely]]
+            if (x >= std::numeric_limits<T>::max()) [[unlikely]]
                 return std::numeric_limits<T>::max();
             if (x <= std::numeric_limits<T>::min()) [[unlikely]]
                 return std::numeric_limits<T>::min();
@@ -142,7 +142,7 @@ private:
         Pair * arr_it = array;
         for (const auto & pair : data)
         {
-            sum_weight += static_cast<Float64>(pair.getMapped());
+            sum_weight += pair.getMapped();
             *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
@@ -154,7 +154,7 @@ private:
 
         for (const Pair * p = array; p != (array + size); ++p)
         {
-            accumulated += static_cast<Float64>(p->second);
+            accumulated += p->second;
 
             if (accumulated >= threshold)
                 return safeCast<T>(p->first);
@@ -183,7 +183,7 @@ private:
         Pair * arr_it = array;
         for (const auto & pair : data)
         {
-            sum_weight += static_cast<Float64>(pair.getMapped());
+            sum_weight += pair.getMapped();
             *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
@@ -196,7 +196,7 @@ private:
 
         for (const Pair * p = array; p != (array + size); ++p)
         {
-            accumulated += static_cast<Float64>(p->second);
+            accumulated += p->second;
 
             while (accumulated >= threshold)
             {

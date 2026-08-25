@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <thread>
 #include <set>
-#include <vector>
 
 namespace
 {
@@ -24,7 +23,7 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
     std::ifstream infile(filename);
     if (!infile.is_open())
         return default_value;
-    int idata = 0;
+    int idata;
     if (infile >> idata)
         return idata;
     return default_value;
@@ -52,7 +51,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
             if (cpu_max_file.is_open())
             {
                 std::string cpu_limit_str;
-                float cpu_period = 0;
+                float cpu_period;
                 cpu_max_file >> cpu_limit_str >> cpu_period;
                 if (cpu_limit_str != "max" && cpu_period != 0)
                 {
@@ -159,7 +158,7 @@ try
     }
     return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<unsigned>(core_entries.size());
 }
-catch (const std::exception &)
+catch (...)
 {
     return std::thread::hardware_concurrency(); /// parsing error
 }
