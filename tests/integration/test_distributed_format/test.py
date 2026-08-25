@@ -385,7 +385,7 @@ def test_selected_rows_not_double_counted(started_cluster, cluster):
     # goes through a copy inside `user_files`. Both names carry the cluster to keep the two
     # parametrized runs independent.
     file_name = f"distr_counters_{cluster}.bin"
-    log_comment = f"116301_distfmt_{cluster}"
+    query_id = f"116301_distfmt_{cluster}"
     node.exec_in_container(
         [
             "bash",
@@ -398,9 +398,9 @@ def test_selected_rows_not_double_counted(started_cluster, cluster):
 
     node.query(
         f"select * from file('{file_name}', 'Distributed') format Null",
+        query_id=query_id,
         settings={
-            "log_comment": log_comment,
-            # A fuzzed re-execution inherits `log_comment` and would be read back below.
+            # The server-side AST fuzzer would re-run this read as extra queries.
             "ast_fuzzer_runs": "0",
         },
     )
@@ -411,7 +411,8 @@ def test_selected_rows_not_double_counted(started_cluster, cluster):
         select read_rows, read_bytes,
                ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
         from system.query_log
-        where type = 'QueryFinish' and log_comment = '{log_comment}'
+        where query_id = '{query_id}' and type = 'QueryFinish'
+        order by event_time_microseconds desc limit 1
         """
     ).split()
 
