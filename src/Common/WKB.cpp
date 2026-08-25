@@ -3,6 +3,7 @@
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -138,6 +139,10 @@ MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::en
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
 {
+    /// Multi* geometries contain nested geometries, and the nesting is not bounded by the element
+    /// count checks: every level can hold a single element. Guard the recursion against a stack overflow.
+    checkStackSize();
+
     char little_endian;
     if (!in_buffer.read(little_endian) || (little_endian != 0 && little_endian != 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
