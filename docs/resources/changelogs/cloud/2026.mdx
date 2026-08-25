@@ -15,15 +15,15 @@ In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibil
 
 <Update label="August 24, 2026">
 
-This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, and completes Private Service Connect with cross-region connectivity.
+This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, and adds Global Access support for Private Service Connect.
 
 ### New AWS regions: Taipei and Malaysia {#new-aws-regions-taipei-and-malaysia}
 
 ClickHouse Cloud is now available in AWS Taipei (`ap-east-2`) and AWS Malaysia (`ap-southeast-5`). Both are set up as Private Regions with ClickPipes support. See the [supported regions documentation](/cloud/reference/supported-regions) and [Private Region considerations](/cloud/reference/supported-regions#private-regions) for details.
 
-### Private Service Connect adds cross-region connectivity {#private-service-connect-adds-cross-region-connectivity}
+### Private Service Connect supports Global Access {#private-service-connect-supports-global-access}
 
-Private Service Connect (PSC) on GCP now supports cross-region connectivity via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). This lets you connect to private endpoints from GCP regions not natively supported in ClickHouse Cloud, such as `asia-northeast3` (Seoul).
+Private Service Connect (PSC) on GCP now supports Global Access. When enabled, clients in other GCP regions within the same VPC can connect to the PSC endpoint, including from regions not natively supported in ClickHouse Cloud, such as `asia-northeast3` (Seoul). The ClickHouse Cloud service and PSC endpoint must remain in the same GCP region.
 
 </Update>
 
