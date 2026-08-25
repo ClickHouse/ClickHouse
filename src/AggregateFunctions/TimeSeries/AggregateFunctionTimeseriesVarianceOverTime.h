@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -109,9 +108,9 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         }
     };
 
-    /// Sliding aggregator: keeps the running `{count, mean, m2}` combine over the window in a `SlidingSum` (two-stacks
-    /// or recompute, chosen by `createAggregator`) and derives the (population) variance or standard deviation from
-    /// it at each grid point.
+    /// Sliding aggregator: keeps the running `{count, mean, m2}` combine over the window in a `SlidingSum`
+    /// (two-stacks or recompute, chosen by the base from the thresholds below) and derives the (population)
+    /// variance or standard deviation from it at each grid point.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
@@ -165,6 +164,17 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
     /// Bumped from 1: `Summary`'s serialized layout changed meaning (raw `{sum, sum2}` -> Welford/Chan
     /// `{mean, m2}`), so old serialized states must not be misread as the new format.
     static constexpr UInt16 FORMAT_VERSION = 2;
+
+    /// `AggregateFunctionTimeseriesBase::getStackSizeForTwoStacks` switches to the two-stack queue once the
+    /// average number of populated buckets in a window reaches this value; below it, recomputing the window
+    /// each grid point is cheaper. Mirrors the threshold tuned for
+    /// `AggregateFunctionTimeseriesLinearRegression` (see its `timeseries_to_grid_two_stack_vs_recompute`
+    /// derivation) - our `Summary::merge` is exactly as cheap as regression's, so the same crossover applies.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+
+    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
+    /// `AggregateFunctionTimeseriesLinearRegression` for the full rationale).
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
 };
 
 
@@ -182,26 +192,9 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesVarianceOverTime, Traits>;
     using Base::Base;
 
-    /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
-    /// window reaches this value; below it, recomputing the window each grid point is cheaper. Mirrors the
-    /// threshold tuned for `AggregateFunctionTimeseriesLinearRegression` (see its `timeseries_to_grid_two_stack_vs_recompute`
-    /// derivation) - our `Summary::merge` is exactly as cheap as regression's, so the same crossover applies.
-    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
-
-    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
-    /// `AggregateFunctionTimeseriesLinearRegression` for the full rationale).
-    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
-
-    typename Traits::Aggregator createAggregator(size_t num_populated_buckets) const
+    typename Traits::Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        const size_t avg_buckets_in_window = Base::bucket_count
-            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
-                / static_cast<double>(Base::bucket_count))
-            : 0;
-        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
-            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
-        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
-        return typename Traits::Aggregator{stack_size};
+        return typename Traits::Aggregator{stack_size_for_two_stacks};
     }
 
     static constexpr bool DateTime64Supported = true;
