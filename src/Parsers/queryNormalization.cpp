@@ -223,8 +223,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
-/// Whether the elements of `list`, which is a child of `parent`, can be reordered
-/// without changing what the query does.
+/// Can the elements of `list`, a child of `parent`, be reordered without changing what the query does?
 bool isUnorderedList(const IAST & parent, const IAST & list)
 {
     if (const auto * select = parent.as<ASTSelectQuery>())
@@ -232,7 +231,7 @@ bool isUnorderedList(const IAST & parent, const IAST & list)
         if (select->select().get() == &list)
             return true;
 
-        /// `ROLLUP` gives a meaning to the order of the keys, `CUBE` and `GROUPING SETS` do not.
+        /// `ROLLUP` cares about the order of the keys, `CUBE` and `GROUPING SETS` do not.
         if (select->groupBy().get() == &list)
             return !select->group_by_with_rollup;
 
@@ -245,7 +244,7 @@ bool isUnorderedList(const IAST & parent, const IAST & list)
     return false;
 }
 
-/// A non-empty list where every element is a literal, such as the right hand side of `IN`.
+/// Such as the right hand side of `IN`.
 bool isListOfLiterals(const IAST & ast)
 {
     if (!ast.as<ASTExpressionList>() || ast.children.empty())
@@ -264,14 +263,14 @@ IASTHash hashCanonical(const IAST & ast, bool sort_children)
 
     SipHash hash;
 
-    /// Values of literals are erased, like in `normalizedQueryHash`.
+    /// Erase the value, like `normalizedQueryHash` does.
     if (ast.as<ASTLiteral>())
     {
         hash.update("\x00", 1);
         return getSipHash128AsPair(hash);
     }
 
-    /// A list of literals is collapsed, so that `IN (1, 2)` and `IN (1, 2, 3)` match.
+    /// Collapse it, so that `IN (1, 2)` and `IN (1, 2, 3)` match.
     if (isListOfLiterals(ast))
     {
         hash.update("\x00", 1);

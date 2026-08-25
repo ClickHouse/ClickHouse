@@ -12,9 +12,7 @@
 #include <Parsers/queryNormalization.h>
 
 
-/** Like `normalizedQueryHash`, but works on the parsed query and ignores the order of elements in
-  * lists where the order does not change what the query does. See `canonicalQueryHash`.
-  */
+/// `normalizedQueryHash` that does not care about the order of a SELECT list. See `canonicalQueryHash`.
 
 namespace DB
 {
