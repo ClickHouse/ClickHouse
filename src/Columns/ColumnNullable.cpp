@@ -337,8 +337,14 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
         return;
     }
 
+    auto & null_map = getNullMapData();
+    const size_t new_size = null_map.size() + length;
+
+    /// Reserve before modifying the nested column so extending the null map cannot fail after a
+    /// successful nested insertion.
+    null_map.reserve(new_size);
     getNestedColumn().insertManyFrom(src, position, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length);
+    null_map.resize_fill(new_size);
 }
 
 void ColumnNullable::popBack(size_t n)

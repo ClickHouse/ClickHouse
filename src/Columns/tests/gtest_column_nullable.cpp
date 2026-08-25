@@ -68,12 +68,17 @@ TEST(ColumnNullable, InsertManyFromNotNullableSupportsStringColumns)
 TEST(ColumnNullable, InsertManyFromNotNullableWithZeroLengthIsNoOp)
 {
     auto src = ColumnUInt64::create();
+    src->insert(10);
     auto nested = ColumnUInt64::create();
+    nested->insert(7);
     auto null_map = ColumnUInt8::create();
+    null_map->insert(1);
     auto dst = ColumnNullable::create(std::move(nested), std::move(null_map));
 
     dst->insertManyFromNotNullable(*src, std::numeric_limits<size_t>::max(), 0);
 
-    EXPECT_EQ(dst->size(), 0);
+    ASSERT_EQ(dst->size(), 1);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(0), 7);
+    EXPECT_EQ(dst->getNullMapData()[0], 1);
     dst->checkConsistency();
 }
