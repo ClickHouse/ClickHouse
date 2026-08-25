@@ -674,7 +674,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -721,7 +721,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
             decimal_type->set("type", "fixed");
             decimal_type->set("size", icebergDecimalRequiredBytes(precision));
-            decimal_type->set("name", fmt::format("decimal_{}_{}", precision, scale));
+            /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
+            /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
+            decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
             decimal_type->set("logicalType", "decimal");
             decimal_type->set("precision", precision);
             decimal_type->set("scale", scale);
@@ -735,7 +737,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
         }
         default:
