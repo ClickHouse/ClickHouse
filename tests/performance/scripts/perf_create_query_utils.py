@@ -19,14 +19,102 @@ WHITESPACE = " \t\r\n\f\v"
 
 
 def is_word_at(text, pos, word):
-    """Case-insensitive word-boundary match of `word` at `pos`."""
+    """Case-insensitive word-boundary match of `word` at `pos`.
+
+    A `.` immediately before the match makes it the trailing part of a
+    qualified name (`system.settings`, `db.engine`), never a clause keyword,
+    so it is rejected as well.
+    """
     wlen = len(word)
     if text[pos : pos + wlen].upper() != word:
         return False
-    if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+    if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] in "_."):
         return False
     end = pos + wlen
     return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+
+def skip_identifier(text, pos):
+    """Advance `pos` past one identifier: a backtick- or double-quote-quoted
+    one, or a bare run of identifier characters. Return `pos` unchanged when
+    there is no identifier at `pos`."""
+    length = len(text)
+    if pos >= length:
+        return pos
+    quote = text[pos]
+    if quote in "`\"":
+        pos += 1
+        while pos < length:
+            if text[pos] == "\\" and pos + 1 < length:
+                pos += 2
+                continue
+            if text[pos] == quote:
+                # A doubled quote inside a quoted identifier is an escape.
+                if pos + 1 < length and text[pos + 1] == quote:
+                    pos += 2
+                    continue
+                return pos + 1
+            pos += 1
+        return pos
+    start = pos
+    while pos < length and (text[pos].isalnum() or text[pos] in "_$"):
+        pos += 1
+    return pos if pos > start else start
+
+
+def skip_table_carrier(text, pos):
+    """Advance `pos` past a `[db.]table` name or a `table_function(...)` call.
+
+    Used after a top-level `AS` in `CREATE TABLE dst AS src ...` /
+    `... CLONE AS src`: the source name is an identifier, not syntax, so the
+    clause scan must resume *after* it. Otherwise a perfectly valid
+    `CREATE TABLE dst AS system.settings ENGINE = MergeTree ... SETTINGS ...`
+    would take the `settings` of `system.settings` for the table's own
+    `SETTINGS` clause.
+    """
+    length = len(text)
+    pos = skip_identifier(text, pos)
+    # An optional `db.` qualifier -- and `db . tbl` is valid too.
+    j = skip_whitespace_and_comments(text, pos)
+    while j < length and text[j] == ".":
+        j = skip_whitespace_and_comments(text, j + 1)
+        pos = skip_identifier(text, j)
+        j = skip_whitespace_and_comments(text, pos)
+    # A table function carries an argument list; skip it as a balanced group,
+    # because it may contain anything, including the word `SETTINGS`.
+    if j < length and text[j] == "(":
+        depth = 0
+        quote = None
+        while j < length:
+            c = text[j]
+            if quote is not None:
+                if c == "\\" and j + 1 < length:
+                    j += 2
+                    continue
+                if c == quote:
+                    if quote == "'" and j + 1 < length and text[j + 1] == "'":
+                        j += 2
+                        continue
+                    quote = None
+                j += 1
+                continue
+            after_comment = comment_end(text, j)
+            if after_comment is not None:
+                j = after_comment
+                continue
+            if c in "'\"`":
+                quote = c
+                j += 1
+                continue
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+            j += 1
+        return length
+    return pos
 
 
 def comment_end(text, pos):
@@ -307,8 +395,11 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                         return -1
                     # `AS [db.]source_table` / `AS table_function(...)`: the
                     # storage clause (with the table's own SETTINGS) may still
-                    # follow, so keep scanning from the source name.
-                    i = j
+                    # follow, so keep scanning -- but only after the whole
+                    # source-table / table-function carrier, whose identifiers
+                    # are not clause keywords even when they read like one
+                    # (`AS system.settings`, `AS settings`).
+                    i = skip_table_carrier(text, j)
                     continue
             i += 1
         return -1

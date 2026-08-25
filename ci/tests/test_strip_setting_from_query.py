@@ -320,6 +320,46 @@ def test_no_table_settings_query_settings_after_table_comment_with_as_select_is_
     assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
 
 
+def test_source_table_named_like_a_clause_keyword_is_not_syntax():
+    # `AS [db.]source_table` carries an identifier, not syntax: the scan must
+    # resume after the whole carrier. Otherwise the `settings` of
+    # `system.settings` is taken for the table's own SETTINGS clause and the
+    # rewrite mangles a perfectly valid CREATE TABLE.
+    for source in ("system.settings", "db.settings", "settings", "system . settings", "`system`.`settings`"):
+        query = f"CREATE TABLE dst AS {source} ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+        expected = f"CREATE TABLE dst AS {source} ENGINE = MergeTree ORDER BY tuple()"
+        assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_source_table_named_like_a_clause_keyword_keeps_an_enabled_value():
+    # The same shape must still fail fast (query unchanged) when the pinned
+    # value is not baseline-equivalent.
+    query = f"CREATE TABLE dst AS system.settings ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+
+
+def test_source_table_named_like_a_clause_keyword_after_clone():
+    # `CLONE AS src` goes through the same top-level `AS`.
+    query = f"CREATE TABLE dst CLONE AS db.settings ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0, index_granularity = 8192"
+    expected = "CREATE TABLE dst CLONE AS db.settings ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_table_function_arguments_are_skipped_after_as():
+    # A table function carries an argument list which may contain anything,
+    # including the word `SETTINGS` inside a string literal.
+    query = f"CREATE TABLE dst AS s3('http://x/y', 'CSV', 'settings String') ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    expected = "CREATE TABLE dst AS s3('http://x/y', 'CSV', 'settings String') ENGINE = MergeTree ORDER BY tuple()"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_engine_detection_ignores_a_qualified_source_name():
+    # The same qualified-name boundary applies to the engine scan: the
+    # `engine` of `db.engine` is part of the source name, not the keyword.
+    query = "CREATE TABLE dst AS db.engine ENGINE = ReplacingMergeTree ORDER BY tuple()"
+    assert create_query_engine(query) == "ReplacingMergeTree"
+
+
 def test_table_settings_before_table_comment_is_still_stripped():
     # The `COMMENT` boundary must only apply *before* a table-level SETTINGS
     # clause: when the table has its own SETTINGS followed by a table comment,
