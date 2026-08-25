@@ -40,6 +40,10 @@ struct SetAndKey
     String key;
     SetPtr set;
     StoragePtr external_table;
+    /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
+    /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
+    /// that must know whether the set fill also feeds an external table.
+    bool external_table_expected = false;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -205,6 +209,7 @@ public:
 
     void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
+    void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
