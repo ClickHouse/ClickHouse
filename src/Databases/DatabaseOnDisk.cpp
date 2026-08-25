@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -152,6 +153,19 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
+
+            if (ast_create_query.columns_list->constraints)
+            {
+                /// Metadata written before the table names of the constraint expressions were
+                /// qualified at CREATE time can contain unqualified names, and the analysis of the
+                /// constraints below executes their scalar subqueries. Such names have to resolve
+                /// against the database owning the table — the same choice as the loading-dependency
+                /// graph makes in `TablesLoader::buildDependencyGraph` — and not against the current
+                /// database of the loading context, which is unrelated to this table.
+                AddDefaultDatabaseVisitor visitor(context, database_name);
+                visitor.visitTableExpressions(*ast_create_query.columns_list->constraints);
+            }
+
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }
