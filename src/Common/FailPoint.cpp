@@ -47,6 +47,8 @@ static struct InitFiu
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
+    REGULAR(file_checker_update_and_save_fail_reading_sizes) \
+    REGULAR(file_checker_update_and_save_fail_persisting) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
@@ -80,6 +82,8 @@ static struct InitFiu
     ONCE(azure_inject_auth_failure_on_request_once) \
     REGULAR(azure_inject_poco_timeout) \
     ONCE(azure_inject_poco_timeout_once) \
+    REGULAR(azure_inject_poco_network_error) \
+    ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
@@ -285,6 +289,7 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    PAUSEABLE_ONCE(rmt_pause_before_commit_local_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
