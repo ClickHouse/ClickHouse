@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <fmt/ranges.h>
 #include <algorithm>
+#include <numeric>
 
 namespace DB
 {
@@ -12,18 +13,26 @@ void ExpressionProperties::setDisjointStreams(DistributionColumns columns)
     chassert(!columns.empty());
     /// Order the sets by their full sorted name lists: comparing only one name per set would
     /// leave sets that share it in an unspecified order, and the same disjointness written
-    /// in a different set order would then compare and hash unequal.
-    auto sorted_names = [](const NameSet & column_set)
+    /// in a different set order would then compare and hash unequal. The sort permutes
+    /// indexes over precomputed keys; sorting the sets directly would let the comparator
+    /// read a set that `std::sort` has moved out.
+    std::vector<Names> sort_keys(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
     {
-        chassert(!column_set.empty());
-        Names names(column_set.begin(), column_set.end());
-        std::sort(names.begin(), names.end());
-        return names;
-    };
-    std::sort(columns.begin(), columns.end(),
-        [&](const NameSet & left, const NameSet & right) { return sorted_names(left) < sorted_names(right); });
+        chassert(!columns[i].empty());
+        sort_keys[i].assign(columns[i].begin(), columns[i].end());
+        std::sort(sort_keys[i].begin(), sort_keys[i].end());
+    }
+    std::vector<size_t> order(columns.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(),
+        [&](size_t left, size_t right) { return sort_keys[left] < sort_keys[right]; });
+
     stream_layout = StreamLayout::Disjoint;
-    stream_disjoint_columns = std::move(columns);
+    stream_disjoint_columns.clear();
+    stream_disjoint_columns.reserve(columns.size());
+    for (size_t i : order)
+        stream_disjoint_columns.push_back(std::move(columns[i]));
 }
 
 bool ExpressionProperties::isStreamLayoutSatisfiedBy(const ExpressionProperties & required, const ExpressionProperties & existing)
