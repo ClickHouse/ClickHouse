@@ -52,9 +52,9 @@ using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const 
 
 struct TextIndexReadInfo
 {
-    const MergeTreeIndexWithCondition * index;
-    bool is_materialized;
-    bool is_fully_materialized;
+    const MergeTreeIndexWithCondition * index = nullptr;
+    bool is_materialized = false;
+    bool is_fully_materialized = false;
     /// False for an index granule analysis did not select: it has no read tasks, so it can only supply the
     /// tokenizer for the row-level rewrite (createReadTasksForTextIndex rejects an unanalyzed index).
     bool can_direct_read = true;
