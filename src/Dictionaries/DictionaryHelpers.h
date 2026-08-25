@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
+#include <IO/ReadBuffer.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -67,8 +68,8 @@ private:
 
     The main idea is that during fetch we create all columns, but fill only columns that client requested.
 
-    We need to create other columns during fetch, because in case of serialized storage we can skip
-    unnecessary columns serialized in cache with skipSerializedInArena method.
+    We need to create other columns during fetch, because in case of serialized storage the serialized
+    values of unnecessary columns are skipped using the header of serialized sizes that prefixes them.
 
     When result is fetched from the storage client of storage can filterOnlyNecessaryColumns
     and get only columns that match attributes_names_to_fetch.
@@ -228,14 +229,18 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
     }
 }
 
-/// Deserialize column value and insert it in columns.
-/// Skip unnecessary columns that were not requested from deserialization.
+/// Deserialize column values and insert them into columns.
+/// The values are prefixed with a header of their serialized sizes,
+/// which is used to skip over columns that were not requested.
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     ReadBuffer & in)
 {
     size_t columns_size = columns.size();
+
+    VectorWithMemoryTracking<UInt32> serialized_sizes(columns_size);
+    in.readStrict(reinterpret_cast<char *>(serialized_sizes.data()), columns_size * sizeof(UInt32));
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
@@ -244,7 +249,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
             column->deserializeAndInsertFromArena(in, nullptr);
         else
-            column->skipSerializedInArena(in);
+            in.ignore(serialized_sizes[column_index]);
     }
 }
 
