@@ -305,9 +305,9 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 -- LowCardinality keys cannot prune the hash table, but the heap still runs in
 -- skip-only mode and the synthesized sort discards evicted stragglers; the
 -- query must stay within the memory limit and external aggregation must not
--- be force-disabled (~660MB working set without spilling).  The limits are
--- per-query, not session `SET`s: the verification query below reads
--- `system.query_log`, whose cost tracks the whole suite's log volume.
+-- be force-disabled (~660MB working set without spilling).
+SET max_memory_usage = 300000000;
+SET max_bytes_before_external_group_by = 50000000;
 
 SELECT 'LowCardinality key under a memory limit (skip-only heap + spill)';
 SELECT count() FROM
@@ -316,7 +316,7 @@ SELECT count() FROM
     FROM (SELECT toLowCardinality(toString(number % 3000000)) AS k FROM numbers(9000000))
     GROUP BY k
     LIMIT 5
-) SETTINGS log_comment = '04500_lowcard_spill', max_memory_usage = 300000000, max_bytes_before_external_group_by = 50000000;
+) SETTINGS log_comment = '04500_lowcard_spill';
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -20,7 +20,6 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 class MergeTreeIndexGranularity;
 struct MergeTreePartInfo;
-struct MergeTreePartition;
 struct MergeTreeDataPartChecksums;
 struct MergeTreeIndexGranularityInfo;
 
@@ -59,8 +58,6 @@ public:
     virtual const String & getPartName() const = 0;
 
     virtual const MergeTreePartInfo & getPartInfo() const = 0;
-
-    virtual const MergeTreePartition & getPartition() const = 0;
 
     virtual Int64 getMinDataVersion() const = 0;
 

@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1072022",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1066254",
       "email": "support@clickhouse.com"
     }
   },
@@ -7205,7 +7205,7 @@
     "/v1/organizations/{organizationId}/activeBalances": {
       "get": {
         "summary": "Get organization active prepaid balances",
-        "description": "DEPRECATED. Use the `/v1/organizations/{organizationId}/creditBalances` endpoint instead. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
         "operationId": "activeBalancesGet",
         "parameters": [
           {
@@ -7260,108 +7260,6 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/ActiveBalances"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "number",
-                      "description": "HTTP status code.",
-                      "example": 400
-                    },
-                    "error": {
-                      "type": "string",
-                      "description": "Detailed error description."
-                    },
-                    "requestId": {
-                      "type": "string",
-                      "description": "Unique id assigned to every request. UUIDv4",
-                      "format": "uuid"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "integer",
-                      "description": "HTTP status code.",
-                      "example": 500
-                    },
-                    "error": {
-                      "type": "string",
-                      "description": "Detailed error description."
-                    },
-                    "requestId": {
-                      "type": "string",
-                      "description": "Unique id assigned to every request. UUIDv4",
-                      "format": "uuid"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true,
-        "tags": [
-          "Billing"
-        ]
-      }
-    },
-    "/v1/organizations/{organizationId}/creditBalances": {
-      "get": {
-        "summary": "Get organization active credit balances",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the active credit balances for the organization, each with its own balance ID, type and remaining credits, along with the total remaining credits across all of them. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first. The list is always present and is empty when the organization has no active balances.",
-        "operationId": "creditBalancesGet",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organizationId",
-            "description": "ID of the requested organization.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "number",
-                      "description": "HTTP status code.",
-                      "example": 200
-                    },
-                    "requestId": {
-                      "type": "string",
-                      "description": "Unique id assigned to every request. UUIDv4",
-                      "format": "uuid"
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/CreditBalances"
                     }
                   }
                 }
@@ -31398,60 +31296,6 @@
             "description": "List of active prepaid balances for the organization.",
             "items": {
               "$ref": "#/components/schemas/ActiveBalance"
-            }
-          }
-        }
-      },
-      "CreditBalance": {
-        "properties": {
-          "id": {
-            "description": "Unique ID of the balance.",
-            "type": "string",
-            "format": "uuid"
-          },
-          "type": {
-            "description": "Type of the balance.",
-            "type": "string",
-            "enum": [
-              "prepaid",
-              "trial"
-            ]
-          },
-          "remainingCredits": {
-            "description": "Remaining credits available on this balance, in ClickHouse Credits (CHCs).",
-            "type": "number"
-          },
-          "totalAmount": {
-            "description": "Total credits granted on this balance, in ClickHouse Credits (CHCs).",
-            "type": "number"
-          },
-          "amountSpent": {
-            "description": "Credits spent from this balance, in ClickHouse Credits (CHCs).",
-            "type": "number"
-          },
-          "startDate": {
-            "description": "Date the balance became active. ISO-8601, based on the UTC timezone.",
-            "type": "string",
-            "format": "date-time"
-          },
-          "expirationDate": {
-            "description": "Date the balance expires. ISO-8601, based on the UTC timezone.",
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "CreditBalances": {
-        "properties": {
-          "totalRemainingCredits": {
-            "description": "Total remaining credits across all active balances, in ClickHouse Credits (CHCs).",
-            "type": "number"
-          },
-          "balances": {
-            "type": "array",
-            "description": "List of active balances for the organization. Empty when the organization has none.",
-            "items": {
-              "$ref": "#/components/schemas/CreditBalance"
             }
           }
         }

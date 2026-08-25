@@ -23,7 +23,6 @@ namespace DB
   * - syntax (how the component is referenced in a query);
   * - examples (queries that can be referenced from the text by names);
   * - the version when the component was introduced;
-  * - the name of the enclosing component (e.g. "SELECT" for a "WHERE" statement description)
   * - a list of related components.
   *
   * The list of related components is documentation cross-reference metadata: it may name components
@@ -54,16 +53,14 @@ struct Documentation
     using Examples = std::vector<Example>;
 
     using IntroducedIn = VersionNumber;
-    using Parent = String;
-    using Related = std::vector<String>;
-
     static constexpr VersionNumber VERSION_UNKNOWN;
+
+    using Related = std::vector<String>;
 
     Description description;                       /// E.g. "The most universal and functional table engine for high-load tasks."
     Syntax syntax {};                              /// E.g. "ENGINE = MergeTree() ORDER BY expr"
     Examples examples {};                          ///
     IntroducedIn introduced_in {VERSION_UNKNOWN};  /// E.g. {25, 5}
-    Parent parent {};                              /// E.g. "SELECT" for the `WHERE` clause.
     Related related {};                            /// E.g. {"ReplicatedMergeTree"}
 
     /// The source file where this documentation is defined. Captured automatically at the construction site;

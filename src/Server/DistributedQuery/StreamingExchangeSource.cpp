@@ -46,11 +46,6 @@ void StreamingExchangeSource::onStart()
     /// Initialize packet receive state
     packet_receive_state = ReceivingHeader;
     current_packet_header_bytes_filled = 0;
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    /// Register the socket so the waiting source wakes on incoming data or peer close.
-    wait_events_epoll.add(socket->sockfd());
-#endif
 }
 
 void StreamingExchangeSource::connect()
@@ -182,27 +177,6 @@ int StreamingExchangeSource::schedule()
     return socket->sockfd();
 }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-std::tuple<int, uint32_t, Int64> StreamingExchangeSource::scheduleForEvent()
-{
-    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, socket->sockfd());
-    /// `wait_events_epoll` becomes readable on socket data and on the output-update wakeup, so
-    /// a source whose peer sends nothing still notices that its output port was closed and
-    /// sends `NoMoreDataNeeded` upstream.
-    /// No timeout: socket events and port updates each wake the source explicitly; a timeout
-    /// would only hide a missed wakeup as a delay instead of a visible hang.
-    return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
-}
-#endif
-
-void StreamingExchangeSource::onUpdatePorts()
-{
-    /// Called by the executor on every port update while the source is not idle, possibly from
-    /// another thread. An extra wake is harmless: `tryGenerate` drains it and `prepare`
-    /// re-checks everything.
-    output_update_wakeup.notify();
-}
-
 void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
     if (!out)
@@ -265,9 +239,6 @@ void StreamingExchangeSource::tryReadBody()
 
 std::optional<Chunk> StreamingExchangeSource::tryGenerate()
 {
-    /// Drain the wakeup pipe; otherwise it would stay readable and wake the source again at once.
-    output_update_wakeup.drain();
-
     if (!was_on_start_called)
     {
         was_on_start_called = true;

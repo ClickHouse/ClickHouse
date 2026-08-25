@@ -31,7 +31,7 @@ from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, PipelineUtilization, StorageUsage
+from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
 
@@ -621,23 +621,6 @@ class Runner:
         return "success"
 
     @staticmethod
-    def _pipeline_job_counts(job_results) -> dict:
-        """Break the pipeline's jobs down by status for CIDB attributes.
-
-        ``run`` counts jobs that actually ran (neither skipped nor dropped).
-        """
-        return {
-            "total": len(job_results),
-            "run": sum(
-                1 for j in job_results if not (j.is_skipped() or j.is_dropped())
-            ),
-            "success": sum(1 for j in job_results if j.is_success()),
-            "failed": sum(1 for j in job_results if j.is_failure() or j.is_error()),
-            "skipped": sum(1 for j in job_results if j.is_skipped()),
-            "dropped": sum(1 for j in job_results if j.is_dropped()),
-        }
-
-    @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
         """Whether a providing artifact that matched no file may be skipped.
 
@@ -898,25 +881,23 @@ class Runner:
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when the workflow Result
-                # has up-to-date storage/compute/pipeline-utilization data. All
-                # three are written as a single workflow-level summary row into
-                # the `attributes` JSON column.
-                ci_db.insert_workflow_usage(
-                    pipeline_utilization=PipelineUtilization.from_dict(
-                        workflow_result.ext.get("pipeline_utilization", {})
-                    ),
-                    storage_usage=StorageUsage.from_dict(
-                        workflow_result.ext.get("storage_usage", {})
-                    ),
-                    compute_usage=ComputeUsage.from_dict(
-                        workflow_result.ext.get("compute_usage", {})
-                    ),
-                    job_counts=self._pipeline_job_counts(workflow_result.results),
-                    start_time=workflow_result.start_time,
-                    duration_s=workflow_result.update_duration().duration,
-                    workflow_status=workflow_result.status,
+                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
                 )
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
+                )
+                if workflow_storage_usage:
+                    print(
+                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_storage_usage(workflow_storage_usage)
+                if workflow_compute_usage:
+                    print(
+                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()

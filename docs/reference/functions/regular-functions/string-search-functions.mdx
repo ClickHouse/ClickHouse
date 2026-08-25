@@ -480,7 +480,7 @@ hasAllTokens(input, needles[, tokenizer])
 
 - `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -708,7 +708,7 @@ hasAnyTokens(input, needles[, tokenizer])
 
 - `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
-- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
+- `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -895,8 +895,7 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
-Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, or `icu`.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
@@ -1502,7 +1501,7 @@ The pattern is not anchored. To match the entire string, anchor the pattern your
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 
-Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (PostgreSQL-style).
+Alternative operator syntax: `haystack REGEXP pattern`.
     
 
 **Syntax**
@@ -1558,47 +1557,6 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
 │                      1 │                        0 │
 └────────────────────────┴──────────────────────────┘
-```
-
-## matchCaseInsensitive {#matchCaseInsensitive}
-
-Introduced in: v26.8.0
-
-Similar to [`match`](#match) but matches case-insensitively.
-
-This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
-
-Alternative operator syntax: `haystack ~* pattern` (PostgreSQL-style).
-    
-
-**Syntax**
-
-```sql
-matchCaseInsensitive(haystack, pattern)
--- haystack ~* pattern
-```
-
-**Arguments**
-
-- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
-- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-Returns `1` if the pattern matches case-insensitively, `0` otherwise. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
-```
-
-```response title=Response
-┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
-│                        1 │                          1 │
-└──────────────────────────┴────────────────────────────┘
 ```
 
 ## multiFuzzyMatchAllIndices {#multiFuzzyMatchAllIndices}
@@ -2857,88 +2815,6 @@ SELECT notLike('ClickHouse', '%SQL%');
 ┌─notLike('Cli⋯', '%SQL%')─┐
 │                        1 │
 └──────────────────────────┘
-```
-
-## notMatch {#notMatch}
-
-Introduced in: v26.8.0
-
-Similar to [`match`](#match) but negates the result: checks that the string does not match the regular expression pattern.
-
-This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
-
-Alternative operator syntax: `haystack !~ pattern` (PostgreSQL-style).
-    
-
-**Syntax**
-
-```sql
-notMatch(haystack, pattern)
--- haystack !~ pattern
-```
-
-**Arguments**
-
-- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
-- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-Returns `0` if the pattern matches, `1` otherwise. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
-```
-
-```response title=Response
-┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
-│                        0 │                       1 │
-└──────────────────────────┴─────────────────────────┘
-```
-
-## notMatchCaseInsensitive {#notMatchCaseInsensitive}
-
-Introduced in: v26.8.0
-
-Similar to [`matchCaseInsensitive`](#matchCaseInsensitive) but negates the result: checks that the string does not match the regular expression pattern case-insensitively.
-
-This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
-
-Alternative operator syntax: `haystack !~* pattern` (PostgreSQL-style).
-    
-
-**Syntax**
-
-```sql
-notMatchCaseInsensitive(haystack, pattern)
--- haystack !~* pattern
-```
-
-**Arguments**
-
-- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
-- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-Returns `0` if the pattern matches case-insensitively, `1` otherwise. [`UInt8`](/reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title=Query
-SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
-```
-
-```response title=Response
-┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
-│                        0 │                       1 │
-└──────────────────────────┴─────────────────────────┘
 ```
 
 ## position {#position}

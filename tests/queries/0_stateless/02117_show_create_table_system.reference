@@ -128,7 +128,7 @@ CREATE TABLE system.data_skipping_index_types
     `related` Array(String)
 )
 ENGINE = SystemDataSkippingIndexTypes
-COMMENT 'Contains a list of all available data skipping index types.'
+COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -231,7 +231,7 @@ CREATE TABLE system.dictionary_layouts
     `related` Array(String)
 )
 ENGINE = SystemDictionaryLayouts
-COMMENT 'Contains a list of all available dictionary layouts.'
+COMMENT 'Contains a list of all available dictionary layouts along with their embedded documentation.'
 CREATE TABLE system.disks
 (
     `name` String,

@@ -769,32 +769,6 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
-/// `mergeInplace` binds a merged expression's inputs to the graph's outputs by `result_name`, and it
-/// installs only the expression's outputs. An output named like one of its own inputs therefore
-/// leaves a computed node over an input of that name, and resolving the name again applies the
-/// expression a second time, so such an expression must not be merged into a join graph.
-static bool hasOutputShadowingInputName(const ActionsDAG & dag)
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : dag.getInputs())
-        input_names.insert(input->result_name);
-
-    for (const auto * output : dag.getOutputs())
-    {
-        if (output->type != ActionsDAG::ActionType::INPUT && input_names.contains(output->result_name))
-            return true;
-    }
-
-    return false;
-}
-
-/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
-/// allows it and the expression cannot be applied twice by the name-based merge.
-static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
-{
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
-}
-
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -808,8 +782,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (canMergeExpressionIntoJoinGraph(
-                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
+        else if (graph.context->optimization_settings.merge_expression_into_join)
         {
             join_node = node->children[0];
         }
@@ -920,8 +893,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
                 if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression())
-                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
+                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
                 {
                     check = check->children[0];
                 }
@@ -1566,8 +1538,7 @@ static void collectJoinGraphRelationHeaders(
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
         expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression())
-            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
+        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
     {
         effective = effective->children[0];
     }

@@ -83,12 +83,6 @@ When you add data permissions to a custom role, ClickHouse Cloud creates a match
 Roles assigned manually in the database using the [`sql-console-role:<email>` naming convention](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) take precedence over roles assigned through the console.
 </Info>
 
-### Prerequisites {#manage-database-roles-prerequisites}
-
-Custom database roles on a service depend on [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) and are not applied while it is disabled. Before adding data permissions to a role, navigate to the service, open `Settings`, and find the `JWT authentication` card in the `Security` section. Make sure the `SQL Console` toggle is enabled.
-
-<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="JWT authentication card with the SQL Console toggle enabled" size="lg" force/>
-
 <Steps>
 <Step title="Add data permissions to a role" id="add-data-permissions">
 

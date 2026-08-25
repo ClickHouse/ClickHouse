@@ -22,8 +22,7 @@
         "group": "الفوترة",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/active-balances-get",
-          "products/cloud/api-reference/billing/credit-balances-get"
+          "products/cloud/api-reference/billing/active-balances-get"
         ]
       },
       {

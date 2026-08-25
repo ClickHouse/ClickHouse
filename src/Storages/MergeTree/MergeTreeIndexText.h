@@ -116,19 +116,10 @@ public:
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder);
 
-    size_t size() const
-    {
-        chassert(!isFiltered());
-        return isSmall() ? small_size : large.postings->cardinality();
-    }
+    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
     bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
-
-    /// A filtered entry holds no postings; only isFiltered and clearFiltered may be called on it.
-    void markFiltered() { small_size = filtered_flag; }
-    bool isFiltered() const { return small_size == filtered_flag; }
-    void clearFiltered() { small_size = 0; }
 
     UInt32 minimum() const
     {
@@ -142,9 +133,9 @@ public:
         return isSmall() ? small[small_size - 1] : large.postings->maximum();
     }
 
-    SmallContainer & getSmall() { chassert(!isFiltered()); return small; }
-    const SmallContainer & getSmall() const { chassert(!isFiltered()); return small; }
-    PostingList & getLarge() const { chassert(!isFiltered()); return *large.postings; }
+    SmallContainer & getSmall() { return small; }
+    const SmallContainer & getSmall() const { return small; }
+    PostingList & getLarge() const { return *large.postings; }
 
 private:
     struct PostingListWithContext
@@ -159,7 +150,6 @@ private:
         PostingListWithContext large;
     };
 
-    static constexpr UInt8 filtered_flag = 0xFF;
     UInt8 small_size;
 };
 
@@ -504,8 +494,6 @@ struct MergeTreeIndexTextGranuleBuilder
     bool empty() const { return is_empty; }
     void reset();
 
-    void seedDropFilter();
-
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -522,8 +510,8 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
-    /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
-    /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
+    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
+    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
@@ -585,11 +573,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    using IMergeTreeIndex::getPhysicalFormat;
-    MergeTreeIndexFormat getPhysicalFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const IDataPartStorage & storage,
-        const std::string & relative_path_prefix) const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

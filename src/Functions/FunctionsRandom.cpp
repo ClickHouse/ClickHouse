@@ -95,25 +95,6 @@ void RandImpl::execute(char * output, size_t size)
 
 using namespace VectorExtension;
 
-/// The Murmur finalizer of intHash64, applied to four values at once.
-inline UInt64x4 intHash64x4(UInt64x4 x)
-{
-    x ^= x >> 33;
-    x *= 0xff51afd7ed558ccdULL;
-    x ^= x >> 33;
-    x *= 0xc4ceb9fe1a85ec53ULL;
-    x ^= x >> 33;
-
-    return x;
-}
-
-/// calcSeed for four consecutive entries of random_numbers, starting at `offset`.
-inline UInt64x4 calcSeeds(UInt64 rand_seed, size_t offset, const char * output)
-{
-    const UInt64 additional_seed = reinterpret_cast<intptr_t>(output);
-    return intHash64x4(intHash64x4(unalignedLoad<UInt64x4>(&random_numbers[offset]) + additional_seed) ^ rand_seed);
-}
-
 /* Takes 2 vectors with LinearCongruentialGenerator states and combines them into vector with random values.
  * From every rand-state we use only bits 15...47 to generate random vector.
  */
@@ -148,11 +129,18 @@ void RandImpl::execute(char * output, size_t size)
     UInt64 a = LinearCongruentialGenerator::a;
     constexpr UInt64 c = LinearCongruentialGenerator::c;
 
-    /// Same seeds as the scalar formula calcSeed(rand_seed, random_numbers[i] + output), computed four at a time.
-    UInt64x4 gens1 = calcSeeds(rand_seed, 0, output);
-    UInt64x4 gens2 = calcSeeds(rand_seed, vec_size, output);
-    UInt64x4 gens3 = calcSeeds(rand_seed, 2 * vec_size, output);
-    UInt64x4 gens4 = calcSeeds(rand_seed, 3 * vec_size, output);
+    UInt64x4 gens1{};
+    UInt64x4 gens2{};
+    UInt64x4 gens3{};
+    UInt64x4 gens4{};
+
+    for (int i = 0; i < vec_size; ++i)
+    {
+        gens1[i] = calcSeed(rand_seed, random_numbers[i] + reinterpret_cast<intptr_t>(output));
+        gens2[i] = calcSeed(rand_seed, random_numbers[i + vec_size] + reinterpret_cast<intptr_t>(output));
+        gens3[i] = calcSeed(rand_seed, random_numbers[i + 2 * vec_size] + reinterpret_cast<intptr_t>(output));
+        gens4[i] = calcSeed(rand_seed, random_numbers[i + 3 * vec_size] + reinterpret_cast<intptr_t>(output));
+    }
 
     while ((end - output) + safe_overwrite >= bytes_per_write)
     {

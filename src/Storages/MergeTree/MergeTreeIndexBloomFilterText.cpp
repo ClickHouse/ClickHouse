@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -438,19 +437,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
-namespace
-{
-
-bool isLikePatternFunction(const String & function_name)
-{
-    return function_name == "like"
-        || function_name == "notLike"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike";
-}
-
-}
-
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -482,12 +468,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         return false;
 
     Field const_value = value_field;
-
-    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
-    /// granule holding matching rows.
-    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
-        && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
-        return false;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);

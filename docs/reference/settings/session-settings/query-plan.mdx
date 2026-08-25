@@ -200,8 +200,6 @@ Control maximum limit value that allows to use query plan for lazy materializati
 
 Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
-This setting also controls the behavior of [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
-
 ## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
@@ -354,14 +352,6 @@ Optimize reading with FINAL from ReplacingMergeTree by building a set of primary
 
 Use query plan for lazy materialization optimization.
 
-## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}]}]}/>
-
-Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
-
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -388,24 +378,6 @@ Only takes effect if setting [query_plan_enable_optimizations](/reference/settin
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 </Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."}]}]}/>
-
-Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
-down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
-wide `String` / `FixedString` argument, so the argument is no longer carried through those steps.
-The rewrite is only applied when the argument column is not needed above the step it is pushed below.
-
-Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
 
 Possible values:
 
