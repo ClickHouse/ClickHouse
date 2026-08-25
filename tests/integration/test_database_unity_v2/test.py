@@ -20,6 +20,11 @@ PROXY_PORT = 8090
 UC_URL = f"http://localhost:{UC_PORT}/api/2.1/unity-catalog"
 PROXY_URL = f"http://localhost:{PROXY_PORT}/api/2.1/unity-catalog"
 
+# Must match the constants in mock_servers/uc_proxy.py.
+CLIENT_ID = "test-client"
+CLIENT_SECRET = "test-secret"
+PAT_TOKEN = "dapi-test-pat"
+
 # Seeded by the docker image, all Delta.
 SEEDED_TABLES = [
     "default.marksheet",
@@ -151,6 +156,7 @@ def started_cluster():
             main_configs=["configs/user_files_root.xml"],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
+            stay_alive=True,
             tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
         )
 
@@ -171,15 +177,27 @@ def unique_name(prefix):
     return f"{prefix}_{uuid.uuid4()}".replace("-", "_")
 
 
-def create_database(node, db_name, url=UC_URL):
+def create_database(node, db_name, url=UC_URL, catalog_credential=None):
+    credential_clause = (
+        f",\n         catalog_credential = '{catalog_credential}'"
+        if catalog_credential is not None
+        else ""
+    )
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
     node.query(
         f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{url}')
 SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2',
-         vended_credentials = false
+         vended_credentials = false{credential_clause}
         """,
         settings={EXPERIMENTAL_SETTING: "1"},
+    )
+
+
+def proxy_control(node, route):
+    """The proxy's unauthenticated side channel for the tests."""
+    return node.exec_in_container(
+        ["curl", "-s", f"http://localhost:{PROXY_PORT}/control/{route}"]
     )
 
 
@@ -304,7 +322,7 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     proxied_db = unique_name("v2_iceberg")
     direct_db = unique_name("v2_direct")
 
-    create_database(node, proxied_db, url=PROXY_URL)
+    create_database(node, proxied_db, url=PROXY_URL, catalog_credential=PAT_TOKEN)
     create_database(node, direct_db)
 
     proxied = node.query(f"SHOW CREATE TABLE {proxied_db}.`{UNIFORM_TABLE}`")
@@ -319,7 +337,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
     metadata path from Delta. Both arms read the same rows, so they must agree."""
     node = started_cluster.instances["node1"]
     iceberg_db = unique_name("v2_iceberg_read")
-    create_database(node, iceberg_db, url=PROXY_URL)
+    create_database(node, iceberg_db, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 
     assert UNIFORM_TABLE in show_tables(node, iceberg_db, "default%")
 
@@ -335,7 +353,7 @@ def test_mixed_formats_in_one_database(started_cluster):
     """One database serving both formats, which is the point of the engine."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_mixed")
-    create_database(node, db_name, url=PROXY_URL)
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 
     assert show_tables(node, db_name, "default%") == SEEDED_TABLES
 
@@ -353,3 +371,68 @@ def test_mixed_formats_in_one_database(started_cluster):
 
     assert "DeltaLake" in delta_storages
     assert "Iceberg" in iceberg_storages
+
+
+def test_pat_token_authentication(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_pat")
+
+    # Succeeds with correct token.
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+    assert DELTA_TABLE in show_tables(node, db_name, "default%")
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+    # Fails with incorrect token.
+    bad_db = unique_name("v2_pat_bad")
+    create_database(node, bad_db, url=PROXY_URL, catalog_credential="dapi-wrong")
+    error = node.query_and_get_error(f"SHOW TABLES FROM {bad_db}")
+    assert "401" in error
+
+
+def test_oauth_token_refresh(started_cluster):
+    # Create DB with client ID and secret.
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_oauth")
+    create_database(node, db_name, PROXY_URL,f"{CLIENT_ID}:{CLIENT_SECRET}")
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+    # Expire the token.
+    proxy_control(node, "expire")
+
+    # Verify refresh.
+    assert_seeded_rows(node, db_name, UNIFORM_TABLE)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+    # Verify failure with wrong secret.
+    bad_db = unique_name("v2_oauth_bad")
+    create_database(node, bad_db, PROXY_URL, f"{CLIENT_ID}:wrong-secret")
+    error = node.query_and_get_error(f"SHOW TABLES FROM {bad_db}")
+    assert "401" in error
+
+
+def test_static_token_expiry(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_pat_expired")
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+    try:
+        proxy_control(node, "revoke_pat")
+
+        error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
+        assert "401" in error
+        assert "LOGICAL_ERROR" not in error
+
+        # Ensure server still starts with an expired token.
+        node.restart_clickhouse()
+
+        assert db_name in node.query("SHOW DATABASES").split("\n")
+        assert "unity_v2" in node.query(f"SHOW CREATE DATABASE {db_name}")
+
+        error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
+        assert "401" in error
+        assert "LOGICAL_ERROR" not in error
+    finally:
+        proxy_control(node, "restore_pat")
+
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
