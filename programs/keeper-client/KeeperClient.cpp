@@ -3,6 +3,7 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/TokenIterator.h>
+#include <fmt/format.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -30,6 +31,9 @@ namespace
 {
 
 char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
+static constexpr const char * DEFAULT_HOST = "localhost";
+static constexpr const char * DEFAULT_PORT = "9181";
+
 
 /// Unescape a bare (unquoted) path that may contain backslash escaping
 /// and inline quoted segments, mirroring what parseKeeperArg accepts:
@@ -488,9 +492,9 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         config().setString("identity", env_identity);
 
     if (!hosts.empty() && hosts.back().empty())
-        hosts.back() = "localhost";
+        hosts.back() = DEFAULT_HOST;
     if (!ports.empty() && ports.back().empty())
-        ports.back() = "9181";
+        ports.back() = DEFAULT_PORT;
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -708,17 +712,19 @@ void KeeperClient::connectToKeeper()
     zkutil::ZooKeeperArgs new_zk_args;
 
     const bool secure_config = config().has("secure");
+
+    auto add_host = [&](const String & host, const String & port) {
+        if (secure_config)
+            new_zk_args.hosts.push_back("secure://" + host + ":" + port);
+        else
+            new_zk_args.hosts.push_back(host + ":" + port);
+    };
     if (!hosts.empty() && !ports.empty())
     {
         chassert(hosts.size() == ports.size());
         for (size_t i = 0; i < hosts.size(); ++i)
         {
-            if (secure_config)
-            {
-                new_zk_args.hosts.push_back("secure://" + hosts[i] + ":" + ports[i]);
-                continue;
-            }
-            new_zk_args.hosts.push_back(hosts[i] + ":" + ports[i]);
+            add_host(hosts[i], ports[i]);
         }
     }
     else if (!keys.empty())
@@ -742,11 +748,7 @@ void KeeperClient::connectToKeeper()
     }
     else
     {
-        const String default_option = "localhost:9181";
-        if (secure_config)
-            new_zk_args.hosts.push_back("secure://" + default_option);
-        else
-            new_zk_args.hosts.push_back(default_option);
+        add_host(DEFAULT_HOST, DEFAULT_PORT);
     }
 
     new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
