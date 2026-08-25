@@ -16,7 +16,7 @@ enum class MetaState : uint8_t
 {
     Clean = 0,       /// The body is present and may be referenced.
     Condemned = 1,   /// GC observed zero in-degree; the body remains present until exact-token deletion,
-                     /// so a writer may resurrect it by replacing the body and updating this marker.
+                     /// so a writer may republish it by replacing the body and updating this marker.
 };
 
 /// The durable per-hash meta record. Its text representation consists of a format header followed by

@@ -1,11 +1,9 @@
 #include <gtest/gtest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCkptFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasFsck.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.h>
 #include <Disks/tests/cas_test_helpers.h>
 
 #include <iostream>
@@ -35,7 +33,6 @@ using namespace DB::Cas;
 using DB::Cas::tests::idOf;
 using DB::Cas::tests::u128Of;
 using DB::Cas::tests::inDegreeOf;
-using DB::Cas::tests::publishCommittedTransition;
 
 namespace
 {
@@ -125,22 +122,6 @@ ManifestId publishOneBlobPart(
     return id;
 }
 
-/// The semantic `publishCommittedTransition` wrapper advances its same-life checkpoint. Keep this
-/// assertion explicit so this leak fixture cannot silently depend on a historical checkpoint lag.
-void assertSemanticTransitionCheckpoint(
-    Backend & backend, const Layout & layout, const RootNamespace & ns, const RefTxnId & committed_through)
-{
-    const auto life = CasRefCatalog::lifeIfCataloged(backend, layout, ns);
-    ASSERT_TRUE(life);
-    const String key = layout.refCkptKey(*life);
-    const auto before = backend.get(key);
-    ASSERT_TRUE(before);
-
-    RefCkpt ckpt = decodeRefCkpt(before->bytes);
-    ASSERT_TRUE(ckpt.committed_through);
-    EXPECT_EQ(*ckpt.committed_through, committed_through);
-}
-
 /// Whether a blob's body object is present in the backend (HEADs blobKey directly — the GC retire path
 /// HEADs the object key, never the Pool's manifest decode cache).
 bool blobPresent(const std::shared_ptr<InMemoryBackend> & b, const Layout & layout, const String & payload)
@@ -154,22 +135,22 @@ bool manifestPresent(const std::shared_ptr<InMemoryBackend> & b, const Layout & 
     return b->head(layout.manifestKey(id)).exists;
 }
 
-/// Stage partB's full closure (its two distinct blob bodies + its manifest body) through the REAL
-/// writer primitives WITHOUT publishing an owner — `beginPartWrite -> putBlob(each) -> stageManifest`. The
-/// bytes are durable in the backend but no journal owner names them yet; the caller installs partB as
-/// the new owner via a REPOINT (see displaceAndGc). Returns partB's ManifestId.
-ManifestId stagePartBClosure(
+/// Replace the existing ref with partB through the real durable-precommit writer sequence. The
+/// resulting `promote` is the production REPOINT: partA's committed owner is removed while partB's
+/// committed owner is installed in the same ordered journal transition.
+ManifestId publishPartBReplacement(
     const PoolPtr & s, const RootNamespace & ns, const String & ref,
     const String & payload_a, const String & payload_b)
 {
     PartWriteInfo info;
     info.intended_ref = ns.string() + "/" + ref;
     auto build = s->beginPartWrite(info);
-    build->putBlob(idOf(payload_a), BlobSource::fromString(payload_a));
-    build->putBlob(idOf(payload_b), BlobSource::fromString(payload_b));
     const ManifestId id = build->stageManifest({blobEntry("data.bin", payload_a),
                                                 blobEntry("data.cmrk3", payload_b)});
-    /// No precommitAdd / promote: the repoint below installs partB committed in ONE owner-move event.
+    build->precommitAdd(ns, ref, id);
+    build->putBlob(idOf(payload_a), BlobSource::fromString(payload_a));
+    build->putBlob(idOf(payload_b), BlobSource::fromString(payload_b));
+    build->promote(ns, ref, build->buildId(), id, /*allow_repoint=*/true);
     return id;
 }
 
@@ -187,15 +168,16 @@ FsckReport displaceAndGc(
     const PoolPtr & s, const std::shared_ptr<InMemoryBackend> & b,
     const RootNamespace & ns, const String & ref, const ManifestId & part_a)
 {
-    /// Stage partB's full closure (blobs + body present), then repoint the ref from partA to partB.
-    const ManifestId part_b = stagePartBClosure(s, ns, ref, "data-B", "mark-B");
+    /// Publish partB's full closure and atomically repoint the ref from partA to partB.
+    const ManifestId part_b = publishPartBReplacement(s, ns, ref, "data-B", "mark-B");
 
     EXPECT_TRUE(b->head(s->layout().manifestKey(part_a)).exists)
         << "partA manifest body must still be present so GC can read its -1 edges at removal-fold";
 
-    /// REPOINT: old={Committed,ref,partA} / new={Committed,ref,partB} in the single ordered journal.
-    const uint64_t repoint_sequence = publishCommittedTransition(*b, s->layout(), ns, ref, part_a.ref, part_b.ref);
-    assertSemanticTransitionCheckpoint(*b, s->layout(), ns, RefTxnId{1, repoint_sequence});
+    const auto resolved = s->resolveRef(ns, ref);
+    EXPECT_TRUE(resolved.has_value());
+    if (resolved)
+        EXPECT_EQ(resolved->manifest_id, part_b) << "the real writer promotion must leave the ref on partB";
 
     /// The repoint dropped partA's owner; advance the watermark floor so partA's now-orphaned blobs are
     /// not spared as in-flight, then run GC to a fixpoint.
@@ -310,7 +292,7 @@ TEST(CASGCLeak, DroppedPartFullyReclaimed)
     EXPECT_EQ(inDegreeOf(*b, s->layout(), u128Of("drop-mark")), 0) << "no stranded positive in-degree";
 }
 
-/// NO-LEAK (resurrect-reupload): a blob incarnation A is published, dropped, and condemned by ONE GC
+/// NO-LEAK (republish): a blob incarnation A is published, dropped, and condemned by ONE GC
 /// round (retired, NOT yet deleted — it is still mid-pipeline). A fresh build then dedup-hits the SAME
 /// content hash: `putBlob` HEADs A, sees it condemned via the per-hash freshness meta point-read, and —
 /// per INV-1 (revival-from-source) — re-uploads a DISTINCT incarnation B at the same content-addressed key
@@ -328,7 +310,7 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
     std::shared_ptr<InMemoryBackend> b;
     auto s = openTestPool(b);
     const RootNamespace ns{"test/tbl"};
-    const String P = "resurrect-payload";
+    const String P = "republish-payload";
 
     /// 1. Publish ref r1 -> token A referenced; capture A.
     publishOneBlobPart(s, ns, "r1", P);
@@ -345,7 +327,7 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
     {
         const auto lm = DB::Cas::tests::loadMetaForTest(*b, s->layout(), u128Of(P));
         ASSERT_TRUE(lm.has_value() && lm->meta.state == MetaState::Condemned)
-            << "precondition: token A must be condemned before the resurrect";
+            << "precondition: token A must be condemned before republication";
     }
     ASSERT_TRUE(blobPresent(b, s->layout(), P)) << "A not yet deleted (still in the pipeline)";
 
@@ -354,7 +336,7 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
     publishOneBlobPart(s, ns, "r2", P);
     const HeadResult hB = b->head(s->layout().blobKey(idOf(P)));
     ASSERT_TRUE(hB.exists);
-    ASSERT_NE(hB.token.value, hA.token.value) << "resurrect must mint a new incarnation token B";
+    ASSERT_NE(hB.token.value, hA.token.value) << "republication must mint a new incarnation token B";
 
     /// 5. Drop r2 -> B dereferenced.
     s->dropRef(ns, "r2");
@@ -364,17 +346,17 @@ TEST(CASGCLeak, ResurrectReplacedIncarnationReclaimed)
     runGcToFixpoint(s, gc);
 
     const FsckReport after = runFsck(*s, /*detail=*/false);
-    EXPECT_EQ(after.dangling, 0u) << "resurrect INV-NO-LOSS: nothing reachable was lost";
+    EXPECT_EQ(after.dangling, 0u) << "republication INV-NO-LOSS: nothing reachable was lost";
     EXPECT_EQ(after.unreachable, 0u)
-        << "resurrect INV-NO-LEAK: the resurrect-replaced incarnation B must not orphan "
+        << "republication INV-NO-LEAK: the replaced incarnation B must not orphan "
            "(unreachable=" << after.unreachable << ")";
     EXPECT_FALSE(blobPresent(b, s->layout(), P)) << "B's object must be deleted";
     EXPECT_EQ(inDegreeOf(*b, s->layout(), u128Of(P)), 0) << "no stranded positive in-degree";
 }
 
-/// IDEMPOTENCY of the RESURRECT-REUPLOAD-ORPHAN fold: drives the exact same condemn-A / resurrect-B /
+/// IDEMPOTENCY of the republication-orphan fold: drives the exact same condemn-A / republish-B /
 /// drop-B / reclaim sequence as `ResurrectReplacedIncarnationReclaimed` above, then keeps running the
-/// regular round PAST the fixpoint. The re-condemn that reclaims the resurrect-replaced incarnation B
+/// regular round PAST the fixpoint. The re-condemn that reclaims the replaced incarnation B
 /// must fire exactly once: extra rounds on an already-reclaimed content hash must be no-ops (no
 /// re-condemn churn, no duplicate retired entry) and must never manufacture fresh fsck debris.
 TEST(CASGCLeak, ResurrectReplacedReclaimIsIdempotent)
@@ -382,7 +364,7 @@ TEST(CASGCLeak, ResurrectReplacedReclaimIsIdempotent)
     std::shared_ptr<InMemoryBackend> b;
     auto s = openTestPool(b);
     const RootNamespace ns{"test/tbl"};
-    const String P = "resurrect-payload-idem";
+    const String P = "republish-payload-idem";
 
     /// 1. Publish ref r1 -> token A referenced, then drop it.
     publishOneBlobPart(s, ns, "r1", P);
@@ -403,7 +385,7 @@ TEST(CASGCLeak, ResurrectReplacedReclaimIsIdempotent)
     ASSERT_FALSE(blobPresent(b, s->layout(), P)) << "B must be reclaimed before the idempotency check";
 
     /// 5. Extra rounds past the fixpoint: nothing is left to do for this hash. The fold must not
-    /// re-condemn it (that would be the churn/duplicate-entry bug) and must not resurrect any debris.
+    /// re-condemn it (that would be the churn/duplicate-entry bug) and must not republish any debris.
     for (int round = 0; round < 3; ++round)
     {
         const RoundReport r = DB::Cas::tests::runRegularRoundReclaiming(gc);
@@ -420,11 +402,11 @@ TEST(CASGCLeak, ResurrectReplacedReclaimIsIdempotent)
     EXPECT_EQ(after.dangling, 0u) << "idempotent extra rounds must never lose a reachable object";
 }
 
-/// WRITER-SIDE half of the RESURRECT-REUPLOAD-ORPHAN fold: after the round that folds the resurrect-
+/// WRITER-SIDE half of the republication-orphan fold: after the round that folds the replaced
 /// replaced incarnation B's dereference re-condemns B, a fresh writer dedup-hitting the SAME content hash
 /// must see B as condemned via the per-hash freshness meta point-read — never as an adoptable live token.
 /// If GC's bookkeeping instead kept treating B as adopt-eligible (the pre-fix bug), a concurrent writer's
-/// `putBlob` would adopt the being-reclaimed B rather than resurrect a fresh incarnation, racing the
+/// `putBlob` would adopt the being-reclaimed B rather than publish a fresh incarnation, racing the
 /// delete pipeline.
 ///
 /// Depending on round timing, by the time the meta is checked B may be (a) still present and visibly
@@ -437,7 +419,7 @@ TEST(CASGCLeak, ResurrectReplacedTokenIsCondemnedInMeta)
     auto s = openTestPool(b);
     const RootNamespace ns{"test/tbl"};
     Gc gc(s, hexToU128("00000000000000000000000000000006"));
-    const String P = "resurrect-payload-view";
+    const String P = "republish-payload-view";
 
     /// 1. Publish ref r1 -> token A referenced; capture A, then drop it and condemn via ONE GC round.
     publishOneBlobPart(s, ns, "r1", P);
@@ -451,7 +433,7 @@ TEST(CASGCLeak, ResurrectReplacedTokenIsCondemnedInMeta)
     publishOneBlobPart(s, ns, "r2", P);
     const HeadResult hB = b->head(s->layout().blobKey(idOf(P)));
     ASSERT_TRUE(hB.exists);
-    ASSERT_NE(hB.token.value, hA.token.value) << "resurrect must mint a distinct incarnation";
+    ASSERT_NE(hB.token.value, hA.token.value) << "republication must mint a distinct incarnation";
     s->dropRef(ns, "r2");
     s->renewWatermarkOnce();
 
@@ -484,13 +466,12 @@ TEST(CASReuseGcRace, ReuseOfBlobDeletedBeforePublish)
     auto s = openTestPool(b);
     const RootNamespace ns{"test/tbl"};
     const String B = "shared-blob-payload";
-    const String U = "build2-unique-blob";
 
     /// build1: commit part_1 -> manifest -> blob B.
     publishOneBlobPart(s, ns, "part_1", B);
 
-    /// build2: adopt B by tokenless evidence (no HEAD) and upload its OWN unique blob U. It does NOT yet
-    /// stage a manifest or precommit — the scenario is that GC deletes B BEFORE build2 publishes a manifest
+    /// build2: adopt B by tokenless evidence (no HEAD). It does NOT yet stage a manifest or precommit —
+    /// the scenario is that GC deletes B BEFORE build2 publishes a manifest
     /// naming it. (Staging+precommitting BEFORE the drop would make the precommit's activating +1 PIN B —
     /// B would never reach in-degree 0 and GC could not delete it, so the race could not be reproduced.)
     PartWriteInfo info;
@@ -504,7 +485,6 @@ TEST(CASReuseGcRace, ReuseOfBlobDeletedBeforePublish)
 
     eb.blob_size = B.size();
     build2->adoptEvidence(eb);                                   /// tokenless dep (no HEAD)
-    build2->putBlob(idOf(U), BlobSource::fromString(U));         /// build2's own unique, protected blob
 
     /// Drop the committed pin on B and advance the watermark so B (owned by the finished build1) is not
     /// spared. No owner names B now (build2 has not staged/precommitted), so GC folds B to in-degree 0
@@ -521,10 +501,10 @@ TEST(CASReuseGcRace, ReuseOfBlobDeletedBeforePublish)
         << "GC must have deleted the now-unreferenced reused blob B";
 
     /// Only NOW does build2 publish a manifest naming the (just-deleted) B: stage the body + precommit.
-    const ManifestId id2 = build2->stageManifest({eb, blobEntry("uniq.bin", U)});
+    const ManifestId id2 = build2->stageManifest({eb});
     build2->precommitAdd(ns, "part_2", id2);
 
-    /// build2 promotes part_2 -> id2 -> {B, U}. §4 manifest-trust: B is a committed-source adopted leaf,
+    /// build2 promotes part_2 -> id2 -> {B}. §4 manifest-trust: B is a committed-source adopted leaf,
     /// so the promote gate TRUSTS it (no HEAD/loadMeta probe) and commits — it does NOT re-observe the
     /// deleted B. This is the accepted D4 trade-off. On the real reuse/relink path B CANNOT be deleted
     /// while build2's precommit edge is live: precommitAdd durably appends the Precommit OwnerTransition

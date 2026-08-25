@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
@@ -103,6 +107,26 @@ ManifestEntry blobManifestEntryStreaming(const String & path, const String & pay
     return e;
 }
 
+PartWriteTxnPtr precommittedBuildForPayload(
+    const PoolPtr & store, const RootNamespace & ns, const String & ref, const String & payload)
+{
+    auto build = startBuildFor(store, ns, ref);
+    const ManifestId manifest = build->stageManifest({blobManifestEntry("data.bin", payload)});
+    build->precommitAdd(ns, ref, manifest);
+    return build;
+}
+
+ManifestId durablyPrecommit(
+    const PartWriteTxnPtr & build,
+    const RootNamespace & ns,
+    const String & ref,
+    std::vector<ManifestEntry> entries)
+{
+    const ManifestId manifest = build->stageManifest(std::move(entries));
+    build->precommitAdd(ns, ref, manifest);
+    return manifest;
+}
+
 /// The full single-blob write flow (EDGE-BEFORE-OBSERVE wiring order):
 /// stageManifest(one entry) -> precommitAdd -> putBlob -> promote. Returns the committed ManifestId.
 ManifestId publishOneBlobPart(
@@ -142,9 +166,11 @@ public:
     std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
     DB::Cas::ListPage list(const String & p, const String & c, size_t l) override { return inner->list(p, c, l); }
     DB::Cas::PutResult putIfAbsent(const String & k, const String & b, const DB::Cas::ObjectMeta & meta) override { return inner->putIfAbsent(k, b, meta); }
-    DB::Cas::WriteSinkPtr putIfAbsentStream(const String & k, const DB::Cas::ObjectMeta & meta) override { return inner->putIfAbsentStream(k, meta); }
+    void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+    {
+        inner->publishBlob(request);
+    }
     DB::Cas::PutResult putOverwrite(const String & k, const String & b, const DB::Cas::Token & e, const DB::Cas::ObjectMeta & meta) override { return inner->putOverwrite(k, b, e, meta); }
-    DB::Cas::Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
     DB::Cas::CasResult casPut(const String & k, const String & b, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & meta) override { return inner->casPut(k, b, e, meta); }
     DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & t) override { return inner->deleteExact(k, t); }
     bool supportsListTokens() const override { return inner->supportsListTokens(); }
@@ -172,9 +198,11 @@ public:
     std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
     DB::Cas::ListPage list(const String & pfx, const String & c, size_t l) override { return inner->list(pfx, c, l); }
     DB::Cas::PutResult putIfAbsent(const String & k, const String & b, const DB::Cas::ObjectMeta & meta) override { return inner->putIfAbsent(k, b, meta); }
-    DB::Cas::WriteSinkPtr putIfAbsentStream(const String & k, const DB::Cas::ObjectMeta & meta) override { return inner->putIfAbsentStream(k, meta); }
+    void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+    {
+        inner->publishBlob(request);
+    }
     DB::Cas::PutResult putOverwrite(const String & k, const String & b, const DB::Cas::Token & e, const DB::Cas::ObjectMeta & meta) override { return inner->putOverwrite(k, b, e, meta); }
-    DB::Cas::Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
     DB::Cas::CasResult casPut(const String & k, const String & b, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & meta) override { return inner->casPut(k, b, e, meta); }
     DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & t) override { return inner->deleteExact(k, t); }
     bool supportsListTokens() const override { return inner->supportsListTokens(); }
@@ -185,13 +213,128 @@ private:
     std::map<String, size_t> get_counts;
 };
 
+/// Forces two writers to complete their absent `HEAD` observations before either can publish.
+class RacingBlobPublicationBackend final : public InMemoryBackend
+{
+public:
+    void watch(String key_)
+    {
+        std::lock_guard lock(mutex);
+        key = std::move(key_);
+        head_calls = 0;
+        publish_calls = 0;
+    }
+
+    HeadResult head(const String & requested_key) override
+    {
+        if (requested_key != key)
+            return InMemoryBackend::head(requested_key);
+
+        const HeadResult observed = InMemoryBackend::head(requested_key);
+        std::unique_lock lock(mutex);
+        ++head_calls;
+        cv.notify_all();
+        cv.wait_for(lock, std::chrono::seconds(5), [&] { return head_calls >= 2; });
+        return observed;
+    }
+
+    void publishBlob(const BlobPublishRequest & request) override
+    {
+        if (request.destination_key == key)
+        {
+            std::lock_guard lock(mutex);
+            ++publish_calls;
+        }
+        InMemoryBackend::publishBlob(request);
+    }
+
+    String key;
+    std::mutex mutex;
+    std::condition_variable cv;
+    size_t head_calls = 0;
+    size_t publish_calls = 0;
+};
+
+}
+
+TEST(CASPartWrite, RacingWritersBothHeadMissAndPublishEquivalentBodies)
+{
+    auto backend = std::make_shared<RacingBlobPublicationBackend>();
+    auto store = openPool(backend);
+    const String payload = "two-racing-mandatory-head-writers";
+    const BlobRef ref = idOf(payload);
+    auto first = precommittedBuildForPayload(store, RootNamespace{"srv1/racing-a"}, "part", payload);
+    auto second = precommittedBuildForPayload(store, RootNamespace{"srv1/racing-b"}, "part", payload);
+    backend->watch(store->layout().blobKey(ref));
+
+    std::exception_ptr first_error;
+    std::exception_ptr second_error;
+    std::thread first_thread([&]
+    {
+        try
+        {
+            first->putBlob(ref, BlobSource::fromString(payload));
+        }
+        catch (...)
+        {
+            first_error = std::current_exception();
+        }
+    });
+    std::thread second_thread([&]
+    {
+        try
+        {
+            second->putBlob(ref, BlobSource::fromString(payload));
+        }
+        catch (...)
+        {
+            second_error = std::current_exception();
+        }
+    });
+    first_thread.join();
+    second_thread.join();
+
+    EXPECT_EQ(first_error, nullptr);
+    EXPECT_EQ(second_error, nullptr);
+    EXPECT_EQ(backend->head_calls, 2u);
+    EXPECT_EQ(backend->publish_calls, 2u)
+        << "both equivalent writers may publish after racing absent observations";
+    EXPECT_EQ(first->dependencyProof(ref), BlobDependencyProof::Materialized);
+    EXPECT_EQ(second->dependencyProof(ref), BlobDependencyProof::Materialized);
+    const auto stored = backend->get(store->layout().blobKey(ref));
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->bytes.substr(store->poolMeta().blob_header_len), payload);
+}
+
+TEST(CASPartWrite, WrongSizeSourcePublishesNothing)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = openPool(backend);
+    const String expected_payload = "declared-eleven-bytes";
+    const BlobRef ref = idOf(expected_payload);
+    auto build = precommittedBuildForPayload(
+        store, RootNamespace{"srv1/wrong-size-publication"}, "part", expected_payload);
+
+    BlobSource source;
+    source.size = 11;
+    source.open = []() -> std::unique_ptr<DB::ReadBuffer>
+    {
+        return std::make_unique<DB::ReadBufferFromOwnString>(String("short"));
+    };
+
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&]
+    {
+        build->putBlob(ref, std::move(source));
+    });
+    EXPECT_FALSE(backend->head(store->layout().blobKey(ref)).exists);
 }
 
 TEST(CASPartWriteTxn, PutBlobWritesEnvelopeWithFixedHeader)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    auto build = s->beginPartWrite({});
+    const RootNamespace ns{"srv1/envelope"};
+    auto build = precommittedBuildForPayload(s, ns, "part", "hello world");
     auto ref = build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     EXPECT_EQ(ref.size, 11u);
 
@@ -246,8 +389,8 @@ TEST(CASPartWriteTxn, PutBlobDedupSecondWriterAdopts)
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
 
-    /// First writer FRESH-uploads (legal pre-precommit — newborn-debris watermark).
-    auto build_a = s->beginPartWrite({});
+    /// First writer publishes under its durable precommit edge.
+    auto build_a = precommittedBuildForPayload(s, RootNamespace{"srv/tbl-a"}, "ref_a", "dup");
     auto ref_a = build_a->putBlob(idOf("dup"), BlobSource::fromString("dup"));
     const Token token_a = b->head(s->layout().blobKey(ref_a.ref)).token;
 
@@ -271,9 +414,9 @@ TEST(CASPartWriteTxn, PutBlobFreshUploadWritesCleanMeta)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    auto build = s->beginPartWrite({});
 
     const String payload = "fresh-meta-payload";
+    auto build = precommittedBuildForPayload(s, RootNamespace{"srv1/fresh-meta"}, "part", payload);
     auto ref = build->putBlob(idOf(payload), BlobSource::fromString(payload));
     EXPECT_EQ(ref.size, payload.size());
 
@@ -294,9 +437,9 @@ TEST(CASPartWriteTxnMetaCounters, CreateCleanAndChokePointCountOnFreshBody)
 
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    auto build = s->beginPartWrite({});
 
     const String payload = "fresh-meta-payload-counters";
+    auto build = precommittedBuildForPayload(s, RootNamespace{"srv1/fresh-meta-counters"}, "part", payload);
     auto ref = build->putBlob(idOf(payload), BlobSource::fromString(payload));
     EXPECT_EQ(ref.size, payload.size());
 
@@ -321,7 +464,7 @@ TEST(CASPartWriteTxnMetaCounters, AdoptBackfillCountsChokePointAndReason)
     const UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
 
-    /// Pre-seed a present body big enough that observeAndAdmit's logical-size guard does not underflow —
+    /// Pre-seed a present body big enough that `ensureBlobPresent`'s logical-size guard does not underflow —
     /// deliberately WITHOUT any meta (unlike PutBlobAdoptsWhenMetaCleanNoRetireView), so the adopt reaches
     /// the `!lm` backfill branch.
     const uint64_t header_len = s->poolMeta().blob_header_len;
@@ -358,7 +501,7 @@ TEST(CASPartWriteTxn, PutBlobAdoptsWhenMetaCleanNoRetireView)
     const BlobRef id = idOf(payload);
     const String blob_key = s->layout().blobKey(id);
 
-    /// Pre-seed a body big enough that observeAndAdmit's logical-size guard (hr.size - header_len)
+    /// Pre-seed a body big enough that `ensureBlobPresent`'s logical-size guard (hr.size - header_len)
     /// does not underflow, plus an INDEPENDENT Clean meta — deliberately NOT via a real putBlob (so the
     /// adopt decision below cannot be riding on THIS task's own fresh-upload meta write).
     const uint64_t header_len = s->poolMeta().blob_header_len;
@@ -385,11 +528,8 @@ TEST(CASPartWriteTxn, PutBlobAdoptsWhenMetaCleanNoRetireView)
     EXPECT_EQ(lm->meta.state, MetaState::Clean) << "an adopt must leave the meta Clean";
 }
 
-/// A4 (negative): observeAndAdmit's EDGE-BEFORE-OBSERVE invariant — adopting an EXISTING incarnation is
-/// safe ONLY under this build's durable precommit closure — was guarded only by chassert(precommitted),
-/// which is compiled out in release. A putBlob that reaches the adopt path with NO precommit (the wiring
-/// order stageManifest -> precommitAdd -> putBlob violated) must fail closed with a real LOGICAL_ERROR,
-/// not silently adopt a blob the newborn-debris watermark does not cover.
+/// A putBlob call without the mandatory durable precommit must fail closed before either observing or
+/// publishing a body. This is the intentional negative fixture for the writer-readiness contract.
 TEST(CASPartWriteTxn, AdoptBeforePrecommitFailsClosed)
 {
     auto b = std::make_shared<InMemoryBackend>();
@@ -401,14 +541,14 @@ TEST(CASPartWriteTxn, AdoptBeforePrecommitFailsClosed)
 
     /// Pre-seed a present body (padded past the pool header so the logical-size guard does not
     /// underflow) + an independent Clean meta, so putBlob's upload conflicts on the present object and
-    /// takes the ADOPT branch of observeAndAdmit — mirroring PutBlobAdoptsWhenMetaCleanNoRetireView.
+    /// takes the observation/adoption branch of `ensureBlobPresent` — mirroring PutBlobAdoptsWhenMetaCleanNoRetireView.
     const uint64_t header_len = s->poolMeta().blob_header_len;
     String raw_body(header_len, '\0');
     raw_body += payload;
     writeRawBlobBody(*b, s->layout(), hash, raw_body);
     writeMetaClean(*b, s->layout(), hash, payload.size());
 
-    /// Start a build but DO NOT call precommitAdd: the adopt runs with `precommitted == false`.
+    /// Start a build but DO NOT call precommitAdd.
     const RootNamespace ns{"srv/tbl"};
     auto build = startBuildFor(s, ns, "ref_adopt");
 
@@ -417,19 +557,19 @@ TEST(CASPartWriteTxn, AdoptBeforePrecommitFailsClosed)
             DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
             build->putBlob(id, BlobSource::fromString(payload));
         },
-        "EDGE-BEFORE-OBSERVE invariant violated");
+        "durable precommit required");
 }
 
-/// The resurrect decision (displace a condemned body) is likewise driven PURELY by the meta point-read
+/// The condemned-body replacement decision is likewise driven purely by the metadata point-read
 /// — again, no RetireView is seeded. A condemned meta must cause putBlob to displace the body (a fresh
 /// token, the old one never returns — INV-NO-RETURN, unchanged body mechanics) AND flip the meta back
 /// to Clean.
-TEST(CASPartWriteTxn, PutBlobResurrectsWhenMetaCondemned)
+TEST(CASPartWriteTxn, PutBlobRepublishesWhenMetaCondemned)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
 
-    const String payload = "resurrect-meta-payload";
+    const String payload = "republish-meta-payload";
     const UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
     const String blob_key = s->layout().blobKey(id);
@@ -442,26 +582,27 @@ TEST(CASPartWriteTxn, PutBlobResurrectsWhenMetaCondemned)
     condemnMeta(*b, s->layout(), hash, /*condemn_round*/ 1);
     const Token t0 = b->head(blob_key).token;
 
-    /// NO retire-view seeding anywhere: the resurrect must be decided purely from the meta point-read.
-    auto build = s->beginPartWrite({});
+    /// No retire-view seeding: the replacement is decided from the metadata point-read.
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/republish-meta"}, "part", payload);
     auto ref = build->putBlob(id, BlobSource::fromString(payload));
     EXPECT_EQ(ref.ref, id);
 
     /// Resurrected: the condemned incarnation was displaced by a fresh one.
     const HeadResult hr = b->head(blob_key);
     ASSERT_TRUE(hr.exists);
-    EXPECT_NE(hr.token, t0) << "a condemned incarnation must be displaced by a fresh one (resurrect)";
+    EXPECT_NE(hr.token, t0) << "a condemned incarnation must be displaced by a fresh publication";
     EXPECT_EQ(b->deleteExact(blob_key, t0).kind, DeleteOutcome::Kind::TokenMismatch)
         << "the condemned token must never return (INV-NO-RETURN)";
 
     const auto lm = loadMetaForTest(*b, s->layout(), hash);
     ASSERT_TRUE(lm.has_value());
-    EXPECT_EQ(lm->meta.state, MetaState::Clean) << "a resurrect must flip the meta back to Clean";
+    EXPECT_EQ(lm->meta.state, MetaState::Clean) << "republishing must flip the metadata back to Clean";
 }
 
-/// §0 introspection: the resurrect (condemned-displacement) meta flip goes through the `casMeta`
+/// §0 introspection: the condemned-displacement metadata flip goes through the `casMeta`
 /// choke point (`CASMetaCompareSwap`), tagged with its reason (`CASMetaResurrectClean`).
-TEST(CASPartWriteTxnMetaCounters, ResurrectCountsCasAndReason)
+TEST(CASPartWriteTxnMetaCounters, CondemnedRepublicationCountsCasAndReason)
 {
     const auto cas_before = ProfileEvents::global_counters[ProfileEvents::CASMetaCompareSwap].load();
     const auto reason_before = ProfileEvents::global_counters[ProfileEvents::CASMetaResurrectClean].load();
@@ -469,7 +610,7 @@ TEST(CASPartWriteTxnMetaCounters, ResurrectCountsCasAndReason)
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
 
-    const String payload = "resurrect-meta-payload-counters";
+    const String payload = "republish-meta-payload-counters";
     const UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
 
@@ -480,7 +621,8 @@ TEST(CASPartWriteTxnMetaCounters, ResurrectCountsCasAndReason)
     writeMetaClean(*b, s->layout(), hash, payload.size());
     condemnMeta(*b, s->layout(), hash, /*condemn_round*/ 1);
 
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/republish-meta-counters"}, "part", payload);
     auto ref = build->putBlob(id, BlobSource::fromString(payload));
     EXPECT_EQ(ref.ref, id);
 
@@ -492,20 +634,19 @@ TEST(CASPartWriteTxn, PutBlobWrongSizeFailsClosed)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/wrong-size"}, "part", "hello world");
 
     BlobSource lying;
     lying.size = 11;   /// declares 11 but writes 5
     lying.open = []() -> std::unique_ptr<DB::ReadBuffer>
     { return std::make_unique<DB::ReadBufferFromOwnString>(String("short")); };
 
-    const BlobRef id = idOf("does-not-matter");
-    EXPECT_DEATH(
-        {
-            DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
-            build->putBlob(id, std::move(lying));
-        },
-        "source streamed");
+    const BlobRef id = idOf("hello world");
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&]
+    {
+        build->putBlob(id, std::move(lying));
+    });
     /// The cancelled stream created nothing.
     EXPECT_FALSE(b->head(s->layout().blobKey(id)).exists);
 }
@@ -520,9 +661,9 @@ TEST(CASPartWriteTxn, PutBlobStreamsSourceOnceNoFullMaterialization)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    auto build = s->beginPartWrite({});
 
     const String payload = "streamed-not-materialized";
+    auto build = precommittedBuildForPayload(s, RootNamespace{"srv1/streaming"}, "part", payload);
     int invocations = 0;
     BlobSource source;
     source.size = payload.size();
@@ -545,40 +686,49 @@ TEST(CASPartWriteTxn, PutBlobStreamsSourceOnceNoFullMaterialization)
 
 /// B190: reuseBlob is removed (it had no production callers post-B188). Its behaviors are now covered by:
 ///   - trusted adopted leaf at gate: PromoteTrustsAdoptedLeafNoProbeManifestTrust (CasPartWriteTxn) — §4
-///     manifest-trust: a committed-source adopted leaf publishes with NO per-file probe; a tokened leaf
+///     manifest-trust: a committed-source adopted leaf publishes with NO per-file probe; a materialized leaf
 ///     is edge-protected (Phase A) and never re-observed at the gate.
 ///   - absent adopted leaf trusted:  PromoteTrustsAdoptedLeafEvenIfBackendRaced (CasPartWriteTxn) — the D4
 ///     trade-off (a genuinely-absent adopted blob is caught by fsck, not the promote gate).
-///   - evidence tokenless vs tokened: DepIsTokenedDiscriminatesPutBlobVsAdopt (CASPartWriteTxnReuseBlob).
-///   - no-dep / staging-bug fail-closed: PromoteCondemnedLeafWithoutDepAbortsFailClosed (CasPartWriteTxn).
+///   - explicit evidence: DependencyProofDistinguishesMaterializedAndTrustedManifest.
+///   - no-dependency staging bug: MissingDependencyProofFailsClosed.
 
-TEST(CASPartWriteTxnReuseBlob, DepIsTokenedDiscriminatesPutBlobVsAdopt)
+TEST(CASPartWriteTxnReuseBlob, DependencyProofDistinguishesMaterializedAndTrustedManifest)
 {
-    /// B156b discriminator unit: putBlob records a TOKENED dep (token observed at upload time),
-    /// adoptEvidence records a TOKENLESS W-EVIDENCE dep (no token; liveness from the source ref).
+    /// A successful publication records physical evidence without retaining the backend token in
+    /// writer readiness state.
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
 
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/dependency-proof/materialized"}, "written", "written");
 
-    /// putBlob'd hash ⇒ tokened.
+    /// A fresh upload is materialized.
     build->putBlob(idOf("written"), BlobSource::fromString("written"));
-    EXPECT_TRUE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("written"))}));
+    EXPECT_EQ(build->dependencyProof(idOf("written")), BlobDependencyProof::Materialized);
 
-    /// Adopted hash ⇒ tokenless. adoptEvidence records the dep directly from a resolved ManifestEntry
-    /// (the source manifest's entry); no body needs to be in hand for the dep to be recorded.
+    /// Observing that same live blob under a durable precommit is also materialized.
+    const RootNamespace ns{"srv1/dependency-proof"};
+    auto observer = startBuildFor(s, ns, "observed");
+    const ManifestEntry observed_entry = blobManifestEntry("data.bin", "written");
+    const ManifestId observed_manifest = observer->stageManifest({observed_entry});
+    observer->precommitAdd(ns, "observed", observed_manifest);
+    observer->putBlob(idOf("written"), BlobSource::fromString("written"));
+    EXPECT_EQ(observer->dependencyProof(idOf("written")), BlobDependencyProof::Materialized);
+
+    /// A committed-source manifest supplies trusted-manifest evidence without physical I/O.
     build->adoptEvidence(blobManifestEntry("f", "adopted"));
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("adopted"))}));
+    EXPECT_EQ(build->dependencyProof(idOf("adopted")), BlobDependencyProof::TrustedManifest);
 
-    /// Unknown hash ⇒ no dep, not tokened.
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("unknown"))}));
+    /// An unknown hash has no proof; absence is distinct from both accepted states.
+    EXPECT_EQ(build->dependencyProof(idOf("unknown")), std::nullopt);
 }
 
 /// B190: ReuseBlobCondemnedThrowsAbortedRetryable is removed (reuseBlob is gone). §4 manifest-trust: a
 /// committed-source adopted leaf is TRUSTED at the promote gate (no HEAD/loadMeta probe), so a condemned
 /// pool blob no longer surfaces at promote — covered by PromoteTrustsAdoptedLeafNoProbeManifestTrust.
 
-TEST(CASPartWriteTxn, PutBlobResurrectVanishedReUploadsHeldBody)
+TEST(CASPartWriteTxn, PutBlobRepublishesVanishedBodyFromHeldSource)
 {
     auto b = std::make_shared<InMemoryBackend>();
 
@@ -587,9 +737,11 @@ TEST(CASPartWriteTxn, PutBlobResurrectVanishedReUploadsHeldBody)
     Token t0;
     {
         auto s0 = openPool(b);
-        auto build0 = s0->beginPartWrite({});
+        auto build0 = precommittedBuildForPayload(
+            s0, RootNamespace{"srv1/republish-vanished-seed"}, "part", "payload-X");
         id = build0->putBlob(idOf("payload-X"), BlobSource::fromString("payload-X")).ref;
         t0 = b->head(s0->layout().blobKey(id)).token;
+        build0->abandon();
     }
 
     /// 2. Condemn (Blob, hash(X), t0) in the retire view.
@@ -604,13 +756,12 @@ TEST(CASPartWriteTxn, PutBlobResurrectVanishedReUploadsHeldBody)
     ///    Pool over the hook so its retire view (refreshed at open) sees the condemnation.
     auto hook = std::make_shared<HeadThenDeleteOnceBackend>(b, blob_key, t0);
     auto s = Pool::open(hook, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/republish-vanished"}, "part", "payload-X");
 
     /// 4. putBlob with a re-invokable body.
-    ///    BEFORE fix: putIfAbsent -> PreconditionFailed -> observeAndAdmit HEAD (present, condemned)
-    ///                -> resurrect GET (vanished, deleted in the window) -> throws FILE_DOESNT_EXIST.
-    ///    AFTER fix:  condemned dedup → uploadFromSource directly from held body; the object is
-    ///                recreated under a FRESH token. NO GET of the condemned object (INV-1).
+    /// The mandatory `HEAD` observes the condemned body and the hook deletes it before returning.
+    /// Publication then recreates the body under a fresh token without reading the condemned object.
     auto ref = build->putBlob(idOf("payload-X"), BlobSource::fromString("payload-X"));
     EXPECT_EQ(ref.ref, id);
 
@@ -630,7 +781,7 @@ TEST(CASPartWriteTxn, PutBlobResurrectVanishedReUploadsHeldBody)
 
     /// The freshness meta must be reconciled to Clean too, not left stale at Condemned: the fresh
     /// re-upload's meta write (writeFreshMetaClean) must find and fix the pre-existing Condemned
-    /// marker via the SAME reload-and-reconcile path a resurrect uses, not silently discard the
+    /// marker via the same reload-and-reconcile path used after condemned replacement, not discard the
     /// conflict (a stale Condemned marker would otherwise mislead every future point-reader).
     const auto lm = loadMetaForTest(*b, s->layout(), u128Of("payload-X"));
     ASSERT_TRUE(lm.has_value());
@@ -645,7 +796,7 @@ TEST(CASPartWriteTxn, PutBlobResurrectVanishedReUploadsHeldBody)
 /// exhausts, and that exhaustion must reach putBlob's caller as NETWORK_ERROR.
 TEST(CASPartWriteTxn, PutBlobFreshMetaExhaustionThrowsRetryLater)
 {
-    /// Short budget + zero backoff: keep the test fast. Each of writeResurrectMetaClean's 8 outer
+    /// Short budget + zero backoff: keep the test fast. Each of the metadata reconciliation loop's 8 outer
     /// attempts calls putMetaIfAbsent, which itself retries up to max_attempts times internally —
     /// with max_attempts=1 the controller gives up on the first faulted attempt each time.
     CasRequestBudget budget;
@@ -653,9 +804,10 @@ TEST(CASPartWriteTxn, PutBlobFreshMetaExhaustionThrowsRetryLater)
     budget.retry_initial_backoff_ms = 0;
     auto b = std::make_shared<DB::Cas::tests::MetaWriteFaultBackend>();
     auto s = Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test", .cas_request_budget = budget});
-    auto build = s->beginPartWrite({});
 
     const String payload = "fresh-meta-exhaustion-payload";
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/fresh-meta-exhaustion"}, "part", payload);
     DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
     {
         build->putBlob(idOf(payload), BlobSource::fromString(payload));
@@ -689,9 +841,11 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupNeverGetsTheDyingObject)
         std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
         DB::Cas::ListPage list(const String & p, const String & c, size_t l) override { return inner->list(p, c, l); }
         DB::Cas::PutResult putIfAbsent(const String & k, const String & bts, const DB::Cas::ObjectMeta & m) override { return inner->putIfAbsent(k, bts, m); }
-        DB::Cas::WriteSinkPtr putIfAbsentStream(const String & k, const DB::Cas::ObjectMeta & m) override { return inner->putIfAbsentStream(k, m); }
+        void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+        {
+            inner->publishBlob(request);
+        }
         DB::Cas::PutResult putOverwrite(const String & k, const String & bts, const DB::Cas::Token & e, const DB::Cas::ObjectMeta & m) override { return inner->putOverwrite(k, bts, e, m); }
-        DB::Cas::Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
         DB::Cas::CasResult casPut(const String & k, const String & bts, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & m) override { return inner->casPut(k, bts, e, m); }
         DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & tok) override { return inner->deleteExact(k, tok); }
         bool supportsListTokens() const override { return inner->supportsListTokens(); }
@@ -707,9 +861,11 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupNeverGetsTheDyingObject)
     Token t0;
     {
         auto s0 = openPool(b);
-        auto build0 = s0->beginPartWrite({});
+        auto build0 = precommittedBuildForPayload(
+            s0, RootNamespace{"srv1/condemned-absent-seed"}, "part", "payload-Y");
         id = build0->putBlob(idOf("payload-Y"), BlobSource::fromString("payload-Y")).ref;
         t0 = b->head(s0->layout().blobKey(id)).token;
+        build0->abandon();
     }
 
     /// 2. Condemn (Blob, hash(Y), t0) in the retire view, then GC-delete the object so it is absent
@@ -724,12 +880,12 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupNeverGetsTheDyingObject)
     /// 3. Open a fresh Pool over a GET-counting wrapper; the retire view sees the condemnation at open.
     auto counting = std::make_shared<GetCountingBackend>(b, blob_key);
     auto s = Pool::open(counting, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/condemned-absent"}, "part", "payload-Y");
 
-    /// 4. putBlob Y — the object is absent (was deleted). The dedup-hit (PreconditionFailed) path
-    ///    won't fire (object is gone, so putIfAbsentStream → Done on the first attempt).
-    ///    However, even if a racing re-creation happens between the check and the upload, the
-    ///    condemned branch must NEVER call backend().get(blob_key).
+    /// 4. The object is absent, so `putBlob` observes absence and publishes from the held source.
+    /// Even if a racing re-creation happens between observation and publication, the condemned branch
+    /// must never call `Backend::get` on the blob key.
     auto ref = build->putBlob(idOf("payload-Y"), BlobSource::fromString("payload-Y"));
     EXPECT_EQ(ref.ref, id);
     EXPECT_EQ(counting->get_count, 0u) << "INV-1: putBlob must not GET the dying object to revive it";
@@ -763,9 +919,11 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupPresentNeverGetsTheDyingObject)
         std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
         DB::Cas::ListPage list(const String & p, const String & c, size_t l) override { return inner->list(p, c, l); }
         DB::Cas::PutResult putIfAbsent(const String & k, const String & bts, const DB::Cas::ObjectMeta & m) override { return inner->putIfAbsent(k, bts, m); }
-        DB::Cas::WriteSinkPtr putIfAbsentStream(const String & k, const DB::Cas::ObjectMeta & m) override { return inner->putIfAbsentStream(k, m); }
+        void publishBlob(const DB::Cas::BlobPublishRequest & request) override
+        {
+            inner->publishBlob(request);
+        }
         DB::Cas::PutResult putOverwrite(const String & k, const String & bts, const DB::Cas::Token & e, const DB::Cas::ObjectMeta & m) override { return inner->putOverwrite(k, bts, e, m); }
-        DB::Cas::Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
         DB::Cas::CasResult casPut(const String & k, const String & bts, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & m) override { return inner->casPut(k, bts, e, m); }
         DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & tok) override { return inner->deleteExact(k, tok); }
         bool supportsListTokens() const override { return inner->supportsListTokens(); }
@@ -781,9 +939,11 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupPresentNeverGetsTheDyingObject)
     Token t0;
     {
         auto s0 = openPool(b);
-        auto build0 = s0->beginPartWrite({});
+        auto build0 = precommittedBuildForPayload(
+            s0, RootNamespace{"srv1/condemned-present-seed"}, "part", "payload-Z");
         id = build0->putBlob(idOf("payload-Z"), BlobSource::fromString("payload-Z")).ref;
         t0 = b->head(s0->layout().blobKey(id)).token;
+        build0->abandon();
     }
 
     /// 2. Condemn (Blob, hash(Z), t0) — object still PRESENT (GC condemned but not yet deleted).
@@ -796,10 +956,10 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupPresentNeverGetsTheDyingObject)
     /// 3. Open a fresh Pool over a GET-counting wrapper.
     auto counting = std::make_shared<GetCountingBackend>(b, blob_key);
     auto s = Pool::open(counting, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
-    auto build = s->beginPartWrite({});
+    auto build = precommittedBuildForPayload(
+        s, RootNamespace{"srv1/condemned-present"}, "part", "payload-Z");
 
-    /// 4. putBlob Z: putIfAbsentStream → PreconditionFailed (object present) → observeAndAdmit →
-    ///    sees condemned token → must call uploadFromSource (NOT resurrect/GET).
+    /// 4. `putBlob` observes the condemned metadata and republishes from the held source without a GET.
     auto ref = build->putBlob(idOf("payload-Z"), BlobSource::fromString("payload-Z"));
     EXPECT_EQ(ref.ref, id);
     EXPECT_EQ(counting->get_count, 0u) << "INV-1: putBlob must not GET the condemned object";
@@ -811,105 +971,6 @@ TEST(CASPartWriteTxn, PutBlobCondemnedDedupPresentNeverGetsTheDyingObject)
     ASSERT_TRUE(raw.has_value());
     const auto hdr = decodeEnvelopeHeader(raw->bytes, raw->bytes.size(), ObjectKind::Blob);
     EXPECT_EQ(raw->bytes.substr(hdr.header_len), "payload-Z");
-}
-
-TEST(CASPartWriteTxn, PutBlobVanishDuringRevivalReUploadsNotFatal)
-{
-    /// B190 sibling (INV-3): inside uploadFromSource the post-412 path re-observes via the 3-arg
-    /// observeAndAdmit. If the object is GC-deleted in the window (present at the conditional PUT
-    /// → 412, but gone at the subsequent HEAD), the 3-arg overload throws FILE_DOESNT_EXIST. Before
-    /// the fix that escaped putBlob's ABORTED-only retry catch as a FATAL INSERT failure. putBlob
-    /// HOLDS the source bytes, so a vanish here must RE-UPLOAD from those bytes within the bounded
-    /// retry loop — never fatal. The fix wraps uploadFromSource's two 3-arg observeAndAdmit calls so
-    /// FILE_DOESNT_EXIST becomes the retryable ABORTED putBlob already handles.
-    struct ScriptedVanishBackend final : public DB::Cas::Backend
-    {
-        ScriptedVanishBackend(BackendPtr inner_, String watched_key_)
-            : inner(std::move(inner_)), watched_key(std::move(watched_key_)) {}
-
-        size_t head_absent_budget = 2;       /// first N head(watched) calls report absent
-        size_t finalize_412_budget = 2;      /// first N finalize() on watched return PreconditionFailed
-
-        /// A sink wrapper that forces PreconditionFailed for the scripted budget, else delegates.
-        struct ScriptedSink final : public DB::Cas::WriteSink
-        {
-            ScriptedSink(WriteSinkPtr inner_, bool force_412_)
-                : inner(std::move(inner_)), force_412(force_412_) {}
-            DB::WriteBuffer & buffer() override { return inner->buffer(); }
-            DB::Cas::PutResult finalize() override
-            {
-                if (force_412)
-                {
-                    /// Abandon the underlying upload so the key is never created by it, and report 412.
-                    inner->cancel();
-                    return {DB::Cas::PutOutcome::PreconditionFailed, {}};
-                }
-                return inner->finalize();
-            }
-            void cancel() noexcept override { inner->cancel(); }
-            WriteSinkPtr inner;
-            bool force_412;
-        };
-
-        DB::Cas::HeadResult head(const String & k) override
-        {
-            if (k == watched_key && head_absent_budget > 0)
-            {
-                --head_absent_budget;
-                return DB::Cas::HeadResult{};   /// exists == false
-            }
-            return inner->head(k);
-        }
-        DB::Cas::WriteSinkPtr putIfAbsentStream(const String & k, const DB::Cas::ObjectMeta & meta) override
-        {
-            const bool force_412 = (k == watched_key && finalize_412_budget > 0);
-            if (force_412)
-                --finalize_412_budget;
-            return std::make_unique<ScriptedSink>(inner->putIfAbsentStream(k, meta), force_412);
-        }
-        std::optional<DB::Cas::GetResult> get(const String & k, DB::Cas::Range r) override { return inner->get(k, r); }
-        std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
-        DB::Cas::ListPage list(const String & p, const String & c, size_t l) override { return inner->list(p, c, l); }
-        DB::Cas::PutResult putIfAbsent(const String & k, const String & bts, const DB::Cas::ObjectMeta & m) override { return inner->putIfAbsent(k, bts, m); }
-        DB::Cas::PutResult putOverwrite(const String & k, const String & bts, const DB::Cas::Token & e, const DB::Cas::ObjectMeta & m) override { return inner->putOverwrite(k, bts, e, m); }
-        DB::Cas::Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
-        DB::Cas::CasResult casPut(const String & k, const String & bts, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & m) override { return inner->casPut(k, bts, e, m); }
-        DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & t) override { return inner->deleteExact(k, t); }
-        bool supportsListTokens() const override { return inner->supportsListTokens(); }
-
-        BackendPtr inner;
-        String watched_key;
-    };
-
-    auto raw = std::make_shared<InMemoryBackend>();
-    DB::Cas::Layout layout("p");
-    const String blob_key = layout.blobKey(idOf("payload-V"));
-
-    /// The blob does NOT need to pre-exist: the scripted backend models the conditional-PUT 412
-    /// (object present at PUT time) independently of the inner store, then reports absent on HEAD.
-    auto scripted = std::make_shared<ScriptedVanishBackend>(raw, blob_key);
-    auto s = Pool::open(scripted, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
-    /// Wiring order (EDGE-BEFORE-OBSERVE): the revive re-observes via observeAndAdmit, which requires a
-    /// durable precommit edge — stageManifest -> precommitAdd before putBlob.
-    const RootNamespace ns_v{"srv/tbl"};
-    auto build = startBuildFor(s, ns_v, "part_v");
-    const ManifestId id_v = build->stageManifest({blobManifestEntry("data.bin", "payload-V")});
-    build->precommitAdd(ns_v, "part_v", id_v);
-
-    /// putBlob holds "payload-V" as source bytes. The vanish-during-revival must NOT be fatal:
-    ///   BEFORE fix: observeAndAdmit throws FILE_DOESNT_EXIST, escapes putBlob's ABORTED-only catch → fatal.
-    ///   AFTER fix:  wrapped to ABORTED → putBlob retries → re-uploads from held bytes → succeeds.
-    PutBlobResult ref;
-    EXPECT_NO_THROW(ref = build->putBlob(idOf("payload-V"), BlobSource::fromString("payload-V")));
-    EXPECT_EQ(ref.ref, idOf("payload-V"));
-
-    /// The blob is present with a fresh incarnation and the exact payload — re-uploaded from source.
-    const HeadResult hr = raw->head(blob_key);
-    ASSERT_TRUE(hr.exists) << "putBlob must have re-uploaded the vanished blob from its held source bytes";
-    const auto stored = raw->get(blob_key);
-    ASSERT_TRUE(stored.has_value());
-    const auto h = decodeEnvelopeHeader(stored->bytes, stored->bytes.size(), ObjectKind::Blob);
-    EXPECT_EQ(stored->bytes.substr(h.header_len), "payload-V");
 }
 
 TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafNoProbeManifestTrust)
@@ -926,8 +987,15 @@ TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafNoProbeManifestTrust)
 
     /// A committed-source blob lives in the shared pool (seeded via a throwaway build on the same store).
     {
-        auto seed = s->beginPartWrite({});
+        const RootNamespace seed_ns{"srv1/trusted-seed"};
+        auto seed = startBuildFor(s, seed_ns, "part");
+        const ManifestId seed_manifest = durablyPrecommit(
+            seed,
+            seed_ns,
+            "part",
+            {blobManifestEntryStreaming("data.bin", "payload-TR")});
         seed->putBlob(streamRefOf("payload-TR"), BlobSource::fromString("payload-TR"));
+        seed->promote(seed_ns, "part", seed->buildId(), seed_manifest);
     }
     const String blob_key = s->layout().blobKey(streamRefOf("payload-TR"));
     const String meta_key = s->layout().blobMetaKey(streamRefOf("payload-TR"));
@@ -935,6 +1003,7 @@ TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafNoProbeManifestTrust)
     auto build = startBuildFor(s, ns, "part_1");
     const ManifestEntry entry = blobManifestEntryStreaming("data.bin", "payload-TR");
     build->adoptEvidence(entry);
+    EXPECT_EQ(build->dependencyProof(entry.ref), BlobDependencyProof::TrustedManifest);
     const ManifestId id = build->stageManifest({entry});
     build->precommitAdd(ns, "part_1", id);
 
@@ -948,6 +1017,61 @@ TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafNoProbeManifestTrust)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASBlobAdoptTrusted].load() - trusted_before, 1);
     EXPECT_EQ(counting->headCountFor(blob_key) - head_before, 0u) << "trust must not HEAD the adopted blob";
     EXPECT_EQ(counting->getCountFor(meta_key) - meta_get_before, 0u) << "trust must not loadMeta the adopted blob";
+}
+
+TEST(CASPartWriteTxn, PromotionAcceptsBothDependencyProofs)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    auto s = openPool(b);
+    const RootNamespace ns{"srv1/proof-promotion"};
+
+    /// Seed the committed-source body used by the trusted-manifest branch.
+    {
+        publishOneBlobPart(
+            s, RootNamespace{"srv1/proof-promotion-seed"}, "part", "data.bin", "trusted-body");
+    }
+
+    auto build = startBuildFor(s, ns, "part_1");
+    const ManifestEntry materialized = blobManifestEntry("data.bin", "materialized-body");
+    const ManifestEntry trusted = blobManifestEntry("data.cmrk3", "trusted-body");
+    const ManifestId id = build->stageManifest({materialized, trusted});
+    build->precommitAdd(ns, "part_1", id);
+
+    build->putBlob(materialized.ref, BlobSource::fromString("materialized-body"));
+    build->adoptEvidence(trusted);
+    ASSERT_EQ(build->dependencyProof(materialized.ref), BlobDependencyProof::Materialized);
+    ASSERT_EQ(build->dependencyProof(trusted.ref), BlobDependencyProof::TrustedManifest);
+
+    EXPECT_NO_THROW(build->promote(ns, "part_1", build->buildId(), id));
+    EXPECT_TRUE(s->resolveRef(ns, "part_1").has_value());
+}
+
+TEST(CASPartWriteTxn, InvalidDependencyProofFailsClosed)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    auto s = openPool(b);
+    const RootNamespace ns{"srv1/invalid-proof"};
+    auto build = startBuildFor(s, ns, "part_1");
+
+    const ManifestEntry entry = blobManifestEntry("data.bin", "invalid-proof-body");
+    const ManifestId id = build->stageManifest({entry});
+    build->precommitAdd(ns, "part_1", id);
+
+    BlobUploadResult invalid{
+        entry.ref,
+        BlobDepRecord{ObjectKind::Blob, static_cast<BlobDependencyProof>(2), entry.blob_size},
+        BlobUploadDiagnostics{
+            BlobMaterializationAction::Published,
+            BlobPublicationReason::Absent,
+            BlobPublicationTransport::Streaming}};
+    build->mergeBlobUploadResults(std::span<const BlobUploadResult>(&invalid, 1));
+
+    EXPECT_DEATH(
+        {
+            DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
+            build->promote(ns, "part_1", build->buildId(), id);
+        },
+        "unnamed dependency proof");
 }
 
 TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafEvenIfBackendRaced)
@@ -964,8 +1088,15 @@ TEST(CASPartWriteTxn, PromoteTrustsAdoptedLeafEvenIfBackendRaced)
     /// Seed X, adopt it, then delete it out from under the build (a landed GC delete in the adopt->promote
     /// window). The pre-§4 gate HEADed X, found it absent, and threw ABORTED; §4 trusts the durable edge.
     {
-        auto seed = s->beginPartWrite({});
+        const RootNamespace seed_ns{"srv1/race-seed"};
+        auto seed = startBuildFor(s, seed_ns, "part");
+        const ManifestId seed_manifest = durablyPrecommit(
+            seed,
+            seed_ns,
+            "part",
+            {blobManifestEntryStreaming("data.bin", "payload-RACE")});
         seed->putBlob(streamRefOf("payload-RACE"), BlobSource::fromString("payload-RACE"));
+        seed->promote(seed_ns, "part", seed->buildId(), seed_manifest);
     }
     const String blob_key = s->layout().blobKey(streamRefOf("payload-RACE"));
     const Token t0 = b->head(blob_key).token;
@@ -1015,11 +1146,11 @@ TEST(CASPartWriteTxn, PromoteSwallowsPostDurableEventSinkFailure)
     s->setEventSink(nullptr);
 }
 
-TEST(CASPartWriteTxn, PromoteCondemnedLeafWithoutDepAbortsFailClosed)
+TEST(CASPartWriteTxn, MissingDependencyProofFailsClosed)
 {
     /// A manifest blob leaf with NO recorded dep (a staging-bug shape: neither putBlob nor adoptEvidence
-    /// recorded it) must fail closed at the promote gate — isTrustedAdopt is false (no tokened dep and no
-    /// committed-source adopt), so §4 never silently publishes it. Under manifest-trust there is NO per-file
+    /// recorded it) must fail closed at the promote gate because neither accepted proof exists, so §4
+    /// never silently publishes it. Under manifest-trust there is NO per-file
     /// probe, so the fail-closed is a LOGICAL_ERROR decided from the dep set alone — it fires regardless of
     /// the pool blob's presence/condemnation (here the blob is even condemned, but that is never observed).
     /// The no-dep shape is reachable through the public build API (stageManifest names the leaf without any
@@ -1030,15 +1161,22 @@ TEST(CASPartWriteTxn, PromoteCondemnedLeafWithoutDepAbortsFailClosed)
 
     /// X exists (streaming-keyed) but THIS build records NO dep for it (no putBlob, no adoptEvidence).
     {
-        auto seed = s->beginPartWrite({});
+        const RootNamespace seed_ns{"srv1/missing-proof-seed"};
+        auto seed = startBuildFor(s, seed_ns, "part");
+        const ManifestId seed_manifest = durablyPrecommit(
+            seed,
+            seed_ns,
+            "part",
+            {blobManifestEntryStreaming("data.bin", "payload-NODEP")});
         seed->putBlob(streamRefOf("payload-NODEP"), BlobSource::fromString("payload-NODEP"));
+        seed->promote(seed_ns, "part", seed->buildId(), seed_manifest);
     }
     const String blob_key = s->layout().blobKey(streamRefOf("payload-NODEP"));
     const Token t0 = b->head(blob_key).token;
 
     auto build = startBuildFor(s, ns, "part_1");
     const ManifestEntry entry = blobManifestEntryStreaming("data.bin", "payload-NODEP");
-    /// NB: NO adoptEvidence(entry) — deps stays empty for this hash, so isTrustedAdopt is false.
+    /// NB: no `adoptEvidence` call — dependencies stay empty for this hash.
     const ManifestId id = build->stageManifest({entry});
     build->precommitAdd(ns, "part_1", id);
 
@@ -1051,7 +1189,7 @@ TEST(CASPartWriteTxn, PromoteCondemnedLeafWithoutDepAbortsFailClosed)
             DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
             build->promote(ns, "part_1", build->buildId(), id);
         },
-        "no tokened and no adopted dep");
+        "no dependency proof");
     EXPECT_FALSE(s->resolveRef(ns, "part_1").has_value());
     /// The pool blob was never touched (no probe, no displacement).
     EXPECT_EQ(b->head(blob_key).token, t0);
@@ -1063,7 +1201,7 @@ TEST(CASPartWriteTxn, PromoteRevalidatesBlobPresenceFailClosed)
     /// "a committed ref never names a missing dependency" invariant. In the part-manifest model
     /// stageManifest does not validate its entries' bodies. §4 manifest-trust: the fail-closed authority at
     /// the promote gate is now the DEP SET, not a backend HEAD — a leaf named by the manifest with NO
-    /// tokened dep (never putBlob'd) and NO adopted dep (never adoptEvidence'd) is a staging bug and fails
+    /// dependency proof (neither `putBlob` nor `adoptEvidence` recorded one) is a staging bug and fails
     /// closed with LOGICAL_ERROR (a real write always records a dep for every leaf). No per-file probe.
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
@@ -1074,29 +1212,29 @@ TEST(CASPartWriteTxn, PromoteRevalidatesBlobPresenceFailClosed)
     const ManifestId mid = build->stageManifest({blobManifestEntry("data.bin", "never-uploaded")});
     build->precommitAdd(ns, "part_1", mid);
 
-    /// promote must fail closed: the leaf has no tokened and no adopted dep ⇒ LOGICAL_ERROR. No ref committed.
+    /// Promotion must fail closed because the leaf has no dependency proof. No ref is committed.
     EXPECT_DEATH(
         {
             DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
             build->promote(ns, "part_1", build->buildId(), mid);
         },
-        "no tokened and no adopted dep");
+        "no dependency proof");
     EXPECT_FALSE(s->resolveRef(ns, "part_1").has_value());
 
     /// After uploading the blob, a fresh build's promote succeeds — the same manifest content is now
     /// fully present.
     auto build2 = startBuildFor(s, ns, "part_1");
-    build2->putBlob(idOf("never-uploaded"), BlobSource::fromString("never-uploaded"));
     const ManifestId mid2 = build2->stageManifest({blobManifestEntry("data.bin", "never-uploaded")});
     build2->precommitAdd(ns, "part_1", mid2);
+    build2->putBlob(idOf("never-uploaded"), BlobSource::fromString("never-uploaded"));
     EXPECT_NO_THROW(build2->promote(ns, "part_1", build2->buildId(), mid2));
     EXPECT_TRUE(s->resolveRef(ns, "part_1").has_value());
 }
 
-TEST(CASPartWriteTxn, AdoptEvidenceRecordsTokenlessDep)
+TEST(CASPartWriteTxn, AdoptEvidenceRecordsTrustedManifestProof)
 {
-    /// Port of AdoptFromTreeRecordsEvidence. adoptEvidence records a TOKENLESS W-EVIDENCE dep directly
-    /// from a resolved ManifestEntry — a Blob entry is tokenless (depIsTokened false), an Inline entry
+    /// Port of AdoptFromTreeRecordsEvidence. `adoptEvidence` records `TrustedManifest` directly
+    /// from a resolved `ManifestEntry`; a Blob entry has a proof, while an Inline entry
     /// records nothing. §4: whether the dep is a committed-source adopt vs absent (adopted vs no-dep) is
     /// asserted end-to-end at the promote gate by PromoteTrustsAdoptedLeafNoProbeManifestTrust (positive:
     /// adopted leaf ⇒ trusted, no probe) and PromoteCondemnedLeafWithoutDepAbortsFailClosed (negative
@@ -1107,15 +1245,15 @@ TEST(CASPartWriteTxn, AdoptEvidenceRecordsTokenlessDep)
 
     const ManifestEntry adopted = blobManifestEntry("data.bin", "source-blob");
     build->adoptEvidence(adopted);
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("source-blob"))}));
+    EXPECT_EQ(build->dependencyProof(adopted.ref), BlobDependencyProof::TrustedManifest);
 
-    /// An Inline entry references no standalone object → records nothing (never tokened).
+    /// An Inline entry references no standalone object and records no proof.
     ManifestEntry inline_entry;
     inline_entry.path = "small";
     inline_entry.placement = EntryPlacement::Inline;
     inline_entry.inline_bytes = "abc";
     build->adoptEvidence(inline_entry);
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("abc"))}));
+    EXPECT_EQ(build->dependencyProof(idOf("abc")), std::nullopt);
 }
 
 TEST(CASPartWriteTxn, AbandonRemovesStagedDebrisAndDisables)
@@ -1128,6 +1266,8 @@ TEST(CASPartWriteTxn, AbandonRemovesStagedDebrisAndDisables)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "ref");
 
+    const ManifestId owner = build->stageManifest({blobManifestEntry("owner", "kept")});
+    build->precommitAdd(ns, "ref", owner);
     auto blob_ref = build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
     const ManifestId mid = build->stageManifest({blobManifestEntry("f", "kept")});
 
@@ -1170,11 +1310,11 @@ TEST(CASPartWriteTxn, PublishHappyPathRoundTrip)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "part_1");
 
+    const ManifestId id = build->stageManifest({blobManifestEntry("data.bin", "hello world")});
+    build->precommitAdd(ns, "part_1", id);
     auto blob = build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     EXPECT_EQ(blob.size, 11u);
 
-    const ManifestId id = build->stageManifest({blobManifestEntry("data.bin", "hello world")});
-    build->precommitAdd(ns, "part_1", id);
     build->promote(ns, "part_1", build->buildId(), id);
 
     auto r = s->resolveRef(ns, "part_1");
@@ -1204,7 +1344,6 @@ TEST(CASPartWriteTxn, PromoteCrossNamespaceManifestFailsClosed)
     const RootNamespace other_ns{"srv1/other"};
 
     auto build = startBuildFor(s, ns, "part_1");
-    build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     /// The manifest is minted in `ns` (derived from intended_ref). Promoting/precommitting it into a
     /// DIFFERENT namespace must fail closed.
     const ManifestId id = build->stageManifest({blobManifestEntry("data.bin", "hello world")});
@@ -1243,11 +1382,11 @@ TEST(CASPartWriteTxn, PublishIntoSecondNamespaceSameBlob)
 
     /// First build publishes part_1 in ns1, uploading the blob.
     auto build1 = startBuildFor(s, ns1, "part_1");
+    const ManifestId id1 = build1->stageManifest({blobManifestEntry("data.bin", "hello world")});
+    build1->precommitAdd(ns1, "part_1", id1);
     auto blob = build1->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     const String blob_key = s->layout().blobKey(blob.ref);
     const Token blob_token = b->head(blob_key).token;
-    const ManifestId id1 = build1->stageManifest({blobManifestEntry("data.bin", "hello world")});
-    build1->precommitAdd(ns1, "part_1", id1);
     build1->promote(ns1, "part_1", build1->buildId(), id1);
 
     /// Second build publishes part_1 in ns2 referencing the SAME blob: putBlob dedup-hits and ADOPTS the
@@ -1284,15 +1423,15 @@ TEST(CASPartWriteTxn, TwoBuildsPublishToSameNamespaceBothLand)
     const String ref2 = "b";
 
     auto build_a = startBuildFor(s, ns, ref1);
-    build_a->putBlob(idOf("content-a"), BlobSource::fromString("content-a"));
     const ManifestId id_a = build_a->stageManifest({blobManifestEntry("data.bin", "content-a")});
     build_a->precommitAdd(ns, ref1, id_a);
+    build_a->putBlob(idOf("content-a"), BlobSource::fromString("content-a"));
     build_a->promote(ns, ref1, build_a->buildId(), id_a);
 
     auto build_b = startBuildFor(s, ns, ref2);
-    build_b->putBlob(idOf("content-b"), BlobSource::fromString("content-b"));
     const ManifestId id_b = build_b->stageManifest({blobManifestEntry("data.bin", "content-b")});
     build_b->precommitAdd(ns, ref2, id_b);
+    build_b->putBlob(idOf("content-b"), BlobSource::fromString("content-b"));
     build_b->promote(ns, ref2, build_b->buildId(), id_b);
 
     auto r1 = s->resolveRef(ns, ref1);
@@ -1321,36 +1460,38 @@ TEST(CASPartWriteTxn, FirstPublishMakesNamespaceDiscoverable)
     EXPECT_EQ(all[0], "srv9/fresh");
 }
 
-TEST(CASPartWriteTxn, AdoptEvidenceNoBackendOp)
+TEST(CASPartWriteTxn, AdoptEvidenceRecordsTrustedManifestDependencyProofWithoutIO)
 {
-    /// B188: adoptEvidence records a TOKENLESS W-EVIDENCE dep from an already-resolved ManifestEntry
+    /// B188: `adoptEvidence` records `TrustedManifest` from an already resolved `ManifestEntry`
     /// WITHOUT any backend call (no HEAD, no GET, no PUT).
     ///
     /// Two behavioural assertions:
     ///   1. No backend op fires during adoptEvidence (counted via a delegating wrapper).
-    ///   2. The recorded dep is tokenless: after adoptEvidence(entry), depIsTokened is false (the
-    ///      W-EVIDENCE dep is what the promote gate later revalidates).
+    ///   2. The recorded dependency proof is `TrustedManifest`.
 
-    /// A delegating wrapper that counts every backend access path including the streaming write path.
+    /// A delegating wrapper that counts every backend access path.
     struct LocalCountingBackend final : public Backend
     {
         explicit LocalCountingBackend(BackendPtr inner_) : inner(std::move(inner_)) {}
         size_t heads = 0;
-        size_t stream_puts = 0;
+        size_t puts = 0;
         size_t gets = 0;
 
         HeadResult head(const String & k) override { ++heads; return inner->head(k); }
-        WriteSinkPtr putIfAbsentStream(const String & k, const ObjectMeta & meta) override
+        void publishBlob(const BlobPublishRequest & request) override
         {
-            ++stream_puts;
-            return inner->putIfAbsentStream(k, meta);
+            ++puts;
+            inner->publishBlob(request);
         }
         std::optional<GetResult> get(const String & k, Range r) override { ++gets; return inner->get(k, r); }
         std::optional<GetStreamResult> getStream(const String & k, Range r) override { return inner->getStream(k, r); }
         ListPage list(const String & p, const String & c, size_t l) override { return inner->list(p, c, l); }
-        PutResult putIfAbsent(const String & k, const String & bts, const ObjectMeta & m) override { return inner->putIfAbsent(k, bts, m); }
+        PutResult putIfAbsent(const String & k, const String & bts, const ObjectMeta & m) override
+        {
+            ++puts;
+            return inner->putIfAbsent(k, bts, m);
+        }
         PutResult putOverwrite(const String & k, const String & bts, const Token & e, const ObjectMeta & m) override { return inner->putOverwrite(k, bts, e, m); }
-        Token resurrect(DB::ReadBuffer & payload, uint64_t payload_size, const String & k, const String & fresh_header) override { return inner->resurrect(payload, payload_size, k, fresh_header); }
         CasResult casPut(const String & k, const String & bts, const std::optional<Token> & e, const ObjectMeta & m) override { return inner->casPut(k, bts, e, m); }
         DeleteOutcome deleteExact(const String & k, const Token & t) override { return inner->deleteExact(k, t); }
         bool supportsListTokens() const override { return inner->supportsListTokens(); }
@@ -1368,18 +1509,18 @@ TEST(CASPartWriteTxn, AdoptEvidenceNoBackendOp)
 
     /// Reset the counters after Pool::open (which may HEAD/GET gc/server-roots etc. during startup).
     counting->heads = 0;
-    counting->stream_puts = 0;
+    counting->puts = 0;
     counting->gets = 0;
 
     /// adoptEvidence — must record the dep WITHOUT touching the backend.
     EXPECT_NO_THROW(build->adoptEvidence(entry));
     EXPECT_EQ(counting->heads, 0u) << "adoptEvidence must not HEAD the backend";
-    EXPECT_EQ(counting->stream_puts, 0u) << "adoptEvidence must not PUT to the backend";
+    EXPECT_EQ(counting->puts, 0u) << "adoptEvidence must not PUT to the backend";
     EXPECT_EQ(counting->gets, 0u) << "adoptEvidence must not GET from the backend";
 
-    /// The dep is recorded — a tokenless W-EVIDENCE dep (depIsTokened false) that the promote gate later
-    /// revalidates; the no-backend-op counts above are the B188 contract's primary guard.
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("b188-content"))}));
+    /// The dep is recorded as trusted manifest evidence; the no-backend-op counts above are the B188
+    /// contract's primary guard.
+    EXPECT_EQ(build->dependencyProof(entry.ref), BlobDependencyProof::TrustedManifest);
 
     /// Inline entry: adoptEvidence records nothing (Inline has no standalone object) and no backend op.
     ManifestEntry inline_entry;
@@ -1388,9 +1529,9 @@ TEST(CASPartWriteTxn, AdoptEvidenceNoBackendOp)
     inline_entry.inline_bytes = "xy";
     EXPECT_NO_THROW(build->adoptEvidence(inline_entry));
     EXPECT_EQ(counting->heads, 0u);
-    EXPECT_EQ(counting->stream_puts, 0u);
+    EXPECT_EQ(counting->puts, 0u);
     EXPECT_EQ(counting->gets, 0u);
-    EXPECT_FALSE(build->depIsTokened(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(u128Of("xy"))}));
+    EXPECT_EQ(build->dependencyProof(idOf("xy")), std::nullopt);
 }
 
 TEST(CASPartWriteTxn, ConvergesUnderProductiveGc)
@@ -1444,15 +1585,19 @@ TEST(CASPartWriteTxn, ConvergesUnderProductiveGc)
                       .size = content.size()}});
     condemnMeta(*b, layout, u128Of(content), /*condemn_round*/ 1);
 
-    /// 3. Open the live Pool and start build B. B dedup-hits the condemned H and re-uploads from
-    ///    source (uploadFromSource via putBlob): a fresh incarnation, a NEW token. B stays ACTIVE for
+    /// 3. Open the live Pool and start build B. B observes condemned H and republishes from
+    ///    its own source through `putBlob`: a fresh incarnation, a NEW token. B stays ACTIVE for
     ///    the whole adversarial loop — its build_seq is never retired below.
     auto s = Pool::open(b, cfg);
     const String blob_key = s->layout().blobKey(h);
     auto build_b = startBuildFor(s, ns, "part_2");
 
-    /// B190: use putBlob (holds source bytes). putBlob detects the condemned dedup hit and calls
-    /// uploadFromSource — no GET of dying object.
+    /// Establish the reachability edge before observing/replacing H.
+    const ManifestId mid_b = build_b->stageManifest({blobManifestEntry("f", content)});
+    build_b->precommitAdd(ns, "part_2", mid_b);
+
+    /// B190: use `putBlob` (holds source bytes). It detects the condemned observation and publishes
+    /// unconditionally — no GET of the dying object.
     const auto ref_b = build_b->putBlob(h, BlobSource::fromString(content));
     ASSERT_EQ(ref_b.ref, h);
 
@@ -1460,12 +1605,7 @@ TEST(CASPartWriteTxn, ConvergesUnderProductiveGc)
     ASSERT_TRUE(after_reupload.exists);
     EXPECT_NE(after_reupload.token, h_token0);   /// a genuinely fresh incarnation
 
-    /// 4. PartWriteTxn B stages its manifest referencing H and PRECOMMITS it (build-root edge). H is now
-    ///    protected by reachability: the GC fold lifts H to in-degree ≥ 1 from the precommit.
-    const ManifestId mid_b = build_b->stageManifest({blobManifestEntry("f", content)});
-    build_b->precommitAdd(ns, "part_2", mid_b);
-
-    /// 5. THE ADVERSARIAL LOOP. A real, productive GC keeps trying to reclaim. It reclaims the now-
+    /// 4. THE ADVERSARIAL LOOP. A real, productive GC keeps trying to reclaim. It reclaims the now-
     ///    unreferenced part_1 manifest (build A's, UNprotected) but H stays pinned by B's PRECOMMIT edge
     ///    (in-degree ≥ 1), so H is never even a zero-in-degree candidate. We drive far more rounds than B
     ///    needs to promote; H must survive ALL of them. Each round renews B's watermark so the crash
@@ -1548,9 +1688,9 @@ TEST(CASPartWriteTxn, PromoteFailsClosedWhenPrecommitNoLongerLiveOwner)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     const ManifestId id = build->stageManifest({blobManifestEntry("data.bin", "hello world")});
     build->precommitAdd(ns, "part_1", id);
+    build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
 
     /// Make the precommit NO LONGER the live owner: append an exact precommit-removal ref-log
     /// transaction exactly as an abandon / GC reclaim would (spec §Remove Precommit) -- via the SAME
@@ -1583,9 +1723,9 @@ TEST(CASPartWriteTxn, PromoteSucceedsWhenPrecommitIsLiveOwner)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
     const ManifestId id = build->stageManifest({blobManifestEntry("data.bin", "hello world")});
     build->precommitAdd(ns, "part_1", id);
+    build->putBlob(idOf("hello world"), BlobSource::fromString("hello world"));
 
     EXPECT_NO_THROW(build->promote(ns, "part_1", build->buildId(), id));
     ASSERT_TRUE(s->resolveRef(ns, "part_1").has_value());
@@ -1611,19 +1751,19 @@ TEST(CASPartWriteTxnRepoint, PromoteRepointsCommittedRef)
 
     /// Publish ref "part_1" -> M1 through the normal build path.
     auto build1 = startBuildFor(s, ns, "part_1");
-    build1->putBlob(idOf("m1"), BlobSource::fromString("m1"));
     const ManifestId m1_id = build1->stageManifest({blobManifestEntry("data.bin", "m1")});
     build1->precommitAdd(ns, "part_1", m1_id);
+    build1->putBlob(idOf("m1"), BlobSource::fromString("m1"));
     build1->promote(ns, "part_1", build1->buildId(), m1_id);
     ASSERT_TRUE(s->resolveRef(ns, "part_1").has_value());
     EXPECT_EQ(s->resolveRef(ns, "part_1")->manifest_id, m1_id);
 
     /// A second build stages M2 (one extra entry) onto the SAME ref.
     auto build2 = startBuildFor(s, ns, "part_1");
-    build2->putBlob(idOf("m2"), BlobSource::fromString("m2"));
-    build2->putBlob(idOf("m2x"), BlobSource::fromString("m2x"));
     const ManifestId m2_id = build2->stageManifest({blobManifestEntry("data.bin", "m2"), blobManifestEntry("extra.bin", "m2x")});
     build2->precommitAdd(ns, "part_1", m2_id);
+    build2->putBlob(idOf("m2"), BlobSource::fromString("m2"));
+    build2->putBlob(idOf("m2x"), BlobSource::fromString("m2x"));
 
     /// allow_repoint = false (the default) -> NETWORK_ERROR (CAS write-retry-later), existing invariant
     /// untouched; M1 still resolves.
@@ -1665,11 +1805,11 @@ TEST(CASPartWriteTxn, AbandonAppendsPrecommitRemovalAndKeepsLivePrecommitBody)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
     const ManifestId mid = build->stageManifest({blobManifestEntry("data.bin", "kept")});
     const String manifest_key = s->layout().manifestKey(mid);
     const UInt128 abandoned_build_id = build->buildId();
     build->precommitAdd(ns, "part_1", mid);
+    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
 
     /// The precommit manifest body is present before abandon.
     ASSERT_TRUE(b->head(manifest_key).exists);
@@ -1705,11 +1845,11 @@ TEST(CASPartWriteTxn, AbandonStillDeletesNeverPrecommittedStagedDebris)
     const RootNamespace ns{"srv1/tbl"};
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
     /// Two staged manifests: one becomes the precommit, the other is pure pre-precommit debris.
     const ManifestId debris = build->stageManifest({blobManifestEntry("debris.bin", "kept")});
     const ManifestId precommitted = build->stageManifest({blobManifestEntry("data.bin", "kept")});
     build->precommitAdd(ns, "part_1", precommitted);
+    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
 
     build->abandon();
 
@@ -1731,9 +1871,9 @@ TEST(CASPartWriteTxn, AbandonSwallowsThrowingEventSink)
     const RootNamespace ns{"srv1/tbl_abandon_sink"};
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
     const ManifestId mid = build->stageManifest({blobManifestEntry("data.bin", "kept")});
     build->precommitAdd(ns, "part_1", mid);
+    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
 
     /// UNKNOWN_EXCEPTION (not LOGICAL_ERROR): mirrors `PromoteSwallowsPostDurableEventSinkFailure`
     /// above -- this simulates an arbitrary observer/sink callback failing, not a CAS invariant
@@ -1813,9 +1953,9 @@ TEST(CASPartWriteTxn, AbandonRetryableAfterAppendFailure)
     DB::Cas::tests::casAdmitRecoverableEntry(*b, s->layout(), ns, s->liveWriterEpoch());
     auto build = startBuildFor(s, ns, "part_1");
 
-    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
     const ManifestId mid = build->stageManifest({blobManifestEntry("data.bin", "kept")});
     build->precommitAdd(ns, "part_1", mid);
+    build->putBlob(idOf("kept"), BlobSource::fromString("kept"));
 
     b->corrupt_key_substr = s->layout().namespaceStreamPrefix(DB::Cas::tests::fixture::fixtureLife(ns)) + "_log/";
     b->corrupt_count = 1;
@@ -2010,10 +2150,10 @@ TEST(CASPartWriteTxn, ManifestCapEncodedBytesOverThrowsBeforeBodyWrite)
 /// spec §9.9 (mixed-algo pools, Phase 3 T2) — the W-DEP-SET cross-satisfaction crux: a manifest with
 /// two entries carrying the SAME digest VALUE under TWO DIFFERENT algos (`ch128:X` / `xxh3:X`). Only
 /// `ch128:X`'s body is ever putBlob'd; `xxh3:X`'s body never lands anywhere. Promote MUST fail closed —
-/// the tokened `ch128:X` dep must NEVER be read as satisfying the non-tokened `xxh3:X` leaf.
+/// the materialized `ch128:X` proof must never satisfy the missing `xxh3:X` proof.
 /// This test is RED (wrongly passes / silently promotes) if `PartWriteTxn::deps` (the W-DEP-SET) were keyed on
 /// a bare digest instead of the full `BlobRef` pair: both entries would collapse to the SAME map key
-/// (the digest alone), so `depIsTokened` would report the xxh3 leaf as edge-protected via the ch128
+/// (the digest alone), so the proof query would report the xxh3 leaf as edge-protected via the ch128
 /// entry's putBlob and promote would skip its revalidation (and hence its absence) entirely.
 TEST(CASPartWriteTxn, WDepSetCrossAlgoSatisfactionFailsClosed)
 {
@@ -2044,16 +2184,16 @@ TEST(CASPartWriteTxn, WDepSetCrossAlgoSatisfactionFailsClosed)
     /// `e_xxh3`'s (`blobs/xxh3/...`), even though the raw digest bytes are identical.
     build->putBlob(BlobRef{BlobHashAlgo::CityHash128, shared_digest}, BlobSource::fromString("abc"));
 
-    /// promote must fail closed: the xxh3:X leaf has NO tokened dep and NO adopted dep — never silently
-    /// satisfied by the ch128:X entry's tokened dep (same digest bytes, distinct object key). §4
-    /// manifest-trust: an unsatisfied leaf is caught by the dep set (isTrustedAdopt false, not tokened) and
+    /// Promotion must fail closed: the xxh3:X leaf has no dependency proof — never silently
+    /// satisfied by the ch128:X entry's materialized proof (same digest bytes, distinct object key). §4
+    /// manifest-trust catches an unsatisfied leaf by the dependency set and
     /// fails closed with LOGICAL_ERROR — a staging bug — without any backend probe on the xxh3 key.
     EXPECT_DEATH(
         {
             DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
             build->promote(ns, "part_mixed", build->buildId(), id);
         },
-        "no tokened and no adopted dep");
+        "no dependency proof");
 
     /// No committed ref appears — the promote aborted before installing one.
     EXPECT_FALSE(s->resolveRef(ns, "part_mixed").has_value());
@@ -2070,17 +2210,14 @@ namespace
 
 /// Faults the part-manifest body PUT (`/cas/manifests/` keys) with an ambiguous
 /// (Unresolved-classified) timeout a bounded number of times, mirroring RefWriterTestBackend's fault
-/// seam (gtest_cas_ref_writer.cpp). Covers BOTH write primitives — `putIfAbsent` (the controller
-/// path) and `putIfAbsentStream` (the pre-controller path) — with ONE shared `fault_count` and the
-/// same land/plant side effects, so the assertions are flip-proof against either implementation of
-/// the stage write.
+/// seam (gtest_cas_ref_writer.cpp). Part manifests use the small-object `putIfAbsent` primitive.
 class ManifestPutFaultBackend final : public InMemoryBackend
 {
 public:
     int fault_count = 0;                 /// remaining ambiguous faults on matching body PUTs
     bool land_despite_fault = false;     /// the faulted attempt's own write actually lands (response lost)
     String plant_different_on_fault;     /// a FOREIGN different body lands at the key before the fault
-    int put_attempts = 0;                /// matching body-PUT attempts observed (both primitives)
+    int put_attempts = 0;                /// matching body-PUT attempts observed
 
     PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
     {
@@ -2089,35 +2226,6 @@ public:
         ++put_attempts;
         maybeFault(key, bytes);
         return InMemoryBackend::putIfAbsent(key, bytes, meta);
-    }
-
-    WriteSinkPtr putIfAbsentStream(const String & key, const ObjectMeta & meta) override
-    {
-        if (!isManifestBodyKey(key))
-            return InMemoryBackend::putIfAbsentStream(key, meta);
-
-        /// Counts/faults at finalize — the moment the old single-attempt path observed its timeout.
-        struct CountingOrFaultingSink final : WriteSink
-        {
-            ManifestPutFaultBackend & parent;
-            String key;
-            ObjectMeta meta;
-            DB::WriteBufferFromOwnString buf;
-
-            CountingOrFaultingSink(ManifestPutFaultBackend & parent_, String key_, ObjectMeta meta_)
-                : parent(parent_), key(std::move(key_)), meta(std::move(meta_)) {}
-
-            DB::WriteBuffer & buffer() override { return buf; }
-            PutResult finalize() override
-            {
-                ++parent.put_attempts;
-                const String & bytes = buf.str();
-                parent.maybeFault(key, bytes);
-                return parent.InMemoryBackend::putIfAbsent(key, bytes, meta);
-            }
-            void cancel() noexcept override {}
-        };
-        return std::make_unique<CountingOrFaultingSink>(*this, key, meta);
     }
 
 private:
@@ -2235,71 +2343,48 @@ TEST(CASPartWriteTxnStageManifestRetry, BudgetExhaustionMapsToNetworkError)
 }
 
 /// =====================================================================================
-/// Task B follow-up (availfix): the two conditional-create paths that still bypassed the request
-/// controller — the BLOB body `putIfAbsentStream` create and `promoteStaged`'s conditional
-/// server-side copy (both issued inside `PartWriteTxn::uploadFromSource`'s streamIfAbsent) — now ride the
-/// same budgeted-attempts machinery. Reissue re-streams from the writer's REPLAYABLE source
-/// (`BlobSource::open` re-reads the staged temp file / re-issues the copy from the intact
-/// staging object — INV-1, never a GET-revive); ambiguity resolves by exact-key OCCUPANCY (the key
-/// embeds the content hash, so any occupant IS the intended content — the same trust model as the
-/// plain 412-adopt path).
+/// Blob publication retries re-stream from the writer's replayable source. A retry after a failed
+/// server-side copy retags and streams from the intact source instead of repeating the copy.
 /// =====================================================================================
 
 namespace
 {
 
-/// Faults blob-body conditional creates — BOTH primitives `uploadFromSource` can issue: the streaming
-/// `putIfAbsentStream` (local staging) and `promoteStaged`'s conditional server-side copy (S3-native
-/// staging) — with an ambiguous (Unresolved-classified) timeout a bounded number of times, mirroring
-/// ManifestPutFaultBackend above. Blob META writes (`.meta` keys, plain putIfAbsent) are never faulted.
+/// Faults unconditional blob publications with an ambiguous timeout a bounded number of times.
+/// Blob metadata writes (`.meta` keys, plain `putIfAbsent`) are never faulted.
 class BlobPutFaultBackend final : public InMemoryBackend
 {
 public:
     int fault_count = 0;                 /// remaining ambiguous faults on matching create attempts
     bool land_despite_fault = false;     /// the faulted attempt's own write actually lands (response lost)
-    int stream_attempts = 0;             /// blob-body streaming-PUT finalize attempts observed
-    int copy_attempts = 0;               /// promoteStaged conditional-copy attempts observed
+    int publish_stream_attempts = 0;     /// unconditional streaming publications observed
+    int publish_copy_attempts = 0;       /// unconditional native-copy publications observed
+    int blob_head_attempts = 0;          /// transaction-level blob observations
 
-    WriteSinkPtr putIfAbsentStream(const String & key, const ObjectMeta & meta) override
+    HeadResult head(const String & key) override
     {
-        if (!isBlobBodyKey(key))
-            return InMemoryBackend::putIfAbsentStream(key, meta);
-
-        /// Counts/faults at finalize — the moment the old single-attempt path observed its timeout.
-        struct CountingOrFaultingSink final : WriteSink
-        {
-            BlobPutFaultBackend & parent;
-            String key;
-            ObjectMeta meta;
-            DB::WriteBufferFromOwnString buf;
-
-            CountingOrFaultingSink(BlobPutFaultBackend & parent_, String key_, ObjectMeta meta_)
-                : parent(parent_), key(std::move(key_)), meta(std::move(meta_)) {}
-
-            DB::WriteBuffer & buffer() override { return buf; }
-            PutResult finalize() override
-            {
-                ++parent.stream_attempts;
-                const String & bytes = buf.str();
-                parent.maybeFault(key, bytes);
-                return parent.InMemoryBackend::putIfAbsent(key, bytes, meta);
-            }
-            void cancel() noexcept override {}
-        };
-        return std::make_unique<CountingOrFaultingSink>(*this, key, meta);
+        if (isBlobBodyKey(key))
+            ++blob_head_attempts;
+        return InMemoryBackend::head(key);
     }
 
-    PutResult promoteStaged(const String & staging_key, const String & blob_key) override
+    void publishBlob(const BlobPublishRequest & request) override
     {
-        ++copy_attempts;
+        if (std::holds_alternative<StreamingBlobPublication>(request.publication))
+            ++publish_stream_attempts;
+        else
+            ++publish_copy_attempts;
+
         if (fault_count > 0)
         {
             --fault_count;
             if (land_despite_fault)
-                InMemoryBackend::promoteStaged(staging_key, blob_key);
-            throw Poco::TimeoutException("BlobPutFaultBackend: simulated ambiguous copy (response lost)");
+                InMemoryBackend::publishBlob(request);
+            else if (const auto * streaming = std::get_if<StreamingBlobPublication>(&request.publication))
+                (void)streaming->open_payload();
+            throw Poco::TimeoutException("BlobPutFaultBackend: simulated ambiguous publication (response lost)");
         }
-        return InMemoryBackend::promoteStaged(staging_key, blob_key);
+        InMemoryBackend::publishBlob(request);
     }
 
 private:
@@ -2308,16 +2393,6 @@ private:
         return key.find("/blobs/") != String::npos && !key.ends_with(".meta");
     }
 
-    /// One fault: apply the configured server-side effect, then lose the response.
-    void maybeFault(const String & key, const String & bytes)
-    {
-        if (fault_count <= 0)
-            return;
-        --fault_count;
-        if (land_despite_fault)
-            InMemoryBackend::putIfAbsent(key, bytes, {});
-        throw Poco::TimeoutException("BlobPutFaultBackend: simulated ambiguous result (response lost)");
-    }
 };
 
 /// Zero-backoff store over a BlobPutFaultBackend: the sleep schedule has its own controller-level
@@ -2351,7 +2426,7 @@ BlobSource countingSource(const String & payload, int & payload_streams)
 /// path failed the whole INSERT on the FIRST timeout (the raw Poco::TimeoutException escaped
 /// putBlob); the controller path rides its budget, RE-STREAMING the payload from the writer's own
 /// replayable source on every attempt.
-TEST(CASPartWriteTxnBlobPutRetry, AmbiguousTimeoutsThenCommitRestreamsFromSource)
+TEST(CASPartWrite, AmbiguousTimeoutsThenCommitRestreamsFromSource)
 {
     auto b = std::make_shared<BlobPutFaultBackend>();
     auto s = openBlobFaultPool(b);
@@ -2367,7 +2442,8 @@ TEST(CASPartWriteTxnBlobPutRetry, AmbiguousTimeoutsThenCommitRestreamsFromSource
     const PutBlobResult res = build->putBlob(idOf(payload), countingSource(payload, payload_streams));
     EXPECT_EQ(res.size, payload.size());
 
-    EXPECT_EQ(b->stream_attempts, 3) << "two faulted attempts + the committing third";
+    EXPECT_EQ(b->publish_stream_attempts, 3) << "two ambiguous publications + the committing third";
+    EXPECT_EQ(b->blob_head_attempts, 3) << "every outer retry restarts from a fresh blob HEAD";
     EXPECT_EQ(payload_streams, 3) << "every reissue must RE-STREAM from the writer's own source (INV-1)";
     EXPECT_TRUE(b->head(s->layout().blobKey(idOf(payload))).exists) << "the blob body must be durable";
 }
@@ -2376,7 +2452,7 @@ TEST(CASPartWriteTxnBlobPutRetry, AmbiguousTimeoutsThenCommitRestreamsFromSource
 /// server-side. The occupancy resolve observes the key present and the existing 412 machinery takes
 /// over — the occupant is ADOPTED (content-addressed identity: any occupant of this key IS the
 /// content), with NO reissue and NO second body upload.
-TEST(CASPartWriteTxnBlobPutRetry, AmbiguousLandedWriteAdoptsOccupantWithoutReupload)
+TEST(CASPartWrite, AmbiguousLandedWriteAdoptsOccupantWithoutReupload)
 {
     auto b = std::make_shared<BlobPutFaultBackend>();
     /// The sink target must outlive the Pool: `~Pool` emits terminate events into the sink.
@@ -2397,7 +2473,8 @@ TEST(CASPartWriteTxnBlobPutRetry, AmbiguousLandedWriteAdoptsOccupantWithoutReupl
     const PutBlobResult res = build->putBlob(idOf(payload), countingSource(payload, payload_streams));
     EXPECT_EQ(res.size, payload.size());
 
-    EXPECT_EQ(b->stream_attempts, 1) << "a landed ambiguous attempt must be resolved, never reissued";
+    EXPECT_EQ(b->publish_stream_attempts, 1) << "a landed ambiguous attempt must be observed, never reissued";
+    EXPECT_EQ(b->blob_head_attempts, 2) << "the ambiguity is resolved by restarting from HEAD";
     EXPECT_EQ(payload_streams, 1);
 
     const String key = s->layout().blobKey(idOf(payload));
@@ -2411,12 +2488,12 @@ TEST(CASPartWriteTxnBlobPutRetry, AmbiguousLandedWriteAdoptsOccupantWithoutReupl
 }
 
 /// Budget exhaustion: EVERY attempt is ambiguous and nothing ever lands. The controller reports the
-/// uncertainty and uploadFromSource maps it to NETWORK_ERROR (fix #37 phase 2) -- the same retryable
+/// uncertainty and `ensureBlobPresent` maps it to `NETWORK_ERROR` -- the same retryable
 /// abort class stageManifest and the ref-log lane map their exhausted budgets to. Unlike the OLD
 /// ABORTED mapping, putBlob's bounded condemned-churn loop (8 rounds) does NOT re-drive this: it only
 /// catches ABORTED, so a NETWORK_ERROR escapes on the FIRST attempt -- desirable (no point hammering a
 /// lost fence locally 8 times; the caller's own backoff, e.g. the merge queue's, is what should retry).
-TEST(CASPartWriteTxnBlobPutRetry, BudgetExhaustionMapsToNetworkErrorAndEscapesImmediately)
+TEST(CASPartWrite, AmbiguousNonLandingPublicationStopsAtOuterBound)
 {
     auto b = std::make_shared<BlobPutFaultBackend>();
     auto s = openBlobFaultPool(b, /*max_attempts=*/3);
@@ -2438,17 +2515,18 @@ TEST(CASPartWriteTxnBlobPutRetry, BudgetExhaustionMapsToNetworkErrorAndEscapesIm
     {
         threw = true;
         EXPECT_EQ(e.code(), DB::ErrorCodes::NETWORK_ERROR);
-        EXPECT_NE(e.message().find("UNCERTAIN"), String::npos) << e.message();
+        EXPECT_NE(e.message().find("ambiguous"), String::npos) << e.message();
     }
     EXPECT_TRUE(threw);
-    EXPECT_EQ(b->stream_attempts, 3) << "the 3-attempt controller budget for ONE outer attempt -- "
-                                          "putBlob's outer condemned-churn loop must NOT re-drive a NETWORK_ERROR";
+    EXPECT_EQ(b->publish_stream_attempts, 8) << "the writer's correctness retry loop is bounded";
+    EXPECT_EQ(b->blob_head_attempts, 8) << "every ambiguous retry is preceded by a new observation";
+    EXPECT_EQ(payload_streams, 8);
 }
 
-/// promoteStaged conditional copy, ambiguous-but-landed: the copy's response is lost AFTER the
+/// A server-side copy publication is ambiguous-but-landed: its response is lost after the
 /// destination was created. The occupancy resolve observes the destination present and the occupant
 /// is adopted — Committed-in-effect WITHOUT a re-copy.
-TEST(CASPartWriteTxnPromoteStagedRetry, AmbiguousCopyLandedAdoptsDestinationWithoutRecopy)
+TEST(CASPartWrite, AmbiguousCopyLandedAdoptsDestinationWithoutRecopy)
 {
     auto b = std::make_shared<BlobPutFaultBackend>();
     /// The sink target must outlive the Pool: `~Pool` emits terminate events into the sink.
@@ -2475,7 +2553,9 @@ TEST(CASPartWriteTxnPromoteStagedRetry, AmbiguousCopyLandedAdoptsDestinationWith
     const PutBlobResult res = build->putBlob(idOf(payload), std::move(source));
     EXPECT_EQ(res.size, payload.size());
 
-    EXPECT_EQ(b->copy_attempts, 1) << "a landed ambiguous copy must be resolved, never re-copied";
+    EXPECT_EQ(b->publish_copy_attempts, 1) << "a landed ambiguous copy must be resolved, never re-copied";
+    EXPECT_EQ(b->publish_stream_attempts, 0);
+    EXPECT_EQ(b->blob_head_attempts, 2);
     const String key = s->layout().blobKey(idOf(payload));
     const auto got = b->get(key);
     ASSERT_TRUE(got.has_value());
@@ -2485,10 +2565,10 @@ TEST(CASPartWriteTxnPromoteStagedRetry, AmbiguousCopyLandedAdoptsDestinationWith
               events.end()) << "the landed destination must be ADOPTED";
 }
 
-/// promoteStaged conditional copy, ambiguous-and-absent: the first copy attempt times out with
+/// A server-side copy publication is ambiguous-and-absent: the first copy attempt times out with
 /// nothing landing; the resolve observes the destination absent and the copy is REISSUED from the
 /// (intact, still-staged) source object — the second attempt commits.
-TEST(CASPartWriteTxnPromoteStagedRetry, AmbiguousCopyAbsentReattemptsAndCommits)
+TEST(CASPartWrite, AmbiguousCopyAbsentReattemptsAndCommits)
 {
     auto b = std::make_shared<BlobPutFaultBackend>();
     auto s = openBlobFaultPool(b);
@@ -2505,13 +2585,20 @@ TEST(CASPartWriteTxnPromoteStagedRetry, AmbiguousCopyAbsentReattemptsAndCommits)
     BlobSource source;
     source.size = payload.size();
     source.server_side_copy_from = staging_key;
+    source.open = [payload]() -> std::unique_ptr<DB::ReadBuffer>
+    {
+        return std::make_unique<DB::ReadBufferFromOwnString>(payload);
+    };
     b->fault_count = 1;
     const PutBlobResult res = build->putBlob(idOf(payload), std::move(source));
     EXPECT_EQ(res.size, payload.size());
 
-    EXPECT_EQ(b->copy_attempts, 2) << "the faulted attempt + the committing reissue";
+    EXPECT_EQ(b->publish_copy_attempts, 1) << "only the first absent observation may select verbatim copy";
+    EXPECT_EQ(b->publish_stream_attempts, 1) << "the absent retry must retag and stream";
+    EXPECT_EQ(b->blob_head_attempts, 2);
     const String key = s->layout().blobKey(idOf(payload));
     const auto got = b->get(key);
     ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->bytes, staging_bytes);
+    EXPECT_NE(got->bytes, staging_bytes);
+    EXPECT_EQ(got->bytes.substr(s->poolMeta().blob_header_len), payload);
 }

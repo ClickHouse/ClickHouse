@@ -304,14 +304,6 @@ TEST(CASPluggableHash, Xxh3BlobLandsUnderAlgoSegmentAndIsDiscoveredCleanByFsck)
     PartWriteInfo info;
     info.intended_ref = ns.string() + "/rb";
     auto build = store->beginPartWrite(info);
-    build->putBlob(id, BlobSource::fromString(payload));
-
-    /// The blob body landed under the algo-segmented path -- readable there, not at the legacy
-    /// no-segment shape.
-    const String blob_key = store->layout().blobKey(id);
-    EXPECT_NE(blob_key.find("/blobs/xxh3/"), String::npos) << blob_key;
-    EXPECT_EQ(blob_key.find("/blobs/ch128/"), String::npos) << blob_key;
-    EXPECT_TRUE(backend->head(blob_key).exists);
 
     ManifestEntry e;
     e.path = "data.bin";
@@ -321,6 +313,15 @@ TEST(CASPluggableHash, Xxh3BlobLandsUnderAlgoSegmentAndIsDiscoveredCleanByFsck)
     e.blob_size = payload.size();
     const ManifestId mid = build->stageManifest({e});
     build->precommitAdd(ns, "rb", mid);
+    build->putBlob(id, BlobSource::fromString(payload));
+
+    /// The blob body landed under the algo-segmented path -- readable there, not at the legacy
+    /// no-segment shape.
+    const String blob_key = store->layout().blobKey(id);
+    EXPECT_NE(blob_key.find("/blobs/xxh3/"), String::npos) << blob_key;
+    EXPECT_EQ(blob_key.find("/blobs/ch128/"), String::npos) << blob_key;
+    EXPECT_TRUE(backend->head(blob_key).exists);
+
     build->promote(ns, "rb", build->buildId(), mid);
     store->renewWatermarkOnce();
 
@@ -472,15 +473,6 @@ TEST(CASPluggableHash, Sha256BuildWritesFullWidthDigestAndInlineEqualsBlob)
     PartWriteInfo info;
     info.intended_ref = ns.string() + "/part1";
     auto build = store->beginPartWrite(info);
-    const PutBlobResult ref = build->putBlob(id, BlobSource::fromString(payload));
-    EXPECT_EQ(ref.size, payload.size());
-
-    /// THE CRUX (blob side): the blob body lands under the sha256-segmented path, addressed by the
-    /// FULL 64-hex key -- `PartWriteTxn::putBlob`'s internal `logical_hash` must not have silently narrowed it
-    /// to a 32-hex (128-bit) key before this task.
-    const String blob_key = store->layout().blobKey(id);
-    EXPECT_NE(blob_key.find("/blobs/sha256/"), String::npos) << blob_key;
-    ASSERT_TRUE(backend->head(blob_key).exists);
 
     /// Mirror the (fixed) inline-candidate hash site directly: same content, same pool algo, via the
     /// SAME public formula ContentAddressedTransaction.cpp's writeFile now uses -- NOT the old hardcoded
@@ -510,6 +502,16 @@ TEST(CASPluggableHash, Sha256BuildWritesFullWidthDigestAndInlineEqualsBlob)
 
     const ManifestId mid = build->stageManifest({blob_entry, inline_entry});
     build->precommitAdd(ns, "part1", mid);
+    const PutBlobResult ref = build->putBlob(id, BlobSource::fromString(payload));
+    EXPECT_EQ(ref.size, payload.size());
+
+    /// THE CRUX (blob side): the blob body lands under the sha256-segmented path, addressed by the
+    /// FULL 64-hex key -- `PartWriteTxn::putBlob`'s internal `logical_hash` must not have silently narrowed it
+    /// to a 32-hex (128-bit) key before this task.
+    const String blob_key = store->layout().blobKey(id);
+    EXPECT_NE(blob_key.find("/blobs/sha256/"), String::npos) << blob_key;
+    ASSERT_TRUE(backend->head(blob_key).exists);
+
     build->promote(ns, "part1", build->buildId(), mid);
     store->renewWatermarkOnce();
 
@@ -572,7 +574,6 @@ TEST(CASPluggableHash, StaleAlgoRegistryRefreshOnMiss)
     PartWriteInfo info;
     info.intended_ref = ns.string() + "/part1";
     auto build = store_a->beginPartWrite(info);
-    build->putBlob(id, BlobSource::fromString(payload));
 
     ManifestEntry e;
     e.path = "data.bin";
@@ -581,6 +582,7 @@ TEST(CASPluggableHash, StaleAlgoRegistryRefreshOnMiss)
     e.blob_size = payload.size();
     const ManifestId mid = build->stageManifest({e});
     build->precommitAdd(ns, "part1", mid);
+    build->putBlob(id, BlobSource::fromString(payload));
     build->promote(ns, "part1", build->buildId(), mid);
     store_a->renewWatermarkOnce();
 
@@ -868,21 +870,21 @@ TEST(CASPluggableHash, SameDigestDifferentAlgoDistinctBodiesAndSettlement)
     PartWriteInfo info_a;
     info_a.intended_ref = ns.string() + "/part_a";
     auto build_a = store->beginPartWrite(info_a);
-    build_a->putBlob(ref_ch, BlobSource::fromString(body_ch));
     ManifestEntry e_a;
     e_a.path = "a.bin"; e_a.placement = EntryPlacement::Blob; e_a.ref = ref_ch; e_a.blob_size = body_ch.size();
     const ManifestId mid_a = build_a->stageManifest({e_a});
     build_a->precommitAdd(ns, "part_a", mid_a);
+    build_a->putBlob(ref_ch, BlobSource::fromString(body_ch));
     build_a->promote(ns, "part_a", build_a->buildId(), mid_a);
 
     PartWriteInfo info_b;
     info_b.intended_ref = ns.string() + "/part_b";
     auto build_b = store->beginPartWrite(info_b);
-    build_b->putBlob(ref_xx, BlobSource::fromString(body_xx));
     ManifestEntry e_b;
     e_b.path = "b.bin"; e_b.placement = EntryPlacement::Blob; e_b.ref = ref_xx; e_b.blob_size = body_xx.size();
     const ManifestId mid_b = build_b->stageManifest({e_b});
     build_b->precommitAdd(ns, "part_b", mid_b);
+    build_b->putBlob(ref_xx, BlobSource::fromString(body_xx));
     build_b->promote(ns, "part_b", build_b->buildId(), mid_b);
     store->renewWatermarkOnce();
 

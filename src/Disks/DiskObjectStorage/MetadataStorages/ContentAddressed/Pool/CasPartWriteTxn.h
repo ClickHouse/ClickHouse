@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <span>
@@ -17,24 +18,26 @@ namespace DB::Cas
 
 /// Re-readable source for one content-addressed blob upload.
 ///
-/// `open` returns a FRESH reader over exactly `size` logical bytes and may be called more than once: an
-/// upload can race with another writer or with GC, in which case the transaction retries from the writer's
-/// own source and each attempt must read from the beginning. `server_side_copy_from` is set only for an S3
-/// staging object; the ordinary create then promotes it by a server-side copy instead of streaming through
-/// ClickHouse, and `open` reads that same staging object when a resurrection has to re-upload it
-/// (`Backend::resurrect` streams from a `ReadBuffer`, it does not copy). The staging object must remain
-/// available through a condemned-object resurrection.
+/// `open` returns a fresh reader over exactly `size` logical bytes and may be called more than once.
+/// `server_side_copy_from` names an already-verified complete staged object that may be copied verbatim
+/// only on this logical source's first publication after an absent observation. Every copy and move of
+/// the source shares `publication_attempted`, so ambiguity or fan-out wrapping cannot re-enable that
+/// staged envelope. Later publications use `open` to stream the same payload under a new envelope.
 struct BlobSource
 {
     uint64_t size = 0;
     std::function<std::unique_ptr<ReadBuffer>()> open;   /// yields exactly `size` bytes, from the start
-    /// When set, the blob's bytes already live in an S3 staging object with this key, and `putBlob` promotes it by a
-    /// WRITE-ONCE conditional SERVER-SIDE COPY (`Backend::promoteStaged`) instead of streaming
-    /// `open` — and resurrects a condemned incarnation by an unconditional re-upload streamed from
-    /// the SAME staging object via `open` (`Backend::resurrect`), never a read of the condemned blob
-    /// (revival must always be a fresh write from the source). Unset (the default, `StagingBackend::Local`) ⇒ the local
-    /// streaming path is byte-for-byte unchanged and `open` is the source.
     std::optional<String> server_side_copy_from;
+    std::shared_ptr<std::atomic<bool>> publication_attempted
+        = std::make_shared<std::atomic<bool>>(false);
+
+    /// Atomically consume the logical source's first-publication privilege. Called after the final
+    /// fence check and immediately before backend publication I/O.
+    bool beginPublication() const
+    {
+        return !publication_attempted->exchange(true, std::memory_order_acq_rel);
+    }
+
     /// Build a re-readable source backed by an owned string; intended for small payloads and tests.
     static BlobSource fromString(String bytes);
 };
@@ -47,34 +50,55 @@ struct PutBlobResult
     uint64_t size = 0;
 };
 
-/// One blob dependency this build contributes — EXACTLY the record `putBlob` folds into `deps`.
-/// A token identifies an incarnation uploaded by this transaction and must be retained through
-/// promotion; a tokenless entry relies on the durable source-manifest edge instead. `adopted`
-/// distinguishes trusted committed-source evidence (`adoptEvidence`) from a pending upload that has
-/// not yet been completed. CAS-owned public value type so a transaction-detached upload can RETURN
-/// its complete dep effect instead of folding it as a side effect (spec §1: "no branch may leave its
-/// dep effect behind as a side effect").
+/// The complete proof vocabulary accepted by writer promotion. Backend incarnation tokens remain
+/// backend/metadata evidence; writer readiness records only why a blob dependency is safe to publish.
+enum class BlobDependencyProof : uint8_t
+{
+    Materialized,       /// publication or observation proved a physical blob is present
+    TrustedManifest,    /// a committed source manifest supplies durable liveness evidence
+};
+
+/// One blob dependency this build contributes — exactly the record `putBlob` folds into `deps`.
+/// CAS-owned public value type so a transaction-detached upload can return its complete dependency
+/// effect instead of folding it as a side effect.
 struct BlobDepRecord
 {
-    ObjectKind kind = ObjectKind::Blob;
-    std::optional<Token> token;                       /// nullopt = live-source evidence
-    uint64_t size = 0;
-    bool adopted = false;                             /// true only for `adoptEvidence`
+    BlobDepRecord(ObjectKind kind_, BlobDependencyProof proof_, uint64_t size_)
+        : kind(kind_), proof(proof_), size(size_)
+    {
+    }
+
+    ObjectKind kind;
+    BlobDependencyProof proof;
+    uint64_t size;
 
     bool operator==(const BlobDepRecord &) const = default;
 };
 
-/// Which branch of the upload primitive admitted a blob. Carried out of `uploadBlobDetached` so the
-/// merge/fan-out layers (and tests) can assert the branch taken without inferring it from the dep.
-enum class BlobUploadOutcome
+enum class BlobMaterializationAction : uint8_t
 {
-    DeduplicationCacheHit,      /// dedup cache said present; HEAD-first confirmed a live incarnation; adopted
-    HeadHit,            /// size-triggered HEAD-first found a present live incarnation; adopted
-    HeadMissAdopted,    /// the write-once create 412'd on a live incarnation (or a racing writer's); adopted
-    FreshUpload,        /// the write-once conditional create streamed a fresh local body
-    StagingPromoted,    /// the write-once conditional server-side copy promoted an S3 staging object
-    ResurrectedLocal,   /// a condemned incarnation displaced by a fresh local `putOverwrite`
-    ResurrectedS3,      /// a condemned incarnation displaced by a fresh server-side copy from staging
+    Observed,
+    Published,
+};
+
+enum class BlobPublicationReason : uint8_t
+{
+    Absent,
+    Condemned,
+};
+
+enum class BlobPublicationTransport : uint8_t
+{
+    Streaming,
+    ServerSideCopy,
+};
+
+/// Independent decision and transport dimensions for one completed materialization.
+struct BlobUploadDiagnostics
+{
+    BlobMaterializationAction action = BlobMaterializationAction::Observed;
+    std::optional<BlobPublicationReason> reason;
+    std::optional<BlobPublicationTransport> transport;
 };
 
 /// Public, CAS-owned input to `uploadBlobDetached`; the transaction's private dep representation is not
@@ -89,12 +113,12 @@ struct BlobUploadRequest
 };
 
 /// Complete result of one detached upload: the addressed ref, the COMPLETE dep effect the upload
-/// contributes (no side channel), and the branch outcome.
+/// contributes (no side channel), and orthogonal materialization diagnostics.
 struct BlobUploadResult
 {
     BlobRef ref;
     BlobDepRecord dep;
-    BlobUploadOutcome outcome = BlobUploadOutcome::FreshUpload;
+    BlobUploadDiagnostics diagnostics;
 };
 
 /// Hash `payload` with `algo` using the same convention as the streaming blob writer and return the complete
@@ -125,23 +149,17 @@ public:
     /// `promote` or `abandon` already retired the sequence, and also covers destruction during unwinding.
     ~PartWriteTxn();
 
-    /// Every upload attempt mints a fresh random `incarnation_tag`.
-    /// New content: streaming PUT If-None-Match:*; on PreconditionFailed ⇒ the cold-reuse rule
-    /// (observe current token; condemned ⇒ uploadFromSource — re-upload from the writer's source
-    /// bytes; else adopt — free).
+    /// Every publication attempt selected by the mandatory blob `HEAD` mints a fresh random
+    /// `incarnation_tag`, except the one permitted first-plus-absent verbatim staged copy.
     /// Ordering: `putBlob` is always called after `precommitAdd` (the wiring order is
-    /// `stageManifest` → `precommitAdd` → `putBlob` → `promote`). Its
-    /// ADOPT paths observe an existing incarnation, so they are safe only under this build's durable
-    /// precommit closure — enforced by a fail-closed throw (LOGICAL_ERROR, not a `chassert`, which is
-    /// compiled out in release) in observeAndAdmit. A FRESH upload before precommit is legal
-    /// (newborn-debris watermark), but production never does it.
+    /// `stageManifest` → `precommitAdd` → `putBlob` → `promote`). Both observation and publication
+    /// require the build's durable precommit closure.
     PutBlobResult putBlob(const BlobRef & ref, BlobSource source);
 
     /// Transaction-DETACHED upload primitive (spec §1). Runs the SAME durable, ordering-sensitive pool
-    /// effects `putBlob` runs — the HEAD-first dedup gate, the write-once conditional create, condemned
-    /// resurrection (INV-1: never GET a condemned object), the freshness-meta `Clean` transition,
-    /// dedup-cache reads/inserts, event emission, ProfileEvents — but folds NOTHING into `build`
-    /// (`deps`), returning the complete dep effect + branch outcome as a value instead. It is therefore
+    /// effects `putBlob` runs — mandatory blob `HEAD`, safe observation or unconditional publication,
+    /// freshness-meta `Clean` reconciliation, event emission, and ProfileEvents — but folds NOTHING into `build`
+    /// (`deps`), returning the complete dep effect plus orthogonal diagnostics as a value instead. It is therefore
     /// safe to run off the owning writer thread while `PartWriteTxn` stays single-writer for `build`.
     /// `putBlob` = this primitive + a single-result `deps` fold on the calling thread.
     BlobUploadResult uploadBlobDetached(const BlobUploadRequest & req) const;
@@ -149,10 +167,8 @@ public:
     /// Applies a fan-out's `uploadBlobDetached` results into `deps` on the CALLING thread, after the
     /// fan-out's join -- so this is an owning-writer-thread API exactly like `putBlob`, and MUST NOT be
     /// called from a pool task. Merge failure must not leave a partially merged build (spec §1): every
-    /// result is prevalidated FIRST -- completeness (a result's dep must carry a token; every branch of
-    /// `uploadBlobDetached` sets one, so a tokenless result is a caller bug, not a valid dep-only-evidence
-    /// state, which is folded through `adoptEvidence` instead) and duplicate-grouping consistency
-    /// (two results for the same `BlobRef` must carry an identical dep record; a conflict -- most
+    /// result is prevalidated FIRST for duplicate-grouping consistency (two results for the same
+    /// `BlobRef` must carry an identical dep record; a conflict -- most
     /// commonly a conflicting size -- means the fan-out's one-task-per-unique-ref invariant was
     /// violated) -- BEFORE any result is applied. Application then runs against a COPY of `deps` (a
     /// "build"), so a mid-application exception (including one raised by `setMergeHookForTest`'s hook, or
@@ -170,22 +186,16 @@ public:
 
     /// Test-only DEEP snapshot of this build's recorded deps, keyed by `BlobRef`. A plain copy of the
     /// private `deps` map -- lets a test assert the whole build is byte-for-byte untouched after a
-    /// rejected or aborted merge, rather than probing one ref at a time via `depIsTokened`.
+    /// rejected or aborted merge, rather than probing one ref at a time via `dependencyProof`.
     std::map<BlobRef, BlobDepRecord> depsSnapshotForTest() const { return deps; }
 
-    /// Return whether this build holds a TOKENED Blob dep for `ref` (`putBlob` ⇒
-    /// tokened) versus a tokenless evidence dep (`adoptEvidence` ⇒ tokenless)? False also when this
-    /// build has no dep for the ref at all.
-    bool depIsTokened(const BlobRef & ref) const;
+    /// Return this build's readiness proof for `ref`, or `std::nullopt` when publication/adoption has
+    /// not established one. Production promotion and tests use this same fail-closed query.
+    std::optional<BlobDependencyProof> dependencyProof(const BlobRef & ref) const;
 
-    /// Record a TOKENLESS evidence blob dep directly from a `ManifestEntry` — no HEAD or backend
-    /// call. Lets staging adopt sites record the dep by hash without asserting presence before
-    /// precommit; the promote gate observes/resurrects it post-precommit. Inline entries record nothing.
+    /// Record `TrustedManifest` directly from a `ManifestEntry` — no HEAD or backend call. Inline
+    /// entries record nothing.
     void adoptEvidence(const ManifestEntry & entry);
-
-    /// Record a TOKENLESS pending blob dep by ref (without a HEAD) for a blob whose bytes are staged locally and
-    /// will be putBlob'd post-precommit. putBlob later overwrites it with the tokened dep on upload.
-    void recordPendingBlobDep(const BlobRef & ref, uint64_t size);
 
     /// Mint a root-local part `ManifestId`, write its body under
     /// `cas/manifests/<ns>/<writer_epoch>/<build_sequence>/000001.zst` via the pool's shared request
@@ -214,15 +224,13 @@ public:
 
     /// Atomically promote the precommit to the committed ref with one `appendRefOps` call on the target ref's
     /// ref-log entry.
-    ///  1. tokened leaves are already protected by the durable precommit edge, so no writer-side retired-view
+    ///  1. `Materialized` leaves are already protected by the durable precommit edge, so no writer-side retired-view
     ///     refresh is needed;
     ///  2. stream-read the precommit manifest body; validate RefMatchesBody / ManifestNamespaceMatches;
-    ///  3. the NON-tokened blob leaves (tokened leaves are edge-protected, not re-checked): a committed-source
-    ///     adoptEvidence leaf is TRUSTED via the durable manifest edge — NO per-file HEAD/loadMeta probe (§4
-    ///     manifest-trust: the live source pins the blob, in-degree >= 1); a genuinely
-    ///     absent adopted blob is an invariant violation caught by fsck, not here;
-    ///  4. a body-absent precommit or a lost owner-liveness ⇒ ABORTED; a non-tokened, non-adopted leaf (no
-    ///     tokened dep and no committed-source adopt — a staging bug) ⇒ LOGICAL_ERROR (fail closed);
+    ///  3. `TrustedManifest` leaves use the durable source-manifest edge with no per-file HEAD/loadMeta
+    ///     probe; a genuinely absent trusted blob is an invariant violation caught by fsck, not here;
+    ///  4. a body-absent precommit or lost owner-liveness ⇒ ABORTED; a missing dependency proof ⇒
+    ///     LOGICAL_ERROR (fail closed);
     ///  5. atomically replace precommit(build_id) owner with committed(final_ref_name) owner by appending
     ///     ONE pure-move `RefOp` (old_binding={Precommit,final_ref_name,T}, new_binding={Committed,final_ref_name,T},
     ///     same manifest_ref T) and setting refs[final_ref_name];
@@ -232,8 +240,8 @@ public:
     /// PROCESS-RESTART INVARIANT: a `PartWriteTxn` is a plain in-memory C++ object owned by the wiring's
     /// `ContentAddressedTransaction` — it is NEVER persisted and NEVER resumed across a process
     /// restart. There is no "replay a precommit" code path anywhere in the core: `promote` is called
-    /// synchronously, in-process, strictly AFTER every referenced blob's `putBlob` (which for S3
-    /// staging drives `promoteStaged`'s conditional copy) has already returned successfully. If the
+    /// synchronously, in-process, strictly AFTER every referenced blob's `putBlob` (which may use
+    /// `publishBlob`'s native staged-copy transport) has already returned successfully. If the
     /// process exits between `precommitAdd` and `promote` (e.g. between staging a blob and its
     /// server-side-copy promote completing), the `PartWriteTxn` object is simply lost with it: nothing ever
     /// "wakes up" that precommit and finishes promoting it. The precommit's owner binding is left as a
@@ -319,26 +327,13 @@ public:
 private:
     /// Keyed on the full `BlobRef` pair (algorithm + digest), because a bare digest is not a blob identity.
     /// This remains an ordered `std::map` (not `unordered_map`): `BlobRef` already provides `operator<=>`, so
-    /// no hasher is needed here. `BlobRefHash` is for unordered dedup-cache/set consumers elsewhere. The
+    /// no hasher is needed here. `BlobRefHash` is for unordered-set consumers elsewhere. The
     /// dependencies are blob-only, so `ObjectKind` is not part of the key.
     using DepKey = BlobRef;
 
-    /// Apply the cold-reuse rule: HEAD the key; absent ⇒ FILE_DOESNT_EXIST;
-    /// condemned-at-current-token ⇒ throw ABORTED (caller must re-upload from its own source bytes);
-    /// else RETURN the adopt dep record (current token, admitted logical size). Build-neutral: it folds
-    /// nothing into `deps` (its callers compose the returned record into a `BlobUploadResult`).
-    BlobDepRecord observeAndAdmit(ObjectKind kind, const BlobRef & ref, const String & key) const;
-    /// Overload for callers that already hold a fresh, present HeadResult for `key` (the putBlob
-    /// HEAD-before-PUT path), avoiding a redundant second HEAD. `hr.exists` MUST be true.
-    BlobDepRecord observeAndAdmit(ObjectKind kind, const BlobRef & ref, const String & key, const HeadResult & hr) const;
-    /// INV-1 (revival-from-source): revive a condemned or absent object by re-uploading from the writer's
-    /// OWN re-readable source without reading the dying object (no backend().get). On a Native backend the
-    /// source is STREAMED into the put sink (header + `source.open`); the emulated backend materializes
-    /// one body at a time inside `Backend::resurrect`;
-    /// `source.open` may be re-invoked on each conditional-write attempt (it re-reads the staged
-    /// temp file / re-emits the captured String), so it is taken by const ref and not consumed. Build-neutral:
-    /// RETURNS the complete `BlobUploadResult` (dep + branch outcome); it folds nothing into `deps`.
-    BlobUploadResult uploadFromSource(ObjectKind kind, const BlobRef & ref, const String & key, const BlobSource & source) const;
+    /// Own the complete bounded `HEAD`/metadata/publication/reconciliation state machine. Build-neutral:
+    /// returns the materialized dependency and diagnostics without folding into `deps`.
+    BlobUploadResult ensureBlobPresent(const BlobUploadRequest & req) const;
 
     /// The build's owning root namespace, derived from PartWriteInfo::intended_ref ("ns/ref" — the ref is the
     /// last `/`-segment; the namespace is everything before it). Sets a manifest body's root_namespace_id.
@@ -352,14 +347,6 @@ private:
     /// sweep is the durable backstop). Shared by the normal and the namespace-removal-cancelled `abandon`
     /// paths; only ever called on the build's OWN thread.
     void cleanupStagedManifestDebrisBestEffort();
-
-    /// A leaf is trusted at promote iff this build holds a TOKENLESS dep recorded by
-    /// `adoptEvidence` (adopted=true) — a committed-source evidence adopt. The live source pins the blob
-    /// (in-degree >= 1, not condemnable) and this build's precommit edge is durable, so the durable manifest
-    /// edge is the liveness evidence: no HEAD, no loadMeta, no copy-forward. A tokened dep (edge-protected,
-    /// handled by `depIsTokened`), a tokenless PENDING-upload dep (adopted=false), or NO dep at all (a
-    /// staging bug) is NOT trusted — it fails closed. The single gate for the promote non-tokened leaf.
-    bool isTrustedAdopt(const BlobRef & ref) const;
 
     PoolPtr store;
     UInt128 build_id{};

@@ -383,7 +383,7 @@ MountClaimResult claimMount(
 
     /// Same uuid + same epoch: it is OUR OWN claim — but a FENCED body is terminal for this
     /// (uuid, epoch): the GC dropped its ack from the floor when it fenced. Refreshing it in place
-    /// would resurrect a fenced incarnation — a fence permanently consumes this `(server_uuid,
+    /// would reactivate a fenced incarnation — a fence permanently consumes this `(server_uuid,
     /// writer_epoch)` pair, so the caller must re-open with a fresh `writer_epoch`.
     if (existing.writer_epoch == our_epoch)
     {

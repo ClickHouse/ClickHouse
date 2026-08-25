@@ -99,13 +99,11 @@ void threadSleepMs(uint64_t ms)
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
-/// Deterministic caller/local bugs the create retry loop must surface immediately:
-/// reissuing only replays the same failure — up to ~12 minutes of budget × putBlob's outer loop at
-/// the defaults — and buries the root cause behind a retryable ABORTED. The set:
-///   LOGICAL_ERROR   — a local invariant violation (e.g. uploadFromSource's source-size check; pinned
-///                     by `CasPartWriteTxn.PutBlobWrongSizeFailsClosed`, which caught exactly this class)
-///   NOT_IMPLEMENTED — a mode/capability guard (e.g. `promoteStaged` on a backend without a native
-///                     conditional server-side copy) — a deterministic configuration bug
+/// Deterministic caller/local bugs a mutable conditional retry loop must surface immediately:
+/// reissuing only replays the same failure and buries the root cause behind a retryable exception.
+/// The set:
+///   LOGICAL_ERROR   — a local invariant violation
+///   NOT_IMPLEMENTED — a deterministic mode or capability guard
 ///   BAD_ARGUMENTS   — a deterministic encode/argument rejection (e.g. BAD_ARGUMENTS escaping
 ///                     buildHeader's second, intended_ref-less encode)
 ///   CORRUPTED_DATA  — integrity failure; retrying re-reads/re-streams the same bad bytes (the same
@@ -420,87 +418,6 @@ CasWriteOutcome CasRequestController::putIfAbsentControlled(
     return unresolved(CasUnresolvedReason::AttemptsExhausted);   /// budget exhausted, no definite outcome
 }
 
-CasCreateResult CasRequestController::conditionalCreateControlled(
-    std::string_view key, const std::function<PutResult()> & attempt, const std::function<bool()> & fence_ok)
-{
-    const String key_s{key};
-    const uint64_t deadline_ms = now_ms() + budget.operation_deadline_ms;
-
-    for (uint32_t attempt_no = 1; attempt_no <= budget.max_attempts; ++attempt_no)
-    {
-        /// Same pre-attempt gates as putIfAbsentControlled.
-        if (!fence_ok())
-            return {CasCreateOutcome::Unresolved, {}};
-        if (now_ms() + budget.attempt_timeout_ms > deadline_ms)
-            return {CasCreateOutcome::Unresolved, {}};
-
-        std::optional<PutResult> put;
-        try
-        {
-            put = attempt();
-        }
-        catch (const std::exception & e)
-        {
-            /// A deterministic LOCAL bug surfaced by the attempt itself — a caller/config error, never
-            /// a wire ambiguity; reissuing would only replay it. Propagate unchanged: instant, loud,
-            /// exactly the pre-controller behavior (see isDeterministicLocalFailure for the set and the
-            /// per-code rationale). This deliberately differs from `putIfAbsentControlled`'s
-            /// everything-Unresolved:
-            /// that lane's byte-exact resolve makes retrying any unproven error harmless, while
-            /// retrying a broken source/mode/encode here is pure noise. Fail-safe either way — a
-            /// propagated exception is never a false Committed.
-            if (const auto * db_e = dynamic_cast<const Exception *>(&e); db_e && isDeterministicLocalFailure(db_e->code()))
-                throw;
-            /// A whitelisted synchronous rejection PROVES the request was never applied: surface the
-            /// original exception — the blob lane's callers always saw the raw storage error's root
-            /// cause, and losing it behind an outcome enum here would only degrade diagnostics
-            /// Anything else is ambiguous: fall through to the occupancy
-            /// resolve below.
-            if (classifyConditionalWriteResult(e) == CasWriteOutcome::DefiniteFailure)
-                throw;
-        }
-
-        if (put)
-        {
-            if (put->outcome == PutOutcome::PreconditionFailed)
-                return {CasCreateOutcome::Occupied, {}};
-
-            /// Done. Final fence check before reporting success: a fence
-            /// lost here means the write may have landed but this call must never claim it did.
-            if (!fence_ok())
-            {
-                ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
-                return {CasCreateOutcome::Unresolved, {}};
-            }
-            return {CasCreateOutcome::Committed, put->token};
-        }
-
-        /// Ambiguous attempt: resolve by exact-key OCCUPANCY — one HEAD, never a body GET (the body
-        /// may be multi-GB, and reading a possibly-condemned occupant would flirt with the resurrect
-        /// invariant; the key's content-address IS the identity proof, see the header contract).
-        bool occupied = false;
-        bool head_answered = true;
-        try
-        {
-            occupied = backend->head(key_s).exists;
-        }
-        catch (const std::exception &)
-        {
-            /// The HEAD itself failed: occupancy unproven either way. Reissuing is still safe — an
-            /// occupant answers the reissued If-None-Match with PreconditionFailed (-> Occupied on
-            /// the next round) — so treat exactly like "absent" and let the budget bound the loop.
-            head_answered = false;
-        }
-        if (head_answered && occupied)
-            return {CasCreateOutcome::Occupied, {}};
-
-        if (attempt_no == budget.max_attempts || !pauseBeforeReissue(attempt_no, deadline_ms, fence_ok))
-            return {CasCreateOutcome::Unresolved, {}};
-    }
-
-    return {CasCreateOutcome::Unresolved, {}};   /// attempt budget exhausted without a definite outcome
-}
-
 CasOverwriteResult CasRequestController::putOverwriteControlled(
     std::string_view key, std::string_view bytes, const Token & expected, const std::function<bool()> & fence_ok)
 {
@@ -522,8 +439,8 @@ CasOverwriteResult CasRequestController::putOverwriteControlled(
         }
         catch (const std::exception & e)
         {
-            /// Same rethrow convention as conditionalCreateControlled: a deterministic local bug or
-            /// a whitelisted synchronous rejection PROVES no retry can help -- surface it unchanged.
+            /// A deterministic local bug or a whitelisted synchronous rejection proves no retry can
+            /// help, so surface it unchanged.
             if (const auto * db_e = dynamic_cast<const Exception *>(&e); db_e && isDeterministicLocalFailure(db_e->code()))
                 throw;
             if (classifyConditionalWriteResult(e) == CasWriteOutcome::DefiniteFailure)
@@ -604,7 +521,7 @@ CasOverwriteResult CasRequestController::putIfAbsentControlledMutable(
         }
         catch (const std::exception & e)
         {
-            /// Same rethrow convention as putOverwriteControlled/conditionalCreateControlled.
+            /// Same rethrow convention as `putOverwriteControlled`.
             if (const auto * db_e = dynamic_cast<const Exception *>(&e); db_e && isDeterministicLocalFailure(db_e->code()))
                 throw;
             if (classifyConditionalWriteResult(e) == CasWriteOutcome::DefiniteFailure)
@@ -713,10 +630,8 @@ SlotOccupyResult CasRequestController::slotOccupy(
     /// together]. Adjudicating whether the occupant is "mine" is entirely the CALLER's job (the
     /// CaCasMountCore `mine` contract), never this primitive's.
     ///
-    /// WHOLE-OBJECT read, unlike conditionalCreateControlled's occupancy resolve (see that method's doc
-    /// in the header), which deliberately uses HEAD instead of GET because a blob body "may be
-    /// multi-GB". That reasoning does not apply here: slotOccupy is scoped by its callers (Task 4/6,
-    /// spec INV-2) to small, write-once CONTROL slots -- ref-log transactions and epoch seals -- whose
+    /// Whole-object resolution is safe here because `slotOccupy` is scoped by its callers (Task 4/6,
+    /// spec INV-2) to small, write-once control slots -- ref-log transactions and epoch seals -- whose
     /// size is bounded by their own format's registry cap (the strict-grammar object caps
     /// CasRefLogFormat/CasRefCkptFormat enforce on decode), never a data blob. slotOccupy itself stays
     /// format-agnostic (it takes a raw key/bytes pair, per the "Interface handed to Stage B" contract in

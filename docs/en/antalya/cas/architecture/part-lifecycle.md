@@ -47,7 +47,7 @@ sequenceDiagram
     Note over PW: precommit durable, the observe gate opens
     TX->>PW: fan out blob uploads, one task per unique BlobRef
     par blob 1
-        PW->>S3: HEAD / conditional PUT / adopt
+        PW->>S3: HEAD, then adopt or unconditional publish
     and blob 2
         PW->>S3: ...
     end
@@ -61,15 +61,17 @@ sequenceDiagram
 
 **Phase A — staging.** The transaction is an eager overlay, not a queue: `writeFile` immediately
 classifies the path and either spills bytes to a hashing buffer or holds them in memory as an
-inline candidate. Blob-class files stage to local scratch by default, or — when `staging_backend`
-is `s3` and the mount-time conditional-copy probe passed — to an S3 staging object written as
-`[header][payload]`, so that the later promote is a verbatim server-side copy. The `tmp_ → final`
-rename is a pure overlay re-key; the durable publish happens only in `commit`.
+inline candidate. Blob-class files stage to local scratch by default. Explicit
+`staging_backend = s3` requires native same-store copy at writable mount and stages a complete
+`[header][payload]` object. Its first publication after a destination miss may copy that object
+verbatim; a condemned or subsequent publication opens the staged payload, retags it, and streams.
+The `tmp_ → final` rename is a pure overlay re-key; durable publication happens only in `commit`.
 
 **Step 1 — `stageManifest`.** Caps (see the
 [manifests-and-refs page](/antalya/cas/architecture/manifests-and-refs#part-manifests)) are
 checked before the write; the id is minted as `{epoch, build_seq, ordinal++}`; the body goes out
-with a conditional create and no preliminary `HEAD`. Both a definite failure and an unresolved
+with a conditional create and no preliminary `HEAD`. Blob publication is different; manifests
+remain small write-once metadata objects. Both a definite failure and an unresolved
 outcome throw retry-later.
 
 **Step 2 — `precommitAdd`.** The intent — target namespace, final ref name, manifest — is recorded
@@ -79,20 +81,23 @@ says `Removing`; once the predecessor row is absent, creation receives a new opa
 starts its own stream. On return the precommit is durable, and only now may the writer adopt
 existing blobs.
 
-**Step 3 — blob upload fan-out.** One task per unique `BlobRef`, deterministic dispatch order, one
+**Step 3 — blob materialization fan-out.** One task per unique `BlobRef`, deterministic dispatch order, one
 pre-sized result slot per ref (see the write-path sequence on the
 [blob-protocol page](/antalya/cas/architecture/blob-protocol#conditional-write-sequence)). The
 calling thread only submits and joins, never occupies a pool slot, so a pool of size one degenerates
 to a correct serial run and can never deadlock. The contract is merge-nothing: if any task threw,
 nothing is merged and the first error in dispatch order is rethrown. Results are folded into the
-dependency set on the owning thread, into a copy, committed by one no-throw swap. Pool size is the
+dependency set on the owning thread, into a copy, committed by one no-throw swap. Every physical
+task starts with blob `HEAD`; a present non-condemned body or a completed publication yields an
+explicit `Materialized` proof. A trusted source manifest instead yields `TrustedManifest` without
+blob I/O. Pool size is the
 server setting `cas_blob_upload_pool_size` (default 16).
 
 **Step 4 — `promote`.** Reads and revalidates the precommit manifest body once; sets the commit
 state to Uncertain before the append — past that point, failure is no longer proof of the negative
-— then checks that the precommit is still the live owner and revalidates leaves. Tokened leaves
-are skipped because they are edge-protected; tokenless leaves must be evidence adopts, trusted
-through the durable manifest edge with no per-file `HEAD`; anything else is a `LOGICAL_ERROR`. The
+— then checks that the precommit is still the live owner and validates explicit dependency proofs.
+`Materialized` leaves are edge-protected; `TrustedManifest` leaves are trusted through the durable
+source-manifest edge with no per-file `HEAD`; anything else is a `LOGICAL_ERROR`. The
 whole thing lands as one ref-log record: optional retirement of the old committed binding, the pure
 Precommit-to-Committed owner move, and `SetPublishedAt`. Promotion emits no blob deltas — the
 manifest never loses an owner, so it is net zero.

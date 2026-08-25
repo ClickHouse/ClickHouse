@@ -103,7 +103,6 @@ String publishOneBlobPart(const PoolPtr & s, const String & ns, const String & r
     PartWriteInfo info;
     info.intended_ref = ns + "/" + ref;
     auto build = s->beginPartWrite(info);
-    build->putBlob(idOf(payload), BlobSource::fromString(payload));
     ManifestEntry e;
     e.path = "data.bin";
     e.placement = EntryPlacement::Blob;
@@ -112,6 +111,7 @@ String publishOneBlobPart(const PoolPtr & s, const String & ns, const String & r
     e.blob_size = payload.size();
     const ManifestId id = build->stageManifest({e});
     build->precommitAdd(nsr, ref, id);
+    build->putBlob(idOf(payload), BlobSource::fromString(payload));
     build->promote(nsr, ref, build->buildId(), id);
     /// Phase 3 (mixed-algo pools): every blob-content-hash event render is `blobIdOf(ref)`
     /// ("<algoName>:<hex>"), never a bare hex -- the prime directive that a digest never appears

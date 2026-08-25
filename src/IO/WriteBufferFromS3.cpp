@@ -408,10 +408,10 @@ void WriteBufferFromS3::createMultipartUpload()
 {
     if (write_settings.s3_force_single_part_upload)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "A token-producing write would start a MULTIPART upload, but the target store enforces "
+            "A conditional write would start a MULTIPART upload, but the target store enforces "
             "no preconditions on CompleteMultipartUpload (GCS, measured 2026-07-03) — refusing "
             "(silent-data-loss risk). The single-PUT budget is governed by the disk setting "
-            "gcs_max_token_producing_put_bytes; the production-grade path for bigger blobs "
+            "gcs_max_conditional_put_bytes; the production-grade path for bigger conditional writes "
             "(unconditional multipart to a temp key + conditional Compose) is not implemented yet. {}",
             getShortLogDetails());
 

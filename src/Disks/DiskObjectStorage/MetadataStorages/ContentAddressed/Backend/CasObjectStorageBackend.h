@@ -43,7 +43,7 @@ PutOutcome finalizeConditionalWrite(WriteBuffer & buf);
 /// merely "seeded" for pre-existing keys); this is what keeps token-exact semantics correct ACROSS a
 /// process restart, which a plain in-process counter cannot do (codex-review-triage §3.18, 19c): a
 /// counter restarts at 0 and can re-mint a value colliding with a persisted pre-restart delete token
-/// for a completely different incarnation, while a resurrected body's mtime is always later. Semantics
+/// for a completely different incarnation, while a republished body's mtime is always later. Semantics
 /// otherwise hold within ONE process only — exactly what unit tests need.
 class ObjectStorageBackend final : public Backend
 {
@@ -53,7 +53,6 @@ public:
     using Backend::get;
     using Backend::getStream;
     using Backend::putIfAbsent;
-    using Backend::putIfAbsentStream;
     using Backend::putOverwrite;
     using Backend::casPut;
 
@@ -64,7 +63,7 @@ public:
     /// tests and local development. The generation-token store limit applies only to Native mode:
     /// generation stores must use a single PUT because their multipart completion path does not enforce
     /// the precondition.
-    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t token_producing_single_put_cap_ = 1ULL << 30);
+    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t conditional_single_put_cap_ = 1ULL << 30);
 
     /// Read an object or return `nullopt` if it is absent. Native mode HEADs first so the returned
     /// token identifies the incarnation whose bytes are read; a not-found race is also reported as
@@ -88,10 +87,10 @@ public:
     /// result has no token; on success the token identifies the newly written incarnation.
     PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override;
 
-    /// Native mode: true streaming — bytes flow straight into the object storage's write buffer with
-    /// `If-None-Match: *` riding on the request. EmulatedSingleProcess mode: memory-buffered delegation
-    /// to putIfAbsent (acceptable: this mode exists for unit tests only).
-    WriteSinkPtr putIfAbsentStream(const String & key, const ObjectMeta & meta) override;
+    /// Execute the selected unconditional blob transport without observing destination state or
+    /// returning a write-response token. Streaming uses ordinary write settings; staged bytes require
+    /// a native same-store copy.
+    void publishBlob(const BlobPublishRequest & request) override;
     /// Replace `key` only when its current token exactly equals `expected`; a mismatch leaves the
     /// existing incarnation untouched. Storage exceptions propagate instead of being reported as a
     /// successful or failed precondition.
@@ -104,20 +103,6 @@ public:
     DeleteOutcome deleteExact(const String & key, const Token & token) override;
     /// Return a page after `cursor`; the next cursor is the last returned key and is empty at the end.
     ListPage list(const String & prefix, const String & cursor, size_t limit) override;
-
-    /// `promoteStaged` (S3-native staging, Native mode only — EmulatedSingleProcess has no server-side
-    /// conditional copy and is never selected for S3 staging, so it throws `NOT_IMPLEMENTED` there):
-    /// WRITE-ONCE conditional copy via `IObjectStorage::copyObjectConditional`.
-    /// `resurrect` (every mode): prepends `fresh_header` and UNCONDITIONALLY writes
-    /// `[fresh_header][payload]` to `blob_key` (a fresh tag gives a token distinct from the condemned
-    /// incarnation, so its already-queued exact-token delete misses), then a fresh HEAD for the token.
-    /// The write carries no precondition but IS token-producing, so it goes through
-    /// `tokenProducingWriteSettings`: on a generation dialect that forces a single PUT and applies the
-    /// token-producing cap, exactly as a conditional write does; an ETag dialect is unconstrained.
-    /// EmulatedSingleProcess materializes and SERIALIZES resurrections process-wide, bounding the peak
-    /// to one body.
-    PutResult promoteStaged(const String & staging_key, const String & blob_key) override;
-    Token resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key, const String & fresh_header) override;
 
     /// Pool-level precondition: on a Native, generation-dialect (GCS) backend, reject the pool unless
     /// object versioning is VERIFIABLY disabled — see Backend::checkPoolPreconditions.
@@ -194,19 +179,10 @@ public:
         return observed == expected;
     }
 
-    /// Settings for EVERY write whose result token enters CAS protocol state ("Write-settings
-    /// decomposition"): always NativeConditional request mode, plus -- on a generation-token store
-    /// (GCS) only -- a forced single PUT capped at token_producing_single_put_cap (GCS enforces no
-    /// precondition on CompleteMultipartUpload, so any token-producing write, conditional or not,
-    /// would silently overwrite instead of failing if it took the multipart path). Use this directly
-    /// for an UNCONDITIONAL token-producing write (resurrection); conditionalWriteSettings layers a
-    /// precondition-specific retry policy on top of it for compare/create operations.
-    WriteSettings tokenProducingWriteSettings() const;
-    WriteSettings tokenProducingWriteSettingsForTest() const { return tokenProducingWriteSettings(); }
-    /// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): everything
-    /// tokenProducingWriteSettings sets, plus exactly one attempt at every retry layer (the
-    /// SingleAttempt object-storage retry profile and WriteBufferFromS3's own unexpected-error retry
-    /// loop) and skipping the racy post-upload existence/size check.
+    /// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): mark the request
+    /// conditional, make exactly one attempt at every retry layer, skip the racy post-upload
+    /// existence/size check, and force a single PUT up to `conditional_single_put_cap` on generation
+    /// stores because GCS does not enforce the condition on multipart completion.
     WriteSettings conditionalWriteSettings() const;
     WriteSettings conditionalWriteSettingsForTest() const { return conditionalWriteSettings(); }
     /// Convert a successful write/copy response's incarnation-identifying string into this backend's
@@ -226,9 +202,8 @@ private:
     const ObjectStoragePtr object_storage;
     const Mode mode;
     TokenType native_token_type = TokenType::ETag;
-    /// GCS single-PUT budget for every token-producing write (generation-token stores only --
-    /// unconditional writes, such as resurrection, included; see tokenProducingWriteSettings and ctor).
-    const uint64_t token_producing_single_put_cap;
+    /// GCS single-PUT budget for genuine conditional writes (generation-token stores only).
+    const uint64_t conditional_single_put_cap;
 
     /// EmulatedSingleProcess state: per-key {etag, disambiguator} — see emuMintToken. A successfully
     /// deleted entry is retained only while its etag is recent enough that an immediate recreate could
@@ -290,6 +265,10 @@ private:
     /// Write a body as the new incarnation of `key` and return its freshly minted token (the
     /// object's own post-write etag — see emuMintToken).
     Token emuWrite(const String & key, const String & bytes, const ObjectMeta & meta);
+    /// Write a complete blob body to a sibling temporary local object, then atomically replace `key`
+    /// and advance any existing same-ETag disambiguator. A failure before the rename leaves the old
+    /// destination and its token state untouched and cleans the temporary.
+    void emuPublishBlobAtomically(const String & key, const String & bytes);
     /// Return the current emulated token for a key we just read/HEAD'd, reflecting its on-disk etag —
     /// does NOT advance the same-etag disambiguator (that only applies to a just-completed write).
     Token emuObserveToken(const String & key);

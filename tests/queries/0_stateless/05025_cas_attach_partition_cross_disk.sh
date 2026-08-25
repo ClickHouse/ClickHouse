@@ -11,11 +11,8 @@
 # The two tables must be on DIFFERENT disks: the clone path is chosen by `on_same_disk`, and a
 # same-disk attach goes through `freeze`, which already has the transaction branch.
 #
-# Leg 2 is the same-pool content-addressed case. It needs no extra production code -- the
-# destination's publish resolves each blob through the dedup gate, so the clone is effectively a ref
-# repoint -- and that claim is asserted rather than assumed. The counter is read PER QUERY from
-# `system.query_log`: `system.events` is process-wide and stateless tests run in parallel, so a
-# global read would be measuring someone else's traffic.
+# Leg 2 is the same-pool content-addressed case. Its row-level result verifies that the destination
+# resolves the shared content correctly without relying on a particular physical-publication branch.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -85,30 +82,13 @@ SETTINGS disk = disk(
     metadata_type = cas,
     server_root_id = '05025_shared_b',
     name = '05025_cas_shared_b',
-    deduplication_head_first_min_bytes = 1,
     path = '05025_cas_shared_pool/');"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO src_cas SELECT number % 2, toString(number) FROM numbers(64);"
 
-ATTACH_QUERY_ID="05025_attach_same_pool_${CLICKHOUSE_DATABASE}"
-${CLICKHOUSE_CLIENT} --query_id "$ATTACH_QUERY_ID" \
-    --query "ALTER TABLE dst_cas_same_pool ATTACH PARTITION 1 FROM src_cas;"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE dst_cas_same_pool ATTACH PARTITION 1 FROM src_cas;"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'leg2', count(), sum(k), uniqExact(v) FROM dst_cas_same_pool;"
-
-# The content is already in the pool, so the publish must have adopted the existing blobs rather
-# than uploading their bodies again. `CASBlobBodyPutAvoided` is raised only on the HEAD-first branch,
-# and that branch is taken on a dedup-cache hit or above `deduplication_head_first_min_bytes` --
-# whose default is 1 MiB, far above these blobs, and the destination pool's presence cache starts
-# empty because it is a different `Cas::Pool` object. Hence the destination disk lowers that
-# threshold to 1: without it the publish takes the conditional-body-PUT branch, the counter stays 0,
-# and this assertion fails for a reason that has nothing to do with the fix.
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS;"
-${CLICKHOUSE_CLIENT} --query "
-SELECT 'leg2_reused_blobs', ProfileEvents['CASBlobBodyPutAvoided'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id = '${ATTACH_QUERY_ID}' AND type = 'QueryFinish'
-ORDER BY event_time_microseconds DESC LIMIT 1;"
 
 # ------------------------------------------------ leg 3: replicated, local -> content-addressed
 

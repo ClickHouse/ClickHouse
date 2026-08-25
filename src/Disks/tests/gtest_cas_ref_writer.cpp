@@ -358,7 +358,6 @@ public:
     using CountingBackend::get;
     using CountingBackend::getStream;
     using CountingBackend::putIfAbsent;
-    using CountingBackend::putIfAbsentStream;
     using CountingBackend::putOverwrite;
     using CountingBackend::casPut;
 
@@ -4138,7 +4137,7 @@ TEST(CASRefWriterNamespaceRemoval, DropNamespaceCancelsInFlightBuildAndNextOpThr
     /// invariant -- though the old WPromote "precommit removed" guard also blocked this, less directly).
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { build->promote(ns, "inflight", build->buildId(), id); });
 
-    /// The cancelled build did not resurrect anything into the removed namespace.
+    /// The cancelled build did not recreate anything in the removed namespace.
     EXPECT_FALSE(store->resolveRef(ns, "inflight").has_value());
     EXPECT_FALSE(store->resolveRef(ns, "committed").has_value()) << "the whole namespace was removed";
 }

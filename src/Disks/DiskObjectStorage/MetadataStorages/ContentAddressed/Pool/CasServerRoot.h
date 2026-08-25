@@ -317,7 +317,7 @@ enum class MountPriorState
 ///   - same `server_uuid` AND same `writer_epoch` as (our_uuid, our_epoch) → it is OUR OWN claim
 ///     (a replay / the keeper adopting it):
 ///       - `gc_fenced` → terminal for THIS (uuid, epoch) — a fence costs an epoch, so refreshing it
-///         in place would resurrect a fenced incarnation → `FencedSelf` (no write);
+///         in place would reactivate a fenced incarnation → `FencedSelf` (no write);
 ///       - otherwise → refresh (`putOverwrite` to bump seq + fresh `expires_at_ms`) → `Claimed`;
 ///   - same `server_uuid`, DIFFERENT `writer_epoch` → reclaimed ONLY on a certificate of death that
 ///     needs no fresh wall-clock trust (see
@@ -743,7 +743,7 @@ private:
 
 /// Mount-lease-scoped staging sweeper for objects left behind by S3-native staging.
 ///
-/// A leaked S3 staging object happens two ways: (1) an exception between `promoteStaged` succeeding and
+/// A leaked S3 staging object happens two ways: (1) an exception between blob publication succeeding and
 /// `cleanupPendingTempFiles` deleting the staging key (`ContentAddressedTransaction.cpp`), or (2) an
 /// aborted/cancelled transaction whose pending blobs were staged but never promoted — by design,
 /// `cleanupPendingTempFiles` deliberately leaves an S3 staging object in place on the abort path (never a

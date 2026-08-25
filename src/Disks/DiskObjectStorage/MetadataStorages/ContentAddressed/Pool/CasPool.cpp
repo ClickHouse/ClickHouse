@@ -60,14 +60,6 @@ namespace ProfileEvents
     extern const Event CASRefSnapshotTailLogs;
     extern const Event CASRefSnapshotPublishDispatched;
     extern const Event CASRefSnapshotPublishBackoff;
-    extern const Event CASDeduplicationCacheHits;
-    extern const Event CASDeduplicationCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric CASDeduplicationCacheBytes;
-    extern const Metric CASDeduplicationCacheEntries;
 }
 
 namespace DB::Cas
@@ -208,10 +200,6 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           config.cas_request_budget,
           [this] { return tryRemountOnce(); })
 {
-    if (config.deduplication_cache_bytes > 0)
-        dedup_cache = std::make_unique<DeduplicationCache>(
-            "LRU", CurrentMetrics::CASDeduplicationCacheBytes, CurrentMetrics::CASDeduplicationCacheEntries,
-            config.deduplication_cache_bytes, DeduplicationCache::NO_MAX_COUNT, DeduplicationCache::DEFAULT_SIZE_RATIO);
 }
 
 bool Pool::isAlgoAdmitted(BlobHashAlgo algo) const
@@ -240,33 +228,6 @@ std::vector<uint8_t> Pool::refreshAdmittedAlgos()
             }
     }
     return admitted_algos;
-}
-
-bool Pool::dedupCacheContains(const BlobRef & ref) const
-{
-    /// raw lookup counters on the presence cache itself, disabled
-    /// (nullptr `dedup_cache`) means neither counter moves -- the short-circuit below never reaches the
-    /// probe. `PartWriteTxn::putBlob` calls this seam up to twice on a genuine hit (once to pick the
-    /// HEAD-first branch, once more just to attribute `CASBlobBodyPutAvoided` to the cache -- see
-    /// CasPartWriteTxn.cpp), so `CASDeduplicationCacheHits` counts LOOKUPS, not distinct blobs or putBlob calls. A hit
-    /// does not itself skip the HEAD that follows in putBlob's HEAD-first branch -- it steers the call
-    /// onto that cheap branch instead of an unconditional body stream; the body PUT is what a hit
-    /// actually avoids.
-    if (!dedup_cache)
-        return false;
-    if (dedup_cache->contains(ref))
-    {
-        ProfileEvents::increment(ProfileEvents::CASDeduplicationCacheHits);
-        return true;
-    }
-    ProfileEvents::increment(ProfileEvents::CASDeduplicationCacheMisses);
-    return false;
-}
-
-void Pool::dedupCacheAdd(const BlobRef & ref)
-{
-    if (dedup_cache)
-        dedup_cache->set(ref, std::make_shared<DedupPresent>());
 }
 
 /// ==== mount-runtime delegates ==== The mount lease keeper, the local write
@@ -1742,11 +1703,6 @@ size_t Pool::wedgedRefLaneCount()
 CasWriteOutcome Pool::stagingPutIfAbsent(std::string_view key, std::string_view bytes, Token * out_token)
 {
     return ref_ledger.stagingPutIfAbsent(key, bytes, out_token);
-}
-
-CasCreateResult Pool::stagingConditionalCreate(std::string_view key, const std::function<PutResult()> & attempt)
-{
-    return ref_ledger.stagingConditionalCreate(key, attempt);
 }
 
 CasOverwriteResult Pool::stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected)

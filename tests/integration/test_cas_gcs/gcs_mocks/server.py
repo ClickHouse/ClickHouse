@@ -13,7 +13,6 @@ and an ETag sent as ``x-goog-if-generation-match`` fails the numeric parse.
 Deliberately NOT supported. Each of these answers with an XML ``<Error>`` naming itself, so a failure
 reads as "the fake refuses this" and never as a storage bug in ClickHouse:
 
-  - multipart upload (``?uploads``, ``uploadId``, ``partNumber``);
   - object versioning (the versioning probe always answers "not enabled", and no noncurrent
     generation is ever retained);
   - server-side encryption, ACLs, lifecycle, requester-pays.
@@ -24,7 +23,10 @@ Control surface, reserved under the bucket name ``_control``:
     headers, response status and the generation/ETag the response carried;
   - ``GET  /_control/minted`` — every generation and every ETag the fake has ever minted;
   - ``GET  /_control/counters`` — per-method request counts plus the counts of the two operations a
-    token-producing write must never issue, ``CreateMultipartUpload`` and ``UploadPart``;
+    mutable token-producing write must never issue, ``CreateMultipartUpload`` and ``UploadPart``;
+  - ``POST /_control/condemn?bucket=B&key=K`` — rewrite blob ``K``'s existing ``.meta`` sibling from
+    ``Clean`` to ``Condemned`` without adding a captured storage request. This is a deterministic
+    state seam for the writer retry test, not a model of the GC request sequence;
   - ``POST /_control/reset`` — drop the capture log and the counters (objects are kept);
   - ``POST /_control/mode?if_match=reject|ignore&omit_generation=0|1`` — select the adversarial
     behaviours below. Global, not per bucket: the client reuses connections across buckets and a
@@ -115,6 +117,7 @@ class Store:
     def __init__(self):
         self.objects = {}  # (bucket, key) -> dict(body, generation, etag, meta, tags, mtime)
         self.requests = []  # the capture log
+        self.multipart_uploads = {}  # upload id -> dict(bucket, key, headers, parts)
         self.minted_generations = []
         self.minted_etags = []
         self.counters = {}
@@ -123,6 +126,7 @@ class Store:
         self.omit_generation = False
         self._next_generation = _GENERATION_SEED
         self._next_etag_ordinal = 1
+        self._next_upload_ordinal = 1
 
     def count(self, name):
         self.counters[name] = self.counters.get(name, 0) + 1
@@ -322,14 +326,71 @@ def _split_source(raw):
     return bucket, key
 
 
+def _request_class(bucket, key):
+    """Classify by durable key family, independently of method and conditional headers."""
+    if bucket in ("plainbucket", "plainhmacbucket"):
+        return "ordinary_non_cas"
+    if bucket not in ("oauthbucket", "hmacbucket"):
+        return "probe"
+    if "/staging/" in "/" + key:
+        return "staging"
+    if re.search(r"/blobs/(?:ch128|xxh3|sha256)/[0-9a-f]{2}/[0-9a-f]+\.meta$", "/" + key):
+        return "blob_meta"
+    if re.search(r"/blobs/(?:ch128|xxh3|sha256)/[0-9a-f]{2}/[0-9a-f]+$", "/" + key):
+        return "blob_body"
+    return "cas_control"
+
+
+def _request_operation(bucket, request_class, method, query, headers):
+    generation_match = "x-goog-if-generation-match" in headers
+    copy_source = _copy_source(headers)
+
+    # Multipart is a wire shape, not an object role. Classify it before conditional headers and key
+    # families so the confinement tests can see a forbidden mutable/control multipart request rather
+    # than having it disappear into `conditional_put` or `ordinary`.
+    if method == "POST" and "uploads" in query:
+        return "blob_multipart_create"
+    if method == "PUT" and "partNumber" in query and "uploadId" in query:
+        return "blob_multipart_part"
+    if method == "POST" and "uploadId" in query:
+        return "blob_multipart_complete"
+    if method == "DELETE" and generation_match:
+        return "exact_delete"
+    if method == "HEAD" and request_class in ("blob_body", "blob_meta", "cas_control"):
+        return "native_token_head"
+    if method == "PUT" and generation_match:
+        if request_class == "blob_body" and copy_source is not None:
+            return "conditional_copy"
+        return "conditional_put"
+    if request_class == "blob_body":
+        if method == "PUT" and copy_source is not None:
+            source_bucket, source_key = _split_source(copy_source)
+            if source_bucket == bucket and _request_class(source_bucket, source_key) == "staging":
+                return "staged_copy"
+            return "blob_copy"
+        if method == "PUT":
+            return "blob_put"
+    return "ordinary"
+
+
 def handle_put(bucket, key, query, headers, body):
     unmodelled = _unmodelled_params(query)
     if unmodelled:
         return _unsupported("PUT with the subresource/parameter " + ", ".join(unmodelled))
+    if "partNumber" in query and "uploadId" in query:
+        upload_id = query["uploadId"][0]
+        upload = STORE.multipart_uploads.get(upload_id)
+        if upload is None or upload["bucket"] != bucket or upload["key"] != key:
+            return _no_such_key("multipart upload " + upload_id)
+        try:
+            part_number = int(query["partNumber"][0])
+        except ValueError:
+            return _bad_request("invalid multipart part number")
+        part_etag = STORE.mint_etag()
+        upload["parts"][part_number] = body
+        return Reply(200, b"", {"ETag": part_etag})
     if "uploadId" in query or "uploads" in query or "partNumber" in query:
-        if "partNumber" in query:
-            STORE.count("UploadPart")
-        return _unsupported("multipart upload")
+        return _unsupported("malformed multipart upload request")
     if "tagging" in query and key:
         entry = STORE.objects.get((bucket, key))
         if entry is None:
@@ -409,9 +470,76 @@ def handle_put(bucket, key, query, headers, body):
     return Reply(200, b"", headers)
 
 
+def handle_post(bucket, key, query, headers, body):
+    unmodelled = _unmodelled_params(query)
+    if unmodelled:
+        return _unsupported("POST with the subresource/parameter " + ", ".join(unmodelled))
+    if "uploads" in query and "uploadId" not in query:
+        if not key:
+            return _unsupported("starting a bucket-level multipart upload")
+        upload_id = "upload-{:08d}".format(STORE._next_upload_ordinal)
+        STORE._next_upload_ordinal += 1
+        STORE.multipart_uploads[upload_id] = {
+            "bucket": bucket,
+            "key": key,
+            "headers": dict(headers),
+            "parts": {},
+        }
+        payload = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<InitiateMultipartUploadResult xmlns="{ns}"><Bucket>{bucket}</Bucket>'
+            '<Key>{key}</Key><UploadId>{upload_id}</UploadId>'
+            "</InitiateMultipartUploadResult>".format(
+                ns=_XMLNS,
+                bucket=_xml_escape(bucket),
+                key=_xml_escape(key),
+                upload_id=_xml_escape(upload_id),
+            )
+        ).encode()
+        return Reply(200, payload, {"Content-Type": "application/xml"})
+
+    if "uploadId" in query and "uploads" not in query:
+        upload_id = query["uploadId"][0]
+        upload = STORE.multipart_uploads.get(upload_id)
+        if upload is None or upload["bucket"] != bucket or upload["key"] != key:
+            return _no_such_key("multipart upload " + upload_id)
+        if not upload["parts"]:
+            return _bad_request("multipart upload has no parts")
+        entry = {
+            "body": b"".join(upload["parts"][number] for number in sorted(upload["parts"])),
+            "generation": STORE.mint_generation(),
+            "etag": STORE.mint_etag(),
+            "meta": _meta_from_request(upload["headers"]),
+            "tags": "",
+            "mtime": time.time(),
+            "content_type": upload["headers"].get("content-type", "application/octet-stream"),
+        }
+        STORE.objects[(bucket, key)] = entry
+        del STORE.multipart_uploads[upload_id]
+        payload = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<CompleteMultipartUploadResult xmlns="{ns}"><Location>/{bucket}/{key}</Location>'
+            '<Bucket>{bucket}</Bucket><Key>{key}</Key><ETag>{etag}</ETag>'
+            "</CompleteMultipartUploadResult>".format(
+                ns=_XMLNS,
+                bucket=_xml_escape(bucket),
+                key=_xml_escape(key),
+                etag=_xml_escape(entry["etag"]),
+            )
+        ).encode()
+        response_headers = {"Content-Type": "application/xml", "ETag": entry["etag"]}
+        if not STORE.omit_generation:
+            response_headers["x-goog-generation"] = entry["generation"]
+        return Reply(200, payload, response_headers)
+
+    return _unsupported("POST " + urllib.parse.urlencode(query, doseq=True))
+
+
 def handle_delete(bucket, key, query, headers):
     if "uploadId" in query:
-        return _unsupported("aborting a multipart upload")
+        upload_id = query["uploadId"][0]
+        STORE.multipart_uploads.pop(upload_id, None)
+        return Reply(204)
     # DELETE was the last handler without this check, so `?acl` and friends used to delete the object
     # while the allowlist above promised refusal. Nothing CAS sends today carries an unmodelled
     # parameter on a DELETE, so this refuses nothing that currently happens — it is here so that a
@@ -647,6 +775,28 @@ def handle_control(path, method, query):
             ).encode(),
             {"Content-Type": "application/json"},
         )
+    if path == "/_control/condemn" and method == "POST":
+        bucket = query.get("bucket", [""])[0]
+        blob_key = query.get("key", [""])[0]
+        meta_key = blob_key + ".meta"
+        entry = STORE.objects.get((bucket, meta_key))
+        if entry is None:
+            return _no_such_key(meta_key)
+        text = entry["body"].decode("utf-8", "strict")
+        rewritten, replacements = re.subn(
+            r'"st":"clean","cr":"[0-9]+"', '"st":"condemned","cr":"1"', text, count=1
+        )
+        if replacements != 1:
+            return _bad_request("blob metadata is not Clean: " + meta_key)
+        entry["body"] = rewritten.encode()
+        entry["generation"] = STORE.mint_generation()
+        entry["etag"] = STORE.mint_etag()
+        entry["mtime"] = time.time()
+        return Reply(
+            200,
+            json.dumps({"bucket": bucket, "key": blob_key, "state": "condemned"}).encode(),
+            {"Content-Type": "application/json"},
+        )
     if path == "/_control/reset" and method == "POST":
         STORE.requests = []
         STORE.counters = {}
@@ -699,7 +849,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         with _LOCK:
             STORE.count("method_" + method)
+            request_class = _request_class(bucket, key)
+            operation = _request_operation(bucket, request_class, method, query, headers)
             if method == "PUT":
+                if "partNumber" in query:
+                    STORE.count("UploadPart")
                 reply = handle_put(bucket, key, query, headers, body)
             elif method == "DELETE":
                 reply = handle_delete(bucket, key, query, headers)
@@ -708,15 +862,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     STORE.count("DeleteObjects")
                     reply = handle_batch_delete(bucket, body)
                 else:
-                    # Counted even though refused: a test asserting that a token-producing write
-                    # issued no CreateMultipartUpload needs the count to be recorded whatever the
-                    # answer is, or the refusal itself would make the count zero and the assertion
-                    # would pass for the wrong reason.
                     if "uploads" in query:
                         STORE.count("CreateMultipartUpload")
                     if "uploadId" in query:
                         STORE.count("CompleteMultipartUpload")
-                    reply = _unsupported("POST " + parsed.query)
+                    reply = handle_post(bucket, key, query, headers, body)
             elif method in ("GET", "HEAD"):
                 reply = handle_get_or_head(bucket, key, query, headers)
             else:
@@ -730,6 +880,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "key": key,
                     "query": parsed.query,
                     "headers": headers,
+                    "request_class": request_class,
+                    "operation": operation,
+                    "request_body": (
+                        body.decode("utf-8", "replace")
+                        if request_class in ("blob_meta", "cas_control")
+                        else ""
+                    ),
                     "status": reply.status,
                     "response_generation": reply.headers.get("x-goog-generation"),
                     "response_etag": reply.headers.get("ETag"),

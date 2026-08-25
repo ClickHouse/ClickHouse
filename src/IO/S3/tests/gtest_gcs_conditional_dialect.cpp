@@ -107,8 +107,9 @@ TEST(GCSConditionalDialect, ConditionalCompleteMultipartUploadThrows)
 {
     /// GCS silently IGNORES preconditions on CompleteMultipartUpload (measured live 2026-07-03) --
     /// sending one would be silent data loss, so this fails closed client-side with a LOGICAL_ERROR:
-    /// token-producing writes force a single PUT, so reaching here is a wiring break. Aborts under
-    /// abort_on_logical_error -- see the DeathTest below.
+    /// every conditional non-blob write, including create-if-absent artifacts and conditional
+    /// replacements, forces a single PUT. Reaching here is a wiring break and aborts under
+    /// abort_on_logical_error; see the DeathTest below. Blob publication uses unconditional multipart.
     auto r = makeRequest("https://storage.googleapis.com/b/k?uploadId=abc", Aws::Http::HttpMethod::HTTP_POST);
     r.SetHeaderValue("if-none-match", "*");
     EXPECT_THROW(applyGcsConditionalDialectToRequest(r), DB::Exception);

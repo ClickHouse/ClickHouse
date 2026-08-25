@@ -1406,7 +1406,6 @@ public:
     using DB::Cas::Backend::get;
     using DB::Cas::Backend::getStream;
     using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putIfAbsentStream;
     using DB::Cas::Backend::putOverwrite;
     using DB::Cas::Backend::casPut;
 
@@ -1958,7 +1957,6 @@ public:
     using DB::Cas::Backend::get;
     using DB::Cas::Backend::getStream;
     using DB::Cas::Backend::putIfAbsent;
-    using DB::Cas::Backend::putIfAbsentStream;
     using DB::Cas::Backend::putOverwrite;
     using DB::Cas::Backend::casPut;
 

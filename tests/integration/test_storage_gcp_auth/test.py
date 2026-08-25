@@ -193,9 +193,19 @@ def test_gcp_auth_ordinary_contract(started_cluster):
         )
         return json.loads(raw)
 
-    def assert_no_generation_precondition(requests):
+    def assert_default_oauth(requests):
         for request in requests:
-            assert "x-goog-if-generation-match" not in request["headers"], request
+            headers = request["headers"]
+            assert headers.get("authorization", "").startswith("Bearer "), request
+            for name in (
+                "x-goog-if-generation-match",
+                "if-match",
+                "if-none-match",
+                "x-amz-copy-source",
+                "x-goog-copy-source",
+            ):
+                assert name not in headers, request
+            assert not [name for name in headers if name.startswith("x-goog-meta-")], request
 
     reset()
 
@@ -212,7 +222,8 @@ def test_gcp_auth_ordinary_contract(started_cluster):
 
     put_requests = [r for r in get_captured() if r["method"] == "PUT"]
     assert put_requests, "expected the INSERT to issue a PUT"
-    assert_no_generation_precondition(put_requests)
+    assert all(r["path"].split("?", 1)[0] == "/test/ordinary.txt" for r in put_requests)
+    assert_default_oauth(put_requests)
 
     # GET/HEAD: the response carries both a stable ETag and an independent x-goog-generation (set by
     # the PUT above); a Default read must come back as the ordinary content, not fail or reinterpret
@@ -220,8 +231,15 @@ def test_gcp_auth_ordinary_contract(started_cluster):
     reset()
     assert node.query("SELECT * FROM s3_ordinary_write") == "hello\n"
     read_requests = get_captured()
-    assert any(r["method"] == "GET" for r in read_requests)
-    assert_no_generation_precondition(read_requests)
+    assert any(
+        r["method"] == "HEAD" and r["path"].split("?", 1)[0] == "/test/ordinary.txt"
+        for r in read_requests
+    ), "expected the direct-key read to issue HEAD for ordinary.txt"
+    assert any(
+        r["method"] == "GET" and r["path"].split("?", 1)[0] == "/test/ordinary.txt"
+        for r in read_requests
+    ), "expected the direct-key read to issue GET for ordinary.txt"
+    assert_default_oauth(read_requests)
 
     # LIST: a glob forces a real ListObjectsV2 call (`list-type=2`), independent of the single-key
     # GET/HEAD path above.
@@ -236,14 +254,15 @@ def test_gcp_auth_ordinary_contract(started_cluster):
         r for r in get_captured() if r["method"] == "GET" and "list-type=2" in r["path"]
     ]
     assert list_requests, "expected the glob read to issue a ListObjectsV2 request"
-    assert_no_generation_precondition(list_requests)
+    assert_default_oauth(list_requests)
 
     # DELETE: TRUNCATE on the S3 engine removes the underlying object.
     reset()
     node.query("TRUNCATE TABLE s3_ordinary_write")
     delete_requests = [r for r in get_captured() if r["method"] == "DELETE"]
     assert delete_requests, "expected TRUNCATE to issue a DELETE"
-    assert_no_generation_precondition(delete_requests)
+    assert all(r["path"] == "/test/ordinary.txt" for r in delete_requests)
+    assert_default_oauth(delete_requests)
 
     # Multipart-sized write: `gcs_conn_multipart` lowers the part-size thresholds so even a small
     # INSERT forces CreateMultipartUpload / UploadPart / CompleteMultipartUpload.
@@ -266,7 +285,7 @@ def test_gcp_auth_ordinary_contract(started_cluster):
         r["method"] == "POST" and "uploadId=" in r["path"] and "uploads" not in r["path"]
         for r in multipart_requests
     ), "expected CompleteMultipartUpload"
-    assert_no_generation_precondition(multipart_requests)
+    assert_default_oauth(multipart_requests)
 
     node.query("DROP TABLE s3_ordinary_write")
     node.query("DROP TABLE s3_multipart_write")

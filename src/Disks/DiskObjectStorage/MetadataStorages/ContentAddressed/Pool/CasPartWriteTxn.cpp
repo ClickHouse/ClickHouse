@@ -20,8 +20,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event CASBlobDeduplicationCacheHit;
-    extern const Event CASBlobHeadFirst;
     extern const Event CASBlobBodyPutAvoided;
     extern const Event CASBlobAdoptTrusted;
     extern const Event CASMetaCreateClean;
@@ -33,12 +31,14 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int NOT_IMPLEMENTED;
-    extern const int ABORTED;
+    extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
+    extern const int POCO_EXCEPTION;
+    extern const int S3_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int LIMIT_EXCEEDED;
 }
 }
@@ -68,6 +68,28 @@ uint64_t nowMs()
 {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+bool isDeterministicBlobPublicationFailure(const std::exception & error)
+{
+    if (classifyConditionalWriteResult(error) == CasWriteOutcome::DefiniteFailure)
+        return true;
+
+    if (const auto * db_error = dynamic_cast<const Exception *>(&error))
+    {
+        const int code = db_error->code();
+        return code != ErrorCodes::NETWORK_ERROR
+            && code != ErrorCodes::S3_ERROR
+            && code != ErrorCodes::POCO_EXCEPTION
+            && code != ErrorCodes::SOCKET_TIMEOUT
+            && code != ErrorCodes::CANNOT_READ_FROM_SOCKET
+            && code != ErrorCodes::TIMEOUT_EXCEEDED;
+    }
+
+    /// Native Poco transport exceptions are outcome-ambiguous unless the shared classifier above
+    /// proves the request was rejected before application. Other standard exceptions, including
+    /// allocation and source-callback failures, are deterministic local failures.
+    return dynamic_cast<const Poco::Exception *>(&error) == nullptr;
 }
 
 }
@@ -170,119 +192,36 @@ PutBlobResult PartWriteTxn::putBlob(const BlobRef & ref, BlobSource source)
     /// the request's `declared_size` mirrors it.
     const uint64_t declared_size = source.size;
     const BlobUploadResult r = uploadBlobDetached(BlobUploadRequest{ref, std::move(source), declared_size});
-    deps[r.ref] = r.dep;
+    deps.insert_or_assign(r.ref, r.dep);
     return PutBlobResult{r.ref, r.dep.size};
 }
 
 BlobUploadResult PartWriteTxn::uploadBlobDetached(const BlobUploadRequest & req) const
 {
-    requireAlive();
-
-    const PoolConfig & cfg = store->poolConfig();
-    /// The caller (the write-mint site) already produced the full `BlobRef` pair (algo + digest), so there
-    /// is no hex round-trip here. `logical_ref` is the blob identity end-to-end: the dedup cache and every
-    /// downstream event render key off THIS value directly.
-    const BlobRef & logical_ref = req.ref;
-    const String key = store->layout().blobKey(req.ref);
-    const BlobSource & source = req.source;
-
-    /// The source is RE-READABLE (the caller's `open` re-reads a staged temp file, or re-emits a
-    /// captured String): it can be invoked MULTIPLE times — the primary streaming PUT plus any INV-1
-    /// re-upload — so we never materialize the whole blob into memory here. The byte count is verified
-    /// against `source.size` at each streaming write site (via the sink buffer's `count()`), not by a
-    /// full pre-materialization, so peak memory is bounded by the write-buffer, not the blob size.
-
-    /// HEAD-before-PUT on a likely dedup hit (cache says present) or a large body (where a
-    /// wasted body-PUT that 412s is expensive — and on a store that early-closes a doomed conditional
-    /// PUT, the broken-pipe and retry storm caused by early rejection). A present HEAD ⇒ admit without streaming the body;
-    /// a stale/absent HEAD ⇒ fall through to the normal conditional upload. SAFE by construction: we
-    /// always genuinely observe present-at-round before skipping the body, so the cache can never cause
-    /// a dangle (a stale hit just HEADs 404 and uploads). The cache membership is read ONCE here: it both
-    /// arms the HEAD-first gate and distinguishes the `DeduplicationCacheHit` outcome from a size-triggered `HeadHit`.
-    const bool cache_hit = store->dedupCacheContains(logical_ref);
-    const bool head_first =
-        cache_hit
-        || (cfg.deduplication_head_first_min_bytes > 0 && source.size >= cfg.deduplication_head_first_min_bytes);
-    if (head_first)
-    {
-        ProfileEvents::increment(ProfileEvents::CASBlobHeadFirst);
-        const HeadResult hr = store->backend().head(key);
-        if (hr.exists)
-        {
-            ProfileEvents::increment(ProfileEvents::CASBlobBodyPutAvoided);
-            if (cache_hit)
-                ProfileEvents::increment(ProfileEvents::CASBlobDeduplicationCacheHit);
-            try
-            {
-                const BlobDepRecord dep = observeAndAdmit(ObjectKind::Blob, logical_ref, key, hr);
-                store->dedupCacheAdd(logical_ref);
-                return BlobUploadResult{req.ref, dep,
-                    cache_hit ? BlobUploadOutcome::DeduplicationCacheHit : BlobUploadOutcome::HeadHit};
-            }
-            catch (const Exception & e)
-            {
-                /// INV-1: HEAD-first path hit a condemned token → re-upload from our OWN source bytes.
-                if (e.code() != ErrorCodes::ABORTED)
-                    throw;
-                /// Fall through to uploadFromSource below.
-            }
-        }
-        /// hr.exists == false OR condemned-ABORTED → fall through to uploadFromSource / fresh upload.
-    }
-
-    /// Fresh-upload path + condemned-dedup recovery under INV-1. Try the primary upload via
-    /// uploadFromSource (which handles condemned-present via putOverwrite and absent via putIfAbsentStream
-    /// without any backend().get). Bounded loop guards against rare concurrent-condemnation churn.
-    constexpr int max_attempts = 8;
-    for (int attempt = 0; attempt < max_attempts; ++attempt)
-    {
-        try
-        {
-            const BlobUploadResult r = uploadFromSource(ObjectKind::Blob, logical_ref, key, source);
-            /// This hash is now known-present — future writers can HEAD-first and skip the body.
-            store->dedupCacheAdd(logical_ref);
-            return r;
-        }
-        catch (const Exception & e)
-        {
-            /// ABORTED from uploadFromSource is retryable — re-upload by re-streaming from our re-readable
-            /// source (bounded). Two cases produce it:
-            ///   • a racing writer displaced the condemned token before our putOverwrite landed and
-            ///     their fresh incarnation is itself already condemned (observeAndAdmit → ABORTED); or
-            ///   • the object was GC-deleted during the post-412 revival re-observe:
-            ///     reviveObserve converts FILE_DOESNT_EXIST → ABORTED so the vanish re-uploads here
-            ///     rather than escaping FATAL. Both are rare races covered by the bounded loop.
-            if (e.code() != ErrorCodes::ABORTED || attempt + 1 == max_attempts)
-                throw;
-        }
-    }
-
-    /// Unreachable: the loop either returns or rethrows on the final attempt.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "uploadBlobDetached: exhausted retries for {}", key);
+    if (req.declared_size != req.source.size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "uploadBlobDetached: request for {} declares size {} but its source is sized {}",
+            blobIdOf(req.ref),
+            req.declared_size,
+            req.source.size);
+    return ensureBlobPresent(req);
 }
 
 void PartWriteTxn::mergeBlobUploadResults(std::span<const BlobUploadResult> results)
 {
-    /// Prevalidate EVERYTHING first, touching nothing but locals: a result without a token is
-    /// incomplete (every `uploadBlobDetached` branch sets one; a tokenless dep only ever arrives
-    /// through `adoptEvidence`'s separate direct-fold path, never through this method) -- a caller bug,
-    /// failed closed rather than merged as a hole. Two results for the SAME ref must carry an
-    /// IDENTICAL dep record (the fan-out's one-task-per-unique-ref invariant, spec §1); a conflict --
+    /// Prevalidate everything first, touching nothing but locals. Two results for the same ref must
+    /// carry an identical dependency record (the fan-out's one-task-per-unique-ref invariant); a conflict --
     /// most commonly a conflicting size -- means that invariant was violated upstream.
     std::map<DepKey, const BlobDepRecord *> seen;
     for (const auto & r : results)
     {
-        if (!r.dep.token.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "PartWriteTxn::mergeBlobUploadResults: incomplete result for {} (no token) -- every "
-                "uploadBlobDetached branch sets one; a tokenless dep must be recorded via adoptEvidence, "
-                "never merged here", blobIdOf(r.ref));
         const auto [it, inserted] = seen.try_emplace(r.ref, &r.dep);
         if (!inserted && !(*it->second == r.dep))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "PartWriteTxn::mergeBlobUploadResults: dep records differ for {} (sizes {} vs {}) -- "
                 "the fan-out must launch exactly one task per unique ref and merge exactly one result; "
-                "records for one ref that differ in ANY field (size, token, kind, or adopted) are a "
+                "records for one ref that differ in any field (size, proof, or kind) are a "
                 "wiring error, so the sizes shown may be equal when the mismatch is in another field",
                 blobIdOf(r.ref), it->second->size, r.dep.size);
     }
@@ -296,7 +235,7 @@ void PartWriteTxn::mergeBlobUploadResults(std::span<const BlobUploadResult> resu
     size_t applied = 0;
     for (const auto & r : results)
     {
-        candidate[r.ref] = r.dep;
+        candidate.insert_or_assign(r.ref, r.dep);
         ++applied;
         if (merge_hook_for_test)
             merge_hook_for_test(applied);
@@ -304,463 +243,232 @@ void PartWriteTxn::mergeBlobUploadResults(std::span<const BlobUploadResult> resu
     deps.swap(candidate);
 }
 
-bool PartWriteTxn::isTrustedAdopt(const BlobRef & ref) const
+std::optional<BlobDependencyProof> PartWriteTxn::dependencyProof(const BlobRef & ref) const
 {
-    /// §4: a leaf trusted at promote iff this build holds a TOKENLESS dep recorded by adoptEvidence
-    /// (a committed-source W-EVIDENCE adopt: the source pins it, in-degree >= 1, not condemnable). A
-    /// tokenless PENDING-upload dep (recordPendingBlobDep, adopted=false) is NOT trusted — it must be
-    /// tokened by putBlob before promote; reaching promote un-tokened is a staging bug (fail closed).
     auto it = deps.find(ref);
-    return it != deps.end() && !it->second.token.has_value() && it->second.adopted;
+    if (it == deps.end())
+        return std::nullopt;
+    return it->second.proof;
 }
 
-bool PartWriteTxn::depIsTokened(const BlobRef & ref) const
+BlobUploadResult PartWriteTxn::ensureBlobPresent(const BlobUploadRequest & req) const
 {
-    /// Discriminator for B156b: a putBlob'd blob records a TOKENED dep (recreatable by retrying), an
-    /// adoptFromTree carry-forward records a TOKENLESS W-EVIDENCE dep (not recreatable — pinned by a
-    /// committed source). Returns false when this build has no dep for the ref (the caller decides
-    /// the default; not-tokened is the fail-loud, INV-NO-LOSS-safe choice).
-    auto it = deps.find(ref);
-    return it != deps.end() && it->second.token.has_value();
-}
-
-BlobDepRecord PartWriteTxn::observeAndAdmit(ObjectKind kind, const BlobRef & ref, const String & key) const
-{
-    /// EDGE-BEFORE-OBSERVE: the durable-precommit guard
-    /// lives in the 4-arg overload below, scoped to its ADOPT branch only — NOT here. A HEAD result
-    /// reached through this wrapper (e.g. `reviveObserve`'s post-race re-observe) can resolve to EITHER
-    /// the condemned/ABORTED branch or the adopt branch once the 4-arg overload point-reads the meta;
-    /// gating here (before that point-read) would wrongly block the condemned branch too, which
-    /// re-uploads under THIS build's own build_id via `uploadFromSource` and stays watermark-protected
-    /// pre-precommit.
-    const HeadResult hr = store->backend().head(key);
-    if (!hr.exists)
-        /// Object absent at observe time. The live caller of this overload is the revival re-observe in
-        /// `uploadFromSource` (`reviveObserve` below, retryable): a GC-deleted object at re-observe time
-        /// is a race under INV-3 — the caller HOLDS the source bytes, so it catches FILE_DOESNT_EXIST
-        /// here and re-throws it as ABORTED so the INSERT layer sees the uniform retryable error and
-        /// re-uploads from those bytes. This overload only ever raises FILE_DOESNT_EXIST; the caller
-        /// decides fail-closed vs retry.
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "PartWriteTxn::observeAndAdmit: object {} vanished (GC-deleted) before observe; "
-            "caller must re-upload/re-materialize from source", key);
-    return observeAndAdmit(kind, ref, key, hr);
-}
-
-BlobDepRecord PartWriteTxn::observeAndAdmit(ObjectKind kind, const BlobRef & ref, const String & key, const HeadResult & hr) const
-{
-    /// `hr.exists` is guaranteed by the caller (the 3-arg wrapper checked it; the putBlob HEAD-first
-    /// path only calls this on a present HEAD). Avoids a redundant second HEAD on the dedup-hit path.
-    /// Logical (payload) size = object size minus the pool's fixed blob header. GUARD against
-    /// unsigned underflow: a truncated/corrupt object whose size is below the header length must surface
-    /// as CORRUPTED_DATA, never wrap to a huge value. Mirrors the GC path's `retiredLogicalSize`.
-    const uint64_t header_len = store->poolMeta().blob_header_len;
-    if (hr.size < header_len)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "PartWriteTxn: {} object {} size {} is below the pool blob header length {}",
-            kind == ObjectKind::Blob ? "blob" : "manifest", key, hr.size, header_len);
-    const uint64_t logical_size = hr.size - header_len;
-
-    const CasEventObjectKind ev_kind = toEventKind(kind);
-
-    /// The condemned decision is a per-hash META POINT-READ, not
-    /// the retired-view snapshot. `absent` meta means "not condemned" — GC always writes a `Condemned`
-    /// meta BEFORE it ever deletes a body, so an absent meta is exactly as live as a `Clean` one.
-    /// The meta ops layer is `BlobRef`-keyed directly (derives its codec from `ref.algo`
-    /// internally). Every event-log render below uses `blobIdOf(ref)` ("<algoName>:<hex>"), never a
-    /// bare hex.
-    const auto lm = loadMeta(store->backend(), store->layout(), ref);
-    const bool condemned = lm && lm->meta.state == MetaState::Condemned;
-    if (condemned)
-    {
-        /// INV-1 (revival-from-source): the observed token is condemned — we must NOT read the dying
-        /// object via backend().get. Throw ABORTED so the caller can re-upload from its OWN source bytes.
-        ///   • putBlob (has BlobSource): catches ABORTED, calls uploadFromSource from held bytes.
-        ///   • a bodyless observe (no source): propagates ABORTED (retryable; caller retries op).
-        EventEmitter{*store}.emit([&](CasEvent & e)
-        {
-            e.type = CasEventType::BlobReuseResurrect;
-            e.object_kind = ev_kind;
-            e.object_hash = blobIdOf(ref);
-            e.token = hr.token.value;
-            e.round = 0;   /// the round is no longer a writer concept (meta point-read replaces the retired view)
-            e.outcome = "condemned";
-            e.reason = "observed token is condemned (meta point-read); caller must re-upload from source (INV-1)";
-        });
-        throw Exception(ErrorCodes::ABORTED,
-            "PartWriteTxn::observeAndAdmit: condemned token for {} — caller must re-upload from source bytes (INV-1)",
-            key);
-    }
-
-    /// EDGE-BEFORE-OBSERVE: from here on we are about to
-    /// ADOPT the live (non-condemned) incarnation as our own dependency — safe ONLY under this build's
-    /// durable precommit closure, because an adopted blob carries the ORIGINAL writer's build_id, so the
-    /// newborn-debris watermark does not cover it. (The condemned branch above is unaffected — it
-    /// re-uploads under THIS build's own build_id via `uploadFromSource`, which stays watermark-protected
-    /// pre-precommit.) See the TLA+ order sabotage (Gate A). A4: a real throw, not chassert — chassert is
-    /// compiled out in release, and a wiring/retry bug that reached adopt without a durable precommit
-    /// would silently drop watermark protection (later dangling ref / data loss with no production
-    /// signal).
-    /// `Durable` and nothing else. `Uncertain` is a precommit that MAY be live and may equally not
-    /// exist at all, and "may" is not the closure this invariant needs: the adopted blob would carry
-    /// the original writer's build_id with only a possibly-absent edge protecting it. It fails closed
-    /// here exactly as `NotAttempted` does, and for the same reason.
+    requireAlive();
     if (precommit_state != PrecommitState::Durable)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "PartWriteTxn::observeAndAdmit: EDGE-BEFORE-OBSERVE invariant violated — adopting an existing "
-            "incarnation before this build's precommit is durable would admit {} ({}) under the original "
-            "writer's build_id with no newborn-debris watermark protection",
-            key, kind == ObjectKind::Blob ? "blob" : "manifest");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PartWriteTxn::ensureBlobPresent: durable precommit required before materializing {}",
+            blobIdOf(req.ref));
+    /// This generation belongs to the operation, not to one observation/publication attempt. In
+    /// particular, an outer retry after ambiguous I/O must not adopt a re-armed incarnation, and a
+    /// trip-and-rearm hidden inside the mandatory `HEAD` must still invalidate the original writer.
+    const uint64_t admitted_generation = store->fenceGeneration();
 
-    /// `!lm`: no meta yet for this hash (a pre-existing blob from before this protocol, or a lost race
-    /// with a concurrent fresh-uploader's own meta write). Best-effort create it as Clean so future
-    /// point-readers (writers and GC) never have to fall back to a HEAD-only guess. A Conflict here just
-    /// means a racing writer already created it — both agree on the same Clean steady state.
-    if (!lm)
-    {
-        ProfileEvents::increment(ProfileEvents::CASMetaAdoptBackfill);
-        putMetaIfAbsent(*store, ref,
-            BlobMeta{.state = MetaState::Clean, .condemn_round = 0, .size = logical_size});
-    }
+    const BlobRef & ref = req.ref;
+    const BlobSource & source = req.source;
+    const String key = store->layout().blobKey(ref);
+    const PoolMeta & pool_meta = store->poolMeta();
+    const PoolConfig & pool_config = store->poolConfig();
 
-    /// Adopt the current incarnation — free, no bytes moved.
-    /// Reuse an ADOPTED existing incarnation's token as NOT condemned (per the meta point-read).
-    /// Was the CAREUSE adopt audit line. Token-join this against a later blob_delete
-    /// of the same hash/token to pin a reuse-of-an-object-being-deleted race.
-    EventEmitter{*store}.emit([&](CasEvent & e)
-    {
-        e.type = CasEventType::BlobReuseAdopt;
-        e.object_kind = ev_kind;
-        e.object_hash = blobIdOf(ref);
-        e.token = hr.token.value;
-        e.round = 0;   /// the round is no longer a writer concept (meta point-read replaces the retired view)
-        e.outcome = "adopt";
-        e.reason = "observed token not condemned (meta point-read); adopted the live incarnation (no bytes moved)";
-    });
-    /// Build-neutral: RETURN the adopt dep (tokened, adopted=false) instead of folding it into `deps`.
-    return BlobDepRecord{kind, hr.token, logical_size, /*adopted=*/false};
-}
-
-BlobUploadResult PartWriteTxn::uploadFromSource(ObjectKind kind, const BlobRef & ref, const String & key, const BlobSource & source) const
-{
-    /// StagingPromoted vs FreshUpload discriminator for the write-once create terminals: the source
-    /// carries a server-side-copy descriptor iff the bytes already live in an S3 staging object.
-    const BlobUploadOutcome fresh_outcome
-        = source.server_side_copy_from ? BlobUploadOutcome::StagingPromoted : BlobUploadOutcome::FreshUpload;
-
-    /// INV-1 (revival-from-source): re-upload a condemned or absent object from the writer's OWN
-    /// re-readable source — NEVER calls backend().get to read the dying object. W-FRESH-TAG: fresh
-    /// incarnation_tag and this build's build_id so the new incarnation is owned by THIS live build
-    /// (the source-based resurrection rule closes the prior ownership gap). The payload is STREAMED into the put sink
-    /// (`source.open`), never materialized into a full in-memory copy on the common
-    /// If-None-Match path; `source.open` is re-invoked on each attempt (it re-reads the staged
-    /// temp file), which is exactly what preserves INV-1 across retries.
-    const PoolMeta & meta = store->poolMeta();
-    const PoolConfig & cfg = store->poolConfig();
-    /// `ref` is the full blob identity (algo + digest) end-to-end -- the `.meta` API is
-    /// `BlobRef`-keyed directly, and the dep map + every event render below key off `ref` too.
-
-    auto buildHeader = [&]() -> String
+    auto buildHeader = [&]()
     {
         EnvelopeHeader header;
-        header.kind = kind;
+        header.kind = ObjectKind::Blob;
         header.incarnation_tag = mintU128();
         header.build_id = build_id;
-        /// ch = the real ClickHouse VERSION_INTEGER (diagnostic-only; no decision reads it) — the v3
-        /// envelope drops writer_version/hash_algo/domain_id, so forensics ride on ch + bld.
-        header.provenance = Provenance{nowMs(), cfg.server_id, VERSION_INTEGER, info.op};
-        if (kind == ObjectKind::Blob)
-            header.intended_ref = info.intended_ref;
-        /// The v3 codec pads to the pool's fixed header length and TRUNCATES a too-long intended_ref
-        /// internally (it is diagnostic-only), so the old drop-and-retry is gone — one encode call.
-        return encodeEnvelopeHeader(header, static_cast<uint32_t>(meta.blob_header_len));
+        header.provenance = Provenance{nowMs(), pool_config.server_id, VERSION_INTEGER, info.op};
+        header.intended_ref = info.intended_ref;
+        return encodeEnvelopeHeader(header, static_cast<uint32_t>(pool_meta.blob_header_len));
     };
 
-    const CasEventObjectKind ev_kind = toEventKind(kind);
-
-    /// Revival-local wrapper for the post-412 re-observe (INV-3). On the post-412 path a
-    /// racing writer is assumed to have (re-)created the object, so we adopt its token via the 3-arg
-    /// observeAndAdmit. But the object can be GC-deleted in the window (present at the conditional PUT
-    /// → 412, gone at the subsequent HEAD), making the 3-arg overload throw FILE_DOESNT_EXIST. The
-    /// caller (putBlob's fresh-upload path, via `uploadFromSource`) HOLDS the source bytes, so a vanish
-    /// here is a retryable race: convert FILE_DOESNT_EXIST → ABORTED so putBlob's bounded retry loop
-    /// re-uploads from those bytes. Without this, FILE_DOESNT_EXIST escaped putBlob's ABORTED-only catch
-    /// as a FATAL INSERT failure — the sibling of the gate bug.
-    auto reviveObserve = [&](const String & k_) -> BlobDepRecord
+    auto validateMetaSize = [&](const LoadedMeta & loaded)
     {
-        try
-        {
-            return observeAndAdmit(kind, ref, k_);
-        }
-        catch (const Exception & e_)
-        {
-            if (e_.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                throw;
-            throw Exception(ErrorCodes::ABORTED,
-                "uploadFromSource: object {} vanished (GC-deleted) during revival re-observe; "
-                "retry the operation — re-upload from held source bytes (INV-3)", k_);
-        }
+        if (loaded.meta.size != source.size)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "PartWriteTxn::ensureBlobPresent: metadata for {} declares logical size {}, expected {}",
+                key,
+                loaded.meta.size,
+                source.size);
     };
 
-    /// Build-neutral: emit the BlobPut audit event and RETURN the fresh/resurrect dep record (tokened,
-    /// adopted=false) for the caller to compose into its `BlobUploadResult` — it folds nothing into `deps`.
-    auto makeDepAndEmit = [&](Token tok) -> BlobDepRecord
+    auto reconcileMetaClean = [&](std::optional<LoadedMeta> loaded, BlobPublicationReason reason)
     {
-        EventEmitter{*store}.emit([&](CasEvent & e)
-        {
-            e.type = CasEventType::BlobPut;
-            e.object_kind = ev_kind;
-            e.object_hash = blobIdOf(ref);
-            e.token = tok.value;
-            e.round = 0;   /// the round is no longer a writer concept (meta point-read replaces the retired view)
-            e.outcome = "ok";
-            e.reason = "uploadFromSource: fresh incarnation streamed from writer's own re-readable source (INV-1)";
-            e.detail = {{"size", std::to_string(source.size)}, {"build_id", u128ToHex(build_id)}};
-        });
-        return BlobDepRecord{kind, tok, source.size, /*adopted=*/false};
-    };
+        if (reason == BlobPublicationReason::Absent)
+            ProfileEvents::increment(ProfileEvents::CASMetaCreateClean);
+        else
+            ProfileEvents::increment(ProfileEvents::CASMetaResurrectClean);
 
-    /// Meta write for the RESURRECT (condemned-displacement) case: flip the now-stale Condemned meta
-    /// back to Clean now that a live incarnation has displaced the condemned body. `lm_before` is the
-    /// point-read taken just before the condemned decision — its etag is the CAS precondition (absent
-    /// when there is no prior point-read at all, the FRESH upload case below). Each outer attempt
-    /// routes through the Pool's request controller (putMetaIfAbsent/casMeta), which already absorbs
-    /// a transient transport error (SlowDown/429/5xx) within its own budget — this outer loop reacts
-    /// only to a genuine `Conflict` (the marker's current token AND bytes both differ from what this
-    /// call intended: a racing writer or GC re-condemning) by reloading and retrying against the
-    /// fresh state. `Unresolved` (the controller's own budget/fence exhausted for one attempt) is
-    /// retried the same way — reloading may simply observe the write actually landed. After
-    /// max_meta_attempts of this outer loop WITHOUT a Committed result, this is a persistent failure,
-    /// not a blip (each outer attempt already burned its own inner retry budget) — the RCA requires
-    /// this reach the caller as a controlled retry-later signal, never a silent skip: a dropped
-    /// freshness marker leaves stale state for the next point-reader.
-    auto writeResurrectMetaClean = [&](std::optional<LoadedMeta> lm_before)
-    {
-        ProfileEvents::increment(ProfileEvents::CASMetaResurrectClean);
         const BlobMeta clean{.state = MetaState::Clean, .condemn_round = 0, .size = source.size};
         constexpr int max_meta_attempts = 8;
         for (int attempt = 0; attempt < max_meta_attempts; ++attempt)
         {
-            const bool committed = lm_before
-                ? casMeta(*store, ref, lm_before->etag, clean).outcome == CasOverwriteOutcome::Committed
-                : putMetaIfAbsent(*store, ref, clean).outcome == CasOverwriteOutcome::Committed;
-            if (committed)
+            if (loaded)
+            {
+                validateMetaSize(*loaded);
+                if (loaded->meta.state == MetaState::Clean)
+                    return;
+                if (casMeta(*store, ref, loaded->etag, clean).outcome == CasOverwriteOutcome::Committed)
+                    return;
+            }
+            else if (putMetaIfAbsent(*store, ref, clean).outcome == CasOverwriteOutcome::Committed)
+            {
                 return;
-            lm_before = loadMeta(store->backend(), store->layout(), ref);
+            }
+            loaded = loadMeta(store->backend(), store->layout(), ref);
         }
         throwCasWriteRetryLater(fmt::format(
-            "writeResurrectMetaClean: freshness-meta transition to Clean for {} did not land within "
-            "{} attempts (each already budget-controlled) — the body incarnation is durable, but the "
-            "meta marker is stuck; retry", store->layout().blobMetaKey(ref), max_meta_attempts));
+            "PartWriteTxn::ensureBlobPresent: freshness metadata for {} did not reconcile to `Clean` "
+            "within {} attempts after blob publication",
+            key,
+            max_meta_attempts));
     };
 
-    /// Meta write for the FRESH (absent -> present) upload cases: the body just transitioned via
-    /// If-None-Match, so the freshness meta is created as Clean. Delegates to writeResurrectMetaClean
-    /// with no prior point-read: a pre-existing marker there is NOT always "a racing writer creating
-    /// the same Clean state" (the retired comment this replaced assumed) -- it can be a stale
-    /// Condemned marker left over from before this exact body vanished and was freshly re-uploaded
-    /// (proven reachable by CasPartWriteTxn.PutBlobResurrectVanishedReUploadsHeldBody), which must be
-    /// reconciled to Clean the same way a resurrect does, not silently ignored.
-    auto writeFreshMetaClean = [&]()
+    constexpr int max_publication_attempts = 8;
+    for (int attempt = 0; attempt < max_publication_attempts; ++attempt)
     {
-        ProfileEvents::increment(ProfileEvents::CASMetaCreateClean);
-        writeResurrectMetaClean(std::nullopt);
-    };
+        requireAlive();
+        const HeadResult head = store->backend().head(key);
+        std::optional<LoadedMeta> loaded;
+        BlobPublicationReason reason = BlobPublicationReason::Absent;
 
-    /// Stream header + payload into a fresh putIfAbsentStream sink WITHOUT materializing the whole blob.
-    /// `source.open` re-reads the staged temp file (INV-1: the writer's own source, never the
-    /// dying object). The payload byte count is verified against `source.size` via the sink buffer's
-    /// `count()` (total bytes written so far) — the streaming equivalent of the old pre-materialized
-    /// size check, with no full in-memory copy. A mismatch is a LOGICAL_ERROR (a buggy/racing source).
-    ///
-    /// The whole conditional create rides the Pool's shared request controller
-    /// (`conditionalCreateControlled` — the retry controller's "any other
-    /// controller-bypassing conditional-write call site"): budgeted attempts + fence-gated backoff +
-    /// exact-key OCCUPANCY resolve, replacing the old bare single attempt whose whole S3-blip tolerance
-    /// was ONE ~3s adaptive-timeout attempt. Reissue is sound for BOTH primitives: the streaming PUT
-    /// re-invokes `source.open` (the REPLAYABLE source contract — a fresh re-upload, never a
-    /// GET-revive), and the server-side copy re-reads the intact staging object. Each re-stream mints a
-    /// fresh incarnation_tag (W-FRESH-TAG), so byte-exact resolve is impossible by design and the
-    /// controller resolves by occupancy instead: an occupant at this content-addressed key IS the
-    /// intended content (whether our own landed ambiguous attempt or a twin), surfaced as
-    /// PreconditionFailed so every existing gate branch below is UNCHANGED.
-    ///
-    /// The size-check LOGICAL_ERROR below stays instant and loud: `conditionalCreateControlled`
-    /// propagates every deterministic local failure — LOGICAL_ERROR, NOT_IMPLEMENTED (the promoteStaged
-    /// mode guard), BAD_ARGUMENTS (escaping buildHeader's second encode), CORRUPTED_DATA — from the
-    /// attempt unchanged (a caller/config bug reissue would only replay — pinned by
-    /// `CasPartWriteTxn.PutBlobWrongSizeFailsClosed` and the controller-level
-    /// `DeterministicLocalFailuresPropagateInstantly`).
-    auto streamIfAbsent = [&]() -> PutResult
-    {
-        const auto one_attempt = [&]() -> PutResult
+        if (head.exists)
         {
-            /// S3-native staging promote: when the source
-            /// carries a server-side-copy descriptor, the write-once CREATE primitive is a conditional
-            /// server-side copy of the staging object to `key` (`If-None-Match:*`) instead of a
-            /// client-side streaming PUT. Same write-once contract (`Done` + dest-ETag token on created,
-            /// `PreconditionFailed` when `key` already exists). The staging object IS the promote source
-            /// — no envelope is streamed here.
-            if (source.server_side_copy_from)
-                return store->backend().promoteStaged(*source.server_side_copy_from, key);
+            if (head.size < pool_meta.blob_header_len)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "PartWriteTxn::ensureBlobPresent: blob {} size {} is below envelope length {}",
+                    key,
+                    head.size,
+                    pool_meta.blob_header_len);
+            const uint64_t logical_size = head.size - pool_meta.blob_header_len;
+            if (logical_size != source.size)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "PartWriteTxn::ensureBlobPresent: blob {} has logical size {}, expected {}",
+                    key,
+                    logical_size,
+                    source.size);
 
-            /// No owner metadata is needed: protection is the precommit edge — reachability, not `cas_owner`.
-            /// A throw mid-stream abandons the sink (its dtor cancels): nothing is ever published by a
-            /// failed attempt except via the storage's own late-landing ambiguity, which the controller
-            /// resolves.
-            WriteSinkPtr sink = store->backend().putIfAbsentStream(key);
-            WriteBuffer & out = sink->buffer();
-            writeString(buildHeader(), out);
-            const size_t before = out.count();
-            copyData(*source.open(), out);
-            const size_t written = out.count() - before;
-            if (written != source.size)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "uploadFromSource: source streamed {} bytes, declared {}", written, source.size);
-            return sink->finalize();
-        };
+            loaded = loadMeta(store->backend(), store->layout(), ref);
+            if (loaded)
+                validateMetaSize(*loaded);
 
-        const CasCreateResult res = store->stagingConditionalCreate(key, one_attempt);
-        switch (res.outcome)
-        {
-            case CasCreateOutcome::Committed:
-                return PutResult{PutOutcome::Done, res.token};
-            case CasCreateOutcome::Occupied:
-                return PutResult{PutOutcome::PreconditionFailed, {}};
-            case CasCreateOutcome::Unresolved:
-                break;
+            if (!loaded || loaded->meta.state == MetaState::Clean)
+            {
+                /// Observation can produce durable metadata and dependency readiness too. Refuse both
+                /// when the mandatory `HEAD` crossed a fence generation, even if the mount has already
+                /// re-armed and is writable again by the time it returns.
+                store->checkFenceOrThrow(admitted_generation);
+                if (!loaded)
+                {
+                    ProfileEvents::increment(ProfileEvents::CASMetaAdoptBackfill);
+                    putMetaIfAbsent(
+                        *store,
+                        ref,
+                        BlobMeta{.state = MetaState::Clean, .condemn_round = 0, .size = logical_size});
+                }
+                store->checkFenceOrThrow(admitted_generation);
+                ProfileEvents::increment(ProfileEvents::CASBlobBodyPutAvoided);
+                EventEmitter{*store}.emit([&](CasEvent & event)
+                {
+                    event.type = CasEventType::BlobReuseAdopt;
+                    event.object_kind = CasEventObjectKind::Blob;
+                    event.object_hash = blobIdOf(ref);
+                    event.token = head.token.value;
+                    event.outcome = "observed";
+                    event.reason = "a present non-condemned blob was observed after mandatory `HEAD`";
+                    event.detail = {{"action", "observed"}, {"size", std::to_string(source.size)}};
+                });
+                store->checkFenceOrThrow(admitted_generation);
+                return BlobUploadResult{
+                    ref,
+                    BlobDepRecord{ObjectKind::Blob, BlobDependencyProof::Materialized, source.size},
+                    BlobUploadDiagnostics{BlobMaterializationAction::Observed, std::nullopt, std::nullopt}};
+            }
+            reason = BlobPublicationReason::Condemned;
         }
-        /// Unresolved = budget exhausted or fence lost without a definite outcome. Nothing referenced
-        /// this incarnation (deps/meta are recorded only on a definite outcome); a late-landing body is
-        /// inert debris behind the content-addressed key — a future writer of the same content adopts
-        /// or displaces it through the normal occupancy machinery. NETWORK_ERROR = the same retryable
-        /// abort class stageManifest and the ref lane map their exhausted budgets to.
-        throwCasWriteRetryLater(fmt::format(
-            "uploadFromSource: conditional create at '{}' is UNCERTAIN (retry budget exhausted or mount "
-            "fence lost) — nothing was acknowledged; retry re-uploads from the writer's own source (INV-1)",
-            key));
-    };
 
-    /// Try the If-None-Match upload (object absent or race with another writer).
-    {
-        const PutResult res = streamIfAbsent();
-        if (res.outcome == PutOutcome::Done)
+        store->checkFenceOrThrow(admitted_generation);
+        const bool first_publication = source.beginPublication();
+
+        BlobPublicationTransport transport;
+        BlobPublication publication;
+        if (first_publication && reason == BlobPublicationReason::Absent && source.server_side_copy_from)
         {
-            const BlobDepRecord dep = makeDepAndEmit(res.token);
-            writeFreshMetaClean();
-            return BlobUploadResult{ref, dep, fresh_outcome};
+            transport = BlobPublicationTransport::ServerSideCopy;
+            publication = VerbatimStagedBlobPublication{
+                *source.server_side_copy_from,
+                pool_meta.blob_header_len + source.size};
         }
-    }
-
-    /// PreconditionFailed: an incarnation exists. HEAD it to check whether it is condemned or live.
-    /// We do NOT read the body (no backend().get) — we only need the token to decide:
-    ///   • live (not condemned)  → adopt; this is the standard dedup case.
-    ///   • condemned             → displace via putOverwrite(If-Match: current_token) by re-reading our
-    ///                            own source, so we never read the dying object. This is the
-    ///                            equivalent of the old `resurrect` minus the GET.
-    const HeadResult hr = store->backend().head(key);
-    if (!hr.exists)
-    {
-        /// Object vanished between putIfAbsentStream (412d) and our HEAD — a concurrent GC delete.
-        /// The object is now absent; re-stream from our re-readable source (bounded by caller).
-        const PutResult res2 = streamIfAbsent();
-        if (res2.outcome == PutOutcome::Done)
+        else
         {
-            const BlobDepRecord dep = makeDepAndEmit(res2.token);
-            writeFreshMetaClean();
-            return BlobUploadResult{ref, dep, fresh_outcome};
+            transport = BlobPublicationTransport::Streaming;
+            if (!source.open)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "PartWriteTxn::ensureBlobPresent: streaming source for {} is not re-readable",
+                    key);
+            publication = StreamingBlobPublication{source.size, buildHeader(), source.open};
         }
-        /// Still 412 after the vanish-and-retry: a racing writer re-created it. Adopt their token.
-        /// reviveObserve converts FILE_DOESNT_EXIST (deleted again in the window) → ABORTED (retryable).
-        return BlobUploadResult{ref, reviveObserve(key), BlobUploadOutcome::HeadMissAdopted};
+
+        try
+        {
+            store->backend().publishBlob(BlobPublishRequest{key, std::move(publication)});
+        }
+        catch (const std::exception & error)
+        {
+            if (isDeterministicBlobPublicationFailure(error))
+                throw;
+            if (attempt + 1 == max_publication_attempts)
+                throwCasWriteRetryLater(fmt::format(
+                    "PartWriteTxn::ensureBlobPresent: publication of {} remained ambiguous after {} "
+                    "attempts: {}",
+                    key,
+                    max_publication_attempts,
+                    error.what()));
+            continue;
+        }
+        catch (...)
+        {
+            if (attempt + 1 == max_publication_attempts)
+                throwCasWriteRetryLater(fmt::format(
+                    "PartWriteTxn::ensureBlobPresent: publication of {} remained ambiguous after {} "
+                    "attempts",
+                    key,
+                    max_publication_attempts));
+            continue;
+        }
+
+        /// A publication may land just as this mount loses its fence. The bytes are harmless debris,
+        /// but they cannot become dependency proof for the fenced transaction.
+        store->checkFenceOrThrow(admitted_generation);
+        reconcileMetaClean(loaded, reason);
+        store->checkFenceOrThrow(admitted_generation);
+        EventEmitter{*store}.emit([&](CasEvent & event)
+        {
+            event.type = CasEventType::BlobPut;
+            event.object_kind = CasEventObjectKind::Blob;
+            event.object_hash = blobIdOf(ref);
+            event.outcome = "published";
+            event.reason = reason == BlobPublicationReason::Absent
+                ? "blob was absent after mandatory `HEAD`"
+                : "blob was present but `Condemned` after mandatory `HEAD`";
+            event.detail = {
+                {"action", "published"},
+                {"publication_reason", reason == BlobPublicationReason::Absent ? "absent" : "condemned"},
+                {"transport", transport == BlobPublicationTransport::Streaming ? "streaming" : "server_side_copy"},
+                {"size", std::to_string(source.size)},
+                {"build_id", u128ToHex(build_id)}};
+        });
+        store->checkFenceOrThrow(admitted_generation);
+        return BlobUploadResult{
+            ref,
+            BlobDepRecord{ObjectKind::Blob, BlobDependencyProof::Materialized, source.size},
+            BlobUploadDiagnostics{BlobMaterializationAction::Published, reason, transport}};
     }
 
-    /// The condemned decision is a per-hash META POINT-READ, not
-    /// the retired-view snapshot. `lm` (and its etag) is reused below to flip a condemned meta back to
-    /// Clean once the resurrect displacement lands.
-    const auto lm = loadMeta(store->backend(), store->layout(), ref);
-    const bool condemned = lm && lm->meta.state == MetaState::Condemned;
-    if (!condemned)
-    {
-        /// Live (not condemned): adopt the current incarnation — free, no bytes moved.
-        return BlobUploadResult{ref, observeAndAdmit(kind, ref, key, hr), BlobUploadOutcome::HeadMissAdopted};
-    }
-
-    /// Condemned: displace the condemned incarnation with our fresh source.
-    ///
-    /// rev.7 [C2] (backlog {#c2-resurrect-putoverwrite-fence-check}): the two displacement calls below
-    /// (`resurrect` / `putOverwrite`) are RAW backend writes with NO controller/fence coupling —
-    /// unlike `streamIfAbsent`, which rides the request controller's fence gate. They were the only
-    /// durable-effect writes left outside Task 4's fence-generation gate. Capture the mount fence
-    /// generation now, at the displacement DECISION, and re-check it (and `mayMutate()`) immediately before
-    /// whichever raw write we issue: a lease lost — or re-armed under a fresh incarnation — since we
-    /// observed the condemned state aborts with the typed transient refusal before any
-    /// stale-incarnation displacement can land. Mirrors `CasPlainObjects::casPutObject`'s
-    /// capture-at-admission-then-check-before-the-durable-write shape.
-    const uint64_t displace_admitted_generation = store->fenceGeneration();
-    if (source.server_side_copy_from)
-    {
-        /// S3-native staging RESURRECT (INV-NO-RETURN): re-establish a fresh
-        /// incarnation by re-uploading OUR OWN staging PAYLOAD under a FRESHLY-tagged envelope header —
-        /// NEVER a read/copy of the condemned `key` (`feedback_ca_resurrect_invariant`). We reach here
-        /// ONLY after the per-hash meta point-read observed `Condemned` just above, so this overwrites a
-        /// condemned body -- or, on a lost race, an equivalent FRESH resurrection of it, which is
-        /// accepted: payloads are content-identical, so the overwrite rotates only envelope and token.
-        /// A live incarnation of DIFFERENT content is unreachable here by the content address itself.
-        ///
-        /// CRITICAL — a VERBATIM server-side copy of the create-time staging object would reproduce the
-        /// condemned incarnation's exact bytes ⇒ identical ETag ⇒ the queued exact-token delete of the
-        /// condemned incarnation would kill the live resurrection (data loss). `buildHeader` mints a
-        /// FRESH `incarnation_tag` distinct from the staging header's tag, so the resurrected body (and
-        /// hence its ETag) differs from the condemned incarnation regardless of edge-before-observe. The
-        /// backend reads the payload from the staging object skipping its own `blob_header_len` envelope
-        /// header and prepends this fresh header.
-        const String fresh_header = buildHeader();
-        /// rev.7 [C2]: a raw `backend()` call with NO controller fence coupling (unlike
-        /// `promoteStaged`/`putIfAbsentStream` above, reached only through `stagingConditionalCreate`'s
-        /// controller+fence_ok). The `checkFenceOrThrow` re-checks the fence generation captured at the
-        /// displacement decision, closing the same gap Task 4 closed on the plain-object surface.
-        Token tok{};
-        store->checkFenceOrThrow(displace_admitted_generation);
-        /// The staging object's own envelope header is skipped HERE, by whoever knows its shape: the
-        /// backend is handed a reader already positioned at the payload.
-        auto staged = store->backend().getStream(*source.server_side_copy_from);
-        if (!staged)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-                "CAS resurrect: staging object {} is absent", *source.server_side_copy_from);
-        staged->stream->ignore(meta.blob_header_len);
-        tok = store->backend().resurrect(*staged->stream, source.size, key, fresh_header);
-        const BlobDepRecord dep = makeDepAndEmit(tok);
-        writeResurrectMetaClean(lm);
-        return BlobUploadResult{ref, dep, BlobUploadOutcome::ResurrectedS3};
-    }
-
-    /// CRITICAL: we re-read the writer's OWN source (NOT backend().get) — no GET of the dying object.
-    /// W-FRESH-TAG: a fresh incarnation_tag minted inside buildHeader() ensures INV-NO-RETURN.
-    ///
-    /// UNCONDITIONAL, exactly like the staging arm above. An `If-Match` on the condemned token would
-    /// save a redundant re-upload when another writer resurrects the same blob first, and would prevent
-    /// nothing: two racing resurrections write payload-identical bodies, no consumer reads a dep token's
-    /// VALUE, and durable references name content hashes rather than incarnations. What protects the
-    /// resurrection is the fresh tag — it makes this body's ETag differ from the condemned one, so every
-    /// already-queued exact-token delete of that incarnation misses.
-    ///
-    /// Blob bodies have no size cap, so a body larger than memory has to remain writable here: a
-    /// Native backend streams the payload from the reader; the emulated (local) backend materializes
-    /// one body at a time, serialized inside `Backend::resurrect`.
-    auto payload = source.open();
-    /// rev.7 [C2]: a raw, uncoupled backend call; fence-checked against the displacement-decision
-    /// generation immediately before the durable write.
-    store->checkFenceOrThrow(displace_admitted_generation);
-    /// `source.size` rides into the write, which counts while streaming and aborts WITHOUT publishing
-    /// on a mismatch -- with an unconditional overwrite, a post-write check would fire only after a
-    /// truncated body had already displaced the condemned incarnation (and could even inspect a racing
-    /// writer's fresh incarnation instead of ours).
-    const Token resurrected = store->backend().resurrect(*payload, source.size, key, buildHeader());
-
-    const BlobDepRecord dep = makeDepAndEmit(resurrected);
-    writeResurrectMetaClean(lm);
-    return BlobUploadResult{ref, dep, BlobUploadOutcome::ResurrectedLocal};
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "PartWriteTxn::ensureBlobPresent: unreachable retry exit for {}", key);
 }
 
 void PartWriteTxn::adoptEvidence(const ManifestEntry & entry)
@@ -773,17 +481,11 @@ void PartWriteTxn::adoptEvidence(const ManifestEntry & entry)
     /// Inline / Blob placements (no Subtree): only blobs are content-addressed.
     if (entry.placement == EntryPlacement::Blob)
     {
-        /// Carry `entry.ref` WHOLE (the pair, never re-derived) — this is what makes a
-        /// mixed-algo manifest's entries each dep-track under their OWN algo. §4: adopted=true marks this a
-        /// committed-source W-EVIDENCE dep, trusted at promote via the durable manifest edge (no probe).
-        deps[entry.ref] = BlobDepRecord{ObjectKind::Blob, std::nullopt, entry.blob_size, /*adopted=*/true};
+        /// Carry `entry.ref` whole (the pair, never re-derived) so mixed-algorithm manifest entries
+        /// track under their own algorithm. The committed source supplies trusted-manifest evidence.
+        deps.insert_or_assign(
+            entry.ref, BlobDepRecord{ObjectKind::Blob, BlobDependencyProof::TrustedManifest, entry.blob_size});
     }
-}
-
-void PartWriteTxn::recordPendingBlobDep(const BlobRef & ref, uint64_t size)
-{
-    requireAlive();
-    deps[ref] = BlobDepRecord{ObjectKind::Blob, std::nullopt, size};
 }
 
 RootNamespace PartWriteTxn::manifestNamespace() const
@@ -1005,7 +707,7 @@ void PartWriteTxn::precommitAdd(const RootNamespace & target_ns, const String & 
         RootMutationOrigin::Writer, RootMutationKind::Precommit);
 
     /// The append returned: the precommit binding is durably this build's, so the duty settles from
-    /// `Uncertain` to `Durable` and `observeAndAdmit`'s EDGE-BEFORE-OBSERVE gate opens.
+    /// `Uncertain` to `Durable` and `ensureBlobPresent`'s materialization gate opens.
     precommit_state = PrecommitState::Durable;
 
     EventEmitter{*store}.emit([&](CasEvent & e)
@@ -1042,11 +744,8 @@ bool PartWriteTxn::promote(const RootNamespace & target_ns, const String & final
     if (!manifestNamespaceMatches(target_ns, body))
         throwCasWriteRetryLater(fmt::format("promote: ManifestNamespaceMatches failed for {}", manifest_key));
 
-    /// The copy-forward pre-pass is removed — the
-    /// in-closure blob revalidation below is now the SINGLE copy-forward site. Trade-off: the rare
-    /// condemned-tokenless copy-forward (a GET+PUT) now runs inside the append lane's flush, briefly
-    /// blocking the per-namespace batching queue; it is idempotent under a re-run (a retry sees its own
-    /// fresh token). The meta CAS is the only remaining coordination for this rare case.
+    /// Blob readiness is checked inside the append closure below, after owner liveness. It consumes
+    /// only this build's explicit dependency proofs and performs no backend copy-forward.
 
     /// The intended-repoint operation is an atomic composition of `WDropRef` and `WPromote`: the
     /// manifest the ref currently commits,
@@ -1071,7 +770,7 @@ bool PartWriteTxn::promote(const RootNamespace & target_ns, const String & final
         /// Capture the closure's INPUTS by value (ref name, manifest id, promote build id, repoint flag,
         /// and the manifest `body` it revalidates) rather than `[&]`, as defense-in-depth against a
         /// closure outliving this stack. Unlike `precommitAdd`, this closure cannot be made fully
-        /// self-contained: `depIsTokened`/`isTrustedAdopt` read this build's `deps` member (so it must
+        /// self-contained: `dependencyProof` reads this build's `deps` member (so it must
         /// keep `this`), and `repoint_old`/`created` are OUTPUTS read after the call returns (so they stay
         /// references). The ref-lane leadership guard is the real fix; both residual by-reference captures
         /// are safe because the guard guarantees the closure is never invoked after this frame unwinds.
@@ -1090,9 +789,8 @@ bool PartWriteTxn::promote(const RootNamespace & target_ns, const String & final
                 return {};
 
             /// NO writer-side view refresh here:
-            /// Gate A): promote-time view freshness is not load-bearing — tokened leaves are edge-protected
-            /// (EDGE-BEFORE-OBSERVE) and the tokenless K3 gate below reads the live view, which the floor
-            /// guarantees contains every graduated entry (in EVERY view >= condemn round + 1).
+            /// Gate A): promote-time view freshness is not load-bearing — `Materialized` leaves are
+            /// edge-protected (EDGE-BEFORE-OBSERVE), while `TrustedManifest` relies on the live source edge.
 
             /// The `WPromote` owner guard (`owner[m] = bld`): a promote is a PURE owner MOVE that emits
             /// NO blob delta (Δ=0) — it restores no blob in-degree. It is therefore only sound when the
@@ -1109,13 +807,12 @@ bool PartWriteTxn::promote(const RootNamespace & target_ns, const String & final
                     "(WPromote owner==bld)",
                     final_ref_name, u128ToHex(promote_build_id)));
 
-            /// Blob-leaf revalidation. TOKENED leaves are
+            /// Blob-leaf revalidation. `Materialized` leaves are
             /// edge-protected — EDGE-BEFORE-OBSERVE: the precommit closure was durable BEFORE putBlob
             /// observed them, so a condemnation in the putBlob→promote window cannot graduate (the next fold
             /// sees the edge, d >= 1, spared), and putBlob's gate already validated them against the installed
-            /// view under that edge. They are NOT re-checked here. A NON-tokened leaf is EITHER a
-            /// committed-source W-EVIDENCE adopt (adoptEvidence ⇒ adopted=true) or a no-dep / pending-upload
-            /// staging bug. There is NO per-file probe on this path: an adopted leaf is TRUSTED via the
+            /// view under that edge. They are not re-checked here. `TrustedManifest` records a
+            /// committed-source adoption. There is no per-file probe on this path: that leaf is trusted via the
             /// durable manifest edge (the live source pins the blob, in-degree >= 1, not condemnable) and this
             /// build's precommit edge is durable — matching the relink trust model (ordinary
             /// ReplicatedMergeTree interserver trust). A genuinely-absent adopted blob is an invariant
@@ -1124,34 +821,43 @@ bool PartWriteTxn::promote(const RootNamespace & target_ns, const String & final
             {
                 if (e.placement != EntryPlacement::Blob)
                     continue;
-                if (depIsTokened(e.ref))
-                    continue;   /// edge-protected (EDGE-BEFORE-OBSERVE); putBlob validated under the durable edge
-                /// §4 manifest-trust: a tokenless adoptEvidence leaf is trusted — no HEAD, no loadMeta, no
-                /// copy-forward; the durable manifest edge is the liveness evidence. EDGE-BEFORE-TRUST: this
-                /// build's precommit edge was durably appended (`precommitAdd`, the `Precommit`
-                /// `OwnerTransition` above) BEFORE we get here, and the owner-liveness check at the top of this
-                /// closure ("WPromote owner==bld") already re-proved it is the LIVE owner — so the dst manifest
-                /// is a live precommit owner input and GC's fold pins every blob it names at in-degree >= 1
-                /// (the barrier-activated create-precommit +1). GC is the sole deleter and respects
-                /// in-degree, so a trusted-promote leaf cannot have been condemned/deleted. The backstop for
-                /// the (production-unreachable) genuinely-absent case is fsck's reachable-but-absent scan
-                /// (`CasFsck.cpp`, `++report.dangling`), NOT this gate. A tokenless PENDING-upload dep
-                /// (adopted=false) or a no-dep leaf never reaches promote un-resolved legitimately: it is a
-                /// staging bug (a pending upload that never completed) and fails closed (LOGICAL_ERROR).
-                if (!isTrustedAdopt(e.ref))
+                const auto proof = dependencyProof(e.ref);
+                if (!proof)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "promote: blob leaf {} has no tokened and no adopted dep at commit — a staging bug "
-                        "(a pending upload never completed); failing closed",
+                        "promote: blob leaf {} has no dependency proof at commit — a pending upload "
+                        "never completed; failing closed",
                         store->layout().blobKey(e.ref));
-                ProfileEvents::increment(ProfileEvents::CASBlobAdoptTrusted);
-                EventEmitter{*store}.emit([&](CasEvent & ev)
+
+                switch (*proof)
                 {
-                    ev.type = CasEventType::BlobReuseAdopt;
-                    ev.object_kind = CasEventObjectKind::Blob;
-                    ev.object_hash = blobIdOf(e.ref);
-                    ev.outcome = "adopt";
-                    ev.reason = "manifest-trust";   /// distinguishable trusted-adopt class (empty token)
-                });
+                    case BlobDependencyProof::Materialized:
+                        continue;   /// edge-protected; putBlob validated under the durable edge
+                    case BlobDependencyProof::TrustedManifest:
+                        /// §4 manifest-trust: a `TrustedManifest` leaf is trusted — no HEAD, no loadMeta, no
+                        /// copy-forward; the durable manifest edge is the liveness evidence. EDGE-BEFORE-TRUST: this
+                        /// build's precommit edge was durably appended (`precommitAdd`, the `Precommit`
+                        /// `OwnerTransition` above) BEFORE we get here, and the owner-liveness check at the top of this
+                        /// closure ("WPromote owner==bld") already re-proved it is the LIVE owner — so the dst manifest
+                        /// is a live precommit owner input and GC's fold pins every blob it names at in-degree >= 1
+                        /// (the barrier-activated create-precommit +1). GC is the sole deleter and respects
+                        /// in-degree, so a trusted-promote leaf cannot have been condemned/deleted. The backstop for
+                        /// the (production-unreachable) genuinely-absent case is fsck's reachable-but-absent scan
+                        /// (`CasFsck.cpp`, `++report.dangling`), not this gate.
+                        ProfileEvents::increment(ProfileEvents::CASBlobAdoptTrusted);
+                        EventEmitter{*store}.emit([&](CasEvent & ev)
+                        {
+                            ev.type = CasEventType::BlobReuseAdopt;
+                            ev.object_kind = CasEventObjectKind::Blob;
+                            ev.object_hash = blobIdOf(e.ref);
+                            ev.outcome = "adopt";
+                            ev.reason = "manifest-trust";   /// distinguishable trusted-adopt class (empty token)
+                        });
+                        continue;
+                }
+
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "promote: blob leaf {} has an unnamed dependency proof at commit; failing closed",
+                    store->layout().blobKey(e.ref));
             }
 
             /// BUG 1a: refuse to overwrite a live committed ref that already names a DIFFERENT manifest —

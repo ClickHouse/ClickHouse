@@ -88,9 +88,9 @@ TEST(CASPartWriteTxnRootDangle, SharedBlobSurvivesSourceDropDuringBuild)
         PartWriteInfo info;
         info.intended_ref = ns.string() + "/refA";
         auto a = s->beginPartWrite(info);
-        a->putBlob(idOf(P), BlobSource::fromString(P));
         const ManifestId id = a->stageManifest({blobEntry("data.bin", P)});
         a->precommitAdd(ns, "refA", id);
+        a->putBlob(idOf(P), BlobSource::fromString(P));
         a->promote(ns, "refA", a->buildId(), id);
     }
     s->renewWatermarkOnce();   /// A is gone; min_active now advances past A's build_seq
@@ -150,9 +150,9 @@ TEST(CASPartWriteTxnRootDangle, PrematureReclaimCommitFailsClosed)
         PartWriteInfo info;
         info.intended_ref = ns.string() + "/refA";
         auto a = s->beginPartWrite(info);
-        a->putBlob(idOf(P), BlobSource::fromString(P));
         const ManifestId id = a->stageManifest({blobEntry("data.bin", P)});
         a->precommitAdd(ns, "refA", id);
+        a->putBlob(idOf(P), BlobSource::fromString(P));
         a->promote(ns, "refA", a->buildId(), id);
     }
     s->renewWatermarkOnce();
@@ -236,9 +236,9 @@ TEST(CASPartWriteTxnRoot, LivePrecommitNotReclaimed)
     PartWriteInfo binfo;
     binfo.intended_ref = ns.string() + "/refLive";
     auto b = s->beginPartWrite(binfo);
-    b->putBlob(idOf(Q), BlobSource::fromString(Q));
     const ManifestId t = b->stageManifest({blobEntry("data.bin", Q)});
     b->precommitAdd(ns, "refLive", t);
+    b->putBlob(idOf(Q), BlobSource::fromString(Q));
     s->renewWatermarkOnce();
     ASSERT_LE(s->minActive(), b->buildSeq()) << "precondition: B must be in-flight (min_active <= seq)";
 

@@ -279,12 +279,8 @@ public:
     /// mount admission rule.
     CasWriteOutcome stagingPutIfAbsent(std::string_view key, std::string_view bytes, Token * out_token);
 
-    /// Performs a conditional staged create using `attempt`, applying the same retry controller and
-    /// append-fence policy as `stagingPutIfAbsent`.
-    CasCreateResult stagingConditionalCreate(std::string_view key, const std::function<PutResult()> & attempt);
-
-    /// Same retry/fence policy as `stagingPutIfAbsent`/`stagingConditionalCreate`, for a MUTABLE
-    /// If-Match overwrite whose bytes are deterministic (safe for GET-based resolution).
+    /// Same retry/fence policy as `stagingPutIfAbsent`, for a MUTABLE If-Match overwrite whose bytes
+    /// are deterministic (safe for GET-based resolution).
     CasOverwriteResult stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected);
 
     /// Same retry/fence policy as `stagingPutIfAbsent`, for a MUTABLE marker where an existing
@@ -939,12 +935,9 @@ private:
         return rt.state.nextTxnId(live_epoch_fn());
     }
 
-    /// The CAS-owned retry controller this Pool's ref-log writer path uses for every
-    /// conditional log/snapshot `PUT` and uncertain-result resolution. Also shared (via the PartWriteTxn
-    /// `PartWriteTxn::stageManifest`'s part-manifest body `PUT` and by `PartWriteTxn::uploadFromSource`'s
-    /// blob-body create — both the streaming
-    /// `putIfAbsentStream` PUT and `promoteStaged`'s conditional server-side copy — via
-    /// `conditionalCreateControlled`. The controller is stateless per call (immutable
+    /// The CAS-owned retry controller this Pool's ref-log writer path uses for every conditional
+    /// log/snapshot `PUT` and uncertain-result resolution. It is also shared by the part-manifest
+    /// write and mutable freshness-meta writes. The controller is stateless per call (immutable
     /// budget/clock/sleep — the sleep fn mutates only through the test-only seam, before traffic), so
     /// concurrent lanes and builds use the one instance safely.
     std::unique_ptr<CasRequestController> ref_request_controller;

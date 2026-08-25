@@ -1,9 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <algorithm>
 #include <stdexcept>
 
@@ -21,48 +19,6 @@ namespace DB::Cas
 
 namespace
 {
-
-/// Memory-buffered WriteSink: accumulates the body in a WriteBufferFromOwnString and delegates the
-/// conditional publish to InMemoryBackend::putIfAbsent at finalize — the single mutex acquisition
-/// inside putIfAbsent gives atomicity for free. Nothing is ever published on cancel/destruction.
-class InMemoryWriteSink final : public WriteSink
-{
-public:
-    InMemoryWriteSink(InMemoryBackend & backend, String key, ObjectMeta meta)
-        : backend_(backend)
-        , key_(std::move(key))
-        , meta_(std::move(meta))
-    {
-    }
-
-    WriteBuffer & buffer() override { return buf_; }
-
-    PutResult finalize() override
-    {
-        chassert(!done_);   /// finalize after finalize/cancel is a misuse — see the WriteSink contract
-        done_ = true;
-        return backend_.putIfAbsent(key_, buf_.str(), meta_);
-    }
-
-    void cancel() noexcept override
-    {
-        done_ = true;
-        buf_.cancel();
-    }
-
-    ~InMemoryWriteSink() override
-    {
-        if (!done_)
-            cancel();
-    }
-
-private:
-    InMemoryBackend & backend_;
-    String key_;
-    ObjectMeta meta_;
-    WriteBufferFromOwnString buf_;
-    bool done_ = false;
-};
 
 /// The windowed slice of `data` for `range`, with the same clamping `get` documents: an offset at or
 /// past EOF yields an empty result; an open-ended length runs to EOF. Shared by `get` and `getStream`
@@ -162,9 +118,60 @@ PutResult InMemoryBackend::putIfAbsent(const String & key, const String & bytes,
     return {PutOutcome::Done, t};
 }
 
-WriteSinkPtr InMemoryBackend::putIfAbsentStream(const String & key, const ObjectMeta & meta)
+void InMemoryBackend::publishBlob(const BlobPublishRequest & request)
 {
-    return std::make_unique<InMemoryWriteSink>(*this, key, meta);
+    if (const auto * streaming = std::get_if<StreamingBlobPublication>(&request.publication))
+    {
+        std::unique_ptr<ReadBuffer> payload = streaming->open_payload();
+        if (!payload)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "InMemoryBackend::publishBlob: payload source for {} returned no reader",
+                request.destination_key);
+
+        /// Drain before taking the store lock: the source may itself read another object from this
+        /// backend. The complete body remains private until its size has been validated.
+        String body = streaming->fresh_envelope;
+        blob_publication_detail::BlobPayloadCopyResult copy_result;
+        {
+            WriteBufferFromString out(body, AppendModeTag{});
+            copy_result = blob_publication_detail::copyBlobPayloadBounded(*payload, out, streaming->payload_size);
+            if (copy_result.exact(streaming->payload_size))
+                out.finalize();
+            else
+                out.cancel();
+        }
+
+        if (!copy_result.exact(streaming->payload_size))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "InMemoryBackend::publishBlob: source yielded {}{} payload bytes for {}, declared {} -- nothing was published",
+                copy_result.has_excess ? "more than " : "",
+                copy_result.copied,
+                request.destination_key,
+                streaming->payload_size);
+
+        std::lock_guard lock(mutex_);
+        Object object;
+        object.bytes = std::move(body);
+        object.token = mintToken();
+        store_[request.destination_key] = std::move(object);
+        return;
+    }
+
+    const auto & staged = std::get<VerbatimStagedBlobPublication>(request.publication);
+    std::lock_guard lock(mutex_);
+    const auto source = store_.find(staged.object_key);
+    if (source == store_.end())
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "InMemoryBackend::publishBlob: staging object {} is absent",
+            staged.object_key);
+
+    Object object;
+    object.bytes = source->second.bytes;
+    object.token = mintToken();
+    store_[request.destination_key] = std::move(object);
 }
 
 PutResult InMemoryBackend::putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta)
@@ -284,57 +291,6 @@ DeleteOutcome InMemoryBackend::deleteExact(const String & key, const Token & tok
     }
 
     return applyDelete(key, token);
-}
-
-PutResult InMemoryBackend::promoteStaged(const String & staging_key, const String & blob_key)
-{
-    std::lock_guard lock(mutex_);
-    auto src = store_.find(staging_key);
-    if (src == store_.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "InMemoryBackend::promoteStaged: staging object {} is absent", staging_key);
-
-    /// Write-once: a present destination is the "lost the race" signal, not an overwrite.
-    if (store_.contains(blob_key))
-        return {PutOutcome::PreconditionFailed, {}};
-
-    /// Server-side copy: the destination bytes ARE the staging bytes; a fresh monotone token stands in
-    /// for the destination ETag the real backend returns from the conditional copy.
-    const Token t = mintToken();
-    Object obj;
-    obj.bytes = src->second.bytes;
-    obj.token = t;
-    store_[blob_key] = std::move(obj);
-    return {PutOutcome::Done, t};
-}
-
-Token InMemoryBackend::resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key,
-                                 const String & fresh_header)
-{
-    /// Drain the reader BEFORE taking the lock: the reader may be backed by another object in this
-    /// same store, and reading it under our own mutex would deadlock.
-    String body = fresh_header;
-    {
-        WriteBufferFromString out(body, AppendModeTag{});
-        copyData(payload, out);
-        out.finalize();
-    }
-
-    if (body.size() - fresh_header.size() != payload_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "InMemoryBackend::resurrect: source yielded {} payload bytes for {}, declared {} -- nothing was published",
-            body.size() - fresh_header.size(), blob_key, payload_size);
-
-    /// The fresh header makes the resurrected body differ from the condemned incarnation for the same
-    /// payload, so a delayed exact-token delete for the old incarnation cannot remove the resurrection
-    /// (`INV-NO-RETURN`). The condemned `blob_key` is never read.
-    std::lock_guard lock(mutex_);
-    const Token t = mintToken();
-    Object obj;
-    obj.bytes = std::move(body);
-    obj.token = t;
-    store_[blob_key] = std::move(obj);
-    return t;
 }
 
 ListPage InMemoryBackend::list(const String & prefix, const String & cursor, size_t limit)

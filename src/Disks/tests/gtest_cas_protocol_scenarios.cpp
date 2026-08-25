@@ -18,20 +18,18 @@
 /// 2026-07-09-cas-writer-gc-simplification):
 ///   • putBlob: INV-1 condemned-dedup re-upload from the writer's OWN source bytes (never GETs the
 ///     dying object);
-///   • promote: TOKENED leaves (this build putBlob'd them) are EDGE-PROTECTED and NOT re-validated — the
+///   • promote: `Materialized` leaves (this build putBlob'd them) are EDGE-PROTECTED and NOT re-validated — the
 ///     precommit closure named them before putBlob observed them, so a condemnation in the
-///     putBlob→promote window is doomed (the next fold spares it). promote commits with the tokened
-///     blob's token UNCHANGED. Only NON-tokened leaves get the single mandatory presence observation: a
-///     tokenless W-EVIDENCE adopt that is condemned-but-present is displaced by a verified copy-forward
-///     (the committed ref names a FRESH incarnation); absent, or condemned + no-dep, fails closed
-///     (ABORTED). promote refreshes the retire view when the fence is ahead.
+///     putBlob→promote window is doomed (the next fold spares it). promote commits without touching
+///     the blob's current token. `TrustedManifest` leaves are accepted through their durable source
+///     manifest edge with no per-file observation.
 /// These scenarios assert the no-dangle / no-loss / fail-closed protocol properties faithfully on that
 /// flow. The strong safety assertions are preserved.
 ///
 /// DELETED (Phase A): `RevalidateAbsentTokenedBlobResurrectsFromSource`. Its premise — a putBlob'd
-/// (tokened) blob body hand-deleted before the gate, then resurrected — is protocol-unreachable under
-/// EDGE-BEFORE-OBSERVE: a tokened leaf under a durable precommit closure cannot be GC-deleted in the
-/// putBlob→promote window, and promote no longer re-validates tokened leaves at all. Deleting a
+/// (`Materialized`) blob body hand-deleted before the gate, then resurrected — is protocol-unreachable under
+/// EDGE-BEFORE-OBSERVE: a materialized leaf under a durable precommit closure cannot be GC-deleted in the
+/// putBlob→promote window, and promote no longer revalidates materialized leaves at all. Deleting a
 /// putBlob'd body out-of-band is corruption, which is `cas-fsck`'s domain, not the promote gate's.
 
 namespace DB::ErrorCodes
@@ -75,6 +73,24 @@ PartWriteTxnPtr startBuildFor(const PoolPtr & s, const RootNamespace & ns, const
     return s->beginPartWrite(info);
 }
 
+/// Seed an arbitrary blob identity through a complete writer transaction, preserving the production
+/// ordering that makes physical publication legal.
+void seedBlobWithDurablePrecommit(
+    const PoolPtr & store, const BlobRef & blob_ref, const String & payload)
+{
+    const RootNamespace ns{"fixture/seed"};
+    auto build = startBuildFor(store, ns, "blob");
+    ManifestEntry entry;
+    entry.path = "data.bin";
+    entry.placement = EntryPlacement::Blob;
+    entry.ref = blob_ref;
+    entry.blob_size = payload.size();
+    const ManifestId id = build->stageManifest({entry});
+    build->precommitAdd(ns, "blob", id);
+    build->putBlob(blob_ref, BlobSource::fromString(payload));
+    build->promote(ns, "blob", build->buildId(), id);
+}
+
 /// The full write flow for a part whose only file is `payload` at `path` (blob placement). Uploads the
 /// blob via putBlob, stages the manifest, precommits, then promotes. Returns the committed ManifestId.
 /// Mirrors what the old single-call `publish` did on the tree model.
@@ -114,9 +130,9 @@ void assertPartReads(
 TEST(CASProtocol, FenceConflictCondemnedTokenedBlobCommitsWithTokenUnchanged)
 {
     /// EDGE-BEFORE-OBSERVE (spec 2026-07-09-cas-writer-gc-simplification, Phase A): a blob leaf whose
-    /// CURRENT token is condemned at the promote gate, but which THIS build putBlob'd (tokened dep under
+    /// CURRENT token is condemned at the promote gate, but which THIS build putBlob'd (`Materialized` proof under
     /// the durable precommit closure), is EDGE-PROTECTED — the condemnation is doomed (the next fold spares
-    /// it) and promote does NOT re-validate or re-upload the tokened leaf. promote COMMITS with the blob's
+    /// it) and promote does NOT revalidate or re-upload the materialized leaf. promote COMMITS with the blob's
     /// token UNCHANGED; the premature condemn is invisible to the client.
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
@@ -135,7 +151,7 @@ TEST(CASProtocol, FenceConflictCondemnedTokenedBlobCommitsWithTokenUnchanged)
     injectRetire(*b, s->layout(), /*round*/ 1, /*shard*/ 0,
         {RetiredEntry{.kind = ObjectKind::Blob, .ref = DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(u128Of("payload-X"))}, .token = t0, .size = 9}});
 
-    /// promote: mutateShard refreshes the view (fence_round 1 > view round 0), but the tokened leaf is
+    /// promote: mutateShard refreshes the view (fence_round 1 > view round 0), but the materialized leaf is
     /// edge-protected — skipped, not re-validated ⇒ commit, token unchanged.
     build->promote(ns, "part_1", build->buildId(), id);
 
@@ -146,8 +162,8 @@ TEST(CASProtocol, FenceConflictCondemnedTokenedBlobCommitsWithTokenUnchanged)
 
 TEST(CASProtocol, RevalidateReObservesStaleTokenKeepsWhenUnchanged)
 {
-    /// A blob dedup-adopted (tokened dep) under the precommit closure; an EMPTY retire set at round 1.
-    /// Under EDGE-BEFORE-OBSERVE the tokened leaf is NOT re-observed at the promote gate at all — it is
+    /// A blob dedup-adopted (`Materialized` proof) under the precommit closure; an EMPTY retire set at round 1.
+    /// Under EDGE-BEFORE-OBSERVE the materialized leaf is NOT re-observed at the promote gate at all — it is
     /// edge-protected — so promote commits in place with the token UNCHANGED (no HEAD, no rewrite).
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
@@ -168,18 +184,18 @@ TEST(CASProtocol, RevalidateReObservesStaleTokenKeepsWhenUnchanged)
     /// token is unchanged.
     injectRetire(*b, s->layout(), /*round*/ 1, /*shard*/ 0, {});
 
-    /// promote: the tokened leaf is edge-protected (not re-observed) ⇒ commit in place (KEEP).
+    /// promote: the materialized leaf is edge-protected (not re-observed) ⇒ commit in place (KEEP).
     build->promote(ns, "part_1", build->buildId(), id);
 
     assertPartReads(b, s, ns, "part_1", "data.bin", "payload-X");
-    /// No rewrite happened — the tokened leaf was never touched, so its token stays at t0.
+    /// No rewrite happened — the materialized leaf was never touched, so its object token stays at t0.
     EXPECT_EQ(b->head(blob_key).token, t0);
 }
 
 TEST(CASProtocol, RevalidateReObservesStaleTokenAdoptsWhenDisplaced)
 {
     /// A blob displaced out-of-band to a fresh live token t1 before promote. Phase-A contract: the leaf is
-    /// TOKENED (putBlob-adopted), so promote SKIPS it entirely (edge-protected — EDGE-BEFORE-OBSERVE); no
+    /// `Materialized` (putBlob-adopted), so promote SKIPS it entirely (edge-protected — EDGE-BEFORE-OBSERVE); no
     /// re-HEAD happens. The commit still rides the displaced object correctly because the manifest names
     /// the HASH, not a token — this is the black-box "displaced object still reads by content key" check.
     auto b = std::make_shared<InMemoryBackend>();
@@ -222,7 +238,7 @@ TEST(CASProtocol, RevalidateReObservesStaleTokenAdoptsWhenDisplaced)
 TEST(CASProtocol, RevalidateAdoptsLiveTokenWhenOnlyPhantomCondemnedAtDifferentToken)
 {
     /// A blob whose OWN current token t0 is LIVE, but a DIFFERENT phantom token t_other for the same
-    /// hash IS condemned. The build putBlob-adopts t0 (tokened dep), so promote does not re-observe it
+    /// hash IS condemned. The build records `Materialized` proof for t0, so promote does not re-observe it
     /// (edge-protected) and commits in place: the blob keeps t0 (no upload, no displacement). The phantom
     /// condemnation is for a different incarnation and never touches t0.
     auto b = std::make_shared<InMemoryBackend>();
@@ -250,7 +266,7 @@ TEST(CASProtocol, RevalidateAdoptsLiveTokenWhenOnlyPhantomCondemnedAtDifferentTo
     build->precommitAdd(ns, "part_1", id);
     build->putBlob(idOf("payload-X"), BlobSource::fromString("payload-X"));   /// dedup → adopts t0
 
-    /// promote: the tokened leaf is edge-protected (not re-observed) ⇒ commit. Lands. t0 untouched.
+    /// promote: the materialized leaf is edge-protected (not re-observed) ⇒ commit. Lands. t0 untouched.
     build->promote(ns, "part_1", build->buildId(), id);
 
     assertPartReads(b, s, ns, "part_1", "data.bin", "payload-X");
@@ -260,30 +276,28 @@ TEST(CASProtocol, RevalidateAdoptsLiveTokenWhenOnlyPhantomCondemnedAtDifferentTo
 }
 
 /// (DELETED, Phase A) RevalidateAbsentTokenedBlobResurrectsFromSource — see the file-header note: a
-/// hand-deleted putBlob'd (tokened) body is protocol-unreachable under EDGE-BEFORE-OBSERVE (a tokened
-/// leaf under a durable precommit closure cannot be GC-deleted in the putBlob→promote window, and promote
-/// no longer re-validates tokened leaves). Out-of-band body deletion is `cas-fsck`'s domain.
+/// hand-deleted putBlob'd (`Materialized`) body is protocol-unreachable under EDGE-BEFORE-OBSERVE (a
+/// materialized leaf under a durable precommit closure cannot be GC-deleted in the putBlob→promote window,
+/// and promote no longer revalidates materialized leaves). Out-of-band body deletion is `cas-fsck`'s domain.
 
 TEST(CASProtocol, EvidenceHitCondemnedPresentBlobCopiesForwardInClosure)
 {
-    /// W-EVIDENCE (tokenless adopted dep) on a blob X whose hash is condemned-but-PRESENT. §4 manifest-trust
+    /// `TrustedManifest` proof on a blob X whose hash is condemned-but-PRESENT. §4 manifest-trust
     /// (test name is legacy — there is no copy-forward any more): a committed-source adopted leaf is TRUSTED
     /// at the promote gate. The gate does NOT observe X — no HEAD, no meta point-read, no displacement — it
     /// publishes on the strength of the durable manifest edge (D4 relink trust). So promote SUCCEEDS and X's
     /// existing incarnation is left EXACTLY as-is: the token is UNCHANGED (never displaced) and the condemned
-    /// meta is NOT flipped (the gate never reads or writes it). A non-tokened leaf is the only leaf promote
-    /// still decides on; here it is trusted (tokened leaves are edge-protected).
+    /// meta is NOT flipped (the gate never reads or writes it). Here the source-manifest proof is trusted;
+    /// materialized leaves are independently edge-protected.
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
     const RootNamespace ns{"srv1/tbl"};
 
     /// X pre-exists with token t0; the manifest names it as a tokenless adopted leaf.
     const String hex = streamingHexOf("payload-X");
-    {
-        auto seed = s->beginPartWrite({});
-        seed->putBlob(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))}, BlobSource::fromString("payload-X"));
-    }
-    const String blob_key = s->layout().blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))});
+    const BlobRef seeded_ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))};
+    seedBlobWithDurablePrecommit(s, seeded_ref, "payload-X");
+    const String blob_key = s->layout().blobKey(seeded_ref);
     const Token t0 = b->head(blob_key).token;
 
     auto build = startBuildFor(s, ns, "part_1");
@@ -313,7 +327,7 @@ TEST(CASProtocol, WedgedHeartbeatCondemnedTokenedBlobCommitsWithTokenUnchanged)
 {
     /// A build whose watermark never renews finds its OWN putBlob'd upload condemned by full GC while its
     /// precommit is STILL the live owner (this setup injects only the retire set + fence, no owner-removal
-    /// — the false-positive-freeze window BEFORE any GC reclaim). The tokened leaf is EDGE-PROTECTED: the
+    /// — the false-positive-freeze window BEFORE any GC reclaim). The materialized leaf is EDGE-PROTECTED: the
     /// precommit closure named it before putBlob observed it, so the condemnation is doomed and promote
     /// does NOT re-validate it — promote COMMITS with the token UNCHANGED, closing the window invisibly.
     /// The genuine dead-build case (precommit reclaimed ⇒ owner check aborts, NO re-upload) is covered
@@ -335,7 +349,7 @@ TEST(CASProtocol, WedgedHeartbeatCondemnedTokenedBlobCommitsWithTokenUnchanged)
     injectRetire(*b, s->layout(), /*round*/ 1, /*shard*/ 0,
         {RetiredEntry{.kind = ObjectKind::Blob, .ref = DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(u128Of("payload-X"))}, .token = t0, .size = 9}});
 
-    /// promote: the tokened leaf is edge-protected — skipped, not re-validated ⇒ commit, token unchanged.
+    /// promote: the materialized leaf is edge-protected — skipped, not revalidated ⇒ commit, token unchanged.
     build->promote(ns, "part_1", build->buildId(), id);
     assertPartReads(b, s, ns, "part_1", "data.bin", "payload-X");
     EXPECT_EQ(b->head(blob_key).token, t0);
@@ -350,14 +364,16 @@ TEST(CASProtocol, AbandonLeavesDebrisAndDisables)
     const RootNamespace ns{"srv1/tbl"};
 
     auto build = startBuildFor(s, ns, "part_1");
-    auto blob = build->putBlob(idOf("payload-X"), BlobSource::fromString("payload-X"));
     const ManifestId id = build->stageManifest({blobEntry("data.bin", "payload-X")});
+    build->precommitAdd(ns, "part_1", id);
+    auto blob = build->putBlob(idOf("payload-X"), BlobSource::fromString("payload-X"));
 
     build->abandon();
 
-    /// The uploaded blob remains as debris; the staged manifest body is best-effort deleted by abandon.
+    /// Both bodies remain as debris: once the manifest has named a durable precommit edge, its body
+    /// must survive until GC folds the matching owner removal.
     EXPECT_TRUE(b->head(s->layout().blobKey(blob.ref)).exists);
-    EXPECT_FALSE(b->head(s->layout().manifestKey(id)).exists);   /// best-effort cleanup ran
+    EXPECT_TRUE(b->head(s->layout().manifestKey(id)).exists);
     EXPECT_TRUE(s->listRefs(ns).empty());
 
     /// Further build ops ⇒ LOGICAL_ERROR (requireAlive).
@@ -485,9 +501,9 @@ TEST(CASProtocol, NewNamespacePublishGatedByShardFenceFloor)
     /// 1. part_1 → a blob in namespace A, through the real PartWriteTxn.
     const RootNamespace ns_a{"srv1/tbl"};
     auto build_a = startBuildFor(s, ns_a, "part_1");
-    build_a->putBlob(idOf("floor-payload"), BlobSource::fromString("floor-payload"));
     const ManifestId id_a = build_a->stageManifest({blobEntry("data.bin", "floor-payload")});
     build_a->precommitAdd(ns_a, "part_1", id_a);
+    build_a->putBlob(idOf("floor-payload"), BlobSource::fromString("floor-payload"));
     build_a->promote(ns_a, "part_1", build_a->buildId(), id_a);
     const String blob_key = s->layout().blobKey(idOf("floor-payload"));
 
@@ -532,16 +548,18 @@ TEST(CASProtocol, FreshEvidenceDepWithViewHitIsResolvedByGate)
     /// it): a committed-source adopted leaf whose blob is condemned-but-PRESENT is TRUSTED at the promote
     /// gate. There is NO per-file probe (no HEAD, no meta point-read) and NO copy-forward — the durable
     /// manifest edge is the liveness evidence (D4 relink trust). promote SUCCEEDS and X keeps its ORIGINAL
-    /// incarnation: the token t0 is UNCHANGED (never displaced). A tokened leaf is edge-protected; only a
-    /// non-tokened leaf is decided here, and a committed-source adopt is trusted.
+    /// incarnation: the token t0 is UNCHANGED (never displaced). A materialized leaf is edge-protected;
+    /// this committed-source adopt instead carries trusted-manifest proof.
     auto b = std::make_shared<InMemoryBackend>();
 
     DB::Cas::Layout layout("p");
     const String hex = streamingHexOf("payload-fresh-ev");
     {
         auto s0 = openPool(b);
-        auto build0 = s0->beginPartWrite({});
-        build0->putBlob(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))}, BlobSource::fromString("payload-fresh-ev"));
+        seedBlobWithDurablePrecommit(
+            s0,
+            BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))},
+            "payload-fresh-ev");
     }
     const String blob_key = layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(hex))});
     const Token t0 = b->head(blob_key).token;

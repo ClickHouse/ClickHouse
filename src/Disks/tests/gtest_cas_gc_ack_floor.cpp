@@ -35,6 +35,27 @@ bool blobExists(InMemoryBackend & b, const Layout & layout, const UInt128 & hash
     return b.head(layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hash)})).exists;
 }
 
+/// Publish one physical blob through the production durable-precommit ordering. The committed fixture
+/// ref keeps the transaction complete; callers that need an initially unowned body drop that ref.
+PutBlobResult publishBlobWithDurablePrecommit(
+    const PoolPtr & store, const RootNamespace & ns, const String & ref,
+    const BlobRef & blob_ref, const String & payload)
+{
+    PartWriteInfo info;
+    info.intended_ref = ns.string() + "/" + ref;
+    auto build = store->beginPartWrite(info);
+    ManifestEntry entry;
+    entry.path = "data.bin";
+    entry.placement = EntryPlacement::Blob;
+    entry.ref = blob_ref;
+    entry.blob_size = payload.size();
+    const ManifestId id = build->stageManifest({entry});
+    build->precommitAdd(ns, ref, id);
+    const PutBlobResult result = build->putBlob(blob_ref, BlobSource::fromString(payload));
+    build->promote(ns, ref, build->buildId(), id);
+    return result;
+}
+
 /// The current retired entry for `hash` (dereferenced through gc/state.retired_refs, shard 0), or nullopt.
 std::optional<RetiredEntry> currentEntryFor(Backend & backend, const Layout & layout, const UInt128 & hash)
 {
@@ -355,14 +376,15 @@ TEST(CASGCRetire, SpareLeavesMetaCondemned)
     const RootNamespace ns{"00/aa@cas@"};
 
     /// A content-addressed body + Clean meta via a real fresh upload, so a later writer dedup-attempt
-    /// resolves to THIS exact hash (GC condemns it; the writer resurrects it).
+    /// resolves to THIS exact hash (GC condemns it; the writer republishes it). Drop the fixture ref
+    /// immediately so only the raw owner transitions below govern its in-degree.
     const String payload = "spare-add-only-payload";
     const UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
-    {
-        auto seed = store->beginPartWrite({});
-        seed->putBlob(id, BlobSource::fromString(payload));
-    }
+    const RootNamespace seed_ns{"00/spare-seed@cas@"};
+    publishBlobWithDurablePrecommit(store, seed_ns, "seed", id, payload);
+    store->dropRef(seed_ns, "seed");
+    store->renewWatermarkOnce();
     const Token t_seed = backend->head(store->layout().blobKey(id)).token;
 
     const ManifestRef r1 = ref("srv-a:1", 1, 0xA1);
@@ -381,7 +403,7 @@ TEST(CASGCRetire, SpareLeavesMetaCondemned)
 
     /// Re-reference the SAME blob (same body/token — never re-uploaded) via a fresh ref before
     /// graduation. The pass merge nets in-degree back to 1: the prior retired entry is SPARED
-    /// (recovery wins, even past the floor) -- not the resurrect-supersede path (the token never changed).
+    /// (recovery wins, even past the floor) -- not the republication-supersede path (the token never changed).
     const ManifestRef r2 = ref("srv-a:1", 2, 0xA2);
     writeManifestRaw(*backend, store->layout(), ns, r2, {blobEntryFor("a", hash)});
     publishCommittedTransition(*backend, store->layout(), ns, "tbl_detached", std::nullopt, r2);
@@ -402,17 +424,17 @@ TEST(CASGCRetire, SpareLeavesMetaCondemned)
     }
 
     /// Only a WRITER re-publishes Clean, and only by displacing the body with a fresh incarnation token:
-    /// a dedup-attempt on the condemned hash resurrects (uploadFromSource) — the body token CHANGES and
+    /// a materialization attempt on the condemned hash republishes the writer's source — the body token CHANGES and
     /// the meta flips to Clean WITH that token change.
-    auto build = store->beginPartWrite({});
-    auto ref_w = build->putBlob(id, BlobSource::fromString(payload));
+    const RootNamespace writer_ns{"00/spare-writer@cas@"};
+    auto ref_w = publishBlobWithDurablePrecommit(store, writer_ns, "writer", id, payload);
     EXPECT_EQ(ref_w.ref, id);
     const Token t_resurrect = backend->head(store->layout().blobKey(id)).token;
-    EXPECT_NE(t_resurrect, t_seed) << "resurrect displaces the body with a fresh incarnation token";
+    EXPECT_NE(t_resurrect, t_seed) << "republication displaces the body with a fresh incarnation token";
     const auto lm_after = loadMetaForTest(*backend, store->layout(), hash);
     ASSERT_TRUE(lm_after.has_value());
     EXPECT_EQ(lm_after->meta.state, MetaState::Clean)
-        << "the writer's resurrect path is the SOLE Condemned -> Clean transition";
+        << "the writer's republication path is the sole Condemned -> Clean transition";
 }
 
 /// Two-leader stale-redelete regression — the executable form of the deposed-leader spec §2. A stale
@@ -424,7 +446,7 @@ TEST(CASGCRetire, SpareLeavesMetaCondemned)
 /// Interleaving fidelity (APPROXIMATED): the deposed leader's destructive side effect is its pre-CAS
 /// exact-token `deleteExact(h, t1)`. We reproduce it deterministically by CAPTURING `t1` at condemn time
 /// (exactly the token a paused leader's `delete_pending` snapshot holds) and firing that exact
-/// `deleteExact` AFTER the surviving leader's spare and the writer's resurrect — the faithful destructive
+/// `deleteExact` AFTER the surviving leader's spare and the writer's republication — the faithful destructive
 /// op, without a mid-round CAS-interrupt seam on the delete path (which the backend does not expose).
 TEST(CASGCRetire, StaleRedeleteAfterSpareDoesNotDeleteLiveReuse)
 {
@@ -436,10 +458,10 @@ TEST(CASGCRetire, StaleRedeleteAfterSpareDoesNotDeleteLiveReuse)
     const UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
     const String blob_key = store->layout().blobKey(id);
-    {
-        auto seed = store->beginPartWrite({});
-        seed->putBlob(id, BlobSource::fromString(payload));
-    }
+    const RootNamespace seed_ns{"00/redelete-seed@cas@"};
+    publishBlobWithDurablePrecommit(store, seed_ns, "seed", id, payload);
+    store->dropRef(seed_ns, "seed");
+    store->renewWatermarkOnce();
 
     const ManifestRef r1 = ref("srv-a:1", 1, 0xA1);
     writeManifestRaw(*backend, store->layout(), ns, r1, {blobEntryFor("a", hash)});
@@ -470,11 +492,9 @@ TEST(CASGCRetire, StaleRedeleteAfterSpareDoesNotDeleteLiveReuse)
     }
 
     /// A writer dedup-hits h. It point-reads Condemned and RESURRECTS to a fresh token t2
-    /// (uploadFromSource) — it never reuses t1.
-    {
-        auto build = store->beginPartWrite({});
-        build->putBlob(id, BlobSource::fromString(payload));
-    }
+    /// from the writer's own source — it never reuses t1.
+    const RootNamespace writer_ns{"00/redelete-writer@cas@"};
+    publishBlobWithDurablePrecommit(store, writer_ns, "writer", id, payload);
     const Token t2 = backend->head(blob_key).token;
     EXPECT_NE(t2, t1) << "the writer resurrected to a fresh incarnation, not a reuse of t1";
 
@@ -515,7 +535,7 @@ TEST(CASGCRetire, CopyForwardedBlobSurvivesWhenRepublished)
     gc.runRegularRound();   /// -1 folds => in-degree 0 => entry (1, t0) condemned
     ASSERT_TRUE(currentEntryFor(*backend, store->layout(), DB::UInt128(1)).has_value());
 
-    /// The raw equivalent of a writer resurrect (PartWriteTxn::uploadFromSource): displace EXACTLY t0 with the
+    /// The raw equivalent of writer republication: displace exactly t0 with the
     /// same verified bytes under a fresh token t1, then republish a part referencing the blob (the
     /// promoted dst ref of a republishRef move).
     const String blob_key = store->layout().blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(DB::UInt128(1))});

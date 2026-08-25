@@ -71,7 +71,6 @@ public:
     using CountingBackend::get;
     using CountingBackend::getStream;
     using CountingBackend::putIfAbsent;
-    using CountingBackend::putIfAbsentStream;
     using CountingBackend::putOverwrite;
     using CountingBackend::casPut;
 

@@ -199,7 +199,7 @@ struct BlobCandidate
 struct ReplacedEntry
 {
     RetiredEntry fresh;   /// the freshly condemned CURRENT token (also pushed into still_retired byte-identically)
-    Token old_token;      /// the superseded (stale) entry's token — what the resurrect replaced
+    Token old_token;      /// the superseded (stale) entry's token — what republication replaced
 };
 
 /// One example of an unmatched-remove delta, kept for the caller's single once-per-round WARNING
@@ -219,7 +219,7 @@ struct RetiredMergeResult
     std::vector<RetiredEntry> graduated;       /// newly floor-passed this pass — published pending, deleted NEXT pass
     std::vector<RetiredEntry> spared;          /// in-degree recovered — entry dropped
     std::vector<RetiredEntry> redelete;        /// pending in the PRIOR list — execute deleteExact pre-CAS, drop
-    std::vector<ReplacedEntry> replaced;  /// re-condemned CURRENT tokens that superseded a stale entry (resurrect-replaced); caller emits blob_retire_replaced
+    std::vector<ReplacedEntry> replaced;  /// re-condemned CURRENT tokens that superseded a stale entry after republication; caller emits blob_retire_replaced
 
     /// Count of `remove == true` deltas that matched no presence for their `(BlobRef, source_id)` key —
     /// neither the prior run nor an earlier delta in the same `scattered` batch had activated it. The
@@ -360,7 +360,7 @@ struct GcRoundWorkBudget
 /// snapshot run bytes. Defaults preserve the empty-retired behavior
 /// current_round 0 => nothing graduates, no head_blob => nothing condemned).
 ///
-/// `peek_head` is a side-effect-free HEAD used only by the resurrect-supersede
+/// `peek_head` is a side-effect-free HEAD used only by the republication-supersede
 /// branch (a `prior_retired` entry whose blob re-touched this pass at net in-degree 0, current token
 /// differs from the stale entry's token). `head_blob` is the FRESH-CONDEMN observation hook — it emits
 /// the `IndegZero`/`GcRetireObserve`/`BlobRetire` trail and increments `CASGCRetiredCondemned`, which is

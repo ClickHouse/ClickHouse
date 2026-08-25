@@ -31,7 +31,6 @@ public:
     using Backend::get;
     using Backend::getStream;
     using Backend::putIfAbsent;
-    using Backend::putIfAbsentStream;
     using Backend::putOverwrite;
     using Backend::casPut;
 
@@ -55,10 +54,9 @@ public:
     /// on a precondition failure leaves the existing object untouched.
     PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override;
 
-    /// Returns a single-use sink whose finalized body is published with the same atomic conditional
-    /// create semantics as `putIfAbsent`. Cancelling or destroying the sink before finalization does
-    /// not publish anything.
-    WriteSinkPtr putIfAbsentStream(const String & key, const ObjectMeta & meta) override;
+    /// Publishes either `[fresh_envelope][payload]` or the complete staged bytes as one atomic
+    /// in-memory replacement. Streaming sources are fully validated before the destination changes.
+    void publishBlob(const BlobPublishRequest & request) override;
 
     /// Replaces the existing object only when `expected` is its current token. Token enforcement can
     /// be disabled with `setEnforceTokens` to model a backend that incorrectly ignores this condition.
@@ -79,19 +77,6 @@ public:
     /// page; returned tokens identify the listed incarnations and `next_cursor` is set only when more
     /// matching keys remain.
     ListPage list(const String & prefix, const String & cursor, size_t limit) override;
-
-    /// Same-store copy operations used to exercise the S3-staging contracts in memory. `promoteStaged`
-    /// copies the complete staging object to `blob_key` only when the destination is absent and returns
-    /// `PreconditionFailed` without changing it otherwise. The new token models the destination ETag.
-    ///
-    /// `resurrect` is the one sanctioned unconditional overwrite: it reads only the writer's
-    /// staging object, skips its envelope header, prepends `fresh_header`, and writes the resulting
-    /// body over `blob_key`. The fresh header makes the resurrected body and token different from the
-    /// condemned incarnation, so a delayed exact-token delete for that old incarnation cannot remove
-    /// the resurrection (`INV-NO-RETURN`). The caller must already have established that the
-    /// destination is condemned.
-    PutResult promoteStaged(const String & staging_key, const String & blob_key) override;
-    Token resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key, const String & fresh_header) override;
 
     // ---- Fault-injection controls ----
 

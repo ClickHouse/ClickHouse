@@ -14,10 +14,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.h>
-#include <Common/CacheBase.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/ProfileEvents.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -67,13 +63,6 @@ struct PoolConfig
     /// the steady-state check and this flag is not needed again for the same algo. Default `false`
     /// (fail-closed, matching the default-refuse behavior).
     bool blob_hash_allow_new = false;
-    /// Dedup cache: byte ceiling for the per-disk known-present blob-hash LRU set. 0 disables the
-    /// cache (every create misses → HEAD-before-PUT only). A hint cache; correctness never depends on
-    /// it (a stale hit is caught by the mandatory HEAD in putBlob).
-    uint64_t deduplication_cache_bytes = 64ULL << 20;        /// 64 MiB
-    /// HEAD-before-PUT: on a dedup-cache MISS, a blob whose body is >= this many bytes is written
-    /// HEAD-first (a cheap HEAD avoids streaming a body that would 412). 0 disables the size trigger.
-    uint64_t deduplication_head_first_min_bytes = 1ULL << 20;   /// 1 MiB
     /// Part-folder cache: byte bound for the manifest DECODE cache. The old cache
     /// was count-bounded only (16384 entries) — decoded manifests carry inline bytes, so the worst
     /// case was multi-GB. 0 disables decode caching (every read decodes fresh — diagnostic mode).
@@ -354,9 +343,8 @@ struct NamespaceListing
 class Pool : public std::enable_shared_from_this<Pool>
 {
     /// PartWriteTxn/Gc reach the ref-log lane only through Pool's PUBLIC surface now (the ref subsystem moved
-    /// to the `ref_ledger` member): PartWriteTxn's staging PUTs go through `stagingPutIfAbsent`/
-    /// `stagingConditionalCreate` (which encapsulate the controller call + fence), its ref mutations
-    /// through the public `appendRefOps` delegate; Gc uses the public
+    /// to the `ref_ledger` member): PartWriteTxn's staging PUTs go through `stagingPutIfAbsent` (which
+    /// encapsulates the controller call + fence), its ref mutations through the public `appendRefOps` delegate; Gc uses the public
     /// `wedgedRefLaneCount`. No `friend` needed -- both prior friendships were removed when the
     /// ref-ledger became a member component.
 
@@ -679,13 +667,12 @@ public:
     /// bare `Backend &` from `backend()` would dangle the instant the owning `Pool` is destroyed.
     BackendPtr poolBackendPtr() const { return pool_backend; }
 
-    /// Staging PUT surface for `PartWriteTxn`: both wrap the ref-ledger's retry controller
+    /// Staging PUT surface for `PartWriteTxn`: the methods wrap the ref-ledger's retry controller
     /// AND the ref-lane fence predicate, so `PartWriteTxn` reaches neither directly (the `friend` is gone).
     /// Behavior-identical to the previously-inlined controller+fence at CasPartWriteTxn.cpp stageManifest /
-    /// uploadFromSource; thin delegates to `ref_ledger`.
+    /// mutable marker writes; thin delegates to `ref_ledger`.
     CasWriteOutcome stagingPutIfAbsent(std::string_view key, std::string_view bytes, Token * out_token = nullptr);
-    CasCreateResult stagingConditionalCreate(std::string_view key, const std::function<PutResult()> & attempt);
-    /// Same retry/fence policy as `stagingConditionalCreate`, for a mutable If-Match overwrite.
+    /// Same retry/fence policy as `stagingPutIfAbsent`, for a mutable If-Match overwrite.
     CasOverwriteResult stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected);
     /// Same retry/fence policy as `stagingPutIfAbsent`, for a mutable marker where an existing
     /// DIFFERENT value at the key is a normal Conflict outcome, not corruption.
@@ -752,13 +739,6 @@ public:
     void beginShutdownForTest();
 
 
-    /// Known-present blob-hash cache. A HINT only — correctness never
-    /// depends on it: a hit just makes putBlob go HEAD-first, and a stale hit is caught by that HEAD.
-    /// No-ops when disabled (deduplication_cache_bytes == 0). Keyed on the full `BlobRef` pair:
-    /// a bare digest is never the blob identity, and the same digest value under two algos is two
-    /// different objects.
-    bool dedupCacheContains(const BlobRef & ref) const;
-    void dedupCacheAdd(const BlobRef & ref);
     /// Test seam: retained bytes of the manifest decode cache (0 when disabled).
     size_t manifestDecodeCacheBytesForTest() const { return manifest_reader.manifestDecodeCacheBytes(); }
 
@@ -1085,21 +1065,6 @@ private:
     mutable std::mutex admitted_algos_mutex;
     std::vector<uint8_t> admitted_algos;
 
-    /// Known-present cache: a bytes-bounded LRU set of blob hashes confirmed present in the pool.
-    /// Value is a 1-byte presence marker; DedupWeight charges a fixed per-entry byte estimate so the
-    /// configured `deduplication_cache_bytes` is an honest memory ceiling. nullptr ⇔ disabled.
-    /// Marker stored for a blob hash known to be present. The value has no payload; the cache key is
-    /// the complete `BlobRef`, including its hash algorithm.
-    struct DedupPresent {};
-
-    /// Fixed memory estimate used by `CacheBase` to enforce the configured byte ceiling. It is an
-    /// estimate rather than an allocation measurement, but keeps cache growth bounded predictably.
-    struct DedupWeight
-    {
-        size_t operator()(const DedupPresent &) const { return 64; }
-    };
-    using DeduplicationCache = CacheBase<BlobRef, DedupPresent, BlobRefHash, DedupWeight>;
-    std::unique_ptr<DeduplicationCache> dedup_cache;
     Layout pool_layout;
     /// The plain-object surface (namespace files + loose mountpoint objects), extracted from Pool.
     /// Stateless over `Backend &` + `const Layout &`; declared AFTER

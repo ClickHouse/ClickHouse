@@ -679,7 +679,7 @@ TEST(CASTransactionRemove, CreateThenDirDropDoesNotPublish)
 }
 
 /// [Task 3] `startup()` publishes `cas_store`/`part_access`/`gc_scheduler` (and sets
-/// `pool_uuid`/`conditional_copy_supported`) atomically as its LAST action. Everything
+/// `pool_uuid`) atomically as its LAST action. Everything
 /// before that point -- opening the pool, building the part-folder facade, the capability probe,
 /// starting the GC scheduler -- happens into locals first, so a throw anywhere along the way (here
 /// simulated via `startup_fault_injection_for_test`, injected right before the publish step) must

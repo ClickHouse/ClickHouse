@@ -134,43 +134,10 @@ void incrementCasEvent(CasNs ns, CasOp op)
     ProfileEvents::increment(cas_event_table[static_cast<size_t>(ns)][static_cast<size_t>(op)]);
 }
 
-namespace
+void InstrumentedBackend::publishBlob(const BlobPublishRequest & request)
 {
-
-/// Wraps an inner `WriteSink`. The namespace is captured at creation because the key is not available
-/// at `finalize`; the `Put` versus `PutDeduplicated` outcome is emitted only after the inner sink returns.
-/// Buffer access and cancellation delegate verbatim, while exceptions from the inner sink propagate.
-class InstrumentedWriteSink final : public WriteSink
-{
-public:
-    InstrumentedWriteSink(WriteSinkPtr inner_, CasNs ns_) : inner(std::move(inner_)), ns(ns_) {}
-
-    WriteBuffer & buffer() override { return inner->buffer(); }
-
-    /// Finalize the inner upload first, then count its returned outcome. No event is emitted if the
-    /// inner operation throws.
-    PutResult finalize() override
-    {
-        PutResult result = inner->finalize();
-        incrementCasEvent(ns, result.outcome == PutOutcome::Done ? CasOp::Put : CasOp::PutDeduplicated);
-        return result;
-    }
-
-    void cancel() noexcept override { inner->cancel(); }
-
-private:
-    WriteSinkPtr inner;
-    CasNs ns;
-};
-
-}
-
-WriteSinkPtr InstrumentedBackend::putIfAbsentStream(const String & key, const ObjectMeta & meta)
-{
-    WriteSinkPtr sink = inner->putIfAbsentStream(key, meta);
-    if (!sink)
-        return sink;
-    return std::make_unique<InstrumentedWriteSink>(std::move(sink), classifyCasNs(key));
+    inner->publishBlob(request);
+    incrementCasEvent(classifyCasNs(request.destination_key), CasOp::Put);
 }
 
 }

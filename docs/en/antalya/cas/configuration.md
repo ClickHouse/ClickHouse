@@ -90,18 +90,16 @@ entirely before release. Treat this table as a snapshot of the current build, no
 | `blob_hash` | `cityhash128` | Pool blob content-hash function (`cityhash128` \| `xxh3-128` \| `sha256`). Recorded in the pool at creation; a mismatching config is refused at mount |
 | `blob_hash_allow_new` | `false` | Explicit opt-in to admit a new hash algorithm into an existing pool. One-way: once admitted, the pool carries both algorithms permanently |
 | `skip_access_check` | `false` | Skip the boot-time capability probe (start now, fix later). Only the preflight probe is skipped — the conditional-write correctness check still runs on every writable mount. **Not available on a writable generation-token (GCS) disk**, which refuses to mount with it: there, the probe battery is the only proof that a token-exact delete carries its generation precondition. Mount such a disk read-only if you need to defer the check |
-| `deduplication_cache_bytes` | 64 MiB | Byte budget of the blob presence cache (`0` disables) |
-| `deduplication_head_first_min_bytes` | 1 MiB | Minimum blob size to try a `HEAD` before uploading the body |
 | `gc_snapshot_generations_to_keep` | `3` | GC snapshot generations retained |
 | `gc_shards` | `1` | Blob-hash-prefix reducer shards (≥ 1). Recorded in the pool at creation; a mismatching config is refused at mount |
-| `gcs_max_token_producing_put_bytes` | 1 GiB | Largest token-producing write on a generation-token store, conditional or not (GCS forces those single-part) |
+| `gcs_max_conditional_put_bytes` | 1 GiB | Largest conditional non-blob `PUT` on a generation-token store, including create-if-absent metadata/control artifacts and conditional replacements. Blob publication is unconditional, uses ordinary multipart, and is not subject to this cap |
 | `part_folder_cache_bytes` | 64 MiB | Part-folder view cache byte budget (`0` disables retention) |
 | `part_folder_cache_max_entries` | `10000` | Part-folder view cache entry cap |
 | `part_folder_cache_max_entry_bytes` | 16 MiB | Oversized part-folder views bypass retention above this size |
 | `part_folder_validate` | `always` | Cache body re-proof policy (`always` \| `never` \| `age <seconds>`). **Leave at `always`**: the other modes trade the fail-closed body-existence check for an optimization — this is a trust decision about unverified data, not a performance knob |
 | `manifest_decode_cache_bytes` | 128 MiB | Manifest decode cache byte budget (`0` disables) |
 | `gc_meta_pool_size` | `16` | Bounded pool size for GC per-hash freshness-meta writes |
-| `staging_backend` | `local` | Blob staging backend (`local` \| `s3`); `s3` is opt-in |
+| `staging_backend` | `local` | Blob staging backend (`local` \| `s3`); `s3` is opt-in and requires native same-store copy on writable mount |
 
 ### Choosing `blob_hash` {#choosing-blob-hash}
 

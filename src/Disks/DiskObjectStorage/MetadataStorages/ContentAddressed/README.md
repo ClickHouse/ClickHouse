@@ -16,7 +16,8 @@ mutable state with immutable, hash-addressed objects plus a small CAS
 
 - **Blob** — the unit of payload. Keyed by its content digest
   (`CasLayout::blobKey`); an envelope wraps the payload
-  (`Formats/CasBlobEnvelopeFormat`). Blobs are immutable and shared: the pool
+  (`Formats/CasBlobEnvelopeFormat`). Blobs are logically immutable and shared: equivalent
+  physical incarnations may replace one another under the same hash key. The pool
   is the only index, and identity is always established by (re-)hashing the
   bytes — there are no trust-the-checksum shortcuts. A freshness sidecar
   (`blobMetaKey` = `blobKey` + `.meta`) carries GC state per hash.
@@ -42,8 +43,8 @@ mutable state with immutable, hash-addressed objects plus a small CAS
   reference which blobs), fold seals, and outcome logs. GC computes blob
   in-degrees from the edges, *condemns* zero-in-degree blobs, and later
   deletes them with **exact-token** conditional deletes, so a concurrent
-  writer re-uploading the same content always wins (resurrection is a fresh
-  re-upload — never a read of a condemned object).
+  writer publishing the same content under a fresh envelope always wins (revival is
+  publication from the writer's own source — never a read of a condemned object).
 
 Everything persisted is a text format with a versioned header line; see
 `Formats/README.md` for the registry, key map, and evolution rules.
@@ -52,8 +53,9 @@ Everything persisted is a text format with a versioned header line; see
 
 - **Write**: `ContentAddressedTransaction` buffers or spills file writes
   (`scratch_path`, or opt-in S3 staging), hashes the payload, and hands it to
-  `Pool/CasPartWriteTxn`: upload-or-adopt each blob (dedup by hash; a HEAD
-  proves presence before reuse), stage the manifest, `precommitAdd` the ref,
+  `Pool/CasPartWriteTxn`: start every materialization with blob `HEAD`, adopt a present
+  non-condemned body or publish the writer's source unconditionally, reconcile `.meta` to
+  `Clean`, and record explicit `Materialized` proof; then stage the manifest, `precommitAdd` the ref,
   then promote it to committed in the ref log.
 - **Read**: disk path → `Parts/PartPathParser` (namespace + part + file) →
   ref table resolves the manifest → `Pool/CasManifestReader` locates the
@@ -91,9 +93,11 @@ Primitives → Formats → Backend → Pool → Gc → Tools ≈ Parts → facad
   `CasRefLogFormat`, …) plus `CasLayout` (the object-key schema). See
   `Formats/README.md` for the format registry.
 - **`Backend/`** — the token-aware storage seam: `CasBackend` (the contract:
-  get/put/`putIfAbsent`/`casPut`/`deleteExact` with CAS tokens),
+  `get`/`putIfAbsent`/`casPut`/`deleteExact` with CAS tokens, plus unconditional
+  transport-only `publishBlob`),
   `CasObjectStorageBackend`, `CasInMemoryBackend`, `CasInstrumentedBackend`,
-  `CasRequestControl` (single-attempt conditional writes, explicit
+  `CasRequestControl` (single-attempt conditional non-blob writes, including create-if-absent
+  artifacts and conditional replacements, with explicit
   state-aware retries), `CasProbe` (mount-time capability probe).
 - **`Pool/`** — the pool engine: `CasPool` (composition root), `CasPartWriteTxn`
   (one-part write transaction), `CasRefLedger` + `CasRefProtocol` (ref-table
@@ -122,8 +126,8 @@ is enforced by convention (README rule) — there is no CI check.
 
 **Named exceptions** (deliberate):
 
-- The staging sweeper (in `Pool/CasServerRoot`) and `probeConditionalCopy`
-  bypass `Backend` and reach straight into `IObjectStorage`.
+- The staging sweeper in `Pool/CasServerRoot` bypasses `Backend` and reaches straight into
+  `IObjectStorage`.
 - `Backend` may read `Formats` traits (the provider-metadata mirror).
 
 ## Configuration
@@ -155,7 +159,10 @@ and its `_s3_` sibling for the lane configs used in CI):
 claim, no capability probe, no writes — the mode `clickhouse-disks` tools and
 post-mortem inspection use. The full knob set (staging backend, cache sizes,
 GC sharding, hash algorithm, request budgets) is parsed in
-`MetadataStorageFactory.cpp`; each knob is documented at its parse site.
+`ContentAddressedSettings.cpp`; each knob is documented at its declaration site. Blob publication
+has no presence-cache setting: `HEAD` is mandatory. `gcs_max_conditional_put_bytes` applies to all
+conditional non-blob writes, including create-if-absent artifacts and conditional replacements, but
+not to multipart-capable blob publication.
 
 ## Operations and observability
 

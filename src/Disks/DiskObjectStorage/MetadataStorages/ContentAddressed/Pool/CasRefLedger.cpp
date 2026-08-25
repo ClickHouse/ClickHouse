@@ -246,13 +246,6 @@ CasWriteOutcome CasRefLedger::stagingPutIfAbsent(std::string_view key, std::stri
     return ref_request_controller->putIfAbsentControlled(key, bytes, fence_ok_fn, out_token);
 }
 
-CasCreateResult CasRefLedger::stagingConditionalCreate(std::string_view key, const std::function<PutResult()> & attempt)
-{
-    /// The supplied attempt is controlled by the same retry and mount-fence policy as other staged
-    /// writes.
-    return ref_request_controller->conditionalCreateControlled(key, attempt, fence_ok_fn);
-}
-
 CasOverwriteResult CasRefLedger::stagingConditionalOverwrite(std::string_view key, std::string_view bytes, const Token & expected)
 {
     /// The supplied write is controlled by the same retry and mount-fence policy as other staged

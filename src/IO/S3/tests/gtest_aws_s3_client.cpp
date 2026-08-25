@@ -236,7 +236,7 @@ TEST(IOTestAwsS3Client, DoesNotRetryPreconditionFailed)
     Aws::Client::AWSError<Aws::S3::S3Errors> named(Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed", "precondition failed", false);
     EXPECT_TRUE(DB::S3::isPreconditionFailedError(named));
 
-    /// Typed-exception surface (the conditional copy / finalize catch an S3Exception): name and message.
+    /// Typed-exception surface consumed by S3 request finalization: name and message.
     EXPECT_TRUE(DB::S3Exception("boom", Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed").isPreconditionFailed());
     EXPECT_FALSE(DB::S3Exception("boom", Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey").isPreconditionFailed());
 }

@@ -173,7 +173,6 @@ ManifestId publishOneBlobPart(const PoolPtr & s, const RootNamespace & ns, const
     PartWriteInfo info;
     info.intended_ref = ns.string() + "/" + ref;
     auto build = s->beginPartWrite(info);
-    build->putBlob(idOf(payload), BlobSource::fromString(payload));
 
     ManifestEntry e;
     e.path = "data.bin";
@@ -183,6 +182,7 @@ ManifestId publishOneBlobPart(const PoolPtr & s, const RootNamespace & ns, const
 
     const ManifestId id = build->stageManifest({e});
     build->precommitAdd(ns, ref, id);
+    build->putBlob(idOf(payload), BlobSource::fromString(payload));
     build->promote(ns, ref, build->buildId(), id);
     return id;
 }

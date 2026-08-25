@@ -444,7 +444,8 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
             /// A delete_pending entry recovering in-degree is the expected shape of a dedup-adopt vs
             /// condemn race, not an ack-floor violation: a graduated blob carries NO surviving prior
             /// edges (see the comment on the sentinel emission below), so any edge that resurrects its
-            /// in-degree is necessarily a FRESH this-generation edge -- a writer's `observeAndAdmit`
+            /// in-degree is necessarily a FRESH this-generation edge -- a writer's non-condemned
+            /// observation in `PartWriteTxn::ensureBlobPresent`
             /// point-read of the per-hash meta raced GC's `Condemned` write and adopted the (about to
             /// be deleted) token instead of resurrecting from source. Spare it LOUDLY (never a
             /// fail-closed abort, never a delete of a re-referenced blob), but at Debug: this is a
@@ -523,7 +524,7 @@ void foldDeltasIntoGeneration(Backend & backend, const Layout & layout,
             /// The retired row already identifies the blob with the native `BlobRef` used by the run.
             const RetiredEntry stale = toRetiredEntry(cur_blob, *cur_condemned);
             /// On a re-reference cycle (touched this window, net in-degree 0),
-            /// re-observe the CURRENT token. If it differs from the retired row's token, a resurrect
+            /// re-observe the CURRENT token. If it differs from the retired row's token, republication
             /// replaced the incarnation at this key — supersede the stale entry with a fresh condemn of the
             /// current token so the replacement enters the pipeline (the stale token's exact-token delete
             /// would only find the new token and no-op). Keyed on (hash, current token), matching GRetire.

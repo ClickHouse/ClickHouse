@@ -58,8 +58,6 @@ namespace ContentAddressedSetting
     extern const ContentAddressedSettingsString server_root_id;
     extern const ContentAddressedSettingsBool gc_enabled;
     extern const ContentAddressedSettingsUInt64 gc_interval_sec;
-    extern const ContentAddressedSettingsUInt64 deduplication_cache_bytes;
-    extern const ContentAddressedSettingsUInt64 deduplication_head_first_min_bytes;
     extern const ContentAddressedSettingsUInt64 gc_snapshot_generations_to_keep;
     extern const ContentAddressedSettingsUInt64 gc_shards;
     extern const ContentAddressedSettingsUInt64 manifest_sweep_list_budget_keys;
@@ -72,7 +70,7 @@ namespace ContentAddressedSetting
     extern const ContentAddressedSettingsUInt64 gc_round_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_handoff_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_outcome_entry_budget;
-    extern const ContentAddressedSettingsUInt64 gcs_max_token_producing_put_bytes;
+    extern const ContentAddressedSettingsUInt64 gcs_max_conditional_put_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entries;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entry_bytes;
@@ -131,7 +129,7 @@ const char * casLifecycleReasonWord(Cas::PoolLifecycle lc)
 /// Factory (never gated): getType, getPath, supportsChmod, supportsStat, isReadOnly, isContentAddressed,
 ///   transactionIsStagingOverlay, supportsAtomicFileWrites, supportsTransactionalMutableFiles,
 ///   areBlobPathsRandom, getHardlinkCount, createTransaction (I/O-free -- allocates a txn), getPoolUUID,
-///   serverRootId, scratchPath, stagingBackend, conditionalCopySupported, objectStorage, gcHealth,
+///   serverRootId, scratchPath, stagingBackend, objectStorage, gcHealth,
 ///   lifecycleSnapshot (both non-store()-gated introspection reads for system.cas_mounts --
 ///   readable in EVERY lifecycle state including a not-live/vanished/null pool, spec §7),
 ///   parseStagingBackend/parsePartFolderValidate/
@@ -279,8 +277,6 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , context(context_)
     , gc_enabled(settings_[ContentAddressedSetting::gc_enabled].value)
     , gc_interval(std::chrono::seconds(settings_[ContentAddressedSetting::gc_interval_sec].value))
-    , deduplication_cache_bytes(settings_[ContentAddressedSetting::deduplication_cache_bytes].value)
-    , deduplication_head_first_min_bytes(settings_[ContentAddressedSetting::deduplication_head_first_min_bytes].value)
     , gc_snapshot_generations_to_keep(settings_[ContentAddressedSetting::gc_snapshot_generations_to_keep].value)
     , gc_shards(settings_[ContentAddressedSetting::gc_shards].value)
     , manifest_sweep_list_budget_keys(settings_[ContentAddressedSetting::manifest_sweep_list_budget_keys].value)
@@ -293,7 +289,7 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , gc_round_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_prefix_wholesale_budget].value)
     , gc_round_handoff_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_handoff_prefix_wholesale_budget].value)
     , gc_round_outcome_entry_budget(settings_[ContentAddressedSetting::gc_round_outcome_entry_budget].value)
-    , gcs_max_token_producing_put_bytes(settings_[ContentAddressedSetting::gcs_max_token_producing_put_bytes].value)
+    , gcs_max_conditional_put_bytes(settings_[ContentAddressedSetting::gcs_max_conditional_put_bytes].value)
     , cas_part_folder_cache_bytes(settings_[ContentAddressedSetting::part_folder_cache_bytes].value)
     , cas_part_folder_cache_max_entries(settings_[ContentAddressedSetting::part_folder_cache_max_entries].value)
     , cas_part_folder_cache_max_entry_bytes(settings_[ContentAddressedSetting::part_folder_cache_max_entry_bytes].value)
@@ -691,7 +687,7 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     const auto mode = object_storage->getType() == ObjectStorageType::Local
         ? Cas::ObjectStorageBackend::Mode::EmulatedSingleProcess
         : Cas::ObjectStorageBackend::Mode::Native;
-    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode, gcs_max_token_producing_put_bytes);
+    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode, gcs_max_conditional_put_bytes);
     const Cas::TokenType backend_token_type = backend->nativeTokenType();
 
     /// EmulatedSingleProcess emulates the conditional-op / exact-token semantics in-process (local
@@ -759,8 +755,6 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     /// `blob_hash_allow_new` or refused (BAD_ARGUMENTS, the default).
     pool_config.blob_hash_algo = blob_hash_algo;
     pool_config.blob_hash_allow_new = blob_hash_allow_new;
-    pool_config.deduplication_cache_bytes = deduplication_cache_bytes;
-    pool_config.deduplication_head_first_min_bytes = deduplication_head_first_min_bytes;
     pool_config.manifest_decode_cache_bytes = manifest_decode_cache_bytes;
     pool_config.gc_snapshot_generations_to_keep = gc_snapshot_generations_to_keep;
     pool_config.gc_shards = gc_shards;
@@ -794,8 +788,20 @@ void ContentAddressedMetadataStorage::startup()
     /// a read-only backend), run no watermark, start no GC, and fail the mutating surface closed.
     read_only = object_storage->isReadOnly();
 
+    /// Explicit S3 staging can publish only by provider-native same-store copy. Validate the actual
+    /// object-storage configuration before opening a writable mount; never infer capability from an
+    /// endpoint/provider name and never substitute local staging for an unsupported explicit choice.
+    /// Observe-only mounts cannot enter staged publication, so they do not require this capability.
+    if (staging_backend == Cas::StagingBackend::S3
+        && !read_only
+        && !object_storage->supportsCopyMode(ObjectStorageCopyMode::NativeOnly))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "staging_backend=s3 requires native-only same-store copy, but object storage {} does not support it",
+            object_storage->getName());
+
     /// Everything below builds into LOCALS -- nothing is published to `cas_store`/`part_access`/
-    /// `gc_scheduler`/`pool_uuid`/`conditional_copy_supported` until the single publish step at the
+    /// `gc_scheduler`/`pool_uuid` until the single publish step at the
     /// very end. This makes a mid-startup throw leave the object exactly as unstarted as it was on
     /// entry (the `if (cas_store) return;` head above still sees an empty pool), so a caller can
     /// retry `startup` after a transient failure instead of being stuck with a half-built mount.
@@ -810,63 +816,16 @@ void ContentAddressedMetadataStorage::startup()
             .max_entry_bytes = cas_part_folder_cache_max_entry_bytes,
             .validate = part_folder_validate});
 
-    /// The optional mount-time capability probe for a write-once conditional server-side copy.
-    /// Only relevant when this disk opted in to `staging_backend=s3`; `Local` (the default,
-    /// global constraint: OFF BY DEFAULT) takes NO probe here — `conditional_copy_supported` simply
-    /// stays at its `false` default and is never consulted on the local path. Skipped in
-    /// observe-only/readonly mode: a probe write would fail on a read-only backend, exactly like the
-    /// mandatory battery (`runCapabilityProbe`) above skips a read-only mount.
-    ///
-    /// Fail-close, never fail-open: an unsupported or non-enforcing backend just falls back to local
-    /// staging (`conditional_copy_supported` stays `false`) — this is NOT a mount failure, unlike the
-    /// mandatory battery, because `local` staging remains fully functional.
-    ///
-    /// A generation-token backend (GCS) is unsupported for S3-native staging regardless of what the
-    /// probe would report, so it takes no probe at all: `probeConditionalCopy` issues its conditional
-    /// copies with a default `WriteSettings`, which never receives the GCS conditional-dialect header
-    /// mapping, so it would observe a raw `If-None-Match` that GCS ignores on `CopyObject` and report
-    /// enforcement where there is none. Even a corrected probe would not help — the generation that
-    /// `promoteStaged` needs comes back in a response HEADER, and the vendored `CopyObjectResult` the
-    /// copy call site reads only ever populates its `ETag` from the response BODY, so the token would
-    /// never reach the caller. Excluding generation stores here keeps that dead end unreachable instead
-    /// of surfacing it as a corrupted-token exception.
-    bool copy_supported = false;
+    /// Reclaim this mount's leaked `staging/<server_root_id>/` debris after an explicit, writable S3
+    /// staging mount has passed the native-copy check above. The prefix is keyed by this mount's own
+    /// `server_root_id`, matching every staging key the writer mints. GC excludes `staging/` entirely,
+    /// so this mount-scoped sweep is its only reclaimer. Read-only and default-local mounts do not
+    /// write into this prefix and skip the sweep.
     if (staging_backend == Cas::StagingBackend::S3 && !read_only)
     {
-        if (view.native_token_type == Cas::TokenType::Generation)
-        {
-            LOG_INFO(
-                getLogger("ContentAddressedMetadataStorage"),
-                "staging_backend=s3 requested but this object storage mints generation incarnation "
-                "tokens, which S3-native staging cannot carry through a server-side copy; falling "
-                "back to local staging");
-        }
-        else
-        {
-            const String probe_prefix = physicalKey(view.pool_prefix + "/staging/" + server_root_id + "/probe");
-            copy_supported = Cas::probeConditionalCopy(*object_storage, probe_prefix);
-            if (!copy_supported)
-                LOG_INFO(
-                    getLogger("ContentAddressedMetadataStorage"),
-                    "staging_backend=s3 requested but the object storage does not enforce conditional "
-                    "copy; falling back to local staging");
-        }
-
-        /// Reclaim this mount's own leaked `staging/<server_root_id>/` debris (a promote whose staging-delete never
-        /// ran, or an aborted transaction's never-promoted staging object — see
-        /// `cleanupPendingTempFiles`) at mount start. Only runs when the S3 path is actually usable
-        /// (`conditional_copy_supported`) — an unsupported/fail-closed-to-local mount never wrote any
-        /// S3 staging objects under this prefix in the first place. LEASE-FENCE: the prefix below is
-        /// keyed by THIS mount's own `server_root_id` (the SAME prefix construction the probe above
-        /// and every staging key this mount ever mints use -- and the same formula `stagingKeyPrefix()`
-        /// uses post-startup; computed from `view.pool_prefix` here rather than via
-        /// `stagingKeyPrefix()` itself, because that helper calls `store()`, which is fail-closed and
-        /// would throw before the pool is published), so this sweep can never reach a different
-        /// mount's in-flight staging (`Cas::sweepOwnMountStaging`'s own doc comment). GC excludes
-        /// `staging/` entirely (a distinct top-level prefix from `blobs/` — see `CasLayout.h`), so this
-        /// sweeper is the ONLY reclaimer of `staging/` debris.
-        if (copy_supported)
-            Cas::sweepOwnMountStaging(*object_storage, physicalKey(view.pool_prefix + "/staging/" + server_root_id) + "/");
+        Cas::sweepOwnMountStaging(
+            *object_storage,
+            physicalKey(view.pool_prefix + "/staging/" + server_root_id) + "/");
     }
 
     /// The background GC scheduler runs only on the disk-factory path (context non-null) and when
@@ -906,7 +865,6 @@ void ContentAddressedMetadataStorage::startup()
         gc_scheduler = std::move(scheduler);
     }
     pool_uuid = std::move(uuid);
-    conditional_copy_supported = copy_supported;
     native_token_type = view.native_token_type;
 
     /// Freeze the object storage's conditional-ops dialect for the rest of its life. Everything above
@@ -1253,10 +1211,8 @@ MetadataTransactionPtr ContentAddressedMetadataStorage::createTransaction()
 
 String ContentAddressedMetadataStorage::stagingKeyPrefix() const
 {
-    /// Mirrors the probe's own prefix construction (`startup`'s `probe_prefix` above), minus
-    /// the probe's own `/probe` leaf — this is the writer-owned sibling subtree of the SAME
-    /// `staging/<server_root_id>/` area. `store()` throws INVALID_STATE when no pool is published
-    /// (pre-`startup`/post-`shutdown`); every caller (writeFile, via a transaction) runs post-startup.
+    /// This is the writer-owned `staging/<server_root_id>/` subtree. `store` throws `INVALID_STATE`
+    /// when no pool is published; every writer caller runs after `startup`.
     return physicalKey(store()->poolConfig().pool_prefix + "/staging/" + server_root_id);
 }
 

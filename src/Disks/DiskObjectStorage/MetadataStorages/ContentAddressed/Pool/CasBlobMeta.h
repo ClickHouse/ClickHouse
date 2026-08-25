@@ -53,7 +53,7 @@ CasOverwriteResult putMetaIfAbsent(Pool & pool, const BlobRef & ref, const BlobM
 /// budgeted resolve-and-reissue as putMetaIfAbsent). A genuine conflict (current token AND bytes both
 /// differ from what this call intended) is reported as `CasOverwriteOutcome::Conflict`, never thrown --
 /// exactly like the previous uncontrolled `CasResult` contract -- so the caller's existing
-/// reload-and-retry loop (`writeResurrectMetaClean`) keeps working unchanged.
+/// reload-and-retry metadata reconciliation in `PartWriteTxn::ensureBlobPresent` keeps working unchanged.
 CasOverwriteResult casMeta(Pool & pool, const BlobRef & ref, const Token & expected, const BlobMeta & meta);
 
 /// Deletes only the marker incarnation identified by `expected`. A token mismatch leaves the current

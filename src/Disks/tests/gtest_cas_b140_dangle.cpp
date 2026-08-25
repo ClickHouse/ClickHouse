@@ -72,7 +72,6 @@ TEST(CASGCDangle, SharedBlobSurvivesDropOfOneOfTwoLiveRefs)
         PartWriteInfo info;
         info.intended_ref = ns.string() + "/rb_live";
         auto build = s->beginPartWrite(info);
-        build->putBlob(idOf("B"), BlobSource::fromString("B"));
         ManifestEntry e;
         e.path = "data.bin";
         e.placement = EntryPlacement::Blob;
@@ -81,6 +80,7 @@ TEST(CASGCDangle, SharedBlobSurvivesDropOfOneOfTwoLiveRefs)
         e.blob_size = std::string("B").size();
         const ManifestId id = build->stageManifest({e});
         build->precommitAdd(ns, "rb_live", id);
+        build->putBlob(idOf("B"), BlobSource::fromString("B"));
         build->promote(ns, "rb_live", build->buildId(), id);
         s->renewWatermarkOnce();
     }

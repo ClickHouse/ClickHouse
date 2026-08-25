@@ -85,7 +85,6 @@ public:
     using Backend::get;
     using Backend::getStream;
     using Backend::putIfAbsent;
-    using Backend::putIfAbsentStream;
     using Backend::putOverwrite;
     using Backend::casPut;
 
@@ -490,7 +489,7 @@ TEST(CASForget, ForgetEndToEndGatesTruthWithTimestampedMessage)
 }
 
 /// (I-1 regression) A manual `SYSTEM CAS GC RUN` admitted while `Live` but that acquires
-/// `gc_scheduler_mutex` strictly AFTER a concurrent FORGET completes must NOT resurrect a `CasGcScheduler`
+/// `gc_scheduler_mutex` strictly AFTER a concurrent FORGET completes must NOT recreate a `CasGcScheduler`
 /// on the now-`Vanished` pool: the under-lock admission re-check refuses with the typed [D5] message. The
 /// interleave is deterministic (bounded cv waits, no sleep) — the GC-verb seam parks the RUN in the
 /// admission→lock window while the FORGET thread drives the real teardown. The lasting-damage observable is
@@ -513,7 +512,7 @@ TEST(CASForget, GcRunAdmittedWhileLiveRefusesAfterConcurrentForget)
     EXPECT_NE(msg.find("erasure was NOT verified"), std::string::npos) << msg;
     /// The I-1 lasting-damage observable: NO scheduler was created on the decommissioned pool.
     EXPECT_FALSE(storage->gcHealth().has_value())
-        << "a GC RUN refused post-FORGET must NOT resurrect the scheduler on a Vanished pool";
+        << "a GC RUN refused post-FORGET must NOT recreate the scheduler on a Vanished pool";
     EXPECT_EQ(pool->lifecycle(), PoolLifecycle::VanishedForgotten);
 }
 

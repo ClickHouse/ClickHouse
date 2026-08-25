@@ -18,9 +18,11 @@ these conditions is refused rather than trusted.
 | Requirement | Interface method | Why it is needed |
 |---|---|---|
 | Read-after-write on a fresh key | `Backend::get` / `Backend::head` | Recovery listings and point reads must see what was just written |
-| Conditional create (`If-None-Match: *`) | `Backend::putIfAbsent`, `Backend::putIfAbsentStream` | Write-once creation of blobs, manifests, and ref-log entries |
+| Conditional create (`If-None-Match: *`) | `Backend::putIfAbsent`, `Backend::casPut` with expected absence | Write-once creation of manifests and control/log objects; blob bodies use unconditional publication after `HEAD` |
 | Conditional overwrite (`If-Match: <token>`) | `Backend::putOverwrite`, `Backend::casPut` | The one mutual-exclusion primitive: mount leases, `gc/state` |
-| Exact-token delete | `Backend::deleteExact` | GC must delete only the incarnation it condemned, never a resurrected replacement |
+| Unconditional complete-object publication | `Backend::publishBlob` | An absent or condemned content-addressed body is replaced atomically; native stores may use multipart |
+| Native same-store copy when `staging_backend = s3` | `IObjectStorage::copyObject` with `ObjectStorageCopyMode::NativeOnly` | The first absent staged publication may copy its complete object without a client-side fallback |
+| Exact-token delete | `Backend::deleteExact` | GC must delete only the incarnation it condemned, never a replacement |
 | Ranged `GET` | `Backend::get` / `Backend::getStream` with a `Range` | Opening one column file of a part costs one bounded read, not a whole-object fetch |
 | `LIST` with a resumable cursor | `Backend::list` | GC discovery and the orphan-manifest sweep page through the pool without a separate index |
 | No versioning / no delete markers | probed by `runCapabilityProbe`; `created_delete_marker` on `DeleteOutcome` | A delete marker over a live key would break exact-token semantics — GC would archive instead of reclaim |
@@ -54,10 +56,15 @@ expires: `GC` reports space as reclaimed while the bill still reflects it.
 
 ## Platform support {#platform-support}
 
+The deterministic request-construction coverage is green, but the
+[real-GCS release gate](/superpowers/cas/unconditional-blob-publication-live-results) remains blocked
+until its credentialed OAuth and HMAC groups run against Google Cloud Storage. A fake service cannot
+establish acceptance of Google's multipart, native-copy, and exact-delete wire behavior.
+
 | Platform | Status | Notes |
 |---|---|---|
-| AWS S3 | ✓ | Native `ETag`-based conditional dialect: `If-None-Match` / `If-Match` used directly |
-| Google Cloud Storage | ✓ | Generation-token dialect: conditional headers are rewritten to `x-goog-if-generation-match`, opted into via `http_client = gcs_hmac` or `gcp_oauth` |
+| AWS S3 | ✓ | Native `ETag`-based conditional dialect for mutable objects and exact deletion; blob publication is unconditional |
+| Google Cloud Storage | implementation complete; release gate pending | Generation-token dialect for mutable objects/native-token `HEAD`/exact deletion, opted into via `http_client = gcs_hmac` or `gcp_oauth`; blob publication uses ordinary copy/multipart. Real credentialed GCS groups have not run yet |
 | Azure Blob Storage | probably | Azure's REST API documents the equivalent conditional headers, but ClickHouse's Azure object-storage backend does not yet wire up a `CAS` conditional dialect the way the S3 and GCS paths do — untested, not validated by the capability probe |
 | Other S3-compatible stores | only with enforced conditional operations | The capability probe is the actual gate: a store that silently ignores `If-None-Match`/`If-Match` (accepting and applying the write regardless) fails the probe and is refused. `RustFS` passes the full battery and is used as the project's test backend; `Garage` was evaluated and rejected because it silently ignores conditional operations |
 

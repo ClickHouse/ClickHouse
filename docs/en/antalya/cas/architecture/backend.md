@@ -20,17 +20,23 @@ every present key has exactly one current incarnation identified by an opaque `T
 |---|---|
 | `get` / `getStream` | Read bytes (or a forward-only stream, for write-once objects) plus the token of the incarnation read |
 | `head` | Existence, size, token, and metadata without reading the body |
-| `putIfAbsent` / `putIfAbsentStream` | Create-if-absent (`If-None-Match: *`); `PreconditionFailed` is a returned outcome, never an exception |
+| `putIfAbsent` | Create a write-once metadata/control object only when absent; `PreconditionFailed` is a returned outcome, never an exception |
+| `publishBlob` | Publish a complete blob unconditionally by streaming rewrite or native same-store copy; it makes no lifecycle decision and returns no token |
 | `putOverwrite` | Replace the current object only when its token equals `expected`; a mismatch is a returned outcome |
 | `casPut` | `expected == nullopt` ⇒ create-if-absent CAS (used for the first write of a root object); a set `expected` conditionally replaces that exact incarnation |
 | `deleteExact` | Delete only the incarnation named by `token`; a token mismatch (`TokenMismatch`) leaves the object untouched and is distinguished from `NotFound` |
 | `list` | One page of keys under a prefix, resumed by the backend's own cursor |
 | `supportsListTokens` | Whether `list` can surface a per-key incarnation token, letting GC discovery skip an unchanged root shard without a `GET` |
-| `promoteStaged` / `resurrect` | `promoteStaged`: write-once server-side copy from S3 staging (optional, defaults to `NOT_IMPLEMENTED`). `resurrect`: unconditional re-upload displacing a condemned incarnation from a caller-supplied reader (streamed on remote object storage, materialized one-at-a-time on the local emulated mode); size-checked before publication, and fresh-tagged so pending deletes of the old incarnation cannot remove it |
 
-`deleteExact`, `putIfAbsent`/`putIfAbsentStream`, and `putOverwrite`/`casPut` are safety-critical:
-they are what makes exact-token deletes, write-once creation, and mutual exclusion hold. Every
-other method is protocol hygiene.
+`deleteExact`, `putIfAbsent`, and `putOverwrite`/`casPut` are safety-critical for exact deletion,
+write-once metadata/control objects, and mutual exclusion. Blob-body publication deliberately has
+different semantics: `PartWriteTxn::ensureBlobPresent` owns `HEAD`, freshness metadata, and proof;
+`publishBlob` only moves the selected bytes.
+
+Writer readiness is represented by `BlobDependencyProof`, not by token presence. `Materialized`
+means the writer observed a present non-condemned body or completed publication and metadata
+reconciliation. `TrustedManifest` means a durable source manifest proves the blob and requires no
+blob I/O. Pending state and writer tokens are not stored in the dependency record.
 
 **`TOKEN ⟹ CONTENT`** is the one contract item the capability probe cannot check: a token must
 uniquely identify the byte content of the incarnation it labels, so that a repeated token never
@@ -43,7 +49,7 @@ backend implementation, not a property the probe verifies.
 ## Provider dialects {#dialects}
 
 `ObjectStorageBackend` (`Backend/CasObjectStorageBackend.cpp`) wraps one `IObjectStorage` and picks
-its token dialect from `IObjectStorage::conditionalOpsUseGenerationTokens()`:
+its token dialect from `IObjectStorage::conditionalOpsUseGenerationTokens`:
 
 | Dialect | Token type | How a conditional write is expressed |
 |---|---|---|
@@ -52,11 +58,13 @@ its token dialect from `IObjectStorage::conditionalOpsUseGenerationTokens()`:
 
 The GCS dialect is opted into by client configuration (`http_client = gcs_hmac` or `gcp_oauth`), not
 auto-detected from the endpoint host. Within such a disk it applies only to `CAS`'s own requests;
-ordinary reads, writes, and copies through the same disk keep standard `ETag` semantics. It also
-rejects one shape outright: a **conditional `CompleteMultipartUpload`** throws rather than silently
-dropping the precondition, because GCS ignores preconditions on that call — a measured, documented
-gap, not a hypothetical one. `CAS`'s conditional writes therefore always take the single-`PUT` path
-on a generation-dialect backend.
+ordinary reads, writes, copies, and all blob-body publications through the same disk keep standard
+`ETag` semantics. Every conditional non-blob write rejects conditional `CompleteMultipartUpload`
+rather than silently dropping the precondition, so create-if-absent artifacts (`putIfAbsent` and
+`casPut` with no expected token) and conditional replacements (`putOverwrite` and `casPut` with an
+expected token) take the single-`PUT` path on a generation-dialect backend. Unconditional
+`publishBlob` uses Default request mode and ordinary multipart policy, including above the
+conditional cap.
 
 With `http_client = gcs_hmac`, requests are signed with Google's native `GOOG4-HMAC-SHA256` scheme,
 and the request is deliberately normalised to `x-goog-` prefixes before signing. Every `x-amz-*`
@@ -67,10 +75,10 @@ contract than `x-amz-server-side-encryption*`; and any custom `x-amz-*` header s
 `<header>`. Both fail with a clear error rather than being sent under a guessed `x-goog-` name GCS
 would not honour. Configure such a disk against an AWS-compatible endpoint instead.
 
-This bounds every write whose resulting token enters `CAS` protocol state, not only the ones carrying
-a precondition: on a generation dialect the write-once create *and* the unconditional resurrect are
-single-part and limited by `gcs_max_token_producing_put_bytes`. On an `ETag` dialect neither is
-forced single-part and neither is size-limited.
+`gcs_max_conditional_put_bytes` bounds every conditional non-blob `PUT` on a generation dialect,
+including create-if-absent metadata/control artifacts and conditional replacements. It does not
+apply to blob publication because the writer neither consumes nor records the write-response
+generation.
 
 The two authentication paths clean up differently, and neither renames headers wholesale. On
 `gcs_hmac` every request the client sends — marked or not — goes through
@@ -124,7 +132,7 @@ battery, skipping the battery used to skip it too, which is exactly why the thir
   committed, so retries on the conditional path must be explicit CAS state-machine transitions, not
   transparent client behavior.
 
-A third, optional probe (`probeConditionalCopy`) checks whether the backend enforces a write-once
-conditional server-side copy. It only matters for `staging_backend = s3`: when the probe reports
-`false`, S3-native staging silently falls back to local staging rather than refusing to mount, since
-enforcement here is an optimization, not a correctness requirement of the disk itself.
+A third staging check requires `supportsCopyMode(ObjectStorageCopyMode::NativeOnly)` when
+`staging_backend = s3`. Writable mount fails closed when native same-store copy is unavailable; it
+does not silently fall back to local staging. Ordinary non-CAS `copyObject` fallback behavior is
+unchanged.

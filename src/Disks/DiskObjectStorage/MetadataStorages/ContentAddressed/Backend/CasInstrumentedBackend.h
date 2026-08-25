@@ -36,7 +36,7 @@ enum class CasNs : uint8_t
 static constexpr size_t CAS_NS_COUNT = 6;
 
 /// Operation + outcome class (11 classes), mapped from the `Backend` method and its return value.
-///   putIfAbsent / putIfAbsentStream finalize → Done ⇒ Put ; PreconditionFailed ⇒ PutDeduplicated
+///   putIfAbsent                              → Done ⇒ Put ; PreconditionFailed ⇒ PutDeduplicated
 ///   putOverwrite                              → Done ⇒ Overwrite ; PreconditionFailed ⇒ CasConflict
 ///   casPut                                    → Committed ⇒ Cas ; Conflict ⇒ CasConflict
 ///   head                                      → exists ⇒ Head ; !exists ⇒ HeadMiss (the 404 signal)
@@ -71,9 +71,6 @@ void incrementCasEvent(CasNs ns, CasOp op);
 
 /// Transparent `Backend` decorator that records operation counts without changing the wrapped
 /// backend's results, exceptions, or state transitions. The inner backend is owned by this object.
-/// For streaming creates, namespace classification happens when the sink is created and the
-/// `Put`/`PutDeduplicated` event is emitted only when `finalize` returns, because the outcome is unavailable
-/// earlier.
 class InstrumentedBackend final : public Backend
 {
 public:
@@ -82,7 +79,6 @@ public:
     using Backend::get;
     using Backend::getStream;
     using Backend::putIfAbsent;
-    using Backend::putIfAbsentStream;
     using Backend::putOverwrite;
     using Backend::casPut;
 
@@ -135,8 +131,9 @@ public:
         return result;
     }
 
-    /// Return a sink that records the create outcome when its `finalize` is called.
-    WriteSinkPtr putIfAbsentStream(const String & key, const ObjectMeta & meta) override;
+    /// Count one successful physical blob publication after delegating exactly once. The backend has
+    /// no lifecycle reason to classify here; decision diagnostics remain with the writer.
+    void publishBlob(const BlobPublishRequest & request) override;
 
     /// Count a successful token-conditional overwrite as `Overwrite`; a precondition conflict is
     /// counted as `CasConflict`.
@@ -175,26 +172,6 @@ public:
 
     /// This capability is a property of the wrapped backend, not an operation to count.
     bool supportsListTokens() const override { return inner->supportsListTokens(); }
-
-    /// Count a successful staged promotion as a create of the destination blob; an existing
-    /// destination is the same deduplication outcome as `putIfAbsent`.
-    PutResult promoteStaged(const String & staging_key, const String & blob_key) override
-    {
-        PutResult result = inner->promoteStaged(staging_key, blob_key);
-        /// A write-once server-side copy is a create attempt on the BLOB key: Done ⇒ Put, 412 ⇒ PutDeduplicated.
-        incrementCasEvent(classifyCasNs(blob_key), result.outcome == PutOutcome::Done ? CasOp::Put : CasOp::PutDeduplicated);
-        return result;
-    }
-
-    /// Count a staged resurrection as an unconditional overwrite of the destination blob. The
-    /// wrapped backend remains responsible for its fresh-header and condemned-token guarantees.
-    Token resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key, const String & fresh_header) override
-    {
-        Token token = inner->resurrect(payload, payload_size, blob_key, fresh_header);
-        /// An unconditional resurrect re-upload overwrites the (condemned) BLOB key.
-        incrementCasEvent(classifyCasNs(blob_key), CasOp::Overwrite);
-        return token;
-    }
 
 private:
     BackendPtr inner;

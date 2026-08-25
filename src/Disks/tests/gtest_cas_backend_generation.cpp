@@ -11,6 +11,10 @@
 #include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/config/AWSProfileConfigLoader.h>
 #include <aws/s3/model/PutObjectRequest.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/AbortMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/S3Client.h>
@@ -21,6 +25,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <mutex>
 #include <sstream>
 #endif
 
@@ -30,6 +35,14 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+#if USE_AWS_S3
+namespace DB::S3RequestSetting
+{
+extern const S3RequestSettingsUInt64 max_single_part_upload_size;
+extern const S3RequestSettingsUInt64 min_upload_part_size;
+}
+#endif
 
 namespace
 {
@@ -253,49 +266,26 @@ TEST(CASBackendGeneration, ConditionalWriteSettingsForceSinglePutOnGenerationSto
 {
     auto b = std::make_shared<ObjectStorageBackend>(
         DB::Cas::tests::makeLocalObjectStorageForTest(), ObjectStorageBackend::Mode::Native,
-        /*token_producing_single_put_cap=*/123);
+        /*conditional_single_put_cap=*/123);
     b->setNativeTokenTypeForTest(TokenType::Generation);
     const auto ws = b->conditionalWriteSettingsForTest();
+    EXPECT_EQ(ws.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
     EXPECT_TRUE(ws.s3_force_single_part_upload);
     EXPECT_EQ(ws.s3_single_part_upload_max_bytes_override, 123u);
+    EXPECT_EQ(ws.object_storage_retry_profile, DB::ObjectStorageRetryProfile::SingleAttempt);
+    EXPECT_EQ(ws.s3_max_unexpected_write_error_retries_override, 1u);
+    ASSERT_TRUE(ws.s3_check_objects_after_upload_override.has_value());
+    EXPECT_FALSE(*ws.s3_check_objects_after_upload_override);
 
     b->setNativeTokenTypeForTest(TokenType::ETag);
     const auto ws2 = b->conditionalWriteSettingsForTest();
+    EXPECT_EQ(ws2.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
     EXPECT_FALSE(ws2.s3_force_single_part_upload);
     EXPECT_EQ(ws2.s3_single_part_upload_max_bytes_override, 0u);
-}
-
-/// Write-settings decomposition: tokenProducingWriteSettings is the layer conditionalWriteSettings
-/// builds on. It always marks the write NativeConditional (dialect-agnostic -- the bit only takes
-/// effect when Client::BuildHttpRequest's GCS-capability gate lets it through), and it alone decides
-/// the single-PUT/cap forcing; conditionalWriteSettings must not duplicate or override that decision.
-TEST(CASBackendGeneration, TokenProducingWriteSettingsMarksNativeConditionalAndForcesSinglePutOnlyOnGenerationStores)
-{
-    auto b = std::make_shared<ObjectStorageBackend>(
-        DB::Cas::tests::makeLocalObjectStorageForTest(), ObjectStorageBackend::Mode::Native,
-        /*token_producing_single_put_cap=*/321);
-
-    const auto ws_etag = b->tokenProducingWriteSettingsForTest();
-    EXPECT_EQ(ws_etag.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
-    EXPECT_FALSE(ws_etag.s3_force_single_part_upload);
-    EXPECT_EQ(ws_etag.s3_single_part_upload_max_bytes_override, 0u);
-
-    b->setNativeTokenTypeForTest(TokenType::Generation);
-    const auto ws_gen = b->tokenProducingWriteSettingsForTest();
-    EXPECT_EQ(ws_gen.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
-    EXPECT_TRUE(ws_gen.s3_force_single_part_upload);
-    EXPECT_EQ(ws_gen.s3_single_part_upload_max_bytes_override, 321u);
-
-    /// conditionalWriteSettings must layer on top, not replace: same request mode and cap, plus the
-    /// precondition-specific retry policy tokenProducingWriteSettings deliberately omits.
-    const auto ws_cond = b->conditionalWriteSettingsForTest();
-    EXPECT_EQ(ws_cond.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
-    EXPECT_TRUE(ws_cond.s3_force_single_part_upload);
-    EXPECT_EQ(ws_cond.s3_single_part_upload_max_bytes_override, 321u);
-    EXPECT_EQ(ws_cond.object_storage_retry_profile, DB::ObjectStorageRetryProfile::SingleAttempt);
-    EXPECT_EQ(ws_cond.s3_max_unexpected_write_error_retries_override, 1u);
-    ASSERT_TRUE(ws_cond.s3_check_objects_after_upload_override.has_value());
-    EXPECT_FALSE(*ws_cond.s3_check_objects_after_upload_override);
+    EXPECT_EQ(ws2.object_storage_retry_profile, DB::ObjectStorageRetryProfile::SingleAttempt);
+    EXPECT_EQ(ws2.s3_max_unexpected_write_error_retries_override, 1u);
+    ASSERT_TRUE(ws2.s3_check_objects_after_upload_override.has_value());
+    EXPECT_FALSE(*ws2.s3_check_objects_after_upload_override);
 }
 
 /// C1: the three token-policy helpers are the single source of truth for how a Native-mode backend
@@ -325,27 +315,17 @@ TEST(CASBackendGeneration, TokenPolicyHelpersAreConsistentWithDialect)
     EXPECT_FALSE(ObjectStorageBackend::tokenMatches(Token{"x", TokenType::ETag}, Token{"x", TokenType::Emulated}));
 }
 
-/// LocalObjectStorage ignores every WriteSettings cap/force-single-part field (it has no multipart
-/// concept at all), so it cannot exercise the ACTUAL enforcement -- only a real WriteBufferFromS3
-/// (over a mocked S3 client) can. The behavioral inversion of the old
-/// "ResurrectIsNotBoundByTheSinglePutCap" contract (a resurrect on a generation store now IS bound by
-/// the cap, because it is a token-producing write like any other) lives in the CASBackendGenerationS3
-/// fixture below, alongside the rest of the "generation-token write kind" battery.
-
 #if USE_AWS_S3
 
 namespace
 {
 
 /// Minimal S3 double for the CasObjectStorageBackend generation-token write battery: just enough of
-/// `DB::S3::Client` to drive a real `WriteBufferFromS3` end to end (PutObject, HeadObject).
-/// CreateMultipartUpload/UploadPart/CompleteMultipartUpload are deliberately NOT overridden: every
-/// test below that expects `NOT_IMPLEMENTED` relies on WriteBufferFromS3::createMultipartUpload
-/// throwing BEFORE any multipart request is ever built, so those requests must never reach the wire in
-/// the first place -- an unimplemented override would only matter if that invariant broke. `GetObject`
-/// is likewise not overridden: reading a written body back verifies against `objects` directly (see
-/// the tests below), rather than through the considerably more involved `ReadBufferFromS3` read path
-/// (range/retry/prefetch machinery), which this fake does not attempt to support.
+/// `DB::S3::Client` to drive a real `WriteBufferFromS3` end to end (`PutObject`, multipart upload, and
+/// `HeadObject`). `GetObject` is not overridden: reading a written body back verifies against
+/// `objects` directly (see the tests below), rather than through the considerably more involved
+/// `ReadBufferFromS3` read path (range/retry/prefetch machinery), which this fake does not attempt to
+/// support.
 class FakeGenerationS3Client : public DB::S3::Client
 {
 public:
@@ -388,16 +368,20 @@ public:
 
     mutable size_t put_object_calls = 0;
     mutable size_t head_object_calls = 0;
+    mutable size_t create_multipart_calls = 0;
+    mutable size_t upload_part_calls = 0;
+    mutable size_t complete_multipart_calls = 0;
+    mutable size_t abort_multipart_calls = 0;
 
     Aws::S3::Model::PutObjectOutcome PutObject(const Aws::S3::Model::PutObjectRequest & request) const override
     {
+        std::lock_guard lock(mutex);
         ++put_object_calls;
         std::stringstream data;
         data << request.GetBody()->rdbuf();
         objects[request.GetKey()] = data.str();
 
-        Aws::S3::Model::PutObjectOutcome outcome;
-        Aws::S3::Model::PutObjectResult result(outcome.GetResultWithOwnership());
+        Aws::S3::Model::PutObjectResult result;
         if (!put_returns_no_etag)
             result.SetETag(next_put_etag);
         return result;
@@ -409,6 +393,7 @@ public:
 
     Aws::S3::Model::HeadObjectOutcome HeadObject(const Aws::S3::Model::HeadObjectRequest & request) const override
     {
+        std::lock_guard lock(mutex);
         ++head_object_calls;
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
@@ -419,10 +404,65 @@ public:
         return result;
     }
 
+    Aws::S3::Model::CreateMultipartUploadOutcome CreateMultipartUpload(
+        const Aws::S3::Model::CreateMultipartUploadRequest & /*request*/) const override
+    {
+        std::lock_guard lock(mutex);
+        ++create_multipart_calls;
+        multipart_parts.clear();
+        Aws::S3::Model::CreateMultipartUploadResult result;
+        result.SetUploadId("publish-upload");
+        return result;
+    }
+
+    Aws::S3::Model::UploadPartOutcome UploadPart(const Aws::S3::Model::UploadPartRequest & request) const override
+    {
+        std::lock_guard lock(mutex);
+        ++upload_part_calls;
+        std::stringstream data;
+        data << request.GetBody()->rdbuf();
+        multipart_parts[request.GetPartNumber()] = data.str();
+
+        Aws::S3::Model::UploadPartResult result;
+        result.SetETag("part-" + std::to_string(request.GetPartNumber()));
+        return result;
+    }
+
+    Aws::S3::Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(
+        const Aws::S3::Model::CompleteMultipartUploadRequest & request) const override
+    {
+        std::lock_guard lock(mutex);
+        ++complete_multipart_calls;
+        String body;
+        for (const auto & [part_number, part] : multipart_parts)
+        {
+            (void)part_number;
+            body += part;
+        }
+        objects[request.GetKey()] = std::move(body);
+
+        Aws::S3::Model::CompleteMultipartUploadResult result;
+        if (!put_returns_no_etag)
+            result.SetETag(next_put_etag);
+        return result;
+    }
+
+    Aws::S3::Model::AbortMultipartUploadOutcome AbortMultipartUpload(
+        const Aws::S3::Model::AbortMultipartUploadRequest & /*request*/) const override
+    {
+        std::lock_guard lock(mutex);
+        ++abort_multipart_calls;
+        multipart_parts.clear();
+        return Aws::S3::Model::AbortMultipartUploadResult{};
+    }
+
     mutable std::map<std::string, std::string> objects;
+    mutable std::map<int, std::string> multipart_parts;
+    mutable std::mutex mutex;
 };
 
-std::shared_ptr<DB::S3ObjectStorage> makeGenerationS3ObjectStorageForTest(FakeGenerationS3Client *& out_client)
+std::shared_ptr<DB::S3ObjectStorage> makeGenerationS3ObjectStorageForTest(
+    FakeGenerationS3Client *& out_client, bool force_multipart = false)
 {
     auto owned_client = std::make_unique<FakeGenerationS3Client>();
     out_client = owned_client.get();
@@ -432,8 +472,15 @@ std::shared_ptr<DB::S3ObjectStorage> makeGenerationS3ObjectStorageForTest(FakeGe
     DB::S3Capabilities capabilities;
     DB::ObjectStorageKeyGeneratorPtr key_generator;
 
+    auto settings = std::make_unique<DB::S3Settings>();
+    if (force_multipart)
+    {
+        settings->request_settings[DB::S3RequestSetting::max_single_part_upload_size] = 0;
+        settings->request_settings[DB::S3RequestSetting::min_upload_part_size] = 64;
+    }
+
     return std::make_shared<DB::S3ObjectStorage>(
-        std::move(owned_client), std::make_unique<DB::S3Settings>(), std::move(uri), capabilities, key_generator, "cas-generation-disk");
+        std::move(owned_client), std::move(settings), std::move(uri), capabilities, key_generator, "cas-generation-disk");
 }
 
 }
@@ -464,84 +511,57 @@ protected:
     }
 };
 
-/// NOTE: putIfAbsent/casPut/putOverwrite (compare/create writes) are NOT covered end to end here.
-/// conditionalWriteSettings() selects the SingleAttempt object-storage retry profile, and
-/// S3ObjectStorage::writeObject resolves that to getSingleAttemptClient(), which ALWAYS constructs a
-/// genuine DB::S3::Client via Client::cloneWithConfigurationOverride (pre-existing behavior, RFC
-/// cas-s3-timeout-retry-control) -- discarding any derived mock's overrides. A compare/create write
-/// therefore cannot be driven through a subclassed fake client this way; their settings-level
-/// contract (NativeConditional mode, cap forcing) is characterized above, and their production
-/// request-marking is covered by WBS3Test/S3ObjectStorageConditionalOpsTest. Resurrection uses
-/// tokenProducingWriteSettings(), which does NOT select SingleAttempt, so it stays on client.get()
-/// (this fixture's fake) and gets full end-to-end coverage below.
-
-/// Trap 1's inversion target: resurrection is UNCONDITIONAL, but it is still a token-producing write,
-/// so it is now bound by the very same single-PUT cap a conditional write is -- the opposite of the
-/// contract this test used to pin (see the comment above this fixture).
-TEST_F(CASBackendGenerationS3, ResurrectAboveSinglePutCapThrowsNotImplementedBeforeAnyPut)
+TEST(CASBackendGeneration, PublishBlobAboveFormerGenerationCapUsesOrdinaryMultipart)
 {
-    const String payload(1024, 'x');   /// far above a 16-byte cap
-    backend = makeBackend(/*cap=*/16);
-    /// Seed the condemned incarnation directly (bypassing casPut/putIfAbsent, which route through
-    /// conditionalWriteSettings' SingleAttempt profile -- S3ObjectStorage::getSingleAttemptClient
-    /// always clones a genuine DB::S3::Client, so it cannot be driven through this fake).
-    client->objects["p/gen/res"] = "original";
+    (void)getContext();
+    FakeGenerationS3Client * client = nullptr;
+    auto storage = makeGenerationS3ObjectStorageForTest(client, /*force_multipart=*/true);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native, /*conditional_single_put_cap=*/16);
+    backend.setNativeTokenTypeForTest(TokenType::Generation);
 
-    DB::ReadBufferFromOwnString in{payload};
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NOT_IMPLEMENTED,
-        [&] { backend->resurrect(in, payload.size(), "p/gen/res", String("HDR")); });
+    const String payload(1024, 'x');
+    backend.publishBlob(BlobPublishRequest{
+        .destination_key = "p/gen/publish-multipart",
+        .publication = StreamingBlobPublication{
+            .payload_size = payload.size(),
+            .fresh_envelope = "fresh",
+            .open_payload = [payload]
+            {
+                return std::make_unique<DB::ReadBufferFromOwnString>(payload);
+            }}});
+
     EXPECT_EQ(client->put_object_calls, 0u);
-}
-
-/// The companion positive case: a resurrect body that FITS the cap (header + payload together) still
-/// completes as a single PUT and is attributed the response's generation directly -- no follow-up HEAD.
-TEST_F(CASBackendGenerationS3, ResurrectAtSinglePutCapUsesOnePutAndReturnsResponseGeneration)
-{
-    const String header = "HDR";
-    const String payload(61, 'x');
-    backend = makeBackend(/*cap=*/header.size() + payload.size());
-    /// Seed the condemned incarnation directly -- see the comment in the above-cap test for why
-    /// putIfAbsent itself cannot be used here.
-    client->objects["p/gen/res-ok"] = "original";
-    client->next_put_etag = "778899";
-
-    DB::ReadBufferFromOwnString in{payload};
-    const Token tok = backend->resurrect(in, payload.size(), "p/gen/res-ok", header);
-    EXPECT_EQ(tok, (Token{"778899", TokenType::Generation}));
-    EXPECT_EQ(client->put_object_calls, 1u);
+    EXPECT_EQ(client->create_multipart_calls, 1u);
+    EXPECT_GT(client->upload_part_calls, 0u);
+    EXPECT_EQ(client->complete_multipart_calls, 1u);
+    EXPECT_EQ(client->abort_multipart_calls, 0u);
     EXPECT_EQ(client->head_object_calls, 0u);
-
-    /// Read the written body directly off the fake's object store rather than through
-    /// `backend->get(...)`: this fake implements just enough of `DB::S3::Client` to drive the WRITE
-    /// path (PutObject/HeadObject), not the considerably more involved `ReadBufferFromS3` read path
-    /// (range/retry/prefetch machinery), so a full round trip through `get()` is out of scope here.
-    EXPECT_EQ(client->objects.at("p/gen/res-ok"), header + payload);
+    EXPECT_EQ(client->objects.at("p/gen/publish-multipart"), "fresh" + payload);
 }
 
-/// Step 7: a successful PUT whose response carries no generation at all is an exception, never a
-/// silently-empty token and never a follow-up HEAD.
-TEST_F(CASBackendGenerationS3, ResurrectMissingGenerationOnSuccessThrows)
+TEST(CASBackendGeneration, PublishBlobSucceedsWithoutResponseGeneration)
 {
-    const String payload(8, 'x');
-    backend = makeBackend(/*cap=*/1024);
+    (void)getContext();
+    FakeGenerationS3Client * client = nullptr;
+    auto storage = makeGenerationS3ObjectStorageForTest(client);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native, /*conditional_single_put_cap=*/1);
+    backend.setNativeTokenTypeForTest(TokenType::Generation);
     client->put_returns_no_etag = true;
 
-    DB::ReadBufferFromOwnString in{payload};
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { backend->resurrect(in, payload.size(), "p/gen/no-etag", String("H")); });
-}
+    const String payload = "payload";
+    EXPECT_NO_THROW(backend.publishBlob(BlobPublishRequest{
+        .destination_key = "p/gen/publish-no-generation",
+        .publication = StreamingBlobPublication{
+            .payload_size = payload.size(),
+            .fresh_envelope = "fresh",
+            .open_payload = [payload]
+            {
+                return std::make_unique<DB::ReadBufferFromOwnString>(payload);
+            }}}));
 
-/// Step 7: a successful PUT whose response ETag is not purely numeric (an AWS-style ETag rather than a
-/// GCS generation) is likewise an exception on a generation-dialect backend.
-TEST_F(CASBackendGenerationS3, ResurrectNonNumericGenerationOnSuccessThrows)
-{
-    const String payload(8, 'x');
-    backend = makeBackend(/*cap=*/1024);
-    client->next_put_etag = "\"d41d8cd98f00b204e9800998ecf8427e\"";
-
-    DB::ReadBufferFromOwnString in{payload};
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA,
-        [&] { backend->resurrect(in, payload.size(), "p/gen/bad-etag", String("H")); });
+    EXPECT_EQ(client->put_object_calls, 1u);
+    EXPECT_EQ(client->head_object_calls, 0u);
+    EXPECT_EQ(client->objects.at("p/gen/publish-no-generation"), "freshpayload");
 }
 
 /// ---- The transport-quoting seam ----
@@ -553,19 +573,29 @@ TEST_F(CASBackendGenerationS3, ResurrectNonNumericGenerationOnSuccessThrows)
 /// the CAS layer receives in the shape production actually produces, which is why a mount that could
 /// never succeed passed every unit test. These three tests are that crossing.
 
-/// A token-producing write whose response generation arrives quoted -- exactly what
+TEST_F(CASBackendGenerationS3, WriteEmptyGenerationThrows)
+{
+    backend = makeBackend(/*cap=*/1024);
+    DB::Cas::tests::expectThrowsCode(
+        DB::ErrorCodes::CORRUPTED_DATA,
+        [&] { backend->tokenFromWriteResult("p/gen/no-etag", String{}); });
+}
+
+TEST_F(CASBackendGenerationS3, WriteNonNumericGenerationThrows)
+{
+    backend = makeBackend(/*cap=*/1024);
+    DB::Cas::tests::expectThrowsCode(
+        DB::ErrorCodes::CORRUPTED_DATA,
+        [&] { backend->tokenFromWriteResult("p/gen/bad-etag", "\"d41d8cd98f00b204e9800998ecf8427e\""); });
+}
+
+/// A mutable conditional write whose response generation arrives quoted -- exactly what
 /// `applyGcsConditionalDialectToResponse` produces -- must yield an UNQUOTED, all-digits token.
 /// Before the fix this threw CORRUPTED_DATA, so every GCS CAS write failed and no pool could mount.
 TEST_F(CASBackendGenerationS3, WriteGenerationTokenStripsTransportQuoting)
 {
-    const String header = "HDR";
-    const String payload(61, 'x');
-    backend = makeBackend(/*cap=*/header.size() + payload.size());
-    client->objects["p/gen/quoted-write"] = "original";
-    client->next_put_etag = "\"1783078552147137\"";
-
-    DB::ReadBufferFromOwnString in{payload};
-    const Token tok = backend->resurrect(in, payload.size(), "p/gen/quoted-write", header);
+    backend = makeBackend(/*cap=*/1024);
+    const Token tok = backend->tokenFromWriteResult("p/gen/quoted-write", "\"1783078552147137\"");
     EXPECT_EQ(tok, (Token{"1783078552147137", TokenType::Generation}));
 }
 
@@ -597,8 +627,7 @@ TEST_F(CASBackendGenerationS3, EtagDialectKeepsTransportQuotingVerbatim)
     EXPECT_EQ(hr.token, (Token{"\"d41d8cd98f00b204e9800998ecf8427e\"", TokenType::ETag}));
 }
 
-/// The HEAD-side twin of ResurrectMissingGenerationOnSuccessThrows: a successful HEAD on a
-/// generation-dialect backend whose response carries no ETag/generation at all must not mint a token
+/// A successful HEAD on a generation-dialect backend whose response carries no ETag/generation at all must not mint a token
 /// from it -- there is no follow-up HEAD to patch this over, so nativeHead must refuse it directly.
 TEST_F(CASBackendGenerationS3, HeadMissingGenerationThrows)
 {
@@ -610,8 +639,7 @@ TEST_F(CASBackendGenerationS3, HeadMissingGenerationThrows)
         [&] { backend->head("p/gen/no-generation-head"); });
 }
 
-/// The HEAD-side twin of ResurrectNonNumericGenerationOnSuccessThrows: an ordinary AWS-style ETag
-/// reaching a generation-dialect backend through a successful HEAD (a proxy dropping
+/// An ordinary AWS-style ETag reaching a generation-dialect backend through a successful HEAD (a proxy dropping
 /// x-goog-generation, a service regression) must not be minted as a generation token either.
 TEST_F(CASBackendGenerationS3, HeadNonNumericGenerationThrows)
 {

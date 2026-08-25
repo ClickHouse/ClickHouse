@@ -33,11 +33,10 @@ namespace DB::Cas
 
 /// Selects where a content-addressed blob is staged before it is published.
 ///
-/// `Local` is the default and preserves the existing local scratch-file path byte for byte; it does
-/// not run the conditional-copy probe. `S3` is opt-in and can stream large blobs to an object-store
-/// staging key. That path is usable only after the mount-time probe has demonstrated write-once
-/// conditional copy semantics. If the backend does not enforce those semantics, callers must stay
-/// on `Local`: an unconditional copy could overwrite a live content-addressed blob.
+/// `Local` is the default and preserves the existing local scratch-file path. `S3` is opt-in and
+/// streams large blobs to an object-store staging key. Writable S3-staging mounts require the
+/// storage to advertise `ObjectStorageCopyMode::NativeOnly`; an unsupported explicit selection is
+/// rejected instead of silently switching to local staging.
 enum class StagingBackend
 {
     Local,
@@ -314,7 +313,7 @@ public:
     void gcStart() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Test-only fault-injection hook. When set, `startup` invokes it right before it publishes
-    /// `cas_store`/`part_access`/`gc_scheduler`/`pool_uuid`/`conditional_copy_supported` -- everything
+    /// `cas_store`/`part_access`/`gc_scheduler`/`pool_uuid` -- everything
     /// up to that point (opening the pool, building the part-folder facade, running the capability
     /// probe, starting the GC scheduler) has already happened into locals, so throwing here proves a
     /// late startup failure publishes nothing and a retry can still succeed. Left empty (a no-op) in
@@ -384,18 +383,14 @@ public:
     std::shared_ptr<Cas::CachedPartFolderAccess> partAccess() const;
     const std::string & serverRootId() const { return server_root_id; }
     const std::string & scratchPath() const { return local_scratch_path; }
-    /// Returns the configured staging backend. `Local` is the behavior-preserving default; callers
-    /// must also check `conditionalCopySupported` before using S3 promotion.
+    /// Returns the configured staging backend. `Local` is the behavior-preserving default. A
+    /// writable S3-staging mount is published only after native-copy capability validation.
     Cas::StagingBackend stagingBackend() const { return staging_backend; }
-    /// Returns the mount-time conditional-copy capability result. It starts false and becomes true
-    /// only after the backend proves write-once copy semantics, so S3 promotion fails closed.
-    bool conditionalCopySupported() const { return conditional_copy_supported; }
     /// Returns the underlying object storage for an S3 staging writer. It is meaningful only when
-    /// `stagingBackend` is `S3` and `conditionalCopySupported` is true.
+    /// `stagingBackend` is `S3`.
     const ObjectStoragePtr & objectStorage() const { return object_storage; }
-    /// Returns the physical prefix for this pool's writer-owned staging area. It is the same
-    /// `pool_prefix/staging/server_root_id` subtree used by the capability probe; callers append a
-    /// unique leaf and must not use the probe object itself.
+    /// Returns the physical `pool_prefix/staging/server_root_id` prefix for this mount's staging
+    /// area. Callers append a unique leaf.
     String stagingKeyPrefix() const;
 
     /// Bytes that live INSIDE pool metadata rather than as their own object: an Inline-placement
@@ -596,8 +591,6 @@ private:
 
     const bool gc_enabled;
     const std::chrono::seconds gc_interval;
-    const uint64_t deduplication_cache_bytes;            /// P1 known-present cache byte cap (0=off)
-    const uint64_t deduplication_head_first_min_bytes;   /// P2 HEAD-before-PUT size threshold (0=off)
     const uint64_t gc_snapshot_generations_to_keep;  /// Number of GC snapshots retained (0 means keep all).
     const uint64_t gc_shards;                    /// Blob-hash-prefix reducer shard count, fixed at pool creation.
     const uint64_t manifest_sweep_list_budget_keys;
@@ -610,10 +603,10 @@ private:
     const uint64_t gc_round_prefix_wholesale_budget;
     const uint64_t gc_round_handoff_prefix_wholesale_budget;
     const uint64_t gc_round_outcome_entry_budget;
-    /// GCS single-PUT budget for every token-producing write, conditional or not (generation-token
-    /// stores only): threaded into the ObjectStorageBackend construction site in startup().
+    /// GCS single-PUT budget for genuine conditional writes (generation-token stores only), threaded
+    /// into the `ObjectStorageBackend` construction site in `startup`.
     /// Irrelevant on ETag stores (AWS et al).
-    const uint64_t gcs_max_token_producing_put_bytes;
+    const uint64_t gcs_max_conditional_put_bytes;
     /// Part-folder view cache settings. `cas_part_folder_cache_bytes == 0` disables retention.
     const uint64_t cas_part_folder_cache_bytes;
     const uint64_t cas_part_folder_cache_max_entries;
@@ -632,11 +625,6 @@ private:
     const bool skip_access_check;
     /// Policy controlling when retained part-folder views revalidate their manifest body.
     const Cas::PartFolderValidate part_folder_validate;
-    /// Set by the mount-time conditional-copy capability probe — not const because the result is
-    /// unavailable until startup.
-    /// Defaults to false (fail-close): assumed unsupported until the probe proves otherwise.
-    bool conditional_copy_supported = false;
-
     /// A single coherent snapshot of the pool and its cached part-folder facade, taken under ONE
     /// `pointer_mutex` acquisition (see `poolAccess()`) so no caller can observe `pool` from one mount
     /// generation and `part_access` from another -- the two used to be fetched by two separate calls
@@ -746,23 +734,20 @@ private:
         /// and callable from a `const` method (`runFsckNow`).
         String physical_key_prefix;
         /// The resolved (bucket-relative, trailing-slash-trimmed) pool prefix passed into
-        /// `Cas::PoolConfig::pool_prefix` -- `startup()`'s S3-staging capability probe below needs the
-        /// SAME resolved value to build its own probe key, so it is returned here rather than
-        /// recomputed a second time.
+        /// `Cas::PoolConfig::pool_prefix` -- `startup` needs the same resolved value to sweep this
+        /// mount's S3-staging prefix, so it is returned here rather than recomputed a second time.
         String pool_prefix;
         /// The backend's native incarnation-token dialect (`Cas::ObjectStorageBackend::nativeTokenType`),
-        /// captured while the concrete backend is still in scope. `startup()`'s S3-staging capability
-        /// probe needs this same fact to decide whether the probe is meaningful at all, and reading it
-        /// back out through `pool` would mean unwrapping the instrumentation decorator `Pool::open`
-        /// wraps the backend in -- returned here instead so there is exactly one place that reads it.
+        /// captured while the concrete backend is still in scope. Reading it back through `pool`
+        /// would mean unwrapping the instrumentation decorator `Pool::open` adds, so it is returned
+        /// here instead.
         Cas::TokenType native_token_type = Cas::TokenType::ETag;
     };
 
     /// Builds the backend + `Cas::PoolConfig` and opens a pool exactly as `startup()` does. A read-only
     /// (`<readonly>`) disk opens with no write probe, no background watermark, and no GC scheduler. Never
-    /// touches `cas_store`/`part_access`/`gc_scheduler`/`physical_key_prefix`/`pool_uuid`/
-    /// `conditional_copy_supported`; `startup()` applies its own result to those members itself, in its
-    /// single publish step.
+    /// touches `cas_store`/`part_access`/`gc_scheduler`/`physical_key_prefix`/`pool_uuid`; `startup`
+    /// applies its own result to those members itself, in its single publish step.
     PoolView openPoolView() const;
 
     /// Classifies `path`'s directory shape by running the fixed dispatch order once (shadow ->

@@ -484,7 +484,6 @@ Configuration:
     <gc_enabled>true</gc_enabled>
     <gc_interval_sec>60</gc_interval_sec>
     <gc_shards>1</gc_shards>
-    <deduplication_cache_bytes>67108864</deduplication_cache_bytes>
     <part_folder_cache_bytes>67108864</part_folder_cache_bytes>
     <part_folder_validate>always</part_folder_validate>
 </s3_cas>
@@ -513,7 +512,8 @@ disk-level and server-level settings surface.
   data path, not the process's current working directory.
 - `staging_backend` — `local` (default) or `s3`. Selects where in-flight part data is staged before
   being committed into the pool; `local` is byte-for-byte the original write path, `s3` enables
-  S3-native staging.
+  S3-native staging. A writable disk configured with `s3` must support native same-store copy and
+  fails closed instead of falling back to client-side copy.
 - `blob_hash` — `cityhash128` (default), `xxh3-128`, or `sha256`. Selects the pool's blob
   content-hash function. The choice is fixed at pool creation; a reopen whose `blob_hash` disagrees
   with the pool's recorded algorithm fails closed. See
@@ -527,15 +527,15 @@ disk-level and server-level settings surface.
 - `gc_shards` — `1` by default; must be `>= 1`. Number of blob-hash-prefix shards the GC reducer
   splits work across. This is a creation-time-only setting: on reopen the pool's persisted GC state is
   authoritative.
-- `deduplication_cache_bytes` — `64` MiB by default. Size of the in-memory deduplication lookup cache.
-- `deduplication_head_first_min_bytes` — `1` MiB by default. Minimum blob size at which a `HEAD` is sent
-  before the body, so that an upload of already-present content can be skipped. `0` disables it.
+- Every physical blob materialization starts with `HEAD`. A present non-condemned blob is adopted;
+  an absent or condemned blob is published unconditionally and its freshness metadata is reconciled
+  to `Clean`. A genuine fresh miss issues no metadata GET before publication.
 - `gc_snapshot_generations_to_keep` — `3` by default. Number of past GC snapshot generations retained.
-- `gcs_max_token_producing_put_bytes` — `1` GiB by default. On generation-token backends (Google Cloud
-  Storage), every write whose resulting token enters content-addressed protocol state — a conditional
-  write and an unconditional one alike — must be a single `PUT`, so its body is RAM-buffered up to
-  this size; a larger write throws `NOT_IMPLEMENTED`. Irrelevant on `ETag`-based backends such as
-  AWS S3.
+- `gcs_max_conditional_put_bytes` — `1` GiB by default. Bounds every conditional non-blob `PUT` on
+  generation-token backends, where the precondition must survive one request. This includes
+  create-if-absent metadata/control artifacts and conditional replacements. Blob bodies do not
+  consume a write-response token: their unconditional publication can use ordinary multipart and
+  is not subject to this cap. Irrelevant on `ETag`-based backends such as AWS S3.
 - `part_folder_cache_bytes` — `64` MiB by default. Size of the part-folder view cache. `0` disables
   retention; this is a supported permanent operational configuration, not only a debug aid.
 - `part_folder_cache_max_entries` — `10000` by default. Maximum number of entries in the part-folder

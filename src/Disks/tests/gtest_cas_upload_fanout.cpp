@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <base/scope_guard.h>
+#include <Poco/Exception.h>
 
 #include <algorithm>
 #include <atomic>
@@ -45,6 +46,7 @@ namespace DB::ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int INCORRECT_DATA;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace CurrentMetrics
@@ -69,12 +71,10 @@ std::unique_ptr<ThreadPool> makePool(size_t size)
 }
 
 /// Open a Pool over any InMemoryBackend-derived backend (the plain one, or the CountingBackend that
-/// records per-key GET counts). `head_first_min_bytes` steers the HEAD-before-PUT size trigger, exactly
-/// as in `gtest_cas_upload_detached.cpp`.
-PoolPtr openPool(const std::shared_ptr<InMemoryBackend> & b, uint64_t head_first_min_bytes = (1ULL << 20))
+/// records per-key GET counts).
+PoolPtr openPool(const std::shared_ptr<InMemoryBackend> & b)
 {
-    return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-                                    .deduplication_head_first_min_bytes = head_first_min_bytes});
+    return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 }
 
 /// Stage a one-blob seed manifest and precommit it, so every adopt branch of `uploadBlobDetached`
@@ -132,21 +132,21 @@ BlobUploadRequest s3Request(const String & payload, const String & staging_key)
     BlobSource src;
     src.size = payload.size();
     src.server_side_copy_from = staging_key;
+    src.open = [payload]() -> std::unique_ptr<DB::ReadBuffer>
+    {
+        return std::make_unique<DB::ReadBufferFromOwnString>(payload);
+    };
     return BlobUploadRequest{idOf(payload), std::move(src), payload.size()};
 }
 
-/// The stable, deterministic part of a build's dep set: (kind, size, adopted, has-token) per ref.
-/// The token VALUE itself is intentionally excluded -- the InMemoryBackend mints tokens from ONE
-/// monotonic counter, so a fanned-out world's fresh/resurrect uploads land their tokens in a
-/// non-deterministic order relative to the serial world. Adopt branches reuse the seeded token, but
-/// keying the comparison off (kind,size,adopted,has-token) plus the backend end state (below) captures
-/// the behavioral equivalence without depending on token-mint ordering.
-using StableDep = std::tuple<ObjectKind, uint64_t, bool, bool>;
+/// The stable dependency state is independent of backend incarnation tokens: all successful upload
+/// branches establish `Materialized`, regardless of serial or parallel token-mint ordering.
+using StableDep = std::tuple<ObjectKind, uint64_t, BlobDependencyProof>;
 std::map<BlobRef, StableDep> stableDeps(const PartWriteTxn & build)
 {
     std::map<BlobRef, StableDep> out;
     for (const auto & [ref, dep] : build.depsSnapshotForTest())
-        out.emplace(ref, StableDep{dep.kind, dep.size, dep.adopted, dep.token.has_value()});
+        out.emplace(ref, StableDep{dep.kind, dep.size, dep.proof});
     return out;
 }
 
@@ -218,19 +218,95 @@ struct ConcurrencyProbe
     }
 };
 
+/// A deterministic native-copy rejection used to prove that the logical source's publication state
+/// survives every request copy made by the fan-out. The first call must propagate; a later request
+/// copied from the same source may only stream a newly tagged envelope, never retry verbatim copy.
+class RejectFirstStagedCopyBackend final : public InMemoryBackend
+{
+public:
+    void publishBlob(const BlobPublishRequest & request) override
+    {
+        if (std::holds_alternative<VerbatimStagedBlobPublication>(request.publication))
+        {
+            ++copy_publications;
+            if (reject_copy)
+            {
+                reject_copy = false;
+                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "test rejects the first staged copy");
+            }
+        }
+        else
+        {
+            ++streaming_publications;
+        }
+        InMemoryBackend::publishBlob(request);
+    }
+
+    bool reject_copy = true;
+    size_t copy_publications = 0;
+    size_t streaming_publications = 0;
+};
+
+}
+
+TEST(CASUploadFanout, CopiedAndMovedRequestsSharePublicationAttemptedState)
+{
+    auto backend = std::make_shared<RejectFirstStagedCopyBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/shared-publication-state"};
+    auto build = precommitBuildFor(store, ns, "part");
+    const String payload = "shared-publication-attempted-payload";
+    const BlobRef ref = idOf(payload);
+    const String staging_key = "p/staging/mount1/shared-attempt.tmp";
+
+    EnvelopeHeader header;
+    header.kind = ObjectKind::Blob;
+    header.incarnation_tag = DB::UInt128(0xC0FFEE);
+    const String staging_bytes
+        = encodeEnvelopeHeader(header, static_cast<uint32_t>(store->poolMeta().blob_header_len)) + payload;
+    backend->putIfAbsent(staging_key, staging_bytes);
+
+    BlobSource source;
+    source.size = payload.size();
+    source.server_side_copy_from = staging_key;
+    source.open = [payload]() -> std::unique_ptr<DB::ReadBuffer>
+    {
+        return std::make_unique<DB::ReadBufferFromOwnString>(payload);
+    };
+
+    BlobUploadRequest original{ref, source, payload.size()};
+    BlobUploadRequest first_copy = original;
+    BlobUploadRequest fanout_copy = original;
+
+    expectThrowsCode(DB::ErrorCodes::NOT_IMPLEMENTED, [&]
+    {
+        build->uploadBlobDetached(first_copy);
+    });
+
+    std::vector<BlobUploadRequest> requests;
+    requests.emplace_back(std::move(fanout_copy));
+    auto pool = makePool(1);
+    fanOutBlobUploads(*build, requests, *pool);
+
+    EXPECT_EQ(backend->copy_publications, 1u)
+        << "only the source's first publication may attempt verbatim staged copy";
+    EXPECT_EQ(backend->streaming_publications, 1u)
+        << "the request copied and moved through fan-out must retain the consumed first-attempt state";
+    EXPECT_EQ(build->dependencyProof(ref), BlobDependencyProof::Materialized);
+    const auto stored = backend->get(store->layout().blobKey(ref));
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->bytes.substr(store->poolMeta().blob_header_len), payload);
 }
 
 /// Test 1 (spec §1 "serial-vs-parallel equivalence for successful runs"): a multi-blob part that
 /// exercises every branch of `uploadBlobDetached` produces IDENTICAL recorded deps and IDENTICAL backend
-/// end state whether the fan-out runs serially (pool size 1) or in parallel (pool size 4). The seven
-/// branches split across two HEAD-first configurations (a single pool config cannot reach both the
-/// size-triggered `HeadHit` and the 412-path `HeadMissAdopted`), so the equivalence is proven under
-/// each config: pass A (HEAD-first off) covers dedup-cache-hit / head-miss-adopt / fresh / staging /
-/// condemned-local / condemned-S3; pass B (HEAD-first forced) covers the size-triggered head-hit.
+/// end state whether the fan-out runs serially (pool size 1) or in parallel (pool size 4). It covers
+/// present-clean observation, metadata backfill, fresh local publication, staging copy, and local and
+/// staged condemned-body republication.
 namespace
 {
 
-/// Arrange pass A's six-branch world (HEAD-first off) and return the payloads it uploads. Every branch
+/// Arrange the six-branch world and return the payloads it uploads. Every branch
 /// is seeded on a DISTINCT ref so the one-task-per-unique-ref fan-out runs six independent tasks.
 struct WorldA
 {
@@ -241,7 +317,7 @@ struct WorldA
     std::vector<String> payloads;
 };
 
-const char * const kDedup = "fanoutA-dedup-cache-hit";
+const char * const kObserved = "fanoutA-observed-clean";
 const char * const kAdopt = "fanoutA-head-miss-adopt";
 const char * const kFresh = "fanoutA-fresh-local";
 const char * const kStaging = "fanoutA-s3-staging";
@@ -252,14 +328,13 @@ WorldA arrangeWorldA()
 {
     WorldA w;
     w.b = std::make_shared<InMemoryBackend>();
-    w.s = openPool(w.b);   /// default trigger: HEAD-first only on a dedup-cache hit
+    w.s = openPool(w.b);
     const RootNamespace ns{"srv1/nsFanoutA"};
     w.build = precommitBuildFor(w.s, ns, "part");
 
-    /// dedup-cache hit: present body + Clean meta + cache membership.
-    seedPresentBody(*w.b, w.s->layout(), w.s->poolMeta(), kDedup);
-    writeMetaClean(*w.b, w.s->layout(), u128Of(kDedup), std::string(kDedup).size());
-    w.s->dedupCacheAdd(idOf(kDedup));
+    /// Present body with `Clean` metadata: safe observation avoids publication.
+    seedPresentBody(*w.b, w.s->layout(), w.s->poolMeta(), kObserved);
+    writeMetaClean(*w.b, w.s->layout(), u128Of(kObserved), std::string(kObserved).size());
 
     /// HEAD-miss then 412-path live adopt with meta backfill: present body, NO meta, not cached.
     seedPresentBody(*w.b, w.s->layout(), w.s->poolMeta(), kAdopt);
@@ -287,27 +362,27 @@ WorldA arrangeWorldA()
         h.kind = ObjectKind::Blob;
         h.incarnation_tag = DB::UInt128(0xC0FFEE);
         const String staging = encodeEnvelopeHeader(h, static_cast<uint32_t>(w.s->poolMeta().blob_header_len)) + kResS3;
-        w.b->putIfAbsent("p/staging/mount1/A-resurrect.tmp", staging);
+        w.b->putIfAbsent("p/staging/mount1/A-republish.tmp", staging);
         w.b->putIfAbsent(w.s->layout().blobKey(idOf(kResS3)), staging);
         writeMetaClean(*w.b, w.s->layout(), u128Of(kResS3), std::string(kResS3).size());
         condemnMeta(*w.b, w.s->layout(), u128Of(kResS3), /*condemn_round=*/9);
     }
 
     w.requests = {
-        localRequest(kDedup),
+        localRequest(kObserved),
         localRequest(kAdopt),
         localRequest(kFresh),
         s3Request(kStaging, "p/staging/mount1/A-staging.tmp"),
         localRequest(kResLocal),
-        s3Request(kResS3, "p/staging/mount1/A-resurrect.tmp"),
+        s3Request(kResS3, "p/staging/mount1/A-republish.tmp"),
     };
-    w.payloads = {kDedup, kAdopt, kFresh, kStaging, kResLocal, kResS3};
+    w.payloads = {kObserved, kAdopt, kFresh, kStaging, kResLocal, kResS3};
     return w;
 }
 
 }
 
-TEST(CASUploadFanout, DepsEquivalenceAcrossBranches)
+TEST(CASUploadFanout, DependencyProofEquivalentAcrossFanoutBranches)
 {
     /// Serial reference: pool size 1.
     WorldA serial = arrangeWorldA();
@@ -327,47 +402,18 @@ TEST(CASUploadFanout, DepsEquivalenceAcrossBranches)
     EXPECT_EQ(serial_deps, fanned_deps) << "recorded deps must match across serial and fanned runs";
     EXPECT_EQ(serial_backend, fanned_backend) << "backend end state must match across serial and fanned runs";
 
-    /// Every dep is a complete tokened blob dep (no branch left its effect behind as a side effect).
+    /// Every successful upload branch records materialized evidence only after the fan-out joins.
     for (const auto & [ref, dep] : serial_deps)
     {
         EXPECT_EQ(std::get<0>(dep), ObjectKind::Blob);
-        EXPECT_TRUE(std::get<3>(dep)) << "every merged fan-out dep carries a token";
+        EXPECT_EQ(std::get<2>(dep), BlobDependencyProof::Materialized);
     }
     for (const auto & p : serial.payloads)
         EXPECT_EQ(metaStateAt(*fanned.b, fanned.s->layout(), p), std::optional<MetaState>(MetaState::Clean));
 
-    /// Pass B: the size-triggered HeadHit branch, proven equivalent under its own (HEAD-first forced) config.
-    auto arrangeB = [](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
-    {
-        b = std::make_shared<InMemoryBackend>();
-        s = openPool(b, /*head_first_min_bytes=*/1);
-        const RootNamespace ns{"srv1/nsFanoutB"};
-        build = precommitBuildFor(s, ns, "part");
-        seedPresentBody(*b, s->layout(), s->poolMeta(), "fanoutB-head-hit");
-        writeMetaClean(*b, s->layout(), u128Of("fanoutB-head-hit"), std::string("fanoutB-head-hit").size());
-    };
-
-    std::shared_ptr<InMemoryBackend> b1;
-    PoolPtr s1;
-    PartWriteTxnPtr build1;
-    arrangeB(b1, s1, build1);
-    std::vector<BlobUploadRequest> reqB{localRequest("fanoutB-head-hit")};
-    auto b_serial_pool = makePool(1);
-    fanOutBlobUploads(*build1, reqB, *b_serial_pool);
-
-    std::shared_ptr<InMemoryBackend> b2;
-    PoolPtr s2;
-    PartWriteTxnPtr build2;
-    arrangeB(b2, s2, build2);
-    auto b_fanned_pool = makePool(4);
-    fanOutBlobUploads(*build2, reqB, *b_fanned_pool);
-
-    EXPECT_EQ(stableDeps(*build1), stableDeps(*build2)) << "HeadHit branch: deps match serial vs fanned";
-    EXPECT_EQ(backendState(*b1, s1, {"fanoutB-head-hit"}), backendState(*b2, s2, {"fanoutB-head-hit"}))
-        << "HeadHit branch: backend end state matches serial vs fanned";
 }
 
-/// Test 1, GET-observability (routed from T3 review (a)): the resurrect invariant is that a condemned
+/// Test 1, GET-observability (routed from T3 review (a)): the republication invariant is that a condemned
 /// object is NEVER GET (revival is a fresh re-upload from the writer's own source). With a
 /// CountingBackend, assert ZERO get/getStream against the condemned blob keys through the whole fan-out.
 TEST(CASUploadFanout, CondemnedBranchesNeverGet)
@@ -379,7 +425,7 @@ TEST(CASUploadFanout, CondemnedBranchesNeverGet)
 
     const String local_payload = "noget-condemned-local";
     const String s3_payload = "noget-condemned-s3";
-    const String s3_staging = "p/staging/mount1/noget-resurrect.tmp";
+    const String s3_staging = "p/staging/mount1/noget-republish.tmp";
 
     seedPresentBody(*counting, s->layout(), s->poolMeta(), local_payload);
     writeMetaClean(*counting, s->layout(), u128Of(local_payload), local_payload.size());
@@ -445,7 +491,8 @@ TEST(CASUploadFanout, DuplicateRefsLaunchOneTask)
 
     EXPECT_EQ(dispatched.load(), 1) << "two pending-blob records for one ref launch exactly one task";
     EXPECT_EQ(per_ref[idOf(payload)], 1);
-    EXPECT_TRUE(build->depIsTokened(idOf(payload))) << "the one task's dep was merged";
+    EXPECT_EQ(build->dependencyProof(idOf(payload)), BlobDependencyProof::Materialized)
+        << "the one task's dep was merged";
     EXPECT_EQ(build->depsSnapshotForTest().size(), 1u) << "exactly one dep for the unique ref";
 }
 
@@ -576,12 +623,9 @@ TEST(CASUploadFanout, CondemnedLocalResurrectStreamsAndFlipsMetaClean)
     EXPECT_EQ(lm->meta.state, MetaState::Clean);
 }
 
-/// `open` is the per-attempt unit of re-readability, and this pins the attempt count for the
-/// present-condemned shape: open #1 is the ordinary conditional-create attempt (streamed, refused at
-/// finalize because the body exists), open #2 is the resurrect itself. Anything ABOVE two would mean
-/// a hidden materialization pass or a mid-write re-open crept in; anything below would mean the
-/// create attempt stopped streaming (a protocol change, not an optimization to make silently).
-TEST(CASUploadFanout, CondemnedLocalResurrectOpensTheSourcePerAttempt)
+/// `open` is the per-publication unit of re-readability. A present `Condemned` observation selects
+/// exactly one unconditional stream; the mandatory `HEAD` itself never opens the source.
+TEST(CASUploadFanout, CondemnedLocalPublicationOpensSourceOnce)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
@@ -606,12 +650,12 @@ TEST(CASUploadFanout, CondemnedLocalResurrectOpensTheSourcePerAttempt)
     auto pool = makePool(2);
     fanOutBlobUploads(*build, reqs, *pool, nullptr);
 
-    EXPECT_EQ(opens, 2) << "conditional-create attempt + resurrect: exactly one open each, nothing extra";
-    EXPECT_TRUE(build->depIsTokened(idOf(payload)));
+    EXPECT_EQ(opens, 1) << "the mandatory `HEAD` selects one unconditional streaming publication";
+    EXPECT_EQ(build->dependencyProof(idOf(payload)), BlobDependencyProof::Materialized);
 }
 
 /// Test 2, condemned-S3 duplicate pair resurrects content-correctly: two duplicate S3-staging records
-/// for one condemned ref collapse to ONE resurrect task; the fresh incarnation displaces the condemned
+/// for one condemned ref collapse to ONE republication task; the fresh incarnation displaces the condemned
 /// one (token changes, meta returns to Clean) and the content is the staging object's payload.
 TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
 {
@@ -621,7 +665,7 @@ TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
     auto build = precommitBuildFor(s, ns, "part");
 
     const String payload = "dup-condemned-s3-payload";
-    const String staging_key = "p/staging/mount1/dup-resurrect.tmp";
+    const String staging_key = "p/staging/mount1/dup-republish.tmp";
     EnvelopeHeader h;
     h.kind = ObjectKind::Blob;
     h.incarnation_tag = DB::UInt128(0xC0FFEE);
@@ -641,8 +685,8 @@ TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
     auto pool = makePool(4);
     fanOutBlobUploads(*build, reqs, *pool, &hooks);
 
-    EXPECT_EQ(dispatched.load(), 1) << "duplicate condemned records collapse to one resurrect task";
-    EXPECT_TRUE(build->depIsTokened(idOf(payload)));
+    EXPECT_EQ(dispatched.load(), 1) << "duplicate condemned records collapse to one republication task";
+    EXPECT_EQ(build->dependencyProof(idOf(payload)), BlobDependencyProof::Materialized);
     const Token after_token = b->head(s->layout().blobKey(idOf(payload))).token;
     EXPECT_NE(after_token.value, condemned_token.value) << "a fresh incarnation displaced the condemned one";
     EXPECT_EQ(metaStateAt(*b, s->layout(), payload), std::optional<MetaState>(MetaState::Clean));
@@ -652,7 +696,7 @@ TEST(CASUploadFanout, DuplicateCondemnedS3ResurrectsCorrectly)
 /// Test 3: one task fails (a poisoned source), one sibling succeeds. Merge-nothing means the build stays
 /// at its pre-fan-out state; the abandoned precommit turns the successful sibling's uploaded body into
 /// ORDINARY GC-reclaimable debris (NOT a new orphan class) -- a GC round reclaims it.
-TEST(CASUploadFanout, MergeNothingOnFailure)
+TEST(CASUploadFanout, PendingFanoutFailureCreatesNoDependency)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
@@ -669,6 +713,8 @@ TEST(CASUploadFanout, MergeNothingOnFailure)
     const ManifestId id = build->stageManifest({blobEntryFor("data.bin", u128Of(good), good.size()),
                                                 blobEntryFor("data.cmrk3", u128Of(poisoned), poisoned.size())});
     build->precommitAdd(ns, "part", id);
+    EXPECT_EQ(build->dependencyProof(idOf(good)), std::nullopt);
+    EXPECT_EQ(build->dependencyProof(idOf(poisoned)), std::nullopt);
 
     /// Poison the failing sibling via the in-task seam: throw a plain (non-LOGICAL, non-ABORTED)
     /// exception so it is neither retried nor an abort under sanitizer builds.
@@ -687,8 +733,8 @@ TEST(CASUploadFanout, MergeNothingOnFailure)
     });
 
     /// Merge-nothing: the build recorded NO dep, even though the good sibling's body was uploaded.
-    EXPECT_FALSE(build->depIsTokened(idOf(good)));
-    EXPECT_FALSE(build->depIsTokened(idOf(poisoned)));
+    EXPECT_EQ(build->dependencyProof(idOf(good)), std::nullopt);
+    EXPECT_EQ(build->dependencyProof(idOf(poisoned)), std::nullopt);
     EXPECT_EQ(build->depsSnapshotForTest().size(), 0u);
 
     /// Abandon the precommit (the existing failure path), then GC reclaims the orphaned sibling body.
@@ -700,18 +746,16 @@ TEST(CASUploadFanout, MergeNothingOnFailure)
     EXPECT_TRUE(blobAbsent(*b, s->layout(), u128Of(poisoned))) << "the poisoned sibling never uploaded a body";
 }
 
-/// Test 4: two DISTINCT-ref fresh uploads, latch-crossed so both are inside `uploadBlobDetached` (hence
-/// both touching the ONE shared dedup cache) at once. The cache's internal locking makes the concurrent
-/// insertion correct; on the TSan lane this pins that there is no data race on the shared cache.
-TEST(CASUploadFanout, ConcurrentDeduplicationCacheInsertion)
+/// Two distinct refs publish concurrently and establish materialized dependencies.
+TEST(CASUploadFanout, ConcurrentPublicationsEstablishProof)
 {
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
-    const RootNamespace ns{"srv1/nsCacheRace"};
+    const RootNamespace ns{"srv1/nsPublicationRace"};
     auto build = precommitBuildFor(s, ns, "part");
 
-    const String pa = "cache-race-a";
-    const String pb = "cache-race-b";
+    const String pa = "publication-race-a";
+    const String pb = "publication-race-b";
 
     /// A latch of 2 crossed with a pool of 2 cannot hang: both tasks are guaranteed to run concurrently
     /// (the calling thread never occupies a pool slot), so both reach the latch and release together.
@@ -723,10 +767,8 @@ TEST(CASUploadFanout, ConcurrentDeduplicationCacheInsertion)
     auto pool = makePool(2);
     fanOutBlobUploads(*build, reqs, *pool, &hooks);
 
-    EXPECT_TRUE(build->depIsTokened(idOf(pa)));
-    EXPECT_TRUE(build->depIsTokened(idOf(pb)));
-    EXPECT_TRUE(s->dedupCacheContains(idOf(pa))) << "concurrent insertion left both keys present";
-    EXPECT_TRUE(s->dedupCacheContains(idOf(pb)));
+    EXPECT_EQ(build->dependencyProof(idOf(pa)), BlobDependencyProof::Materialized);
+    EXPECT_EQ(build->dependencyProof(idOf(pb)), BlobDependencyProof::Materialized);
 }
 
 /// Test 5: pool saturation is bounded. Eight blobs run through a pool of 2 (peak concurrency 2 is
@@ -765,7 +807,8 @@ TEST(CASUploadFanout, PoolSaturationBounded)
         fanOutBlobUploads(*build, reqs, *pool, &hooks);
 
         for (const auto & p : payloads)
-            EXPECT_TRUE(build->depIsTokened(idOf(p))) << "every blob uploaded (pool_size=" << pool_size << ")";
+            EXPECT_EQ(build->dependencyProof(idOf(p)), BlobDependencyProof::Materialized)
+                << "every blob uploaded (pool_size=" << pool_size << ")";
     };
 
     ConcurrencyProbe probe2;
@@ -819,7 +862,8 @@ TEST(CASUploadFanout, DrainPrecedesUnwind)
 
     EXPECT_TRUE(b->head(s->layout().blobKey(idOf(slow))).exists)
         << "the sibling's upload was drained by the join before the failure surfaced";
-    EXPECT_FALSE(build->depIsTokened(idOf(slow))) << "merge-nothing: the drained sibling's dep is not merged";
+    EXPECT_EQ(build->dependencyProof(idOf(slow)), std::nullopt)
+        << "merge-nothing: the drained sibling's dep is not merged";
 }
 
 /// Test 6b: a throw injected DURING the dispatch loop (before all tasks are enqueued) still drains the

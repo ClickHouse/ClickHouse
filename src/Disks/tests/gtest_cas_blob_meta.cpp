@@ -158,32 +158,6 @@ TEST(CASBlobMeta, WritesUsePoolRequestController)
     EXPECT_EQ(backend->overwrite_attempts, 2u);
 }
 
-/// Phase 3 T3 (was Phase 2 Task 5 crux Test 2, dedup half): the dedup-cache set is `BlobRef`-keyed and
-/// admits a 32-byte digest without truncation/collision against its 16-byte zero-tailed sibling — even
-/// under a DIFFERENT algo (the whole point of the pair identity).
-TEST(CASBlobMeta, DeduplicationCacheAdmitsWidth32Digest)
-{
-    auto backend = std::make_shared<InMemoryBackend>();
-    PoolConfig cfg{.pool_prefix = "p", .server_root_id = "test", .deduplication_cache_bytes = 64ULL << 20};
-    auto store = Pool::open(backend, cfg);
-
-    BlobDigest wide;
-    for (size_t i = 0; i < wide.bytes.size(); ++i)
-        wide.bytes[i] = static_cast<uint8_t>(i + 1);
-    /// The 16-byte prefix of `wide`, zero-tailed — a DIFFERENT logical identity at width 16.
-    BlobDigest narrow;
-    for (size_t i = 0; i < 16; ++i)
-        narrow.bytes[i] = wide.bytes[i];
-
-    const BlobRef wide_ref{BlobHashAlgo::Sha256, wide};
-    const BlobRef narrow_ref{BlobHashAlgo::CityHash128, narrow};
-    EXPECT_FALSE(store->dedupCacheContains(wide_ref));
-    EXPECT_FALSE(store->dedupCacheContains(narrow_ref));
-    store->dedupCacheAdd(wide_ref);
-    EXPECT_TRUE(store->dedupCacheContains(wide_ref));
-    EXPECT_FALSE(store->dedupCacheContains(narrow_ref)) << "a 32-byte digest must not collide with its zero-tailed 16-byte prefix";
-}
-
 /// `cas-inspect` dispatch (CasInspect.cpp): a `.meta` key must decode as a BlobMeta, NOT fall through
 /// to the `blobs/` envelope branch (the `.meta` key shares the `blobsPrefix()` prefix with a body key).
 TEST(CASBlobMeta, InspectRendersCondemnedMeta)

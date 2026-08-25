@@ -555,6 +555,13 @@ bool S3ObjectStorage::conditionalOpsUseGenerationTokens() const
     return client.get()->supportsGcsNativeConditionalRequests();
 }
 
+bool S3ObjectStorage::supportsCopyMode(ObjectStorageCopyMode mode) const
+{
+    return mode == ObjectStorageCopyMode::Default
+        || (mode == ObjectStorageCopyMode::NativeOnly
+            && s3_settings.get()->request_settings[S3RequestSetting::allow_native_copy]);
+}
+
 void S3ObjectStorage::pinConditionalOpsGenerationDialect(bool expect_generation_tokens)
 {
     pinned_generation_dialect.store(expect_generation_tokens ? 1 : 0);
@@ -745,13 +752,16 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
                 [&, this]{ return readObject(object_from, read_settings_to_use);},
-                object_to_attributes);
+                object_to_attributes,
+                write_settings.object_storage_copy_mode);
             return;
         }
         catch (S3Exception & exc)
         {
-            /// If authentication/permissions error occurs then fallthrough to copy with buffer.
-            if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+            /// Default mode may fall through to a buffered copy after an authentication/permissions error;
+            /// NativeOnly must preserve the native-copy failure.
+            if (write_settings.object_storage_copy_mode == ObjectStorageCopyMode::NativeOnly
+                || exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
             else
             {
@@ -774,6 +784,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         }
     }
 
+    if (write_settings.object_storage_copy_mode == ObjectStorageCopyMode::NativeOnly)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native-only object copy requires both object storages to use the native S3 copy path");
+
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
@@ -781,9 +796,16 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    if (!supportsCopyMode(write_settings.object_storage_copy_mode))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native-only object copy requires the native S3 copy path, which is disabled "
+            "(allow_native_copy=false) for object storage {}",
+            getName());
+
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
@@ -804,114 +826,8 @@ void S3ObjectStorage::copyObject( // NOLINT
         BlobStorageLogWriter::create(disk_name),
         scheduler,
         [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
-}
-
-/// Consumes exactly two fields of `write_settings`: `object_storage_request_mode` and
-/// `s3_single_part_upload_max_bytes_override`. It deliberately IGNORES the rest of what a conditional
-/// write asks for, and a caller passing `ObjectStorageBackend::conditionalWriteSettings` gets less than
-/// that method's name promises:
-///   - `object_storage_retry_profile = SingleAttempt` is inert here. Only `writeObject` resolves the
-///     profile to `getSingleAttemptClient`; this path always uses `client.get()`, so the SDK may retry
-///     a CopyObject transparently.
-///   - `s3_max_unexpected_write_error_retries_override` and `s3_check_objects_after_upload_override`
-///     are applied inside `writeObject` only, and no copy passes through it.
-///
-/// Why that is safe rather than merely tolerated. The only caller supplying those settings is the
-/// content-addressed staging promote, and a retried CopyObject whose first attempt already landed
-/// answers `412` on the second, which becomes `created=false` — indistinguishable from losing the
-/// race. The caller's precondition-failed arm HEADs the key and either adopts a live incarnation or
-/// displaces a condemned one; the key is a content hash, so every incarnation under it carries a
-/// byte-identical payload and the created-versus-existed verdict is recoverable without the token from
-/// the response that was lost. Generation-token stores never reach here at all: S3-native staging is
-/// refused for them at mount.
-///
-/// Re-derive that argument before routing this copy through the single-attempt client. Doing so is a
-/// protocol-adjacent change, and correctness on this path does not need it.
-ConditionalCopyResult S3ObjectStorage::copyObjectConditional( // NOLINT
-    const StoredObject & object_from,
-    const StoredObject & object_to,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::optional<ObjectAttributes> object_to_attributes)
-{
-    auto current_client = client.get();
-    auto settings_ptr = s3_settings.get();
-
-    /// `copyS3File`'s `If-None-Match` precondition is only honored on the native server-side copy
-    /// path (`CopyObject` / `CompleteMultipartUpload`): if native copy is disabled it silently falls
-    /// back to an unconditional read-write copy (`copyDataToS3File`), which would defeat the
-    /// write-once guarantee the content-addressed staging promote relies on. Fail closed instead of
-    /// racing an unconditional overwrite onto what may already be a live blob.
-    if (!settings_ptr->request_settings[S3RequestSetting::allow_native_copy])
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Conditional (write-once) object copy requires the native S3 copy path, which is disabled "
-            "(allow_native_copy=false) for object storage {}", getName());
-
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
-    const auto read_settings_to_use = patchSettings(read_settings);
-
-    /// A token-producing conditional copy on a generation-token store (GCS) must stay a SINGLE
-    /// CopyObject operation, for the same reason a token-producing PUT must stay a single PUT (see
-    /// WriteBufferFromS3::createMultipartUpload): GCS enforces no precondition on
-    /// CompleteMultipartUpload, so a lost race on a multipart-completed conditional copy would
-    /// silently overwrite instead of failing. Fail BEFORE issuing any request rather than falling
-    /// back to multipart or an unconditional read-write copy -- `write_settings.s3_single_part_upload_max_bytes_override`
-    /// carries the same cap a conditional PUT uses (see ObjectStorageBackend::tokenProducingWriteSettings);
-    /// it is 0 (no override) for a non-generation dialect or an ordinary, non-token-producing copy.
-    S3::S3RequestSettings request_settings = settings_ptr->request_settings;
-    if (write_settings.object_storage_request_mode == ObjectStorageRequestMode::NativeConditional
-        && conditionalOpsUseGenerationTokens()
-        && write_settings.s3_single_part_upload_max_bytes_override)
-    {
-        const uint64_t cap = write_settings.s3_single_part_upload_max_bytes_override;
-        if (size > cap)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "CAS on GCS: a token-producing conditional copy of {} bytes to {} exceeds the "
-                "single-operation cap of {} bytes -- refusing (a multipart-completed conditional copy "
-                "would silently overwrite instead of failing, since GCS enforces no precondition on "
-                "CompleteMultipartUpload)", size, object_to.remote_path, cap);
-        /// Raise the single-operation ceiling so a body up to the cap stays a single CopyObject
-        /// instead of taking the (forbidden, for this dialect) multipart-copy path.
-        request_settings[S3RequestSetting::max_single_operation_copy_size] = cap;
-    }
-
-    String dest_etag;
-    try
-    {
-        copyS3File(
-            /*src_s3_client=*/current_client,
-            /*src_bucket=*/uri.bucket,
-            /*src_key=*/object_from.remote_path,
-            /*src_offset=*/0,
-            /*src_size=*/size,
-            /*dest_s3_client=*/current_client,
-            /*dest_bucket=*/uri.bucket,
-            /*dest_key=*/object_to.remote_path,
-            request_settings,
-            read_settings_to_use,
-            BlobStorageLogWriter::create(disk_name),
-            scheduler,
-            [&, this]{ return readObject(object_from, read_settings_to_use);},
-            object_to_attributes,
-            /*if_none_match=*/"*",
-            /*out_dest_etag=*/&dest_etag,
-            write_settings.object_storage_request_mode);
-    }
-    catch (S3Exception & exc)
-    {
-        /// A `412 Precondition Failed` is the expected "lost the race" signal (the destination already
-        /// exists), not an error — see `S3Exception::isPreconditionFailed` for the one policy.
-        if (exc.isPreconditionFailed())
-            return {.created = false, .dest_etag = {}};
-
-        /// Any other failure (network error, access denied, etc.) is a real error and must propagate:
-        /// never silently treat it as "lost the race".
-        throw;
-    }
-
-    return {.created = true, .dest_etag = dest_etag};
+        object_to_attributes,
+        write_settings.object_storage_copy_mode);
 }
 
 void S3ObjectStorage::shutdown()

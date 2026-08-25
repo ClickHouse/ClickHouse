@@ -430,15 +430,28 @@ TEST(CASGCShardIncarnation, NewbornPrecommitProtectsDedupBlobAgainstConcurrentDr
         auto store = makePoolWithShards(backend, gc_shards);
         const RootNamespace ns_b{"srv1/tblB"};
 
-        /// --- Phase 1: Write b1's body directly (before any GC). ---
-        /// Mint b1 under the POOL streaming-hash id (via a throwaway build's putBlob) so the in-closure
-        /// copy-forward verifier accepts its payload — the plain CityHash test id would be refused.
+        /// --- Phase 1: Write b1's body before any GC. ---
+        /// Mint b1 under the pool streaming-hash id through a complete durable-precommit fixture, then
+        /// drop that fixture ref so the newborn owner below is the edge whose safety matters.
         const String b1_payload = "shared-blob-b1";
         const String b1_hex = streamingHexOf(b1_payload);
         const BlobRef b1_ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(hexToU128(b1_hex))};
         {
-            auto seed = store->beginPartWrite({});
+            const RootNamespace seed_ns{"srv1/seed"};
+            PartWriteInfo seed_info;
+            seed_info.intended_ref = seed_ns.string() + "/seed";
+            auto seed = store->beginPartWrite(seed_info);
+            ManifestEntry seed_entry;
+            seed_entry.path = "data.bin";
+            seed_entry.placement = EntryPlacement::Blob;
+            seed_entry.ref = b1_ref;
+            seed_entry.blob_size = b1_payload.size();
+            const ManifestId seed_manifest = seed->stageManifest({seed_entry});
+            seed->precommitAdd(seed_ns, "seed", seed_manifest);
             seed->putBlob(b1_ref, BlobSource::fromString(b1_payload));
+            seed->promote(seed_ns, "seed", seed->buildId(), seed_manifest);
+            store->dropRef(seed_ns, "seed");
+            store->renewWatermarkOnce();
         }
         const String b1_key = store->layout().blobKey(b1_ref);
         ASSERT_TRUE(backend->head(b1_key).exists)

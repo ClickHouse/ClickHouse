@@ -1,5 +1,5 @@
 ---
-description: 'How CAS writes, deduplicates, and reclaims a blob: conditional-write sequencing, the writer-versus-GC race, and the deterministic-artifact adoption pin.'
+description: 'How CAS observes, publishes, deduplicates, and reclaims a blob: mandatory HEAD, unconditional publication, and the writer-versus-GC race.'
 sidebar_label: 'Blob protocol'
 sidebar_position: 3
 slug: /antalya/cas/architecture/blob-protocol
@@ -10,19 +10,20 @@ doc_type: 'reference'
 # CAS architecture — blob protocol {#blob-protocol}
 
 A blob is the unit of content-addressed storage: one part file's bytes, keyed by a hash of its
-own content. This page covers how a blob gets written exactly once, how a duplicate write is
+own content. This page covers how a blob is observed or published, how a duplicate write is
 turned into a no-op, and how a writer and a `GC` round racing over the same blob are kept safe
 without ever comparing multi-gigabyte bodies. Object layout and the four durable object kinds
 are covered on the [overview page](/antalya/cas/architecture/); `GC`'s fold and round structure
 is covered on the GC page.
 
-## Conditional-write sequence {#conditional-write-sequence}
+## HEAD-then-publication sequence {#conditional-write-sequence}
 
 Every blob body lives at a key derived purely from its content hash
 (`blobs/<algo>/<hex[0:2]>/<hex>`, `CasLayout::blobKey`), with a sidecar `.meta` object at the
-same key plus `.meta`. Because the key already encodes the digest, the backend never needs a
-compare-and-swap on content — only on *presence* (`PUT` with `If-None-Match: *`) or on a specific
-prior incarnation (`PUT`/`DELETE` with `If-Match: <token>`).
+same key plus `.meta`. Because the key already encodes the digest, concurrent writers may safely
+replace one physical incarnation with another carrying the same logical payload. Blob publication
+therefore needs no create-if-absent condition and returns no incarnation token. Conditional writes
+remain necessary for mutable metadata and control objects; `GC` still uses exact-token deletion.
 
 ```mermaid
 sequenceDiagram
@@ -31,50 +32,64 @@ sequenceDiagram
     participant S3 as Object store
 
     Writer->>Writer: hash source, derive key from digest
-    alt dedup cache hit OR size >= deduplication_head_first_min_bytes
-        Writer->>S3: HEAD blobs/algo/hex
-        alt body present
-            Writer->>S3: GET .meta (point read, body never streamed)
-            Writer->>Writer: adopt current token if Clean or absent
-        else body absent
-            Writer->>S3: putIfAbsentStream (If-None-Match: star)
+    Writer->>S3: HEAD blobs/algo/hex
+    alt body present
+        S3-->>Writer: present, size, backend token t1
+        Writer->>S3: GET .meta (point read, body never streamed)
+        alt meta Clean or absent
+            Writer->>Writer: record token-free BlobDependencyProof::Materialized (never adopt t1)
+        else meta Condemned
+            Writer->>S3: unconditional publish with fresh envelope
+            Writer->>S3: reconcile .meta to Clean
         end
-    else small, no cache hit
-        Writer->>S3: putIfAbsentStream (If-None-Match: star) directly
+    else body absent
+        S3-->>Writer: absent
+        Writer->>S3: unconditional publish
+        Writer->>S3: create or reconcile .meta to Clean
     end
-    S3-->>Writer: Done -- fresh upload, write Clean meta
-    S3-->>Writer: PreconditionFailed -- someone occupies the key
-    opt on PreconditionFailed
-        Writer->>S3: HEAD blobs/algo/hex
-        Writer->>S3: GET .meta -- adopt the occupant's token as a dependency
-    end
+    Writer->>Writer: record token-free BlobDependencyProof::Materialized (never retain a body token)
 ```
 
-Ordered steps (`Pool/CasPartWriteTxn.cpp:160-245` and `:427-779`):
+Ordered steps in `PartWriteTxn::ensureBlobPresent`:
 
 1. `requireAlive()` — the build is not abandoned, the namespace not dropped, the writer epoch
    still live.
-2. **Adaptive dedup gate.** `HEAD` first if the dedup cache reports the content present, or the
-   object is at least `deduplication_head_first_min_bytes` (default 1 MiB). Below that threshold
-   a speculative conditional `PUT` is cheaper than a `HEAD` plus a `PUT`.
-3. On a `HEAD` hit, `observeAndAdmit` point-reads the `.meta` sidecar and adopts the live
-   incarnation — the body is never streamed for a dedup hit.
-4. Otherwise a bounded retry loop (up to 8 attempts) around `uploadFromSource`, which mints a
-   **fresh `incarnation_tag` per attempt** and does either a conditional server-side `COPY` from
-   S3 staging or a streaming `putIfAbsentStream`. The byte count is verified against the declared
-   source size.
-5. A 412 means someone occupies the key. Because the key embeds the content digest, **any
-   occupant is by definition the intended content** — ambiguity is resolved by one `HEAD`
-   (occupancy), never by comparing bodies.
-6. `Unresolved` (timeout, 5xx, connection loss) never acks. It throws retry-later — nothing was
-   published, so a body that lands late is inert debris for the orphan sweep.
+2. **Mandatory observation.** Every physical materialization begins with one blob `HEAD`, regardless
+   of size, provider, staging backend, or whether another writer probably uploaded the same hash.
+3. On a hit, the writer reads `.meta`. `Clean` or absent metadata permits adoption; the writer
+   records a `Materialized` dependency proof without retaining the observed token. `Condemned`
+   requires a new publication.
+4. On a miss, the writer does not read `.meta` before publication. It publishes its own payload
+   unconditionally, then creates or reconciles `.meta` to `Clean`.
+5. Streaming publication mints a fresh `incarnation_tag` and can use ordinary multipart. The first
+   publication of an S3-staged source may use native same-store copy only after a miss; a condemned
+   or subsequent publication retags and streams the staged payload.
+6. `BlobSource::beginPublication` consumes the shared, monotonic `publication_attempted` state
+   before backend I/O. A lost response cannot re-enable verbatim copy on a later attempt.
+7. Retryable or ambiguous failures restart at `HEAD`. No dependency proof is recorded until a
+   present non-condemned body was observed, or publication and metadata reconciliation completed.
 
-**Two writers uploading identical content** both derive the same key and both send
-`If-None-Match: *`. The object store serializes them: one gets `Done`, the other gets 412,
-`HEAD`s, point-reads `.meta`, and adopts the winner's token as its own dependency. The loser never
-published anything — a failed or cancelled sink publishes nothing — and its adopt is protected by
-its own durable precommit edge (see [the writer-versus-GC race](#writer-gc-race)). Both writers
-are safe; the only cost is one wasted upload attempt.
+**Two writers uploading identical content** may both observe absence and both publish. The last
+physical incarnation wins, but the key proves that both payloads have the same logical identity and
+durable references name that identity, not an ETag or generation. Each writer records only a
+`Materialized` proof. Its durable precommit edge protects the logical blob while the physical race
+settles (see [the writer-versus-GC race](#writer-gc-race)).
+
+### Request budget and release evidence {#request-budget-and-release-evidence}
+
+The protocol deliberately pays one blob `HEAD` per materialization task. A genuine fresh miss then
+publishes one body and attempts one `Clean` metadata create, with no pre-publication metadata GET. A
+duplicate pays the metadata read and avoids the body publication. All blob tasks remain in the
+bounded `cas_blob_upload_pool_size` fan-out rather than serializing the part.
+
+The [performance report](/superpowers/cas/unconditional-blob-publication-performance) confirms that
+request shape on three target-only runs, but it has no matched same-environment pre-change binary.
+Its control-adjusted sequence ratios are not a code-version delta; performance acceptance remains
+blocked pending a matched before/after pair and explicit human acceptance. The
+[real-GCS result](/superpowers/cas/unconditional-blob-publication-live-results) likewise records
+deterministic coverage but no credentialed Google run. Release readiness remains blocked until the
+OAuth and HMAC groups pass against real GCS; ordinary `test_storage_s3` is also externally blocked
+by the unavailable `clickhouse/clickhouse-server:23.3.19.33.altinitystable` image.
 
 ## Dedup and the identity primitive {#dedup-identity}
 
@@ -93,7 +108,7 @@ pool. `blob_hash_allow_new` gates admitting a second algorithm into an already-p
 
 `cityhash128` is not cryptographically collision-resistant. A pool shared across mutually
 untrusted writers should run `sha256` — CAS enforces no policy choice here; the operator picks
-the threat model via `blob_hash`. This is why the dedup admission gate is a `HEAD` (occupancy)
+the threat model via `blob_hash`. This is why the materialization gate is a `HEAD` (occupancy)
 rather than a body compare: it tells the writer *something* already claims this key, and the
 digest is the only claim CAS trusts.
 
@@ -133,25 +148,25 @@ sequenceDiagram
 
     Note over GC: round n+2 -- the single content-delete site
     GC->>S3: deleteExact(blob, t1)
-    alt writer resurrected
+    alt writer republished
         S3-->>GC: TokenMismatch -- nothing deleted, blob is live at t2
     else genuinely dead
         S3-->>GC: Deleted -- then drop the .meta
     end
 ```
 
-The invariant that makes every interleaving safe: **revival is re-upload only — never `GET` a
-condemned object to revive it.** A writer that finds `Condemned` metadata does not resurrect the
+The invariant that makes every interleaving safe: **revival is re-publication only — never `GET` a
+condemned object to revive it.** A writer that finds `Condemned` metadata does not reuse the
 existing body; it re-uploads its own source bytes under a fresh `incarnation_tag`, producing a
 new token that no prior `deleteExact` call can name. `GC` never streams a body it might delete,
 and a writer never trusts a body it did not itself just write.
 
 Why this closes the race in both directions:
 
-- A writer that **adopts** a token must have read a non-`Condemned` marker, and its precommit
+- A writer that **adopts** a present body must have read a non-`Condemned` marker, and its precommit
   edge was durable *before* that read. The next fold therefore sees in-degree ≥ 1 and spares the
   blob.
-- A writer that **resurrects** changes the token. A stale `deleteExact(t1)` then returns
+- A writer that **replaces a condemned incarnation** changes the token. A stale `deleteExact(t1)` then returns
   `TokenMismatch` and reclaims nothing — the delete names an exact incarnation, never "the object
   at this key".
 - The delete lags condemnation by at least two full rounds, and publishing the one edge that
@@ -162,14 +177,14 @@ Why this closes the race in both directions:
 Both directions degrade to a spurious re-upload or a no-op delete. Neither can lose data or leave
 a dangling manifest entry.
 
-**One asymmetry worth flagging:** on a local (emulated) disk the resurrect path materializes the
-full `[header][payload]` in memory; resurrections are serialized, so at most one body is held whole
-in RAM at a time. On remote object storage the resurrect streams and holds nothing.
+**One asymmetry worth flagging:** on a local emulated disk `publishBlob` materializes the full
+`[header][payload]` in memory. These publications are serialized, so at most one body is held whole
+in RAM at a time. Native object storage streams and can use multipart.
 
 ### The `.meta` sidecar {#meta-sidecar}
 
 `.meta` has exactly two states: `Clean` (body present, may be referenced) and `Condemned`
-(`GC` observed zero in-degree; the body is still present and a writer may resurrect it). An
+(`GC` observed zero in-degree; the body is still present and a writer may replace it). An
 *absent* `.meta` reads exactly like `Clean` — there is no third "unaccounted" state in the
 stored format; `unaccounted` is an `ca-fsck` classification, not something `GC` ever writes.
 
@@ -221,11 +236,9 @@ prefix.
 |---|---|---|
 | `blob_hash` | Pool blob content-hash function (`cityhash128` \| `xxh3-128` \| `sha256`); fixed at pool creation | `cityhash128` |
 | `blob_hash_allow_new` | Explicit opt-in to admit a new hash algorithm into an existing pool's `algos_used` | `false` |
-| `deduplication_cache_bytes` | Byte budget of the blob-presence cache that feeds the dedup `HEAD`-first decision (`0` disables) | 64 MiB |
-| `deduplication_head_first_min_bytes` | Minimum blob size to try a `HEAD` before uploading the body | 1 MiB |
 | `staging_backend` | Blob staging backend (`local` \| `s3`); `s3` is opt-in | `local` |
 | `scratch_path` | Server-local scratch directory for the local-staging write-buffer spill; a relative value is anchored to the server data path | `""` |
-| `gcs_max_token_producing_put_bytes` | Largest token-producing write on a generation-token store, conditional or not (GCS forces those single-part) | 1 GiB |
+| `gcs_max_conditional_put_bytes` | Largest conditional non-blob `PUT` on a generation-token store, covering create-if-absent artifacts and conditional replacements; unconditional blob publication is not subject to this cap | 1 GiB |
 
 `GC`-round budgets that gate condemnation and reclaim of these same blobs (graduation, redelete,
 sweep budgets) live on the GC architecture page, not here — they govern the `GC` side of the race

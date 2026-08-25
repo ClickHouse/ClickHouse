@@ -90,12 +90,6 @@ public:
         return InMemoryBackend::putIfAbsent(k, b, m);
     }
 
-    Cas::WriteSinkPtr putIfAbsentStream(const String & k, const Cas::ObjectMeta & m) override
-    {
-        failIfArmed();
-        return InMemoryBackend::putIfAbsentStream(k, m);
-    }
-
     Cas::PutResult putOverwrite(const String & k, const String & b, const Cas::Token & e, const Cas::ObjectMeta & m) override
     {
         failIfArmed();

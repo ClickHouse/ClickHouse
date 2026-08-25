@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <IO/ReadBufferFromString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
@@ -133,7 +132,7 @@ TEST_P(CASBackendContract, ReadAfterWrite)
 }
 
 /// After an object is created then deleted (key absent again), BOTH conditional updates against a stale
-/// token must be rejected with the object still absent — a token-conditional update can never resurrect a
+/// token must be rejected with the object still absent — a token-conditional update can never recreate a
 /// missing key. For the Native S3 adapter this pins the 404-on-If-Match -> PreconditionFailed/Conflict
 /// mapping; for every backend it pins that absence is not a write opportunity for a stale token.
 TEST_P(CASBackendContract, OverwriteAndCasOnMissingKey)
@@ -150,103 +149,6 @@ TEST_P(CASBackendContract, OverwriteAndCasOnMissingKey)
     EXPECT_FALSE(b->get("k").has_value());                     // still absent
 }
 
-TEST_P(CASBackendContract, StreamPutRoundTrip)
-{
-    auto b = GetParam()();
-    auto sink = b->putIfAbsentStream("k/stream1");
-    sink->buffer().write("hello ", 6);
-    sink->buffer().write("world", 5);
-    const auto res = sink->finalize();
-    const Token tok = res.token;
-    ASSERT_EQ(res.outcome, PutOutcome::Done);
-    ASSERT_FALSE(tok.empty());
-    auto got = b->get("k/stream1");
-    ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->bytes, "hello world");
-    EXPECT_EQ(got->token, tok);
-}
-
-TEST_P(CASBackendContract, StreamPutPreconditionAtFinalize)
-{
-    auto b = GetParam()();
-    const auto first_put = b->putIfAbsent("k/stream2", "original");
-    const Token first = first_put.token;
-    ASSERT_EQ(first_put.outcome, PutOutcome::Done);
-    auto sink = b->putIfAbsentStream("k/stream2");
-    sink->buffer().write("loser", 5);
-    ASSERT_EQ(sink->finalize().outcome, PutOutcome::PreconditionFailed);
-    auto got = b->get("k/stream2");
-    ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->bytes, "original");    /// the failed conditional write left the object unmodified
-    EXPECT_EQ(got->token, first);
-}
-
-TEST_P(CASBackendContract, StreamPutCancelLeavesNothing)
-{
-    auto b = GetParam()();
-    {
-        auto sink = b->putIfAbsentStream("k/stream3");
-        sink->buffer().write("partial", 7);
-        sink->cancel();
-    }
-    EXPECT_FALSE(b->head("k/stream3").exists);
-}
-
-TEST_P(CASBackendContract, StreamPutDestructionWithoutFinalizeLeavesNothing)
-{
-    auto b = GetParam()();
-    {
-        auto sink = b->putIfAbsentStream("k/stream4");
-        sink->buffer().write("partial", 7);
-        /// no finalize, no cancel — destructor must behave as cancel (never publish)
-    }
-    EXPECT_FALSE(b->head("k/stream4").exists);
-}
-
-TEST_P(CASBackendContract, StreamPutEmptyBody)
-{
-    auto b = GetParam()();
-    auto sink = b->putIfAbsentStream("k/stream_empty");
-    const auto res = sink->finalize();
-    const Token tok = res.token;
-    ASSERT_EQ(res.outcome, PutOutcome::Done);
-    ASSERT_FALSE(tok.empty());
-    auto got = b->get("k/stream_empty");
-    ASSERT_TRUE(got.has_value());
-    EXPECT_TRUE(got->bytes.empty());
-    EXPECT_EQ(got->token, tok);
-    auto h = b->head("k/stream_empty");
-    EXPECT_TRUE(h.exists);
-    EXPECT_EQ(h.size, 0u);
-}
-
-/// ~1 MB written in chunks: exercises buffer growth in the memory-buffered sinks and, for the
-/// future Native sink, the real streaming path.
-TEST_P(CASBackendContract, StreamPutLargeBody)
-{
-    auto b = GetParam()();
-    String chunk(4096, '\0');
-    for (size_t i = 0; i < chunk.size(); ++i)
-        chunk[i] = static_cast<char>('a' + i % 26);
-
-    String expected;
-    auto sink = b->putIfAbsentStream("k/stream_large");
-    for (size_t written = 0; written < (1 << 20); written += chunk.size())
-    {
-        sink->buffer().write(chunk.data(), chunk.size());
-        expected += chunk;
-    }
-    const auto res = sink->finalize();
-    const Token tok = res.token;
-    ASSERT_EQ(res.outcome, PutOutcome::Done);
-
-    auto got = b->get("k/stream_large");
-    ASSERT_TRUE(got.has_value());
-    ASSERT_EQ(got->bytes.size(), expected.size());
-    EXPECT_EQ(got->bytes, expected);
-    EXPECT_EQ(got->token, tok);
-}
-
 INSTANTIATE_TEST_SUITE_P(CASInMemory, CASBackendContract,
     ::testing::Values(+[]() -> BackendPtr { return std::make_shared<InMemoryBackend>(); }));
 
@@ -256,46 +158,3 @@ INSTANTIATE_TEST_SUITE_P(CASLocal, CASBackendContract,
         return std::make_shared<ObjectStorageBackend>(
             DB::Cas::tests::makeLocalObjectStorageForTest(), ObjectStorageBackend::Mode::EmulatedSingleProcess);
     }));
-
-/// The unconditional resurrect counts while streaming and aborts WITHOUT publishing when the reader
-/// yields a different byte count than declared. With no precondition on the write, this is the last
-/// line of defence against a source truncated after hashing: a post-write check would fire only after
-/// the short body had displaced the condemned incarnation.
-TEST_P(CASBackendContract, ResurrectWrongSizePublishesNothing)
-{
-    auto b = GetParam()();
-    const auto created = b->putIfAbsent("k/res_short", "condemned-body");
-    ASSERT_EQ(created.outcome, PutOutcome::Done);
-
-    DB::ReadBufferFromOwnString in{String("short")};
-    EXPECT_THROW(b->resurrect(in, /*payload_size=*/1000, "k/res_short", String("HDR")), DB::Exception);
-
-    const auto got = b->get("k/res_short");
-    ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->bytes, "condemned-body") << "a size-mismatched resurrect must publish nothing";
-    EXPECT_EQ(got->token, created.token);
-}
-
-/// The resurrect works on EVERY mode of every backend -- the emulated (local object storage) mode
-/// included. The former conditional putOverwrite supported local disks, and losing that would make a
-/// condemned blob unrepairable on a local content-addressed disk.
-TEST_P(CASBackendContract, ResurrectReplacesBodyAndMintsFreshToken)
-{
-    auto b = GetParam()();
-    const auto created = b->putIfAbsent("k/res_ok", "condemned-body");
-    ASSERT_EQ(created.outcome, PutOutcome::Done);
-
-    const String payload = "resurrected-payload";
-    DB::ReadBufferFromOwnString in{payload};
-    const Token fresh = b->resurrect(in, payload.size(), "k/res_ok", String("HDR"));
-    EXPECT_FALSE(fresh.empty());
-    EXPECT_NE(fresh, created.token);
-
-    const auto got = b->get("k/res_ok");
-    ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->bytes, "HDR" + payload);
-
-    /// INV-NO-RETURN: the queued exact-token delete of the condemned incarnation misses the fresh one.
-    EXPECT_EQ(b->deleteExact("k/res_ok", created.token).kind, DeleteOutcome::Kind::TokenMismatch);
-    EXPECT_TRUE(b->head("k/res_ok").exists);
-}

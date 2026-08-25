@@ -1,21 +1,21 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
+#include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
 
 #include <Common/Exception.h>
-
-#include <base/defines.h>
 
 #include "config.h"
 
@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 
 namespace DB
 {
@@ -39,10 +40,10 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
-ObjectStorageBackend::ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t token_producing_single_put_cap_)
+ObjectStorageBackend::ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t conditional_single_put_cap_)
     : object_storage(std::move(object_storage_))
     , mode(mode_)
-    , token_producing_single_put_cap(token_producing_single_put_cap_)
+    , conditional_single_put_cap(conditional_single_put_cap_)
     , emu_root(object_storage->getCommonKeyPrefix())
 {
     if (mode == Mode::Native && object_storage->conditionalOpsUseGenerationTokens())
@@ -252,103 +253,12 @@ PutResult ObjectStorageBackend::nativeConditionalPut(const String & key, const S
 namespace
 {
 
-/// True-streaming WriteSink for Native mode: the underlying object-storage write buffer was opened
-/// with `If-None-Match: *` riding on its WriteSettings, so bytes stream through it directly and the
-/// condition is checked when finalize completes the object — see finalizeConditionalWrite for the
-/// outcome mapping. Nothing is ever published on cancel/destruction.
-class NativeStreamingSink final : public WriteSink
+/// Keep the emulated backend's publication memory bound to one materialized body at a time.
+std::mutex & emulatedBlobPublicationMutex()
 {
-public:
-    NativeStreamingSink(ObjectStorageBackend & backend_, String key_, std::unique_ptr<WriteBufferFromFileBase> write_buf_)
-        : backend(backend_)
-        , key(std::move(key_))
-        , write_buf(std::move(write_buf_))
-    {
-    }
-
-    WriteBuffer & buffer() override { return *write_buf; }
-
-    PutResult finalize() override
-    {
-        chassert(!done);   /// finalize after finalize/cancel is a misuse — see the WriteSink contract
-        done = true;
-        if (finalizeConditionalWriteInstrumented(*write_buf) == PutOutcome::PreconditionFailed)
-        {
-            /// Losing the condition is an ORDINARY outcome, not an error: another writer legitimately
-            /// took the slot. Abort HERE rather than leaving it to the buffer's destructor, which warns
-            /// "was neither finished nor aborted" on every occurrence -- and a server that writes that
-            /// to stderr fails the test around it -- while the uploaded parts stay billable until a
-            /// lifecycle rule reaps them.
-            write_buf->cancel();
-            return {PutOutcome::PreconditionFailed, {}};
-        }
-
-        /// Attribute the token of the incarnation we just wrote (model WCreate) -- see
-        /// tokenFromWriteResult for the exact generation-vs-ETag policy.
-        return {PutOutcome::Done, backend.tokenFromWriteResult(key, write_buf->getResultObjectETag())};
-    }
-
-    void cancel() noexcept override
-    {
-        done = true;
-        write_buf->cancel();
-    }
-
-    ~NativeStreamingSink() override
-    {
-        if (!done)
-            cancel();
-    }
-
-private:
-    ObjectStorageBackend & backend;
-    const String key;
-    std::unique_ptr<WriteBufferFromFileBase> write_buf;
-    bool done = false;
-};
-
-/// Memory-buffered WriteSink for EmulatedSingleProcess mode (unit tests only — buffering the whole
-/// body is acceptable and documented): accumulates into a WriteBufferFromOwnString and delegates the
-/// conditional publish to putIfAbsent at finalize, which provides atomicity under emu_mutex. Nothing
-/// is ever published on cancel/destruction.
-class EmulatedBufferedSink final : public WriteSink
-{
-public:
-    EmulatedBufferedSink(Backend & backend_, String key_, ObjectMeta meta_)
-        : backend(backend_)
-        , key(std::move(key_))
-        , meta(std::move(meta_))
-    {
-    }
-
-    WriteBuffer & buffer() override { return buf; }
-
-    PutResult finalize() override
-    {
-        chassert(!done);   /// finalize after finalize/cancel is a misuse — see the WriteSink contract
-        done = true;
-        return backend.putIfAbsent(key, buf.str(), meta);
-    }
-
-    void cancel() noexcept override
-    {
-        done = true;
-        buf.cancel();
-    }
-
-    ~EmulatedBufferedSink() override
-    {
-        if (!done)
-            cancel();
-    }
-
-private:
-    Backend & backend;
-    const String key;
-    const ObjectMeta meta;
-    WriteBufferFromOwnString buf;
-    bool done = false;
-};
+    static std::mutex mutex;
+    return mutex;
+}
 
 }
 
@@ -574,6 +484,43 @@ Token ObjectStorageBackend::emuWrite(const String & key, const String & bytes, c
 
     const auto metadata = object_storage->tryGetObjectMetadata(emuPath(key), /*with_tags=*/false);
     return emuMintToken(key, metadata ? metadata->etag : String{}, /*just_wrote=*/true);
+}
+
+void ObjectStorageBackend::emuPublishBlobAtomically(const String & key, const String & bytes)
+{
+    if (object_storage->getType() != ObjectStorageType::Local)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "ObjectStorageBackend::publishBlob: atomic emulated publication requires local object storage");
+
+    const String destination_object = emuPath(key);
+    const String temporary_object = destination_object + ".publish-" + toString(UUIDHelpers::generateV4()) + ".tmp";
+    const String root = object_storage->getCommonKeyPrefix();
+    const String destination_path = resolvePathRelativelyToBase(destination_object, root);
+    const String temporary_path = resolvePathRelativelyToBase(temporary_object, root);
+    const auto existing_token_state = emu_token_state.find(key);
+
+    try
+    {
+        auto out = object_storage->writeObject(StoredObject(temporary_object), WriteMode::Rewrite);
+        out->write(bytes.data(), bytes.size());
+        out->finalize();
+        std::filesystem::rename(temporary_path, destination_path);
+    }
+    catch (...)
+    {
+        std::error_code cleanup_error;
+        std::filesystem::remove(temporary_path, cleanup_error);
+        throw;
+    }
+
+    /// Publication is transport-only and cannot HEAD to learn the replacement's ETag. Advancing an
+    /// existing disambiguator is sufficient: if the next observation sees the same ETag, it returns
+    /// a token distinct from the old incarnation; if the ETag changed, emuMintToken resets the state
+    /// to that new ETag. With no existing state, this backend has issued no same-process stale token
+    /// that needs fencing. The post-rename increment cannot allocate or throw.
+    if (existing_token_state != emu_token_state.end())
+        ++existing_token_state->second.second;
 }
 
 Token ObjectStorageBackend::emuObserveToken(const String & key)
@@ -824,35 +771,21 @@ SentinelProbeResult ObjectStorageBackend::probeSentinelRaw(const String & key)
     }
 }
 
-/// Settings for EVERY write whose result token enters CAS protocol state ("Write-settings
-/// decomposition"): mark the write NativeConditional so its production request wrapper is eligible
-/// for the typed GCS dialect, and on a generation-token store (GCS) ALSO force a single PUT capped at
-/// token_producing_single_put_cap. GCS enforces no precondition on `CompleteMultipartUpload`
-/// (measured), so ANY token-producing write -- conditional or not -- would silently overwrite
-/// instead of failing if it were allowed to complete via multipart; raise the single-part cap to keep
-/// the fast (RAM-buffered) path available for bodies up to that size, and let a bigger body throw
-/// NOT_IMPLEMENTED from WriteBufferFromS3::createMultipartUpload before any multipart request is
-/// issued. ETag-dialect stores are unaffected (no forcing, no cap).
-WriteSettings ObjectStorageBackend::tokenProducingWriteSettings() const
+/// Settings for a genuine Native conditional write. Mark the request for the typed conditional
+/// dialect and, on a generation-token store, force a single PUT capped at
+/// `conditional_single_put_cap`: GCS does not enforce the condition on multipart completion. Blob
+/// publication never uses these settings; it remains an ordinary unconditional multipart-capable
+/// write. CAS-mutable keys (shard manifests, gc/state, the registry) also skip the racy post-upload
+/// existence/size check; a publish's manifest CAS was observed racing the GC fence there.
+WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
 {
     WriteSettings ws;
     ws.object_storage_request_mode = ObjectStorageRequestMode::NativeConditional;
     if (native_token_type == TokenType::Generation)
     {
         ws.s3_force_single_part_upload = true;
-        ws.s3_single_part_upload_max_bytes_override = token_producing_single_put_cap;
+        ws.s3_single_part_upload_max_bytes_override = conditional_single_put_cap;
     }
-    return ws;
-}
-
-/// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): everything
-/// tokenProducingWriteSettings sets, plus the precondition-specific retry policy. CAS-mutable keys
-/// (shard manifests, gc/state, the registry) override check_objects_after_upload to `false` (see
-/// WriteSettings.h); this was observed live against RustFS: a publish's manifest CAS raced the GC
-/// fence and the mismatch terminated the server from the upload worker.
-WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
-{
-    WriteSettings ws = tokenProducingWriteSettings();
     ws.s3_check_objects_after_upload_override = false;
     /// Exactly one attempt at the WriteBufferFromS3 layer too: makeSinglepartUpload/
     /// completeMultipartUpload run their OWN retry loop above the S3 client, reissuing the identical
@@ -861,16 +794,14 @@ WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
     ws.s3_max_unexpected_write_error_retries_override = 1;
     /// Exactly one HTTP attempt for every conditional write: the object storage resolves the
     /// profile to its own single-attempt client. A backend that cannot honor it is rejected for
-    /// writable Native mounts by checkConditionalWriteSingleAttemptSupport (fail closed). An
-    /// UNCONDITIONAL token-producing write (resurrection) must NOT inherit this retry policy, which
-    /// is why it uses tokenProducingWriteSettings directly instead of this method.
+    /// writable Native mounts by checkConditionalWriteSingleAttemptSupport (fail closed).
     ws.object_storage_retry_profile = ObjectStorageRetryProfile::SingleAttempt;
     return ws;
 }
 
 /// See the declaration in the header for the policy. Centralizes the generation-vs-ETag attribution
-/// decision that every Native write/copy result path (nativeConditionalPut, NativeStreamingSink,
-/// resurrect, promoteStaged) used to duplicate.
+/// decision for all successful conditional non-blob writes, including create-if-absent artifacts
+/// and conditional replacements.
 ///
 /// The strict Generation-dialect check below is gated on `etag.has_value()`, not merely on
 /// `native_token_type`: `WriteBufferFromS3` unconditionally assigns `object_etag = outcome.GetResult().GetETag()`
@@ -889,20 +820,6 @@ WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
 /// that is not itself a `WriteBufferFromFileBase`, which would silently turn a hard failure back into
 /// a HEAD fallback.
 ///
-/// `promoteStaged`'s caller does NOT get the benefit of that `has_value()` discriminator:
-/// `ConditionalCopyResult::dest_etag` is a plain `String`, not `std::optional<String>`, so it always
-/// converts to a `has_value()` optional here -- there is no "this backend has no write-time-token
-/// concept" case for a copy, and a Generation-dialect `promoteStaged` always takes the strict branch.
-/// That is intentional, not an oversight: a server-side copy response either carries a real generation
-/// or it doesn't, so there is no analogous "local files never report one" structural absence to fall
-/// back from.
-///
-/// One behavior change from this centralization, on the ETag dialect specifically: an empty
-/// `dest_etag` on a successful copy now falls through to a fresh HEAD (same as the write-buffer
-/// callers) instead of being forwarded as `Token{"", ETag}` the way `promoteStaged` used to before this
-/// existed. Keep it this way -- forwarding an empty token into CAS protocol state is worse than one
-/// extra metadata request, and a real AWS-compatible `CopyObject`/`CompleteMultipartUpload` response
-/// essentially never omits the ETag on success, so the extra HEAD is not expected to fire in practice.
 Token ObjectStorageBackend::tokenFromWriteResult(const String & key, const std::optional<String> & etag)
 {
     if (native_token_type == TokenType::Generation && etag.has_value())
@@ -914,7 +831,7 @@ Token ObjectStorageBackend::tokenFromWriteResult(const String & key, const std::
         const Token token = tokenForHead(*etag);
         if (!isValidGenerationTokenValue(token.value))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS on GCS: a token-producing write to {} succeeded but its response carried no "
+                "CAS on GCS: a conditional write to {} succeeded but its response carried no "
                 "valid generation ({}) -- there is no follow-up HEAD to patch this over, so the write "
                 "cannot be attributed to an incarnation",
                 key, *etag);
@@ -946,23 +863,101 @@ PutResult ObjectStorageBackend::putIfAbsent(const String & key, const String & b
     return {PutOutcome::Done, emuWrite(key, bytes, meta)};
 }
 
-WriteSinkPtr ObjectStorageBackend::putIfAbsentStream(const String & key, const ObjectMeta & meta)
+void ObjectStorageBackend::publishBlob(const BlobPublishRequest & request)
 {
-    if (mode == Mode::Native)
+    if (const auto * streaming = std::get_if<StreamingBlobPublication>(&request.publication))
     {
-        /// Same WriteSettings construction as putIfAbsent — the condition rides on the write buffer
-        /// and is checked when finalize completes the object.
-        WriteSettings ws = conditionalWriteSettings();
-        ws.object_storage_write_if_none_match = "*";
-        std::optional<ObjectAttributes> attrs;
-        if (!meta.empty())
-            attrs.emplace(meta.begin(), meta.end());   /// ObjectMeta is the same map type as ObjectAttributes
-        auto buf = object_storage->writeObject(
-            StoredObject(key), WriteMode::Rewrite, attrs, DBMS_DEFAULT_BUFFER_SIZE, ws);
-        return std::make_unique<NativeStreamingSink>(*this, key, std::move(buf));
+        std::unique_ptr<ReadBuffer> payload = streaming->open_payload();
+        if (!payload)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "ObjectStorageBackend::publishBlob: payload source for {} returned no reader",
+                request.destination_key);
+
+        if (mode != Mode::Native)
+        {
+            /// The emulated adapter's writes are whole-body operations. Serialize materialization so
+            /// concurrent publications retain the existing one-body peak-memory bound.
+            std::lock_guard publish_lock(emulatedBlobPublicationMutex());
+
+            String body = streaming->fresh_envelope;
+            blob_publication_detail::BlobPayloadCopyResult copy_result;
+            {
+                WriteBufferFromString out(body, AppendModeTag{});
+                copy_result = blob_publication_detail::copyBlobPayloadBounded(*payload, out, streaming->payload_size);
+                if (copy_result.exact(streaming->payload_size))
+                    out.finalize();
+                else
+                    out.cancel();
+            }
+
+            if (!copy_result.exact(streaming->payload_size))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "ObjectStorageBackend::publishBlob: source yielded {}{} payload bytes for {}, declared {} -- nothing was published",
+                    copy_result.has_excess ? "more than " : "",
+                    copy_result.copied,
+                    request.destination_key,
+                    streaming->payload_size);
+
+            std::lock_guard lock(emu_mutex);
+            emuPublishBlobAtomically(request.destination_key, body);
+            return;
+        }
+
+        /// Ordinary unconditional rewrite: default request mode, retry profile, and multipart policy.
+        /// In particular, generation stores are not restricted by the conditional single-PUT cap.
+        auto out = object_storage->writeObject(
+            StoredObject(request.destination_key),
+            WriteMode::Rewrite,
+            /*attributes=*/std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            WriteSettings{});
+        out->write(streaming->fresh_envelope.data(), streaming->fresh_envelope.size());
+        blob_publication_detail::BlobPayloadCopyResult copy_result;
+        try
+        {
+            copy_result = blob_publication_detail::copyBlobPayloadBounded(*payload, *out, streaming->payload_size);
+        }
+        catch (...)
+        {
+            out->cancel();
+            throw;
+        }
+        if (!copy_result.exact(streaming->payload_size))
+        {
+            out->cancel();
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "ObjectStorageBackend::publishBlob: source yielded {}{} payload bytes for {}, declared {} -- upload aborted, nothing published",
+                copy_result.has_excess ? "more than " : "",
+                copy_result.copied,
+                request.destination_key,
+                streaming->payload_size);
+        }
+        out->finalize();
+        return;
     }
 
-    return std::make_unique<EmulatedBufferedSink>(*this, key, meta);
+    const auto & staged = std::get<VerbatimStagedBlobPublication>(request.publication);
+    if (mode != Mode::Native)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "ObjectStorageBackend::publishBlob: verbatim staged publication requires Native mode");
+
+    WriteSettings write_settings;
+    write_settings.object_storage_copy_mode = ObjectStorageCopyMode::NativeOnly;
+    if (!object_storage->supportsCopyMode(write_settings.object_storage_copy_mode))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "ObjectStorageBackend::publishBlob: object storage {} does not support native-only same-store copy",
+            object_storage->getName());
+
+    object_storage->copyObject(
+        StoredObject(staged.object_key),
+        StoredObject(request.destination_key),
+        getReadSettings(),
+        write_settings);
 }
 
 PutResult ObjectStorageBackend::putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta)
@@ -1092,121 +1087,6 @@ DeleteOutcome ObjectStorageBackend::deleteExact(const String & key, const Token 
     }
     d.kind = DeleteOutcome::Kind::Deleted;
     return d;
-}
-
-PutResult ObjectStorageBackend::promoteStaged(const String & staging_key, const String & blob_key)
-{
-    if (mode != Mode::Native)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ObjectStorageBackend::promoteStaged is Native-mode only (EmulatedSingleProcess has no "
-            "server-side conditional copy and is never selected for S3 staging)");
-
-    /// WRITE-ONCE conditional server-side copy staging -> blob (`If-None-Match:*` on the destination),
-    /// via `IObjectStorage::copyObjectConditional`. `created` ⇒ the destination ETag is the new
-    /// incarnation token; `!created` ⇒ the destination already existed = the "lost the race" 412 signal.
-    /// Counted with the same attempt/outcome counters as every other conditional write
-    /// (`finalizeConditionalWriteInstrumented`'s contract): the copy is a conditional
-    /// create attempt too, and it is initiated by the controlled content-addressed upload path — an
-    /// uncounted attempt would hide SDK-versus-controller retry accounting.
-    /// A resolved `!created` is counted `Unresolved` (the 412 does not prove who created the occupant),
-    /// mirroring the PUT paths.
-    recordConditionalWriteAttemptStarted();
-    ConditionalCopyResult res;
-    try
-    {
-        res = object_storage->copyObjectConditional(
-            StoredObject(staging_key), StoredObject(blob_key), getReadSettings(), conditionalWriteSettings());
-    }
-    catch (const std::exception & e)
-    {
-        recordConditionalWriteOutcome(classifyConditionalWriteResult(e));
-        throw;
-    }
-    recordConditionalWriteOutcome(res.created ? classifyConditionalWriteResult() : CasWriteOutcome::Unresolved);
-    if (!res.created)
-        return {PutOutcome::PreconditionFailed, {}};
-    /// Attribute the token of the incarnation this copy just created -- see tokenFromWriteResult for
-    /// the exact generation-vs-ETag policy (a missing/non-numeric generation is now an exception here
-    /// too, rather than being forwarded blindly as before).
-    return {PutOutcome::Done, tokenFromWriteResult(blob_key, res.dest_etag)};
-}
-
-Token ObjectStorageBackend::resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key,
-                                      const String & fresh_header)
-{
-    if (mode != Mode::Native)
-    {
-        /// EmulatedSingleProcess (local object storage): same unconditional semantics. The body is
-        /// materialized -- the emulated conditional ops are whole-`String` by design -- so resurrections
-        /// are SERIALIZED process-wide by their own mutex: the fan-out may run N resurrect tasks at
-        /// once, and without this the peak would be the SUM of the bodies. One at a time bounds the
-        /// peak to the largest single body, the same guarantee the byte-weighted admission's exclusive
-        /// arm used to give. A dedicated mutex, not `emu_mutex`: the drain may read through the same
-        /// store, and `emu_mutex` guards individual ops inside it.
-        static std::mutex emulated_resurrect_mutex;
-        std::lock_guard resurrect_lock(emulated_resurrect_mutex);
-        String body = fresh_header;
-        {
-            WriteBufferFromString out(body, AppendModeTag{});
-            copyData(payload, out);
-            out.finalize();
-        }
-        if (body.size() - fresh_header.size() != payload_size)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "resurrect: source yielded {} payload bytes for {}, declared {} -- nothing was published",
-                body.size() - fresh_header.size(), blob_key, payload_size);
-        std::lock_guard lock(emu_mutex);
-        return emuWrite(blob_key, body, /*meta=*/{});
-    }
-
-    /// Unconditional overwrite of the condemned body (plain WriteSettings — no If-Match/If-None-Match).
-    /// This is safe by three independent structural properties, not merely "no time to add a
-    /// precondition": (1) the key is content-addressed, so every incarnation ever written under it is
-    /// byte-identical in its PAYLOAD — an overwrite here rotates only the envelope/token; (2) an
-    /// adopted dependency token VALUE is never a promote gate, only `has_value()` is consulted
-    /// (tokenless-on-ref promote), so no consumer can observe or react to the specific bytes of the old
-    /// token; (3) the fresh-tagged `fresh_header` guarantees the resurrected incarnation's token differs
-    /// from the condemned one, so every already-queued exact-token GC delete of the condemned
-    /// incarnation mismatches and misses (`INV-NO-RETURN`). An `If-Match` on the condemned token would
-    /// only save a redundant re-upload on a lost race, never prevent data loss.
-    ///
-    /// This write carries no precondition, but it is still routed through tokenProducingWriteSettings
-    /// rather than plain WriteSettings: it is a token-producing write ("Unconditional token-producing
-    /// write"), so on a generation-token store (GCS) it is bound by the same single-PUT cap a
-    /// CONDITIONAL write is -- GCS drops preconditions on multipart completion regardless of whether
-    /// one was ever set, so an oversized unconditional resurrect could silently multipart-overwrite
-    /// too. ETag-dialect (AWS-compatible) stores are unaffected: tokenProducingWriteSettings only
-    /// forces single-part for the Generation dialect, so resurrect may still take the multipart path
-    /// there, and the payload keeps streaming from `payload` without ever being materialized whole.
-    auto out = object_storage->writeObject(
-        StoredObject(blob_key), WriteMode::Rewrite, /*attributes=*/std::nullopt, DBMS_DEFAULT_BUFFER_SIZE,
-        tokenProducingWriteSettings());
-    out->write(fresh_header.data(), fresh_header.size());
-    const size_t before = out->count();
-    copyData(payload, *out);
-    const size_t streamed = out->count() - before;
-    if (streamed != payload_size)
-    {
-        /// Abort BEFORE finalize: the incomplete multipart upload is discarded and nothing becomes
-        /// current. This is what keeps the unconditional write fail-closed against a source truncated
-        /// after hashing -- a post-write check would run only after the short body had displaced the
-        /// condemned incarnation.
-        out->cancel();
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "resurrect: source yielded {} payload bytes for {}, declared {} -- upload aborted, nothing published",
-            streamed, blob_key, payload_size);
-    }
-    out->finalize();
-
-    /// Attribute the token of the incarnation WE just wrote -- see tokenFromWriteResult for the exact
-    /// generation-vs-ETag policy (no follow-up HEAD on a generation store; the pre-existing
-    /// fail-closed HEAD fallback below is unchanged for dialects with no write-time token at all).
-    const Token token = tokenFromWriteResult(blob_key, out->getResultObjectETag());
-    if (token.empty())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "ObjectStorageBackend::resurrect: blob {} is absent immediately after the resurrect "
-            "re-upload — failing closed", blob_key);
-    return token;
 }
 
 ListPage ObjectStorageBackend::list(const String & prefix, const String & cursor, size_t limit)

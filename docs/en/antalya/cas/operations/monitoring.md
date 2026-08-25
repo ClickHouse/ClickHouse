@@ -36,7 +36,8 @@ subset for a first health pass; the full list groups by object class (`CASBlob*`
 | Metric | Healthy range | A spike or nonzero means |
 |---|---|---|
 | `CASBlobCompareSwapConflict` | Near zero relative to `CASBlobCompareSwap` | Concurrent-update contention on blob metadata |
-| `CASBlobHeadFirst` vs `CASBlobBodyPutAvoided` | `CASBlobBodyPutAvoided` tracks `CASBlobHeadFirst` closely | A widening gap means the dedup `HEAD`-before-`PUT` gate is firing but not finding matches — expected for genuinely new content, worth checking if it dominates |
+| `CASBlobHead` / `CASBlobHeadMiss` | Aggregate present/missing outcomes for every successful backend `HEAD` under `/blobs/`, across writer, `GC`, validation, and other callers | Global totals do not by themselves measure the one-`HEAD` writer budget or diagnose retries; attribute by query and path before drawing either conclusion |
+| `CASBlobBodyPutAvoided` | Safe writer observations increment it when a physical body publication is avoided | Compare with query-attributed writer materialization tasks; the aggregate HEAD counters include unrelated callers |
 | `CASRefAppendWedged` | Zero | A ref-log append lane exhausted its retries after an uncertain `PUT`; ref-log progress on that namespace may be stalled |
 | `CASRefNeedsRecovery` | Zero | A ref-append lane could not install a known-durable transaction and now refuses writes, snapshots, and confirmation until durable replay completes |
 | `CASRefAppendSealRejected` | Occasional (a deposed writer losing a race is the protocol working); sustained growth is not | A writer keeps retrying after losing its mount and does not yet know it |

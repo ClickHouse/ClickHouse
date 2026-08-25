@@ -2385,7 +2385,7 @@ TEST(CASGCFrontierGate, AResurrectedIncarnationSurvivesTheDelayedStaleTokenDelet
     const RootNamespace ns{"00/aa@cas@"};
 
     /// A REAL content-addressed blob, so the writer path below addresses exactly the object GC condemns.
-    const String payload = "frontier-gate-resurrect-payload";
+    const String payload = "frontier-gate-republish-payload";
     const DB::UInt128 hash = u128Of(payload);
     const BlobRef id = idOf(payload);
     const String key = layout.blobKey(id);
@@ -2416,11 +2416,17 @@ TEST(CASGCFrontierGate, AResurrectedIncarnationSurvivesTheDelayedStaleTokenDelet
     /// A writer now adopts the blob through the REAL admit gate. It point-reads the Condemned meta,
     /// refuses to adopt the dying incarnation, and rematerializes from its OWN source bytes -- never by
     /// reading the condemned object. The key ends up holding a DIFFERENT incarnation.
-    auto build = store->beginPartWrite({});
+    PartWriteInfo info;
+    info.intended_ref = ns.string() + "/republished";
+    auto build = store->beginPartWrite(info);
+    const ManifestId republished_manifest
+        = build->stageManifest({blobEntryFor("data.bin", hash, payload.size())});
+    build->precommitAdd(ns, "republished", republished_manifest);
     const PutBlobResult uploaded = build->putBlob(id, BlobSource::fromString(payload));
     EXPECT_EQ(uploaded.ref, id);
+    build->promote(ns, "republished", build->buildId(), republished_manifest);
     const Token fresh_token = backend->head(key).token;
-    ASSERT_NE(fresh_token, condemned_token) << "a resurrect must displace the condemned incarnation";
+    ASSERT_NE(fresh_token, condemned_token) << "republication must displace the condemned incarnation";
 
     /// GC's delayed delete still names the OLD token. It cannot touch the new object.
     drive(store, gc, /*rounds*/ 2, UniversePolicy::Authoritative);

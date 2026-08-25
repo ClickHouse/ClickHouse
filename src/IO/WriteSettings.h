@@ -20,6 +20,14 @@ enum class ObjectStorageRetryProfile : uint8_t
     SingleAttempt,
 };
 
+/// Per-copy transport requirement, resolved by the object storage that executes the copy.
+/// `NativeOnly` requires a provider-native same-store copy and forbids a client-side fallback.
+enum class ObjectStorageCopyMode : uint8_t
+{
+    Default,
+    NativeOnly,
+};
+
 /// Per-request GCS conditional-dialect opt-in, carried alongside the write itself so it survives
 /// into the object storage request that ends up on the wire (see `RequestWithNativeConditionalMode`).
 /// NativeConditional: this write is content-addressed-storage-owned and may use GCS generation
@@ -84,6 +92,9 @@ struct WriteSettings
     /// Selects the retry profile the object storage should execute this write under; see
     /// ObjectStorageRetryProfile.
     ObjectStorageRetryProfile object_storage_retry_profile = ObjectStorageRetryProfile::Default;
+
+    /// Selects the transport requirement for an object storage copy; see `ObjectStorageCopyMode`.
+    ObjectStorageCopyMode object_storage_copy_mode = ObjectStorageCopyMode::Default;
 
     /// Selects the object storage request mode this write should carry; see ObjectStorageRequestMode.
     ObjectStorageRequestMode object_storage_request_mode = ObjectStorageRequestMode::Default;

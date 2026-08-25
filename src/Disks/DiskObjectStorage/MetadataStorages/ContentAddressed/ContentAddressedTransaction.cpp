@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasBlobEnvelopeFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileView.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -43,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -178,10 +180,10 @@ void ContentAddressedTransaction::cleanupPendingTempFiles() noexcept
                 /// A successful commit deletes the S3 staging object
                 /// HERE — `committed` is only ever true when EVERY part's `publishStaging` ran to
                 /// completion (commit() sets it right before this call), which means every referenced
-                /// pending blob was already promoted (`PartWriteTxn::putBlob` → `promoteStaged`/`resurrect`)
+                /// pending blob was already materialized (`PartWriteTxn::putBlob` → `publishBlob`)
                 /// or, for an orphaned pending blob (its entry removed by `unlinkFile`/`replaceFile`
                 /// before commit), was never going to be promoted at all — either way the staging object
-                /// is no longer needed as a resurrect source, so it is safe to reclaim now.
+                /// is no longer needed as a re-readable publication source, so it is safe to reclaim now.
                 ///
                 /// An ABORTED/exception-unwound transaction (`committed == false`, including a partial
                 /// multi-part commit failure where an EARLIER part's blobs were already promoted) leaves
@@ -190,7 +192,7 @@ void ContentAddressedTransaction::cleanupPendingTempFiles() noexcept
                 /// (`Cas::sweepOwnMountStaging`), never here. This mirrors the local path's own asymmetry:
                 /// `Local` staging is a private per-transaction scratch file removed unconditionally on
                 /// both commit and abort (nobody else can ever read it), whereas an `S3` staging object
-                /// is the sanctioned resurrect source for the promote gate and must outlive an aborted
+                /// is the sanctioned re-readable source for publication and must outlive an aborted
                 /// transaction so a later attempt (or the sweeper) can still account for it.
                 try
                 {
@@ -226,20 +228,19 @@ void ContentAddressedTransaction::adoptStagedBlob(
 {
     if (pb)
     {
-        /// Pending blob (not yet uploaded): record a tokenless dependency without any pool operation.
-        /// If copy_pending, push a copy of the pb record into dst_st so publishStaging uploads it
+        /// Pending blob (not yet uploaded): no dependency exists until publication succeeds. If
+        /// copy_pending, push a copy of the pb record into dst_st so publishStaging uploads it
         /// for the dst part too (hardlink = copy semantics). If !copy_pending, the record is already
         /// in dst_st (moved by caller) — skip the push.
         if (copy_pending)
             dst_st.pending_blobs.push_back(*pb);
-        dst_build.recordPendingBlobDep(entry.ref, entry.blob_size);
     }
     else
     {
-        /// Uploaded / committed: record a tokenless W-EVIDENCE dep — no pool HEAD/GET before precommit.
+        /// Uploaded / committed: record trusted-manifest evidence — no pool HEAD/GET before precommit.
         /// §4 manifest-trust: the publish gate (promote) TRUSTS this committed-source adopted leaf via the
-        /// durable manifest edge — it does NOT observe/resurrect it. Only tokened / pending-upload leaves
-        /// are resurrected (by putBlob, before promote); a genuinely-absent adopted blob is an fsck finding.
+        /// durable manifest edge — it does not observe or republish it. Pending uploads establish
+        /// `Materialized` through `putBlob` before promote; a genuinely absent adopted blob is an fsck finding.
         dst_build.adoptEvidence(entry);
     }
 }
@@ -267,14 +268,10 @@ void ContentAddressedTransaction::uploadPendingBlobs(PartStaging & st)
     /// Build one upload request per referenced pending blob. Duplicate refs (staged-hardlink copies push
     /// a copy of the record) are collapsed by `fanOutBlobUploads`' grouping, which SUBSUMES the former
     /// duplicate-membership filter here — the fan-out launches one task per unique ref and merges one
-    /// dep. The upload primitive differs by staging backend exactly as before:
-    ///   - `Cas::StagingBackend::Local`: `open` re-reads the local staged temp file and streams
-    ///     it into a write-once `putIfAbsentStream` create; the local-staging path remains byte-for-byte
-    ///     compatible with its previous behavior.
-    ///   - `Cas::StagingBackend::S3`: the bytes already live in an S3 staging object (`pb.staging_key`);
-    ///     `server_side_copy_from` drives a WRITE-ONCE conditional SERVER-SIDE COPY (and an unconditional
-    ///     resurrect copy FROM the staging object for a condemned incarnation). No local read-back —
-    ///     `open` is left unset.
+    /// dep. Local staging re-opens the payload file directly. S3 staging owns a complete
+    /// `[envelope][payload]` object: the first publication after an absent destination may copy that
+    /// object verbatim, while every other publication re-opens it, validates and skips its fixed
+    /// envelope, and streams only the payload under a fresh envelope.
     std::vector<Cas::BlobUploadRequest> requests;
     requests.reserve(st.pending_blobs.size());
     for (const auto & pb : st.pending_blobs)
@@ -286,6 +283,34 @@ void ContentAddressedTransaction::uploadPendingBlobs(PartStaging & st)
         if (pb.backend == Cas::StagingBackend::S3)
         {
             source.server_side_copy_from = pb.staging_key;
+            const Cas::PoolPtr store = metadata_storage.store();
+            const std::string staging_key = pb.staging_key;
+            const uint64_t header_len = store->poolMeta().blob_header_len;
+            const uint64_t payload_size = pb.size;
+            source.open = [store, staging_key, header_len, payload_size]() -> std::unique_ptr<ReadBuffer>
+            {
+                auto staged = store->backend().getStream(staging_key);
+                if (!staged)
+                    throw Exception(
+                        ErrorCodes::FILE_DOESNT_EXIST,
+                        "CAS staging object {} disappeared before retagged blob publication",
+                        staging_key);
+
+                String encoded_header(header_len, '\0');
+                staged->stream->readStrict(encoded_header.data(), encoded_header.size());
+                const Cas::EnvelopeHeader decoded = Cas::decodeEnvelopeHeader(
+                    encoded_header,
+                    header_len + payload_size,
+                    Cas::ObjectKind::Blob);
+                if (decoded.header_len != header_len)
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "CAS staging object {} uses envelope length {}, expected {}",
+                        staging_key,
+                        decoded.header_len,
+                        header_len);
+                return std::move(staged->stream);
+            };
         }
         else
         {
@@ -398,14 +423,14 @@ void ContentAddressedTransaction::publishStaging(const Cas::RootNamespace & ns, 
 
     /// Write path (rev. 15): stage the part manifest body (mints a ManifestId), precommitAdd a
     /// build-intent owner (closure now protected by reachability), upload the pending blobs, then
-    /// promote — an atomic owner move that revalidates every non-tokened blob fail-closed.
+    /// promote — an atomic owner move that validates every blob dependency proof fail-closed.
     ///
     /// ORDERING IS LOAD-BEARING (EDGE-BEFORE-OBSERVE):
     /// precommitAdd's durable closure names EVERY blob hash BEFORE putBlob makes the first backend
-    /// observation. This is what lets promote skip re-validating tokened leaves (a condemnation in the
+    /// observation. This is what lets promote skip re-validating `Materialized` leaves (a condemnation in the
     /// putBlob→promote window cannot graduate — the next fold sees the edge). Moving putBlob before
     /// precommitAdd would adopt an incarnation with no protecting edge and
-    /// trips the EDGE-BEFORE-OBSERVE fail-closed throw in PartWriteTxn::observeAndAdmit; the TLA+ order
+    /// trips the durable-precommit guard in `PartWriteTxn::ensureBlobPresent`; the TLA+ order
     /// sabotage (Gate A) is the formal guard.
     const Cas::ManifestId id = st.build->stageManifest(st.entries);
     st.build->precommitAdd(ns, ref, id);
@@ -702,13 +727,13 @@ void ContentAddressedTransaction::stageBlobPartFile(
     const ContentAddressedMetadataStorage::Route & route,
     const Cas::BlobRef & ref, size_t size, const std::string & staging_key, Cas::StagingBackend backend)
 {
-    /// Do not upload here. Record the pending blob (uploaded post-precommit in publishStaging)
-    /// and a tokenless dependency; putBlob later overwrites it with the tokened dependency.
+    /// Do not upload here. Record the pending blob for post-precommit publication; dependency state
+    /// remains absent until the upload succeeds and its result is merged.
     /// The staging bytes are kept (the transaction owns them) — a local temp file for
     /// `Cas::StagingBackend::Local`, or an S3 staging object for `Cas::StagingBackend::S3`.
     auto & st = stagingFor(route);
     st.pending_blobs.push_back({ref, staging_key, size, backend});
-    buildFor(route, st).recordPendingBlobDep(ref, size);
+    (void)buildFor(route, st);
 
     Cas::ManifestEntry entry;
     entry.path = route.file;
@@ -722,7 +747,7 @@ void ContentAddressedTransaction::stageBlobPartFile(
 std::string ContentAddressedTransaction::buildS3StagingBlobHeader(
     const ContentAddressedMetadataStorage::Route & route) const
 {
-    /// Mirror `PartWriteTxn::uploadFromSource`'s `buildHeader` (minus the dropped `logical_size`/`logical_hash`
+    /// Mirror `PartWriteTxn::ensureBlobPresent`'s fresh-envelope construction (minus the dropped `logical_size`/`logical_hash`
     /// fields and minus `build_id`, which is not known until commit and is diagnostic-only). A FRESH
     /// `incarnation_tag` per staging object keeps the incarnation zone unique; the header is padded to
     /// the pool's fixed `blob_header_len` so the payload starts at a constant offset.
@@ -855,16 +880,13 @@ std::unique_ptr<WriteBufferFromFileBase> ContentAddressedTransaction::writeFile(
     /// A CONTENT part file that must stay a blob (per-column data/marks, primary.idx): spill + hash,
     /// then stage the blob as PENDING (precommit-first). The blob is NOT uploaded/promoted here;
     /// `publishStaging` uploads it (Local) or promotes the S3 staging object post-precommit.
-    /// recordPendingBlobDep (inside stageBlobPartFile) records a tokenless dependency without any
-    /// pool operation at staging time.
+    /// Staging records no dependency proof and performs no pool operation; successful post-precommit
+    /// publication records `Materialized`.
     if (Cas::partFileMustStayBlob(r->file))
     {
-        /// S3-native staging:
-        /// when this disk opted in (`staging_backend=s3`) AND the mount-time capability probe
-        /// a capability probe proved the object storage enforces write-once conditional copy, stream directly
-        /// to a fresh per-mount S3 staging object while hashing — no local-disk round trip. Otherwise
-        /// (the OFF BY DEFAULT global constraint, or a probe fail-close) fall through to the existing,
-        /// byte-for-byte-unchanged local-temp-file path below.
+        /// When this disk explicitly opts in to `staging_backend=s3`, `startup` has already required
+        /// provider-native same-store copy, so stream directly to a fresh per-mount staging object
+        /// while hashing. The default `local` setting keeps the existing local-temp-file path below.
         /// Hash with this pool's node-local write algorithm rather than a hardcoded city hash;
         /// `PoolMeta` no longer records a single pool-wide algorithm --
         /// mixed-algo pools track `algos_used`; `writeAlgo()` is the write-mint accessor now).
@@ -873,7 +895,7 @@ std::unique_ptr<WriteBufferFromFileBase> ContentAddressedTransaction::writeFile(
         /// parse it back at that SAME width via `Cas::codecFor(hash_algo)` (never a pool-wide
         /// `DigestCodec`, which no longer exists) into a full `BlobRef` pair.
 
-        if (metadata_storage.stagingBackend() == Cas::StagingBackend::S3 && metadata_storage.conditionalCopySupported())
+        if (metadata_storage.stagingBackend() == Cas::StagingBackend::S3)
         {
             const std::string staging_key = metadata_storage.stagingKeyPrefix() + "/" + getRandomASCIIString(32) + ".tmp";
             auto object_sink = metadata_storage.objectStorage()->writeObject(StoredObject(staging_key), WriteMode::Rewrite);
@@ -1156,7 +1178,7 @@ void ContentAddressedTransaction::createHardLink(const std::string & path_from, 
 
     /// Content file. Prefer an entry staged earlier in THIS transaction (the destination PartWriteTxn
     /// re-observes the blob via cold reuse — its own dependency); else carry forward from the
-    /// COMMITTED source part (adoptFromTree: tokenless evidence pinned by the witnessed live
+    /// COMMITTED source part (`TrustedManifest` evidence pinned by the witnessed live
     /// source tree, W-EVIDENCE).
     Cas::ManifestEntry entry;
     if (auto * src_st = findStaging(*src))
@@ -1720,11 +1742,11 @@ void fanOutBlobUploads(
     /// One result slot per unique ref, pre-sized so element addresses are STABLE: each task writes ONLY
     /// its own slot (no data race on the vector) and the vector never reallocates. Declared BEFORE the
     /// runner and the drain guard so it OUTLIVES them — the drain guard joins every scheduled task before
-    /// `results` is destroyed on EVERY path, including a throw raised during the dispatch loop below (the
+    /// `result_slots` is destroyed on EVERY path, including a throw raised during the dispatch loop below (the
     /// B90 lesson, `threadPoolCallbackRunner.h:68`). Tasks capture only owning/value state: a stable slot
     /// pointer, the request by value (its source is captured by value too), and the txn pointer whose
     /// pointee outlives the runner.
-    std::vector<BlobUploadResult> results(grouped.size());
+    std::vector<std::optional<BlobUploadResult>> result_slots(grouped.size());
 
     {
         /// `pool` is disjoint from the S3 writer pool an upload may itself use, and the calling thread
@@ -1740,7 +1762,7 @@ void fanOutBlobUploads(
         /// runner's `enqueueAndKeepTrack`: that helper schedules a task and only THEN appends its handle
         /// to an UNRESERVED tracking vector, so a `bad_alloc` at the append would leave a
         /// scheduled-but-untracked task the runner's destructor cannot join — it would run later against
-        /// the already-destroyed `results`/txn (a use-after-free; codex stage-1 review, Critical).
+        /// the already-destroyed `result_slots`/txn (a use-after-free; codex stage-1 review, Critical).
         /// PRE-RESERVING `handles` to the exact task count makes the append after each schedule a
         /// no-throw operation, so a task is NEVER scheduled without being tracked in the SAME expression.
         std::vector<std::shared_ptr<RunnerTask>> handles;
@@ -1756,7 +1778,7 @@ void fanOutBlobUploads(
         size_t idx = 0;
         for (const auto & [ref, req] : grouped)
         {
-            BlobUploadResult * slot = &results[idx++];
+            std::optional<BlobUploadResult> * slot = &result_slots[idx++];
             BlobUploadRequest task_req = req;
             const BlobUploadFanoutHooksForTest * task_hooks = hooks;
             if (hooks && hooks->on_dispatch)
@@ -1781,8 +1803,21 @@ void fanOutBlobUploads(
         ThreadPoolCallbackRunnerLocal<void>::waitForAllToFinishAndRethrowFirstError(handles);
     }
 
-    /// Every task succeeded (else we rethrew above): fold all results into `build` on this (the owning
-    /// writer) thread, all-or-nothing (`mergeBlobUploadResults` prevalidates, then build-and-swaps).
+    /// Every task succeeded (else we rethrew above). Materialize the joined slots only now, on the
+    /// owning writer thread. A missing slot is an internal fan-out error and fails closed before any
+    /// dependency reaches the build.
+    std::vector<BlobUploadResult> results;
+    results.reserve(result_slots.size());
+    for (auto & slot : result_slots)
+    {
+        if (!slot)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "fanOutBlobUploads: a successful join left an empty result slot");
+        results.emplace_back(std::move(*slot));
+    }
+
+    /// Fold all successful results into `build` all-or-nothing (`mergeBlobUploadResults` prevalidates,
+    /// then build-and-swaps).
     build.mergeBlobUploadResults(results);
 }
 

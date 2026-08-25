@@ -34,10 +34,8 @@ namespace ProfileEvents
 #if USE_AWS_S3
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_EXCEPTION;
 }
 #endif
@@ -687,77 +685,6 @@ TEST(CASRequestControllerBackoff, DefaultBudgetRidesSixtySecondOutage)
     EXPECT_EQ(backend->put_attempts.load(), 11u);
     EXPECT_LT(clock, CasRequestBudget{}.operation_deadline_ms);
 }
-
-/// Availfix review M1: deterministic CALLER/local bugs — `LOGICAL_ERROR` (a broken source),
-/// `NOT_IMPLEMENTED` (a mode/capability guard, e.g. promoteStaged on a backend without a native
-/// conditional copy), `BAD_ARGUMENTS` (a deterministic encode rejection escaping buildHeader's second
-/// encode), `CORRUPTED_DATA` (integrity) — propagate INSTANTLY from the create retry loop: exactly one
-/// attempt, no occupancy resolve, no backoff sleep. Retrying a deterministic failure only replays it
-/// (~12 minutes at the default budget through putBlob's outer loop) and buries the root cause behind a
-/// retryable ABORTED — the exact class the `PutBlobWrongSizeFailsClosed` sweep regression exposed.
-TEST(CASRequestControllerCreate, DeterministicLocalFailuresPropagateInstantly)
-{
-    /// LOGICAL_ERROR aborts the whole process in debug/sanitizer builds instead of behaving like a
-    /// catchable exception, so it's excluded from this loop there --
-    /// CASRequestControllerCreateDeathTest below proves the same instant-propagate contract for it
-    /// positively via EXPECT_DEATH instead.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    const std::vector<int> codes = {DB::ErrorCodes::NOT_IMPLEMENTED, DB::ErrorCodes::BAD_ARGUMENTS, DB::ErrorCodes::CORRUPTED_DATA};
-#else
-    const std::vector<int> codes = {DB::ErrorCodes::LOGICAL_ERROR, DB::ErrorCodes::NOT_IMPLEMENTED,
-                                     DB::ErrorCodes::BAD_ARGUMENTS, DB::ErrorCodes::CORRUPTED_DATA};
-#endif
-    for (const int code : codes)
-    {
-        SCOPED_TRACE("error code " + std::to_string(code));
-        auto backend = std::make_shared<ScriptedControllerBackend>();
-        uint64_t sleeps = 0;
-        int attempts = 0;
-        CasRequestController controller(
-            backend, CasRequestBudget{}, /*now_ms=*/[] { return static_cast<uint64_t>(0); },
-            /*sleep_ms=*/[&](uint64_t) { ++sleeps; });
-
-        bool threw = false;
-        try
-        {
-            controller.conditionalCreateControlled("k",
-                [&]() -> PutResult
-                {
-                    ++attempts;
-                    throw DB::Exception(code, "scripted deterministic local failure");
-                },
-                [] { return true; });
-        }
-        catch (const DB::Exception & e)
-        {
-            threw = true;
-            EXPECT_EQ(e.code(), code) << "the ORIGINAL exception must propagate, not a mapped outcome";
-        }
-        EXPECT_TRUE(threw) << "a deterministic local failure must propagate, never return an outcome";
-        EXPECT_EQ(attempts, 1) << "no reissue: retrying a deterministic failure only replays it";
-        EXPECT_EQ(sleeps, 0u) << "no backoff sleep may be served for a deterministic failure";
-    }
-}
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-/// Debug/sanitizer-build counterpart to DeterministicLocalFailuresPropagateInstantly's LOGICAL_ERROR
-/// case, excluded from that loop above: LOGICAL_ERROR aborts the process here instead of throwing a
-/// catchable exception, so the check must be a death test (same pattern as CASBlobDigestDeathTest in
-/// gtest_cas_blob_digest.cpp).
-TEST(CASRequestControllerCreateDeathTest, LogicalErrorPropagatesInstantlyAborts)
-{
-    auto backend = std::make_shared<ScriptedControllerBackend>();
-    CasRequestController controller(
-        backend, CasRequestBudget{}, /*now_ms=*/[] { return static_cast<uint64_t>(0); },
-        /*sleep_ms=*/[](uint64_t) {});
-    EXPECT_DEATH(
-        {
-            controller.conditionalCreateControlled("k",
-                [&]() -> PutResult { throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "scripted deterministic local failure"); },
-                [] { return true; });
-        }, "");
-}
-#endif
 
 /// Startup validation (RFC §required-timeout-model): a consistent default budget is accepted silently;
 /// either inequality violated on its own is rejected with BAD_ARGUMENTS.

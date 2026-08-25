@@ -264,11 +264,9 @@ void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_le
 /// `INSERT` client. We deliberately kept `NETWORK_ERROR` for now to add zero new coupling to
 /// generic ClickHouse code, consistent with the rest of the CAS layer.
 ///
-/// SCOPE: only the ESCAPING retry-later throws route here (fence lost / write outcome
-/// uncertain / conditional-create Unresolved). The ABORTED values used as internal
-/// control-flow signals (the condemned/vanished "re-upload from source" signal caught
-/// inside putBlob), and the startup/decommission and generic live-lock-brake ABORTEDs,
-/// keep their meaning and are NOT rerouted here.
+/// SCOPE: only the ESCAPING retry-later throws route here (fence lost or a controlled write outcome
+/// remaining uncertain). Startup/decommission and generic live-lock-brake `ABORTED` values keep
+/// their meaning and are not rerouted here.
 [[noreturn]] void throwCasWriteRetryLater(const String & why);
 
 /// Same classification as `throwCasWriteRetryLater`, but returns the exception as a
@@ -307,34 +305,6 @@ std::exception_ptr makeCasWriteRetryLaterExceptionPtr(const String & why);
 /// refused operation (tens of thousands within a single observed lease gap) and every caller already
 /// reports the exception it receives.
 [[noreturn]] void throwCasTransientUnavailable(const String & subject, const String & condition);
-
-/// Outcome of a controlled CONTENT-ADDRESSED conditional create (`conditionalCreateControlled`):
-///   - Committed:  an attempt's own request completed (2xx) and the final fence check held — `token`
-///     names the created incarnation.
-///   - Occupied:   the key holds an object — either a genuine `PreconditionFailed` (a racing twin) or
-///     an earlier ambiguous attempt of THIS operation that actually landed. For a content-addressed
-///     key these are THE SAME situation: the key embeds the content hash, so any occupant is the
-///     intended content (the exact trust model the plain 412-adopt path already relies on) — the
-///     caller runs its ordinary occupant machinery (adopt live / displace condemned).
-///   - Unresolved: budget exhausted or fence lost without a definite outcome — the write may or may
-///     not have landed; the caller must not ACK (a late-landing body is inert unreferenced debris for
-///     the orphan sweep, exactly like a stageManifest Unresolved).
-enum class CasCreateOutcome : uint8_t
-{
-    Committed,
-    Occupied,
-    Unresolved,
-};
-
-/// Result of one `CasRequestController::conditionalCreateControlled` operation. `token` is meaningful
-/// only when `outcome` is `Committed`; it identifies the incarnation created by the successful attempt.
-/// An `Occupied` result deliberately carries no token because the caller must use its normal occupant
-/// handling, whether the occupant was created by a racing writer or by an earlier ambiguous attempt.
-struct CasCreateResult
-{
-    CasCreateOutcome outcome = CasCreateOutcome::Unresolved;
-    Token token;   /// set ONLY on Committed
-};
 
 /// Outcome of a controlled MUTABLE conditional overwrite (`putOverwriteControlled`) -- an If-Match
 /// replace whose caller can, unlike a content-addressed create, supply the intended bytes for
@@ -416,8 +386,8 @@ public:
     /// `sleep_ms_`: the inter-attempt backoff sleep, defaulting to a real `std::this_thread::sleep_for`;
     /// tests inject a recorder/no-op to assert the backoff schedule without wall-clock waits. The
     /// controller only ever sleeps BETWEEN attempts of one logical operation, on the calling thread,
-    /// with no Pool mutex held (every call site — the ref append lane's leader, `stageManifest`, blob
-    /// uploads, snapshot publishes — invokes the controller outside its locks; the append lane's
+    /// with no Pool mutex held (every call site — the ref append lane's leader, `stageManifest`, and
+    /// snapshot publishes — invokes the controller outside its locks; the append lane's
     /// LEADERSHIP is deliberately held across the sleep: same-table appends must queue behind an
     /// unresolved predecessor PUT anyway, preserving the writer's per-table ordering.
     CasRequestController(BackendPtr backend_, CasRequestBudget budget_, std::function<uint64_t()> now_ms_ = {},
@@ -474,37 +444,6 @@ public:
     CasWriteOutcome resolveByExactGet(std::string_view key, std::string_view expected_bytes,
                                       Token * out_token = nullptr);
 
-    /// Controlled conditional create for content-addressed write-once keys whose body CANNOT be
-    /// byte-compared across attempts — the blob-body `putIfAbsentStream` create and `promoteStaged`'s
-    /// conditional server-side copy (`PartWriteTxn::uploadFromSource`). Byte-exact resolve
-    /// (`resolveByExactGet`) is impossible there BY DESIGN: W-FRESH-TAG mints a fresh
-    /// `incarnation_tag` into the envelope header on every re-stream, so two attempts of the same
-    /// logical create legitimately differ in bytes. The identity authority is the KEY itself (it
-    /// embeds algo + content digest), so an uncertain attempt resolves by exact-key OCCUPANCY (one
-    /// HEAD — never a GET of a possibly-multi-GB body, and never a GET-revive):
-    ///   - occupant present  -> Occupied (definite; whether it is our own landed attempt or a twin is
-    ///     immaterial for a content-addressed key — the caller's ordinary 412 machinery takes over)
-    ///   - absent            -> another attempt may be legal (fence/deadline/backoff-gated, same
-    ///     schedule as putIfAbsentControlled); `attempt` re-streams from the caller's REPLAYABLE
-    ///     source — a fresh re-upload, honoring the resurrect invariant
-    ///   - the HEAD fails    -> still ambiguous; reissue is safe (an occupant just answers the reissue
-    ///     with PreconditionFailed -> Occupied on the next round)
-    /// `attempt` performs ONE conditional-create attempt of the same logical content and returns its
-    /// PutResult (Done/PreconditionFailed) or throws. A whitelisted DefiniteFailure classification
-    /// RETHROWS the original exception (the blob lane always surfaced the raw storage error's root
-    /// cause — unlike the ref lane's outcome mapping, nothing here needs the code collapsed), and a
-    /// deterministic LOCAL failure from the attempt — `LOGICAL_ERROR` (e.g. a source streaming a
-    /// different byte count than it declared), `NOT_IMPLEMENTED` (a mode/capability guard),
-    /// `BAD_ARGUMENTS` (a deterministic encode rejection), `CORRUPTED_DATA` (integrity) — propagates
-    /// unchanged too, on the FIRST attempt with no resolve and no backoff: a caller/config bug reissue
-    /// would only replay, never a wire ambiguity.
-    /// A Done attempt gets the final fence check before being reported Committed
-    /// Occupied needs none — it acks nothing of OUR write, and the
-    /// caller's occupant path gates its own adoption.
-    CasCreateResult conditionalCreateControlled(std::string_view key,
-                                                const std::function<PutResult()> & attempt,
-                                                const std::function<bool()> & fence_ok);
-
     /// Controlled If-Match overwrite with resolve-before-reissue, for a MUTABLE marker whose bytes
     /// are deterministic so GET-based resolution can compare them (unlike a content-addressed
     /// create's freshly-minted-per-attempt body). Performs at most `budget.max_attempts` attempts of
@@ -519,10 +458,9 @@ public:
     ///   - neither                                      -> Conflict: a genuine competing write
     ///     landed; returned as a value, never thrown
     ///   - the GET itself fails                         -> still ambiguous; reissue is safe
-    /// A whitelisted `DefiniteFailure` classification, or a deterministic LOCAL failure
-    /// (`isDeterministicLocalFailure`), RETHROWS the original exception -- mirrors
-    /// `conditionalCreateControlled`'s convention, never `putIfAbsentControlled`'s (that method
-    /// predates this convention).
+    /// A whitelisted `DefiniteFailure` classification, or a deterministic local failure
+    /// (`isDeterministicLocalFailure`), rethrows the original exception rather than collapsing it
+    /// into an outcome.
     CasOverwriteResult putOverwriteControlled(std::string_view key, std::string_view bytes,
                                               const Token & expected, const std::function<bool()> & fence_ok);
 
@@ -562,7 +500,7 @@ public:
     /// Pre-attempt gate ONLY: `fence_ok` and the operation deadline are checked ONCE, before the (only)
     /// attempt — a refusal there sends nothing and reports `Unresolved`/`NoAttemptSent`, exactly like
     /// every other controlled op's FIRST iteration. UNLIKE `putIfAbsentControlled` /
-    /// `conditionalCreateControlled` / `putOverwriteControlled` / `putIfAbsentControlledMutable`, there
+    /// `putOverwriteControlled` / `putIfAbsentControlledMutable`, there
     /// is deliberately no POST-write fence recheck here: `fence_ok` is evaluated once per attempt, and
     /// since this primitive makes exactly one attempt, admission-fence discipline across an outer
     /// caller-driven retry (including verifying a `Created`/`Occupied` result is still relevant after
@@ -578,7 +516,7 @@ public:
     ///
     /// A whitelisted synchronous rejection (`classifyConditionalWriteResult`'s `DefiniteFailure`) or a
     /// deterministic local failure (`isDeterministicLocalFailure`) RETHROWS the original exception
-    /// unchanged — the same convention as `conditionalCreateControlled`/`putOverwriteControlled`/
+    /// unchanged — the same convention as `putOverwriteControlled`/
     /// `putIfAbsentControlledMutable` (`SlotOccupyResult::Kind` has no `DefiniteFailure` member to carry
     /// it). Any other exception, or a clean `PreconditionFailed`, is ambiguous and falls through to the
     /// resolve GET identically — this primitive cannot and does not distinguish the two.

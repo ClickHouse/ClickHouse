@@ -75,8 +75,6 @@ static const std::set<std::string> non_cas_keys = {
     DECLARE(String, blob_hash, "cityhash128", "Pool blob content-hash function (cityhash128 | xxh3-128 | sha256); fixed at pool creation", 0) \
     DECLARE(Bool,   blob_hash_allow_new, false, "Explicit opt-in to admit a NEW hash algo into an existing pool's algos_used", 0) \
     DECLARE(Bool,   skip_access_check, false, "Skip the boot-time capability probe (start now, fix later)", 0) \
-    DECLARE(UInt64, deduplication_cache_bytes, 64ULL << 20, "Byte budget of the blob presence cache (0 disables)", 0) \
-    DECLARE(UInt64, deduplication_head_first_min_bytes, 1ULL << 20, "Minimum blob size to try a HEAD before uploading the body", 0) \
     DECLARE(UInt64, gc_snapshot_generations_to_keep, 3, "GC snapshot generations retained", 0) \
     DECLARE(UInt64, gc_shards, 1, "Blob-hash-prefix reducer shards (>= 1); creation-time only", 0) \
     DECLARE(UInt64, manifest_sweep_list_budget_keys, 1000, "Orphan-manifest sweep LIST budget per round", 0) \
@@ -90,7 +88,7 @@ static const std::set<std::string> non_cas_keys = {
     DECLARE(UInt64, gc_round_handoff_prefix_wholesale_budget, 5000, "Post-CAS hand-off generation-prefix reclaim object cap per round, reserved separately from gc_round_prefix_wholesale_budget so a prune-heavy round cannot starve the one-shot hand-off (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_outcome_entry_budget, 5000, "GcOutcomes per-round entry cap across the redelete/spared audit log (0 = unbounded)", 0) \
     DECLARE(String, server_root_id, "", "REQUIRED explicit layout subtree identity; macros expand as in the s3 endpoint", 0) \
-    DECLARE(UInt64, gcs_max_token_producing_put_bytes, 1ULL << 30, "GCS single-PUT budget for every token-producing write, conditional or not (generation-token stores only)", 0) \
+    DECLARE(UInt64, gcs_max_conditional_put_bytes, 1ULL << 30, "GCS single-PUT budget for genuine conditional writes (generation-token stores only)", 0) \
     DECLARE(UInt64, part_folder_cache_bytes, 64ULL << 20, "Part-folder view cache byte budget (0 disables retention)", 0) \
     DECLARE(UInt64, part_folder_cache_max_entries, 10000, "Part-folder view cache entry cap", 0) \
     DECLARE(UInt64, part_folder_cache_max_entry_bytes, 16ULL << 20, "Oversized part-folder views bypass retention above this size", 0) \

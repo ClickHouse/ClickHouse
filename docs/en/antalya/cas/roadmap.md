@@ -20,9 +20,9 @@ a pool; immutable part manifests; a pluggable blob-hash algorithm (`cityhash128`
 `xxh3-128`, or `sha256`) fixed per pool at creation; a JSON-text object format end to end (no
 binary framing, no protobuf) so any object can be read with ordinary line-oriented tools.
 
-**Write path.** Conditional writes (create-if-absent, compare-and-swap) as the only mutual
-exclusion primitive the pool needs; an adaptive HEAD-before-PUT dedup gate; a bounded thread pool
-fanning out multi-blob part uploads in parallel; carry-forward on mutation for `Wide` parts (an
+**Write path.** Conditional writes for mutable metadata/control objects; mandatory blob `HEAD`
+followed by adoption or unconditional, multipart-capable publication; a bounded thread pool
+fanning out multi-blob part materialization in parallel; carry-forward on mutation for `Wide` parts (an
 untouched column is re-referenced, not re-hashed).
 
 **Read path.** Ref resolution to manifest to ranged blob reads, with a manifest-decode cache and
@@ -41,9 +41,11 @@ observation-based reclaim of an expired predecessor (never trusting a foreign bo
 timestamp); clean decommission of a permanently departed pool member
 (`SYSTEM CAS DROP POOL MEMBER`).
 
-**Backends.** AWS S3 (`ETag`-based conditional dialect) and Google Cloud Storage (generation-token
-dialect) both live-validated; a capability probe that runs at every writable mount and refuses to
-proceed on a backend that does not enforce the conditions CAS depends on.
+**Backends.** AWS S3 (`ETag`-based conditional dialect) is validated. Google Cloud Storage's
+generation-token implementation and deterministic tests are complete, but its credentialed
+[real-GCS release gate](/superpowers/cas/unconditional-blob-publication-live-results) has not run. A
+capability probe runs at every writable mount and refuses a backend that does not enforce the
+conditions CAS depends on.
 
 **Operability.** `system.cas_log`, `system.cas_gc_log`, and `system.cas_mounts` for introspection;
 `clickhouse-disks` commands `ca-fsck`, `ca-inspect`, `ca-gc-dryrun`, and `ca-gc-rebuild`; the
@@ -56,15 +58,16 @@ positioning.
 
 ## In progress / planned {#in-progress}
 
-- **Azure real-store validation.** AWS and GCS are live-validated; Azure is not — see
-  [known limitations](#known-limitations) below.
+- **GCS and Azure real-store validation.** The new GCS publication groups still require credentials;
+  Azure has no wired CAS conditional dialect. See [known limitations](#known-limitations) below.
 - **WORM deployments.** A read-only disk mode exists today; a fuller write-once story — a pool
   served immutably, with pinned snapshots for read-only replicas — has a draft design and is not
   yet implemented.
 - **Backup and restore.** See [Backups](#backups) below — this is further along as a design than as
   an implementation.
 - **First-class local-disk pools.** Today a pool over local paths runs a minimal best-effort
-  emulation of the conditional-write dialect (single-process, serialized resurrections). Making the
+  emulation of the token-conditional mutable-object dialect. Blob publication materializes a whole
+  object and is serialized to retain a one-body memory bound. Making the
   local mode efficient in its own right is under consideration: a local CAS tier is a natural target
   for backups, pinned snapshots, and moving data between CAS tiers.
 

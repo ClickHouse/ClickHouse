@@ -147,11 +147,11 @@ TEST(CASObservability, AbandonWithoutPrecommitEmitsNoPrecommitRemoved)
         [](const CasEvent & x){ return x.type == CasEventType::PrecommitRemoved; }), 0);
 }
 
-/// Task 2 (Part A audit fix, 2026-07-08): the resurrect-supersede branch inside `closeBlob`
+/// Task 2 (Part A audit fix, 2026-07-08): the republication-supersede branch inside `closeBlob`
 /// (`CasBlobInDegree.cpp`) used to peek the current token via `head_blob` — the FRESH-CONDEMN
 /// observation hook — which double-emitted `blob_retire` alongside `blob_retire_replaced` and
-/// double-counted `CASGCRetiredCondemned` for what is really ONE physical condemnation (the resurrect
-/// replaced a stale retired entry with the current token). Drives the same condemn-A / resurrect-B /
+/// double-counted `CASGCRetiredCondemned` for what is really one physical condemnation (republication
+/// replaced a stale retired entry with the current token). Drives the same condemn-A / republish-B /
 /// drop-B sequence as `CASGCLeak.ResurrectReplacedIncarnationReclaimed`, then isolates the ONE round
 /// that folds B's create+drop and supersedes A's stale retired entry: that round must emit exactly one
 /// `blob_retire_replaced` (carrying the STALE token A in `detail["superseded_token"]`), ZERO
@@ -163,7 +163,7 @@ TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
     std::vector<CasEvent> seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
     auto s = openPool(b);
     const RootNamespace ns{"test/tbl"};
-    const String P = "resurrect-payload-audit";
+    const String P = "republish-payload-audit";
 
     /// 1. Publish ref r1 -> token A referenced; drop it; ONE GC round condemns A (retired, not deleted).
     publishOneBlobPart(s, ns, "r1", P);
@@ -180,14 +180,14 @@ TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
     {
         const auto lm = DB::Cas::tests::loadMetaForTest(*b, s->layout(), u128Of(P));
         ASSERT_TRUE(lm.has_value() && lm->meta.state == MetaState::Condemned)
-            << "precondition: token A must be condemned before the resurrect";
+            << "precondition: token A must be condemned before republication";
     }
 
     /// 2. RESURRECT: r2 dedup-hits P while A is condemned -> mints a fresh incarnation B; drop it too.
     publishOneBlobPart(s, ns, "r2", P);
     const HeadResult hB = b->head(s->layout().blobKey(idOf(P)));
     ASSERT_TRUE(hB.exists);
-    ASSERT_NE(hB.token.value, hA.token.value) << "resurrect must mint a new incarnation token B";
+    ASSERT_NE(hB.token.value, hA.token.value) << "republication must mint a new incarnation token B";
     s->dropRef(ns, "r2");
     s->renewWatermarkOnce();
 
@@ -223,7 +223,7 @@ TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
     ASSERT_TRUE(replaced_events[0].detail.count("superseded_token"));
     EXPECT_FALSE(replaced_events[0].detail.at("superseded_token").empty());
     EXPECT_EQ(replaced_events[0].detail.at("superseded_token"), hA.token.value)
-        << "superseded_token must name the STALE token (A) the resurrect replaced";
+        << "superseded_token must name the stale token (A) that republication replaced";
 
     EXPECT_EQ(replaced_after - replaced_before, 1u) << "CASGCRetireReplaced increments exactly once";
     EXPECT_EQ(condemned_after - condemned_before, 0u)

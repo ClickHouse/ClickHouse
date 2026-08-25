@@ -49,7 +49,7 @@ Backpressure caps are enforced before the body is written (`Pool/CasPartWriteTxn
 | Total inline bytes | 16 MiB |
 | Largest single inline entry | 1 MiB |
 
-A manifest is written once with a conditional create (`putIfAbsentStream`) and **never rewritten**.
+A manifest is written once with a conditional create (`putIfAbsent`) and **never rewritten**.
 A different object at that key would be an id collision and is `CORRUPTED_DATA`, fail-closed,
 before any owner transition names it. Rewriting a part therefore writes a **new** manifest over
 the **same** blobs and moves the ref in one ref-log record — a repoint, covered in full on the

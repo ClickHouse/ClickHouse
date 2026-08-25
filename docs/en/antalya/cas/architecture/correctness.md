@@ -24,7 +24,8 @@ The full model index (source `.tla` files and proof-run records) lives at
 
 | Model (`docs/superpowers/models/`) | Invariant it proves | Counterexample it caught |
 |---|---|---|
-| `CaIncarnationCore.tla` | `INV_NO_DANGLE`, `INV_NO_LOSS`, `INV_NO_RETURN` — the safety spine for the whole GC core | `sab_unconddelete`: replacing the exact-token delete with an unconditional one lets a stale delete kill the live incarnation a resurrect just wrote |
+| `CaBlobPublishCore.tla` | Split `HEAD` from unconditional publication while preserving logical content, fresh incarnation identity, monotonic `publication_attempted`, fence safety, and readiness only after metadata reconciliation | Eleven sabotage configurations cover condemned adoption, stale exact delete, ambiguous copy/PUT landing, envelope reuse after a later miss, missing precommit/meta reconciliation, fence loss, and wrong-content publication; three witnesses prove the safe paths are reachable |
+| `CaIncarnationCore.tla` | `INV_NO_DANGLE`, `INV_NO_LOSS`, `INV_NO_RETURN` — the safety spine for the whole GC core | `sab_unconddelete`: replacing the exact-token delete with an unconditional one lets a stale delete kill a replacement incarnation |
 | `CaBuildRootPrecommit.tla` | `INV_NO_DANGLE_COMMITTED` — a committed manifest never references an absent blob | Reproduces the dangling-manifest hazard exactly: `WriteBlob → AdoptBlob → BuildDie → GcDelete → Commit` with no presence re-check publishes a manifest over a deleted blob |
 | `CaGcLeaseCore.tla` | `NoFalseSteal` — no leader steals leadership from a live, mid-round incumbent | Without the advisory heartbeat, a frozen `seq` during a round looks identical to a dead leader, and a second leader steals from the alive one |
 | `CaCasMountCore.tla` | Reclaim exclusivity for an expired mount | `sab_wallclockreclaim`: trusting the foreign mount body's wall-clock timestamp (instead of observing a stable token on the reclaimer's own monotonic clock) breaks exclusivity |
@@ -44,12 +45,12 @@ the design leans on both rather than either alone. `TLA+` proves a protocol's co
 line of `C++` exists — the two-coordinate namespace-incarnation proof and the build-root necessity
 proof were both design decisions made this way. The soak, running two `ReplicatedMergeTree`
 replicas against one shared pool under a seeded workload and a seeded fault injector, finds what an
-idealized model necessarily abstracts away: the dangling-manifest hazard and the resurrect-reupload orphan were
+idealized model necessarily abstracts away: the dangling-manifest hazard and the condemned-body replacement orphan were
 both first observed live in `system.cas_log` during soak runs, before either got a focused model. Each
 quiesced soak checkpoint cross-checks `SQL` results against a model oracle and runs
 `clickhouse-disks ca-fsck` plus `ca-gc-dryrun`, asserting `dangling=0`.
 
-The relationship runs in both directions: the resurrect-reupload orphan (`utils/ca-soak` scenario
+The relationship runs in both directions: the historical resurrect-reupload orphan (`utils/ca-soak` scenario
 S30, root-caused via `system.cas_log`) got a focused `TLA+` reproduction that proved the fix and
 was then retired once a deterministic `gtest` (`CASGCLeak.ResurrectReplacedIncarnationReclaimed`)
 covered the same scenario for less ongoing cost — the model did its job as a pre-implementation

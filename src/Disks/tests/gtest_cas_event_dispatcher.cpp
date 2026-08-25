@@ -33,7 +33,6 @@ void publishOneBlobPart(const PoolPtr & s, const String & ns, const String & ref
     PartWriteInfo info;
     info.intended_ref = ns + "/" + ref;
     auto build = s->beginPartWrite(info);
-    build->putBlob(idOf(payload), BlobSource::fromString(payload));
     ManifestEntry e;
     e.path = "data.bin";
     e.placement = EntryPlacement::Blob;
@@ -41,6 +40,7 @@ void publishOneBlobPart(const PoolPtr & s, const String & ns, const String & ref
     e.blob_size = payload.size();
     const ManifestId id = build->stageManifest({e});
     build->precommitAdd(nsr, ref, id);
+    build->putBlob(idOf(payload), BlobSource::fromString(payload));
     build->promote(nsr, ref, build->buildId(), id);
 }
 

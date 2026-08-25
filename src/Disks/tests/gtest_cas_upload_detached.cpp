@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <new>
 #include <vector>
 
@@ -20,25 +21,46 @@ using DB::Cas::tests::condemnMeta;
 using DB::Cas::tests::blobEntryFor;
 using DB::Cas::tests::expectThrowsCode;  // NOLINT(misc-unused-using-decls): only used inside `#ifndef DEBUG_OR_SANITIZER_BUILD` -- unused in a sanitizer build's TU, used in a release build's
 
+namespace ProfileEvents
+{
+extern const Event CASBlobBodyPutAvoided;
+}
+
 namespace DB::ErrorCodes
 {
+extern const int FILE_DOESNT_EXIST;
 extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-/// Open a Pool over `b`. `head_first_min_bytes` steers the HEAD-before-PUT size trigger: the default
-/// (1 MiB) keeps the trigger off for the small test payloads (so a branch is reached only via the dedup
-/// cache), while a value of 1 forces the HEAD-first path for any non-empty blob (the `HeadFirstHit` leg).
-PoolPtr openUploadPool(const std::shared_ptr<InMemoryBackend> & b, uint64_t head_first_min_bytes = (1ULL << 20))
+/// Open a Pool over `b`.
+PoolPtr openUploadPool(const std::shared_ptr<InMemoryBackend> & b)
 {
-    return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-                                    .deduplication_head_first_min_bytes = head_first_min_bytes});
+    return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
 }
 
-/// Stage a one-blob manifest for `payload` and precommit it, so `observeAndAdmit`'s EDGE-BEFORE-OBSERVE
-/// fail-closed check holds on the adopt branches. Returns the build ready for an upload of `idOf(payload)`.
+BlobSource reReadableStagedSource(
+    const BackendPtr & backend, const String & staging_key, uint64_t payload_size, uint64_t header_len)
+{
+    BlobSource source;
+    source.size = payload_size;
+    source.server_side_copy_from = staging_key;
+    source.open = [backend, staging_key, header_len, payload_size]() -> std::unique_ptr<DB::ReadBuffer>
+    {
+        auto staged = backend->getStream(staging_key);
+        if (!staged)
+            throw DB::Exception(DB::ErrorCodes::FILE_DOESNT_EXIST, "staging object {} is absent", staging_key);
+        String encoded_header(header_len, '\0');
+        staged->stream->readStrict(encoded_header.data(), encoded_header.size());
+        (void)decodeEnvelopeHeader(encoded_header, header_len + payload_size, ObjectKind::Blob);
+        return std::move(staged->stream);
+    };
+    return source;
+}
+
+/// Stage a one-blob manifest for `payload` and durably precommit it before materialization.
 PartWriteTxnPtr precommitBuildFor(
     const PoolPtr & s, const RootNamespace & ns, const String & ref, const String & payload)
 {
@@ -79,116 +101,191 @@ std::optional<MetaState> metaStateAt(InMemoryBackend & b, const Layout & layout,
     return lm ? std::optional<MetaState>(lm->meta.state) : std::nullopt;
 }
 
-}
-
-/// dedup-cache hit: the ref is known-present in the dedup cache ⇒ HEAD-first ⇒ present ⇒ adopt.
-/// The returned result is a complete tokened adopt dep with the `DeduplicationCacheHit` outcome; the build's
-/// dep set stays untouched; the backend body/meta match the serial `putBlob` for the same input.
-TEST(CASUploadDetached, DeduplicationCacheHitAdoptsBuildUntouched)
+/// Records only the watched blob lane, so pool-open and precommit traffic cannot obscure the
+/// transaction-level ordering asserted below.
+class ProtocolRecordingBackend final : public InMemoryBackend
 {
-    const RootNamespace ns{"srv1/nsDedup"};
-    const String ref_name = "part";
-    const String payload = "dedup-cache-hit-payload";
-    const BlobRef blob = idOf(payload);
-
-    auto arrange = [&](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
+public:
+    void watch(String blob_key_, String meta_key_)
     {
-        b = std::make_shared<InMemoryBackend>();
-        s = openUploadPool(b);
-        seedPresentBody(*b, s->layout(), s->poolMeta(), blob, payload);
-        writeMetaClean(*b, s->layout(), u128Of(payload), payload.size());
-        s->dedupCacheAdd(blob);
-        build = precommitBuildFor(s, ns, ref_name, payload);
-    };
+        blob_key = std::move(blob_key_);
+        meta_key = std::move(meta_key_);
+        operations.clear();
+        blob_heads = 0;
+        meta_gets = 0;
+        publish_calls = 0;
+        meta_gets_before_first_publish.reset();
+    }
 
-    std::shared_ptr<InMemoryBackend> b1;
-    PoolPtr s1;
-    PartWriteTxnPtr build1;
-    arrange(b1, s1, build1);
-    const String key = s1->layout().blobKey(blob);
+    HeadResult head(const String & key) override
+    {
+        if (key == blob_key)
+        {
+            ++blob_heads;
+            operations.emplace_back("head");
+        }
+        return InMemoryBackend::head(key);
+    }
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    std::optional<GetResult> get(const String & key, Range range) override
+    {
+        if (key == meta_key)
+        {
+            ++meta_gets;
+            operations.emplace_back("meta-get");
+        }
+        return InMemoryBackend::get(key, range);
+    }
 
-    const BlobUploadResult r = build1->uploadBlobDetached(
-        BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
+    void publishBlob(const BlobPublishRequest & request) override
+    {
+        if (request.destination_key == blob_key)
+        {
+            ++publish_calls;
+            operations.emplace_back("publish");
+            if (!meta_gets_before_first_publish)
+                meta_gets_before_first_publish = meta_gets;
+        }
+        InMemoryBackend::publishBlob(request);
+    }
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::DeduplicationCacheHit);
-    EXPECT_EQ(r.ref, blob);
-    EXPECT_EQ(r.dep.kind, ObjectKind::Blob);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.token->value.empty());
-    EXPECT_FALSE(r.dep.adopted);
-    EXPECT_EQ(r.dep.size, payload.size());
+    String blob_key;
+    String meta_key;
+    std::vector<String> operations;
+    size_t blob_heads = 0;
+    size_t meta_gets = 0;
+    size_t publish_calls = 0;
+    std::optional<size_t> meta_gets_before_first_publish;
+};
 
-    /// Build UNTOUCHED: the detached primitive folded no dep.
-    EXPECT_FALSE(build1->depIsTokened(blob));
-
-    /// Serial reference on an identically-arranged world: putBlob folds the dep; end-state matches.
-    std::shared_ptr<InMemoryBackend> b2;
-    PoolPtr s2;
-    PartWriteTxnPtr build2;
-    arrange(b2, s2, build2);
-    const PutBlobResult pr = build2->putBlob(blob, BlobSource::fromString(payload));
-    EXPECT_TRUE(build2->depIsTokened(blob));
-    EXPECT_EQ(pr.size, r.dep.size);
-
-    EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len),
-              logicalPayloadAt(*b2, key, s2->poolMeta().blob_header_len));
-    EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), metaStateAt(*b2, s2->layout(), payload));
-    EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
 }
 
-/// HEAD-first hit (size-triggered, not cached): a present body under the size trigger is adopted with
-/// the `HeadHit` outcome. Distinct from the dedup-cache leg by NOT being in the dedup cache.
-TEST(CASUploadDetached, HeadFirstHitAdopts)
+TEST(CASUploadDetached, FreshMissHeadsThenPublishesWithoutPrepublicationMetaGet)
 {
-    const RootNamespace ns{"srv1/nsHead"};
-    const String ref_name = "part";
-    const String payload = "head-first-hit-payload";
-    const BlobRef blob = idOf(payload);
+    const String payload = "mandatory-head-fresh-miss";
+    const BlobRef ref = idOf(payload);
+    auto backend = std::make_shared<ProtocolRecordingBackend>();
+    auto store = openUploadPool(backend);
+    auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-fresh"}, "part", payload);
+    const String blob_key = store->layout().blobKey(ref);
+    backend->watch(blob_key, store->layout().blobMetaKey(ref));
 
-    auto arrange = [&](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
-    {
-        b = std::make_shared<InMemoryBackend>();
-        s = openUploadPool(b, /*head_first_min_bytes=*/1);   /// force HEAD-first without the dedup cache
-        seedPresentBody(*b, s->layout(), s->poolMeta(), blob, payload);
-        writeMetaClean(*b, s->layout(), u128Of(payload), payload.size());
-        build = precommitBuildFor(s, ns, ref_name, payload);
-    };
+    const BlobUploadResult result = build->uploadBlobDetached(
+        BlobUploadRequest{ref, BlobSource::fromString(payload), payload.size()});
 
-    std::shared_ptr<InMemoryBackend> b1;
-    PoolPtr s1;
-    PartWriteTxnPtr build1;
-    arrange(b1, s1, build1);
-    const String key = s1->layout().blobKey(blob);
-
-    EXPECT_FALSE(build1->depIsTokened(blob));
-
-    const BlobUploadResult r = build1->uploadBlobDetached(
-        BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
-
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::HeadHit);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.adopted);
-    EXPECT_EQ(r.dep.size, payload.size());
-
-    EXPECT_FALSE(build1->depIsTokened(blob));
-
-    std::shared_ptr<InMemoryBackend> b2;
-    PoolPtr s2;
-    PartWriteTxnPtr build2;
-    arrange(b2, s2, build2);
-    build2->putBlob(blob, BlobSource::fromString(payload));
-    EXPECT_TRUE(build2->depIsTokened(blob));
-
-    EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len),
-              logicalPayloadAt(*b2, key, s2->poolMeta().blob_header_len));
-    EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
+    EXPECT_EQ(result.dep.proof, BlobDependencyProof::Materialized);
+    ASSERT_FALSE(backend->operations.empty());
+    EXPECT_EQ(backend->operations.front(), "head");
+    EXPECT_EQ(backend->blob_heads, 1u);
+    EXPECT_EQ(backend->publish_calls, 1u);
+    ASSERT_TRUE(backend->meta_gets_before_first_publish.has_value());
+    EXPECT_EQ(*backend->meta_gets_before_first_publish, 0u);
 }
 
-/// HEAD-first miss, then a live adopt via the conditional-create 412 path, with the meta point-read
-/// finding no meta and backfilling `Clean`. Outcome `HeadMissAdopted`.
-TEST(CASUploadDetached, HeadMissLiveAdoptBackfills)
+TEST(CASUploadDetached, ExistingCleanHeadsAndObservesWithoutPublication)
+{
+    const String payload = "mandatory-head-existing-clean";
+    const BlobRef ref = idOf(payload);
+    auto backend = std::make_shared<ProtocolRecordingBackend>();
+    auto store = openUploadPool(backend);
+    seedPresentBody(*backend, store->layout(), store->poolMeta(), ref, payload);
+    writeMetaClean(*backend, store->layout(), u128Of(payload), payload.size());
+    auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-clean"}, "part", payload);
+    backend->watch(store->layout().blobKey(ref), store->layout().blobMetaKey(ref));
+    const uint64_t avoided_before = ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load();
+
+    const BlobUploadResult result = build->uploadBlobDetached(
+        BlobUploadRequest{ref, BlobSource::fromString(payload), payload.size()});
+
+    EXPECT_EQ(result.dep.proof, BlobDependencyProof::Materialized);
+    ASSERT_FALSE(backend->operations.empty());
+    EXPECT_EQ(backend->operations.front(), "head");
+    EXPECT_EQ(backend->blob_heads, 1u);
+    EXPECT_EQ(backend->meta_gets, 1u);
+    EXPECT_EQ(backend->publish_calls, 0u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load(), avoided_before + 1);
+}
+
+TEST(CASUploadDetached, ExistingBodyWithoutMetadataBackfillsWithoutPublication)
+{
+    const String payload = "mandatory-head-metadata-backfill";
+    const BlobRef ref = idOf(payload);
+    auto backend = std::make_shared<ProtocolRecordingBackend>();
+    auto store = openUploadPool(backend);
+    seedPresentBody(*backend, store->layout(), store->poolMeta(), ref, payload);
+    auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-backfill"}, "part", payload);
+    backend->watch(store->layout().blobKey(ref), store->layout().blobMetaKey(ref));
+
+    const BlobUploadResult result = build->uploadBlobDetached(
+        BlobUploadRequest{ref, BlobSource::fromString(payload), payload.size()});
+
+    EXPECT_EQ(result.dep.proof, BlobDependencyProof::Materialized);
+    ASSERT_FALSE(backend->operations.empty());
+    EXPECT_EQ(backend->operations.front(), "head");
+    EXPECT_EQ(backend->blob_heads, 1u);
+    EXPECT_EQ(backend->meta_gets, 1u);
+    EXPECT_EQ(backend->publish_calls, 0u);
+    const auto meta = loadMetaForTest(*backend, store->layout(), u128Of(payload));
+    ASSERT_TRUE(meta.has_value());
+    EXPECT_EQ(meta->meta.state, MetaState::Clean);
+    EXPECT_EQ(meta->meta.size, payload.size());
+}
+
+TEST(CASUploadDetached, AbsentBodyWithStaleCondemnedPublishesBeforeMetadataRead)
+{
+    const String payload = "mandatory-head-absent-stale-condemned";
+    const BlobRef ref = idOf(payload);
+    auto backend = std::make_shared<ProtocolRecordingBackend>();
+    auto store = openUploadPool(backend);
+    writeMetaClean(*backend, store->layout(), u128Of(payload), payload.size());
+    condemnMeta(*backend, store->layout(), u128Of(payload), 17);
+    auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-stale"}, "part", payload);
+    backend->watch(store->layout().blobKey(ref), store->layout().blobMetaKey(ref));
+
+    const BlobUploadResult result = build->uploadBlobDetached(
+        BlobUploadRequest{ref, BlobSource::fromString(payload), payload.size()});
+
+    EXPECT_EQ(result.dep.proof, BlobDependencyProof::Materialized);
+    ASSERT_FALSE(backend->operations.empty());
+    EXPECT_EQ(backend->operations.front(), "head");
+    EXPECT_EQ(backend->blob_heads, 1u);
+    EXPECT_EQ(backend->publish_calls, 1u);
+    ASSERT_TRUE(backend->meta_gets_before_first_publish.has_value());
+    EXPECT_EQ(*backend->meta_gets_before_first_publish, 0u);
+    EXPECT_GT(backend->meta_gets, 0u) << "the stale marker is read only while reconciling after publication";
+    EXPECT_EQ(metaStateAt(*backend, store->layout(), payload), std::optional<MetaState>(MetaState::Clean));
+}
+
+TEST(CASUploadDetached, PresentCondemnedPublishesFreshAndQueuedOldDeleteMisses)
+{
+    const String payload = "mandatory-head-present-condemned";
+    const BlobRef ref = idOf(payload);
+    auto backend = std::make_shared<ProtocolRecordingBackend>();
+    auto store = openUploadPool(backend);
+    seedPresentBody(*backend, store->layout(), store->poolMeta(), ref, payload);
+    writeMetaClean(*backend, store->layout(), u128Of(payload), payload.size());
+    condemnMeta(*backend, store->layout(), u128Of(payload), 19);
+    auto build = precommitBuildFor(store, RootNamespace{"srv1/protocol-condemned"}, "part", payload);
+    const String blob_key = store->layout().blobKey(ref);
+    const Token condemned_token = backend->head(blob_key).token;
+    backend->watch(blob_key, store->layout().blobMetaKey(ref));
+    const uint64_t avoided_before = ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load();
+
+    const BlobUploadResult result = build->uploadBlobDetached(
+        BlobUploadRequest{ref, BlobSource::fromString(payload), payload.size()});
+
+    EXPECT_EQ(result.dep.proof, BlobDependencyProof::Materialized);
+    ASSERT_FALSE(backend->operations.empty());
+    EXPECT_EQ(backend->operations.front(), "head");
+    EXPECT_EQ(backend->blob_heads, 1u);
+    EXPECT_EQ(backend->publish_calls, 1u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASBlobBodyPutAvoided].load(), avoided_before);
+    EXPECT_EQ(backend->deleteExact(blob_key, condemned_token).kind, DeleteOutcome::Kind::TokenMismatch);
+    EXPECT_TRUE(backend->head(blob_key).exists);
+}
+
+/// A present body with absent metadata is observed and backfilled `Clean` without publication.
+TEST(CASUploadDetached, PresentBodyWithoutMetadataBackfills)
 {
     const RootNamespace ns{"srv1/nsAdopt"};
     const String ref_name = "part";
@@ -198,8 +295,8 @@ TEST(CASUploadDetached, HeadMissLiveAdoptBackfills)
     auto arrange = [&](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
     {
         b = std::make_shared<InMemoryBackend>();
-        s = openUploadPool(b);                        /// default trigger off ⇒ no HEAD-first
-        seedPresentBody(*b, s->layout(), s->poolMeta(), blob, payload);   /// body present, NO meta ⇒ backfill
+        s = openUploadPool(b);
+        seedPresentBody(*b, s->layout(), s->poolMeta(), blob, payload);   /// body present, no meta: backfill
         build = precommitBuildFor(s, ns, ref_name, payload);
     };
 
@@ -210,17 +307,18 @@ TEST(CASUploadDetached, HeadMissLiveAdoptBackfills)
     const String key = s1->layout().blobKey(blob);
 
     ASSERT_FALSE(metaStateAt(*b1, s1->layout(), payload).has_value());   /// precondition: meta absent
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
         BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::HeadMissAdopted);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.adopted);
+    EXPECT_EQ(r.diagnostics.action, BlobMaterializationAction::Observed);
+    EXPECT_EQ(r.diagnostics.reason, std::nullopt);
+    EXPECT_EQ(r.diagnostics.transport, std::nullopt);
+    EXPECT_EQ(r.dep.proof, BlobDependencyProof::Materialized);
     EXPECT_EQ(r.dep.size, payload.size());
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     /// The point-read backfilled a Clean meta.
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
 
@@ -229,15 +327,15 @@ TEST(CASUploadDetached, HeadMissLiveAdoptBackfills)
     PartWriteTxnPtr build2;
     arrange(b2, s2, build2);
     build2->putBlob(blob, BlobSource::fromString(payload));
-    EXPECT_TRUE(build2->depIsTokened(blob));
+    EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
 
     EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len),
               logicalPayloadAt(*b2, key, s2->poolMeta().blob_header_len));
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), metaStateAt(*b2, s2->layout(), payload));
 }
 
-/// Fresh local streaming: nothing present ⇒ the write-once conditional create streams the body and
-/// creates the Clean meta. Outcome `FreshUpload`, a tokened dep sized to the source.
+/// Fresh local streaming: mandatory `HEAD` observes absence, then unconditional publication creates
+/// the body and reconciles `Clean` metadata.
 TEST(CASUploadDetached, FreshLocalStreaming)
 {
     const RootNamespace ns{"srv1/nsFresh"};
@@ -259,19 +357,19 @@ TEST(CASUploadDetached, FreshLocalStreaming)
     const String key = s1->layout().blobKey(blob);
 
     ASSERT_FALSE(b1->head(key).exists);   /// precondition: absent
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
         BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::FreshUpload);
+    EXPECT_EQ(r.diagnostics.action, BlobMaterializationAction::Published);
+    EXPECT_EQ(r.diagnostics.reason, BlobPublicationReason::Absent);
+    EXPECT_EQ(r.diagnostics.transport, BlobPublicationTransport::Streaming);
     EXPECT_EQ(r.ref, blob);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.token->value.empty());
-    EXPECT_FALSE(r.dep.adopted);
+    EXPECT_EQ(r.dep.proof, BlobDependencyProof::Materialized);
     EXPECT_EQ(r.dep.size, payload.size());
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     EXPECT_TRUE(b1->head(key).exists);
     EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len), payload);
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Clean));
@@ -281,7 +379,7 @@ TEST(CASUploadDetached, FreshLocalStreaming)
     PartWriteTxnPtr build2;
     arrange(b2, s2, build2);
     const PutBlobResult pr = build2->putBlob(blob, BlobSource::fromString(payload));
-    EXPECT_TRUE(build2->depIsTokened(blob));
+    EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
     EXPECT_EQ(pr.size, r.dep.size);
 
     /// The envelope's fresh incarnation tag differs per upload, but the LOGICAL payload and meta match.
@@ -290,8 +388,7 @@ TEST(CASUploadDetached, FreshLocalStreaming)
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), metaStateAt(*b2, s2->layout(), payload));
 }
 
-/// S3-native staging promotion: the source carries a server-side-copy descriptor and the blob key is
-/// absent ⇒ a write-once conditional server-side copy creates the blob. Outcome `StagingPromoted`.
+/// A first absent observation with an S3-staged source selects verbatim native copy.
 TEST(CASUploadDetached, S3StagingPromotion)
 {
     const RootNamespace ns{"srv1/nsStaging"};
@@ -313,14 +410,6 @@ TEST(CASUploadDetached, S3StagingPromotion)
         build = precommitBuildFor(s, ns, ref_name, payload);
     };
 
-    auto stagingSource = [&]() -> BlobSource
-    {
-        BlobSource src;
-        src.size = payload.size();
-        src.server_side_copy_from = staging_key;
-        return src;
-    };
-
     std::shared_ptr<InMemoryBackend> b1;
     PoolPtr s1;
     PartWriteTxnPtr build1;
@@ -329,18 +418,21 @@ TEST(CASUploadDetached, S3StagingPromotion)
     const String key = s1->layout().blobKey(blob);
 
     ASSERT_FALSE(b1->head(key).exists);
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
-        BlobUploadRequest{blob, stagingSource(), payload.size()});
+        BlobUploadRequest{
+            blob,
+            reReadableStagedSource(b1, staging_key, payload.size(), s1->poolMeta().blob_header_len),
+            payload.size()});
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::StagingPromoted);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.token->value.empty());
-    EXPECT_FALSE(r.dep.adopted);
+    EXPECT_EQ(r.diagnostics.action, BlobMaterializationAction::Published);
+    EXPECT_EQ(r.diagnostics.reason, BlobPublicationReason::Absent);
+    EXPECT_EQ(r.diagnostics.transport, BlobPublicationTransport::ServerSideCopy);
+    EXPECT_EQ(r.dep.proof, BlobDependencyProof::Materialized);
     EXPECT_EQ(r.dep.size, payload.size());
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     ASSERT_TRUE(b1->head(key).exists);
     /// The server-side copy moved the staging bytes verbatim to the blob key.
     const auto got = b1->get(key);
@@ -352,22 +444,24 @@ TEST(CASUploadDetached, S3StagingPromotion)
     PartWriteTxnPtr build2;
     String staging_bytes2;
     arrange(b2, s2, build2, staging_bytes2);
-    build2->putBlob(blob, stagingSource());
-    EXPECT_TRUE(build2->depIsTokened(blob));
+    build2->putBlob(
+        blob,
+        reReadableStagedSource(b2, staging_key, payload.size(), s2->poolMeta().blob_header_len));
+    EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
 
     const auto got2 = b2->get(key);
     ASSERT_TRUE(got2.has_value());
     EXPECT_EQ(got->bytes, got2->bytes);
 }
 
-/// Condemned-local resurrection: a present body observed condemned via the meta point-read is displaced
-/// by a fresh incarnation streamed from the writer's OWN source (`putOverwrite`), never a read of the
-/// dying object. Outcome `ResurrectedLocal`; the token is refreshed and the meta returns to Clean.
+/// Condemned-local replacement: a present body observed condemned via the metadata point-read is displaced
+/// by a fresh incarnation streamed from the writer's OWN source, never a read of the dying object.
+/// Diagnostics are `Published` + `Condemned` + `Streaming`; the token changes and metadata returns to `Clean`.
 TEST(CASUploadDetached, CondemnedLocalResurrection)
 {
     const RootNamespace ns{"srv1/nsResLocal"};
     const String ref_name = "part";
-    const String payload = "condemned-local-resurrect-payload";
+    const String payload = "condemned-local-republish-payload";
     const BlobRef blob = idOf(payload);
 
     auto arrange = [&](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
@@ -388,17 +482,18 @@ TEST(CASUploadDetached, CondemnedLocalResurrection)
     const Token condemned_token = b1->head(key).token;
 
     ASSERT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Condemned));
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
         BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::ResurrectedLocal);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.adopted);
+    EXPECT_EQ(r.diagnostics.action, BlobMaterializationAction::Published);
+    EXPECT_EQ(r.diagnostics.reason, BlobPublicationReason::Condemned);
+    EXPECT_EQ(r.diagnostics.transport, BlobPublicationTransport::Streaming);
+    EXPECT_EQ(r.dep.proof, BlobDependencyProof::Materialized);
     EXPECT_EQ(r.dep.size, payload.size());
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     /// The condemned incarnation was displaced by a fresh one (token changed) and the meta is Clean again.
     const Token after_token = b1->head(key).token;
     EXPECT_NE(after_token.value, condemned_token.value);
@@ -410,23 +505,23 @@ TEST(CASUploadDetached, CondemnedLocalResurrection)
     PartWriteTxnPtr build2;
     arrange(b2, s2, build2);
     build2->putBlob(blob, BlobSource::fromString(payload));
-    EXPECT_TRUE(build2->depIsTokened(blob));
+    EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
 
     EXPECT_EQ(logicalPayloadAt(*b1, key, s1->poolMeta().blob_header_len),
               logicalPayloadAt(*b2, key, s2->poolMeta().blob_header_len));
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), metaStateAt(*b2, s2->layout(), payload));
 }
 
-/// Condemned-S3 resurrection: a present body observed condemned with an S3 staging source is displaced
-/// by an unconditional server-side copy from the SAME staging object under a fresh-tagged header, never
-/// a read/copy of the condemned blob key. Outcome `ResurrectedS3`.
+/// Condemned-S3 replacement: a present body observed condemned with an S3 staging source is displaced
+/// by an unconditional retagged stream from that writer-owned staging payload, never a read/copy of
+/// the condemned blob key. Diagnostics are `Published` + `Condemned` + `Streaming`.
 TEST(CASUploadDetached, CondemnedS3Resurrection)
 {
     const RootNamespace ns{"srv1/nsResS3"};
     const String ref_name = "part";
-    const String payload = "condemned-s3-resurrect-payload";
+    const String payload = "condemned-s3-republish-payload";
     const BlobRef blob = idOf(payload);
-    const String staging_key = "p/staging/mount1/resurrect.tmp";
+    const String staging_key = "p/staging/mount1/republish.tmp";
 
     auto arrange = [&](std::shared_ptr<InMemoryBackend> & b, PoolPtr & s, PartWriteTxnPtr & build)
     {
@@ -444,14 +539,6 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
         build = precommitBuildFor(s, ns, ref_name, payload);
     };
 
-    auto stagingSource = [&]() -> BlobSource
-    {
-        BlobSource src;
-        src.size = payload.size();
-        src.server_side_copy_from = staging_key;
-        return src;
-    };
-
     std::shared_ptr<InMemoryBackend> b1;
     PoolPtr s1;
     PartWriteTxnPtr build1;
@@ -460,17 +547,21 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
     const Token condemned_token = b1->head(key).token;
 
     ASSERT_EQ(metaStateAt(*b1, s1->layout(), payload), std::optional<MetaState>(MetaState::Condemned));
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
 
     const BlobUploadResult r = build1->uploadBlobDetached(
-        BlobUploadRequest{blob, stagingSource(), payload.size()});
+        BlobUploadRequest{
+            blob,
+            reReadableStagedSource(b1, staging_key, payload.size(), s1->poolMeta().blob_header_len),
+            payload.size()});
 
-    EXPECT_EQ(r.outcome, BlobUploadOutcome::ResurrectedS3);
-    ASSERT_TRUE(r.dep.token.has_value());
-    EXPECT_FALSE(r.dep.adopted);
+    EXPECT_EQ(r.diagnostics.action, BlobMaterializationAction::Published);
+    EXPECT_EQ(r.diagnostics.reason, BlobPublicationReason::Condemned);
+    EXPECT_EQ(r.diagnostics.transport, BlobPublicationTransport::Streaming);
+    EXPECT_EQ(r.dep.proof, BlobDependencyProof::Materialized);
     EXPECT_EQ(r.dep.size, payload.size());
 
-    EXPECT_FALSE(build1->depIsTokened(blob));
+    EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
     /// A fresh incarnation displaced the condemned one (INV-NO-RETURN: fresh tag ⇒ different token).
     const Token after_token = b1->head(key).token;
     EXPECT_NE(after_token.value, condemned_token.value);
@@ -480,17 +571,18 @@ TEST(CASUploadDetached, CondemnedS3Resurrection)
     PoolPtr s2;
     PartWriteTxnPtr build2;
     arrange(b2, s2, build2);
-    build2->putBlob(blob, stagingSource());
-    EXPECT_TRUE(build2->depIsTokened(blob));
+    build2->putBlob(
+        blob,
+        reReadableStagedSource(b2, staging_key, payload.size(), s2->poolMeta().blob_header_len));
+    EXPECT_EQ(build2->dependencyProof(blob), BlobDependencyProof::Materialized);
 
     EXPECT_EQ(metaStateAt(*b1, s1->layout(), payload), metaStateAt(*b2, s2->layout(), payload));
 }
 
 /// `mergeBlobUploadResults` folds N detached results in ONE call to EXACTLY the same deps a serial
 /// putBlob fold would produce. Both worlds run the identical sequence of backend calls (same
-/// precommit, same blobs in the same order), so their independently-minted tokens line up too -- the
-/// merge path adds no backend calls of its own, only in-memory bookkeeping, so a DEEP dep-map
-/// comparison (tokens included) is exact, not just per-ref.
+/// precommit and same blobs in the same order). The merge path adds no backend calls of its own, only
+/// in-memory bookkeeping, so a deep dependency-map comparison is exact.
 TEST(CASUploadDetached, MergeAppliesAllDeps)
 {
     const RootNamespace ns{"srv1/nsMergeAll"};
@@ -513,18 +605,18 @@ TEST(CASUploadDetached, MergeAppliesAllDeps)
     for (const auto & payload : payloads)
     {
         const BlobRef blob = idOf(payload);
-        EXPECT_FALSE(build1->depIsTokened(blob));
+        EXPECT_EQ(build1->dependencyProof(blob), std::nullopt);
         results.push_back(build1->uploadBlobDetached(
             BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()}));
     }
     /// Still untouched before the merge -- uploadBlobDetached folds nothing.
     for (const auto & payload : payloads)
-        EXPECT_FALSE(build1->depIsTokened(idOf(payload)));
+        EXPECT_EQ(build1->dependencyProof(idOf(payload)), std::nullopt);
 
     build1->mergeBlobUploadResults(results);
 
     for (const auto & payload : payloads)
-        EXPECT_TRUE(build1->depIsTokened(idOf(payload)));
+        EXPECT_EQ(build1->dependencyProof(idOf(payload)), BlobDependencyProof::Materialized);
 
     std::shared_ptr<InMemoryBackend> b2;
     PoolPtr s2;
@@ -554,7 +646,7 @@ TEST(CASUploadDetached, MergeFailureLeavesBuildUntouched)
 
     /// A pre-existing folded dep the merge must leave completely alone.
     build->putBlob(idOf(payload_existing), BlobSource::fromString(payload_existing));
-    ASSERT_TRUE(build->depIsTokened(idOf(payload_existing)));
+    ASSERT_EQ(build->dependencyProof(idOf(payload_existing)), BlobDependencyProof::Materialized);
 
     std::vector<BlobUploadResult> results;
     results.push_back(build->uploadBlobDetached(
@@ -574,8 +666,8 @@ TEST(CASUploadDetached, MergeFailureLeavesBuildUntouched)
     EXPECT_THROW(build->mergeBlobUploadResults(results), std::bad_alloc);
 
     EXPECT_EQ(build->depsSnapshotForTest(), pre_merge_snapshot);
-    EXPECT_FALSE(build->depIsTokened(idOf(payload_a)));
-    EXPECT_FALSE(build->depIsTokened(idOf(payload_b)));
+    EXPECT_EQ(build->dependencyProof(idOf(payload_a)), std::nullopt);
+    EXPECT_EQ(build->dependencyProof(idOf(payload_b)), std::nullopt);
 }
 
 /// Duplicate-grouping consistency: two results for the SAME ref with conflicting sizes are rejected
@@ -599,7 +691,7 @@ TEST(CASUploadDetached, MergeValidatesSizes)
 
     const BlobUploadResult r = build->uploadBlobDetached(
         BlobUploadRequest{blob, BlobSource::fromString(payload), payload.size()});
-    ASSERT_FALSE(build->depIsTokened(blob));
+    ASSERT_EQ(build->dependencyProof(blob), std::nullopt);
 
     BlobUploadResult conflicting = r;
     conflicting.dep.size = r.dep.size + 1;   /// same ref, conflicting declared size
@@ -612,7 +704,7 @@ TEST(CASUploadDetached, MergeValidatesSizes)
     });
 
     EXPECT_EQ(build->depsSnapshotForTest(), pre_merge_snapshot);
-    EXPECT_FALSE(build->depIsTokened(blob));
+    EXPECT_EQ(build->dependencyProof(blob), std::nullopt);
 }
 #endif
 

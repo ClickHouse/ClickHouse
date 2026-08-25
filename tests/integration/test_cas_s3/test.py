@@ -6,6 +6,14 @@ cluster = ClickHouseCluster(__file__)
 
 STORAGE_POLICY = "cas_s3"
 NUM_ROWS = 1000
+CAS_PUBLICATION_EVENTS = (
+    "CASBlobBodyPutAvoided",
+    "CASBlobHead",
+    "CASBlobHeadMiss",
+    "CASBlobPut",
+    "CASBlobUploadFanoutTasks",
+    "CASMetaCreateClean",
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,6 +30,24 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def cas_publication_events(node):
+    """Return process-wide CAS publication counters for an isolated before/after budget."""
+    rows = node.query(
+        "SELECT event, value FROM system.events WHERE event IN ({}) FORMAT TSV".format(
+            ", ".join("'{}'".format(event) for event in CAS_PUBLICATION_EVENTS)
+        )
+    )
+    values = {event: 0 for event in CAS_PUBLICATION_EVENTS}
+    for row in rows.splitlines():
+        event, value = row.split("\t")
+        values[event] = int(value)
+    return values
+
+
+def event_delta(before, after):
+    return {event: after[event] - before[event] for event in CAS_PUBLICATION_EVENTS}
 
 
 def test_cas_s3():
@@ -41,12 +67,29 @@ def test_cas_s3():
         )
     )
 
-    # First insert of NUM_ROWS deterministic rows.
+    # First insert of NUM_ROWS deterministic rows. The RustFS lane has no concurrent query writer,
+    # so process-wide ProfileEvents form an exact request budget for this operation.
+    before_fresh = cas_publication_events(node)
     node.query(
         "INSERT INTO cas_test SELECT number, toString(number) FROM numbers({})".format(
             NUM_ROWS
         )
     )
+    fresh = event_delta(before_fresh, cas_publication_events(node))
+    assert fresh["CASBlobUploadFanoutTasks"] > 0, fresh
+    assert (
+        fresh["CASBlobHead"] + fresh["CASBlobHeadMiss"]
+        == fresh["CASBlobUploadFanoutTasks"]
+    ), fresh
+    assert fresh["CASBlobHeadMiss"] == fresh["CASBlobUploadFanoutTasks"], fresh
+    assert fresh["CASBlobBodyPutAvoided"] == 0, fresh
+    assert fresh["CASMetaCreateClean"] == fresh["CASBlobUploadFanoutTasks"], fresh
+    # `CASBlobPut` is namespace/path instrumentation: both the body and its `.meta` sibling live
+    # below `/blobs/`, so a fresh publication contributes exactly those two physical PUTs.
+    assert (
+        fresh["CASBlobPut"]
+        == fresh["CASBlobUploadFanoutTasks"] + fresh["CASMetaCreateClean"]
+    ), fresh
 
     expected_sum = (NUM_ROWS - 1) * NUM_ROWS // 2
     assert int(node.query("SELECT count() FROM cas_test")) == NUM_ROWS
@@ -54,11 +97,23 @@ def test_cas_s3():
 
     # A second identical insert: the row count doubles. Each part's content is identical, so the
     # content-addressed disk deduplicates the blobs, but the logical row count must still double.
+    before_duplicate = cas_publication_events(node)
     node.query(
         "INSERT INTO cas_test SELECT number, toString(number) FROM numbers({})".format(
             NUM_ROWS
         )
     )
+    duplicate = event_delta(before_duplicate, cas_publication_events(node))
+    assert duplicate["CASBlobUploadFanoutTasks"] > 0, duplicate
+    assert (
+        duplicate["CASBlobHead"] + duplicate["CASBlobHeadMiss"]
+        == duplicate["CASBlobUploadFanoutTasks"]
+    ), duplicate
+    assert duplicate["CASBlobHead"] == duplicate["CASBlobUploadFanoutTasks"], duplicate
+    assert duplicate["CASBlobHeadMiss"] == 0, duplicate
+    assert duplicate["CASBlobPut"] == 0, duplicate
+    assert duplicate["CASBlobBodyPutAvoided"] == duplicate["CASBlobHead"], duplicate
+    assert duplicate["CASMetaCreateClean"] == 0, duplicate
     assert int(node.query("SELECT count() FROM cas_test")) == 2 * NUM_ROWS
     assert int(node.query("SELECT sum(id) FROM cas_test")) == 2 * expected_sum
 

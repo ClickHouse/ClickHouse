@@ -102,7 +102,7 @@ public:
     void removeDirectory(const std::string & path) override;
     /// Removes refs, namespace files, and shadow objects while leaving shared CAS objects to GC.
     void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
-    /// Copies an entry between parts, preserving pending staging ownership and tokenless evidence.
+    /// Copies an entry between parts, preserving pending staging ownership and trusted-manifest evidence.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
     /// These filesystem metadata operations are unsupported because CAS metadata is immutable and
     /// object storage exposes neither POSIX timestamps nor mode bits.
@@ -165,8 +165,9 @@ private:
     /// instead of paying one manifest-body HEAD per file. Cleared in `commit()`'s epilogue.
     std::unordered_set<String> force_fresh_validated_refs;
 
-    /// Stage a CONTENT part file as a blob: record the pending upload + a tokenless dependency
-    /// and add/replace its manifest entry. Shared by the streaming-blob path
+    /// Stage a content part file as a blob without recording a dependency proof, and add/replace its
+    /// manifest entry. Successful post-precommit publication later records `Materialized`. Shared by
+    /// the streaming-blob path
     /// (Local or S3-staging, `backend` says which) and the always-Local inline-cap fallback.
     void stageBlobPartFile(const ContentAddressedMetadataStorage::Route & route,
                            const Cas::BlobRef & ref, size_t size, const std::string & staging_key,
@@ -202,16 +203,15 @@ private:
 
     /// Adopts a manifest entry into another part while preserving its storage state. For a pending
     /// blob, `copy_pending` controls whether the staging record is copied (hardlink semantics) or
-    /// has already been moved by the caller; either way the destination records a dependency. For
-    /// an uploaded or committed blob, the destination records tokenless evidence and does not
+    /// has already been moved by the caller; no dependency exists until its upload succeeds. For
+    /// an uploaded or committed blob, the destination records trusted-manifest evidence and does not
     /// perform a pool read before precommit.
     ///
     /// `pb != nullptr` (pending, not yet uploaded):
     ///   - `copy_pending=true`  → push a copy of *pb into dst_st.pending_blobs (hardlink semantics:
     ///     both src and dst upload independently; src's copy is left in place by the caller).
-    ///   - `copy_pending=false` → the pb record is already in dst_st (moved or already there);
-    ///     just record the dep without any additional push.
-    ///   In both cases: dst_build.recordPendingBlobDep(entry.file_hash, entry.file_size).
+    ///   - `copy_pending=false` → the pb record is already in dst_st (moved or already there).
+    ///   In both cases the later successful upload records `Materialized` in the destination build.
     ///
     void adoptStagedBlob(const PartStaging::PendingBlob * pb, const Cas::ManifestEntry & entry,
                          PartStaging & dst_st, Cas::PartWriteTxn & dst_build, bool copy_pending);
@@ -252,7 +252,7 @@ struct BlobUploadFanoutHooksForTest
     /// destructor drains every already-scheduled task before the stack unwinds).
     std::function<void(const BlobRef &)> on_dispatch;
     /// Invoked at the TOP of each pool task (on the pool thread) BEFORE `uploadBlobDetached`, with the
-    /// task's `BlobRef`. Lets a test rendezvous tasks on a latch (concurrent dedup-cache insertion, pool
+    /// task's `BlobRef`. Lets a test rendezvous publication tasks on a latch (shared-source state, pool
     /// saturation) or fail a specific task deterministically, all without a sleep.
     std::function<void(const BlobRef &)> in_task;
     /// Invoked on the DISPATCH thread immediately AFTER a task has been scheduled AND recorded in the
