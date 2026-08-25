@@ -1,0 +1,15 @@
+A one-character punctuation token is data, not a separator
+c0	String					
+c1	String					
+c2	Int64					
+a	-	1
+b	-	2
+A row after the inference sample that stops matching the solution fails instead of reusing the previous row
+CANNOT_READ_ALL_DATA
+A JSON row after the inference sample that omits a key fails instead of reusing the previous row
+CANNOT_READ_ALL_DATA
+An explicit structure narrower than the inferred solution fails instead of reading out of bounds
+INCORRECT_NUMBER_OF_COLUMNS
+An explicit structure of the right width works
+1	2	3
+4	5	6

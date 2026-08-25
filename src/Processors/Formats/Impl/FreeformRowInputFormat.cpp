@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -103,12 +104,19 @@ static FieldMatcher::Result makeFailedResult()
 
 FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_t offset)
 {
+    if (fields.empty())
+        return makeFailedResult();
+
     NamesAndTypesList names_and_types;
     std::vector<String> values;
-    unsigned type_score{0}, score{0};
+    unsigned type_score = 0;
+    unsigned score = 0;
     for (auto & [col, field] : fields)
     {
-        if (field.empty() || (field.size() == 1 && isPunctuationASCII(field[0])))
+        /// An empty field or a field consisting of a single delimiter is a sign that the matcher
+        /// consumed a separator, not data. Only the actual delimiter set is rejected here: other
+        /// one-character punctuation tokens (a `-` placeholder in Apache or syslog logs) are data.
+        if (field.empty() || (field.size() == 1 && (field[0] == ',' || field[0] == ':' || isWhitespaceASCII(field[0]))))
             return makeFailedResult();
 
         auto type = getDataTypeFromField(field);
@@ -417,31 +425,64 @@ bool FreeformFieldMatcher::parseRow()
     if (in->eof() || final_solution.matchers_order.empty())
         return false;
 
-    matched_fields.resize(final_solution.size);
+    /// Every field is reassigned below; a row that stops matching the solution must fail
+    /// instead of silently reusing the previous row's values.
+    matched_fields.assign(final_solution.size, {});
     rules.resize(final_solution.size);
 
+    unsigned assigned_fields = 0;
     for (unsigned col{0}; const auto & i : final_solution.matchers_order)
     {
         skipWhitespacesAndDelimiters(*in);
         auto result = matchers[i]->parseField<false>(*in, col);
-        for (unsigned j{0}; const auto & [name, _] : result.names_and_types)
+        if (!result.ok)
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Row does not match the inferred solution: cannot parse a field with {}",
+                matchers[i]->getName());
+
+        for (size_t j = 0; const auto & [name, _] : result.names_and_types)
         {
             if (!first_row)
             {
+                /// A key not seen in the first row (an extra key of a JSON object) is skipped,
+                /// but `j` still advances: `fields` is parallel to `names_and_types`, and skipping
+                /// a value would shift every following field of this matcher by one.
                 auto it = field_name_to_index.find(name);
                 if (it != field_name_to_index.end())
-                    matched_fields[it->second] = result.fields[j++];
+                {
+                    matched_fields[it->second] = result.fields[j];
+                    ++assigned_fields;
+                }
             }
             else
             {
+                if (col >= final_solution.size)
+                    throw Exception(
+                        ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Row has more fields than the {} fields of the inferred solution",
+                        final_solution.size);
+
                 field_name_to_index[name] = col;
                 rules[col] = matchers[i]->getEscapingRule();
-                matched_fields[col] = result.fields[j++];
+                matched_fields[col] = result.fields[j];
+                ++assigned_fields;
             }
 
+            ++j;
             ++col;
         }
     }
+
+    if (assigned_fields < final_solution.size)
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Row matched only {} out of {} fields of the inferred solution",
+            assigned_fields,
+            final_solution.size);
+
+    if (!in->eof() && *in->position() != '\n')
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Row does not end at a newline after all fields of the inferred solution");
 
     first_row = false;
     skipToNextLineOrEOF(*in);
@@ -472,7 +513,16 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     {
         auto size = matcher.getSolutionLength();
 
-        columns.resize(size);
+        /// `columns` and `serializations` are built from the header the caller provided
+        /// (an explicit structure of `file(...)` or `INSERT ... FORMAT Freeform`), and the
+        /// inferred solution is not obliged to fit it.
+        if (size != columns.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+                "The inferred solution has {} fields per row, while {} columns are expected",
+                size,
+                columns.size());
+
         ext.read_columns.assign(size, false);
         for (unsigned index = 0; index < size; ++index)
             ext.read_columns[index] = readField(index, columns);
