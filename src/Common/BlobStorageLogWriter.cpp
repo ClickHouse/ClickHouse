@@ -1,5 +1,7 @@
 #include <Common/BlobStorageLogWriter.h>
 
+#include <Common/HTTPConnectionInfo.h>
+
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -37,6 +39,12 @@ void BlobStorageLogWriter::addEvent(
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
 
+    /// Which connection carried the request we are about to log. Taken here, at the single funnel
+    /// for every blob storage event, so no call site has to thread it through. Taking clears it:
+    /// a batched delete does one request and logs several events, and only the first of them
+    /// truthfully belongs to that connection.
+    const auto connection = takeCurrentHTTPConnectionInfo();
+
     log->add([&](BlobStorageLogElement & element)
     {
         element.event_type = event_type;
@@ -51,6 +59,17 @@ void BlobStorageLogWriter::addEvent(
         element.local_path = local_path_.empty() ? local_path : local_path_;
         element.data_size = data_size;
         element.elapsed_microseconds = elapsed_microseconds;
+
+        if (connection.has_value)
+        {
+            element.connection_id = connection.id;
+            element.connection_local_port = connection.local_port;
+            element.connection_socket_inode = connection.socket_inode;
+            element.connection_requests = connection.requests_served;
+            element.connection_age_microseconds = connection.age_microseconds;
+            element.connection_idle_microseconds = connection.idle_microseconds;
+        }
+
         element.error_code = error_code;
         element.error_message = error_message;
 
