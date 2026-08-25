@@ -346,6 +346,14 @@ public:
         if (exact_size)
             return *exact_size;
 
+        /// The filter pruned an unknown share of the batch. Every stream asks for an address as soon
+        /// as it starts, so starting more of them than the batch holds forces another batch at once -
+        /// and generating it throws when the first batch already reached the limit, failing a query
+        /// whose surviving addresses were all within it. Only the buffered survivors are known to be
+        /// servable without generating more; never zero, since the pattern is not exhausted.
+        if (filter_dag)
+            return std::max<size_t>(1, batch.size() - batch_index);
+
         /// Not exhausted, so at least one more address exists beyond the batch; the query can never
         /// consume more than the limit anyway.
         const auto total = generator.totalCount();
