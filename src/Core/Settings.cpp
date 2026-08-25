@@ -8646,7 +8646,7 @@ If it is set to true, allow to specify any experimental compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
 Enables the `Quantized` compression codec.
 )", EXPERIMENTAL) \
