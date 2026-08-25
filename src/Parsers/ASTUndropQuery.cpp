@@ -15,9 +15,8 @@ String ASTUndropQuery::getID(char delim) const
 ASTPtr ASTUndropQuery::clone() const
 {
     auto res = make_intrusive<ASTUndropQuery>(*this);
-    res->children.clear();
-    cloneTableOptions(*res);
     cloneOutputOptions(*res);
+    cloneTableOptions(*res);
     return res;
 }
 

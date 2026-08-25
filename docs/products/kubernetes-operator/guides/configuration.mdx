@@ -531,7 +531,7 @@ The set of required keys depends on the running ClickHouse version. `named-colle
 
 ## Additional ports {#additional-ports}
 
-The operator exposes a fixed set of ports on every ClickHouse Pod and its public headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001`/`9002` management, `9363` Prometheus metrics, and the TLS variants `8443`/`9440` when TLS is enabled. The `interserver` and management ports are additionally exposed through the per-replica internal Services so replicas and the operator can communicate before a replica becomes ready. To make ClickHouse listen on additional protocols — MySQL, PostgreSQL, gRPC, or any custom port — declare them in `spec.additionalPorts`:
+The operator exposes a fixed set of ports on every ClickHouse Pod and its headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` Prometheus metrics, and the TLS variants `8443`/`9440` when TLS is enabled. To make ClickHouse listen on additional protocols — MySQL, PostgreSQL, gRPC, or any custom port — declare them in `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -544,8 +544,7 @@ spec:
       port: 9100
 ```
 
-The operator adds those ports to the Pod's `containerPorts` and the public headless Service.
-The complete example lives at [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+The operator adds those ports to the Pod's `containerPorts` and to the headless Service. The complete example lives at [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
 `additionalPorts` only opens the ports on the Kubernetes side. It does **not** configure the ClickHouse server to listen on them. You also have to enable the matching protocol in `spec.settings.extraConfig.protocols`. Without that, the port is open on the Service but nothing inside the pod is answering.
@@ -569,7 +568,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the public headless Service.
+  # 1) Open the port on the Pod and the headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -882,12 +881,6 @@ spec:
 ```
 
 When enabled, the operator synchronizes Replicated and integration tables to new replicas.
-
-Every replica Pod carries the `clickhouse.com/ReplicaInitialized` readiness gate, so a new replica is published through the public headless Service only after the operator completes its initialization: the `default` database is converted to the Replicated engine and the schema is synchronized. Until then, the operator and the other replicas reach it through its internal Service. With `enableDatabaseSync: false`, the operator marks replicas initialized immediately, so readiness follows the container probes alone.
-
-The operator never drops a populated non-Replicated `default` database. Such a replica still starts serving client traffic after schema preparation, but the cluster reports `SchemaInSync=False` with reason `DefaultDatabaseNotReplicated` until you resolve that database yourself.
-
-Before a replica is removed on scale-down, the operator first unloads client traffic from it, waits until it stops being published, replicates its remaining data to the surviving replicas, and only then deletes it.
 
 ### Server logging {#server-logging}
 

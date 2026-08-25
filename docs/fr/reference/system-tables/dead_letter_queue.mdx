@@ -11,11 +11,11 @@ doc_type: 'reference'
   ## Description
 </div>
 
-Contient des informations sur les messages reçus via un moteur de streaming et dont l’analyse a produit des erreurs. Actuellement implémenté pour Kafka et RabbitMQ.
+Contient des informations sur les messages reçus via un moteur de streaming et dont l’analyse a généré des erreurs. Actuellement implémenté pour Kafka et RabbitMQ.
 
 La journalisation est activée en définissant `dead_letter_queue` pour le paramètre `handle_error_mode` spécifique au moteur.
 
-La période de vidage des données est définie par le paramètre `flush_interval_milliseconds` dans la section des [paramètres serveur `dead_letter_queue`](/fr/reference/settings/server-settings/settings/other#dead_letter_queue). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
+La période de vidage des données est définie par le paramètre `flush_interval_milliseconds` dans la section des [paramètres serveur `dead_letter_queue`](/fr/reference/settings/server-settings/settings#dead_letter_queue). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
 
 ClickHouse ne supprime pas automatiquement les données de la table. Consultez [Introduction](/fr/reference/system-tables/overview#system-tables-introduction) pour plus de détails.
 

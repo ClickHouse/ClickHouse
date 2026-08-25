@@ -42,7 +42,6 @@ int mainEntryExampleIntervalTree(int argc, char ** argv);
 int mainEntryExampleEncryptDecrypt(int argc, char ** argv);
 int mainEntryExampleCheckPointerValid(int argc, char ** argv);
 int mainEntryExampleMemoryTrackerBenchmark(int argc, char ** argv);
-int mainEntryExampleRSeqVsAtomicBenchmark(int argc, char ** argv);
 int mainEntryExampleUtf8UpperLower(int argc, char ** argv);
 int mainEntryExampleCompressedBuffer(int argc, char ** argv);
 int mainEntryExampleDecompressPerf(int argc, char ** argv);

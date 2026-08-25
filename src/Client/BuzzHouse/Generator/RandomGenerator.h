@@ -41,12 +41,7 @@ private:
     std::uniform_int_distribution<uint32_t> dist4;
     std::uniform_int_distribution<uint32_t> date_years;
     std::uniform_int_distribution<uint32_t> datetime_years;
-    /// Absolute years, unlike the two above, because `Date32` starts at year 0. It spans
-    /// [0000, 9999], but the date LUT only covers [1900, 2299] and everything else takes the
-    /// cctz escape path, so draw from the two windows separately - a uniform draw over ten
-    /// millennia would leave the LUT range, which most queries actually use, at 4% of values.
-    std::uniform_int_distribution<uint32_t> date32_years;
-    std::uniform_int_distribution<uint32_t> date32_lut_years;
+    std::uniform_int_distribution<uint32_t> datetime64_years;
     std::uniform_int_distribution<uint32_t> months;
     std::uniform_int_distribution<uint32_t> hours;
     std::uniform_int_distribution<uint32_t> minutes;
@@ -145,8 +140,7 @@ public:
         , dist4(UINT32_C(1), UINT32_C(2))
         , date_years(0, 2149 - 1970)
         , datetime_years(0, 2106 - 1970)
-        , date32_years(0, 9999)
-        , date32_lut_years(1900, 2299)
+        , datetime64_years(0, 2299 - 1900)
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
@@ -340,9 +334,8 @@ public:
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
     String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
-    /// Scale-dependent range: up to [0001-01-01, 9999-12-31] for scale <= 7, narrower for
-    /// higher scales (the ticks are Int64 in units of 10^-scale seconds)
-    String nextDateTime64(const String & separator, bool allow_func, uint32_t scale);
+    /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
+    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)

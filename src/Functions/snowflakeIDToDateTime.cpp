@@ -176,13 +176,13 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
 {
     /// snowflakeIDToDateTime documentation
     FunctionDocumentation::Description description_snowflakeIDToDateTime = R"(
-Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](/reference/data-types/datetime).
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).
     )";
     FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime = "snowflakeIDToDateTime(value[, epoch[, time_zone]])";
     FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime = {
         {"value", "Snowflake ID.", {"UInt64"}},
         {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}},
-        {"time_zone", "Optional. [Timezone](/reference/settings/server-settings/settings/other#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime = {"Returns the timestamp component of `value`.", {"DateTime"}};
     FunctionDocumentation::Examples examples_snowflakeIDToDateTime = {
@@ -206,13 +206,13 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
     /// snowflakeIDToDateTime64 documentation
     FunctionDocumentation::Description description_snowflakeIDToDateTime64 = R"(
-Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](/reference/data-types/datetime64).
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).
     )";
     FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime64 = "snowflakeIDToDateTime64(value[, epoch[, time_zone]])";
     FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime64 = {
         {"value", "Snowflake ID.", {"UInt64"}},
         {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}},
-        {"time_zone", "Optional. [Timezone](/reference/settings/server-settings/settings/other#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime64 = {"Returns the timestamp component of `value` as a `DateTime64` with scale = 3, i.e. millisecond precision.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_snowflakeIDToDateTime64 = {

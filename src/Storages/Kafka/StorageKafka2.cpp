@@ -7,7 +7,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -42,7 +41,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -57,7 +55,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -120,25 +117,16 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
     extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
-    extern const KafkaSettingsString kafka_partition_shard_num;
-    extern const KafkaSettingsUInt64 kafka_shard_count;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
 
 namespace fs = std::filesystem;
 
-namespace FailPoints
-{
-extern const char kafka2_remove_zk_before_get_children[];
-extern const char kafka2_remove_zk_before_final_multi[];
-}
-
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
 extern const int QUERY_NOT_ALLOWED;
 extern const int ABORTED;
 extern const int REPLICA_ALREADY_EXISTS;
@@ -167,7 +155,7 @@ StorageKafka2::StorageKafka2(
     , fs_keeper_path(keeper_path)
     , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
-    , macros_info{.table_id = table_id_, .shard = getContext()->getMacros()->tryGetValue("shard")}
+    , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
@@ -187,8 +175,6 @@ StorageKafka2::StorageKafka2(
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
     kafka_settings->sanityCheck(getContext());
-    parsePartitionAffinitySettings();
-
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -207,20 +193,17 @@ StorageKafka2::StorageKafka2(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
 
-    if (!getContext()->getMessageQueueDisableInsertion())
-    {
-        const auto first_replica = createTableIfNotExists();
+    const auto first_replica = createTableIfNotExists();
 
-        if (!first_replica)
-            createReplica();
-    }
+    if (!first_replica)
+        createReplica();
 
-    activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -399,10 +382,9 @@ void StorageKafka2::activateAndReschedule()
 
 void StorageKafka2::assertActive() const
 {
-    /// The table becomes inactive at any moment when the Keeper session expires and `partialShutdown` runs,
-    /// racing with direct reads and MV streaming, so this is an expected runtime condition, not a logical error.
+    // TODO(antaljanosbenjamin): change LOGICAL_ERROR to something sensible
     if (!is_active)
-        throw Exception(ErrorCodes::ABORTED, "Table is not active (replica path: {})", replica_path);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table is not active (replica path: {})", replica_path);
 }
 
 
@@ -578,12 +560,6 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
-    if (getContext()->getMessageQueueDisableInsertion())
-    {
-        LOG_INFO(log, "Streaming to views is disabled");
-        return;
-    }
-
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
@@ -596,7 +572,7 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, partition_shard_num, shard_count);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -631,50 +607,6 @@ void StorageKafka2::shutdown(bool)
 void StorageKafka2::drop()
 {
     dropReplica();
-}
-
-void StorageKafka2::parsePartitionAffinitySettings()
-{
-    const auto & raw_partition_shard_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
-    const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
-
-    /// Neither setting specified - affinity disabled.
-    if (raw_partition_shard_num.empty() && shard_count_val == 0)
-        return;
-
-    /// Both must be specified together (enforced by KafkaSettings::sanityCheck).
-    if (raw_partition_shard_num.empty() || shard_count_val == 0)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together "
-            "(this should have been caught by sanityCheck)");
-
-    /// Validate macro expansion produces a valid integer.
-    const auto & expanded = getContext()->getMacros()->expand(raw_partition_shard_num, macros_info);
-    if (expanded.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' expanded to an empty string after macro substitution (original: '{}')",
-            raw_partition_shard_num);
-
-    UInt64 parsed = 0;
-    if (!tryParse(parsed, expanded))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' must be a valid non-negative integer after macro expansion, got '{}'",
-            expanded);
-
-    if (parsed < 1 || parsed > shard_count_val)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' ({}) must be between 1 and 'kafka_shard_count' ({}) inclusive",
-            parsed,
-            shard_count_val);
-
-    partition_shard_num = parsed;
-    shard_count = shard_count_val;
-
-    LOG_INFO(log, "Partition affinity enabled: partition_shard_num={}, shard_count={}", partition_shard_num, shard_count);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
@@ -803,10 +735,9 @@ bool StorageKafka2::createTableIfNotExists()
         const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
         ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
 
-        // Create the first replica - store shard_num as znode data when affinity is enabled
+        // Create the first replica
         ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
-        const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path, replica_data, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
 
 
         Coordination::Responses responses;
@@ -837,22 +768,13 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 {
     bool completely_removed = false;
 
-    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_get_children);
-
     Strings children;
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
-    {
-        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
-        /// allowing another process to complete the removal. The table is completely gone.
-        LOG_WARNING(log, "Table {} was already removed from Keeper, looks like a concurrent operation removed it", keeper_path);
-        return true;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
 
     for (const auto & child : children)
         if (child != "dropped")
             keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
-
-    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_final_multi);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -863,14 +785,10 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 
     if (code == Coordination::Error::ZNONODE)
     {
-        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
-        /// allowing another process to complete the removal or create a new table.
-        LOG_WARNING(
-            log,
-            "Table {} was not completely removed from Keeper, some nodes were already removed by a concurrent operation",
-            keeper_path);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -898,8 +816,7 @@ void StorageKafka2::createReplica()
     LOG_INFO(log, "Creating replica {}", replica_path);
     // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
     // metadata about the table to be able to identify that the same table is created, not a new one.
-    const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
-    const auto code = keeper->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
+    const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
 
     switch (code)
     {
@@ -913,21 +830,6 @@ void StorageKafka2::createReplica()
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} was suddenly removed", keeper_path);
         default:
             throw Coordination::Exception::fromPath(code, replica_path);
-    }
-
-    if (code == Coordination::Error::ZNODEEXISTS)
-    {
-        String stored_data;
-        if (keeper->tryGet(replica_path, stored_data))
-        {
-            if (stored_data != replica_data)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot create replica: the stored shard num '{}' does not match the current value '{}'. "
-                    "Changing kafka_partition_shard_num for an existing table is not supported; "
-                    "use a different kafka_keeper_path for a new shard assignment",
-                    stored_data, replica_data);
-        }
     }
 }
 
@@ -1096,8 +998,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         {
             auto elapsed_ns = watch.elapsed();
 
-            /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
-            if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
+            if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
                 return false;
         }
 
@@ -1187,7 +1088,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element =
+                    dead_letter_queue->add(
                         DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
@@ -1200,7 +1101,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
                                 .offset = msg_info.currentOffset(),
-                                .key = msg_info.currentKey()}}; });
+                                .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -1447,8 +1348,8 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     /// schedules them so that Query A holds consumer 0 and waits for consumer 1 while Query B
     /// holds consumer 1 and waits for consumer 0, we get a deadlock. The timeout breaks it
     /// by failing one of the queries, allowing the other to proceed.
-    auto acquire_timeout
-        = saturatedMilliseconds((*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
+    auto acquire_timeout = std::chrono::milliseconds(
+        (*kafka_settings)[KafkaSetting::kafka_consumer_acquire_timeout_ms].totalMilliseconds());
     auto deadline = std::chrono::steady_clock::now() + acquire_timeout;
 
     /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock

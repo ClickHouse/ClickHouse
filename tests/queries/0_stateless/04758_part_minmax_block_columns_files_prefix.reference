@@ -1,4 +1,0 @@
-fresh_mutation	p,_block_number,_block_offset	prefix=1
-widened_setting	p,_block_number,_block_offset	prefix=1
-legacy_repair	p,_block_number	prefix=1
-merged_legacy_repair	p,_block_number	prefix=1

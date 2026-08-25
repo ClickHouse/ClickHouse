@@ -96,21 +96,20 @@ Connect to your AlloyDB instance as an admin user and execute the following comm
 
 ## Configure network access {#configure-network-access}
 
-Next, choose how ClickPipes will connect to your AlloyDB instance.
+<Note>
+ClickPipes doesn't support Private Service Connect (PSC) connections. If you don't allow public access to your AlloyDB instance, you can [use an SSH tunnel](#configure-network-access) to connect securely. PSC will be supported in the future.
+</Note>
+
+Next, you must allow connections to your AlloyDB instance from ClickPipes.
 
 <Tabs>
-<Tab title="Use Private Service Connect">
-
-For private connectivity from a ClickHouse Cloud service hosted on GCP, follow the [GCP Private Service Connect guide](/integrations/clickpipes/networking/gcp-psc) to configure a reverse private endpoint for your AlloyDB instance.
-
-</Tab>
 <Tab title="Allow ClickPipes IPs">
 
 1. In the Google Cloud Console, navigate to the AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) page. Select your primary instance to open the **Overview** page.
 
 2. Scroll down to **Instances in your cluster** and click **Edit primary**.
 
-3. Check the **Enable Public IP** checkbox to allow connections to the instance over the public internet. Under **Authorized external networks**, enter the [list of ClickPipes static IP addresses](/integrations/clickpipes/networking/static-ips) for the region your service is deployed in.
+3. Check the **Enable Public IP** checkbox to allow connections to the instance over the public internet. Under **Authorized external networks**, enter the [list of ClickPipes static IP addresses](/integrations/clickpipes/home#list-of-static-ips) for the region your service is deployed in.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="Configure networking for public access with an IP allowlist" size="lg" border/>
 
@@ -131,7 +130,7 @@ If you don't allow public access to your AlloyDB instance, you must first set up
    - Ensure the GCE instance is in the same Virtual Private Network (VPC) as your AlloyDB instance.
    - Ensure the GCE instance has a [static public IP address](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address). You’ll use this IP address when connecting ClickPipes to your SSH bastion host.
 
-2. Update the firewall rules of the SSH bastion host to allow traffic from the [list of ClickPipes static IP addresses](/integrations/clickpipes/networking/static-ips) for the region your service is deployed in.
+2. Update the firewall rules of the SSH bastion host to allow traffic from the [list of ClickPipes static IP addresses](/integrations/clickpipes/home#list-of-static-ips) for the region your service is deployed in.
 
 3. Update the firewall rules of AlloyDB to allow traffic from the SSH bastion host.
 

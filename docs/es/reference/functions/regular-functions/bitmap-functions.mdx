@@ -166,7 +166,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 Introducido en: v20.1.0
 
-Crea un bitmap a partir de un array de enteros. Los tipos de elementos compatibles son enteros con signo y sin signo de 8, 16, 32 o 64 bits. Es la operación inversa de la función [`bitmapToArray`](/es/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
+Crea un bitmap a partir de un array de enteros sin signo. Es la operación inversa de la función [`bitmapToArray`](/es/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
 
 **Sintaxis**
 
@@ -176,7 +176,7 @@ bitmapBuild(array)
 
 **Argumentos**
 
-* `array` — Array de enteros. [`Array((U)Int*)`](/es/reference/data-types/array)
+* `array` — Array de enteros sin signo. [`Array(UInt*)`](/es/reference/data-types/array)
 
 **Valor devuelto**
 
@@ -194,18 +194,6 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
-```
-
-**Bitmap con signo**
-
-```sql title=Query
-SELECT bitmapBuild([-128, -1]::Array(Int8)) AS res, toTypeName(res);
-```
-
-```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([-128, -1]::Array(Int8)))─┐
-│     │ AggregateFunction(groupBitmap, Int8)             │
-└─────┴──────────────────────────────────────────────────┘
 ```
 
 <div id="bitmapCardinality">
@@ -250,7 +238,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 Introducido en: v20.1.0
 
-Comprueba si el bitmap contiene un elemento específico. El valor se compara como un entero sin signo del tipo de elemento del bitmap. En los bitmaps con signo, un elemento negativo coincide con su equivalente sin signo (por ejemplo, el valor `Int8` `-1` coincide con `255`).
+Comprueba si el bitmap contiene un elemento específico.
 
 **Sintaxis**
 
@@ -272,18 +260,6 @@ Devuelve `1` si el bitmap contiene el valor especificado; de lo contrario, `0` [
 
 ```sql title=Query
 SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│  1  │
-└─────┘
-```
-
-**Bitmap con signo**
-
-```sql title=Query
-SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
 ```
 
 ```response title=Response
@@ -370,7 +346,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 Introducido en: v20.1.0
 
-Devuelve el elemento de mayor valor de un bitmap, interpretado como un entero sin signo del tipo de elemento del bitmap. En los bitmaps con signo, los valores negativos se tratan como sus equivalentes sin signo (por ejemplo, el valor `-1` de `Int8` es `255`). Devuelve `0` si el bitmap está vacío.
+Devuelve la posición del bit activado de mayor valor en un bitmap, o `0` si el bitmap está vacío.
 
 **Sintaxis**
 
@@ -380,11 +356,11 @@ bitmapMax(bitmap)
 
 **Argumentos**
 
-* `bitmap` — Objeto bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction).
+* `bitmap` — Objeto de bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction).
 
 **Valor devuelto**
 
-Devuelve el elemento mayor como un valor sin signo del tipo de elemento del bitmap, o `0` si el bitmap está vacío [`UInt64`](/es/reference/data-types/int-uint)
+Devuelve la posición del bit activado más alto en el bitmap; de lo contrario, `0` [`UInt64`](/es/reference/data-types/int-uint)
 
 **Ejemplos**
 
@@ -400,25 +376,13 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
-**Bitmap con signo**
-
-```sql title=Query
-SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 255 │
-└─────┘
-```
-
 <div id="bitmapMin">
   ## bitmapMin
 </div>
 
 Introducido en: v20.1.0
 
-Devuelve el elemento más pequeño de un bitmap, interpretado como un entero sin signo del tipo de elemento del bitmap. En los bitmaps con signo, los valores negativos se tratan como sus equivalentes sin signo (por ejemplo, el valor `-128` de tipo `Int8` equivale a `128`). Si el bitmap está vacío, devuelve `UINT32_MAX` (`UINT64_MAX` si el tipo de elemento del bitmap tiene más de 32 bits).
+Devuelve la posición del bit activado más pequeño en un bitmap. Si no hay ningún bit activado, devuelve `UINT32_MAX` (`UINT64_MAX` si el bitmap contiene más de `2^64` bits).
 
 **Sintaxis**
 
@@ -432,7 +396,7 @@ bitmapMin(bitmap)
 
 **Valor devuelto**
 
-Devuelve el elemento más pequeño como un valor sin signo del tipo de elemento del bitmap, o `UINT32_MAX`/`UINT64_MAX` si el bitmap está vacío [`UInt64`](/es/reference/data-types/int-uint)
+Devuelve la posición del bit activado de menor valor en el bitmap, o `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/es/reference/data-types/int-uint)
 
 **Ejemplos**
 
@@ -445,18 +409,6 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
-└─────┘
-```
-
-**Bitmap con signo**
-
-```sql title=Query
-SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 128 │
 └─────┘
 ```
 
@@ -538,7 +490,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 Introducido en: v20.1.0
 
-Devuelve un subconjunto del bitmap que contiene elementos en el rango de valores `[start, end)`. Los valores de los elementos se comparan como enteros sin signo del tipo de elemento del bitmap.
+Devuelve un subconjunto del bitmap que contiene solo los bits activados en el rango especificado [start, end). Usa indexación basada en 1.
 
 **Sintaxis**
 
@@ -552,7 +504,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **Valor devuelto**
 
-Devuelve un bitmap que contiene solo los elementos en el rango de valores especificado [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
+Devuelve un bitmap que contiene solo los bits activados en el rango especificado [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
 
 **Ejemplos**
 
@@ -574,7 +526,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 Introducido en: v20.1.0
 
-Devuelve un subconjunto de como máximo `cardinality_limit` elementos cuyos valores son mayores o iguales que `range_start`, seleccionando los menores valores en orden sin signo.
+Devuelve un subconjunto de un bitmap a partir de la posición `range_start`, con un máximo de `cardinality_limit` bits activos. Utiliza indexación desde 1.
 
 **Sintaxis**
 
@@ -588,19 +540,19 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Valor devuelto**
 
-Devuelve un bitmap que contiene como máximo `cardinality_limit` elementos con un valor sin signo igual o superior a `range_start` [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
+Devuelve un bitmap que contiene como máximo `cardinality_limit` bits activados, a partir de `range_start` [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
 
 **Ejemplos**
 
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
 ```
 
 ```response title=Response
 ┌─res────┐
-│ [3, 5] │
+│ [5, 3] │
 └────────┘
 ```
 
@@ -610,7 +562,7 @@ SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3
 
 Introducido en: v20.1.0
 
-Convierte un bitmap en un array de sus elementos. El tipo de elemento del array coincide con el tipo de elemento `T` del bitmap (entero con o sin signo). Es la función opuesta a [`bitmapBuild`](/es/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
+Convierte un bitmap en un array de enteros sin signo. Es la función opuesta a [`bitmapBuild`](/es/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
 
 **Sintaxis**
 
@@ -624,7 +576,7 @@ bitmapToArray(bitmap)
 
 **Valor devuelto**
 
-Devuelve un array de los elementos contenidos en el bitmap [`Array(T)`](/es/reference/data-types/array)
+Devuelve un Array de enteros sin signo contenidos en el bitmap [`Array(UInt*)`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -640,29 +592,13 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────────────────┘
 ```
 
-**Bitmap con signo**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
-```
-
-```response title=Response
-┌─res────────┐
-│ [-128, -1] │
-└────────────┘
-```
-
 <div id="bitmapTransform">
   ## bitmapTransform
 </div>
 
 Introducido en: v20.1.0
 
-Reemplaza elementos de un bitmap según una correspondencia entre `from_array` y `to_array`.
-Los valores se interpretan como enteros sin signo del tipo de elemento del bitmap (el mismo dominio que [`bitmapContains`](/es/reference/functions/regular-functions/bitmap-functions#bitmapContains)).
-En los bitmaps con signo, un elemento negativo coincide con su equivalente sin signo (por ejemplo, el valor `Int8` `-1` coincide con `255`).
-Un valor de `to_array` que no cabe en el tipo de elemento del bitmap genera `BAD_ARGUMENTS`. Un valor de `from_array`
-que no cabe simplemente no se encuentra, por lo que no se aplica el reemplazo correspondiente.
+Cambia hasta N bits de un bitmap sustituyendo los valores de bits específicos de `from_array` por los correspondientes de `to_array`.
 
 **Sintaxis**
 
@@ -672,7 +608,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **Argumentos**
 
-* `bitmap` — Objeto bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction). - `from_array` — Array de bits activados originales que se van a reemplazar. [`Array(T)`](/es/reference/data-types/array). - `to_array` — Array de nuevos bits activados con los que se realizará el reemplazo. [`Array(T)`](/es/reference/data-types/array).
+* `bitmap` — Objeto bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction). - `from_array` — Array de bits activados originales que se van a reemplazar. [`Array(T)`](/es/reference/data-types/array). - `to_array` — Array de nuevos bits activados con los que se reemplazarán. [`Array(T)`](/es/reference/data-types/array).
 
 **Valor devuelto**
 
@@ -690,18 +626,6 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ┌─res───────────────┐
 │ [1, 3, 5, 20, 40] │
 └───────────────────┘
-```
-
-**Bitmap con signo**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
-```
-
-```response title=Response
-┌─res─────┐
-│ [0, 10] │
-└─────────┘
 ```
 
 <div id="bitmapXor">
@@ -782,7 +706,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 Introducido en: v21.9.0
 
-Devuelve un subconjunto del bitmap tras omitir `offset` elementos en orden ascendente de valores sin signo. La cardinalidad máxima del bitmap devuelto es `cardinality_limit`.
+Devuelve un subconjunto del bitmap a partir de la posición `offset`. La cardinalidad máxima del bitmap devuelto es `cardinality_limit`.
 
 **Sintaxis**
 
@@ -792,11 +716,11 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Argumentos**
 
-* `bitmap` — Objeto bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction). - `offset` — Número de bits activados que se omiten desde el principio (indexado desde cero). [`UInt32`](/es/reference/data-types/int-uint) - `cardinality_limit` — Número máximo de bits activados que se incluirán en el subconjunto. [`UInt32`](/es/reference/data-types/int-uint)
+* `bitmap` — Objeto bitmap. [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction). - `offset` — Número de bits activados que se omiten desde el inicio (indexado desde cero). [`UInt32`](/es/reference/data-types/int-uint) - `cardinality_limit` — Número máximo de bits activados que se incluirán en el subconjunto. [`UInt32`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
-Devuelve un bitmap que contiene como máximo `cardinality_limit` elementos tras omitir `offset` elementos en orden ascendente de valores sin signo [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
+Devuelve un bitmap que contiene como máximo `limit` bits activados, tras omitir `offset` bits activados en orden ascendente [`AggregateFunction(groupBitmap, T)`](/es/reference/data-types/aggregatefunction)
 
 **Ejemplos**
 

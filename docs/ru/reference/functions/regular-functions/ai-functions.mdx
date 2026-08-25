@@ -9,123 +9,112 @@ doc_type: 'reference'
 Функции ИИ — это встроенные функции ClickHouse, которые можно использовать для вызова ИИ или генерации эмбеддингов при работе с данными, извлечении информации, классификации данных и т. д.
 
 <Note>
-  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions).
+  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings#allow_experimental_ai_functions).
+</Note>
 
+<Note>
   Функции ИИ могут возвращать непредсказуемые результаты. Результат во многом зависит от качества промпта и используемой модели.
 </Note>
 
-<Warning>
-  **Внедрение промпта**
-
-  Входной текст отправляется модели и может влиять на её вывод (внедрение промпта). Текст из внешних, непроверенных или неочищенных источников может содержать инструкции, из-за которых модель вернёт содержимое, контролируемое злоумышленником, проигнорирует требуемый формат или создаст вредоносную полезную нагрузку. Считайте вывод функции ИИ недоверенным: проверяйте или очищайте его перед использованием на последующих этапах, таких как построение SQL, команд оболочки, дальнейших запросов или принятие решений по контролю доступа.
-</Warning>
-
 Все функции используют общую инфраструктуру, которая обеспечивает:
 
-* **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
-* **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings/ai-function#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## Конфигурация
 </div>
 
-Функции ИИ используют **именованную коллекцию**, в которой хранятся учётные данные провайдера и параметры конфигурации. Для разных функций или их вызовов можно создавать и использовать разные именованные коллекции. Например, для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) и функций эмбеддингов (`aiEmbed`, `aiSimilarity`) можно определить отдельные именованные коллекции, так как им требуются разные конечные точки и обычно разные модели.
+Функции ИИ получают учетные данные провайдера и конфигурацию из [**именованной коллекции**](/ru/concepts/features/configuration/server-config/named-collections). Чтобы указать именованную коллекцию, которую следует использовать для учетных данных, используйте настройку [`ai_function_credentials`](/ru/reference/settings/session-settings#ai_function_credentials).
 
-Пример оператора для создания именованной коллекции с учётными данными провайдера: одна — с конечной точкой для чата, другая — с конечной точкой для эмбеддингов:
+Пример оператора для создания именованной коллекции с учетными данными провайдера:
 
 ```sql
-CREATE NAMED COLLECTION ai_text_credentials AS
+CREATE NAMED COLLECTION my_ai_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
-
--- The embedding functions (`aiEmbed`, `aiSimilarity`) do not read `model` from the named collection,
--- pass it as a positional argument instead. Defining `model` in an embedding collection is an error,
--- not silently ignored.
-CREATE NAMED COLLECTION ai_embedding_credentials AS
-    provider = 'openai',
-    endpoint = 'https://api.openai.com/v1/embeddings',
-    api_key = 'sk-...';
 ```
+
+Выберите коллекцию, указав настройку `ai_function_credentials`, для сеанса или отдельного запроса:
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+Когда `ai_function_credentials` пуст (по умолчанию), возникает исключение.
 
 <div id="named-collection-parameters">
   ### Параметры именованной коллекции
 </div>
 
-| Параметр      | Тип    | По умолчанию | Описание                                                                                                                                                                                                                                       |
-| ------------- | ------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`    | String | —            | Провайдер модели. Поддерживаются: `'openai'`, `'anthropic'`. См. примечание ниже.                                                                                                                                                              |
-| `endpoint`    | String | —            | URL конечной точки API.                                                                                                                                                                                                                        |
-| `model`       | String | —            | Имя модели (например, `'gpt-4o-mini'`). Используется текстовыми функциями; функции эмбеддингов (`aiEmbed`, `aiSimilarity`) требуют `model` в качестве позиционного аргумента и возвращают ошибку, если `model` указан в именованной коллекции. |
-| `api_key`     | String | —            | Ключ аутентификации для провайдера. Необязательно: если параметр не указан, заголовок аутентификации не отправляется, что позволяет использовать OpenAI-совместимые серверы, не требующие аутентификации.                                      |
-| `max_tokens`  | UInt64 | `1024`       | Максимальное количество выходных токенов на один вызов API.                                                                                                                                                                                    |
-| `api_version` | String | —            | Строка версии API. Используется в Anthropic (`'2023-06-01'`).                                                                                                                                                                                  |
+| Параметр      | Тип    | По умолчанию | Описание                                                                                                                                                                                                  |
+| ------------- | ------ | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`    | String | —            | Провайдер модели. Поддерживаются: `'openai'`, `'anthropic'`. См. примечание ниже.                                                                                                                         |
+| `endpoint`    | String | —            | URL конечной точки API.                                                                                                                                                                                   |
+| `model`       | String | —            | Имя модели (например, `'gpt-4o-mini'`, `'text-embedding-3-small'`).                                                                                                                                       |
+| `api_key`     | String | —            | Ключ аутентификации для провайдера. Необязательно: если параметр не указан, заголовок аутентификации не отправляется, что позволяет использовать OpenAI-совместимые серверы, не требующие аутентификации. |
+| `max_tokens`  | UInt64 | `1024`       | Максимальное количество выходных токенов на один вызов API.                                                                                                                                               |
+| `api_version` | String | —            | Строка версии API. Используется в Anthropic (`'2023-06-01'`).                                                                                                                                             |
 
 <Note>
   Любой API, совместимый с OpenAI (например, vLLM, Ollama, LiteLLM), можно использовать, если задать `provider = 'openai'` и указать в `endpoint` конечную точку вашего сервиса.
 </Note>
 
-<div id="selecting-credentials">
-  ### Выбор учетных данных
-</div>
-
-Функция определяет именованную коллекцию, которую следует использовать, в следующем порядке:
-
-1. ключ `credentials` из её карты параметров, если он указан;
-2. в противном случае — соответствующую настройку учетных данных по умолчанию:
-   * [`ai_function_text_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`);
-   * [`ai_function_embedding_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) для функций эмбеддингов (`aiEmbed`, `aiSimilarity`).
-
-Если не задано ни то ни другое, вызов завершится ошибкой. Для текстовых функций и функций эмбеддингов используются разные настройки по умолчанию, поскольку конечная точка для chat-completions отличается от конечной точки для эмбеддингов.
-
-```sql
-SET ai_function_text_default_credentials = 'ai_text_credentials';
-
--- Uses ai_text_credentials from the setting:
-SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
-
--- Overrides the default for this call:
-SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
-```
-
-Фильтруйте строки по условию на естественном языке с помощью `aiFilter`, которая возвращает `UInt8` и может использоваться непосредственно в предложении `WHERE`:
-
-```sql
-SELECT * FROM reviews
-WHERE aiFilter(body, 'the customer is angry about shipping');
-```
-
-<div id="parameter-map">
-  ### Карта параметров
-</div>
-
-Каждая функция принимает необязательный завершающий `Map(String, String)` с параметрами. Все значения — строки (числа заключайте в кавычки, например `'0.2'`). Неизвестные ключи отклоняются. Если ключ указан, он переопределяет соответствующее значение из именованной коллекции; если ключ отсутствует, используется значение из именованной коллекции (для `model`/`max_tokens`) или встроенное значение по умолчанию. Исключение — функции эмбеддингов (`aiEmbed`, `aiSimilarity`): в них `model` передаётся как обязательный позиционный аргумент (например, `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`), и если вместо этого задать его в карте параметров или именованной коллекции, возникнет ошибка. Это необходимо для обеспечения воспроизводимости эмбеддингов.
-
-Следующие параметры являются общими для всех функций ИИ:
-
-| Key           | Description                                                                                                                                                                                        |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `credentials` | Именованная коллекция для использования (см. выше).                                                                                                                                                |
-| `model`       | Переопределяет `model` коллекции (только для текстовых функций; в функциях эмбеддингов (`aiEmbed`, `aiSimilarity`) `model` передаётся как обязательный позиционный аргумент, а не как ключ карты). |
-
-Отдельные функции принимают дополнительные, специфичные для конкретной функции параметры (например, `max_tokens`, `temperature`, `system_prompt`, `instructions` и `dimensions`). Сведения о поддерживаемых параметрах и их значениях по умолчанию см. ниже в справочнике для каждой функции.
-
-```sql
-SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
-```
-
 <div id="query-level-settings">
   ### Настройки на уровне запроса
 </div>
 
-Все настройки, связанные с ИИ, перечислены в разделе [Настройки](/ru/reference/settings/session-settings) и имеют префикс `ai_function_`.
+Выбор именованной коллекции, которая будет использоваться, определяется настройкой [`ai_function_credentials`](/ru/reference/settings/session-settings#ai_function_credentials). Все настройки, связанные с ИИ, перечислены в разделе [Настройки](/ru/reference/settings/session-settings) и имеют префикс `ai_function_`.
+
+<div id="default-and-materialized-columns">
+  ### Использование в столбцах `DEFAULT` и `MATERIALIZED`
+</div>
+
+Параметр `ai_function_credentials` читается при вычислении выражения по умолчанию, а НЕ при определении столбца. Имя коллекции не сохраняется в определении столбца:
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+Для вычисления выражения нужны три условия: должны быть заданы `allow_experimental_ai_functions` и `ai_function_credentials`, а пользователь, который выполняет вычисление, должен иметь `GRANT NAMED COLLECTION` на коллекцию (при разрешении учетных данных выполняется проверка доступа к `NAMED COLLECTION`). Если отсутствует хотя бы одно из них, возникает исключение (`SUPPORT_IS_DISABLED`, ошибка пустых учетных данных или `ACCESS_DENIED`).
+
+Столбец `DEFAULT` вычисляется во время `INSERT`, поэтому оба параметра должны быть заданы в сеансе или запросе, выполняющем вставку:
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+Чтобы можно было выполнять вставку в такие таблицы, не задавая эти параметры для каждого сеанса, укажите оба параметра в [профиле настроек](/ru/concepts/features/configuration/settings/settings-profiles):
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+Столбец `MATERIALIZED` вычисляется при `INSERT`, как и столбец `DEFAULT`, а также пересчитывается мутациями, например `ALTER TABLE ... MATERIALIZE COLUMN`. Мутации выполняются вне пользовательского сеанса и не наследуют секцию `SETTINGS` из запроса, но наследуют настройки из профиля настроек. Чтобы пересчёт, запускаемый мутациями, выполнялся успешно, задайте обе настройки в профиле настроек и выдайте владельцу таблицы право `NAMED COLLECTION`.
 
 <div id="restricting-endpoint-hosts">
   ### Ограничение хостов конечных точек
 </div>
 
-URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) в конфигурации сервера, например:
+URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings#remote_url_allow_hosts) в конфигурации сервера, например:
 
 ```xml
 <remote_url_allow_hosts>
@@ -135,19 +124,6 @@ URL `endpoint` в именованной коллекции AI — это исх
 ```
 
 Обратите внимание, что этот параметр является общесерверным и применяется ко всем возможностям, использующим HTTP.
-
-<div id="transport-security">
-  ### Безопасность передачи данных (HTTP vs HTTPS)
-</div>
-
-Способ передачи определяется исключительно схемой URL `endpoint`. Шифрования полезной нагрузки запроса на уровне приложения нет; защита данных при передаче полностью зависит от схемы:
-
-* `https://` — соединение использует TLS. Тело запроса (входной текст, промпты) и `api_key` в заголовках запроса шифруются при передаче, а сертификат провайдера проверяется. Используйте этот вариант для любого удалённого провайдера.
-* `http://` — соединение **не шифруется**. Тело запроса и `api_key` передаются в открытом виде. Используйте этот вариант только для доверенного провайдера в частной сети (например, для локального экземпляра `vLLM` или `Ollama`).
-
-По умолчанию функции ИИ отклоняют `endpoint`, который отправлял бы данные в открытом виде на удалённый хост: любая конечная точка, отличная от HTTPS, хост которой не является loopback-адресом, вызывает исключение. Loopback-хосты (`localhost`, `127.0.0.0/8`, `::1`) являются исключением, поэтому локальный сервер моделей `http://localhost` работает без дополнительной настройки. Чтобы разрешить незашифрованную конечную точку `http://` на удалённом хосте, установите [`ai_function_allow_insecure_endpoint`](/ru/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) в значение `1`. Эта проверка не зависит от [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): эта настройка представляет собой список разрешённых хостов и не проверяет схему URL, поэтому конечная точка `http://`, указывающая на разрешённый хост, всё равно проходит её.
-
-Обратите внимание: в обоих случаях провайдер получает входные данные в открытом виде после завершения TLS; TLS защищает данные только на сетевом участке между сервером и провайдером.
 
 <div id="supported-providers">
   ## Поддерживаемые провайдеры
@@ -201,14 +177,14 @@ ORDER BY event_time DESC;
 
 Классифицирует заданный текст по одной из указанных категорий с помощью провайдера LLM.
 
-Учетные данные (именованная коллекция, задающая провайдера, модель, конечную точку и, при необходимости, ключ API)
-берутся из ключа `credentials` в необязательной карте параметров или из настройки
-`ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
+Функция отправляет текст вместе с фиксированным промптом для классификации и форматом ответа в виде JSON Schema, который ограничивает модель так, чтобы она возвращала ровно одну из переданных меток. Если ответ возвращается как объект JSON вида `{"category": "..."}`, метка извлекается, и функция возвращает строку этой метки.
+
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в параметре `ai_function_credentials`.
 
 **Синтаксис**
 
 ```sql
-aiClassify(text, categories[, params])
+aiClassify(text, categories[, temperature])
 ```
 
 **Псевдонимы**: `AIClassify`
@@ -217,7 +193,7 @@ aiClassify(text, categories[, params])
 
 * `text` — Текст для классификации. [`String`](/ru/reference/data-types/string)
 * `categories` — Константный список возможных меток категорий. [`Array(String)`](/ru/reference/data-types/array)
-* `params` — Необязательный константный набор параметров `Map(String, String)`. Ключи, специфичные для функции: `temperature` (температура сэмплирования, влияющая на случайность; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `temperature` — Температура сэмплирования, влияющая на случайность. По умолчанию: `0.0`. [`Float64`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -228,17 +204,20 @@ aiClassify(text, categories[, params])
 **Классификация тональности**
 
 ```sql title=Query
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
 ```
 
 ```response title=Response
 positive
 ```
 
-**Классификация столбца с явно заданными учетными данными**
+**Классификация столбца**
 
 ```sql title=Query
-SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
 ```
 
 <div id="aiEmbed">
@@ -247,62 +226,59 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 Добавленный в: v26.6.0
 
-Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного AI-провайдера.
+Генерирует эмбеддинг-вектор для заданного текста с помощью настроенного провайдера ИИ.
 
-Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
-В пределах одного блока строк входные данные группируются в батчи до
-[`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
-записей на один HTTP-запрос, чтобы сократить накладные расходы на каждый вызов.
+Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор в виде `Array(Float32)`.
+В рамках одного блока строк входные данные группируются в батчи размером до
+[`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+элементов в одном HTTP-запросе, чтобы сократить накладные расходы на каждый вызов.
 
-Учетные данные (именованная коллекция, задающая провайдера, конечную точку и, при необходимости, ключ API)
-берутся из ключа `credentials` карты параметров или из настройки
-`ai_function_embedding_default_credentials`, если в карте этот ключ отсутствует. Обратите внимание, что `aiEmbed` использует
-отдельную настройку учетных данных по умолчанию, отличную от той, что используется текстовыми функциями, поскольку конечная точка эмбеддингов
-отличается от конечной точки чата.
-
-`model` — обязательный позиционный аргумент (константный `String`). В отличие от текстовых функций,
-`aiEmbed` не считывает `model` из именованной коллекции или карты параметров. Именованная коллекция,
-в которой задан `model`, отклоняется.
-
-Необязательный параметр `dimensions`, если он поддерживается моделью (например, в OpenAI `text-embedding-3-*`),
-запрашивает вектор указанного размера; в противном случае возвращается собственная размерность модели.
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
+Необязательный аргумент `dimensions`, если он поддерживается моделью (например, `text-embedding-3-*` от OpenAI),
+запрашивает вектор заданной размерности; в противном случае возвращается размерность модели по умолчанию.
 
 **Синтаксис**
 
 ```sql
-aiEmbed(text, model[, params])
+aiEmbed(text[, dimensions])
 ```
-
-**Псевдонимы**: `AIEmbed`
 
 **Аргументы**
 
-* `text` — Текст для получения эмбеддинга. [`String`](/ru/reference/data-types/string)
-* `model` — Имя модели эмбеддингов. [`const String`](/ru/reference/data-types/string)
-* `params` — Необязательная константа `Map(String, String)` с параметрами. Специфичный для функции ключ: `dimensions` (целевая размерность выходного вектора; `0` или отсутствие значения означает исходную размерность модели). Также применяется общий параметр `credentials` (см. [Функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `text` — Текст для создания эмбеддинга. [`String`](/ru/reference/data-types/string)
+* `dimensions` — Необязательная целевая размерность выходного вектора. `0` или отсутствие значения означает исходную размерность модели. [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
-Эмбеддинг-вектор или пустой массив, если входное значение равно NULL или пусто, запрос завершился с ошибкой и `ai_function_throw_on_error` отключён, либо была превышена квота при отключённом `ai_function_throw_on_quota_exceeded`. [`Array(Float32)`](/ru/reference/data-types/array)
+Эмбеддинг-вектор или пустой массив, если входное значение — NULL или пустая строка, запрос завершился ошибкой и `ai_function_throw_on_error` отключён, либо была превышена квота при отключённом `ai_function_throw_on_quota_exceeded`. [`Array(Float32)`](/ru/reference/data-types/array)
 
 **Примеры**
 
-**Эмбеддинг одной строки (`credentials` можно опустить, если задана настройка `ai_function_embedding_default_credentials`)**
+**Создание эмбеддинга для одной строки**
 
 ```sql title=Query
-SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
 ```
 
-**С явно заданной размерностью**
-
-```sql title=Query
-SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
+```response title=Response
 ```
 
-**Вычислить эмбеддинги для столбца с текстами**
+**С явно заданными измерениями**
 
 ```sql title=Query
-SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Создать эмбеддинги для текстового столбца**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
 ```
 
 <div id="aiExtract">
@@ -313,20 +289,18 @@ SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding
 
 Извлекает структурированную информацию из неструктурированного текста с помощью провайдера LLM.
 
-Третий аргумент может быть либо произвольной инструкцией на естественном языке (например, `'the main complaint'`), либо
+Второй аргумент может быть либо произвольной инструкцией на естественном языке (например, `'the main complaint'`), либо
 JSON-кодированной схемой вида `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 В режиме инструкции функция возвращает извлечённое значение в виде обычной строки или пустую строку, если ничего не найдено.
 В режиме схемы функция возвращает строку с объектом JSON, ключи которого соответствуют запрошенной схеме; отсутствующие поля имеют значение `null`.
 
-Учетные данные (именованная коллекция, задающая провайдера, модель, конечную точку и, при необходимости, ключ API)
-берутся из ключа `credentials` необязательной карты параметров или из настройки
-`ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
 
 **Синтаксис**
 
 ```sql
-aiExtract(text, instruction_or_schema[, params])
+aiExtract(text, instruction_or_schema[, temperature])
 ```
 
 **Псевдонимы**: `AIExtract`
@@ -335,7 +309,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 * `text` — Текст, из которого нужно извлечь информацию. [`String`](/ru/reference/data-types/string)
 * `instruction_or_schema` — Инструкция для извлечения в свободной форме или константный объект JSON, описывающий извлекаемые поля. [`const String`](/ru/reference/data-types/string)
-* `params` — Необязательный константный `Map(String, String)` параметров. Ключи, специфичные для функции: `temperature` (температура сэмплирования, определяющая степень случайности; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов на вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `temperature` — Температура сэмплирования, определяющая степень случайности. По умолчанию: `0.0`. [`const Float64`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -346,7 +320,7 @@ aiExtract(text, instruction_or_schema[, params])
 **Инструкция в свободной форме**
 
 ```sql title=Query
-SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
 ```
 
 ```response title=Response
@@ -359,56 +333,7 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-<div id="aiFilter">
-  ## aiFilter
-</div>
-
-Добавлено в: v26.8.0
-
-Проверяет условие, заданное на естественном языке, по указанному тексту с помощью провайдера LLM и возвращает булево значение (`UInt8`), пригодное для использования в `WHERE`, `PREWHERE` и `JOIN ... ON`.
-
-Функция запрашивает у модели ответ только в виде `true` или `false` в нижнем регистре. Неудачные запросы (когда
-`ai_function_throw_on_error` отключён) и нераспознанные ответы преобразуются в `0`, поэтому строка отфильтровывается.
-
-**Предупреждение:** Не доверяйте результатам `aiFilter` без тщательной проверки. Предикаты на основе LLM могут быть некорректными
-или непоследовательными; используйте их только там, где допустимы ложноположительные и ложноотрицательные срабатывания.
-
-Учётные данные (именованная коллекция, содержащая провайдера, модель, конечную точку и, при необходимости, ключ API)
-берутся из ключа `credentials` необязательной карты параметров или из настройки
-`ai_function_text_default_credentials`, если карта не содержит этого ключа.
-
-Примечание: при использовании `aiFilter` в `JOIN ... ON` LLM вызывается один раз для каждой пары кандидатов, что может быть затратно.
-
-**Синтаксис**
-
-```sql
-aiFilter(text, condition[, params])
-```
-
-**Псевдонимы**: `AIFilter`
-
-**Аргументы**
-
-* `text` — Текст для оценки. [`String`](/ru/reference/data-types/string)
-* `condition` — Постоянное условие на естественном языке, которому должен удовлетворять текст. [`String`](/ru/reference/data-types/string)
-* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, определяющая случайность; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
-
-**Возвращаемое значение**
-
-`1`, если текст соответствует условию, иначе `0`. Возвращает значение по умолчанию (`0`), если запрос завершился ошибкой и `ai_function_throw_on_error` отключён. [`UInt8`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Фильтрация гневных отзывов**
-
-```sql title=Query
-SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
-```
-
-**Фильтрация столбца с явно заданными учётными данными**
-
-```sql title=Query
-SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```response title=Response
 ```
 
 <div id="aiGenerate">
@@ -417,30 +342,27 @@ SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_crede
 
 Добавленный в: v26.4.0
 
-Генерирует произвольный текст по промпту с помощью провайдера LLM.
+Генерирует текст произвольной формы из промпта с помощью провайдера LLM.
 
-Функция отправляет промпт настроенному AI-провайдеру и возвращает сгенерированный текст.
+Функция отправляет промпт настроенному провайдеру ИИ и возвращает сгенерированный текст.
+Чтобы задать поведение модели (например, тон, формат или роль), можно передать необязательный системный промпт.
+Если системный промпт не указан, по умолчанию используется: `You are a helpful assistant. Provide a clear and concise response.`
 
-Учетные данные (именованная коллекция с указанием провайдера, модели, конечной точки и, при необходимости, ключа API)
-берутся из ключа `credentials` необязательной карты параметров или из настройки
-`ai_function_text_default_credentials`, если этот ключ в карте отсутствует.
-
-Необязательная карта параметров также может задавать `system_prompt` (инструкцию, определяющую
-поведение модели, например тон, формат или роль), `temperature`, `max_tokens` и `model`. Если `system_prompt`
-не задан, по умолчанию используется: `You are a helpful assistant. Provide a clear and concise response.`
+Учётные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
 
 **Синтаксис**
 
 ```sql
-aiGenerate(prompt[, params])
+aiGenerate(prompt[, system_prompt[, temperature]])
 ```
 
 **Псевдонимы**: `AIGenerate`
 
 **Аргументы**
 
-* `prompt` — Пользовательский промпт или вопрос, отправляемый модели. [`String`](/ru/reference/data-types/string)
-* `params` — Необязательный константный `Map(String, String)` с параметрами. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.7`), `max_tokens` (максимальное число выходных токенов за один вызов; по умолчанию `1024`), `system_prompt` (константная системная инструкция, определяющая поведение модели; по умолчанию — общий промпт ассистента). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `prompt` — Промпт или вопрос пользователя, отправляемый модели. [`String`](/ru/reference/data-types/string)
+* `system_prompt` — Необязательная постоянная системная инструкция, определяющая поведение модели (например, роль или формат вывода), которая отправляется вместе с каждым промптом. [`String`](/ru/reference/data-types/string)
+* `temperature` — Температура сэмплирования, управляющая случайностью. Значение по умолчанию: `0.7`. [`Float64`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -451,17 +373,20 @@ aiGenerate(prompt[, params])
 **Простой вопрос**
 
 ```sql title=Query
-SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
 ```
 
 ```response title=Response
 4
 ```
 
-**С явными учетными данными и системным промптом**
+**С системным промптом**
 
 ```sql title=Query
-SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
 ```
 
 **Сводка значений столбца**
@@ -470,132 +395,7 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-<div id="aiRedact">
-  ## aiRedact
-</div>
-
-Добавлено в: v26.8.0
-
-Обнаруживает и маскирует персональные данные (PII) в заданном тексте с помощью провайдера LLM.
-
-<Warning>
-  `aiRedact` обнаруживает и маскирует PII с помощью LLM в меру своих возможностей, поэтому его вывод
-  ненадёжен. Обнаружение и удаление PII зависят от выбранной модели, промпта и входных данных: модель
-  может пропустить идентификаторы, замаскировать их лишь частично или изменить окружающий текст. Функция лучше всего работает с
-  грамотно составленным английским текстом; для других языков или текста с большим количеством орфографических,
-  пунктуационных или грамматических ошибок результаты могут быть хуже. `aiRedact` не гарантирует отсутствие PII в своём выводе и не должен
-  рассматриваться как самостоятельный безопасный или достаточный механизм анонимизации. Перед передачей данных недоверенным сторонам всегда проверяйте вывод, чтобы убедиться, что он
-  соответствует политикам вашей организации в области конфиденциальности данных и соблюдения нормативных требований.
-</Warning>
-
-Каждый обнаруженный диапазон PII заменяется токеном маскирования (по умолчанию `[REDACTED]`, настраивается через
-параметр `replacement`). Массив `categories` ограничивает типы маскируемых PII; пустой массив
-использует набор распространённых категорий по умолчанию (имя, email, номер телефона, адрес, кредитная карта, IP-адрес).
-
-`aiRedact` предписывает модели изменять только обнаруженные диапазоны PII, однако сохранение окружающего текста
-также выполняется в меру возможностей, поэтому модель всё равно может его изменить (см. предупреждение выше). Управляющие символы, кроме табуляции,
-перевода строки и возврата каретки, перед отправкой запроса также заменяются пробелами, поэтому вывод
-не является побайтно идентичным входным данным, содержащим такие символы.
-
-Поскольку `aiRedact` возвращает весь входной текст с заменёнными PII, вывод имеет примерно ту же длину, что и входные данные.
-Установите `max_tokens` (по умолчанию `1024`) выше длины входных данных в токенах; ответ, усечённый из-за слишком низкого ограничения,
-будет неполным.
-
-**Синтаксис**
-
-```sql
-aiRedact(text, categories[, params])
-```
-
-**Псевдонимы**: `AIRedact`
-
-**Аргументы**
-
-* `text` — Текст для маскирования. [`String`](/ru/reference/data-types/string)
-* `categories` — Постоянный список категорий PII, подлежащих маскированию (например, `['name', 'ssn', 'credit_card']`). При пустом массиве используется набор распространённых категорий по умолчанию (имя, электронная почта, номер телефона, адрес, кредитная карта, IP-адрес). [`Array(String)`](/ru/reference/data-types/array)
-* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за вызов; по умолчанию `1024` — поскольку `aiRedact` возвращает полный текст, задайте значение больше длины входного текста в токенах, иначе ответ может быть усечённым и неполным), `replacement` (токен, заменяющий каждый обнаруженный фрагмент PII; по умолчанию `[REDACTED]`). Также применяются общие параметры `credentials` и `model` (см. [Функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
-
-**Возвращаемое значение**
-
-Текст, в котором обнаруженные PII заменены токеном маскирования, или значение по умолчанию для типа столбца (пустая строка), если запрос завершился с ошибкой и `ai_function_throw_on_error` отключён. [`String`](/ru/reference/data-types/string)
-
-**Примеры**
-
-**Маскирование определённых категорий**
-
-```sql title=Query
-SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
-```
-
 ```response title=Response
-Purchase was done by customer [REDACTED] with email [REDACTED]
-```
-
-**Маскировка категорий PII по умолчанию с помощью пользовательского токена**
-
-```sql title=Query
-SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
-```
-
-<div id="aiSimilarity">
-  ## aiSimilarity
-</div>
-
-Добавлено в: v26.8.0
-
-Вычисляет семантическое сходство двух текстов с помощью настроенного провайдера эмбеддингов.
-
-Вычисляет векторные эмбеддинги обоих текстов и возвращает их
-[косинусное сходство](https://en.wikipedia.org/wiki/Cosine_similarity). Оценка `-1` присваивается
-противоположным векторам эмбеддингов; семантически это означает, что тексты с оценками, близкими к `-1`, противоположны
-по смыслу. Оценка `0` означает, что векторы ортогональны, то есть семантически не связаны. Наконец, оценка `1`
-означает, что векторы эмбеддингов направлены в одну сторону, а тексты с оценками, близкими к `1`,
-схожи по смыслу. Это дополнение `cosineDistance` для тех же эмбеддингов
-(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
-
-Батчинг, учетные данные и параметр `dimensions` соответствуют `aiEmbed`, включая настройку
-учетных данных по умолчанию `ai_function_embedding_default_credentials`.
-
-Как и в `aiEmbed`, `model` — обязательный позиционный аргумент (константный `String`), который не считывается из
-именованной коллекции или карты параметров.
-
-**Синтаксис**
-
-```sql
-aiSimilarity(text1, text2, model[, params])
-```
-
-**Псевдонимы**: `AISimilarity`
-
-**Аргументы**
-
-* `text1` — Первый текст. [`String`](/ru/reference/data-types/string)
-* `text2` — Второй текст. [`String`](/ru/reference/data-types/string)
-* `model` — Имя модели эмбеддингов. [`const String`](/ru/reference/data-types/string)
-* `params` — Необязательный константный `Map(String, String)` параметров. Ключ, специфичный для этой функции: `dimensions` (целевая размерность эмбеддингов; `0` или отсутствие значения означает собственную размерность модели). Также применяется общий параметр `credentials` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
-
-**Возвращаемое значение**
-
-Косинусное сходство в диапазоне `[-1, 1]` или NULL, если один из текстов имеет значение NULL или пуст, запрос на создание эмбеддинга завершился ошибкой при отключённом `ai_function_throw_on_error` либо квота была превышена при отключённом `ai_function_throw_on_quota_exceeded`. [`Nullable(Float32)`](/ru/reference/data-types/nullable)
-
-**Примеры**
-
-**Сравнение двух строк (`credentials` можно не указывать, если задана настройка `ai_function_embedding_default_credentials`)**
-
-```sql title=Query
-SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
-```
-
-**Ранжируйте отзывы по схожести с запросом**
-
-```sql title=Query
-SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
-```
-
-**Семантическая дедупликация с использованием self-join**
-
-```sql title=Query
-SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">
@@ -606,16 +406,14 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
 
 Переводит заданный текст на указанный целевой язык с помощью провайдера LLM.
 
-Дополнительные указания по стилю или диалекту можно передать через ключ `instructions` в карте параметров (например, `'keep technical terms untranslated'`).
+Дополнительные указания по стилю или диалекту можно передать в качестве третьего аргумента (например, `'keep technical terms untranslated'`).
 
-Учетные данные (именованная коллекция, задающая провайдера, модель, конечную точку и, при необходимости, ключ API)
-берутся из ключа `credentials` необязательной карты параметров или из
-настройки `ai_function_text_default_credentials`, если в карте этот ключ отсутствует.
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
 
 **Синтаксис**
 
 ```sql
-aiTranslate(text, target_language[, params])
+aiTranslate(text, target_language[, instructions[, temperature]])
 ```
 
 **Псевдонимы**: `AITranslate`
@@ -623,8 +421,9 @@ aiTranslate(text, target_language[, params])
 **Аргументы**
 
 * `text` — Текст для перевода. [`String`](/ru/reference/data-types/string)
-* `target_language` — Название целевого языка или код BCP-47 (например, `'French'`, `'es-MX'`). [`String`](/ru/reference/data-types/string)
-* `params` — Необязательная константа `Map(String, String)` с параметрами. Ключи, специфичные для этой функции: `temperature` (температура сэмплирования, определяющая случайность; по умолчанию `0.3`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024`), `instructions` (дополнительные указания по стилю или диалекту для переводчика). Также применяются общие параметры `credentials` и `model` (см. [Функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `target_language` — Имя целевого языка или код BCP-47 (например, `'French'`, `'es-MX'`). [`String`](/ru/reference/data-types/string)
+* `instructions` — Необязательные дополнительные инструкции для переводчика в виде константы. [`String`](/ru/reference/data-types/string)
+* `temperature` — Температура сэмплирования, управляющая случайностью. По умолчанию: `0.3`. [`Float64`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -635,17 +434,20 @@ aiTranslate(text, target_language[, params])
 **Перевод на французский**
 
 ```sql title=Query
-SELECT aiTranslate('Hello, world!', 'French')
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
 ```
 
 ```response title=Response
 Bonjour le monde!
 ```
 
-**Перевести на японский с учетом инструкций по стилю**
+**Переведите на японский с учетом указаний по стилю**
 
 ```sql title=Query
-SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
 ```
 
 {/*AUTOGENERATED_END*/}

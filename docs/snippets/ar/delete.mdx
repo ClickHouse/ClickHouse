@@ -30,11 +30,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 يُنَفَّذ `DELETE` الخفيف باعتباره [mutation](/ar/reference/statements/alter/index#mutations) تضع علامة على الصفوف بأنها محذوفة، لكنها لا تحذفها فعليًا على الفور.
 
-بشكل افتراضي، تنتظر عبارات `DELETE` حتى يكتمل وضع علامة الحذف على الصفوف قبل أن تعود. وقد يستغرق ذلك وقتًا طويلًا إذا كان حجم البيانات كبيرًا. بدلًا من ذلك، يمكنك تشغيله بشكل غير متزامن في الخلفية باستخدام الإعداد [`lightweight_deletes_sync`](/ar/reference/settings/session-settings/lightweight#lightweight_deletes_sync). وإذا كان هذا الإعداد معطّلًا، فستعود عبارة `DELETE` فورًا، لكن قد تظل البيانات مرئية للاستعلامات إلى أن تنتهي الـ mutation في الخلفية.
+بشكل افتراضي، تنتظر عبارات `DELETE` حتى يكتمل وضع علامة الحذف على الصفوف قبل أن تعود. وقد يستغرق ذلك وقتًا طويلًا إذا كان حجم البيانات كبيرًا. بدلًا من ذلك، يمكنك تشغيله بشكل غير متزامن في الخلفية باستخدام الإعداد [`lightweight_deletes_sync`](/ar/reference/settings/session-settings#lightweight_deletes_sync). وإذا كان هذا الإعداد معطّلًا، فستعود عبارة `DELETE` فورًا، لكن قد تظل البيانات مرئية للاستعلامات إلى أن تنتهي الـ mutation في الخلفية.
 
 لا تحذف الـ mutation الصفوف التي وُضعت عليها علامة الحذف فعليًا؛ إذ لا يحدث ذلك إلا أثناء عملية الدمج التالية. ونتيجة لذلك، قد لا تُحذف البيانات فعليًا من التخزين لفترة غير محددة، وإنما يُكتفى فقط بوضع علامة عليها بأنها محذوفة.
 
-إذا كنت بحاجة إلى ضمان حذف بياناتك من التخزين خلال مدة يمكن التنبؤ بها، ففكّر في استخدام إعداد الجدول [`min_age_to_force_merge_seconds`](/ar/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). أو يمكنك استخدام الأمر [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete). لاحظ أن حذف البيانات باستخدام `ALTER TABLE ... DELETE` قد يستهلك قدرًا كبيرًا من الموارد لأنه يعيد إنشاء جميع الأجزاء المتأثرة.
+إذا كنت بحاجة إلى ضمان حذف بياناتك من التخزين خلال مدة يمكن التنبؤ بها، ففكّر في استخدام إعداد الجدول [`min_age_to_force_merge_seconds`](/ar/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds). أو يمكنك استخدام الأمر [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete). لاحظ أن حذف البيانات باستخدام `ALTER TABLE ... DELETE` قد يستهلك قدرًا كبيرًا من الموارد لأنه يعيد إنشاء جميع الأجزاء المتأثرة.
 
 <div id="deleting-large-amounts-of-data">
   ## حذف كميات كبيرة من البيانات

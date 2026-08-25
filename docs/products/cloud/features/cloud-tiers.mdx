@@ -59,7 +59,7 @@ This page discusses which tiers are right for your specific use case.
     <td>Vertical scaling</td>
     <td></td>
     <td>✓ Automatic Scaling</td>
-    <td>✓ Automatic for standard profiles, support-assisted for custom profiles</td>
+    <td>✓ Automatic for standard profiles, manual for custom profiles</td>
   </tr>
   <tr>
     <td>Horizontal scaling</td>
@@ -70,6 +70,12 @@ This page discusses which tiers are right for your specific use case.
   <tr>
     <td>ClickPipes</td>
     <td>✓</td>
+    <td>✓</td>
+    <td>✓</td>
+  </tr>
+  <tr>
+    <td>Early upgrades</td>
+    <td></td>
     <td>✓</td>
     <td>✓</td>
   </tr>
@@ -185,7 +191,7 @@ Caters to large-scale, mission critical deployments that have stringent security
 - Offers [HIPAA](/products/cloud/reference/security/compliance-overview#hipaa-since-2024) and PCI compliance.
 
 <Note>
-Scale and Enterprise tiers support [large single-replica services](/products/cloud/features/large-single-replica-services). Scale services and Enterprise services with standard `1:4` profiles support self-service vertical autoscaling, while Enterprise services with custom profiles require support-assisted vertical resizing. Basic tier single-replica services remain fixed in size (`8 GiB` or `12 GiB`).
+Single replica services across all three tiers are meant to be fixed in size (`8 GiB`, `12 GiB`)
 </Note>
 
 ## Upgrading to a different tier {#upgrading-to-a-different-tier}

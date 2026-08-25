@@ -279,12 +279,9 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "catboostEvaluate",
     "aiGenerate",
     "aiClassify",
-    "aiFilter",
     "aiExtract",
     "aiTranslate",
-    "aiRedact",
     "aiEmbed",
-    "aiSimilarity",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -1386,7 +1383,7 @@ struct FunctionsStressTestThread
                     /// guards we set up ourselves.
                     stats.add(S_QUERY_CANCELLED, 1);
                 }
-                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().contains("incorrect data types"))
+                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
                 {
                     /// Known issue: some arithmetic functions (plus, minus, etc.) accept types in
                     /// getReturnTypeImpl but fail in executeImpl with LowCardinality arguments.

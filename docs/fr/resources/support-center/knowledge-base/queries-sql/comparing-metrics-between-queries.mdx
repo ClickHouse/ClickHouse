@@ -1,16 +1,20 @@
 ---
 date: 2023-01-14
-title: Comparer des métriques entre deux requêtes en décibels
-description: Une requête pour comparer des métriques entre deux requêtes dans ClickHouse.
+title: Comparaison des métriques entre deux requêtes en décibels
+description: Une requête permettant de comparer les métriques de deux requêtes dans ClickHouse.
 tags: ['Performances et optimisations']
-keywords: [comparer des requêtes, comparer des métriques, performance des requêtes]
+keywords: [comparaison de requêtes, comparaison de métriques, performances des requêtes]
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="compare-metrics-between-two-queries">
-  ## Comparer les métriques de deux requêtes
+  ## Comparer des métriques entre deux requêtes
 </div>
 
-Pour comparer les métriques de deux requêtes, vous devez d’abord obtenir le `query_id` de chacune d’elles.
+Pour comparer des métriques entre deux requêtes, vous devez d&#39;abord obtenir le `query_id` de chacune des deux requêtes.
 
 Vous pouvez ensuite exécuter la requête suivante :
 
@@ -37,7 +41,7 @@ ORDER BY
 FORMAT PrettyCompactMonoBlock
 ```
 
-Vous obtiendrez un tableau de métriques comparant les deux requêtes :
+Vous recevrez un tableau de métriques comparant les deux requêtes :
 
 ```sql
 ┌─metric──────────────────────────────────────────────┬───────v1─┬───────v2─┬──────────────────dB─┬───perc─┬─bar───────────────────────────────┐

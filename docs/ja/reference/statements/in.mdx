@@ -62,7 +62,7 @@ Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Se
 ClickHouse では、`IN` サブクエリの左辺と右辺で型が異なっていても問題ありません。
 この場合、右辺の値は左辺の型に変換されます。これは、右辺に [accurateCastOrNull](/ja/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) 関数を適用した場合と同等です。
 
-これは、データ型が[Nullable](/ja/reference/data-types/nullable)になることを意味し、変換を実行できない場合は[NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default)を返します。
+これは、データ型が[Nullable](/ja/reference/data-types/nullable)になることを意味し、変換を実行できない場合は[NULL](/ja/reference/settings/formats#input_format_null_as_default)を返します。
 
 **例**
 
@@ -126,7 +126,7 @@ ORDER BY EventDate ASC
   ## NULL の処理
 </div>
 
-リクエストの処理中、`IN` 演算子は、[NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) を含む演算の結果を、`NULL` が演算子の右辺・左辺のどちらにあっても常に `0` と見なします。[transform&#95;null&#95;in = 0](/ja/reference/settings/session-settings/other#transform_null_in) の場合、`NULL` 値はいかなるデータセットにも含まれず、互いに対応せず、比較もできません。
+リクエストの処理中、`IN` 演算子は、[NULL](/ja/reference/settings/formats#input_format_null_as_default) を含む演算の結果を、`NULL` が演算子の右辺・左辺のどちらにあっても常に `0` と見なします。[transform&#95;null&#95;in = 0](/ja/reference/settings/session-settings#transform_null_in) の場合、`NULL` 値はいかなるデータセットにも含まれず、互いに対応せず、比較もできません。
 
 以下は、`t_null` テーブルを使った例です。
 
@@ -269,7 +269,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
   ### 分散サブクエリと max_rows_in_set
 </div>
 
-[`max_rows_in_set`](/ja/reference/settings/session-settings/max-rows#max_rows_in_set) と [`max_bytes_in_set`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_set) を使うと、分散クエリで転送されるデータ量を制御できます。
+[`max_rows_in_set`](/ja/reference/settings/session-settings#max_rows_in_set) と [`max_bytes_in_set`](/ja/reference/settings/session-settings#max_bytes_in_set) を使うと、分散クエリで転送されるデータ量を制御できます。
 
 これは、`GLOBAL IN` クエリが大量のデータを返す場合に特に重要です。次の SQL を見てみましょう。
 
@@ -277,7 +277,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-`some_predicate` の選択性が十分でない場合、大量のデータが返され、パフォーマンス上の問題を引き起こす可能性があります。そのような場合は、ネットワーク経由のデータ転送を制限するのが賢明です。また、[`set_overflow_mode`](/ja/reference/settings/session-settings/other#set_overflow_mode) は (デフォルトで) `throw` に設定されており、これらの閾値に達すると例外が送出される点にも注意してください。
+`some_predicate` の選択性が十分でない場合、大量のデータが返され、パフォーマンス上の問題を引き起こす可能性があります。そのような場合は、ネットワーク経由のデータ転送を制限するのが賢明です。また、[`set_overflow_mode`](/ja/reference/settings/session-settings#set_overflow_mode) は (デフォルトで) `throw` に設定されており、これらの閾値に達すると例外が送出される点にも注意してください。
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### 分散サブクエリと max_parallel_replicas
@@ -307,4 +307,4 @@ SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 
 `local_table_2` が要件を満たさない場合の回避策の 1 つは、`GLOBAL IN` または `GLOBAL JOIN` を使用することです。
 
-テーブルにサンプリングキーがない場合は、[parallel&#95;replicas&#95;custom&#95;key](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) のより柔軟なオプションを使用でき、異なる、より最適な動作を実現できることがあります。
+テーブルにサンプリングキーがない場合は、[parallel&#95;replicas&#95;custom&#95;key](/ja/reference/settings/session-settings#parallel_replicas_custom_key) のより柔軟なオプションを使用でき、異なる、より最適な動作を実現できることがあります。

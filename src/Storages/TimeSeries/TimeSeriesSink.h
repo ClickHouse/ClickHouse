@@ -48,14 +48,17 @@ public:
     static void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags);
 
     /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Every tag goes to `out_tags_names`/`out_tags_values`; tags matching a key in `columns_by_tag_name`
-    /// are also copied to the corresponding column.
+    /// Tags matching a key in `columns_by_tag_name` go to that column; the rest go to `out_tags_names`/`out_tags_values`.
+    /// The optional `all_tags_*` columns (pass `nullptr` to skip) receive every non-`__name__` tag.
     static void insertSortedTagsToColumns(
         const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
         IColumn & out_tags_names,
         IColumn & out_tags_values,
         IColumn & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name);
+        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
+        IColumn * all_tags_names,
+        IColumn * all_tags_values,
+        IColumn * all_tags_offsets);
 
 private:
     /// A persistent pipeline for inserting blocks into one target table.
@@ -103,7 +106,6 @@ private:
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
-    std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
 };
 

@@ -35,7 +35,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Достаточно места на диске для файлов журналов
 
 <Steps>
-  <Step title="Настройте логирование в MySQL" id="configure-mysql">
+  <Step>
+    #### Настройте логирование в MySQL
+
     MySQL поддерживает несколько типов журналов. Для всестороннего мониторинга с OpenTelemetry мы рекомендуем включить журнал ошибок и журнал медленных запросов.
 
     Файл конфигурации `my.cnf` или `my.ini` обычно находится по следующим путям:
@@ -48,16 +50,16 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
     ```ini
     [mysqld]
-    # Error log configuration
+    # Конфигурация журнала ошибок
     log_error = /var/log/mysql/error.log
 
-    # Slow query log configuration
+    # Конфигурация журнала медленных запросов
     slow_query_log = ON
     slow_query_log_file = /var/log/mysql/mysql-slow.log
     long_query_time = 1
     log_queries_not_using_indexes = ON
 
-    # Optional: General query log (verbose, use with caution in production)
+    # Необязательно: общий журнал запросов (подробный, используйте с осторожностью в production)
     # general_log = ON
     # general_log_file = /var/log/mysql/mysql-general.log
     ```
@@ -69,25 +71,27 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     После внесения этих изменений перезапустите MySQL:
 
     ```bash
-    # For systemd
+    # Для systemd
     sudo systemctl restart mysql
 
-    # For Docker
+    # Для Docker
     docker restart <mysql-container>
     ```
 
     Проверьте, что журналы записываются:
 
     ```bash
-    # Check error log
+    # Проверка журнала ошибок
     tail -f /var/log/mysql/error.log
 
-    # Check slow query log
+    # Проверка журнала медленных запросов
     tail -f /var/log/mysql/mysql-slow.log
     ```
   </Step>
 
-  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
+  <Step>
+    #### Создайте пользовательскую конфигурацию OTel collector
+
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл с именем `mysql-logs-monitoring.yaml` со следующей конфигурацией:
@@ -172,7 +176,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Настройте ClickStack для загрузки пользовательской конфигурации" id="load-custom">
+  <Step>
+    #### Настройте ClickStack для загрузки пользовательской конфигурации
+
     Чтобы включить пользовательскую конфигурацию коллектора в существующем развертывании ClickStack, смонтируйте файл пользовательской конфигурации по пути `/etc/otelcol-contrib/custom.config.yaml` и задайте переменную окружения `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
 
     Обновите конфигурацию развертывания ClickStack:
@@ -180,14 +186,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... существующая конфигурация ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... другие переменные окружения ...
         volumes:
           - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/mysql:/var/log/mysql:ro
-          # ... other volumes ...
+          # ... другие тома ...
     ```
 
     <Note>
@@ -195,7 +201,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверка журналов в HyperDX" id="verifying-logs">
+  <Step>
+    #### Проверка журналов в HyperDX
+
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     1. Перейдите в Search view
@@ -216,14 +224,16 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию журналов MySQL перед настройкой своих продуктивных систем, мы предоставляем демо-набор данных с заранее сгенерированными журналами MySQL, отражающими реалистичные паттерны.
 
 <Steps>
-  <Step title="Скачайте пример набора данных" id="download-sample">
+  <Step>
+    #### Скачайте пример набора данных
+
     Скачайте примеры файлов журналов:
 
     ```bash
-    # Download error log
+    # Скачать журнал ошибок
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
 
-    # Download slow query log
+    # Скачать журнал медленных запросов
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
     ```
 
@@ -235,7 +245,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Последовательности запуска и остановки сервера базы данных
   </Step>
 
-  <Step title="Создайте конфигурацию тестового коллектора" id="test-config">
+  <Step>
+    #### Создайте конфигурацию тестового коллектора
+
     Создайте файл с именем `mysql-logs-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -244,7 +256,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       filelog/mysql_error:
         include:
           - /tmp/mysql-demo/error.log
-        start_at: beginning  # Read from beginning for demo data
+        start_at: beginning  # Читать с начала для демонстрационных данных
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         operators:
@@ -267,7 +279,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       filelog/mysql_slow:
         include:
           - /tmp/mysql-demo/mysql-slow.log
-        start_at: beginning  # Read from beginning for demo data
+        start_at: beginning  # Читать с начала для демонстрационных данных
         multiline:
           line_start_pattern: '^# Time:'
         operators:
@@ -301,7 +313,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Запустите ClickStack с демонстрационной конфигурацией" id="run-demo">
+  <Step>
+    #### Запустите ClickStack с демонстрационной конфигурацией
+
     Запустите ClickStack с демонстрационными журналами и конфигурацией:
 
     ```bash
@@ -315,7 +329,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте логи в HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Проверьте логи в HyperDX
+
     После запуска ClickStack:
 
     1. Подождите немного, пока ClickStack полностью инициализируется (обычно 30–60 секунд)
@@ -347,11 +363,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы помочь вам начать мониторинг MySQL в ClickStack, мы предоставляем основные визуализации для журналов MySQL.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
+  <Step>
+    #### Импортируйте преднастроенный дашборд
+
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -362,7 +380,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mysql/finish-import.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
+  <Step>
+    #### Откройте панель мониторинга
+
     Панель мониторинга будет создана со всеми преднастроенными визуализациями.
 
     <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Пример панели мониторинга" />
@@ -468,7 +488,7 @@ head -5 /var/log/mysql/error.log
 * Настройте `long_query_time` с учетом наблюдаемых закономерностей производительности запросов
 
 <div id="going-to-production">
-  ## Переход в продакшн
+  ## Переход к промышленной эксплуатации
 </div>
 
-В этом руководстве для быстрого развертывания используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшн мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. раздел [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) с рекомендациями по конфигурации для продакшн.
+В этом руководстве используется встроенный в ClickStack OpenTelemetry Collector для быстрого начала работы. Для промышленного развертывания мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. О конфигурации для промышленной эксплуатации см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

@@ -26,13 +26,11 @@
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -69,6 +67,304 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+/// Returns true if '\' followed by this character means "match this character
+/// literally". For example, '\.' matches a literal dot, '\(' matches a
+/// literal '(', '\-' matches a literal '-'.
+/// Returns false for escape sequences where the matched character is different
+/// from what follows '\': '\n' matches a newline (not 'n'), '\d' matches any
+/// digit (not 'd'), '\x41' matches 'A' (not 'x').
+static bool isLiteralEscape(char c)
+{
+    switch (c)
+    {
+        case '|':
+        case '(':
+        case ')':
+        case '^':
+        case '$':
+        case '.':
+        case '[':
+        case ']':
+        case '?':
+        case '*':
+        case '+':
+        case '\\':
+        case '{':
+        case '}':
+        case '-':
+            return true;
+        default:
+            return false;
+    }
+
+    UNREACHABLE();
+}
+
+/// Extracts a conservative fixed literal prefix from a ^-anchored regular expression.
+///
+/// In regex, '^' means "must start at the beginning of the string".
+/// This function walks the pattern after '^' and collects characters that
+/// are guaranteed to appear, in order, at the start of every matching string.
+/// It stops as soon as it hits any metacharacter or special construct where it
+/// cannot guarantee a fixed character. The parser is conservative and may miss
+/// some cases where a guaranteed fixed prefix could be derived but would be
+/// complicated to do so. The result is a prefix that is common to all possible
+/// matching strings.
+///
+/// "^abc"
+///   Every matching string starts with exactly "abc".
+///   Prefix: "abc".
+///
+/// "^abc.*"
+///   '.' means "any single character" and '*' means "zero or more times".
+///   So after "abc" anything can follow. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc\\|def"
+///   A backslash before a special character removes its special meaning.
+///   '|' normally means "or" (see below), but '\\|' means a literal '|'
+///   character. So this matches strings starting with the text "abc|def".
+///   Prefix: "abc|def".
+///
+/// "^abc\\d"
+///   '\\d' means "any digit" (0-9). It is not a single fixed character,
+///   so we stop. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc|def"
+///   '|' means "or" — match the left side or the right side.
+///   This means: (string starts with "abc") OR (string contains "def" anywhere).
+///   The right side has no '^', so it can match in the middle of a string.
+///   We cannot guarantee any prefix at all.
+///   Prefix: "".
+///
+/// "^abc[12]"
+///   '[12]' is a character class — it matches either '1' or '2'.
+///   Since the next character is not fixed, we stop at "abc".
+///   Prefix: "abc".
+///
+/// '(' is treated as a stop character (')' cannot appear unescaped in a
+/// valid regex without a preceding '('). Patterns like
+/// "^(abc)def" could theoretically yield prefix "abcdef", but analyzing
+/// group semantics (optional groups, alternation inside groups, etc.)
+/// is complex and error-prone. The alternation helper
+/// `extractCommonPrefixFromAlternationBranches` handles the important case of
+/// "^(branch1|branch2|...)" separately.
+static String extractFixedPrefixFromRegularExpression(const String & regexp)
+{
+    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
+    if (regexp.size() <= 1 || regexp[0] != '^')
+        return {};
+
+    String fixed_prefix;
+    const char * begin = regexp.data() + 1;
+    const char * pos = begin;
+    const char * end = regexp.data() + regexp.size();
+
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '\0':
+                pos = end;
+            break;
+
+            case '\\':
+            {
+                ++pos;
+                if (pos == end)
+                    break;
+
+                if (isLiteralEscape(*pos))
+                {
+                    fixed_prefix += *pos;
+                    ++pos;
+                }
+                else
+                    pos = end;
+
+                break;
+            }
+
+            /// non-trivial cases
+            case '|':
+                fixed_prefix.clear();
+            [[fallthrough]];
+            case '(':
+            case '[':
+            case '^':
+            case '$':
+            case '.':
+            case '+':
+                pos = end;
+            break;
+
+            /// Quantifiers that allow a zero number of occurrences.
+            case '{':
+            case '?':
+            case '*':
+                if (!fixed_prefix.empty())
+                    fixed_prefix.pop_back();
+
+            pos = end;
+            break;
+            default:
+                fixed_prefix += *pos;
+            pos++;
+            break;
+        }
+    }
+
+    return fixed_prefix;
+}
+
+/// Returns true if the expression contains any unescaped '|'.
+static bool expressionHasUnescapedAlternation(const String & expression)
+{
+    for (size_t i = 0; i < expression.size(); ++i)
+    {
+        /// \\| is not an alternation, but a literal '|', so skip the next character after a backslash.
+        if (expression[i] == '\\' && i + 1 < expression.size())
+        {
+            ++i;
+            continue;
+        }
+        if (expression[i] == '|')
+            return true;
+    }
+    return false;
+}
+
+/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
+/// each branch is a plain literal string (no metacharacters, no nesting).
+///
+/// This is called when the expression contains an unescaped '|', meaning
+/// `extractFixedPrefixFromRegularExpression` cannot be used (it would stop
+/// at '|' or '('). Returns empty for any pattern more complex than simple
+/// literal branches inside a single group.
+///
+/// "^(abc-xx|abc-yy)"
+///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
+///   Both start with "abc-", so every matching string begins with "abc-".
+///   Prefix: "abc-".
+///
+/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
+///   Three alternatives. All three start with "abc-", but they diverge
+///   after that ('x' vs 'y'). So "abc-" is the longest common start.
+///   Prefix: "abc-".
+///
+/// "^(abc|def)"
+///   Two alternatives: "abc" and "def". They share nothing at the start —
+///   'a' vs 'd' already differ. We cannot guarantee any prefix.
+///   Prefix: "".
+///
+/// "^(abc|def)$"
+///   '$' means "must end at the end of the string". It constrains what
+///   comes after the match, but does not change what the string starts
+///   with. So the prefix analysis is the same as without '$'.
+///   Prefix: "".
+///
+/// Not supported (returns empty — could be improved in the future):
+///
+/// "^(abc.*|abd.*)"
+///   Branches contain '.*' (wildcard). We only handle plain literal branches.
+///   The common prefix "ab" could theoretically be extracted, but is not.
+///   Prefix: "".
+///
+/// "^(abc|abd)+"
+///   The '+' after the group means it must appear at least once.
+///   We only handle patterns where the group is followed by '$' or end
+///   of expression. Prefix: "".
+///
+/// "^(abc(1|2)|abc(3|4))"
+///   Branches contain nested groups. We only handle flat literal branches.
+///   The common prefix "abc" could theoretically be extracted, but is not.
+///   Prefix: "".
+static String extractCommonPrefixFromAlternationBranches(const String & expression)
+{
+    /// We only handle "^(literal1|literal2|...)$?".
+    /// Reject anything that doesn't start with "^(".
+    if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
+        return {};
+
+    const char * pos = expression.data() + 2; /// Start right after "^("
+    const char * end = expression.data() + expression.size();
+
+    /// Split branches by '|'. Each branch must be a plain literal —
+    /// no metacharacters, no nested groups, no character classes.
+    /// If we see anything other than a literal char, escaped char, or '|',
+    /// we give up.
+    std::vector<String> branches;
+    String current_branch;
+
+    while (pos < end)
+    {
+        if (*pos == '\\' && pos + 1 < end)
+        {
+            char next = *(pos + 1);
+            if (isLiteralEscape(next))
+            {
+                current_branch += next;
+                pos += 2;
+            }
+            else
+                return {};
+        }
+        else if (*pos == '|')
+        {
+            /// Branch separator — save the current branch and start a new one.
+            branches.push_back(std::move(current_branch));
+            current_branch.clear();
+            ++pos;
+        }
+        else if (*pos == ')')
+        {
+            /// End of the group. Save the last branch.
+            branches.push_back(std::move(current_branch));
+            ++pos;
+
+            /// Allow only '$' or end of expression after ')'.
+            if (pos < end && *pos == '$')
+                ++pos;
+            if (pos != end)
+                return {};
+
+            break;
+        }
+        else if (
+            *pos == '(' || *pos == '[' || *pos == '.' || *pos == '*' || *pos == '+' || *pos == '?' || *pos == '{' || *pos == '^'
+            || *pos == '$')
+        {
+            /// Any metacharacter inside a branch — too complex, give up.
+            return {};
+        }
+        else
+        {
+            /// Plain literal character.
+            current_branch += *pos;
+            ++pos;
+        }
+    }
+
+    if (branches.size() < 2)
+        return {};
+
+    /// Compute the longest prefix common to all branches.
+    String common_prefix = branches[0];
+    for (size_t i = 1; i < branches.size(); ++i)
+    {
+        size_t common_len = 0;
+        size_t max_len = std::min(common_prefix.size(), branches[i].size());
+        while (common_len < max_len && common_prefix[common_len] == branches[i][common_len])
+            ++common_len;
+        common_prefix.resize(common_len);
+        if (common_prefix.empty())
+            return {};
+    }
+
+    return common_prefix;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -179,14 +475,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
-            "notHas",
-            [] (RPNElement & out, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_NOT_IN_SET;
-                return true;
-            }
-        },
-        {
             "nullIn",
             [] (RPNElement & out, const Field &)
             {
@@ -243,31 +531,31 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
 
                 /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
-                if (prefix.is_exact)
+                if (is_exact)
                 {
                     out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix.prefix);
+                    out.range = Range(prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.prefix.empty())
+                if (prefix.empty())
                     return false;
 
-                if (!prefix.is_perfect)
+                if (!is_perfect)
                     out.relaxed = true;
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix.prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix.prefix, true);
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
                 return true;
             }
@@ -279,30 +567,30 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
 
                 /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
-                if (prefix.is_exact)
+                if (is_exact)
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(prefix.prefix);
+                    out.range = Range(prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.prefix.empty())
+                if (prefix.empty())
                     return false;
 
-                chassert(prefix.is_perfect);
+                chassert(is_perfect);
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix.prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix.prefix, true);
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
 
                 return true;
             }
@@ -362,29 +650,27 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
-
-                /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
-                /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
-                if (prefix.is_exact)
-                {
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix.prefix);
-                    return true;
-                }
-
-                if (prefix.prefix.empty())
+                /// ClickHouse `match` patterns must not contain NUL bytes.
+                /// Do not attempt to optimize such patterns.
+                if (expression.find('\0') != String::npos)
                     return false;
 
-                if (!prefix.is_perfect)
-                    out.relaxed = true;
+                String prefix;
+                if (!expressionHasUnescapedAlternation(expression))
+                    prefix = extractFixedPrefixFromRegularExpression(expression);
+                else
+                    prefix = extractCommonPrefixFromAlternationBranches(expression);
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
+                if (prefix.empty())
+                    return false;
+
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix.prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix.prefix, true);
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
+                out.relaxed = true;
 
                 return true;
             }
@@ -447,7 +733,7 @@ static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunction
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
 static const std::set<std::string_view> no_relaxed_atom_functions
-    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
+    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty"};
 
 static const std::map<std::string, std::string> inverse_relations =
 {
@@ -473,29 +759,7 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notILike", "ilike"},
     {"empty", "notEmpty"},
     {"notEmpty", "empty"},
-    {"has", "notHas"},
-    {"notHas", "has"},
 };
-
-/// `KeyCondition` can only build a set atom out of `has(constant_array, key)`, so that is the only shape where
-/// folding `NOT has(...)` into the single `notHas` leaf buys anything. `has(column, needle)` is deliberately left
-/// as `not(has(...))`: the text index and the bloom filter index analyzers recognize `has` but not `notHas`, so
-/// folding would turn the atom into `FUNCTION_UNKNOWN` for them. Their granule filtering does not suffer from that
-/// - a negated containment atom can never prune those indexes - but the condition becomes always unknown or true,
-/// which drops the index from the useful ones and, for a text index, takes the direct read from it down as well.
-static bool canFoldToInverseRelation(const std::string & name, const ActionsDAG::NodeRawConstPtrs & children)
-{
-    if (name != "has")
-        return true;
-
-    if (children.size() != 2)
-        return false;
-
-    /// The haystack must be constant, which is what `tryPrepareSetIndexForHas` requires of it. This mirrors
-    /// `RPNBuilderTreeNode::isConstant`; aliases need no unwrapping because `cloneDAGWithInversionPushDown`
-    /// elides them while cloning the arguments.
-    return children[0]->column != nullptr;
-}
 
 /// Returns the comparison operator after reversing comparison direction.
 ///
@@ -1036,91 +1300,6 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
 }
 
-static const ActionsDAG::Node * tryRewriteNullIfComparison(
-    const ActionsDAG::Node & node,
-    const String & op_name,
-    ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
-    const ContextPtr & context)
-{
-    if (node.children.size() != 2)
-        return nullptr;
-
-    auto mirrored_op = [](std::string_view op) -> std::string_view
-    {
-        if (op == "equals") return "equals";
-        if (op == "notEquals") return "notEquals";
-        if (op == "less") return "greater";
-        if (op == "greater") return "less";
-        if (op == "lessOrEquals") return "greaterOrEquals";
-        if (op == "greaterOrEquals") return "lessOrEquals";
-        return {};
-    };
-
-    const std::string_view mirrored = mirrored_op(op_name);
-    if (mirrored.empty())
-        return nullptr;
-
-    auto is_const = [](const ActionsDAG::Node & n)
-    {
-        return n.column && isColumnConst(*n.column);
-    };
-
-    const bool c0 = is_const(*node.children[0]);
-    const bool c1 = is_const(*node.children[1]);
-    if (c0 == c1)
-        return nullptr;
-
-    const ActionsDAG::Node * nullif_node = node.children[c0 ? 1 : 0];
-    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
-    const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
-
-    if (nullif_node->type != ActionsDAG::ActionType::FUNCTION)
-        return nullptr;
-
-    const auto & function_name = nullif_node->function_base->getName();
-    if (function_name != "nullIf")
-        return nullptr;
-
-    if (nullif_node->children.size() != 2)
-        return nullptr;
-
-    if (canonical_op != "equals")
-        return nullptr;
-
-    const auto * col_node = nullif_node->children[0];
-    const auto * sentinel_node = nullif_node->children[1];
-
-    if (!is_const(*sentinel_node))
-        return nullptr;
-
-    Field sentinel_field;
-    Field const_field;
-    sentinel_node->column->get(0, sentinel_field);
-    const_node->column->get(0, const_field);
-
-    if (!sentinel_node->result_type->equals(*const_node->result_type) || !col_node->result_type->equals(*const_node->result_type) || sentinel_field == const_field)
-        return nullptr;
-
-    auto function_builder = FunctionFactory::instance().get(String(canonical_op), context);
-    if (!function_builder)
-        return nullptr;
-
-    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false, false);
-    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, false);
-
-    ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
-    const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
-    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
-    /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
-    /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
-    /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
-    const String cmp_name(canonical_op);
-    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
-        return rewritten;
-    return &cmp_node;
-}
-
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -1132,16 +1311,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
-    /// An inversion may only be pushed onto a node whose negation equals its two-valued complement.
-    /// `NOT NULL` is `NULL`, so absorb the inversion at an all-NULL node. That substitutes the
-    /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
-    if (need_inversion && boolean_context
-        && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
-        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
-
     switch (node.type)
     {
-        case ActionsDAG::ActionType::INPUT:
+        case (ActionsDAG::ActionType::INPUT):
         {
             auto & input = inputs_mapping[&node];
             if (input == nullptr)
@@ -1151,7 +1323,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = input;
             break;
         }
-        case ActionsDAG::ActionType::COLUMN:
+        case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
             if (node.column && node.column->getDataType() != TypeIndex::Function)
@@ -1168,20 +1340,20 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
-        case ActionsDAG::ActionType::ALIAS:
+        case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
             res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
-        case ActionsDAG::ActionType::ARRAY_JOIN:
+        case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
             const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
-        case ActionsDAG::ActionType::FUNCTION:
+        case (ActionsDAG::ActionType::FUNCTION):
         {
             auto name = node.function_base->getName();
             if (name == "not")
@@ -1257,8 +1429,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 && boolean_context
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
             {
                 handled_inversion = true;
             }
@@ -1274,7 +1445,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
+                if (it != inverse_relations.end())
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
@@ -1412,16 +1583,10 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             && action.node->children.size() >= 2
             && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
-            /// A curve is only usable here through its key column position, so a curve that is
-            /// an intermediate value of the key expression rather than a key column is skipped.
-            auto it = key_columns.find(action.node->result_name);
-            if (it == key_columns.end())
-                continue;
-
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
             curve.type = space_filling_curve_name_to_type.at(curve.function_name);
-            curve.key_column_pos = it->second;
+            curve.key_column_pos = key_columns.at(action.node->result_name);
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -1467,8 +1632,7 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
-    bool skip_analysis_,
-    bool require_ready_sets_)
+    bool skip_analysis_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1493,10 +1657,7 @@ KeyCondition::KeyCondition(
         return;
     }
 
-    auto info = BuildInfo {
-        .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
-        .require_ready_sets = require_ready_sets_};
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -1674,8 +1835,7 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
-             || !canBeAccurateCastOrNullTarget(in_argument_type))
+    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
@@ -1715,9 +1875,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
 
-        /// DateTime64/Date32 are signed and wider than Date, DateTime, and the narrow integer types,
-        /// so converting values outside the target range wraps around (`Date`/`DateTime`) or throws
-        /// a `DECIMAL_OVERFLOW` exception (integer targets, see `DecimalUtils::convertTo`).
+        /// DateTime64/Date32 are signed, but Date, DateTime, and UInt32 are unsigned, so converting
+        /// values outside the unsigned range wraps around or throws DECIMAL_OVERFLOW.
         ///
         /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
         /// and AFTER execution to catch boundary values where the next value would wrap
@@ -1732,55 +1891,22 @@ static bool applyFunctionChainToColumn(
             else
                 value = (*result_column)[0].safeGet<Time64>().getValue();
 
+            /// negative timestamps after cast -> large unsigned values
+            if (value < 0)
+                return false;
+
             UInt32 scale = isDateTime64(arg_type_inner)
                 ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
                 : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
-
-            /// The whole number of seconds, truncated toward zero - the same value the conversion
-            /// to an integer produces (see `DecimalUtils::getWholePart`).
             Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
-            WhichDataType which_result(*result_type_inner);
-            if (which_result.isInt())
-            {
-                /// A signed target accommodates negative timestamps, but a narrow one throws
-                /// a `DECIMAL_OVERFLOW` exception outside of its range.
-                if (which_result.isInt8() && (seconds < std::numeric_limits<Int8>::min() || seconds > std::numeric_limits<Int8>::max()))
-                    return false;
-                if (which_result.isInt16() && (seconds < std::numeric_limits<Int16>::min() || seconds > std::numeric_limits<Int16>::max()))
-                    return false;
-                if (which_result.isInt32() && (seconds < std::numeric_limits<Int32>::min() || seconds > std::numeric_limits<Int32>::max()))
-                    return false;
-                /// Int64 and wider signed targets fit the whole number of seconds of any DateTime64/Time64.
-            }
-            else if (which_result.isUInt())
-            {
-                /// negative timestamps -> DECIMAL_OVERFLOW for an unsigned target.
-                /// The conversion rejects a value by its whole part, not by the raw tick value
-                /// (see `DecimalUtils::convertToImpl`), so a pre-epoch sub-second value such as
-                /// `1969-12-31 23:59:59.500` is defined and converts to `0`.
-                if (seconds < 0)
-                    return false;
-                if (which_result.isUInt8() && seconds > std::numeric_limits<UInt8>::max())
-                    return false;
-                if (which_result.isUInt16() && seconds > std::numeric_limits<UInt16>::max())
-                    return false;
-                if (which_result.isUInt32() && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
-                    return false;
-                /// UInt64 and wider unsigned targets fit any non-negative number of seconds.
-            }
-            else
-            {
-                /// negative timestamps after cast -> large unsigned values
-                if (value < 0)
-                    return false;
-
-                /// timestamps beyond the target range -> small values
-                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
-                    return false;
-                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
-                    return false;
-            }
+            /// timestamps beyond the target range -> small values
+            if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                return false;
+            if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
         }
         else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
         {
@@ -1964,12 +2090,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return true;
 
             /// Range is irrelevant in this case.
-            /// Monotonicity on defined values only is enough here: stored key values always
-            /// belong to the subset on which the key expression evaluates (computing the sorting
-            /// key at insert time would have thrown otherwise), and a constant outside of that
-            /// subset is rejected by the guards in `applyFunctionChainToColumn`.
             auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-            if (!monotonicity.is_always_monotonic && !monotonicity.is_always_monotonic_where_defined)
+            if (!monotonicity.is_always_monotonic)
                 return false;
 
             return true;
@@ -2178,10 +2300,7 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
-        /// passes it and then throws in the cast below.
-        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
-            || !canBeAccurateCastOrNullTarget(probe_type))
+        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2593,16 +2712,13 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
-        /// passes it and then throws in `castColumnAccurateOrNull` below.
-        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
+        if (!key_column_type->canBeInsideNullable())
             return false;
 
-        /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
-        /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
-        /// `Nothing` is another representation of an all-NULL literal array and is handled below.
-        const NullMap * source_null_map = nullptr;
-        const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
+        const NullMap * set_column_null_map = nullptr;
+
+        // Keep a reference to the original set_column to ensure the data remains valid
+        ColumnPtr original_set_column = set_column;
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
@@ -2614,47 +2730,47 @@ static bool tryPrepareSetColumnsForIndex(
 
             set_element_type = removeNullable(set_element_type);
 
-            const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
-            if (!source_nullable_column)
+            // Obtain the nullable column without reassigning set_column immediately
+            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!set_column_nullable)
                 return false;
 
-            source_null_map = &source_nullable_column->getNullMapData();
-            set_column = source_nullable_column->getNestedColumnPtr();
+            const NullMap & null_map_data = set_column_nullable->getNullMapData();
+            if (!null_map_data.empty())
+                set_column_null_map = &null_map_data;
+
+            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
+
+            // Reassign set_column after we have obtained necessary references
+            set_column = nested_column;
         }
 
-        /// Cast to the key column type, writing NULL where the value cannot be represented in it
-        /// (e.g. 256 for a UInt8 key), so the null map of the result marks the cast failures.
-        ColumnPtr cast_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto * cast_nullable_column = typeid_cast<const ColumnNullable *>(cast_column.get());
-        if (!cast_nullable_column)
+        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
+        if (!nullable_set_column_typed)
             return false;
 
-        const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
-        size_t set_size = cast_failure_null_map.size();
+        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
+        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
-        const bool key_is_nullable = key_column_type->isNullable();
-
-        /// A NULL set element can match a Nullable key, so preserve it in that case. Otherwise it
-        /// cannot match any key value - under regular `IN`, `nullIn` and `has` semantics alike.
-        for (size_t i = 0; i < set_size; ++i)
+        if (set_column_null_map)
         {
-            const bool null_in_source = source_null_map && (*source_null_map)[i];
-            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
-                filter[i] = 0;
-        }
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+            {
+                if (nullable_set_column_null_map_size < set_column_null_map->size())
+                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                else
+                    filter[i] &= !nullable_set_column_null_map[i];
+            }
 
-        if (key_is_nullable && (source_null_map || source_is_nothing))
-        {
-            auto null_map = ColumnUInt8::create();
-            null_map->getData().assign(cast_failure_null_map);
-            auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
-            if (source_null_map)
-                nullable_set_column->applyNullMap(*source_null_map);
-            set_column = std::move(nullable_set_column);
+            set_column = nullable_set_column;
         }
         else
         {
-            set_column = cast_nullable_column->getNestedColumnPtr();
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] &= !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed->getNestedColumnPtr();
         }
         filter_used = true;
 
@@ -2699,11 +2815,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
-        return false;
-
-    /// `buildOrderedSetInplace` below executes the subquery and consumes its plan. `get()` is non-null
-    /// only for an already-built set, same check as `tryRewriteInTruthyCondition` above.
-    if (info.require_ready_sets && !future_set->get())
         return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
@@ -2781,7 +2892,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const BuildInfo & info,
     RPNElement & out)
 {
-    chassert(func.getFunctionName() == "has" || func.getFunctionName() == "notHas");
+    chassert(func.getFunctionName() == "has");
     chassert(func.getArgumentsSize() == 2);
 
     /// Check if key usable
@@ -2816,30 +2927,11 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
 
-    /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
-    /// keys with ColumnVector::compareAt. In particular, `has([nan], nan)` is false but the set index
-    /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
-    /// including nested tuple elements: using it under `notHas` could otherwise prune rows that satisfy
-    /// the predicate.
-    bool array_contains_float = WhichDataType(*array_nested_type).isFloat();
-    if (!array_contains_float)
-    {
-        array_nested_type->forEachChild([&array_contains_float](const IDataType & child)
-        {
-            if (!array_contains_float && WhichDataType(child).isFloat())
-                array_contains_float = true;
-        });
-    }
-
-    if (array_contains_float)
-        return false;
-
     const auto array_elements = array_col->getDataPtr();
     if (array_elements->empty())
     {
-        /// has([], x) is always false and notHas([], x) is always true - we can fold the condition
-        /// to a constant.
-        out.function = func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+        /// has([], x) is always false – we can mark the condition as always false
+        out.function = RPNElement::ALWAYS_FALSE;
         return true;
     }
 
@@ -3442,43 +3534,6 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 }
 
 
-/// Whether `shell` plus the hole rings in arguments 2..num_args-1 of `pointInPolygon` assemble into
-/// a valid polygon. A hole argument that is not a constant ring of two-element numeric tuples
-/// yields false, so an unrecognized shape is never taken for a hole-free polygon.
-static bool holesAreValidForShell(
-    const RPNBuilderFunctionTreeNode & func, size_t num_args, const KeyCondition::RPNElement::Polygon::RingT & shell)
-{
-    boost::geometry::model::polygon<KeyCondition::RPNElement::Polygon::PointT> polygon;
-    polygon.outer().assign(shell.begin(), shell.end());
-
-    for (size_t i = 2; i < num_args; ++i)
-    {
-        Field hole_value;
-        DataTypePtr hole_type;
-        if (!func.getArgumentAt(i).tryGetConstant(hole_value, hole_type) || !WhichDataType(hole_type).isArray())
-            return false;
-
-        auto & hole = polygon.inners().emplace_back();
-        for (const auto & elem : hole_value.safeGet<Array>())
-        {
-            if (elem.getType() != Field::Types::Tuple)
-                return false;
-
-            const auto & elem_tuple = elem.safeGet<Tuple>();
-            if (elem_tuple.size() != 2)
-                return false;
-
-            auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
-            auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-            hole.emplace_back(x, y);
-        }
-    }
-
-    boost::geometry::correct(polygon);
-    return boost::geometry::is_valid(polygon);
-}
-
-
 /** This helper rewrites comparisons of the form "integer_key <op> Float64_literal" into semantically equivalent
   * integer-key predicates so that pruning can stay exact.
   *
@@ -3738,47 +3793,22 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             const auto atom_it = atom_map.find(func_name);
 
-            /// Analyze the point argument. It is either a `tuple` function of two key columns,
-            /// as in pointInPolygon((x, y), ...), or a single key column of type `Point`
-            /// (or another Tuple of two numeric elements), as in pointInPolygon(coord, ...).
+            /// Analyze (x, y)
 
-            auto point_argument = func.getArgumentAt(0);
-            if (point_argument.isFunction()
-                && point_argument.toFunctionNode().getFunctionName() == "tuple"
-                && point_argument.toFunctionNode().getArgumentsSize() == 2)
-            {
-                auto first_argument = point_argument.toFunctionNode();
-                for (size_t i = 0; i < 2; ++i)
-                {
-                    auto name = first_argument.getArgumentAt(i).getColumnName();
-                    auto it = key_columns.find(name);
-                    if (it == key_columns.end())
-                    {
-                        out.key_columns.clear();
-                        break;
-                    }
-                    out.key_columns.push_back(it->second);
-                }
-            }
+            /// TODO: support index analysis for first argument of Point/Tuple type.
+            if (!func.getArgumentAt(0).isFunction())
+                return false;
 
-            if (out.key_columns.empty())
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
+            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
+                return false;
+
+            for (size_t i = 0; i < 2; ++i)
             {
-                /// A whole key column (or key expression) of type Tuple of two coordinates,
-                /// e.g. a `Point` column. Tuple values are ordered lexicographically, so the range
-                /// of such key column constrains the coordinates of the point - see the evaluation
-                /// in `checkInHyperrectangle`.
-                auto name = point_argument.getColumnName();
+                auto name = first_argument.getArgumentAt(i).getColumnName();
                 auto it = key_columns.find(name);
                 if (it == key_columns.end())
                     return false;
-
-                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
-                    info.key_expr->getSampleBlock().getByName(name).type.get());
-                if (!tuple_type || tuple_type->getElements().size() != 2
-                    || !isNativeNumber(tuple_type->getElements()[0])
-                    || !isNativeNumber(tuple_type->getElements()[1]))
-                    return false;
-
                 out.key_columns.push_back(it->second);
             }
             out.point_in_polygon_function_name = func_name;
@@ -3802,17 +3832,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 out.polygon->ring.emplace_back(x, y);
             }
             boost::geometry::correct(out.polygon->ring);
-
-            /// `correct` does not make a ring valid, and `intersects` below only agrees with the
-            /// algorithm the function evaluates for a ring that is. Prune only from a valid one.
-            if (!boost::geometry::is_valid(out.polygon->ring))
-                return false;
-
-            /// Holes are not stored, so `intersects` below tests the shell alone. That over-
-            /// approximates the function only while the assembled shape is valid: for an invalid
-            /// one the function can report a point the shell excludes.
-            if (num_args > 2 && !holesAreValidForShell(func, num_args, out.polygon->ring))
-                return false;
 
             /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
             /// costly `intersects` checks
@@ -3854,12 +3873,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
             }
 
-            if (func_name == "has" || func_name == "notHas")
+            if (func_name == "has")
             {
                 if (tryPrepareSetIndexForHas(func, info, out))
                 {
-                    /// Found empty array constant: has([], x) is always false, notHas([], x) is always true.
-                    if (out.function == RPNElement::ALWAYS_FALSE || out.function == RPNElement::ALWAYS_TRUE)
+                    /// Found empty array constant in has([], x) -> always false
+                    if (out.function == RPNElement::ALWAYS_FALSE)
                         return true;
 
                     const auto atom_it = atom_map.find(func_name);
@@ -4057,34 +4076,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                     if (!should_keep_original_string_constant)
                     {
-                        /// A `FixedString(N)` constant is stored as a `String` Field of N bytes,
-                        /// right-padded with '\0', and compared zero-padded, so it can match more than
-                        /// the single padded value while `convertFieldToType` below builds a point
-                        /// range from the padding:
-                        ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                        ///     (`'abc'`, `'abc\0'`, ...), not a point;
-                        ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
-                        ///     bytes, which no longer map into the key domain.
-                        /// Either way the point range is unsound and prunes matching granules, so
-                        /// decline index analysis (fall back to a full scan). A wider-or-equal
-                        /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
-                        /// so pruning stays correct and is left untouched.
-                        /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
-                        /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
-                        /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                        /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
-                        /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                        /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                        /// type is already `LowCardinality`/`Nullable`-stripped above).
-                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
-                        {
-                            const size_t const_bytes = const_value.safeGet<String>().size();
-                            const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                            if (!fixed_key || fixed_key->getN() < const_bytes)
-                                return false;
-                        }
-
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -5297,11 +5288,8 @@ bool KeyCondition::matchesExactContinuousRange() const
                 Constraint & constraint = column_constraints.at(mapping.key_index);
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE.
-                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
-                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
-                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
-                if (is_chain_strict && mapping.functions.empty())
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
                     constraint = Constraint::POINT;
                 else
                 {
@@ -5325,11 +5313,8 @@ bool KeyCondition::matchesExactContinuousRange() const
             {
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE.
-                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
-                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
-                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
-                if (is_chain_strict && element.monotonic_functions_chain.empty())
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
                     constraint = Constraint::POINT;
             }
 
@@ -5608,42 +5593,6 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
-/// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`
-/// (an unbounded side of a `Range` is represented by a null-like Field), so map it to infinity.
-static Float64 coordinateBoundToFloat64(const Field & field, bool is_left_bound)
-{
-    if (field.isNull())
-        return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
-
-    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
-}
-
-/// For pointInPolygon over a single key column of type Tuple of two coordinates (e.g. `Point`):
-/// derive the bounding box of the coordinates from the range of tuple values. Tuples are ordered
-/// lexicographically: the range [(x1, y1), (x2, y2)] constrains the first coordinate to [x1, x2]
-/// and constrains the second coordinate only if the first coordinate is fixed (x1 = x2).
-static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, Float64 & x_max, Float64 & y_min, Float64 & y_max)
-{
-    x_min = -std::numeric_limits<Float64>::infinity();
-    x_max = std::numeric_limits<Float64>::infinity();
-    y_min = -std::numeric_limits<Float64>::infinity();
-    y_max = std::numeric_limits<Float64>::infinity();
-
-    const Tuple * left = tuple_range.left.getType() == Field::Types::Tuple ? &tuple_range.left.safeGet<Tuple>() : nullptr;
-    const Tuple * right = tuple_range.right.getType() == Field::Types::Tuple ? &tuple_range.right.safeGet<Tuple>() : nullptr;
-
-    if (left && !left->empty())
-        x_min = coordinateBoundToFloat64((*left)[0], /*is_left_bound*/ true);
-    if (right && !right->empty())
-        x_max = coordinateBoundToFloat64((*right)[0], /*is_left_bound*/ false);
-
-    if (left && right && left->size() == 2 && right->size() == 2 && (*left)[0] == (*right)[0])
-    {
-        y_min = coordinateBoundToFloat64((*left)[1], /*is_left_bound*/ true);
-        y_max = coordinateBoundToFloat64((*right)[1], /*is_left_bound*/ false);
-    }
-}
-
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -5878,38 +5827,30 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
-            Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
-            Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
-            Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
-            Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
-
-            if (element.key_columns.size() == 1)
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
             {
-                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
-                if (element.key_columns[0] >= hyperrectangle.size())
+                if (ref.isNull())
                 {
-                    rpn_stack.emplace_back(true, true);
-                    continue;
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
                 }
 
-                tupleRangeToBoundingBox(hyperrectangle[element.key_columns[0]], x_min, x_max, y_min, y_max);
-            }
-            else
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+
+            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
             {
-                if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
-                {
-                    rpn_stack.emplace_back(true, true);
-                    continue;
-                }
-
-                const auto & range_x = hyperrectangle[element.key_columns[0]];
-                const auto & range_y = hyperrectangle[element.key_columns[1]];
-
-                x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
-                x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
-                y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
-                y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
+
+            const auto & range_x = hyperrectangle[element.key_columns[0]];
+            const auto & range_y = hyperrectangle[element.key_columns[1]];
+
+            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
@@ -6346,62 +6287,59 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
+            if (element.key_columns.size() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Point-in-polygon requires 2 key columns.");
+
+            size_t x_key_column = element.key_columns[0];
+            size_t y_key_column = element.key_columns[1];
+
+            auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
+            auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
+
+            if (!is_x_key_col_present && !is_y_key_col_present)
+            {
+                /// Neither coordinate is available — nothing to prune on.
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            {
+                if (ref.isNull())
+                {
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                }
+
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+
+            /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
             Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
-
-            if (element.key_columns.size() == 1)
+            if (is_x_key_col_present)
             {
-                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
-                auto [is_key_col_present, sparse_pos] = get_sparse_info(element.key_columns[0]);
-
-                if (!is_key_col_present)
-                {
-                    rpn_stack.emplace_back(true, true);
-                    continue;
-                }
-
-                tupleRangeToBoundingBox(sparse_hyperrectangle[sparse_pos], x_min, x_max, y_min, y_max);
+                const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
+                x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+                x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
             }
             else
             {
-                size_t x_key_column = element.key_columns[0];
-                size_t y_key_column = element.key_columns[1];
-
-                auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
-                auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
-
-                if (!is_x_key_col_present && !is_y_key_col_present)
-                {
-                    /// Neither coordinate is available — nothing to prune on.
-                    rpn_stack.emplace_back(true, true);
-                    continue;
-                }
-
-                /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
-                if (is_x_key_col_present)
-                {
-                    const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
-                    x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
-                    x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
-                }
-                else
-                {
-                    x_min = -std::numeric_limits<Float64>::infinity();
-                    x_max = std::numeric_limits<Float64>::infinity();
-                }
-                if (is_y_key_col_present)
-                {
-                    const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
-                    y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
-                    y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
-                }
-                else
-                {
-                    y_min = -std::numeric_limits<Float64>::infinity();
-                    y_max = std::numeric_limits<Float64>::infinity();
-                }
+                x_min = -std::numeric_limits<Float64>::infinity();
+                x_max = std::numeric_limits<Float64>::infinity();
+            }
+            if (is_y_key_col_present)
+            {
+                const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
+                y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+                y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+            }
+            else
+            {
+                y_min = -std::numeric_limits<Float64>::infinity();
+                y_max = std::numeric_limits<Float64>::infinity();
             }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))

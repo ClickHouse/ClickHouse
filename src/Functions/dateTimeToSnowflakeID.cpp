@@ -132,7 +132,7 @@ public:
 REGISTER_FUNCTION(DateTimeToSnowflakeID)
 {
     {
-        FunctionDocumentation::Description description = R"(Converts a [DateTime](/reference/data-types/datetime) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
+        FunctionDocumentation::Description description = R"(Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
         FunctionDocumentation::Syntax syntax = "dateTimeToSnowflakeID(value[, epoch])";
         FunctionDocumentation::Arguments arguments = {
             {"value", "Date with time.", {"DateTime"}},
@@ -147,7 +147,7 @@ REGISTER_FUNCTION(DateTimeToSnowflakeID)
     }
 
     {
-        FunctionDocumentation::Description description = R"(Converts a [DateTime64](/reference/data-types/datetime64) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
+        FunctionDocumentation::Description description = R"(Converts a [DateTime64](../data-types/datetime64.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.)";
         FunctionDocumentation::Syntax syntax = "dateTime64ToSnowflakeID(value[, epoch])";
         FunctionDocumentation::Arguments arguments = {
             {"value", "Date with time.", {"DateTime64"}},

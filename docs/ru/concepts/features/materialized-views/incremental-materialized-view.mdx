@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Параллельная и последовательная обработка
 </div>
 
-Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings/parallel#parallel_view_processing).
+Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings#parallel_view_processing).
 
 По умолчанию эта настройка имеет значение `0` (`false`), то есть materialized view выполняются последовательно в порядке `uuid`.
 
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-В этом случае CTE `users` заново вычисляется при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
+В этом случае CTE `users` пересчитывается при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
 
-Как правило, используйте CTE для логики, работающей с той же исходной таблицей, к которой привязано materialized view, либо убедитесь, что таблицы, на которые есть ссылки, небольшие и вряд ли станут узким местом по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+Как правило, CTE стоит использовать для логики, которая работает с той же исходной таблицей, к которой привязана materialized view, либо нужно убедиться, что используемые таблицы небольшие и вряд ли создадут узкие места по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в Materialized Views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

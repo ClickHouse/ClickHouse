@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -69,21 +70,13 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
-class MemorySpillScheduler;
-using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
-
 class ThreadGroup
 {
-    /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
-    /// - createForMaterializedView()
-    /// - createForFlushAsyncInsertQueue()
-    /// - createForExplainAnalyze()
-    /// Required for raw pointers to memory_tracker/performance_counters
-    ThreadGroupPtr parent;
-
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -96,7 +89,7 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillSchedulerPtr memory_spill_scheduler;
+    MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -139,8 +132,7 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
-    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -168,9 +160,6 @@ private:
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
-
-    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).

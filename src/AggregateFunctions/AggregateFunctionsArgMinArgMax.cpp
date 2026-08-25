@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -125,10 +124,9 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
                     this->type_val->getName(),
-                    getName(),
-                    getNumericVariantSupertypeHint(type.getPtr()));
+                    getName());
         };
         check_not_dynamic_or_variant(*this->type_val);
         this->type_val->forEachChild(check_not_dynamic_or_variant);
@@ -451,11 +449,11 @@ void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
-- [Tuple](/reference/data-types/tuple)
+- [Tuple](/sql-reference/data-types/tuple.md)
     )";
     FunctionDocumentation::Syntax syntax_argMin = R"(
 argMin(arg, val)
@@ -522,11 +520,11 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
-- [Tuple](/reference/data-types/tuple)
+- [Tuple](/sql-reference/data-types/tuple.md)
     )";
     FunctionDocumentation::Syntax syntax_argMax = R"(
 argMax(arg, val)
@@ -597,7 +595,7 @@ SELECT argMax(a, (b,a)) FROM test;
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMin` is that `argAndMin` returns both argument and value.
@@ -605,8 +603,8 @@ The only difference with `argMin` is that `argAndMin` returns both argument and 
 
 **See also**
 
-- [argMin](/reference/functions/aggregate-functions/argMin)
-- [Tuple](/reference/data-types/tuple)
+- [argMin](/sql-reference/aggregate-functions/reference/argMin.md)
+- [Tuple](/sql-reference/data-types/tuple.md)
     )";
     FunctionDocumentation::Syntax syntax_argAndMin = R"(
 argAndMin(arg, val)
@@ -674,7 +672,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMax` is that `argAndMax` returns both argument and value.
@@ -682,8 +680,8 @@ The only difference with `argMax` is that `argAndMax` returns both argument and 
 
 **See also**
 
-- [argMax](/reference/functions/aggregate-functions/argMax)
-- [Tuple](/reference/data-types/tuple)
+- [argMax](/sql-reference/aggregate-functions/reference/argMax.md)
+- [Tuple](/sql-reference/data-types/tuple.md)
     )";
     FunctionDocumentation::Syntax syntax_argAndMax = R"(
 argAndMax(arg, val)

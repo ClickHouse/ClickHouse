@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', 'логическая репликация'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
@@ -71,43 +71,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 Нажмите **Next**.
 
-<div id="automated-schema-migration">
-  ## Автоматизированная миграция схемы
-</div>
-
-<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Шаг 2: автоматизированная миграция схемы с выбором целевой базы данных" size="lg" border />
-
-При выборе этого варианта ClickPipe автоматически получит схему исходной базы данных и применит её к сервису Managed Postgres на этапе [Setup](/ru/integrations/clickpipes/postgres/lifecycle#setup) после создания ClickPipe.
-
-Эта возможность предполагает **пустую целевую базу данных**, поскольку переносит из исходной базы данных все объекты независимо от того, какие таблицы вы выберете позже в мастере. Если целевая база данных уже содержит данные или требуется более гибкая настройка, выберите режим [**Manual**](#manual-schema-migration).
-
-Выберите целевую базу данных в раскрывающемся списке или нажмите **Create a new database**, чтобы создать её.
-
-<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Диалог создания новой базы данных Postgres" size="lg" border />
-
-<div id="monitoring">
-  ### Мониторинг
-</div>
-
-Ход миграции схемы можно отслеживать в представлении сведений о ClickPipes. В разделе **Журналы** отображаются статус миграции схемы и все возникшие ошибки.
-
-Этот режим имеет следующие ограничения:
-
-* Пайпы, использующие SSH tunneling, не поддерживают автоматическую миграцию схемы. Схему необходимо [экспортировать и импортировать вручную](#manual-schema-migration).
-
-<div id="manual-schema-migration">
-  ## Ручная миграция схемы
-</div>
-
-Если в целевой базе данных уже есть данные или вам нужна более индивидуальная настройка, а не чистое состояние, которое предполагает автоматический режим, выберите режим **Manual**.
-
-<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Шаг 2: ручная миграция схемы с помощью команды экспорта pg_dump" size="lg" border />
-
 <div id="step-2-export-schema">
-  ### Экспортируйте схему базы данных
+  ## Шаг 2: Экспорт схемы базы данных
 </div>
 
-Мастер покажет команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
+Мастер показывает команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
 
 <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Шаг 2: команда pg_dump для экспорта схемы" size="lg" border />
 
@@ -120,19 +88,19 @@ pg_dump \
   -f pg.sql
 ```
 
-В результате в текущем каталоге будет создан файл `pg.sql`.
+Это создаст `pg.sql` в текущем каталоге.
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Вывод терминала после выполнения pg_dump" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Вывод в терминале после запуска pg_dump" size="lg" border />
 
-Нажмите **Next**.
+Нажмите **Далее**.
 
 <div id="step-3-import-schema">
-  ### Импортируйте схему в свой сервис Managed Postgres
+  ## Шаг 3: Импорт схемы в сервис Managed Postgres
 </div>
 
 Выберите целевую базу данных в раскрывающемся списке или нажмите **Create a new database**, чтобы создать новую.
 
-Мастер покажет команду `psql` для применения дампа схемы к вашему сервису Managed Postgres. Выполните её в терминале:
+Мастер покажет команду `psql`, с помощью которой можно применить дамп схемы в вашем сервисе Managed Postgres. Выполните её в терминале:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Шаг 3: команда psql для импорта схемы" size="lg" border />
 
@@ -145,9 +113,9 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Вывод терминала после выполнения импорта схемы через psql" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Вывод терминала после запуска импорта схемы через psql" size="lg" border />
 
-Нажмите **Next**.
+Нажмите **Далее**.
 
 <div id="step-4-ingestion-settings">
   ## Шаг 4: Настройка параметров ингестии
@@ -183,9 +151,9 @@ psql \
   ## Отслеживание миграции
 </div>
 
-После создания миграции она появится в списке **источников данных** со статусом **Running**.
+После создания миграции она появится в списке **источник данных** со статусом **Running**.
 
-<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Список источников данных с миграцией в статусе Running" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Список источник данных с миграцией в статусе Running" size="lg" border />
 
 Нажмите на миграцию, чтобы открыть подробное представление. На вкладке **Tables** отображается ход начальной загрузки для каждой таблицы, включая количество обработанных строк, число партиций и среднее время на партицию. На вкладке **Metrics** после запуска CDC отображаются задержка репликации и пропускная способность.
 
@@ -258,6 +226,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## Следующие шаги
 </div>
 
-* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)
+* [Быстрый старт с Managed Postgres](/ru/products/managed-postgres/quickstart)
 * [Сведения о подключении к Managed Postgres](/ru/products/managed-postgres/connection)
-* [FAQ по ClickPipes для Postgres](/ru/integrations/clickpipes/postgres/faq)
+* [FAQ по ClickPipes Postgres](/ru/integrations/clickpipes/postgres/faq)

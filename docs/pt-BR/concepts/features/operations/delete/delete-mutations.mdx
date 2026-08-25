@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: 'Mutações de exclusão'
+title: 'Mutações de exclusão'
+hide_title: false
+description: 'Página que descreve mutações de exclusão — consultas ALTER que manipulam dados da tabela por meio de exclusões'
+keywords: ['mutações de exclusão', 'ALTER TABLE DELETE', 'mutações de dados', 'reescrita de partes de dados', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+Mutações de exclusão referem-se a consultas `ALTER` que manipulam dados da tabela por meio de exclusões. Em especial, incluem consultas como `ALTER TABLE DELETE`. Executar essas consultas gera novas versões modificadas das partes de dados. Isso significa que essas instruções acionam a reescrita de partes de dados inteiras para todos os dados inseridos antes da mutação, resultando em uma grande quantidade de solicitações de gravação.
+
+<Info>
+  Para exclusões, você pode evitar essa grande quantidade de solicitações de gravação usando motores de tabela especializados, como [ReplacingMergeTree](/pt-BR/concepts/features/operations/update/replacing-merge-tree) ou [CollapsingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree), em vez do motor de tabela MergeTree padrão.
+</Info>
+
+import DeleteMutations from '/snippets/pt-BR/delete.mdx';
+
+<DeleteMutations />

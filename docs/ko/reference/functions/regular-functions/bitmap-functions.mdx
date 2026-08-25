@@ -166,7 +166,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 도입 버전: v20.1.0
 
-정수 배열에서 비트맵을 생성합니다. 지원되는 원소 타입은 8, 16, 32 또는 64비트의 부호 있는 정수와 부호 없는 정수입니다. 함수 [`bitmapToArray`](/ko/reference/functions/regular-functions/bitmap-functions#bitmapToArray)의 반대 기능입니다.
+부호 없는 정수 배열에서 비트맵을 생성합니다. 함수 [`bitmapToArray`](/ko/reference/functions/regular-functions/bitmap-functions#bitmapToArray)의 반대 기능입니다.
 
 **구문**
 
@@ -176,7 +176,7 @@ bitmapBuild(array)
 
 **인수**
 
-* `array` — 정수 배열. [`Array((U)Int*)`](/ko/reference/data-types/array)
+* `array` — 부호 없는 정수로 이루어진 배열. [`Array(UInt*)`](/ko/reference/data-types/array)
 
 **반환 값**
 
@@ -194,18 +194,6 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
-```
-
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT bitmapBuild([-128, -1]::Array(Int8)) AS res, toTypeName(res);
-```
-
-```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([-128, -1]::Array(Int8)))─┐
-│     │ AggregateFunction(groupBitmap, Int8)             │
-└─────┴──────────────────────────────────────────────────┘
 ```
 
 <div id="bitmapCardinality">
@@ -250,7 +238,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 도입 버전: v20.1.0
 
-비트맵에 특정 원소가 포함되어 있는지 확인합니다. 값은 비트맵 원소 타입의 부호 없는 정수로 비교됩니다. 부호 있는 비트맵에서 음수 원소는 그에 대응하는 부호 없는 값과 일치합니다(예: `Int8` 값 `-1`은 `255`와 일치함).
+비트맵에 특정 요소가 포함되어 있는지 확인합니다.
 
 **구문**
 
@@ -260,7 +248,7 @@ bitmapContains(bitmap, value)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `value` — 확인할 원소. [(U)Int8/16/32/64](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `value` — 확인할 요소. [(U)Int8/16/32/64](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -272,18 +260,6 @@ bitmapContains(bitmap, value)
 
 ```sql title=Query
 SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│  1  │
-└─────┘
-```
-
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
 ```
 
 ```response title=Response
@@ -370,7 +346,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 도입 버전: v20.1.0
 
-비트맵 원소 타입의 부호 없는 정수로 해석했을 때 비트맵에서 가장 큰 원소를 반환합니다. 부호 있는 비트맵의 음수 값은 해당하는 부호 없는 값으로 처리합니다(예: `Int8` 값 `-1`은 `255`입니다). 비트맵이 비어 있으면 `0`을 반환합니다.
+비트맵에서 설정된 비트 중 가장 큰 비트의 위치를 반환합니다. 비트맵이 비어 있으면 `0`을 반환합니다.
 
 **구문**
 
@@ -384,7 +360,7 @@ bitmapMax(bitmap)
 
 **반환 값**
 
-비트맵 원소 타입의 부호 없는 값으로 가장 큰 원소를 반환하며, 비트맵이 비어 있으면 `0`을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+비트맵에서 설정된 비트 중 가장 큰 비트의 위치를 반환합니다. 설정된 비트가 없으면 `0`을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
 
 **예시**
 
@@ -400,25 +376,13 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 255 │
-└─────┘
-```
-
 <div id="bitmapMin">
   ## bitmapMin
 </div>
 
 도입 버전: v20.1.0
 
-비트맵에서 가장 작은 원소를 비트맵 원소 타입의 부호 없는 정수로 해석해 반환합니다. 부호 있는 비트맵에서는 음수 값을 해당하는 부호 없는 값으로 처리합니다(예: `Int8` 값 `-128`은 `128`입니다). 비트맵이 비어 있으면 `UINT32_MAX`를 반환합니다(비트맵 원소 타입이 32비트보다 크면 `UINT64_MAX`).
+비트맵에서 설정된 비트 중 가장 작은 비트의 위치를 반환합니다. 모든 비트가 설정 해제된 경우에는 `UINT32_MAX`를 반환하며, 비트맵에 `2^64`개보다 많은 비트가 포함된 경우에는 `UINT64_MAX`를 반환합니다.
 
 **구문**
 
@@ -432,7 +396,7 @@ bitmapMin(bitmap)
 
 **반환 값**
 
-비트맵 원소 타입의 최솟값을 부호 없는 값으로 반환합니다. 비트맵이 비어 있으면 `UINT32_MAX`/`UINT64_MAX`를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+비트맵에서 설정된 가장 낮은 비트의 위치 또는 `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/ko/reference/data-types/int-uint)를 반환합니다.
 
 **예시**
 
@@ -445,18 +409,6 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
-└─────┘
-```
-
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 128 │
 └─────┘
 ```
 
@@ -538,7 +490,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 도입 버전: v20.1.0
 
-값 범위 `[start, end)`에 포함된 원소를 포함하는 비트맵의 부분 집합을 반환합니다. 원소 값은 비트맵 원소 타입의 부호 없는 정수로 비교됩니다.
+지정된 범위 [start, end) 내에서 설정된 비트만 포함하는 비트맵의 부분 집합을 반환합니다. 인덱스는 1부터 시작합니다.
 
 **구문**
 
@@ -552,7 +504,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **반환 값**
 
-지정된 값 범위의 원소만 포함하는 비트맵을 반환합니다 [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
+지정된 범위에서 1로 설정된 비트만 포함하는 비트맵을 반환합니다 [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
@@ -574,7 +526,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 도입 버전: v20.1.0
 
-값이 `range_start` 이상인 원소 중 부호 없는 순서로 가장 작은 값부터 선택하여, 최대 `cardinality_limit`개의 원소로 구성된 부분 집합을 반환합니다.
+위치 `range_start`부터 최대 `cardinality_limit`개의 비트가 설정된 비트맵 부분집합을 반환합니다. 인덱싱은 1부터 시작합니다.
 
 **구문**
 
@@ -584,23 +536,23 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `range_start` — 범위의 시작(포함). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합의 최대 카디널리티. [`UInt32`](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `range_start` — 범위의 시작값(포함). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합의 최대 카디널리티. [`UInt32`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-부호 없는 값이 `range_start` 이상인 원소를 최대 `cardinality_limit`개 포함하는 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
+`range_start`부터 시작하는, 최대 `cardinality_limit`개의 비트가 설정된 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
 **사용 예시**
 
 ```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
 ```
 
 ```response title=Response
 ┌─res────┐
-│ [3, 5] │
+│ [5, 3] │
 └────────┘
 ```
 
@@ -610,7 +562,7 @@ SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3
 
 도입 버전: v20.1.0
 
-비트맵을 해당 원소의 배열로 변환합니다. 배열 원소 타입은 비트맵 원소 타입 `T`(부호 있는 정수 또는 부호 없는 정수)와 일치합니다. 함수 [`bitmapBuild`](/ko/reference/functions/regular-functions/bitmap-functions#bitmapBuild)와 반대되는 기능입니다.
+비트맵을 부호 없는 정수 배열로 변환합니다. 함수 [`bitmapBuild`](/ko/reference/functions/regular-functions/bitmap-functions#bitmapBuild)와 반대되는 기능입니다.
 
 **구문**
 
@@ -624,7 +576,7 @@ bitmapToArray(bitmap)
 
 **반환 값**
 
-비트맵에 포함된 원소의 배열을 반환합니다. [`Array(T)`](/ko/reference/data-types/array)
+비트맵에 포함된 부호 없는 정수 배열을 반환합니다. [`Array(UInt*)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -640,29 +592,13 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────────────────┘
 ```
 
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
-```
-
-```response title=Response
-┌─res────────┐
-│ [-128, -1] │
-└────────────┘
-```
-
 <div id="bitmapTransform">
   ## bitmapTransform
 </div>
 
 도입 버전: v20.1.0
 
-`from_array`에서 `to_array`로의 매핑에 따라 비트맵의 원소를 대체합니다.
-값은 비트맵 원소 타입의 부호 없는 정수로 해석됩니다([`bitmapContains`](/ko/reference/functions/regular-functions/bitmap-functions#bitmapContains)와 동일한 도메인).
-부호 있는 비트맵에서는 음수 원소가 해당 부호 없는 원소와 일치합니다(예: `Int8` 값 `-1`은 `255`와 일치합니다).
-`to_array`의 값이 비트맵 원소 타입에 맞지 않으면 `BAD_ARGUMENTS`가 발생합니다. `from_array`의 값이
-맞지 않으면 해당 값을 찾을 수 없으므로 대응하는 대체가 적용되지 않습니다.
+`from_array`의 특정 비트 값을 `to_array`의 해당 값으로 교체하여 비트맵에서 최대 N개의 비트를 변경합니다.
 
 **구문**
 
@@ -672,11 +608,11 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `from_array` — 대체할 기존의 설정된 비트 배열. [`Array(T)`](/ko/reference/data-types/array). - `to_array` — 대체에 사용할 새로 설정된 비트 배열. [`Array(T)`](/ko/reference/data-types/array).
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `from_array` — 대체할 기존 설정 비트의 배열. [`Array(T)`](/ko/reference/data-types/array). - `to_array` — 대체에 사용할 새 설정 비트의 배열. [`Array(T)`](/ko/reference/data-types/array).
 
 **반환 값**
 
-지정된 매핑에 따라 원소가 변환된 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
+지정된 매핑에 따라 요소가 변환된 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
@@ -690,18 +626,6 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ┌─res───────────────┐
 │ [1, 3, 5, 20, 40] │
 └───────────────────┘
-```
-
-**부호 있는 비트맵**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
-```
-
-```response title=Response
-┌─res─────┐
-│ [0, 10] │
-└─────────┘
 ```
 
 <div id="bitmapXor">
@@ -782,7 +706,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 도입 버전: v21.9.0
 
-부호 없는 값의 오름차순으로 `offset`개의 원소를 건너뛴 후 비트맵의 부분 집합을 반환합니다. 반환되는 비트맵의 최대 카디널리티는 `cardinality_limit`입니다.
+`offset` 위치부터 시작하는 비트맵의 부분 집합을 반환합니다. 반환되는 비트맵의 최대 카디널리티는 `cardinality_limit`입니다.
 
 **구문**
 
@@ -792,11 +716,11 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `offset` — 처음부터 건너뛸 설정된 비트 수(0부터 시작). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합에 포함할 설정된 비트의 최대 개수. [`UInt32`](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `offset` — 앞에서부터 건너뛸 1로 설정된 비트 수(0부터 시작). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합에 포함할 1로 설정된 비트의 최대 개수. [`UInt32`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-부호 없는 값의 오름차순에서 `offset`개의 원소를 건너뛴 후 최대 `cardinality_limit`개의 원소를 포함하는 비트맵을 반환합니다 [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
+오름차순에서 `offset`개의 1로 설정된 비트를 건너뛴 다음부터 시작하는, 최대 `limit`개의 1로 설정된 비트를 포함하는 비트맵을 반환합니다 [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 

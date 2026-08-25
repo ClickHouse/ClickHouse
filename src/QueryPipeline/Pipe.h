@@ -60,10 +60,9 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
-    /// Drop totals and extremes. All three discard through a `DroppingTransform` on the data path.
+    /// Drop totals and extremes (create NullSink for them).
     void dropTotals();
     void dropExtremes();
-    void dropTotalsAndExtremes();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -129,11 +128,6 @@ private:
     /// If is set, all newly created processors will be added to this too.
     /// It is needed for debug. See QueryPipelineProcessorsCollector.
     Processors * collected_processors = nullptr;
-
-    /// Discards the requested streams through a `DroppingTransform`. Requires a data output to forward,
-    /// which holds for every caller: totals and extremes can only be added to a non-empty pipe, and
-    /// `addTransform` rejects an empty one.
-    void dropStreams(bool drop_totals, bool drop_extremes);
 
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.

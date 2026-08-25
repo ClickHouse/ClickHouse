@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/HypotheticalIndexStore.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
@@ -30,7 +30,7 @@ ColumnsDescription StorageSystemHypotheticalIndexes::getColumnsDescription()
 void StorageSystemHypotheticalIndexes::fillData(
     MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & store = context->getHypotheticalObjectStore();
+    const auto & store = context->getHypotheticalIndexStore();
     auto entries = store.getAll();
 
     for (const auto & entry : entries)

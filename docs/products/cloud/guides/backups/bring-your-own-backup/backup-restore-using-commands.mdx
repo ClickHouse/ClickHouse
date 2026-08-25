@@ -174,27 +174,13 @@ where `uuid` is a unique identifier, used to identify the backup.
 <Tab title="RESTORE">
 
 ```sql
-RESTORE ALL
+RESTORE ALL EXCEPT TABLES system.users, system.roles
 FROM S3(
     'https://testchbackups.s3.amazonaws.com/<uuid>',
     '<key id>',
     '<key secret>'
 )
-SETTINGS restore_access_entities_with_current_grants = 1
 ```
-
-The `restore_access_entities_with_current_grants` setting is available from ClickHouse Cloud version **26.4** (build **26.4.1.1942** or later).
-You can check the version your service is running with:
-
-```sql
-SELECT version()
-```
-
-When `restore_access_entities_with_current_grants` is enabled, restored users and roles have their grants limited to what the restoring user is allowed to grant
-(the same semantics as [`GRANT CURRENT GRANTS`](/reference/statements/grant)), instead of the `RESTORE`
-failing with `ACCESS_DENIED` when the backup contains more permissions than the restoring user can grant.
-
-On versions earlier than 26.4, omit the setting.
 </Tab>
 </Tabs>
 
