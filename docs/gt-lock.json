@@ -7,36 +7,36 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "ko": {
-          "updatedAt": "2026-08-25T02:30:33.929Z",
+          "updatedAt": "2026-08-25T11:21:44.269Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-25T02:30:34.569Z",
+          "updatedAt": "2026-08-25T11:21:44.785Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-25T02:30:33.518Z",
+          "updatedAt": "2026-08-25T11:21:43.894Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-25T02:30:34.353Z",
+          "updatedAt": "2026-08-25T11:21:44.606Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-25T02:30:34.986Z",
+          "updatedAt": "2026-08-25T11:21:45.141Z",
           "fileName": "docs.json",
-          "postProcessHash": "934d9898710a24b4913d425e0f39e346445bc0c8f1d677bb40440f2deee546d9"
+          "postProcessHash": "2bf917935af13f78971df62816212aa14434052947548813fb558721db4682f1"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-25T02:30:34.133Z",
+          "updatedAt": "2026-08-25T11:21:44.432Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-25T02:30:33.726Z",
+          "updatedAt": "2026-08-25T11:21:44.102Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-25T02:30:34.787Z",
+          "updatedAt": "2026-08-25T11:21:44.955Z",
           "fileName": "docs.json"
         }
       },
@@ -14301,51 +14301,50 @@
     },
     {
       "fileId": "b3e6410562c09d1a4eb633364785f35dde8d081feb40962a33762510fa5a3fbf",
-      "versionId": "f81cc6f8d2d48d772be9b8f495887aa2cc85d59110bcec3b90550bea8c8f6d33",
+      "versionId": "668011ec38d55726365e72021ee40e67a493c2a345b870dd54a7b0dcac5fee78",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
-          "fileName": "es/products/managed-postgres/faq.mdx",
-          "postProcessHash": "1ed86fa00ed56afcb03fa6f32d376eb5855cff427c1b641e62f972a9c4cb99f6"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
+          "updatedAt": "2026-08-25T11:21:50.400Z",
           "fileName": "ja/products/managed-postgres/faq.mdx",
-          "postProcessHash": "53af9556502adb4552b91413a36e4059a0b08aec2912763af6ccb230f4c53142"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
-          "fileName": "ko/products/managed-postgres/faq.mdx",
-          "postProcessHash": "3d6ae995a3f7cd1a1b38f8e975c77acc9aa7ff181b307d2617b0f72473b0ce88"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
-          "fileName": "pt-BR/products/managed-postgres/faq.mdx",
-          "postProcessHash": "177bdd7b1f536599c6b1823b86202999fdc3b9b65734d63e53e5bdee26f3cac3"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.962Z",
-          "fileName": "ru/products/managed-postgres/faq.mdx",
-          "postProcessHash": "ea43083884a54577867a123f5c14818c2e70660b8625e10aff771299ed006414"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.963Z",
-          "fileName": "zh/products/managed-postgres/faq.mdx",
-          "postProcessHash": "c11d940878334f72505d9d05e1b536c21862e47bb48c66ffa303607f5c1995e6"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.963Z",
-          "fileName": "ar/products/managed-postgres/faq.mdx",
-          "postProcessHash": "7f921186662ae9af8e5e50047c5f189bc130fd69856565255341964424138d2d"
+          "postProcessHash": "9c476f8e68e5eb92310149c96b01ce517c24200262144ca08493ab11e3db3be6"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.963Z",
+          "updatedAt": "2026-08-25T11:21:50.401Z",
           "fileName": "fr/products/managed-postgres/faq.mdx",
-          "postProcessHash": "e2237c5a4853b63f85e22c994800f14cf6712027860f33a9be53d9ab1a03c3aa"
+          "postProcessHash": "047fe4d2435357c11deda693a92b3fb2246cf0a6b534ff0a00f2e4263f10cfa4"
+        },
+        "zh": {
+          "updatedAt": "2026-08-25T11:21:50.402Z",
+          "fileName": "zh/products/managed-postgres/faq.mdx",
+          "postProcessHash": "0f87e66ff03754e5bf7322383ec7f236fc007383a9423279dc0f7b864d9e8cac"
+        },
+        "es": {
+          "updatedAt": "2026-08-25T11:21:50.403Z",
+          "fileName": "es/products/managed-postgres/faq.mdx",
+          "postProcessHash": "5ba73dae59c8becf06ee56dfa92a44a3f18ce7a52a0f1d08558ebeab70a678bc"
+        },
+        "ar": {
+          "updatedAt": "2026-08-25T11:21:50.403Z",
+          "fileName": "ar/products/managed-postgres/faq.mdx",
+          "postProcessHash": "b788a038c7b843dddc6f9b16846fb4e1df6cb8c2c9d03b320b11b7e7bef9e1e4"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T11:21:50.403Z",
+          "fileName": "ko/products/managed-postgres/faq.mdx",
+          "postProcessHash": "43b1223e3066967006878ec54e9823e6b9930cf3fd9a97a9d859188cd4205c7c"
+        },
+        "ru": {
+          "updatedAt": "2026-08-25T11:21:50.406Z",
+          "fileName": "ru/products/managed-postgres/faq.mdx",
+          "postProcessHash": "fc72e886ea93f37e9865f9d87d5a5076fcdaac8d36d44a897c5cf1e4653d1efa"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T11:21:50.414Z",
+          "fileName": "pt-BR/products/managed-postgres/faq.mdx",
+          "postProcessHash": "1cfbd729d18be0c88f38ae538ce7de2b7a3728f2d172dd1053b2aa31ac049577"
         }
       },
-      "fileName": "products/managed-postgres/faq.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/faq.mdx"
     },
     {
       "fileId": "25eb169ba89248b77aac1dd630a176bc4cd33afda320630ec1ca632afc7cf6bd",
@@ -14541,51 +14540,50 @@
     },
     {
       "fileId": "a05ef4dfd3414a0071b94623b7d5e4e233611ee2534a5dca290cd6379d31f20b",
-      "versionId": "f1a00cec225ee871ac9b334087d26bd75b73f429c3bc562a93780277b774a66d",
+      "versionId": "7dcd377bf49c77e0a81f9e53a2869ef518a2a0eea09b997e396741c99b418d40",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.969Z",
+          "updatedAt": "2026-08-25T11:21:50.408Z",
           "fileName": "es/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "ba50efb3d23c23d30ce1561c1ff5ad8aa61da4987d9bc255cdd5198d9869a865"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.969Z",
-          "fileName": "ja/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "f36a9e0f1ac2a085ec69ddd62ca48e040e021a47c9a26473acfda31fd48a45aa"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
-          "fileName": "ko/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "51bc6facb75e5f1f8103e6e9f02e6569afeeddae367fc958d8a322b311fd59f3"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
-          "fileName": "pt-BR/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "1ba6c2f94ec6d218ebebc2138d554aaab7c9718834e9cff91d94a062159f7866"
+          "postProcessHash": "40ade8e420117844025f9d2ee9d1d5413010e48271a6000a40cb423141c4331d"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
+          "updatedAt": "2026-08-25T11:21:50.413Z",
           "fileName": "ru/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "e26f23aa6fe38d843c34ef130cdbf22eb29650eb73be1991dbe4085b84d7ff60"
+          "postProcessHash": "93fb9fb3e1bb3b0441042f416acc4d86363f2d3ef34482c57a74663e6522d062"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
-          "fileName": "zh/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "701b6c695f35b2d86c625d07aa659842e1ade74a15778e53547d0c8b939f9a0d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
-          "fileName": "ar/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "c1cfda5670081d719942a32b5305794ac1a73c859e8d31c1be17a67ed0811721"
+        "ja": {
+          "updatedAt": "2026-08-25T11:21:50.418Z",
+          "fileName": "ja/products/managed-postgres/pricing.mdx",
+          "postProcessHash": "79a9fc52ad85e050a2727548f7da9f9be2d58b1bac9836b2d864bf9b22880aaf"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.970Z",
+          "updatedAt": "2026-08-25T11:21:50.420Z",
           "fileName": "fr/products/managed-postgres/pricing.mdx",
-          "postProcessHash": "86117d6baa9e9b3d5acfb3b4f91cf239bfaa54176d8676aaa014ef4e9c8d3480"
+          "postProcessHash": "e150be1bb5a397b70c841acd94eda616dcb48e8353d4e2c58dbc8c907a7bfc5d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T11:21:50.420Z",
+          "fileName": "pt-BR/products/managed-postgres/pricing.mdx",
+          "postProcessHash": "25c71b451a678199434026c739b1242e01435258458c1abe9be921008cc75fba"
+        },
+        "ar": {
+          "updatedAt": "2026-08-25T11:21:50.423Z",
+          "fileName": "ar/products/managed-postgres/pricing.mdx",
+          "postProcessHash": "0da823367b0e6f1537bf1b34c3b68a54ebb5dffee1f645f130b27d8e3f98532e"
+        },
+        "zh": {
+          "updatedAt": "2026-08-25T11:21:50.423Z",
+          "fileName": "zh/products/managed-postgres/pricing.mdx",
+          "postProcessHash": "1694d7e7550f45c132b454e0cf9414b16198bfffe4e3fec092c74399c453ea97"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T11:21:50.425Z",
+          "fileName": "ko/products/managed-postgres/pricing.mdx",
+          "postProcessHash": "8a41223d1c53e07b9455ace21ffea96583b6a27e668b07afd948e3eadbc38a30"
         }
       },
-      "fileName": "products/managed-postgres/pricing.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/pricing.mdx"
     },
     {
       "fileId": "8de504e21a701894f014bd4ba742aa8e61f45ddb271c4fe74ac5ad31ae217d94",
@@ -14733,51 +14731,50 @@
     },
     {
       "fileId": "7c97949d4493b25a28d3daeb977e7e9e391d0cc47bfa4c9aa5e540084a1d071a",
-      "versionId": "923a904e95053e254f0cddfc0c5a1631bf1e8b7fdc92bea402452d71d38582d6",
+      "versionId": "bd6c8e35a6af89161273bf993c4ada999e383d75c1d56a209eeb3e7718d274d0",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
-          "fileName": "ko/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "718cdc2c6cc56698253c122b096f09531a77b216dee447404fdc2bd8f0aac343"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
+          "updatedAt": "2026-08-25T11:21:50.407Z",
           "fileName": "zh/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "c8975fb5451492be477d5528e1f3605aca3b2ed25f52b404adfd9071e8fe354b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
-          "fileName": "ja/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "5447116b58c367c8a70f6fcd6b1c3ad43ae6dec280711a837d835c42dce61f25"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.975Z",
-          "fileName": "fr/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "93be5db6fdf3a7feb19d7988f475abc7c8a8cfe4c5681fac797611ad7a059871"
+          "postProcessHash": "6658f97d8a06940339c2dc598da0e08cf9eb9e7829bab83e26f530c5726334a8"
         },
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
+          "updatedAt": "2026-08-25T11:21:50.411Z",
           "fileName": "es/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "c6a7a94eee207f19992c1883af245e6025f6641c889ff407d146c00d3ec32c31"
+          "postProcessHash": "55828d2722cd5b12ba7a7b37090331904e4eda1cdecc2fbf164984924b9116f5"
+        },
+        "fr": {
+          "updatedAt": "2026-08-25T11:21:50.412Z",
+          "fileName": "fr/products/managed-postgres/scaling.mdx",
+          "postProcessHash": "9343e5fbb54f490c382a0d43a73523ea504a4d1c57fd2f72d679aa1ff41af8ca"
+        },
+        "ja": {
+          "updatedAt": "2026-08-25T11:21:50.412Z",
+          "fileName": "ja/products/managed-postgres/scaling.mdx",
+          "postProcessHash": "bb4b94fe6ce72bcc8c985f09f3b0a3e9b3565331cc2efffe569438b261ff00f1"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
+          "updatedAt": "2026-08-25T11:21:50.415Z",
           "fileName": "ru/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "100c1081e31806b02a6067cf1af4ced0adcf094b86ef3a35519fe1cc1bd1fc08"
+          "postProcessHash": "e3cf679ea6a3a3cee500abea795f6e691658abfa610da5bccd2670981ff99e77"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T11:21:50.417Z",
+          "fileName": "ko/products/managed-postgres/scaling.mdx",
+          "postProcessHash": "237c7135e61131467e55c7ee0e94bdc699d891de369abde79518f8116a771562"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.974Z",
+          "updatedAt": "2026-08-25T11:21:50.421Z",
           "fileName": "pt-BR/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "20c0a4e020b6fb101c490d208505749ad1f03c43a555fb7dfa3526dcc208217b"
+          "postProcessHash": "618649087c90d7dacc9b45195550f16b44c60a77ef747774395390c98b4660c5"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.975Z",
+          "updatedAt": "2026-08-25T11:21:50.424Z",
           "fileName": "ar/products/managed-postgres/scaling.mdx",
-          "postProcessHash": "fafd3a354de419ba051d1d0e4e85d93d8dcbdaf579500b6f249df2e058705bea"
+          "postProcessHash": "ba9e0cf73d0b63082c8ce9a64d350d8230be0d75f4e65b304ece686529025da8"
         }
       },
-      "fileName": "products/managed-postgres/scaling.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/scaling.mdx"
     },
     {
       "fileId": "e8499f991cb07ef9c66212d6ccc58a71ddef8b8a880f0753f6526f9e7d260c74",
@@ -14829,51 +14826,50 @@
     },
     {
       "fileId": "1bdaa9c171b1072cf355605f51a50b68bec0da4cb50c0038102b501ec97e5887",
-      "versionId": "fd9ecd4c7efdfc652d29353db3c03ee274a39234a6cdcbb30dc89752fc66c3e4",
+      "versionId": "32b3dd5e97dc354a4f563780ce6c03e921cc9e53c88d551dce9d3abd07368d9f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "es/products/managed-postgres/settings.mdx",
-          "postProcessHash": "84b277a8120f9824ee93113f2f8a6833b7b00de36edd49f6548407a13dd25032"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "ja/products/managed-postgres/settings.mdx",
-          "postProcessHash": "bf5dd42c73ba0a331d81a299fe41399bbb1c40d96d39e81d9e93804172d377db"
+        "zh": {
+          "updatedAt": "2026-08-25T11:21:50.399Z",
+          "fileName": "zh/products/managed-postgres/settings.mdx",
+          "postProcessHash": "357735a04366e0406a505968a2f76c68fa11710e18a876a2f3fbf39c50089576"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
+          "updatedAt": "2026-08-25T11:21:50.400Z",
           "fileName": "ko/products/managed-postgres/settings.mdx",
-          "postProcessHash": "616f3fa6e50f46130c0ec96cd492c7acaeace313f6632a6a909ed11fb588d245"
+          "postProcessHash": "904ae9308937115fdbf62ccd602308dbe51700b7f13de1c78e167286bb5425d0"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "pt-BR/products/managed-postgres/settings.mdx",
-          "postProcessHash": "0e13ccff44ca4d665c96b2bd20f994a858a3f643b2e1f995356e7f4d623ec685"
+        "ja": {
+          "updatedAt": "2026-08-25T11:21:50.401Z",
+          "fileName": "ja/products/managed-postgres/settings.mdx",
+          "postProcessHash": "290c30b33f93bff40424a063a77cd44235df1d9275392117a443462c61372968"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "ru/products/managed-postgres/settings.mdx",
-          "postProcessHash": "edec002b6fd7834caf7feb7e0f32742fbb5bc00d99573a296d1229ff2e059297"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "zh/products/managed-postgres/settings.mdx",
-          "postProcessHash": "65cb1dc95caaf0d01999cd3159d9fe330d9753cc0f6f07c49841e695ec66b328"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
-          "fileName": "ar/products/managed-postgres/settings.mdx",
-          "postProcessHash": "dd80826cb0d2ce631f9d83c26d6778fe5fd709b099fdf5bca58ee0eb75a59c8e"
+        "es": {
+          "updatedAt": "2026-08-25T11:21:50.404Z",
+          "fileName": "es/products/managed-postgres/settings.mdx",
+          "postProcessHash": "cb896a00891fc74a175747cd77b993719669fa04e5fc37cc534e94d73225da66"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.976Z",
+          "updatedAt": "2026-08-25T11:21:50.405Z",
           "fileName": "fr/products/managed-postgres/settings.mdx",
-          "postProcessHash": "83aa685867d9a15721cf6c53fabf7c667e0e563ca8b9c18cb94aae21fc31ecbc"
+          "postProcessHash": "6abbd83fa6e6c0ce2f1770649e6a8c647b3e3dd9358003a04a8efcb73cddf0b8"
+        },
+        "ar": {
+          "updatedAt": "2026-08-25T11:21:50.409Z",
+          "fileName": "ar/products/managed-postgres/settings.mdx",
+          "postProcessHash": "a220f115e5e4024cd5fafdeda932f559b21f264c37e725dec306a08badf215cc"
+        },
+        "ru": {
+          "updatedAt": "2026-08-25T11:21:50.410Z",
+          "fileName": "ru/products/managed-postgres/settings.mdx",
+          "postProcessHash": "b44020c9cd24e4eeca30379329158b1ca86c2870fce1113ca9533b18eb2a8065"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T11:21:50.419Z",
+          "fileName": "pt-BR/products/managed-postgres/settings.mdx",
+          "postProcessHash": "5fe1fde25124486441f2edae7a618cabed2cdbc9ec278a81e3d040c738a8c7e9"
         }
       },
-      "fileName": "products/managed-postgres/settings.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/settings.mdx"
     },
     {
       "fileId": "5c8efe636e55df0100a30183bfe64e250d4eba1a8b0661716414cec133927b58",
@@ -14925,51 +14921,50 @@
     },
     {
       "fileId": "31c0e8e5109dabeb794303f7c3d3576f169e6b2e9f14e44c4e6743ac80bbb754",
-      "versionId": "cf0e9e192d14d73c1f95d2b190545829cb3b4137cf32cd45d292a26f5576439e",
+      "versionId": "b5a9efafb7b599e009e08da18070bf35d494aaccd9028075453c3b3fdaadebf0",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
-          "fileName": "es/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "7388f8b19cd568d1db7ecbde8c8cfd9a41b9e3923b49efbda0ee1645e3d923bf"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
-          "fileName": "ja/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "eb558e96367b6c46780027036d864a1d5e9b926ae1261ff1ee3927284acba264"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
-          "fileName": "ko/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "97eae9f6bc435a93d9cb689ca977fb1c36f80af40996ae3db87013a23159b7c2"
+        "ar": {
+          "updatedAt": "2026-08-25T11:21:50.415Z",
+          "fileName": "ar/products/managed-postgres/upgrades.mdx",
+          "postProcessHash": "af33c24b3b8a15b0c01ec467879667c02b6e3864b7d8107150b62c80f528c890"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
+          "updatedAt": "2026-08-25T11:21:50.416Z",
           "fileName": "pt-BR/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "c12a4cedf2611983019122baa05bdad093a747a08eb5ceb79418d70030a5f806"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
-          "fileName": "ru/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "9f7c9f205296a246b7ca40183f70e946583b44540f38db3a3482b46c7c650dc1"
+          "postProcessHash": "07a6f983c435fa61853edd212beadc50827d8de14a0ffa7d80684a9890f3d75a"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
+          "updatedAt": "2026-08-25T11:21:50.417Z",
           "fileName": "zh/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "d7e3e81ab936a9c2b13f849a9c5981bb45d8b6c76b50a422896928f10008b259"
+          "postProcessHash": "a343f61d8e80802597ea9c0380d1a79d6b53bf9f94abf8c003d88a29fc5fabf8"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.978Z",
-          "fileName": "ar/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "ff9484ec79de4a9586c0796b776e209ab2b02c01ce37b6e3acd069f07e85988e"
+        "ja": {
+          "updatedAt": "2026-08-25T11:21:50.418Z",
+          "fileName": "ja/products/managed-postgres/upgrades.mdx",
+          "postProcessHash": "b0bb545ea2ee65e12a30315eb455e2dd26cf1421980ab421e871bb1767d2ba10"
+        },
+        "es": {
+          "updatedAt": "2026-08-25T11:21:50.419Z",
+          "fileName": "es/products/managed-postgres/upgrades.mdx",
+          "postProcessHash": "4f2fd007f897a177751a1883f6ff98b7c7e805f6ad0afae3e966f3334f2b10b8"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T11:21:50.422Z",
+          "fileName": "ko/products/managed-postgres/upgrades.mdx",
+          "postProcessHash": "98d0b6fa8ebfe965ed0386730519a6de6db64476f7771e854af2d03a6a27b23e"
+        },
+        "ru": {
+          "updatedAt": "2026-08-25T11:21:50.422Z",
+          "fileName": "ru/products/managed-postgres/upgrades.mdx",
+          "postProcessHash": "a5144a80ab000263ce2bde7293be63367057ca05ca82b3113d94368d4f4f64c9"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.979Z",
+          "updatedAt": "2026-08-25T11:21:50.424Z",
           "fileName": "fr/products/managed-postgres/upgrades.mdx",
-          "postProcessHash": "572ca70266e97fd11596b3bba8004ed7b2075234dbddcefd9425a87b77eaff95"
+          "postProcessHash": "24fe90b2affa63c088c9edbb56520936fd001e376e42fc17058e751f9b00c371"
         }
       },
-      "fileName": "products/managed-postgres/upgrades.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/upgrades.mdx"
     },
     {
       "fileId": "c26c6610d5f765c3496c4e8fc84491d5bda07ab1c0bd54073accaf923d8f6f71",
@@ -104829,51 +104824,50 @@
     },
     {
       "fileId": "f51ea09c6f2bd1bab07f5fde385c01ee81ceb4882b0de27bd878401245277911",
-      "versionId": "ef082ce915bee9067c30ed93d1d857d7779ce5d30d86e17742dddbb835e5434c",
+      "versionId": "889087faa33c35583aaaaf5d6638d295a6ec9214b27974ec211cc1e55d4bd460",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.799Z",
-          "fileName": "snippets/es/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "c2c7bbdddd2efc211c3ce88178d3a9116e92414bab2d1060a77c961ad989ba0e"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.799Z",
+          "updatedAt": "2026-08-25T11:21:50.405Z",
           "fileName": "snippets/ja/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "144e59b7ed70bc550e758fc19d9f8d82592eceb7cd39a61f2167916b5e732ef5"
+          "postProcessHash": "c2eb948d9e58a3d0d4ab5e31181984f6f48d95c76bf921e669b1ed9105a25f42"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.799Z",
+          "updatedAt": "2026-08-25T11:21:50.406Z",
           "fileName": "snippets/ko/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "fc94eb9691e7d7e988a5d6b3d0c226ea46baf3db4ad742f2289b1bc7284d5d93"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.800Z",
-          "fileName": "snippets/pt-BR/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "c89a3e4e6a94ae4a83b2bb1c40aafb2464a980404d2a41db0bb904e9130ad324"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.800Z",
-          "fileName": "snippets/ru/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "104132887210d72259ce5a3f90e783ce8bcfdb0e7f6479a2bb53f7b598e2c5f0"
+          "postProcessHash": "1319b880626d8ade0e9608f0186cdd36c3b831c9a700b1bd818925417b686079"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.800Z",
+          "updatedAt": "2026-08-25T11:21:50.407Z",
           "fileName": "snippets/zh/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "1adb93e191809b63f1d78e22a1570b8575651aaab96254425023189b7cb9027a"
+          "postProcessHash": "fe5991950fabab08a30e5120938ac32a806fbbd89c6c330b0bca37ed63b752c2"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T11:21:50.408Z",
+          "fileName": "snippets/pt-BR/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "287b978a5173720c925e3caad10d545de255ef6216f3971cd591c21b2934e773"
+        },
+        "es": {
+          "updatedAt": "2026-08-25T11:21:50.410Z",
+          "fileName": "snippets/es/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "a3f8ab70478f7c67eb08f10ea7a6354aa6ec33921323fe2d7c87801753660f18"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.800Z",
+          "updatedAt": "2026-08-25T11:21:50.411Z",
           "fileName": "snippets/ar/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "2ebe69b5ea33726223ef9b1901bb53dba38f4773f037f51a5f0a5d5fbcc46333"
+          "postProcessHash": "55b8153b5721e7c702aa50d8b23a0df13c3400478ee0cc751c822a5301fa8d93"
+        },
+        "ru": {
+          "updatedAt": "2026-08-25T11:21:50.413Z",
+          "fileName": "snippets/ru/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "b2896fc3aea424dc9fd5f414e39b4169d5feb36b449c69840f41beb4e94bf1f6"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.800Z",
+          "updatedAt": "2026-08-25T11:21:50.414Z",
           "fileName": "snippets/fr/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "0dff7cb6addcfa3c96e6a04566c266cae7225404f35a9339d2213a8221fd03e2"
+          "postProcessHash": "5d76907d4e8129bec2f711f9658b841c1b327204c7a04c2e5eced8d3ae343649"
         }
       },
-      "fileName": "snippets/components/ReleaseSchedule/ReleaseSchedule.jsx",
-      "staged": false
+      "fileName": "snippets/components/ReleaseSchedule/ReleaseSchedule.jsx"
     },
     {
       "fileId": "23ac778d11a76a513e595765810d4c8086e81578a3bd64a9bb37262e176f0529",
