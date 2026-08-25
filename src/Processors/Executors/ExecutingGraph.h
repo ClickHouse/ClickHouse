@@ -53,9 +53,6 @@ public:
     /// Use std::list because new ports can be added to processor during execution.
     using Edges = std::list<Edge>;
 
-    /// Pending edge updates of a single `updateNode` frame.
-    using EdgeWorkList = boost::container::devector<Edge *>;
-
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
     enum class ExecStatus : uint8_t
@@ -214,43 +211,24 @@ private:
     struct RemoveGroupResult
     {
         std::unordered_set<const Node *> removed_nodes;
-        std::unordered_set<const void *> removed_edges;
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
 
-    /// Publishes one `updateNode` frame's pending edge updates while that frame holds no
-    /// `nodes_mutex`, which is the only time another frame can free those edges; being published
-    /// is what lets the freeing frame drop the entries. Only edges need this: a node cannot be
-    /// removed before it is `Finished`, and a `Finished` node is never queued.
-    class EdgeWorkListGuard
-    {
-    public:
-        EdgeWorkListGuard(ExecutingGraph & graph_, EdgeWorkList & work_list_);
-        ~EdgeWorkListGuard();
+    /// An edge of a removed processor is moved here instead of being destroyed, and lives until the
+    /// graph does: a `updateNode` frame may hold it queued across a gap it makes in `nodes_mutex`,
+    /// and that pointer has to stay valid.
+    Edges retired_edges;
 
-        EdgeWorkListGuard(const EdgeWorkListGuard &) = delete;
-        EdgeWorkListGuard & operator=(const EdgeWorkListGuard &) = delete;
+    /// Permanently `Finished` node every retired edge is pointed at. `updateNode` skips a
+    /// `Finished` node without reaching its processor, so a retired edge cannot reach the removed
+    /// processor. It is in neither `nodes` nor the pipeline's processors, so nothing prepares it and
+    /// nothing reports it. Its processor needs a list of its own because `Node` holds an iterator.
+    Processors retired_edge_target_processors;
+    std::unique_ptr<Node> retired_edge_target;
 
-    private:
-        friend class ExecutingGraph;
-
-        ExecutingGraph & graph;
-        EdgeWorkList & work_list;
-        EdgeWorkListGuard * prev = nullptr;
-        EdgeWorkListGuard * next = nullptr;
-    };
-
-    /// Intrusive list of the published work lists, newest first. Intrusive so that entering
-    /// `updateNode` does not allocate.
-    EdgeWorkListGuard * active_edge_work_lists = nullptr;
-    std::mutex active_edge_work_lists_mutex;
-
-    /// Drop the given edges from every published work list. Callers must hold `nodes_mutex`
-    /// exclusively, which is what makes the in-place mutation of another frame's work list safe:
-    /// every other access to a work list happens under `nodes_mutex` too.
-    /// Lock order is `nodes_mutex` then `active_edge_work_lists_mutex`, never the reverse.
-    void scrubRemovedEdges(const std::unordered_set<const void *> & removed_edge_ids);
+    /// Callers must hold `nodes_mutex` exclusively.
+    void retireAffectedEdges(const std::unordered_set<const Node *> & removed_nodes);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 
