@@ -60,6 +60,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.write_geometadata = format_settings.parquet.write_geometadata;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
+    options.output_float_as_alp = format_settings.parquet.enable_alp;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
     {

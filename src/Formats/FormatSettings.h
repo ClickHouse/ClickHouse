@@ -409,6 +409,7 @@ struct FormatSettings
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
+        bool enable_alp = false;
     } parquet{};
 
     struct Pretty

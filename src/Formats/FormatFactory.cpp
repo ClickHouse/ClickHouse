@@ -248,6 +248,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
     format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
+    format_settings.parquet.enable_alp = settings[Setting::output_format_parquet_enable_alp];
 
 
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
