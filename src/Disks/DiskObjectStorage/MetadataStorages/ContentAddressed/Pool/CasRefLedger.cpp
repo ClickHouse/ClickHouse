@@ -27,6 +27,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int INVALID_STATE;
@@ -196,8 +197,10 @@ CasRefLedger::CasRefLedger(
     std::function<uint64_t()> boot_ms_now_fn_,
     std::function<bool()> may_mutate_,
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
-    std::function<std::shared_ptr<void>()> pin_owner_,
-    std::function<void(const RootNamespace &)> cancel_inflight_builds_)
+    std::function<bool(std::function<void(DetachedStopToken)>)> dispatch_detached_,
+    std::function<void()> publish_error_hook_,
+    std::function<void(const RootNamespace &)> cancel_inflight_builds_,
+    std::function<void()> recovery_pre_first_request_hook_for_test_)
     : backend(*backend_ptr)
     , layout(layout_)
     , config(std::move(config_))
@@ -211,8 +214,10 @@ CasRefLedger::CasRefLedger(
     , boot_ms_now_fn(std::move(boot_ms_now_fn_))
     , may_mutate(std::move(may_mutate_))
     , on_impossible_interference(std::move(on_impossible_interference_))
-    , pin_owner(std::move(pin_owner_))
+    , dispatch_detached(std::move(dispatch_detached_))
+    , publish_error_hook(std::move(publish_error_hook_))
     , cancel_inflight_builds(std::move(cancel_inflight_builds_))
+    , recovery_pre_first_request_hook_for_test(std::move(recovery_pre_first_request_hook_for_test_))
 {
     /// The ref-log writer path uses the same retry controller and clock seam as the mount's local
     /// write fence, so deadline-sensitive tests exercise both paths with one monotonic clock.
@@ -226,11 +231,11 @@ CasRefLedger::CasRefLedger(
     /// out a full 30s backoff. This is deliberate, bounded backoff against external object-store I/O
     /// failure -- NOT masking a race -- exactly like `CasRequestControl`'s own inter-attempt
     /// `threadSleepMs`; the slice loop additionally makes it interruptible, which that one is not.
-    recovery_retry_sleep_fn = [this](uint64_t total_ms)
+    recovery_retry_sleep_fn = [this](uint64_t total_ms, const std::optional<DetachedStopToken> & token)
     {
         constexpr uint64_t slice_ms = 200;
         uint64_t slept = 0;
-        while (slept < total_ms && fence_ok_fn())
+        while (slept < total_ms && fence_ok_fn() && !(token && token->stopping()))
         {
             const uint64_t chunk = std::min(slice_ms, total_ms - slept);
             sleepForMilliseconds(chunk);
@@ -261,6 +266,16 @@ CasOverwriteResult CasRefLedger::stagingPutIfAbsentMutable(std::string_view key,
 void CasRefLedger::setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn)
 {
     ref_request_controller->setSleepFnForTest(sleep_fn);
+    recovery_retry_sleep_fn = [recovery_sleep_fn = std::move(sleep_fn)](
+        uint64_t total_ms, const std::optional<DetachedStopToken> &)
+    {
+        recovery_sleep_fn(total_ms);
+    };
+}
+
+void CasRefLedger::setRefRecoveryRetrySleepForTest(
+    std::function<void(uint64_t, const std::optional<DetachedStopToken> &)> sleep_fn)
+{
     recovery_retry_sleep_fn = std::move(sleep_fn);
 }
 
@@ -683,15 +698,23 @@ void CasRefLedger::reconcileCatalogCut(const CasRefCatalog::Snapshot & catalog_c
 }
 
 void CasRefLedger::checkRecoveryStillAdmitted(const RootNamespace & ns, RefTableRuntime & rt,
-                                              bool & cancelled) const
+                                              bool & cancelled,
+                                              const std::optional<DetachedStopToken> & token) const
 {
     /// Polled at EVERY I/O boundary of the walk, because every one of them is a point at which this
     /// recovery may already have lost the right to continue -- and the walk WRITES, so "continue" is not
     /// a read-only proposition.
     ///
-    /// Cancellation is checked FIRST and reported as its own outcome: a self-remount asking recovery to
-    /// stop is an orderly hand-off, not a failure of the store, and the caller must not re-drive it
-    /// through the transient-retry loop the way it would an S3 blip.
+    /// Detached teardown is terminal for this publisher attempt. It is independent of the runtime's
+    /// remount-cancellation latch and uses `ABORTED` so the retry envelope cannot mistake it for a
+    /// transient object-store failure.
+    if (token && token->stopping())
+        throw Exception(ErrorCodes::ABORTED,
+            "CAS ref recovery: teardown began while recovery was in progress");
+
+    /// Runtime cancellation is checked next and reported as its own outcome: a self-remount asking
+    /// recovery to stop is an orderly hand-off, not a failure of the store, and the caller must not
+    /// re-drive it through the transient-retry loop the way it would an S3 blip.
     if (rt.recovery_cancel_requested.load(std::memory_order_acquire))
     {
         cancelled = true;
@@ -731,7 +754,7 @@ void CasRefLedger::checkRecoveryStillAdmitted(const RootNamespace & ns, RefTable
 std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
     const RootNamespace & ns, RefTableRuntime & rt, uint64_t admitted_generation, uint64_t live_epoch,
     const std::optional<RefAppendAttempt> & retained_attempt, std::optional<String> & hole_detail,
-    bool & cancelled)
+    bool & cancelled, const std::optional<DetachedStopToken> & token)
 {
     /// Spec §4, one attempt. Runs with NO lock held: everything below is either read-only I/O or a
     /// conditional create at a key this namespace owns, and the replayed candidate is PRIVATE until the
@@ -750,9 +773,12 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
         .ns = life.ns,
         .state = NsState::Live,
         .incarnation = life.incarnation};
+    if (recovery_pre_first_request_hook_for_test)
+        recovery_pre_first_request_hook_for_test();
+    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
     const std::optional<CkptSample> sampled_ckpt = readCkpt(backend, layout, life);
     std::optional<CkptSample> accepted_ckpt_sample = sampled_ckpt;
-    checkRecoveryStillAdmitted(ns, rt, cancelled);
+    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
 
     /// ---- Step 3: the finite grounding and exact base ----
     /// `chooseRecoveryGrounding` is the single policy boundary. The immutable checkpoint alone names
@@ -768,7 +794,17 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
     {
         try
         {
-            CheckpointSnapshotBase base = readCheckpointSnapshotBase(backend, layout, life, sampled_ckpt->ckpt);
+            checkRecoveryStillAdmitted(ns, rt, cancelled, token);
+            std::function<void()> admit_snapshot_base_request;
+            if (token)
+            {
+                admit_snapshot_base_request = [this, &ns, &rt, &cancelled, &token]
+                {
+                    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
+                };
+            }
+            CheckpointSnapshotBase base = readCheckpointSnapshotBase(
+                backend, layout, life, sampled_ckpt->ckpt, admit_snapshot_base_request);
             base_snapshot = std::move(base.snapshot);
             base_snapshot_bytes = base.bytes;
         }
@@ -781,6 +817,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
             /// old anchor's snapshot or witness log. Restart from that newer immutable sample; an
             /// unchanged checkpoint turns every helper failure (missing, malformed, or seal) into the
             /// fail-closed corruption it describes.
+            checkRecoveryStillAdmitted(ns, rt, cancelled, token);
             const std::optional<CkptSample> current = readCkpt(backend, layout, life);
             if (classifyMissingSampledBase(sampled_ckpt->token,
                                            current ? std::optional<Token>(current->token) : std::nullopt)
@@ -789,7 +826,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
             throw;
         }
     }
-    checkRecoveryStillAdmitted(ns, rt, cancelled);
+    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
 
     /// The committed replay range comes only from the grounding. Writer recovery additionally probes
     /// the single arithmetic successor: it is the durable-but-not-yet-frontiered transaction left by
@@ -820,8 +857,9 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
         builder.applyOne(std::move(txn), encoded_bytes);
     };
 
-    const auto check_recovery_write_admitted = [this, &rt](uint64_t expected_generation)
+    const auto check_recovery_write_admitted = [this, &ns, &rt, &cancelled, &token](uint64_t expected_generation)
     {
+        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
         check_fence_or_throw(expected_generation);
         if (rt.catalog_life_invalidated.load(std::memory_order_acquire))
             throwCasWriteRetryLater(fmt::format(
@@ -829,6 +867,14 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                 "before its checkpoint contribution",
                 rt.life.ns.string(), renderIncarnation(rt.life.incarnation)));
     };
+    std::function<void()> admit_recovery_request;
+    if (token)
+    {
+        admit_recovery_request = [this, &ns, &rt, &cancelled, &token]
+        {
+            checkRecoveryStillAdmitted(ns, rt, cancelled, token);
+        };
+    }
     const auto publish_recovered_frontier = [&](const RefLogTxn & txn)
     {
         const RefCkpt contribution{
@@ -837,7 +883,9 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
             .checkpoint_snapshot_id = std::nullopt,
             .last_epoch_seal = refLogTxnIsEpochSeal(txn)
                 ? std::optional<RefTxnId>{txn.txn_id} : txn.prev_epoch_seal};
-        if (publishCkptContribution(life, contribution, admitted_generation, check_recovery_write_admitted)
+        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
+        if (publishCkptContribution(
+                life, contribution, admitted_generation, check_recovery_write_admitted, admit_recovery_request)
             == CkptPublishOutcome::FencedOut)
             throwCasWriteRetryLater(fmt::format(
                 "CAS ref-table recovery for namespace '{}': the mount incarnation moved before the "
@@ -848,6 +896,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
         /// candidate cannot silently inherit that winner's farther frontier. If it moved beyond this
         /// one successor between lookahead and our CAS, restart from the exact newer checkpoint so the
         /// installed state covers every transaction its frontier certifies.
+        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
         std::optional<CkptSample> exact = readCkpt(backend, layout, life);
         if (!exact || !exact->ckpt.committed_through || *exact->ckpt.committed_through < txn.txn_id)
             throwCasWriteRetryLater(fmt::format(
@@ -880,7 +929,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
 
         for (;;)
         {
-            checkRecoveryStillAdmitted(ns, rt, cancelled);
+            checkRecoveryStillAdmitted(ns, rt, cancelled, token);
             const RefTxnId id{epoch, sequence};
 
             if (const auto got = backend.get(layout.refLogKey(life, id)))
@@ -925,8 +974,10 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                     const RefTxnId following_id = is_seal
                         ? RefTxnId{id.writer_epoch + 1, 1}
                         : RefTxnId{id.writer_epoch, id.ref_sequence + 1};
+                    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
                     if (backend.get(layout.refLogKey(life, following_id)))
                     {
+                        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
                         const std::optional<CkptSample> current = readCkpt(backend, layout, life);
                         if (!sampled_ckpt || !current || current->token != sampled_ckpt->token)
                             return std::nullopt;
@@ -987,6 +1038,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                 /// This id belongs to the inclusive committed range. A 404 cannot shorten that range:
                 /// re-read the exact mutable checkpoint to distinguish a concurrent frontier movement
                 /// from durable-data loss under an unchanged authority token.
+                checkRecoveryStillAdmitted(ns, rt, cancelled, token);
                 const std::optional<CkptSample> current = readCkpt(backend, layout, life);
                 if (!current || current->token != sampled_ckpt->token)
                     return std::nullopt;
@@ -999,20 +1051,24 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
 
             /// Only the exact checkpoint's recorded seal may witness a same-epoch hole. LIST log names
             /// are diagnostics only; an omitted or stale name cannot change a correctness verdict.
-            if (sampled_ckpt->ckpt.last_epoch_seal
+            const bool sampled_seal_is_after_hole = sampled_ckpt->ckpt.last_epoch_seal
                 && sampled_ckpt->ckpt.last_epoch_seal->writer_epoch == epoch
-                && sequence < sampled_ckpt->ckpt.last_epoch_seal->ref_sequence
-                && backend.get(layout.refLogKey(life, *sampled_ckpt->ckpt.last_epoch_seal)))
+                && sequence < sampled_ckpt->ckpt.last_epoch_seal->ref_sequence;
+            if (sampled_seal_is_after_hole)
             {
-                ProfileEvents::increment(ProfileEvents::CASRefRecoveryStreamHole);
-                hole_detail = fmt::format(
-                    "id {}-{} is absent while the exact checkpoint records same-epoch seal {}-{} — the "
-                    "ref-log stream is dense by construction (INV-1), so this is a hole, not the end of "
-                    "the stream",
-                    id.writer_epoch, id.ref_sequence,
-                    sampled_ckpt->ckpt.last_epoch_seal->writer_epoch,
-                    sampled_ckpt->ckpt.last_epoch_seal->ref_sequence);
-                return std::nullopt;
+                checkRecoveryStillAdmitted(ns, rt, cancelled, token);
+                if (backend.get(layout.refLogKey(life, *sampled_ckpt->ckpt.last_epoch_seal)))
+                {
+                    ProfileEvents::increment(ProfileEvents::CASRefRecoveryStreamHole);
+                    hole_detail = fmt::format(
+                        "id {}-{} is absent while the exact checkpoint records same-epoch seal {}-{} — the "
+                        "ref-log stream is dense by construction (INV-1), so this is a hole, not the end of "
+                        "the stream",
+                        id.writer_epoch, id.ref_sequence,
+                        sampled_ckpt->ckpt.last_epoch_seal->writer_epoch,
+                        sampled_ckpt->ckpt.last_epoch_seal->ref_sequence);
+                    return std::nullopt;
+                }
             }
 
             if (epoch >= live_epoch)
@@ -1062,14 +1118,16 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
             /// Presented on EVERY attempt: the generation this recovery was admitted under, never the
             /// current one. A seal written by an incarnation that no longer owns the namespace is a write
             /// from a dead mount, and refusing pre-attempt leaves the slot provably untouched.
-            const auto admitted_fence_ok = [this, &rt, admitted_generation]
+            const auto admitted_fence_ok = [this, &rt, admitted_generation, &token]
             {
                 return fence_ok_fn()
+                    && !(token && token->stopping())
                     && !rt.catalog_life_invalidated.load(std::memory_order_acquire)
                     && !rt.superseded_by_remount.load(std::memory_order_acquire)
                     && fence_generation_fn() == admitted_generation;
             };
 
+            checkRecoveryStillAdmitted(ns, rt, cancelled, token);
             const SlotOccupyResult occupied =
                 ref_request_controller->slotOccupy(
                     layout.refLogKey(life, id), seal_bytes, admitted_fence_ok);
@@ -1151,18 +1209,20 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
     /// frontier rather than assuming the CAS result and the candidate stayed aligned.
     if (last_epoch_seal)
     {
-        checkRecoveryStillAdmitted(ns, rt, cancelled);
+        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
         const RefCkpt contribution{.life_epoch = std::nullopt,
                                    .committed_through = last_epoch_seal,
                                    .checkpoint_snapshot_id = std::nullopt,
                                    .last_epoch_seal = last_epoch_seal};
-        if (publishCkptContribution(life, contribution, admitted_generation, check_recovery_write_admitted)
+        if (publishCkptContribution(
+                life, contribution, admitted_generation, check_recovery_write_admitted, admit_recovery_request)
             == CkptPublishOutcome::FencedOut)
             throwCasWriteRetryLater(fmt::format(
                 "CAS ref-table recovery for namespace '{}': the mount incarnation moved before the "
                 "checkpoint could record the epoch seal {}-{}; nothing was written and nothing is installed",
                 ns.string(), last_epoch_seal->writer_epoch, last_epoch_seal->ref_sequence));
 
+        checkRecoveryStillAdmitted(ns, rt, cancelled, token);
         const std::optional<CkptSample> exact = readCkpt(backend, layout, life);
         if (!exact || exact->ckpt.committed_through != private_frontier || exact->ckpt.last_epoch_seal != last_epoch_seal)
             return std::nullopt;
@@ -1173,12 +1233,13 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
     /// the private cut, but another actor could have changed `_ckpt` immediately afterwards. Install
     /// only when both the exact object token and its complete decoded body remain equal to the latest
     /// authority sample this private candidate accepted.
+    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
     const std::optional<CkptSample> final_ckpt = readCkpt(backend, layout, life);
     if (!final_ckpt || !accepted_ckpt_sample
         || final_ckpt->token != accepted_ckpt_sample->token
         || final_ckpt->ckpt != accepted_ckpt_sample->ckpt)
         return std::nullopt;
-    checkRecoveryStillAdmitted(ns, rt, cancelled);
+    checkRecoveryStillAdmitted(ns, rt, cancelled, token);
 
     RecoveryResult result = std::move(builder).finish();
 
@@ -1315,7 +1376,9 @@ NamespaceLifeId CasRefLedger::resolveNamespaceLife(
         "incarnation after {} attempts", ns.string(), kMaxResolveAttempts));
 }
 
-void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRuntime & rt)
+void CasRefLedger::ensureRefTableRecovered(
+    const RootNamespace & ns, RefTableRuntime & rt,
+    const std::optional<DetachedStopToken> & token)
 {
     {
     std::unique_lock lock(rt.state_mutex);
@@ -1336,8 +1399,11 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
     /// caller's unlocked I/O.
     while (rt.recovery_in_progress)
     {
+        if (token && token->stopping())
+            throw Exception(ErrorCodes::ABORTED,
+                "CAS ref recovery: teardown began while waiting for a concurrent recovery");
         ++rt.recovery_waiters_for_test;
-        rt.recovery_cv.wait(lock);
+        rt.recovery_cv.wait_for(lock, std::chrono::milliseconds(200));
         --rt.recovery_waiters_for_test;
     }
     if (rt.recovered && !needs_rerecovery())
@@ -1375,7 +1441,7 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
     /// socket/timeout from the direct LIST/GET backend calls, or a controller `NETWORK_ERROR`) is retried
     /// with capped-exponential backoff until `recovery_retry_budget_ms` is spent, instead of propagating
     /// and failing this table's async load permanently. Non-transient errors (corruption, decode, a moved
-    /// fence, logic, resource limits) fail fast; so do the two LATCHED terminal cases below.
+    /// fence, logic, resource limits) fail fast; so do the latched terminal cases below.
     const uint64_t recovery_start_ms = boot_ms_now_fn();
     uint64_t recovery_retry_num = 0;
     bool vanish_brake_tripped = false;
@@ -1422,7 +1488,7 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
                 try
                 {
                     walked = runRecoveryWalkOnce(
-                        ns, rt, admitted_generation, live_epoch, retained_attempt, hole_detail, cancelled);
+                        ns, rt, admitted_generation, live_epoch, retained_attempt, hole_detail, cancelled, token);
                 }
                 catch (...)
                 {
@@ -1455,6 +1521,9 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
                         "CAS ref-table recovery for namespace '{}': this cached table was superseded by a "
                         "self-remount while the walk was in flight — nothing is installed",
                         ns.string()));
+                if (token && token->stopping())
+                    throw Exception(ErrorCodes::ABORTED,
+                        "CAS ref recovery: teardown began before recovery install");
 
                 /// One atomic publication under `state_mutex`: `installRecoveryResult` copies every seeded
                 /// field from the result and sets `recovered` LAST, so no waiter (woken only by the
@@ -1476,8 +1545,10 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
             /// `cancelled` is latched by the poll itself: a self-remount's cancellation uses the
             /// retry-later class (the caller should retry, against the FRESH incarnation), so without the
             /// latch this loop would read it as a transient blip and re-drive the very work the remount
-            /// just stopped.
-            if (vanish_brake_tripped || cancelled || !isTransientRecoveryError(code))
+            /// just stopped. Detached teardown is independently terminal even when the in-flight
+            /// exception happened to carry a transient transport code.
+            if (vanish_brake_tripped || cancelled || (token && token->stopping())
+                || !isTransientRecoveryError(code))
                 throw;   /// a latched terminal case, or a non-transient failure -- fail fast
 
             const uint64_t elapsed_ms = boot_ms_now_fn() - recovery_start_ms;
@@ -1485,6 +1556,7 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
             /// self-remount, or the incarnation that admitted this recovery has moved (retrying under a
             /// generation that is already stale can only ever be refused at the install).
             if (elapsed_ms >= cas_request_budget.recovery_retry_budget_ms
+                || (token && token->stopping())
                 || !fence_ok_fn()
                 || rt.catalog_life_invalidated.load(std::memory_order_acquire)
                 || rt.superseded_by_remount.load(std::memory_order_acquire)
@@ -1513,7 +1585,7 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
             /// `state_mutex`) never runs unlocked -- same obligation as the walk's window above.
             try
             {
-                recovery_retry_sleep_fn(backoff_ms);
+                recovery_retry_sleep_fn(backoff_ms, token);
             }
             catch (...)
             {
@@ -1526,6 +1598,7 @@ void CasRefLedger::ensureRefTableRecovered(const RootNamespace & ns, RefTableRun
             /// the budget, or under a lost or moved fence (the sliced sleep may have woken early on fence
             /// loss).
             if (boot_ms_now_fn() - recovery_start_ms >= cas_request_budget.recovery_retry_budget_ms
+                || (token && token->stopping())
                 || !fence_ok_fn()
                 || rt.catalog_life_invalidated.load(std::memory_order_acquire)
                 || rt.superseded_by_remount.load(std::memory_order_acquire)
@@ -3989,47 +4062,67 @@ void CasRefLedger::dispatchSnapshotPublisher(const RootNamespace & ns, const std
     /// `admitSnapshotPublishUnderStateLock` already incremented `pending_snapshot_publishes` for THIS
     /// dispatch. Off the mutation hot path: `tryPublishSnapshotAndAdvanceCheckpointOnce` never touches
     /// the append queue, so dispatching it onto an unrelated global-pool thread can never deadlock a flush leader.
-    /// `pin_owner()` (the Pool's `shared_from_this`) keeps the Pool -- and hence this ledger member --
-    /// alive for the thread's lifetime.
     ProfileEvents::increment(ProfileEvents::CASRefSnapshotPublishDispatched);
-    auto owner = pin_owner();
-    try
-    {
-        ThreadFromGlobalPool([owner, this, ns, rt]
-        {
-            setThreadName(ThreadName::CAS_REF_SNAPSHOT_PUBLISH);
-            try
-            {
-                tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(ns, rt);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger("CasPool"), "CAS background snapshot publish attempt failed");
-            }
-            settleSnapshotPublish(ns, rt);
-        }).detach();
-    }
-    catch (...)
-    {
-        /// The `ThreadFromGlobalPool` ctor can throw (pool exhaustion) AFTER the count was incremented.
-        /// Undo the count WITHOUT the settlement re-evaluation (else a persistently-failing dispatch could
-        /// re-fire itself in a loop) and SWALLOW the failure: dispatching a background publish is a
-        /// best-effort maintenance trigger and must never fail an otherwise-successful read or mutation.
-        /// The next trigger reschedules.
+
+    /// The reservation was taken under `state_mutex` before this call, and only a LAUNCHED task's
+    /// settlement retires it. This guard therefore covers exactly the paths on which no task runs --
+    /// including an allocation failure while constructing the task, which happens in the expression
+    /// below, before the dispatcher's own body is entered.
+    bool launched = false;
+    SCOPE_EXIT({
+        if (launched)
+            return;
         {
             std::lock_guard lock(rt->state_mutex);
             rt->pending_snapshot_publishes.fetch_sub(1, std::memory_order_relaxed);
         }
         rt->publish_settle_cv.notify_all();
-        tryLogCurrentException(getLogger("CasPool"), "CAS background snapshot-publish dispatch failed to launch");
+    });
+
+    try
+    {
+        launched = dispatch_detached([this, ns, rt](DetachedStopToken token)
+        {
+            /// Settlement runs on EVERY exit. A handler that throws must not be able to strand the
+            /// reservation -- nothing would ever report that, and quiescence would wait forever.
+            SCOPE_EXIT({ settleSnapshotPublish(ns, rt, token); });
+            setThreadName(ThreadName::CAS_REF_SNAPSHOT_PUBLISH);
+            try
+            {
+                tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(ns, rt, token);
+            }
+            catch (...)
+            {
+                if (publish_error_hook)
+                    publish_error_hook();
+                try
+                {
+                    tryLogCurrentException(getLogger("CasPool"), "CAS background snapshot publish attempt failed");
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                }
+            }
+        });
+    }
+    catch (...)
+    {
+        try
+        {
+            tryLogCurrentException(getLogger("CasPool"), "CAS background snapshot-publish dispatch failed");
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
     }
 }
 
-void CasRefLedger::settleSnapshotPublish(const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt)
+void CasRefLedger::settleSnapshotPublish(
+    const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt, const DetachedStopToken & token)
 {
     /// Fence re-checked outside `state_mutex` (as in `maybeScheduleSnapshotPublish`): a fence lost
     /// between this publish's dispatch and its settlement must suppress a follow-up.
-    const bool live_mount = may_mutate();
+    const bool live_mount = !token.stopping() && may_mutate();
     bool redispatch = false;
     {
         std::lock_guard lock(rt->state_mutex);
@@ -4194,14 +4287,15 @@ void clampedCounterSub(std::atomic<uint64_t> & counter, uint64_t amount)
 
 CkptPublishOutcome CasRefLedger::publishCkptContribution(const NamespaceLifeId & life, const RefCkpt & contribution,
                                                          uint64_t admitted_generation,
-                                                         const std::function<void(uint64_t)> & check_admission)
+                                                         const std::function<void(uint64_t)> & check_admission,
+                                                         const std::function<void()> & admit_request)
 {
     /// The retry window is the SAME budget every other CAS operation of this ledger rides, measured on
     /// the ledger's own injectable boot clock -- so a test drives the exhaustion arm without sleeping,
     /// and a VM suspend cannot shorten it.
     const CkptDeadline deadline{boot_ms_now_fn, boot_ms_now_fn() + cas_request_budget.operation_deadline_ms};
     const CkptPublishOutcome outcome = publishCkpt(
-        backend, layout, life, contribution, admitted_generation, check_admission, deadline);
+        backend, layout, life, contribution, admitted_generation, check_admission, deadline, admit_request);
     if (outcome == CkptPublishOutcome::Published)
         ProfileEvents::increment(ProfileEvents::CASRefCheckpointPublished);
     else if (outcome == CkptPublishOutcome::IdenticalSkip)
@@ -4219,7 +4313,17 @@ bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnce(const RootNamespac
 bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(
     const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt)
 {
-    ensureRefTableRecovered(ns, *rt);
+    return tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl(ns, rt, std::nullopt);
+}
+
+
+bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl(
+    const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt,
+    const std::optional<DetachedStopToken> & token)
+{
+    ensureRefTableRecovered(ns, *rt, token);
+    if (token && token->stopping())
+        return false;
 
     /// This attempt's ADMISSION token, captured once, before any of its I/O: which mount incarnation
     /// allowed this publish. It is presented back on every `_ckpt` CAS attempt below (spec §3's
@@ -4426,6 +4530,14 @@ bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(
         rt->base_snapshot_bytes.store(bytes.size(), std::memory_order_relaxed);
     }
     return true;
+}
+
+bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(
+    const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt, const DetachedStopToken & token)
+{
+    if (token.stopping())
+        return false;
+    return tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl(ns, rt, token);
 }
 
 

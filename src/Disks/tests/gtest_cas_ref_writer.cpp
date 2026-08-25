@@ -1970,6 +1970,27 @@ TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
     EXPECT_TRUE(has_event) << "a ForeignInterference CasEvent must be audited";
 }
 
+/// A failed best-effort diagnostic dispatch must not replace the fail-closed exception raised by the
+/// mutation that discovered the anomaly, even when preparing the diagnostic log fails too.
+TEST(CASAnomalyPolicy, DiagnosticDispatchLoggingCannotReplaceFailClosedException)
+{
+    auto backend = std::make_shared<RefWriterTestBackend>();
+    PoolConfig config;
+    config.detached_dispatch_fault_for_test = DetachedDispatchFault::ThrowBeforeLaunch;
+    config.diagnostic_dispatch_error_hook_for_test
+        = [] { throw std::runtime_error("injected: preparing the diagnostic dispatch log failed"); };
+    auto store = openPoolWithConfig(backend, std::move(config));
+    const RootNamespace ns{"srv1/diagnostic_dispatch_log_failure"};
+    publishEmptyPart(store, ns, "x");
+
+    store->setRefPreCarveHookForTest([&]
+    {
+        store->forceWedgeForTest(ns, /*writer_epoch*/ 1, /*ref_sequence*/ 1, "bogus/_log/key", "bogus-bytes");
+    });
+
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
+}
+
 /// I3: a conditional write whose attempt classified Committed but whose FINAL post-write fence check
 /// failed (the mount fence was lost after the write may have landed) is counted separately, not folded
 /// into the generic Unresolved classifier (spec §Late Predecessor PUT best-effort diagnostic).

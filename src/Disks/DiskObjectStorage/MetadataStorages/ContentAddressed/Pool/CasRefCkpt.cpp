@@ -197,11 +197,25 @@ std::optional<CkptSample> readCkpt(Backend & backend, const Layout & layout, con
 CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life,
                                const RefCkpt & contribution, uint64_t admitted_generation,
                                const std::function<void(uint64_t)> & check_fence_or_throw,
-                               const CkptDeadline & deadline)
+                               const CkptDeadline & deadline,
+                               const std::function<void()> & admit_request)
 {
     const String key = layout.refCkptKey(life);
     std::optional<CkptSample> current;
     bool have_current = false;
+    const auto request_is_admitted = [&]
+    {
+        try
+        {
+            if (admit_request)
+                admit_request();
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    };
 
     for (size_t attempt = 0; attempt < MAX_CKPT_CAS_ATTEMPTS; ++attempt)
     {
@@ -213,6 +227,8 @@ CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const N
         /// the merge left out, one round later.
         if (!have_current)
         {
+            if (!request_is_admitted())
+                return CkptPublishOutcome::FencedOut;
             current = readCkpt(backend, layout, life);
             have_current = true;
         }
@@ -283,6 +299,8 @@ CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const N
         /// Encode before entering the ambiguity catch. Allocation or invariant failures happen before
         /// any request is sent and must propagate as themselves, not trigger a needless resolution GET.
         const String merged_bytes = encodeRefCkpt(merged);
+        if (!request_is_admitted())
+            return CkptPublishOutcome::FencedOut;
         try
         {
             if (backend.casPut(key, merged_bytes, expected).outcome == CasOutcome::Committed)
@@ -294,6 +312,8 @@ CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const N
             /// from memory: first point-read the exact mutable object, including its fresh token. If
             /// that observation includes this contribution under the semantic join, the write is
             /// resolved durable; otherwise that exact observation is the only valid base for a retry.
+            if (!request_is_admitted())
+                return CkptPublishOutcome::FencedOut;
             try
             {
                 current = readCkpt(backend, layout, life);

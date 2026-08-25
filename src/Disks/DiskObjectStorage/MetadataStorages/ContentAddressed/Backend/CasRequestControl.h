@@ -410,18 +410,18 @@ struct CasOverwriteResult
 ///     match alone) is entirely the CALLER's job.
 ///   - Unresolved: the outcome is unknowable right now — a pre-attempt gate refused (fence lost /
 ///     deadline exhausted, `unresolved_reason == NoAttemptSent`, nothing was sent — `unresolvedProvesNothingWasSent`
-///     is TRUE only for this case), or the conditional create was itself ambiguous (a transient
-///     exception) and the follow-up resolve GET found nothing (the occupant that caused the conflict
-///     vanished before the GET, or the GET itself failed — BOTH of these report `unresolved_reason ==
-///     AttemptsExhausted`, for which `unresolvedProvesNothingWasSent` is FALSE) — NEVER fabricated into
+///     is TRUE only for this case), admission was lost after the create but before its resolution GET,
+///     or the conditional create was itself ambiguous (a transient exception) and the follow-up resolve
+///     GET found nothing (the occupant that caused the conflict vanished before the GET, or the GET
+///     itself failed). Both post-create cases report `unresolved_reason == AttemptsExhausted`, for which
+///     `unresolvedProvesNothingWasSent` is FALSE — NEVER fabricated into
 ///     a false `Created`. CALLERS: do not log a bare `describeUnresolvedReason(AttemptsExhausted)` for
 ///     this case — it reads "the attempt budget was exhausted", which is misleading for a primitive
-///     with no retry budget, and it silently folds "the resolve GET found nothing" together with "the
-///     occupant that caused the conflict was DELETED under a live epoch" (a GC-invariant alarm, not
-///     routine contention) into the same generic wording. `SlotOccupyResult` carries no discriminator
-///     between those two sub-cases — log the slot key plus "the resolve read found nothing"; the day a
-///     caller NEEDS the split is the trigger for adding a dedicated `CasUnresolvedReason` value (a
-///     gated protocol decision, not a drive-by).
+///     with no retry budget, and it silently folds admission loss together with "the resolve GET found
+///     nothing" and "the occupant that caused the conflict was DELETED under a live epoch" (a
+///     GC-invariant alarm, not routine contention) into the same generic wording. `SlotOccupyResult`
+///     carries no discriminator between these sub-cases; the day a caller NEEDS the split is the trigger
+///     for adding a dedicated `CasUnresolvedReason` value (a gated protocol decision, not a drive-by).
 struct SlotOccupyResult
 {
     enum class Kind : uint8_t { Created, Occupied, Unresolved };
@@ -567,14 +567,13 @@ public:
     /// wedge retry uses (spec INV-2): each CALL is one bounded attempt, and a caller that wants to keep
     /// trying calls this again later, under its OWN fence/deadline/backoff discipline.
     ///
-    /// Pre-attempt gate ONLY: `fence_ok` and the operation deadline are checked ONCE, before the (only)
-    /// attempt — a refusal there sends nothing and reports `Unresolved`/`NoAttemptSent`, exactly like
-    /// every other controlled op's FIRST iteration. UNLIKE `putIfAbsentControlled` /
-    /// `putOverwriteControlled` / `putIfAbsentControlledMutable`, there
-    /// is deliberately no POST-write fence recheck here: `fence_ok` is evaluated once per attempt, and
-    /// since this primitive makes exactly one attempt, admission-fence discipline across an outer
-    /// caller-driven retry (including verifying a `Created`/`Occupied` result is still relevant after
-    /// the I/O) is the CALLER's contract (Task 4/6's post-I/O recheck under its own state lock).
+    /// `fence_ok` and the operation deadline are checked before the (only) create attempt — a refusal
+    /// there sends nothing and reports `Unresolved`/`NoAttemptSent`, exactly like every other
+    /// controlled op's first iteration. If the create conflicts or is ambiguous, `fence_ok` is checked
+    /// once more immediately before its resolution GET; refusal starts no GET and reports
+    /// `Unresolved`/`AttemptsExhausted`, because the create was already sent. There is deliberately no
+    /// post-I/O fence recheck after either request: verifying that a `Created`/`Occupied` result is still
+    /// relevant remains the caller's contract (Task 4/6's recheck under its own state lock).
     ///
     /// CONSEQUENCE, stated bluntly because it is the OPPOSITE of every sibling op's behavior: a
     /// `Created` or `Occupied` returned here may come from a call whose fence was lost WHILE the PUT or
@@ -593,8 +592,8 @@ public:
     ///
     /// Op-count contract (asserted by every `gtest_cas_slot_occupy.cpp` test): `Created` costs exactly
     /// one backend op (the create); `Occupied` costs exactly two (the create, then the resolve GET);
-    /// `Unresolved` costs at most two (zero when a pre-attempt gate refuses, otherwise the create plus
-    /// a resolve GET that came up empty or failed).
+    /// `Unresolved` costs at most two (zero when a pre-attempt gate refuses, one when admission is lost
+    /// before resolution, otherwise the create plus a resolve GET that came up empty or failed).
     SlotOccupyResult slotOccupy(std::string_view key, std::string_view bytes,
                                 const std::function<bool()> & fence_ok);
 

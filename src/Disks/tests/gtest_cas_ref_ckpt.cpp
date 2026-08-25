@@ -187,6 +187,7 @@ public:
     Fault fault = Fault::None;
     String dominating_bytes;
     bool fail_resolution_get = false;
+    std::function<void()> after_ambiguous_cas;
     std::function<void()> before_resolution_get;
     std::function<void()> after_resolution_get;
     std::vector<String> journal;
@@ -238,6 +239,8 @@ public:
                           PutOutcome::Done);
             }
         }
+        if (after_ambiguous_cas)
+            after_ambiguous_cas();
         throw Poco::TimeoutException("AmbiguousCkptBackend: CAS response lost");
     }
 
@@ -818,6 +821,34 @@ TEST(CASRefCheckpoint, FenceMovementAroundAmbiguityResolutionMakesTheExactReadIn
                               check_admission, generousDeadline()), CkptPublishOutcome::FencedOut);
         EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS", "GET"}));
     }
+}
+
+TEST(CASRefCheckpoint, AdmissionLostWithTheAmbiguousCasPreventsItsResolutionGet)
+{
+    auto backend = std::make_shared<AmbiguousCkptBackend>();
+    const Layout layout{"p"};
+    const NamespaceLifeId life = DB::Cas::tests::fixture::fixtureLife(
+        RootNamespace{"srv1/ckpt_admission_lost_before_resolution"});
+    const String key = layout.refCkptKey(life);
+    const RefCkpt base{.life_epoch = 1, .committed_through = ID_1_1,
+                       .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt};
+    ASSERT_EQ(backend->casPut(key, encodeRefCkpt(base), std::nullopt).outcome, CasOutcome::Committed);
+
+    bool admitted = true;
+    backend->after_ambiguous_cas = [&] { admitted = false; };
+    backend->arm(key, AmbiguousCkptBackend::Fault::CommitThenThrow);
+    const auto admit_request = [&]
+    {
+        if (!admitted)
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "admission withdrawn");
+    };
+
+    EXPECT_EQ(publishCkpt(*backend, layout, life,
+                          RefCkpt{.life_epoch = std::nullopt, .committed_through = ID_1_2,
+                                  .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = std::nullopt},
+                          7, ALWAYS_ADMITTED, generousDeadline(), admit_request), CkptPublishOutcome::FencedOut);
+    EXPECT_EQ(backend->journal, (std::vector<String>{"GET", "CAS"}))
+        << "publishCkpt started its ambiguity-resolution GET after admission was withdrawn";
 }
 
 TEST(CASRefCheckpoint, ContinuedAmbiguityStopsAtTheDeadlineAndNeverIssuesConsecutiveCasAttempts)

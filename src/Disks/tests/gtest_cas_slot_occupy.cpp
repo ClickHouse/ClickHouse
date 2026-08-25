@@ -275,9 +275,9 @@ TEST(CASSlotOccupy, DeterministicLocalFailurePropagatesWithoutResolve)
 /// consumes this primitive. Both guard the design decisions the review approved -- see
 /// task-2-review.md concern (a) and finding I2's Task-4-adoption note. ----
 
-/// I1: pins the single-fence_ok()-call design (concern (a)) so a future contributor cannot silently
-/// "fix the inconsistency" by re-adding the sibling ops' post-write fence recheck -- that change would
-/// break Task 4's old-generation-retry semantics (resolveWedgeOnce deliberately calls slotOccupy under
+/// I1: pins the single-`fence_ok`-call `Created` design (concern (a)) so a future contributor cannot
+/// silently "fix the inconsistency" by re-adding the sibling ops' post-write fence recheck. That change
+/// would break Task 4's old-generation-retry semantics (resolveWedgeOnce deliberately calls slotOccupy under
 /// the wedge's ORIGINAL admitted_fence_generation, and relies on ITS OWN post-I/O checkFenceOrThrow,
 /// not a second internal check here, to decide whether the result is still relevant). A counting
 /// fence_ok that only answers true on its FIRST call: if slotOccupy ever called it again after the
@@ -301,6 +301,30 @@ TEST(CASSlotOccupy, CreatedNeverRechecksFenceAfterTheWrite)
     EXPECT_EQ(fence_calls, 1) << "slotOccupy must call fence_ok() exactly ONCE (pre-attempt only) -- "
                                  "a post-write recheck would falsely report Unresolved here (fence_calls's "
                                  "SECOND answer is false) and would break Task 4's old-generation-retry design";
+}
+
+/// A conflict needs a second backend request to resolve its occupant. Admission may disappear while
+/// the conditional create is in flight; in that case the resolver must fail closed before starting
+/// the `GET`, while preserving the one-check `Created` contract above.
+TEST(CASSlotOccupy, AdmissionLostAfterConflictPreventsTheResolveGet)
+{
+    auto backend = std::make_shared<CountingBackend>();
+    ASSERT_EQ(backend->putIfAbsent("k", "existing").outcome, PutOutcome::Done);
+    CasRequestController controller(backend, CasRequestBudget{});
+
+    int admission_checks = 0;
+    const auto admitted = [&admission_checks]
+    {
+        ++admission_checks;
+        return admission_checks == 1;
+    };
+
+    const auto result = controller.slotOccupy("k", "attempt", admitted);
+    EXPECT_EQ(result.kind, SlotOccupyResult::Kind::Unresolved);
+    EXPECT_EQ(admission_checks, 2);
+    EXPECT_EQ(backend->putCount("k"), 2u);
+    EXPECT_EQ(backend->getCount("k"), 0u)
+        << "slotOccupy started its ambiguity-resolution GET after admission was withdrawn";
 }
 
 /// I2: proves Occupied is reachable for an occupant that is OUR OWN earlier ambiguous write, not only

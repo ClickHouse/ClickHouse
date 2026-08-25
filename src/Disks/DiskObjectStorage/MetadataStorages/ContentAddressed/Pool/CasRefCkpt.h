@@ -116,10 +116,13 @@ struct CkptDeadline
 /// `admitted_generation` is the fence generation the CALLER captured when its work was admitted, and
 /// `check_fence_or_throw` is the callback the pool wires from `CasMountRuntime::checkFenceOrThrow`
 /// (the ledger never owns a `CasMountRuntime`; it receives the pair the way `CasPlainObjects` does).
+/// `admit_request` is independent of that post-read fence contract: when supplied, it is checked
+/// immediately before every raw backend request, and refusal returns `FencedOut` without starting it.
 CkptPublishOutcome publishCkpt(Backend & backend, const Layout & layout, const NamespaceLifeId & life,
                                const RefCkpt & contribution, uint64_t admitted_generation,
                                const std::function<void(uint64_t)> & check_fence_or_throw,
-                               const CkptDeadline & deadline);
+                               const CkptDeadline & deadline,
+                               const std::function<void()> & admit_request = {});
 
 /// One observation of a namespace's `_ckpt`: the decoded body and the incarnation TOKEN it was read
 /// at. The token is what the missing-base revalidation adjudicates against, so a reader that keeps

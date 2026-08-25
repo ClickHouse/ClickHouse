@@ -23,6 +23,7 @@
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/LoggingHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Poco/String.h>
@@ -35,6 +36,12 @@
 #include <unordered_set>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event CASDetachedWorkDrainTimeouts;
+    extern const Event CASEventDroppedContextExpired;
+}
 
 namespace DB
 {
@@ -274,7 +281,7 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , server_root_id(settings_[ContentAddressedSetting::server_root_id].value)
     , disk_name(!disk_name_.empty() ? disk_name_ : storage_path_prefix)
     , local_scratch_path(settings_[ContentAddressedSetting::scratch_path].value)
-    , context(context_)
+    , context(context_ ? std::optional<ContextWeakPtr>(context_) : std::nullopt)
     , gc_enabled(settings_[ContentAddressedSetting::gc_enabled].value)
     , gc_interval(std::chrono::seconds(settings_[ContentAddressedSetting::gc_interval_sec].value))
     , gc_snapshot_generations_to_keep(settings_[ContentAddressedSetting::gc_snapshot_generations_to_keep].value)
@@ -301,6 +308,11 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , skip_access_check(settings_[ContentAddressedSetting::skip_access_check].value)
     , part_folder_validate(settings_.partFolderValidate())
 {
+}
+
+ContentAddressedMetadataStorage::~ContentAddressedMetadataStorage()
+{
+    stopAndDrainForTeardown();
 }
 
 Cas::StagingBackend ContentAddressedMetadataStorage::parseStagingBackend(const std::string & value)
@@ -484,12 +496,18 @@ Cas::GcRoundLogger ContentAddressedMetadataStorage::makeGcRoundLogger() const
     /// Unit tests pass a null context (no system logs); the scheduler then runs without a sink.
     if (!context)
         return {};
-    auto ctx = context;
+    const ContextWeakPtr weak_context = *context;
     /// The configured disk name (threaded from the metadata-storage factory); falls back to
     /// storage_path_prefix for callers that don't supply one (e.g. unit tests).
     const String disk = disk_name;
-    return [ctx, disk](const Cas::GcRoundLogRecord & r)
+    return [weak_context, disk](const Cas::GcRoundLogRecord & r)
     {
+        auto ctx = weak_context.lock();
+        if (!ctx)
+        {
+            ProfileEvents::increment(ProfileEvents::CASEventDroppedContextExpired);
+            return;
+        }
         auto log = ctx->getContentAddressedGarbageCollectionLog();
         if (!log)
             return;
@@ -562,12 +580,18 @@ Cas::CasEventSink ContentAddressedMetadataStorage::makeCasEventSink() const
     /// Unit tests pass a null context (no system logs); the Pool then runs without a sink.
     if (!context)
         return {};
-    auto ctx = context;
+    const ContextWeakPtr weak_context = *context;
     /// The configured disk name (threaded from the metadata-storage factory); falls back to
     /// storage_path_prefix for callers that don't supply one (e.g. unit tests).
     const String disk = disk_name;
-    return [ctx, disk](Cas::CasEvent ev)
+    return [weak_context, disk](Cas::CasEvent ev)
     {
+        auto ctx = weak_context.lock();
+        if (!ctx)
+        {
+            ProfileEvents::increment(ProfileEvents::CASEventDroppedContextExpired);
+            return;
+        }
         auto log = ctx->getContentAddressedLog();
         if (!log)
             return;
@@ -680,7 +704,7 @@ Cas::RebuildReport ContentAddressedMetadataStorage::runGcRebuildNow(bool force) 
     return gc.rebuildBaseline(force);
 }
 
-ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openPoolView() const
+ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openPoolView(bool context_available) const
 {
     /// Native mode rides real conditional ops (probed fail-closed by Pool::open); Local object
     /// storage has none, so the backend emulates exact token semantics in-process (single server).
@@ -747,7 +771,7 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     pool_config.server_id = serverIdToU128(server_id);
     pool_config.server_root_id = server_root_id;
     /// A read-only (`<readonly>`) disk opens with no background watermark and no write probe.
-    pool_config.background_watermark = (context != nullptr) && !read_only;
+    pool_config.background_watermark = context_available && !read_only;
     pool_config.read_only = read_only;
     pool_config.skip_access_check = skip_access_check;
     /// The node-local write algorithm: `PoolMeta::createOrValidate` accepts it with no write once
@@ -784,6 +808,17 @@ void ContentAddressedMetadataStorage::startup()
     if (cas_store)
         return;
 
+    ContextPtr startup_context;
+    if (context)
+    {
+        startup_context = context->lock();
+        if (!startup_context)
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Cannot start content-addressed metadata storage {} because its `Context` has expired",
+                storage_path_full);
+    }
+
     /// Observe-only mode (the disk's <readonly> config): skip the probe (a probe write would fail on
     /// a read-only backend), run no watermark, start no GC, and fail the mutating surface closed.
     read_only = object_storage->isReadOnly();
@@ -805,7 +840,7 @@ void ContentAddressedMetadataStorage::startup()
     /// very end. This makes a mid-startup throw leave the object exactly as unstarted as it was on
     /// entry (the `if (cas_store) return;` head above still sees an empty pool), so a caller can
     /// retry `startup` after a transient failure instead of being stuck with a half-built mount.
-    PoolView view = openPoolView();
+    PoolView view = openPoolView(static_cast<bool>(startup_context));
     physical_key_prefix = view.physical_key_prefix;
     auto pool = std::move(view.pool);
     auto uuid = Cas::u128ToHex(pool->poolMeta().pool_id);
@@ -839,7 +874,7 @@ void ContentAddressedMetadataStorage::startup()
     /// `CasGcScheduler`; its destructor calls `stop()`, which joins both worker threads before the
     /// exception continues propagating. No explicit `SCOPE_EXIT` is needed for that.
     std::shared_ptr<Cas::CasGcScheduler> scheduler;
-    if (context && gc_enabled && !read_only)
+    if (startup_context && gc_enabled && !read_only)
     {
         scheduler = std::make_shared<Cas::CasGcScheduler>(
             pool, gc_interval, fmt::format("{}::ContentAddressedGC", storage_path_full),
@@ -882,22 +917,69 @@ void ContentAddressedMetadataStorage::shutdown()
     /// for a round's whole duration) -- unchanged priority: clean GC completion over fast shutdown.
     std::lock_guard round_lock(gc_scheduler_mutex);
     shutdown_called = true;
+    stopAndDrainForTeardown();
+}
+
+void ContentAddressedMetadataStorage::stopAndDrainForTeardown() noexcept
+{
     std::shared_ptr<Cas::CasGcScheduler> old_scheduler;
+    std::shared_ptr<Cas::CachedPartFolderAccess> old_part_access;
+    Cas::PoolPtr old_pool;
     {
         std::lock_guard ptr_lock(pointer_mutex);
         old_scheduler = std::move(gc_scheduler);
         gc_scheduler.reset();
+        old_part_access = std::move(part_access);
         part_access.reset();
         /// Terminal server-shutdown semantics: a one-way trip (no server-lifecycle "remount" after
         /// shutdown). Nulling `cas_store` puts the storage back into the null-pool (ShutDown) lifecycle,
         /// so `poolAccess()`/the gate report the same operational refusal post-shutdown as pre-startup.
+        old_pool = std::move(cas_store);
         cas_store.reset();
     }
-    /// `stop` joins the background threads. Runs outside pointer_mutex (no reset left to race:
-    /// gc_scheduler is already null) but still inside round_lock, so a NEW round can't start here.
-    /// old_scheduler keeps the object alive regardless.
-    if (old_scheduler)
-        old_scheduler->stop();
+    /// Everything below runs OUTSIDE `pointer_mutex`. Required, not incidental: waiting under it would
+    /// block snapshot readers for the whole wait, and it is also what keeps a `Pool` destructor triggered
+    /// by the last local reference from running under that mutex.
+    ///
+    /// Each phase is guarded SEPARATELY. One `try` around all of them would let an exception from stopping
+    /// the scheduler skip the part-access release and the drain itself -- the two steps this function
+    /// exists for.
+    const auto guarded = [](auto && phase, const char * what)
+    {
+        try
+        {
+            phase();
+        }
+        catch (...)
+        {
+            try
+            {
+                tryLogCurrentException(getLogger("ContentAddressedMetadataStorage"), what);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        }
+    };
+
+    guarded([&] { if (old_scheduler) old_scheduler->stop(); }, "CAS storage teardown: stopping GC");
+    guarded([&] { old_part_access.reset(); }, "CAS storage teardown: releasing part access");
+    guarded([&]
+    {
+        if (!old_pool)
+            return;
+        const auto & budget = old_pool->poolConfig().cas_request_budget;
+        const uint64_t deadline_ms = budget.attempt_timeout_ms + budget.lease_safety_margin_ms;
+        if (old_pool->stopAndDrainDetachedWork(deadline_ms))
+            return;
+        ProfileEvents::increment(ProfileEvents::CASDetachedWorkDrainTimeouts);
+        LOG_WARNING(
+            getLogger("ContentAddressedMetadataStorage"),
+            "CAS storage teardown: {} detached background task(s) still in flight after {} ms; proceeding",
+            old_pool->detachedWorkInFlight(),
+            deadline_ms);
+    }, "CAS storage teardown: draining detached work");
+    /// `old_pool` is released here, at the end of the function and outside every lock.
 }
 
 namespace
@@ -1091,6 +1173,12 @@ void ContentAddressedMetadataStorage::throwStorageNotStarted() const
 Cas::PoolPtr ContentAddressedMetadataStorage::store() const
 {
     return poolAccess().pool;
+}
+
+Cas::PoolPtr ContentAddressedMetadataStorage::poolForTest() const
+{
+    std::lock_guard lock(pointer_mutex);
+    return cas_store;
 }
 
 std::shared_ptr<Cas::CachedPartFolderAccess> ContentAddressedMetadataStorage::partAccess() const

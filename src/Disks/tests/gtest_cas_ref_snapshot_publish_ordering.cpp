@@ -47,119 +47,13 @@ extern const int NETWORK_ERROR;
 
 using namespace DB::Cas;
 using DB::Cas::tests::CountingBackend;
+using DB::Cas::tests::OrderedFaultBackend;
 using DB::Cas::tests::expectThrowsCode;
 using DB::Cas::tests::namespaceBirthOp;
 using DB::Cas::tests::publishCommittedOps;
 
 namespace
 {
-
-/// Records the ORDER of body-PUT / `_ckpt`-CAS operations (so a test can compare indices) and lets a
-/// test inject a persistent `Conflict` on one chosen `_ckpt` key -- the same technique
-/// `gtest_cas_ref_writer.cpp`'s `RefWriterTestBackend::ckpt_conflict_key`/`ckpt_conflict_count` uses to
-/// drive the ledger into `NeedsRecovery`, reproduced here so this suite has no dependency on that file's
-/// internal (non-exported) test type. Delegates every operation to `CountingBackend` unchanged, so the
-/// per-key counters (`putCount`/`casPutCount`) remain available as the positive control.
-class OrderedFaultBackend : public CountingBackend
-{
-public:
-    using CountingBackend::casPut;
-    using CountingBackend::get;
-    using CountingBackend::putIfAbsent;
-
-    enum class Op : uint8_t { Put, Cas };
-    struct Entry
-    {
-        Op op;
-        String key;
-    };
-
-    PutResult putIfAbsent(const String & key, const String & bytes, const ObjectMeta & meta) override
-    {
-        record(Op::Put, key);
-        if (fail_put_count > 0 && !fail_put_substr.empty() && key.find(fail_put_substr) != String::npos)
-        {
-            --fail_put_count;
-            throw Poco::TimeoutException("OrderedFaultBackend: simulated PUT response lost, nothing landed");
-        }
-        return CountingBackend::putIfAbsent(key, bytes, meta);
-    }
-
-    CasResult casPut(const String & key, const String & bytes, const std::optional<Token> & expected,
-                      const ObjectMeta & meta) override
-    {
-        record(Op::Cas, key);
-        if (key == fail_cas_key && fail_cas_count > 0)
-        {
-            --fail_cas_count;
-            /// A `Conflict` (not a thrown/ambiguous response): the caller's own re-read-and-merge loop
-            /// (`publishCkpt`) treats this exactly like a concurrent writer that landed first, and
-            /// exhausts `MAX_CKPT_CAS_ATTEMPTS` (100) without ever committing -- deterministically, with
-            /// no wall-clock wait, since the loop is attempt-bounded rather than only deadline-bounded.
-            return {CasOutcome::Conflict, {}};
-        }
-        return CountingBackend::casPut(key, bytes, expected, meta);
-    }
-
-    /// Arms a persistent CAS conflict at `key` for the next `count` attempts.
-    void armCasConflict(const String & key, size_t count)
-    {
-        fail_cas_key = key;
-        fail_cas_count = count;
-    }
-
-    /// Arms a persistent, never-committed PUT failure for the next `count` `putIfAbsent` calls whose key
-    /// contains `substr`: the object is never actually written (unlike a real ambiguous response, which
-    /// may or may not have landed), so the resolve-by-exact-GET a controlled `CasRequestBudget` with
-    /// `max_attempts = 1` performs always finds the key absent and classifies the attempt a definite,
-    /// non-`Committed` failure -- deterministically, with no internal retry and no wall-clock wait.
-    void armPutFailure(const String & substr, int count)
-    {
-        fail_put_substr = substr;
-        fail_put_count = count;
-    }
-
-    /// The current length of the journal -- a caller's baseline for `indicesFrom` below, so a query can
-    /// be scoped to "since I last looked" rather than "since the pool opened" (whose earlier entries
-    /// belong to unrelated setup writes, e.g. the birth transaction's own checkpoint CAS).
-    size_t journalSize() const
-    {
-        std::lock_guard lock(mutex);
-        return journal.size();
-    }
-
-    /// Every index at or after `from` where `op`/`key` matches, in order.
-    std::vector<size_t> indicesFrom(Op op, const String & key, size_t from) const
-    {
-        std::lock_guard lock(mutex);
-        std::vector<size_t> result;
-        for (size_t i = from; i < journal.size(); ++i)
-            if (journal[i].op == op && journal[i].key == key)
-                result.push_back(i);
-        return result;
-    }
-
-    /// The first index at or after `from` where `op`/`key` matches, if any.
-    std::optional<size_t> firstIndexFrom(Op op, const String & key, size_t from) const
-    {
-        const auto indices = indicesFrom(op, key, from);
-        return indices.empty() ? std::nullopt : std::make_optional(indices.front());
-    }
-
-private:
-    void record(Op op, const String & key)
-    {
-        std::lock_guard lock(mutex);
-        journal.push_back({op, key});
-    }
-
-    mutable std::mutex mutex;
-    std::vector<Entry> journal;
-    String fail_cas_key;
-    size_t fail_cas_count = 0;
-    String fail_put_substr;
-    int fail_put_count = 0;
-};
 
 PoolPtr openPool(const std::shared_ptr<OrderedFaultBackend> & backend, PoolConfig config = {})
 {

@@ -952,7 +952,8 @@ std::optional<RefTxnId> nextRefLogIdWithinCommittedFrontier(
 }
 
 CheckpointSnapshotBase readCheckpointSnapshotBase(
-    Backend & backend, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint)
+    Backend & backend, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint,
+    const std::function<void()> & admit_request)
 {
     const RootNamespace & ns = life.ns;
     if (!checkpoint.checkpoint_snapshot_id)
@@ -968,6 +969,8 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
             ns.string());
     }
     const RefTxnId snapshot_id = *checkpoint.checkpoint_snapshot_id;
+    if (admit_request)
+        admit_request();
     const auto log = backend.get(layout.refLogKey(life, snapshot_id));
     if (!log)
     {
@@ -1004,6 +1007,8 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
     if (base_txn.prev_epoch_seal)
     {
         predecessor_seal_id = *base_txn.prev_epoch_seal;
+        if (admit_request)
+            admit_request();
         const auto predecessor = backend.get(layout.refLogKey(life, *predecessor_seal_id));
         if (!predecessor)
         {
@@ -1025,6 +1030,8 @@ CheckpointSnapshotBase readCheckpointSnapshotBase(
         }
     }
 
+    if (admit_request)
+        admit_request();
     const auto snapshot = backend.get(layout.refSnapshotKey(life, snapshot_id));
     if (!snapshot)
     {

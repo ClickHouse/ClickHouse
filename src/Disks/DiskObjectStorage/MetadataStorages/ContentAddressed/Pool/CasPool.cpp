@@ -223,8 +223,10 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           [this] { return mayMutate(); },
           [this] (const String & key, const String & reason, const std::optional<String> & offending_ns)
               { reportImpossibleInterference(key, reason, offending_ns); },
-          [this] { return std::static_pointer_cast<void>(shared_from_this()); },
-          [this] (const RootNamespace & ns) { cancelInflightBuildsForNamespace(ns); })
+          [this] (std::function<void(DetachedStopToken)> task) { return tryDispatchDetached(std::move(task)); },
+          config.publish_error_hook_for_test,
+          [this] (const RootNamespace & ns) { cancelInflightBuildsForNamespace(ns); },
+          config.recovery_pre_first_request_hook_for_test)
     /// Mount / write-fence / build-watermark / self-remount runtime. Injected with
     /// backend/layout + the `MountConfig` slice + `server_root_id` + the event-sink reference + the pool
     /// `cas_request_budget` + the `remount_attempt` callback (== `Pool::tryRemountOnce`, whose claim/
@@ -879,30 +881,142 @@ PoolPtr Pool::openForDecommission(BackendPtr backend, PoolConfig config, const S
 
 Pool::~Pool()
 {
-    /// Teardown order is load-bearing and unchanged from the pre-3.5 inline sequence (only the
-    /// mount/remount mechanics were relocated into `mount_runtime`):
-    ///
+    /// Nothing here may escape: a destructor is `noexcept` by default, so any throw terminates the
+    /// process. Each phase is guarded separately because `finishTeardown` re-enters
+    /// `stopBackgroundWorkers`; guarding only the first call would leave the second one unguarded.
+    const auto guarded = [](auto && phase, const char * what)
+    {
+        try
+        {
+            phase();
+        }
+        catch (...)
+        {
+            /// `tryLogCurrentException` allocates, and can itself throw under the memory pressure that
+            /// caused the teardown failure.
+            try
+            {
+                tryLogCurrentException(getLogger("CasPool"), what);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        }
+    };
+
     /// 1. Stop and join both persistent mount-runtime workers before draining or releasing the keeper.
-    mount_runtime.stopBackgroundWorkers();
+    guarded([this]
+    {
+        if (config.teardown_phase1_throw_for_test)
+            config.teardown_phase1_throw_for_test();
+        mount_runtime.stopBackgroundWorkers();
+    }, "CAS pool teardown: stopping background workers");
 
-    /// 2. The farewell marker the keeper's `release` writes is a
-    /// certificate that no in-flight ref-log conditional PUT from this incarnation can land after it --
-    /// a successor treats it as proof of a clean death (`MountPriorState::Clean`, no observation wait
-    /// needed). Writing it without an actual drain would be a protocol-safety bug: an uncertain PUT this
-    /// incarnation is still resolving could land AFTER the successor already reclaimed and started
-    /// mutating. `drainRefLanesForShutdown` is the drain; bounded by one attempt's worth of budget plus
-    /// the lease safety margin -- long enough for an in-flight attempt to resolve, never unbounded. It
-    /// stays on `Pool` (mediating the mount↔ledger coupling), sequenced between the two mount-runtime
-    /// teardown steps exactly as before.
-    const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
-        config.cas_request_budget.attempt_timeout_ms + config.cas_request_budget.lease_safety_margin_ms);
-    const bool drained = ref_lanes_drained && !writerCleanupDutiesPending();
+    /// 2. The farewell marker the keeper's `release` writes is a certificate that no in-flight ref-log
+    /// conditional PUT from this incarnation can land after it. A successor treats it as proof of a
+    /// clean death (`MountPriorState::Clean`, no observation wait needed). Writing it without an actual
+    /// drain would be a protocol-safety bug: an uncertain PUT this incarnation is still resolving could
+    /// land after the successor already reclaimed and started mutating. `drainRefLanesForShutdown` is
+    /// bounded by one attempt's worth of budget plus the lease safety margin, and stays on `Pool`
+    /// between the two mount-runtime teardown steps.
+    ///
+    /// False by default, rather than assigned from the drain: swallowing a drain failure must never
+    /// forge the clean-release marker.
+    bool drained = false;
+    guarded([this, &drained]
+    {
+        if (config.teardown_phase2_throw_for_test)
+            config.teardown_phase2_throw_for_test();
+        const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
+            config.cas_request_budget.attempt_timeout_ms + config.cas_request_budget.lease_safety_margin_ms);
+        drained = ref_lanes_drained && !writerCleanupDutiesPending();
+    }, "CAS pool teardown: draining ref lanes");
 
-    /// 3. Retire the merged heartbeat: `finishTeardown` runs the keeper's terminal op on a clean drain
-    /// (stamping the lease already-expired + folding in the watermark farewell so a SAME-server reopen
-    /// reclaims immediately) or the fail-closed no-terminal-op on an unresolved PUT, then does the
-    /// belt-and-suspenders worker re-join. See `CasMountRuntime::finishTeardown`.
-    mount_runtime.finishTeardown(drained);
+    /// 3. Retire the merged heartbeat. This always runs after phase 2, even when that phase failed, and
+    /// gets the captured fail-closed drain result.
+    guarded([this, drained]
+    {
+        if (config.teardown_phase3_throw_for_test)
+            config.teardown_phase3_throw_for_test();
+        mount_runtime.finishTeardown(drained);
+    }, "CAS pool teardown: finishing mount teardown");
+}
+
+bool Pool::tryDispatchDetached(std::function<void(DetachedStopToken)> task)
+{
+    /// Admission is exception-safe in this order: allocate FIRST, then check-and-count under the
+    /// mutex, then arm. Counting before allocating would strand a count that nothing can decrement,
+    /// and every later drain would then run to its full deadline.
+    DetachedTaskLease lease(shared_from_this(), detached_work, config.detached_lease_release_hook_for_test);
+    DetachedStopToken token(detached_work);
+
+    if (config.detached_dispatch_fault_for_test == DetachedDispatchFault::ThrowBeforeLaunch)
+        throw Exception(ErrorCodes::ABORTED, "CAS detached dispatch: injected pre-admission failure");
+
+    {
+        std::lock_guard lock(detached_work->mutex);
+        if (detached_work->stopping)
+            return false;
+        ++detached_work->in_flight;
+    }
+    lease.arm();
+
+    try
+    {
+        if (config.detached_dispatch_fault_for_test == DetachedDispatchFault::RefuseLaunch)
+            throw Exception(ErrorCodes::ABORTED, "CAS detached dispatch: injected launch failure");
+
+        ThreadFromGlobalPool([lease, token, task]() mutable
+        {
+            task(token);
+        }).detach();
+    }
+    catch (...)
+    {
+        /// The launch failed. `lease` is destroyed as this scope unwinds and performs the release in
+        /// order. Log best-effort under a nested guard: `tryLogCurrentException` allocates, and memory
+        /// pressure is one of the conditions that brings us here.
+        try
+        {
+            tryLogCurrentException(getLogger("CasPool"), "CAS detached dispatch failed to launch");
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        return false;
+    }
+    return true;
+}
+
+bool Pool::stopAndDrainDetachedWork(uint64_t deadline_ms)
+{
+    {
+        std::lock_guard lock(detached_work->mutex);
+        detached_work->stopping = true;
+    }
+    detached_work->cv.notify_all();
+
+    std::unique_lock lock(detached_work->mutex);
+    return detached_work->cv.wait_for(lock, std::chrono::milliseconds(deadline_ms),
+                                      [this] { return detached_work->in_flight == 0; });
+}
+
+uint64_t Pool::detachedWorkInFlight() const
+{
+    std::lock_guard lock(detached_work->mutex);
+    return detached_work->in_flight;
+}
+
+bool Pool::detachedWorkStoppingForTest() const
+{
+    std::lock_guard lock(detached_work->mutex);
+    return detached_work->stopping;
+}
+
+void Pool::setDetachedDrainDeadlineBudgetForTest(uint64_t attempt_timeout_ms, uint64_t lease_safety_margin_ms)
+{
+    config.cas_request_budget.attempt_timeout_ms = attempt_timeout_ms;
+    config.cas_request_budget.lease_safety_margin_ms = lease_safety_margin_ms;
 }
 
 void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const String & reason)
@@ -1560,17 +1674,18 @@ void Pool::reportImpossibleInterference(const String & key, const String & reaso
 
     /// Diagnosis off the critical path: a background task may spend a FEW
     /// requests -- never the caller's thread, and never blocking this call's own return.
-    /// `shared_from_this()` keeps the Pool alive for the thread's lifetime (mirrors
-    /// `maybeScheduleSnapshotPublish`'s dispatch).
-    auto self = shared_from_this();
     try
     {
-        ThreadFromGlobalPool([self, key]
+        /// The lease owns the pool reference for this task's lifetime; capturing one here as well would
+        /// put it outside the lease's release ordering.
+        const bool dispatched = tryDispatchDetached([this, key](DetachedStopToken token)
         {
             setThreadName(ThreadName::CAS_ANOMALY_DIAG);
+            if (token.stopping())
+                return;
             try
             {
-                const auto got = self->pool_backend->get(key);
+                const auto got = pool_backend->get(key);
                 if (!got)
                 {
                     LOG_ERROR(getLogger("CasPool"),
@@ -1593,12 +1708,22 @@ void Pool::reportImpossibleInterference(const String & key, const String & reaso
                 tryLogCurrentException(getLogger("CasPool"),
                     "CAS anomaly diagnostics: background GET failed for '" + key + "'");
             }
-        }).detach();
+        });
+        (void)dispatched;   /// best-effort: a refused diagnostic is not an error for the caller
     }
     catch (...)
     {
-        /// Pool exhaustion: best-effort diagnostics must never block the caller's own fail-closed throw.
-        tryLogCurrentException(getLogger("CasPool"), "CAS anomaly diagnostics dispatch failed to launch for '" + key + "'");
+        /// Pool exhaustion: every part of best-effort logging may allocate and must never replace the
+        /// caller's own fail-closed exception.
+        try
+        {
+            if (config.diagnostic_dispatch_error_hook_for_test)
+                config.diagnostic_dispatch_error_hook_for_test();
+            tryLogCurrentException(getLogger("CasPool"), "CAS anomaly diagnostics dispatch failed to launch for '" + key + "'");
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
     }
 }
 
@@ -1715,6 +1840,12 @@ std::vector<String> Pool::listMirroredChildren(const String & prefix)
 void Pool::setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn)
 {
     ref_ledger.setCasRetrySleepForTest(std::move(sleep_fn));
+}
+
+void Pool::setRefRecoveryRetrySleepForTest(
+    std::function<void(uint64_t, const std::optional<DetachedStopToken> &)> sleep_fn)
+{
+    ref_ledger.setRefRecoveryRetrySleepForTest(std::move(sleep_fn));
 }
 
 std::optional<Resolved> Pool::resolveRef(const RootNamespace & ns, const String & ref_name, bool allow_stale, ResolveAudit audit)

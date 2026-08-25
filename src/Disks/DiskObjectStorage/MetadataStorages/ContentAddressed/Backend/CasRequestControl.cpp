@@ -835,14 +835,15 @@ SlotOccupyResult CasRequestController::slotOccupy(
     const String bytes_s{bytes};
     const uint64_t deadline_ms = now_ms() + budget.operation_deadline_ms;
 
-    /// Pre-attempt gate ONLY -- the same two checks every controlled op runs before its first (here,
-    /// only) attempt: the mount fence must still hold, and there must be enough of the operation's own
+    /// Pre-attempt gate -- the same two checks every controlled op runs before its first (here, only)
+    /// attempt: the mount fence must still hold, and there must be enough of the operation's own
     /// deadline left for one attempt to plausibly complete. Neither check sends anything to the
     /// backend, so a refusal here PROVES the key is untouched by this call. UNLIKE every sibling
-    /// controlled op, there is no post-write recheck below: fence_ok is evaluated once per attempt, and
-    /// the stronger post-I/O consistency check (fence generation together with wedge/txn identity) is
-    /// the CALLER's contract (Task 4/6's re-acquire-lock-and-checkFenceOrThrow step), not this raw
-    /// primitive's.
+    /// controlled op, there is no post-write result recheck below: the stronger post-I/O consistency
+    /// check (fence generation together with wedge/txn identity) is the CALLER's contract (Task 4/6's
+    /// re-acquire-lock-and-checkFenceOrThrow step), not this raw primitive's. The admission predicate is
+    /// checked again only if this attempt needs a second backend request to resolve its result; a
+    /// `Created` result still performs no post-write recheck.
     if (!fence_ok() || now_ms() + budget.attempt_timeout_ms > deadline_ms)
         return {.kind = SlotOccupyResult::Kind::Unresolved, .occupant_bytes = {}, .occupant_token = {},
                 .unresolved_reason = CasUnresolvedReason::NoAttemptSent};
@@ -884,6 +885,10 @@ SlotOccupyResult CasRequestController::slotOccupy(
     /// format-agnostic (it takes a raw key/bytes pair, per the "Interface handed to Stage B" contract in
     /// the plan) and does not encode any format's cap here -- the size bound is a property of what
     /// callers are allowed to pass it, enforced where the returned bytes are decoded, not by this seam.
+    if (!fence_ok())
+        return {.kind = SlotOccupyResult::Kind::Unresolved, .occupant_bytes = {}, .occupant_token = {},
+                .unresolved_reason = CasUnresolvedReason::AttemptsExhausted};
+
     std::optional<GetResult> got;
     try
     {

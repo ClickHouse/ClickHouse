@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasBlobDigest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasEventDispatcher.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasDetachedWork.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPartManifestFormat.h>
@@ -33,6 +34,13 @@
 namespace DB::Cas
 {
 
+
+enum class DetachedDispatchFault
+{
+    None,
+    RefuseLaunch,
+    ThrowBeforeLaunch,
+};
 
 /// Configuration supplied when opening a content-addressed pool. The fields remain flat for the
 /// compatibility of existing wiring and tests, while `refLedgerConfig` and `mountConfig` project
@@ -164,6 +172,32 @@ struct PoolConfig
     bool background_watermark = false;
     /// Installed on the pool before a writable mount can start its runtime-owned workers.
     CasEventSink event_sink = {};
+
+    /// TEST SEAM: invoked by a detached task's lease at the exact boundary between releasing its pool
+    /// reference and decrementing the in-flight count.
+    std::function<void()> detached_lease_release_hook_for_test = {};
+
+    /// TEST SEAM: fault injection for the detached dispatch. `ThrowBeforeLaunch` stands in for an
+    /// allocation failure raised before the count is taken; `RefuseLaunch` for a launch that failed
+    /// after it was.
+    DetachedDispatchFault detached_dispatch_fault_for_test = DetachedDispatchFault::None;
+
+    /// TEST SEAM: invoked inside the background snapshot publisher's error handler, before logging.
+    /// Empty in production; a test uses it to make the handler itself throw and verify settlement still
+    /// releases the publisher's single-flight reservation.
+    std::function<void()> publish_error_hook_for_test = {};
+
+    /// TEST SEAM: invoked when the anomaly diagnostic dispatch failed, before logging that failure.
+    /// Empty in production; a test uses it to verify diagnostics cannot replace the caller's exception.
+    std::function<void()> diagnostic_dispatch_error_hook_for_test = {};
+
+    /// TEST SEAM: invoked immediately before ref-table recovery issues its first backend request.
+    std::function<void()> recovery_pre_first_request_hook_for_test = {};
+
+    /// TEST SEAM: invoked at the start of each `Pool` teardown phase.
+    std::function<void()> teardown_phase1_throw_for_test = {};
+    std::function<void()> teardown_phase2_throw_for_test = {};
+    std::function<void()> teardown_phase3_throw_for_test = {};
 
     /// Mount-lease TTL: how long a freshly-renewed mount lease is valid. The local
     /// write fence's monotonic deadline is `renew_time + this`, so a superseded/paused writer is fenced
@@ -369,6 +403,15 @@ public:
     /// backend-facing components in their dependency order. Destruction is also the clean-farewell
     /// path for a writable mount, so it must complete before the owning backend is released.
     ~Pool();
+
+    bool tryDispatchDetached(std::function<void(DetachedStopToken)> task);
+    bool stopAndDrainDetachedWork(uint64_t deadline_ms);
+    uint64_t detachedWorkInFlight() const;
+    uint64_t detachedWorkInFlightForTest() const { return detachedWorkInFlight(); }
+    bool detachedWorkStoppingForTest() const;
+    /// Test-only: shortens the metadata-storage teardown deadline without changing any request path.
+    /// Call before dispatching detached work; production configuration remains immutable after open.
+    void setDetachedDrainDeadlineBudgetForTest(uint64_t attempt_timeout_ms, uint64_t lease_safety_margin_ms);
 
     /// ---- per-server watermark surface ----
     /// process_epoch: random nonzero per Pool (process). GC checks epoch EQUALITY, never ordering.
@@ -982,6 +1025,10 @@ public:
     /// real sleep.
     void setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn);
 
+    /// Test-only: replace only ref-table recovery's token-aware retry delay seam.
+    void setRefRecoveryRetrySleepForTest(
+        std::function<void(uint64_t, const std::optional<DetachedStopToken> &)> sleep_fn);
+
     /// Queue depth for the ref-append-lane tests (mirrors `shardQueuePendingForTest`): how many
     /// `appendRefOps` callers are enqueued for `ns` right now.
     size_t refQueuePendingForTest(const RootNamespace & ns) { return ref_ledger.refQueuePendingForTest(ns); }
@@ -1053,6 +1100,8 @@ private:
     BackendPtr pool_backend;
     PoolConfig config;
     PoolMeta meta;
+
+    std::shared_ptr<DetachedRegistryState> detached_work = std::make_shared<DetachedRegistryState>();
 
     mutable std::mutex writer_cleanup_mutex;
     std::condition_variable writer_cleanup_cv;

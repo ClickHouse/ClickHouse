@@ -763,6 +763,8 @@ struct RecoveredRefTable
 /// the named predecessor to be an `EpochSeal`, then read the snapshot. This order prevents a forged
 /// snapshot at any historical seal or contextually invalid epoch start from becoming state. Cleanup
 /// retains both the matching log and returned predecessor proof while the checkpoint names this base.
+/// When supplied, `admit_request` runs immediately before each raw backend request so a caller may
+/// refuse later requests without changing their durable order. Its default preserves read-only callers.
 struct CheckpointSnapshotBase
 {
     RefTableSnapshot snapshot;
@@ -773,7 +775,8 @@ struct CheckpointSnapshotBase
 };
 
 CheckpointSnapshotBase readCheckpointSnapshotBase(
-    Backend & backend, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint);
+    Backend & backend, const Layout & layout, const NamespaceLifeId & life, const RefCkpt & checkpoint,
+    const std::function<void()> & admit_request = {});
 
 /// Recover a ref table from ONE immutable lifecycle authority cut supplied by the caller. `catalog_entry`
 /// is either the exact row from that caller's frozen catalog cut or absence from that same cut; `ckpt` is
