@@ -11,6 +11,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
@@ -19,6 +20,8 @@
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+#include <algorithm>
 
 #include <fmt/ranges.h>
 
@@ -152,6 +155,55 @@ bool sameSerializedExpressions(const String & lhs, const String & rhs)
     };
 
     return sameAST(parse(lhs), parse(rhs));
+}
+
+/// Columns of the same automatic min-max index category, as `StorageInMemoryMetadata::addImplicitIndicesForColumn` groups them.
+bool sameImplicitIndexCategory(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    return (isNumber(lhs) && isNumber(rhs))
+        || (isString(lhs) && isString(rhs))
+        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(lhs) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(rhs));
+}
+
+/// Columns that never get an implicit index, whatever the automatic min-max index settings are.
+bool isSkippedByImplicitIndices(const ColumnDescription & column)
+{
+    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+        return true;
+
+    return column.default_desc.kind == ColumnDefaultKind::Alias
+        && column.default_desc.expression
+        && column.default_desc.expression->as<ASTIdentifier>();
+}
+
+/// A pre-25.12 replica wrote an implicit `auto_minmax_index_<column>` for *every* column of a
+/// category enabled by its automatic min-max index settings, so legacy Keeper metadata always
+/// carries the whole category. An explicitly declared index that merely reuses the reserved
+/// prefix - which is legal exactly while the automatic index settings are disabled - does not
+/// have that shape. Requiring the whole category lets such an index stay visible to the metadata
+/// comparison when the Keeper entry is newer than the local snapshot (a replica joining with
+/// stale DDL, or replaying the `ALTER` that adds the index), instead of stripping a change the
+/// replica has not applied yet.
+bool storedIndicesCoverImplicitCategory(
+    const IndicesDescription & stored, const ColumnsDescription & columns, const DataTypePtr & category_type)
+{
+    for (const auto & column : columns)
+    {
+        if (!sameImplicitIndexCategory(column.type, category_type) || isSkippedByImplicitIndices(column))
+            continue;
+
+        /// The column is covered either by its own implicit index, or by the user-defined min-max
+        /// index that made `addImplicitIndicesForColumn` skip the column in the first place.
+        const bool covered = std::any_of(stored.begin(), stored.end(), [&](const auto & index)
+        {
+            return index.type == "minmax" && !index.column_names.empty() && index.column_names.front() == column.name;
+        });
+
+        if (!covered)
+            return false;
+    }
+
+    return true;
 }
 
 }
@@ -408,11 +460,12 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
         {
             const auto column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
             /// A joining replica may have automatic indices disabled, leaving it without a local
-            /// counterpart for an index written implicitly by a pre-25.12 replica. Recognize
-            /// only the exact canonical implicit definition; a local explicit declaration above
-            /// continues to take precedence over this compatibility path.
+            /// counterpart for an index written implicitly by a pre-25.12 replica. Recognize only
+            /// the exact canonical implicit definition of a complete legacy category; a local
+            /// explicit declaration above continues to take precedence over this compatibility path.
             if (columns.has(column_name)
-                && sameAST(index.definition_ast, createImplicitMinMaxIndexAST(column_name)))
+                && sameAST(index.definition_ast, createImplicitMinMaxIndexAST(column_name))
+                && storedIndicesCoverImplicitCategory(parsed, columns, columns.get(column_name).type))
             {
                 index.is_implicitly_created = true;
                 has_implicit = true;

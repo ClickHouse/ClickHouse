@@ -32,7 +32,7 @@
 1
 1
 0
-SELECT count()\nFROM constraint_test_constants\nWHERE or(greater(b, 100), greater(c, 100))
+SELECT count()\nFROM constraint_test_constants\nWHERE or(greater(c, 100), greater(b, 100))
 SELECT count()\nFROM constraint_test_constants\nWHERE greater(c, 100)
 QUERY id: 0
   PROJECTION COLUMNS

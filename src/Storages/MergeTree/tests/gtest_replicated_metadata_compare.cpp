@@ -201,6 +201,36 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalO
     EXPECT_TRUE(disabled_metadata.skip_indices.empty());
 }
 
+TEST(ReplicatedMergeTreeTableMetadataCompare, NewerRemoteExplicitAutoMinMaxIndexIsNotStripped)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// Two columns of the same category: a pre-25.12 replica would have written an implicit index
+    /// for both of them, so a Keeper entry holding only one of them is not legacy metadata.
+    ColumnsDescription columns;
+    columns.add(ColumnDescription("x", std::make_shared<DataTypeUInt64>()));
+    columns.add(ColumnDescription("y", std::make_shared<DataTypeUInt64>()));
+
+    MetadataFields fields;
+    /// An index a user is allowed to declare while `add_minmax_index_for_numeric_columns = 0`,
+    /// added on another replica and not applied locally yet.
+    fields.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1";
+    const auto serialized = makeMetadata(fields).toString();
+
+    /// The local snapshot has no counterpart because this is exactly the change to apply. The
+    /// index must survive normalization, otherwise the comparison misses the metadata change.
+    auto from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, {}, getContext().context);
+    EXPECT_EQ(from_zk.skip_indices, fields.indices);
+
+    /// The same entry is recognized as legacy implicit metadata once it covers the whole category.
+    MetadataFields legacy = fields;
+    legacy.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1, auto_minmax_index_y y TYPE minmax() GRANULARITY 1";
+    auto legacy_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        makeMetadata(legacy).toString(), columns, {}, getContext().context);
+    EXPECT_TRUE(legacy_from_zk.skip_indices.empty());
+}
+
 TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSignificant)
 {
     /// Parts of a TTL element that are not AST children: mode, destination, GROUP BY keys and
