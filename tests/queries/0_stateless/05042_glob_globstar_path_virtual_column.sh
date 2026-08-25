@@ -64,8 +64,9 @@ mkdir -p "${OUTSIDE_DIR}/inner"
 printf '999\n' > "${OUTSIDE_DIR}/secret.csv"
 ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/esc"
 # Printed as the path the query resolved to, so an unrelated failure cannot pass as a denial: the
-# `..` has to be gone and `esc/` with it.
-$CLICKHOUSE_CLIENT -q "
+# `..` has to be gone and `esc/` with it. The forwarded server log would repeat the same text, so
+# only the client's own exception is read here.
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
 SELECT count() FROM file('${DATA_DIR}/esc/{..,missing}/secret.csv', 'CSV', 'id UInt64') WHERE id = 999;
 " 2>&1 | sed -n "s|.*File ${DATA_DIR}/\([^ ]*\) doesn't exist.*|resolved to \1|p"
 
@@ -102,8 +103,10 @@ SETTINGS rename_files_after_processing = 'processed_%f%e';
 # here lives under the symlink's target; the access check resolves the directory before approving
 # it. The row count shows the read happened, which is what selects the rename path, so the outside
 # file keeping its name is not just a query that never ran.
+# The refusal is reported by the reader's destructor, which cannot throw, so it reaches the client
+# as a forwarded server log rather than as a query error.
 ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/escw"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -q "
 SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64')
 SETTINGS rename_files_after_processing = 'processed_%f%e';
 "
