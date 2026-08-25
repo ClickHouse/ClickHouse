@@ -202,6 +202,13 @@ def coverage_comment_message(outcome: str) -> str:
     return f"Skipping coverage comment: {reason}."
 
 
+def coverage_marker_reason(outcome: str) -> str:
+    """Completes the hook's "No coverage measurement for commit <sha>: <reason>."
+    warning, so the reason starts lowercase and carries no trailing period."""
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return reason[:1].lower() + reason[1:]
+
+
 def coverage_drop(baseline_cov: float, current_cov: float) -> float:
     """Return the line coverage drop in pp, rounded to two decimals.
 
@@ -612,15 +619,24 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
-            # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # the diff HTML report was generated; there are no numbers to report in
-            # any other outcome.
+            # Only write the full coverage numbers when the diff HTML report was
+            # generated; there are no numbers to report in any other outcome.
             # Tests-only PRs never reach this job at all - the coverage family is
             # auto-skipped for them (see filter_job.py) since the compiled binary,
             # and therefore coverage, cannot have moved.
             _has_coverage_data = _diff_ran
             if not _has_coverage_data:
                 print(coverage_comment_message(_diff_outcome))
+                # The hook renders this marker as a stale-numbers warning in the
+                # PR comment's coverage section and skips the CI DB insert.
+                with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                    json.dump(
+                        {
+                            "skipped_reason": coverage_marker_reason(_diff_outcome),
+                            "commit_sha": current_commit_sha,
+                        },
+                        f,
+                    )
             else:
                 _comment_data = {
                     # GitHub comment fields

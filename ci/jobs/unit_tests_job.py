@@ -65,6 +65,15 @@ if __name__ == "__main__":
             print(f"Removing pre-existing {merged_file}")
             os.unlink(merged_file)
 
+        # ERROR means the binary died before writing gtest.json, so the .profraw
+        # covers only part of the run; FAIL is a completed run and still publishes.
+        if R.is_error():
+            print(
+                "ERROR: the unit-test binary did not run to completion, so this "
+                "shard's coverage is incomplete; publishing no profile"
+            )
+            profraw_files = []
+
         # A zero-length .profraw is silently accepted by llvm-profdata at every
         # --failure-mode; treat it as an incomplete shard and publish no profile.
         empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]

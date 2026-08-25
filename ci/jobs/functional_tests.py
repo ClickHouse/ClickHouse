@@ -1578,6 +1578,21 @@ def main():
             print(f"Removing pre-existing {merged_file}")
             os.unlink(merged_file)
 
+        # A missing test_result means the test stage never ran, and a runner-level
+        # ERROR means it terminated unexpectedly; either way the .profraw files
+        # understate coverage. FAIL is a completed run and still publishes.
+        if test_result is None or test_result.is_error():
+            _gate_reason = (
+                "the test stage did not run"
+                if test_result is None
+                else "the test runner terminated unexpectedly (runner-level ERROR)"
+            )
+            print(
+                f"ERROR: {_gate_reason}, so this shard's coverage is incomplete; "
+                f"publishing no profile"
+            )
+            profraw_files = []
+
         # A zero-length .profraw is silently accepted by llvm-profdata at every
         # --failure-mode, so it would drop one process's coverage with no signal.
         # Treat it as an incomplete shard and publish no profile.

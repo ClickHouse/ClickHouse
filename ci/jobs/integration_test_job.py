@@ -544,11 +544,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str):
+def merge_profraw_files(llvm_profdata_cmd: str, run_complete: bool):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
+        run_complete: whether the test run executed everything it planned
     """
     import subprocess
     from pathlib import Path
@@ -573,6 +574,16 @@ def merge_profraw_files(llvm_profdata_cmd: str):
     if os.path.exists(final_file):
         print(f"Removing pre-existing {final_file}", flush=True)
         os.unlink(final_file)
+
+    # An incomplete run's .profraw files understate coverage, so publish nothing
+    # and let the aggregate job abstain; the inputs stay on disk for inspection.
+    if not run_complete:
+        print(
+            "ERROR: the run timed out or hit an infrastructure error, so this "
+            "shard's coverage is incomplete; publishing no profile",
+            flush=True,
+        )
+        return None
 
     # Find all profraw files
     profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
@@ -1603,6 +1614,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         files=attached_files,
     )
 
+    # Snapshot the run's health before the blocks below launder `has_error`;
+    # a timed-out or errored run must publish no coverage profile.
+    coverage_run_complete = not timed_out and not has_error
+
     if is_llvm_coverage:
         assert (
             is_bugfix_validation is False
@@ -1740,7 +1755,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merged_profdata = merge_profraw_files(llvm_profdata_cmd)
+        merged_profdata = merge_profraw_files(
+            llvm_profdata_cmd, run_complete=coverage_run_complete
+        )
 
         # Attach profdata file to the result report so it is uploaded
         # unconditionally (even when tests fail) and visible in the CI report.
