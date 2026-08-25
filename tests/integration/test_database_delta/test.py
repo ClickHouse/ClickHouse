@@ -1490,6 +1490,55 @@ def test_register_existing_delta_table_rejects_column_mapping(started_cluster):
         )
 
 
+def test_register_existing_delta_table_rejects_char_varchar(started_cluster):
+    """
+    A Spark Delta table with CHAR/VARCHAR columns stores them as `string` with a `__CHAR_VARCHAR_TYPE_STRING`
+    field-metadata annotation that the raw-schema helper cannot preserve, so onboarding such a table into a
+    Unity catalog must be rejected rather than register a schema differing from the `_delta_log`. Regression
+    for review #2 in PR #106011.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_charvarchar_{test_uuid}"
+    schema_name = f"charvarchar_schema_{test_uuid}"
+    table_name = f"charvarchar_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (id INT, name VARCHAR(10)) USING delta",
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # Onboarding a CHAR/VARCHAR table into the catalog must be rejected, not silently registered as string.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "CHAR/VARCHAR" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
 def test_register_existing_delta_table_requires_kernel(started_cluster):
     """
     Attaching an existing Delta table into a Unity `DataLakeCatalog` database reads its schema via the kernel

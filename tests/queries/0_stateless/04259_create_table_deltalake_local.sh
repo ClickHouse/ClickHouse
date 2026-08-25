@@ -49,9 +49,11 @@ CREATE TABLE t_dl_part (id Int32, name String, country String)
 
 # With allow_experimental_delta_kernel_rs = 0 there is no Delta Lake writer, so a fresh CREATE
 # (a location with no `_delta_log`) must fail rather than silently creating a ClickHouse table over
-# a non-Delta location.
+# a non-Delta location. allow_delta_lake_create_table = 1 opts into the create path so the kernel
+# requirement is enforced (with the create flag off the create path is skipped and no error is raised).
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 0;
+SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_nokernel (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOKERNEL}', Parquet);
 " 2>&1 | grep -q "requires allow_experimental_delta_kernel_rs"; then echo "fresh create without kernel rejected"; else echo "fresh create without kernel NOT rejected"; fi
 

@@ -845,6 +845,11 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
             ErrorCodes::NOT_IMPLEMENTED,
             "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
+    /// Keep compatible behaviour without adding extra round trip on successful path.
+    /// If delta_log does not exist -- it will be shown to user anyway.
+    if (!register_with_catalog && !local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
+        return;
+
     const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
     const bool fresh_create = has_explicit_columns && !delta_log_exists;
     if ((fresh_create || register_with_catalog)

@@ -193,7 +193,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     if (creating_new_storage)
     {
-        LOG_DEBUG(log, "Creating new storage");
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }

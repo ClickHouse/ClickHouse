@@ -430,12 +430,12 @@ void UnityCatalog::createTable(
             [&](std::ostream & os) { body->stringify(os); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
-    catch (const DB::Exception & ex)
+    catch (...)
     {
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Failed to create table {}.{} in Unity catalog: {}",
-            namespace_name, table_name, ex.message());
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ true));
     }
 }
 

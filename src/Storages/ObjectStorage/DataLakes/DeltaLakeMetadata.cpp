@@ -71,6 +71,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -717,13 +718,13 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
 void DeltaLakeMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context,
-    const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by,
-    ASTPtr order_by,
-    bool if_not_exists,
+    [[maybe_unused]] const ContextPtr & local_context,
+    [[maybe_unused]] const std::optional<ColumnsDescription> & columns,
+    [[maybe_unused]] ASTPtr partition_by,
+    [[maybe_unused]] ASTPtr order_by,
+    [[maybe_unused]] bool if_not_exists,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id_)
+    [[maybe_unused]] const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
     chassert(configuration_ptr);
@@ -737,6 +738,11 @@ void DeltaLakeMetadata::createInitial(
     /// Without the kernel there is no Delta Lake writer, so a fresh CREATE (no `_delta_log`) must fail.
     if (!kernel_enabled)
     {
+        /// Keep compatible behaviour without adding extra round trip on successful path.
+        /// If delta_log does not exist -- it will be shown to user anyway.
+        if (!catalog && !local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
+            return;
+
         if (!deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -748,14 +754,6 @@ void DeltaLakeMetadata::createInitial(
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Registering an existing Delta Lake table in a catalog requires allow_experimental_delta_kernel_rs = 1");
-#if !USE_DELTA_KERNEL_RS
-        (void)local_context;
-        (void)columns;
-        (void)partition_by;
-        (void)order_by;
-        (void)if_not_exists;
-        (void)table_id_;
-#endif
         return;
     }
 
