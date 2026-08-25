@@ -42,7 +42,13 @@ IGNORED_FILENAMES = {
     "changelog_entry_guidelines.md",
 }
 PAGE_SUFFIXES = {".md", ".mdx"}
-NAVIGATION_EXEMPT_FILES = {Path("search.mdx")}
+NAVIGATION_EXEMPT_FILES = {
+    Path("search.mdx"),
+    # Published and reachable at its URL, but intentionally kept out of the
+    # sidebar while the Microsoft Fabric workload is in public preview.
+    # Navigation is restored in ClickHouse/ClickHouse#116380.
+    Path("integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx"),
+}
 NAVIGATION_EXEMPT_DIRS = (Path("clickstack/managed-onboarding"),)
 QUICKSTARTS_DIR = Path("get-started/quickstarts")
 QUICKSTARTS_HOME = QUICKSTARTS_DIR / "home.mdx"

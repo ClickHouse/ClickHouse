@@ -237,6 +237,33 @@ Save the first query as **Holidays by country** to see saved queries in action.
 
 The agent answers by running governed, read-only SQL against your synced table.
 
+## Known limitations {#known-limitations}
+
+The ClickHouse workload is in public preview. The limitations below are the current state, not the destination; most are on the roadmap.
+
+### Data movement {#data-movement}
+
+* **Copies are point-in-time snapshots.** There is no scheduled or continuous replication yet. To refresh a table with the latest OneLake data, re-run the sync. Updates and deletes in the source table are not propagated to the ClickHouse copy.
+* **Lakehouse tables only.** Copy & Sync reads Delta tables from a Lakehouse in the same workspace. Other Fabric items (Warehouse, KQL databases, mirrored databases) are not yet supported as sources.
+* **No write-back to OneLake.** Data flows one way, from OneLake into ClickHouse. Writing query results back to OneLake is planned.
+
+### Service management {#service-management}
+
+* **One service per item, fixed at creation.** You cannot attach an existing ClickHouse Cloud service to a Fabric item, and you cannot connect the workload to an existing ClickHouse Cloud organization.
+* **Service deletion from the ClickHouse Cloud console leaves the Fabric item orphaned and unrecoverable.** Deleting a Fabric item deletes its service, but the reverse path is currently unsupported.
+* **Service configuration lives in the Cloud console.** Scaling, idling, and backups are managed from ClickHouse Cloud, not from Fabric item settings.
+
+### Access and identity {#access-and-identity}
+
+* **Role changes apply on next open.** Your ClickHouse organization role is mapped from your Fabric workspace role when you open a ClickHouse item. Fabric cannot notify ClickHouse of role changes, so a changed workspace role takes effect the next time you open the item, not immediately.
+* **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
+* **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
+
+### Fabric platform integration {#fabric-platform-integration}
+
+* **Not yet integrated in preview:** Fabric Monitoring Hub (monitor copy jobs from the ClickHouse Cloud console instead), deployment pipelines and git integration (ALM/CI/CD), item export and restore across workspaces, the OneLake data hub, data lineage, Microsoft Purview sensitivity labels, workspace-level settings, global search, and cross-tenant (B2B) sharing.
+* **Private Link is not configurable through the workload.** Azure Private Link is supported from the ClickHouse Cloud console, but not from Fabric.
+
 ## Reference {#reference}
 
 * [Vendor attestation](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
