@@ -14,31 +14,17 @@ struct RoundAgeImpl
 
     static ResultType apply(A x)
     {
-        if constexpr (is_big_int_v<A>)
-        {
-            /// Wide integers are software-emulated and have no vector form, so the flat
-            /// accumulation below has no vectorisation gain to offset its extra comparisons.
-            return x < 1 ? 0
-                : (x < 18 ? 17
-                : (x < 25 ? 18
-                : (x < 35 ? 25
-                : (x < 45 ? 35
-                : (x < 55 ? 45
-                : 55)))));
-        }
-        else
-        {
-            /// The predicate is `!(x < c)` rather than `x >= c` so that a NaN argument, for which every
-            /// comparison is false, accumulates every delta and yields the oldest age range.
-            UInt32 result = 0;
-            result += !(x < 1) ? 17 : 0;
-            result += !(x < 18) ? 1 : 0;
-            result += !(x < 25) ? 7 : 0;
-            result += !(x < 35) ? 10 : 0;
-            result += !(x < 45) ? 10 : 0;
-            result += !(x < 55) ? 10 : 0;
-            return static_cast<ResultType>(result);
-        }
+        /// Branch-free check to enable auto-vectorization.
+        /// The predicate is `!(x < c)` rather than `x >= c` so that a NaN argument, for which every
+        /// comparison is false, accumulates every delta and yields the oldest age range.
+        UInt32 result = 0;
+        result += !(x < 1) ? 17 : 0;
+        result += !(x < 18) ? 1 : 0;
+        result += !(x < 25) ? 7 : 0;
+        result += !(x < 35) ? 10 : 0;
+        result += !(x < 45) ? 10 : 0;
+        result += !(x < 55) ? 10 : 0;
+        return static_cast<ResultType>(result);
     }
 
 #if USE_EMBEDDED_COMPILER
