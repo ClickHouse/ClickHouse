@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionWatermarks.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
@@ -19,7 +19,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
 
-#include <Processors/QueryPlan/Streaming/CalculateWatermarksStep.h>
 #include <Processors/QueryPlan/Streaming/RaiseWatermarksStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -141,9 +140,8 @@ Pipe buildPartitionReadingPipeline(
     /// Add watermark calculation step.
     if (stream_settings.watermark)
     {
-        plan->addStep(std::make_unique<CalculateWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context));
+        plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context, partition_id));
         plan->addStep(std::make_unique<RaiseWatermarksStep>(plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
-        plan->addStep(std::make_unique<StampPartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
     }
 
     /// Add row policy filter built from the outer query analysis.
@@ -234,7 +232,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     result.pipe = Pipe::unitePipes(std::move(pipes));
 
     if (stream_settings.watermark)
-        result.pipe.calibrateWatermarks(1);
+        result.pipe.calibrateWatermarks(1, state.getLastEmittedWatermark());
     else
         result.pipe.resize(1);
 
