@@ -44,7 +44,7 @@ public:
     ScopedCasSettingsLogCapture()
         : logger(getLogger("ContentAddressedSettings"))
         , channel(new Poco::StreamChannel(stream))
-        , old_channel(logger->getChannel())
+        , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
@@ -66,6 +66,9 @@ private:
     LoggerPtr logger;
     std::ostringstream stream;
     Poco::AutoPtr<Poco::StreamChannel> channel;
+    /// `shared=true` above is load-bearing: `AutoPtr(ptr)` would STEAL a reference the fixture
+    /// never owned, undercounting the previous channel once per capture. The extra reference also
+    /// keeps the parked channel alive while the capture channel is installed.
     Poco::AutoPtr<Poco::Channel> old_channel;
     int old_level;
 };

@@ -28,12 +28,16 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS dst_cas_repl SYNC;"
 
 # ---------------------------------------------------------------- leg 1: local -> content-addressed
 
+# The local disks embed the database in their NAME, not only in the path: custom disks live for the
+# whole server lifetime, and a repeated run gets a fresh database -- a fixed name with a
+# database-dependent path would be a redefinition of an existing disk, which is rejected.
+
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE src_plain (k UInt32, v String)
 ENGINE = MergeTree ORDER BY k PARTITION BY k
 SETTINGS disk = disk(
     type = local,
-    name = '05025_plain',
+    name = '${CLICKHOUSE_DATABASE}_05025_plain',
     path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_DATABASE}_05025_plain/');"
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -104,7 +108,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05025_src_repl', 'r1
 ORDER BY k PARTITION BY k
 SETTINGS disk = disk(
     type = local,
-    name = '05025_plain_repl',
+    name = '${CLICKHOUSE_DATABASE}_05025_plain_repl',
     path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_DATABASE}_05025_plain_repl/');"
 
 ${CLICKHOUSE_CLIENT} --query "

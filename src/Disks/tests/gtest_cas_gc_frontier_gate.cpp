@@ -254,7 +254,7 @@ public:
     ScopedCasGcLogCapture()
         : logger(getLogger("CasGc"))
         , channel(new Poco::StreamChannel(stream))
-        , old_channel(logger->getChannel())
+        , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
@@ -276,7 +276,8 @@ private:
     LoggerPtr logger;
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::StreamChannel> channel;
-    Poco::Channel * old_channel;
+    /// A real reference (shared=true), so the parked previous channel cannot die while ours is installed.
+    Poco::AutoPtr<Poco::Channel> old_channel;
     int old_level;
 };
 

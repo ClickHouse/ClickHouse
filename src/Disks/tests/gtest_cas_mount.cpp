@@ -206,7 +206,7 @@ public:
     ScopedBlockingRenewalDebugLog()
         : logger(getLogger("CasMountLeaseKeeper"))
         , channel(new BlockingRenewalDebugChannel)
-        , old_channel(logger->getChannel())
+        , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
@@ -225,7 +225,8 @@ public:
 private:
     LoggerPtr logger;
     Poco::AutoPtr<BlockingRenewalDebugChannel> channel;
-    Poco::Channel * old_channel;
+    /// A real reference (shared=true), so the parked previous channel cannot die while ours is installed.
+    Poco::AutoPtr<Poco::Channel> old_channel;
     int old_level;
 };
 
@@ -235,7 +236,7 @@ public:
     explicit ScopedRenewalLogCapture(const String & level)
         : logger(getLogger("CasMountLeaseKeeper"))
         , channel(new Poco::StreamChannel(stream))
-        , old_channel(logger->getChannel())
+        , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
@@ -254,7 +255,8 @@ private:
     LoggerPtr logger;
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::StreamChannel> channel;
-    Poco::Channel * old_channel;
+    /// A real reference (shared=true), so the parked previous channel cannot die while ours is installed.
+    Poco::AutoPtr<Poco::Channel> old_channel;
     int old_level;
 };
 

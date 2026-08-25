@@ -49,6 +49,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -169,9 +170,15 @@ inline DB::ObjectStoragePtr makeLocalObjectStorageForTest()
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_unit_" + unique)).string();
 
+    /// A silently missing root would surface later as a bewildering storage-layer error (e.g. a
+    /// failed bootstrap LIST), so a setup failure must be loud and named.
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
+    if (ec)
+        throw std::runtime_error("cannot clear test object storage root " + root + ": " + ec.message());
     std::filesystem::create_directories(root, ec);
+    if (ec)
+        throw std::runtime_error("cannot create test object storage root " + root + ": " + ec.message());
 
     DB::LocalObjectStorageSettings settings("test", root, /*read_only_=*/false);
     return std::make_shared<DB::LocalObjectStorage>(std::move(settings));

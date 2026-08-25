@@ -97,18 +97,26 @@ void emitTestEvent(DB::ContentAddressedMetadataStorage & storage)
 
 }
 
+/// These exit tests run their statement in a fresh re-executed process ("threadsafe" style), not a
+/// fork of the test runner. The default fork inherits a heavily multithreaded, sanitizer-instrumented
+/// process, where filesystem calls made while building the storage inside the child can fail
+/// spuriously (seen under TSan as `weakly_canonical: Invalid argument` from the bootstrap LIST).
+/// gtest restores the flag after each test.
 TEST(CASShutdownExitTest, TeardownPhase1ThrowExitsCleanly)
 {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_EXIT(tearDownWithThrowingPhase(1), ::testing::ExitedWithCode(0), "");
 }
 
 TEST(CASShutdownExitTest, TeardownPhase2ThrowExitsCleanlyAndSkipsTheMarker)
 {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_EXIT(tearDownWithThrowingPhase(2), ::testing::ExitedWithCode(0), "");
 }
 
 TEST(CASShutdownExitTest, TeardownPhase3ThrowExitsCleanly)
 {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_EXIT(tearDownWithThrowingPhase(3), ::testing::ExitedWithCode(0), "");
 }
 
@@ -116,6 +124,7 @@ TEST(CASShutdownExitTest, TeardownPhase3ThrowExitsCleanly)
 /// in that window must be skipped safely, not dereference a null `shared`.
 TEST(CASShutdownExitTest, EmitAfterResetSharedContextExitsCleanly)
 {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_EXIT(
         {
             auto context = makeTestContext();

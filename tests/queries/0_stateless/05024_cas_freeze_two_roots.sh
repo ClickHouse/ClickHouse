@@ -11,12 +11,17 @@ set -euo pipefail
 # destructive lookup needs ONE table path reachable from both roots, and the shadow path embeds the
 # table UUID in an Atomic database -- so the UUID is reused sequentially rather than creating two
 # tables, which would have two UUIDs, two namespaces, and no cross-root lookup to test.
+#
+# The UUID is generated per run, not a fixed literal: a repeated run in the same server would
+# otherwise collide with the previous run's asynchronous cleanup (the Atomic database still holds
+# the UUID mapping until the deferred drop completes, and the CAS namespace stays in its removal
+# state until a terminal fold -- which never comes here, since the test keeps GC off).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TABLE_UUID='05024aaa-0000-4000-8000-000000000001'
+TABLE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
 SHARED_BACKUP='shared_05024'
 B_BACKUP='own_b_05024'
 DISK_B='05024_cas_freeze_b'
