@@ -325,6 +325,7 @@ private:
     ///       (FUTEX_WAKE syscall); and that pushing happens from the commit thread, which is often
     ///       on the critical path limiting the total server throughput, while responseThread is
     ///       ~never the bottleneck.
+    //TODO(keeper-batch) Make this a queue of response batches (vectors), so push/pop and size accounting happen once per batch; then its element-count capacity can be set high without practical overflow (see TODO in constructor).
     NonblockingBoundedQueue<KeeperResponseForSession> responses_queue;
     std::atomic<int64_t> response_bytes_in_all_queues {};
 

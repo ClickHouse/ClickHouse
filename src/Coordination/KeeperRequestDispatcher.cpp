@@ -387,6 +387,7 @@ bool KeeperRequestDispatcher::tryPopRequest(KeeperRequestForSession & request)
     return res;
 }
 
+//TODO(keeper-batch) Take a batch of responses: compute the byte cost and do the flow-control push once per batch (the timeout/drop-and-finishSession path must then handle multiple sessions in one batch).
 void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noexcept
 {
     size_t size = getResponseBytesCost(*response.response);
@@ -915,6 +916,7 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
 
+                //TODO(keeper-batch) Serialize `requests` into a single batch log entry; gate on a compatibility setting that instead produces single-request batch payloads until the whole cluster is upgraded (InFlightBatch stays batched either way).
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
@@ -1002,6 +1004,7 @@ void KeeperRequestDispatcher::dropInFlightRequests()
         LOG_INFO(log, "Dropped {} batches with {} writes and {} reads", batches_dropped, requests_dropped, reads_dropped);
 }
 
+//TODO(keeper-batch) When responses travel in batches, accumulate error responses into a batch at the call sites (dropInFlightRequests can generate many) instead of pushing them one at a time.
 void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & request_for_session, Coordination::Error error)
 {
     auto response = request_for_session.request->makeResponse();
@@ -1015,6 +1018,7 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     onResponse(std::move(response_for_session));
 }
 
+//TODO(keeper-batch) Works as-is while commit_callback stays per-request; if/when it becomes batch-level, match own batches cheaply by dispatcher_server_id + head-of-queue identity (subsumes the SessionID server_id/internal_id special case), and solve intermediate_reads timing which currently relies on per-request commit granularity (unresolved; see also KeeperStateMachine::commit).
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
 {
     /// When Close commits, mark the session as dead so that
@@ -1128,6 +1132,7 @@ void KeeperRequestDispatcher::onResponseDeallocated(const Coordination::ZooKeepe
     response_bytes_in_all_queues.fetch_sub(size);
 }
 
+//TODO(keeper-batch) Pop response batches; within a batch, reuse the session lookup / sessions_mutex acquisition across consecutive responses for the same session.
 void KeeperRequestDispatcher::responseThread()
 {
     try

@@ -1232,6 +1232,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             // This event is called before a single log is appended to the entry on the leader node
             case nuraft::cb_func::PreAppendLogLeader:
             {
+                //TODO(keeper-batch) Take a run of consecutive zxids for the batch, preprocess each request in order, then rewrite the batch's trailing first_zxid+digest in place; the missing-fields back-fill below applies only to legacy single-request entries from old servers.
                 // we are relying on the fact that request are being processed under a mutex
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
@@ -1298,6 +1299,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             }
             case nuraft::cb_func::AppendLogFailed:
             {
+                //TODO(keeper-batch) Roll back all preprocessed requests of the batch, in reverse order.
                 // we are relying on the fact that request are being processed under a mutex
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);

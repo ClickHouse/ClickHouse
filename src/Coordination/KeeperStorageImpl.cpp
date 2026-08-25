@@ -1696,6 +1696,7 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         }
         else
         {
+            //TODO(keeper-batch) This back()-based double-preprocess detection breaks for batches: pre_commit would re-preprocess starting from the batch's *first* request while back() is the batch's *last* transaction, hitting the LOGICAL_ERROR below; move the dedup to batch level in pre_commit (skip the whole already-preprocessed batch), and consider taking transaction_mutex once per batch.
             /// On leader, preprocessRequest is called for each log entry twice:
             ///  1. In PreAppendLogLeader callback, before the entry is written to changelog.
             ///     (At this point we're allowed to reject the entry. We could do that for failed

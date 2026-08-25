@@ -17,6 +17,7 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+//TODO(keeper-batch) Change to take a batch of responses (KeeperResponsesForSessions), so queue pushes and flow-control accounting in onResponse happen once per batch instead of once per response.
 using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -42,6 +43,7 @@ struct KeeperSnapshotStatus
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    //TODO(keeper-batch) Keep calling per request (from commit's loop over the batch) at first; making it batch-level requires solving the intermediate_reads timing problem in KeeperRequestDispatcher::onCommit (unresolved).
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     KeeperStateMachine(
@@ -58,6 +60,7 @@ public:
     void setLogStore(KeeperLogStore * log_store_);
     KeeperLogStore * getLogStore() { return log_store; }
 
+    //TODO(keeper-batch) Add a batch entry format (marker + explicit version byte + dispatcher_server_id + request count + per-request records + trailing first_zxid/digest); the EOF-sniffed versions below remain only for parsing legacy single-request entries.
     enum ZooKeeperLogSerializationVersion
     {
         INITIAL = 0,

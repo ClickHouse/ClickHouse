@@ -191,6 +191,7 @@ void KeeperStateMachine::init()
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
+//TODO(keeper-batch) Loop over all requests of each batch entry; per-request zxids come from the batch's first_zxid, and the `zxid = log_idx` fallback below must apply only to legacy single-request entries (batches pack many zxids into one log_idx).
 void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
 {
     if (!log_store)
@@ -283,6 +284,7 @@ union XidHelper
 
 }
 
+//TODO(keeper-batch) Preprocess all requests of the batch in order; on leader, detect "already preprocessed in PreAppendLogLeader" with one batch-level check here instead of KeeperStorage's per-request back()-based dedup (which breaks for batches, see preprocessRequest); `zxid = log_idx` fallback is legacy-only.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
     LockMemoryExceptionInThread blocker{VariableContext::Global};
@@ -354,6 +356,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
 }
 
 // Serialize the request for the log entry
+//TODO(keeper-batch) Serialize a whole KeeperRequestBatch into one buffer: marker + format version + dispatcher_server_id + request count + per-request records, with first_zxid/digest placeholders at a fixed offset from the end so PreAppendLogLeader can rewrite them in place without version-dependent offset math.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
@@ -392,6 +395,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const Keepe
     return write_buf.getBuffer();
 }
 
+//TODO(keeper-batch) Become a batch parser returning KeeperRequestBatch: detect the legacy single-request format (no batch marker) and wrap it as a 1-request batch; keep parsed_request_cache lookups per request within the batch; parse in a single pass without extra buffer copies.
 std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
@@ -648,6 +652,7 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
+//TODO(keeper-batch) Process all requests of the batch under one storage-lock/process_and_responses_lock acquisition (splitting into runs where SessionID needs different handling), collect responses into one batched response_callback call, assert digest only after the last request, keep per-request commit_callback for now, setLastCommitIndex once per batch; `zxid = log_idx` fallback is legacy-only.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
@@ -991,6 +996,7 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     keeper_context->setLastCommitIndex(log_idx);
 }
 
+//TODO(keeper-batch) Roll back the batch's requests in reverse zxid order; the `zxid <= log_idx` reasoning below holds only for legacy single-request entries, batch entries always carry explicit zxids.
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
