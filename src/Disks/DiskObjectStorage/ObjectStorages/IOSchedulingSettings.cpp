@@ -1,4 +1,4 @@
-#include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IOSchedulingSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Interpreters/Context.h>
