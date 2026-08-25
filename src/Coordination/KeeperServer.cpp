@@ -32,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -1404,7 +1405,7 @@ void KeeperServer::waitInit()
     std::unique_lock lock(initialized_mutex);
 
     int64_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::startup_timeout].totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
+    if (!initialized_cv.wait_for(lock, saturatedWaitMilliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
