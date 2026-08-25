@@ -1,17 +1,11 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 
 #include <Processors/Streaming/Markers.h>
-#include <Processors/IInflatingTransform.h>
-#include <Processors/Port.h>
+#include <Processors/ISimpleTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/Block.h>
-
-#include <base/defines.h>
-
-#include <optional>
-#include <queue>
 
 namespace DB
 {
@@ -34,11 +28,11 @@ ITransformingStep::Traits getTraits()
     };
 }
 
-class StampPartitionWatermarksTransform : public IInflatingTransform
+class StampPartitionWatermarksTransform : public ISimpleTransform
 {
 public:
     StampPartitionWatermarksTransform(SharedHeader header, String partition_id_)
-        : IInflatingTransform(header, header)
+        : ISimpleTransform(header, header, /*skip_empty_chunks_=*/false)
         , partition_id(std::move(partition_id_))
     {
     }
@@ -46,42 +40,20 @@ public:
     String getName() const override { return "StampPartitionWatermarks"; }
 
 protected:
-    void consume(Chunk chunk) override
+    void transform(Chunk & chunk) override
     {
-        std::optional<Field> watermark;
-        if (auto marker = chunk.getChunkInfos().get<WatermarkMarker>())
-            watermark = marker->watermark;
+        auto marker = chunk.getChunkInfos().get<WatermarkMarker>();
+        if (!marker)
+            return;
 
-        pending_chunks.push(std::move(chunk));
-
-        if (watermark)
-        {
-            auto partition_marker = std::make_shared<PartitionWatermarkInfo>();
-            partition_marker->partition_id = partition_id;
-            partition_marker->watermark = std::move(*watermark);
-
-            Chunk partition_marker_chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-            partition_marker_chunk.getChunkInfos().add(std::move(partition_marker));
-            pending_chunks.push(std::move(partition_marker_chunk));
-        }
-    }
-
-    bool canGenerate() override
-    {
-        return !pending_chunks.empty();
-    }
-
-    Chunk generate() override
-    {
-        chassert(!pending_chunks.empty());
-        auto chunk = std::move(pending_chunks.front());
-        pending_chunks.pop();
-        return chunk;
+        auto partition_marker = std::make_shared<PartitionWatermarkInfo>();
+        partition_marker->partition_id = partition_id;
+        partition_marker->watermark = marker->watermark;
+        chunk.getChunkInfos().add(std::move(partition_marker));
     }
 
 private:
     const String partition_id;
-    std::queue<Chunk> pending_chunks;
 };
 
 }

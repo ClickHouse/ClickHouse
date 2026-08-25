@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Watermark of a concrete partition; emitted by the stamper as an additional chunk after the generic marker.
+/// Watermark of a concrete partition; attached by the stamper to the same chunk that carries the generic marker.
 struct PartitionWatermarkInfo : public ChunkInfoCloneable<PartitionWatermarkInfo>
 {
     String partition_id;
