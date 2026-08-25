@@ -12,9 +12,14 @@ LEGACY_ADMONITION_RE = re.compile(
     re.MULTILINE,
 )
 ESCAPED_ADMONITION_RE = re.compile(
-    r":{3,}(?:note|warning|tip|info|caution|danger|important)(?:\\n|[ \t\[])",
+    r":{3,}(?:note|warning|tip|info|caution|danger|important)"
+    r"(?:[ \t\[][^\r\n\\]*)?\\n",
 )
 SOURCE_EXTENSIONS = {".cpp", ".h", ".hpp", ".inc"}
+# This compatibility test intentionally exercises the legacy renderer syntax.
+SOURCE_EXCLUSIONS = {
+    Path("Client/tests/gtest_terminal_markdown_renderer.cpp"),
+}
 DOC_EXTENSIONS = {".md", ".mdx"}
 LOCALES = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 
@@ -29,8 +34,12 @@ def is_localized_doc(relative_path):
 
 
 def canonical_documentation_files(repo_root):
-    for path in (repo_root / "src").rglob("*"):
-        if path.suffix in SOURCE_EXTENSIONS:
+    source_root = repo_root / "src"
+    for path in source_root.rglob("*"):
+        if (
+            path.suffix in SOURCE_EXTENSIONS
+            and path.relative_to(source_root) not in SOURCE_EXCLUSIONS
+        ):
             yield path
 
     docs_root = repo_root / "docs"
@@ -49,16 +58,15 @@ def find_legacy_admonitions(repo_root):
     findings = []
     for path in canonical_documentation_files(repo_root):
         text = path.read_text(encoding="utf-8")
-        pattern = (
-            ESCAPED_ADMONITION_RE
-            if path.suffix == ".sql"
-            else LEGACY_ADMONITION_RE
-        )
-        for match in pattern.finditer(text):
-            line_number = text.count("\n", 0, match.start()) + 1
-            findings.append(
-                f"{path.relative_to(repo_root)}:{line_number}:{match.group(0).strip()}"
-            )
+        patterns = [LEGACY_ADMONITION_RE]
+        if path.suffix in SOURCE_EXTENSIONS or path.suffix == ".sql":
+            patterns.append(ESCAPED_ADMONITION_RE)
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                line_number = text.count("\n", 0, match.start()) + 1
+                findings.append(
+                    f"{path.relative_to(repo_root)}:{line_number}:{match.group(0).strip()}"
+                )
     return findings
 
 
