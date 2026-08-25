@@ -49,13 +49,17 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Lifting only helps when the target side eventually feeds a MergeTree primary key
-bool targetReachesIndexedSource(const QueryPlan::Node * node)
+/// Primary key columns of the MergeTree table the target side reads from, empty when there is none
+NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
 {
-    return walkDown(node, [](const auto * n)
+    const auto * read = walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
-    }) != nullptr;
+    });
+    if (!read)
+        return {};
+    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
+    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
 /// A lifted predicate is useful only when every substituted key that it uses belongs to the
@@ -64,19 +68,10 @@ bool targetReachesIndexedSource(const QueryPlan::Node * node)
 /// can use the same per-part applicability analysis as `ReadFromMergeTree`.
 bool atomCanUseTargetPrimaryKey(
     const QueryPlan::Node * target_root,
+    const NameSet & primary_key_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
-    const auto * read = walkDown(target_root, [](const auto * n)
-    {
-        return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
-    });
-    const auto * mt = read ? typeid_cast<const ReadFromMergeTree *>(read->step.get()) : nullptr;
-    if (!mt)
-        return false;
-
-    const auto & primary_key = mt->getStorageMetadata()->getPrimaryKey().column_names;
-    NameSet primary_key_columns(primary_key.begin(), primary_key.end());
     for (const auto * child : atom->children)
     {
         if (child->type != ActionsDAG::ActionType::INPUT)
@@ -182,9 +177,11 @@ size_t tryLiftSide(
     QueryPlan::Nodes & nodes)
 {
     auto * target_root = join_node->children[target_idx];
-    if (!targetReachesIndexedSource(target_root))
-        return 0;
     if (!source_filter)
+        return 0;
+    /// Lifting only helps when the target side eventually feeds a MergeTree primary key
+    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
+    if (primary_key_columns.empty())
         return 0;
 
     SubstitutionMap filter_level_sub;
@@ -199,7 +196,8 @@ size_t tryLiftSide(
     ActionsDAG::NodeRawConstPtrs liftable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
-        if (atomSafelySubstitutable(atom, filter_level_sub) && atomCanUseTargetPrimaryKey(target_root, atom, filter_level_sub))
+        if (atomSafelySubstitutable(atom, filter_level_sub)
+            && atomCanUseTargetPrimaryKey(target_root, primary_key_columns, atom, filter_level_sub))
             liftable.push_back(atom);
     }
     if (liftable.empty())
@@ -267,31 +265,25 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     /// like `ON l.k = r.k + 1` the rhs name is `plus(...)` which is not in the right child
     const auto & left_header  = *parent_node->children[0]->step->getOutputHeader();
     const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
+    /// `buildEquialentSetsForJoinStepLogical` proves transitive key equivalences through nested
+    /// INNER joins, so a filter written on an inner-child key equivalent to `from` can be
+    /// substituted by `to` as well
+    auto collect = [&](JoinActionRef from, JoinActionRef to, bool from_left, SubstitutionMap & substitution)
+    {
+        substitution[from.getColumnName()] = to.getColumn();
+        for (const auto & eq_expr : equi_set.getClass(from))
+        {
+            if (eq_expr.isFromSameActions(from) && (from_left ? eq_expr.fromLeft() : eq_expr.fromRight())
+                && eq_expr.getColumn().type->equals(*to.getColumn().type))
+                substitution.emplace(eq_expr.getColumnName(), to.getColumn());
+        }
+    };
     for (const auto & [lhs, rhs] : equi_pairs)
     {
         if (!changes_right && right_header.has(rhs.getColumn().name))
-        {
-            l_to_r[lhs.getColumnName()] = rhs.getColumn();
-            /// `buildEquialentSetsForJoinStepLogical` proves transitive key equivalences through
-            /// nested INNER joins, so a filter written on an inner-child key equivalent to `lhs`
-            /// can be lifted to the right side as well
-            for (const auto & eq_expr : equi_set.getClass(lhs))
-            {
-                if (eq_expr.isFromSameActions(lhs) && eq_expr.fromLeft()
-                    && eq_expr.getColumn().type->equals(*rhs.getColumn().type))
-                    l_to_r.emplace(eq_expr.getColumnName(), rhs.getColumn());
-            }
-        }
+            collect(lhs, rhs, /*from_left=*/true, l_to_r);
         if (!changes_left && left_header.has(lhs.getColumn().name))
-        {
-            r_to_l[rhs.getColumnName()] = lhs.getColumn();
-            for (const auto & eq_expr : equi_set.getClass(rhs))
-            {
-                if (eq_expr.isFromSameActions(rhs) && eq_expr.fromRight()
-                    && eq_expr.getColumn().type->equals(*lhs.getColumn().type))
-                    r_to_l.emplace(eq_expr.getColumnName(), lhs.getColumn());
-            }
-        }
+            collect(rhs, lhs, /*from_left=*/false, r_to_l);
     }
 
     /// LEFT keeps unmatched left rows, so only L->R is safe/ mirror for RIGHT/ INNER allows both

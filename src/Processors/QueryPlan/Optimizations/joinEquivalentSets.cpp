@@ -44,19 +44,6 @@ JoinActionRef EquivalentJoinKeySet::unite(JoinActionRef a, JoinActionRef b)
     return root_a;
 }
 
-bool EquivalentJoinKeySet::connected(JoinActionRef a, JoinActionRef b)
-{
-    return findOrAdd(a) == findOrAdd(b);
-}
-
-std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> EquivalentJoinKeySet::getClasses()
-{
-    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
-    for (auto & [ref, _] : parent)
-        classes[findOrAdd(ref)].push_back(ref);
-    return classes;
-}
-
 std::vector<JoinActionRef> EquivalentJoinKeySet::getClass(JoinActionRef ref)
 {
     std::vector<JoinActionRef> res;

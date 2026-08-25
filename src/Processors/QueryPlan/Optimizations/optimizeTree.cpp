@@ -312,8 +312,8 @@ void optimizeTreeSecondPass(
                         {
                             if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
                                 mt->invalidateIndexes();
+                            optimizePrimaryKeyConditionAndLimit(inner_stack);
                         });
-                        traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
                     }
                 }
             }

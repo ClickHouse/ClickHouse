@@ -22,8 +22,6 @@ class EquivalentJoinKeySet
 public:
     JoinActionRef findOrAdd(JoinActionRef ref);
     JoinActionRef unite(JoinActionRef a, JoinActionRef b);
-    bool connected(JoinActionRef a, JoinActionRef b);
-    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses();
     std::vector<JoinActionRef> getClass(JoinActionRef ref);
 
 private:
