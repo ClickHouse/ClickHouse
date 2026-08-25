@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.defs.job_configs import (
+    INTEGRATION_DIND_DAEMON_LIMIT,
     INTEGRATION_DIND_DAEMON_RESERVE,
     INTEGRATION_DIND_INIT_LIMIT,
     INTEGRATION_DIND_INIT_RESERVE,
@@ -170,6 +171,31 @@ def _init_limit_for(physical):
     praktika.utils.Utils.physical_memory = faked
     try:
         return importlib.reload(cfg).INTEGRATION_DIND_INIT_LIMIT
+    finally:
+        Utils.physical_memory = real
+        praktika.utils.Utils.physical_memory = real
+        importlib.reload(cfg)
+
+
+def _daemon_limit_for(physical):
+    """`INTEGRATION_DIND_DAEMON_LIMIT` as `job_configs.py` computes it on a host of `physical`
+    bytes.
+
+    Same reason as `_init_limit_for`: a test that overrides the reserves has to pass the limit
+    production would pair with them, or the script rightly refuses the mismatch.
+    """
+    import importlib
+
+    import praktika.utils
+
+    import ci.defs.job_configs as cfg
+
+    real = Utils.physical_memory
+    faked = staticmethod(lambda: physical)
+    Utils.physical_memory = faked
+    praktika.utils.Utils.physical_memory = faked
+    try:
+        return importlib.reload(cfg).INTEGRATION_DIND_DAEMON_LIMIT
     finally:
         Utils.physical_memory = real
         praktika.utils.Utils.physical_memory = real
@@ -382,6 +408,7 @@ def test_a_small_host_refuses_naming_the_host_size_and_the_reserves(tmp_path, ph
             "CI_DIND_INIT_RESERVE": str(init_reserve),
             "CI_DIND_INIT_LIMIT": str(_init_limit_for(physical_gb * GIB)),
             "CI_DIND_DAEMON_RESERVE": str(INTEGRATION_DIND_DAEMON_RESERVE),
+            "CI_DIND_DAEMON_LIMIT": str(_daemon_limit_for(physical_gb * GIB)),
             "CI_DIND_NESTED_BUDGET": str(nested),
         },
     )
@@ -414,6 +441,9 @@ def test_the_smallest_supported_host_still_runs(tmp_path):
                 _init_limit_for(min(SUPPORTED_PHYSICAL_GB) * GIB)
             ),
             "CI_DIND_DAEMON_RESERVE": str(INTEGRATION_DIND_DAEMON_RESERVE),
+            "CI_DIND_DAEMON_LIMIT": str(
+                _daemon_limit_for(min(SUPPORTED_PHYSICAL_GB) * GIB)
+            ),
             "CI_DIND_NESTED_BUDGET": str(nested),
         },
     )
@@ -508,6 +538,66 @@ def test_the_job_passes_the_init_limit_to_the_script():
     without it."""
     assert (
         f"--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
+        in common_integration_test_job_config.run_in_docker
+    )
+
+
+# The pre-pull's own charge on `/dockerd`, measured against the batch that killed shards 2/6 and
+# 5/8: 25 images, 12,883 MiB transferred. Replaying it under caps of 2, 8 and 32 GiB gave peaks of
+# 2054, 8194 and 14339 MiB while anon stayed at 154-293 MiB throughout, i.e. the charge is the
+# layer page cache and it saturates any cap below the batch's own size. A dirty page cannot be
+# reclaimed until its writeback lands, which is what turns saturation into a kill.
+CARRIER_PREFETCH_BATCH_MIB = 12883
+CARRIER_DAEMON_KILLED_AT_GIB = 2
+
+
+@pytest.mark.parametrize("physical_gb", SUPPORTED_PHYSICAL_GB)
+def test_the_daemon_limit_exceeds_its_share_of_the_budget(physical_gb):
+    """Capping `/dockerd` at the daemons' own footprint killed the pre-pull, which writes the whole
+    image batch through the leaf, so the limit must be the larger of the two or the kill returns."""
+    assert _daemon_limit_for(physical_gb * GIB) > INTEGRATION_DIND_DAEMON_RESERVE
+
+
+def test_the_carrier_daemon_limit_clears_the_batch_it_was_killed_pulling():
+    """A footprint-sized cap is what the carriers had when the daemon was killed, so the limit must
+    clear the batch the leaf actually holds rather than merely differing from the reserve."""
+    limit_mib = _daemon_limit_for(CI_CARRIER_PHYSICAL_GB * GIB) / 1024**2
+    assert limit_mib > CARRIER_DAEMON_KILLED_AT_GIB * 1024
+    # Room for the whole batch, since the cache is charged here until writeback completes.
+    assert limit_mib >= CARRIER_PREFETCH_BATCH_MIB
+
+
+@pytest.mark.parametrize("physical_gb", SUPPORTED_PHYSICAL_GB)
+def test_the_daemon_limit_still_fits_beside_the_leaves_it_overlaps(physical_gb):
+    """The limit overlaps `/docker`'s reserve on purpose, so what bounds it is the leaves it does
+    NOT overlap: it may not push the root and init reserves past the job limit."""
+    limited, _ = _budget_for(physical_gb * GIB)
+    total = (
+        _daemon_limit_for(physical_gb * GIB)
+        + INTEGRATION_DIND_ROOT_RESERVE
+        + _init_reserve_for(physical_gb * GIB)
+    )
+    assert total <= limited, physical_gb
+
+
+@pytest.mark.parametrize("physical_gb", SUPPORTED_PHYSICAL_GB)
+def test_the_daemon_limit_does_not_change_worker_concurrency(physical_gb):
+    """`/dockerd`'s cap and the container budget are decoupled on purpose: the budget xdist sizes
+    workers from keeps subtracting the reserve, so raising the cap cannot change concurrency."""
+    limited, nested = _budget_for(physical_gb * GIB)
+    assert nested == (
+        limited
+        - INTEGRATION_DIND_ROOT_RESERVE
+        - _init_reserve_for(physical_gb * GIB)
+        - INTEGRATION_DIND_DAEMON_RESERVE
+    )
+
+
+def test_the_job_passes_the_daemon_limit_to_the_script():
+    """The constant is inert unless it reaches `docker_in_docker.sh`, whose validator refuses
+    without it."""
+    assert (
+        f"--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
         in common_integration_test_job_config.run_in_docker
     )
 
@@ -1440,11 +1530,14 @@ def test_the_count_survives_both_reporters_firing_together(tmp_path, monkeypatch
 
 
 # --- docker_in_docker.sh: the containment ladder, run against a fake cgroup tree -----------
-# The block holds the riskiest logic in the change (five validators, the namespace guard whose
-# failure mode is writing to the HOST root, and the EBUSY retry), and none of it is reachable
+# The block holds the riskiest logic in the change (the budget validators, the namespace guard
+# whose failure mode is writing to the HOST root, and the EBUSY retry), and none of it is reachable
 # from the assertions above: an inert stub would pass every one of them. Extracted verbatim
 # between markers, following ci/tests/test_logs_cluster_probe_loop.py.
 
+# Every byte count the block reads. A value missing here is summed unchecked, and Bash's signed
+# 64-bit arithmetic wraps one near the top of the range negative, satisfying the `<= job limit`
+# checks it was supposed to fail.
 _VARS = [
     "CI_DIND_JOB_MEM",
     "CI_DIND_ROOT_RESERVE",
@@ -1452,6 +1545,7 @@ _VARS = [
     "CI_DIND_DAEMON_RESERVE",
     "CI_DIND_NESTED_BUDGET",
     "CI_DIND_INIT_LIMIT",
+    "CI_DIND_DAEMON_LIMIT",
 ]
 
 
@@ -1543,6 +1637,7 @@ def _run_containment(tmp_path, env_overrides=None, **fake_kwargs):
             # limit the script will accept and the tests exercise the production relationship.
             "CI_DIND_INIT_LIMIT": str(job_mem - 768 * 1024**2),
             "CI_DIND_DAEMON_RESERVE": str(512 * 1024**2),
+            "CI_DIND_DAEMON_LIMIT": str(job_mem - 768 * 1024**2),
             "CI_DIND_NESTED_BUDGET": str(job_mem - 1280 * 1024**2),
         }
     )
@@ -1554,10 +1649,15 @@ def _run_containment(tmp_path, env_overrides=None, **fake_kwargs):
     # An override that raises a reserve can leave the default limit below it; follow it up rather
     # than making every caller restate the limit. Skipped unless both values are byte counts: a
     # test that overrides one with a malformed value is asserting the refusal itself.
-    limit, reserve = env.get("CI_DIND_INIT_LIMIT"), env.get("CI_DIND_INIT_RESERVE")
-    caller_pinned_limit = "CI_DIND_INIT_LIMIT" in (env_overrides or {})
-    if not caller_pinned_limit and _is_byte_count(limit) and _is_byte_count(reserve):
-        env["CI_DIND_INIT_LIMIT"] = str(max(int(limit), int(reserve)))
+    for limit_var, reserve_var in (
+        ("CI_DIND_INIT_LIMIT", "CI_DIND_INIT_RESERVE"),
+        ("CI_DIND_DAEMON_LIMIT", "CI_DIND_DAEMON_RESERVE"),
+    ):
+        limit, reserve = env.get(limit_var), env.get(reserve_var)
+        if limit_var in (env_overrides or {}):
+            continue
+        if _is_byte_count(limit) and _is_byte_count(reserve):
+            env[limit_var] = str(max(int(limit), int(reserve)))
     script = tmp_path / "block.sh"
     script.write_text(
         "set -u\n"
@@ -1585,7 +1685,11 @@ def test_containment_happy_path_caps_every_leaf(tmp_path):
     assert (cg / "init" / "memory.max").read_text().strip() == str(
         2 * GIB - 768 * 1024**2
     )
-    assert (cg / "dockerd" / "memory.max").read_text().strip() == str(512 * 1024**2)
+    # `/dockerd` likewise: an image pull writes every layer through this leaf, so its page cache
+    # is charged here, and capping it at the daemons' own footprint is what killed the pre-pull.
+    assert (cg / "dockerd" / "memory.max").read_text().strip() == str(
+        2 * GIB - 768 * 1024**2
+    )
     assert (cg / "docker" / "memory.max").read_text().strip() == str(
         2 * GIB - 1280 * 1024**2
     )
@@ -1703,7 +1807,7 @@ def test_v1_caps_every_leaf_under_the_memory_controller(tmp_path):
         2 * GIB - 768 * 1024**2
     )
     assert (mem / "dockerd" / "memory.limit_in_bytes").read_text().strip() == str(
-        512 * 1024**2
+        2 * GIB - 768 * 1024**2
     )
     assert (mem / "docker" / "memory.limit_in_bytes").read_text().strip() == str(
         2 * GIB - 1280 * 1024**2
@@ -1744,6 +1848,7 @@ def test_v1_refuses_if_the_harness_cannot_be_moved(tmp_path):
             "CI_DIND_INIT_RESERVE": str(512 * 1024**2),
             "CI_DIND_INIT_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_DAEMON_RESERVE": str(512 * 1024**2),
+            "CI_DIND_DAEMON_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_NESTED_BUDGET": str(2 * GIB - 1280 * 1024**2),
         }
     )
@@ -1767,11 +1872,11 @@ def test_v1_also_limits_memory_plus_swap(tmp_path):
         2 * GIB - 1280 * 1024**2
     )
     assert (mem / "dockerd" / "memory.memsw.limit_in_bytes").read_text().strip() == str(
-        512 * 1024**2
+        2 * GIB - 768 * 1024**2
     )
-    # `/init`'s memsw tracks its own limit, not its share of the budget. A memsw left at the share
-    # re-imposes the wall the limit exists to lift, while `memory.limit_in_bytes` still reads as
-    # raised, so no other assertion here would catch it.
+    # Both limit-bearing leaves' memsw track their own limit, not their share of the budget. A
+    # memsw left at the share re-imposes the wall the limit exists to lift, while
+    # `memory.limit_in_bytes` still reads as raised, so no other assertion here would catch it.
     assert (mem / "init" / "memory.memsw.limit_in_bytes").read_text().strip() == str(
         2 * GIB - 768 * 1024**2
     )
@@ -1859,6 +1964,7 @@ def test_v1_refuses_when_the_outer_limit_did_not_apply(tmp_path):
             "CI_DIND_INIT_RESERVE": str(512 * 1024**2),
             "CI_DIND_INIT_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_DAEMON_RESERVE": str(512 * 1024**2),
+            "CI_DIND_DAEMON_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_NESTED_BUDGET": str(2 * GIB - 1280 * 1024**2),
         }
     )
@@ -1887,6 +1993,46 @@ def test_containment_refuses_reserves_above_the_job_limit(tmp_path):
     assert "above the job limit" in out
 
 
+@pytest.mark.parametrize(
+    "limit_var,reserve_var,phrase",
+    [
+        ("CI_DIND_INIT_LIMIT", "CI_DIND_INIT_RESERVE", "the init limit is"),
+        ("CI_DIND_DAEMON_LIMIT", "CI_DIND_DAEMON_RESERVE", "the daemon limit is"),
+    ],
+)
+def test_containment_refuses_a_limit_below_its_own_reserve(
+    tmp_path, limit_var, reserve_var, phrase
+):
+    """A limit under its own reserve means the leaf is capped below what the other leaves already
+    left it, which reads as a raised cap while imposing a lower one."""
+    rc, out, _ = _run_containment(
+        tmp_path,
+        env_overrides={limit_var: str(256 * 1024**2), reserve_var: str(512 * 1024**2)},
+    )
+    assert rc == 3, out
+    assert phrase in out, out
+
+
+@pytest.mark.parametrize(
+    "limit_var,phrase",
+    [
+        ("CI_DIND_INIT_LIMIT", "the init limit of"),
+        ("CI_DIND_DAEMON_LIMIT", "the daemon limit of"),
+    ],
+)
+def test_containment_refuses_a_limit_that_crowds_the_leaves_it_does_not_overlap(
+    tmp_path, limit_var, phrase
+):
+    """Each limit overlaps `/docker` by design, so the bound is the leaves it does NOT overlap.
+    A limit that fits under the job limit alone can still push those past it."""
+    rc, out, _ = _run_containment(
+        tmp_path, env_overrides={limit_var: str(2 * GIB - 128 * 1024**2)}
+    )
+    assert rc == 3, out
+    assert phrase in out, out
+    assert "above the job limit" in out, out
+
+
 def test_containment_retries_delegation_while_a_pid_is_still_in_the_root(tmp_path):
     """Delegation fails EBUSY while the cgroup holds a process, and the caller keeps forking,
     so a single pass loses the delegation silently. The fake `cgroup.subtree_control` rejects
@@ -1906,6 +2052,7 @@ def test_containment_retries_delegation_while_a_pid_is_still_in_the_root(tmp_pat
             "CI_DIND_INIT_RESERVE": str(512 * 1024**2),
             "CI_DIND_INIT_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_DAEMON_RESERVE": str(512 * 1024**2),
+            "CI_DIND_DAEMON_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_NESTED_BUDGET": str(2 * GIB - 1280 * 1024**2),
         }
     )
@@ -1941,6 +2088,7 @@ def test_containment_refuses_when_delegation_never_succeeds(tmp_path):
             "CI_DIND_INIT_RESERVE": str(512 * 1024**2),
             "CI_DIND_INIT_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_DAEMON_RESERVE": str(512 * 1024**2),
+            "CI_DIND_DAEMON_LIMIT": str(2 * GIB - 768 * 1024**2),
             "CI_DIND_NESTED_BUDGET": str(2 * GIB - 1280 * 1024**2),
         }
     )
@@ -2082,6 +2230,38 @@ def test_the_peak_readout_measures_init_against_the_written_cap(tmp_path, capsys
     init_line = next(l for l in capsys.readouterr().out.splitlines() if "/init" in l)
     assert "16.00 GiB of 56.00 GiB cap" in init_line, init_line
     assert "AT CAP" not in init_line, init_line
+
+
+def test_the_peak_readout_measures_dockerd_against_the_written_cap(tmp_path, capsys):
+    """Same for `/dockerd`, whose share and cap also differ. Reporting the share is worse here than
+    a wrong number: the pre-pull's peak always exceeds it, so every pull would read as AT CAP and
+    the flag would stop discriminating the kills it exists to mark."""
+    _peak_tree(tmp_path, {"dockerd": 13 * GIB})
+    env = {
+        "CI_DIND_REQUIRE_CGROUP_CONTAINMENT": "1",
+        "CI_DIND_DAEMON_RESERVE": str(2 * GIB),
+        "CI_DIND_DAEMON_LIMIT": str(45 * GIB),
+        "CI_DIND_NESTED_BUDGET": str(40 * GIB),
+    }
+    print_leaf_peak_usage(env, cgroup_root=tmp_path)
+    line = next(l for l in capsys.readouterr().out.splitlines() if "/dockerd" in l)
+    assert "13.00 GiB of 45.00 GiB cap" in line, line
+    assert "AT CAP" not in line, line
+
+
+def test_the_peak_readout_still_flags_dockerd_pinned_at_its_written_cap(tmp_path, capsys):
+    """The other direction, so the test above cannot be satisfied by never flagging `/dockerd`:
+    a peak at the LIMIT is still the censored figure the sizing decision needs."""
+    _peak_tree(tmp_path, {"dockerd": 45 * GIB})
+    env = {
+        "CI_DIND_REQUIRE_CGROUP_CONTAINMENT": "1",
+        "CI_DIND_DAEMON_RESERVE": str(2 * GIB),
+        "CI_DIND_DAEMON_LIMIT": str(45 * GIB),
+        "CI_DIND_NESTED_BUDGET": str(40 * GIB),
+    }
+    print_leaf_peak_usage(env, cgroup_root=tmp_path)
+    line = next(l for l in capsys.readouterr().out.splitlines() if "/dockerd" in l)
+    assert "AT CAP" in line, line
 
 
 def test_the_peak_readout_runs_after_the_last_init_work():

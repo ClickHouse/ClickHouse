@@ -53,6 +53,14 @@ INTEGRATION_DIND_INIT_LIMIT = max(
     LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
     INTEGRATION_DIND_INIT_RESERVE,
 )
+# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
+# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
+# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
+# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
+INTEGRATION_DIND_DAEMON_LIMIT = max(
+    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
+    INTEGRATION_DIND_DAEMON_RESERVE,
+)
 integration_dind_env = (
     "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
     f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
@@ -60,6 +68,7 @@ integration_dind_env = (
     f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
     f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
     f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
+    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
     f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
 )
 

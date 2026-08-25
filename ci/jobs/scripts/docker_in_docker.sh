@@ -40,7 +40,8 @@ if [ "${CI_DIND_REQUIRE_CGROUP_CONTAINMENT:-0}" = 1 ]; then
     }
 
     for var in CI_DIND_JOB_MEM CI_DIND_ROOT_RESERVE CI_DIND_INIT_RESERVE \
-               CI_DIND_INIT_LIMIT CI_DIND_DAEMON_RESERVE CI_DIND_NESTED_BUDGET; do
+               CI_DIND_INIT_LIMIT CI_DIND_DAEMON_RESERVE CI_DIND_DAEMON_LIMIT \
+               CI_DIND_NESTED_BUDGET; do
         case "${!var:-}" in
             "" | *[!0-9]*) refuse "\$$var is [${!var:-}], expected a byte count" ;;
         esac
@@ -90,7 +91,7 @@ CI_DIND_REQUIRE_CGROUP_CONTAINMENT to run uncontained"
     # Each reserve is bounded by the job limit before they are summed: the sum is signed 64-bit,
     # so a value near its top wraps negative and passes the total check below.
     for var in CI_DIND_ROOT_RESERVE CI_DIND_INIT_RESERVE CI_DIND_DAEMON_RESERVE \
-               CI_DIND_NESTED_BUDGET CI_DIND_INIT_LIMIT; do
+               CI_DIND_NESTED_BUDGET CI_DIND_INIT_LIMIT CI_DIND_DAEMON_LIMIT; do
         [ "${!var}" -le "$CI_DIND_JOB_MEM" ] || \
             refuse "\$$var is [${!var}] bytes, above the job limit of $CI_DIND_JOB_MEM"
     done
@@ -110,6 +111,14 @@ CI_DIND_REQUIRE_CGROUP_CONTAINMENT to run uncontained"
     [ "$init_headroom" -le "$CI_DIND_JOB_MEM" ] || \
         refuse "the init limit of $CI_DIND_INIT_LIMIT bytes plus the root and daemon reserves \
 totals $init_headroom, above the job limit of $CI_DIND_JOB_MEM"
+
+    # The daemon limit is bounded the same way, against the leaves it does not overlap.
+    [ "$CI_DIND_DAEMON_LIMIT" -ge "$CI_DIND_DAEMON_RESERVE" ] || \
+        refuse "the daemon limit is [$CI_DIND_DAEMON_LIMIT] bytes, below its own reserve of [$CI_DIND_DAEMON_RESERVE]"
+    daemon_headroom=$(( CI_DIND_DAEMON_LIMIT + CI_DIND_ROOT_RESERVE + CI_DIND_INIT_RESERVE ))
+    [ "$daemon_headroom" -le "$CI_DIND_JOB_MEM" ] || \
+        refuse "the daemon limit of $CI_DIND_DAEMON_LIMIT bytes plus the root and init reserves \
+totals $daemon_headroom, above the job limit of $CI_DIND_JOB_MEM"
 
     mkdir -p "$leaf_root/init" "$leaf_root/dockerd" "$leaf_root/docker"
 
@@ -135,7 +144,7 @@ totals $init_headroom, above the job limit of $CI_DIND_JOB_MEM"
     # Cap every leaf before the daemon starts; dockerd recreates `/docker` on startup, and the
     # limit is measured to survive that only in this order.
     echo "$CI_DIND_INIT_LIMIT"     > "$leaf_root/init/$limit_file"    || refuse "capping [$leaf_root/init] failed"
-    echo "$CI_DIND_DAEMON_RESERVE" > "$leaf_root/dockerd/$limit_file" || refuse "capping [$leaf_root/dockerd] failed"
+    echo "$CI_DIND_DAEMON_LIMIT"   > "$leaf_root/dockerd/$limit_file" || refuse "capping [$leaf_root/dockerd] failed"
     echo "$CI_DIND_NESTED_BUDGET"  > "$leaf_root/docker/$limit_file"  || refuse "capping [$leaf_root/docker] failed"
 
     # A memory cap alone bounds resident pages, so a leaf can still exceed its advertised budget
@@ -152,7 +161,7 @@ totals $init_headroom, above the job limit of $CI_DIND_JOB_MEM"
     for leaf in init dockerd docker; do
         case $leaf in
             init)    bytes=$CI_DIND_INIT_LIMIT ;;
-            dockerd) bytes=$CI_DIND_DAEMON_RESERVE ;;
+            dockerd) bytes=$CI_DIND_DAEMON_LIMIT ;;
             docker)  bytes=$CI_DIND_NESTED_BUDGET ;;
         esac
         if [ "$cgroup_version" = 1 ]; then
@@ -189,7 +198,7 @@ totals $init_headroom, above the job limit of $CI_DIND_JOB_MEM"
     echo $$ > "$leaf_root/dockerd/cgroup.procs" || refuse "moving this shell into [$leaf_root/dockerd] failed"
 
     echo "docker_in_docker.sh: cgroup containment active (cgroup v$cgroup_version):" \
-         "init=$CI_DIND_INIT_LIMIT dockerd=$CI_DIND_DAEMON_RESERVE" \
+         "init=$CI_DIND_INIT_LIMIT dockerd=$CI_DIND_DAEMON_LIMIT" \
          "docker=$CI_DIND_NESTED_BUDGET within $CI_DIND_JOB_MEM"
 fi
 # END: cgroup containment

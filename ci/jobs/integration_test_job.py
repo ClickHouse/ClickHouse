@@ -48,11 +48,11 @@ LATE_DMESG_LOG = "./ci/tmp/dmesg-after-merge.log"
 # `docker_in_docker.sh`'s own output, which holds the containment decision and any refusal.
 DOCKER_IN_DOCKER_LOG = "./ci/tmp/docker-in-docker.log"
 
-# Images pulled at once. The daemon holds each pull's layers in its own address space, so what
-# it needs follows the pulls in flight rather than the size of the batch: measured against the
-# widest batch, its peak grows from 161 MiB at one concurrent pull to 697 MiB at 25. Bounded so
-# that a batch cannot size the daemon's footprint, and low enough to leave the leaf's cap room
-# for the containerd and shim processes charged there beside it.
+# Images pulled at once. This bounds the daemon's anon working set, which does follow the pulls in
+# flight: measured against the widest batch, 161 MiB at one concurrent pull and 697 MiB at 25. It
+# does not bound the leaf's total charge, because each layer is also written through the leaf's page
+# cache and stays charged there until writeback lands, whatever the concurrency. Sizing the leaf for
+# that is `INTEGRATION_DIND_DAEMON_LIMIT`'s job, not this knob's.
 PREFETCH_PARALLEL_PULLS = 8
 
 # Seconds ALL archiving gets, together, after the hard backstop fired. Sized to complete an
@@ -274,9 +274,10 @@ def print_leaf_peak_usage(env, cgroup_root=DIND_CGROUP_ROOT) -> Dict[str, int]:
         return {}
     peaks = leaf_peak_usage(cgroup_root=cgroup_root)
     caps = {
-        # The cap that was written, which for `/init` is not its share of the budget.
+        # The cap that was written, which for `/init` and `/dockerd` is not their share of the
+        # budget. Falling back to the reserve would understate the cap and print a false AT CAP.
         "init": env.get("CI_DIND_INIT_LIMIT") or env.get("CI_DIND_INIT_RESERVE"),
-        "dockerd": env.get("CI_DIND_DAEMON_RESERVE"),
+        "dockerd": env.get("CI_DIND_DAEMON_LIMIT") or env.get("CI_DIND_DAEMON_RESERVE"),
         "docker": env.get("CI_DIND_NESTED_BUDGET"),
     }
     for leaf, peak in sorted(peaks.items()):

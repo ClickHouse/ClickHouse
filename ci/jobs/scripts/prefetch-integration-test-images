@@ -16,8 +16,8 @@ set -uo pipefail
 
 PULL_RETRIES="${PULL_RETRIES:-3}"
 PULL_TIMEOUT="${PULL_TIMEOUT:-300}"
-# The daemon holds each pull's layers in its own address space, so what it needs follows the
-# pulls in flight rather than the size of the batch.
+# Bounds the daemon's anon working set, which follows the pulls in flight. The layer page cache it
+# also writes through is charged per batch, not per pull, so that is capped on the cgroup instead.
 PULL_PARALLEL="${PULL_PARALLEL:-8}"
 
 images=("$@")
