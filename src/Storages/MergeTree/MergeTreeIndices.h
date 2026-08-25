@@ -286,8 +286,7 @@ struct IMergeTreeIndex
     /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
     ///
-    /// The physical question needs only the checksums and the storage, so it is answered without a part:
-    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+    /// The physical question needs only the checksums and the storage, so it is answered without a part.
     virtual MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
