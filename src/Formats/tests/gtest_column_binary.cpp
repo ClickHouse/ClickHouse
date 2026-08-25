@@ -1732,3 +1732,61 @@ TEST(ColumnBinary, WriterRejectsColumnCountMismatch)
         EXPECT_THROW(output.write(block), DB::Exception);
     }
 }
+
+TEST(ColumnBinary, WriterRejectsColumnTypeMismatch)
+{
+    auto declared_type = std::make_shared<DataTypeUInt64>();
+    auto other_type = std::make_shared<DataTypeString>();
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{declared_type->createColumn(), declared_type, "col0"});
+
+    // Same column count, wrong type: the reader decodes against the declared type and
+    // rejects the frame (see ColumnBinaryInputFormat's structureEquals check), so the
+    // writer must refuse to emit it rather than produce something unreadable.
+    {
+        auto c = ColumnString::create();
+        c->insertData("abc", 3);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName{std::move(c), other_type, "col0"});
+
+        WriteBufferFromOwnString obuf;
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
+        EXPECT_THROW(output.write(block), DB::Exception);
+    }
+
+    // A same-width but differently-typed column is still a mismatch: Int64 and UInt64 are
+    // both 8 bytes, so only a structural check (not a size check) catches this.
+    {
+        auto int_type = std::make_shared<DataTypeInt64>();
+        auto c = ColumnInt64::create();
+        c->getData().push_back(-1);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName{std::move(c), int_type, "col0"});
+
+        WriteBufferFromOwnString obuf;
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
+        EXPECT_THROW(output.write(block), DB::Exception);
+    }
+
+    // The matching type still writes cleanly, so the new check does not reject valid frames.
+    {
+        auto c = ColumnUInt64::create();
+        c->getData().push_back(7);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName{std::move(c), declared_type, "col0"});
+
+        WriteBufferFromOwnString obuf;
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        EXPECT_NO_THROW(output.precomputeSerializedSize(block, 1));
+        EXPECT_NO_THROW(output.write(block));
+    }
+}

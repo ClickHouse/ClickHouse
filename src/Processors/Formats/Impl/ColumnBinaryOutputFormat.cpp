@@ -36,6 +36,29 @@ void ColumnBinaryOutputFormat::checkNumCols(size_t num_cols) const
             num_cols, header_->columns());
 }
 
+void ColumnBinaryOutputFormat::checkColumnStructure(size_t i, const IColumn & column) const
+{
+    // Mirror `ColumnBinaryInputFormat`'s read-side check exactly: the reader decodes each
+    // column against `header_->getByPosition(i).type` and rejects a structural mismatch, so a
+    // writer that only enforces the column *count* fails open on the public
+    // `IOutputFormat::write` path - a formatter built with a `UInt64` header would happily
+    // serialize a same-count `String` block, emitting a frame that disagrees with the
+    // advertised sample header and that the matching reader then refuses. Require the same
+    // exact schema the reader does, so the mismatch is caught before the frame is written
+    // rather than after it is read back.
+    // `COL_IS_CONST` legitimately serializes a `ColumnConst` wrapper, which never structurally
+    // equals the plain column the declared type creates; compare what it wraps, as the reader
+    // does on its side.
+    const IColumn & actual = isColumnConst(column)
+        ? static_cast<const ColumnConst &>(column).getDataColumn()
+        : column;
+    const auto & expected_type = header_->getByPosition(i).type;
+    if (!actual.structureEquals(*expected_type->createColumn()))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: column {} is {}, which does not match the declared type {}",
+            i, actual.getName(), expected_type->getName());
+}
+
 std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const Block & block, size_t rows) const
 {
     if (disable_preallocation_)
@@ -78,6 +101,7 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
             ? removeSpecialRepresentations(static_cast<const ColumnConst &>(*raw_ptr).getDataColumnPtr())
             : removeSpecialRepresentations(raw_ptr);
         const IColumn * actual = stripped.get();
+        checkColumnStructure(i, *actual);
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : static_cast<uint32_t>(rows);
 
@@ -157,6 +181,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         const IColumn * actual = is_const
             ? &static_cast<const ColumnConst &>(raw_col).getDataColumn()
             : &raw_col;
+        checkColumnStructure(i, *actual);
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
         cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);

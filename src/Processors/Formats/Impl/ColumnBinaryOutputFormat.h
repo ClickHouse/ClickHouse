@@ -23,6 +23,9 @@ public:
     /// Enforce the exact column count the reader requires; see consume().
     void checkNumCols(size_t num_cols) const;
 
+    /// Enforce the exact column type the reader requires; see checkColumnStructure().
+    void checkColumnStructure(size_t i, const IColumn & column) const;
+
 protected:
     void consume(Chunk chunk) override;
     void writePrefix() override {}
