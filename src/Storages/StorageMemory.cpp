@@ -760,6 +760,11 @@ IStorage::ColumnSizeByName StorageMemory::getColumnSizes() const
 
 bool StorageMemory::supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
 {
+    /// The table behind a materialized CTE or a `GLOBAL` subquery is filled during query
+    /// execution, after the planner would have observed `totalRows` (as zero).
+    if (delay_read_for_global_subqueries || getMaterializedCTE())
+        return false;
+
     /// A pinned snapshot (atomic `CREATE MATERIALIZED VIEW ... POPULATE`) must observe the set of
     /// blocks captured at subscription time, while `totalRows` reflects the latest committed state.
     if (query_context)
@@ -819,6 +824,8 @@ When using the Memory table engine on ClickHouse Cloud, data is not replicated a
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
 Indexes are not supported. Reading is parallelized.
+
+Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
 
 Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
 When restarting a server, data disappears from the table and the table becomes empty.
