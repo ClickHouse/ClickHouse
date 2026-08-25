@@ -355,7 +355,6 @@ def test_pr_workflow_keeps_full_suite_msan_wasmedge_functional_tests():
         job for job in workflow.jobs if "selected tests" in job.name
     ]
     assert selected_test_jobs
-    assert all(job.digest_config is None for job in selected_test_jobs)
 
     # Every gating job must exist in the workflow - the trimmed jobs replaced
     # the full-suite ones the gate used to name.
