@@ -30,4 +30,53 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 4;
 
+-- A many-shard shuffle must still aggregate correctly and still distribute.
+SELECT '-- sixteen workers: shuffled aggregation is correct';
+SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    distributed_plan_workers_num = 16;
+
+SELECT '-- sixteen workers: still a distributed plan';
+EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    distributed_plan_workers_num = 16;
+
+-- Only a dispatched fragment reports its own counters: it gets its own process-list entry, while
+-- a `distributed_plan_execute_locally` fragment reports the initiator's. A fragment carries the
+-- initiator's `query_id` as its `initial_query_id`, which is unique per query, so that key selects
+-- one query's fragments whatever else the server is running concurrently.
+-- A fragment bounded to one thread acquires exactly one CPU slot, competing or not; which of the
+-- two counters carries it depends on the server's scheduler, so the assertion sums them. That
+-- value is vacuously true while arbitration is off, which is what the first one pins. The probe
+-- runs with `make_distributed_plan = 0` so it spawns no fragments of its own.
+SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread limit';
+-- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment` and would
+-- win the lookup against `system.query_log` below.
+SET ast_fuzzer_runs = 0;
+SET log_comment = '04515_worker_fragment_cpu_slots';
+SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+    distributed_plan_force_shuffle_aggregation = 1,
+    use_concurrency_control = 1, max_threads = 1
+FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT count() > 0 AND min(ProfileEvents['ConcurrencyControlSlotsGranted']) > 0,
+       count() > 0 AND max(ProfileEvents['ConcurrencyControlSlotsAcquired']
+                        + ProfileEvents['ConcurrencyControlSlotsAcquiredNonCompeting']) = 1
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
+  AND initial_query_id = (
+      SELECT query_id FROM system.query_log
+      WHERE event_date >= yesterday() AND type = 'QueryFinish'
+        AND current_database = currentDatabase()
+        AND query_id = initial_query_id
+        AND Settings['log_comment'] = '04515_worker_fragment_cpu_slots'
+      ORDER BY event_time_microseconds DESC LIMIT 1)
+  AND query_id != initial_query_id
+SETTINGS make_distributed_plan = 0;
+SET log_comment = '';
+
 DROP TABLE t_worker_count;
