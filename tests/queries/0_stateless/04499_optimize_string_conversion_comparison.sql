@@ -110,6 +110,14 @@ SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELE
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(CAST('x', 'Variant(String, UInt8)')) AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%needle%');
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(CAST('{"a": 1}', 'JSON')) AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%needle%');
 
+SELECT '-- Tuples with DateTime/DateTime64 elements are not destructured either, because a scalar toString ignores date_time_output_format (and stay correct)';
+SET date_time_output_format = 'iso';
+SELECT
+    toString((materialize(toDateTime('2024-01-02 03:04:05', 'UTC')), 1)) LIKE '%T%',
+    toString((materialize(toDateTime64('2024-01-02 03:04:05', 3, 'UTC')), 1)) LIKE '%T%';
+SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(toDateTime('2024-01-02 03:04:05', 'UTC')) AS dt, materialize(1) AS n) WHERE toString((dt, n)) LIKE '%T%');
+SET date_time_output_format = 'simple';
+
 SELECT '-- Patterns that must not be destructured (0 = no OR chain in the query tree)';
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize('x') AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%search%phrase%');
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize('x') AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%a_b%');
