@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/SystemTableDocumentation.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -167,31 +166,5 @@ void BucketedMetricLog::stepFunction(const std::chrono::system_clock::time_point
         element.histogram_sum = std::move(metric_log_element.histogram_sum);
     });
 }
-
-}
-
-namespace DB
-{
-
-REGISTER_SYSTEM_TABLE_DOCUMENTATION(
-    "histogram_metric_log",
-    .description = R"DOCS_MD(
-History of `system.histogram_metrics`. Snapshot taken every `collect_interval_milliseconds`, flushed to disk.
-)DOCS_MD",
-    .get_columns = BucketedMetricLogElement::getColumnsDescription,
-    .examples = R"DOCS_MD(
-```sql
-SELECT event_time, metric, labels, histogram
-FROM system.histogram_metric_log
-WHERE metric = 'keeper_response_time_ms'
-ORDER BY event_time DESC
-LIMIT 1
-FORMAT Vertical;
-```
-)DOCS_MD",
-    .see_also = R"DOCS_MD(
-- [system.histogram_metrics](/reference/system-tables/histogram_metrics) — Live histogram metrics.
-- [system.metric_log](/reference/system-tables/metric_log) — History of `system.metrics` and `system.events`.
-)DOCS_MD")
 
 }

@@ -13,15 +13,15 @@ REPO_ROOT = HERE.parents[4]
 GENERATOR = REPO_ROOT / "utils" / "generate-system-tables-docs"
 SOURCE_ROOT = REPO_ROOT / "src"
 
-EXPECTED_DOCUMENTATION_COUNT = 170
-EXPECTED_SOURCE_COUNT = 163
-EXPECTED_COLUMNS_PROVIDER_COUNT = 49
+EXPECTED_DOCUMENTATION_COUNT = 169
+EXPECTED_SOURCE_COUNT = 162
+EXPECTED_COLUMNS_PROVIDER_COUNT = 48
 EXPECTED_FIELD_COUNTS = {
     ".description": EXPECTED_DOCUMENTATION_COUNT,
     ".columns_notes": 10,
-    ".examples": 106,
+    ".examples": 105,
     ".additional_sections": 12,
-    ".see_also": 60,
+    ".see_also": 59,
 }
 PLACEHOLDERS = {
     "{{PROFILE_EVENTS}}": 1,
@@ -97,6 +97,7 @@ def main():
     }
     expected_page_names = documentation_page_names - {
         "delta_lake_metadata_log",  # Legacy duplicate of `delta_metadata_log.mdx`.
+        "histogram_metric_log",     # Deprecated `system.histogram_metric_log` table which no longer exists.
         "information_schema",       # Overview of a separate database.
         "overview",                 # System-tables overview, not a table page.
         "warnings",                 # Legacy duplicate of `system_warnings.mdx`.
