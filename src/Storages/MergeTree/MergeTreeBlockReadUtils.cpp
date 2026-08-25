@@ -229,8 +229,15 @@ NameSet injectRequiredColumns(
         NamesAndTypesList available_columns;
         std::unordered_map<String, String> metadata_name_by_part_name;
 
-        for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        /// Iterated directly rather than through `getAllPhysical`, which would build a list of every
+        /// physical column for each part while only the name is wanted here. The skipped kinds are the
+        /// ones that function skips; neither is ever stored in a part.
+        for (const auto & column : storage_snapshot->metadata->getColumns())
         {
+            if (column.default_desc.kind == ColumnDefaultKind::Alias
+                || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+                continue;
+
             auto name_in_part = column.name;
             if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
                 name_in_part = alter_conversions->getColumnOldName(name_in_part);
