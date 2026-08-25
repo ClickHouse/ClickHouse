@@ -37,8 +37,11 @@ INNER JOIN view(SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS
 ON a.c0 = v.d0
 ORDER BY ALL;
 
--- The view's own join is reordered internally before the enclosing join is optimized, and
--- `chooseJoinOrder` replaces that node, so this arm covers the boundary surviving the replacement.
+-- A view whose own join is itself a candidate for reordering is still kept whole. This arm does not
+-- cover the boundary being carried onto the node `chooseJoinOrder` returns: the traversal optimizes
+-- the enclosing join first, so it reads the boundary before the inner join is ever replaced. Measured
+-- by deleting that re-application, which leaves every arm of this test green. It is there for a
+-- receiver handed an already-expanded fragment, which the arms below cover.
 SELECT '-- view whose own inner join is reordered';
 SELECT a.c0, v.c0
 FROM t_a_05039 AS a
@@ -59,12 +62,45 @@ INNER JOIN v_merge_05039 AS m
 ON a.c0 = m.c0
 ORDER BY ALL;
 
--- An inlined view is numbered by the same alias pass as the enclosing query, so it is not a case the
--- barrier exists for; it is pinned here because it reaches a different code path into the view.
-SELECT '-- view read with analyzer_inline_views';
+-- An inlined view is rewritten into a subquery before the join tree is resolved, so it is numbered by
+-- the same alias pass as the enclosing query, does not restart the namespace, and is not a case the
+-- barrier exists for. Only a stored view reaches the inlining hook, which rewrites a `TableNode`, so a
+-- `view(...)` table function never enters it. The pair reads different values, which is what shows the
+-- setting is in effect here instead of being asserted by results that agree either way. Suppressing the
+-- marking under the setting leaves both arms unchanged, so the inlined arm flattens because no view is
+-- read at all, not because the mark was withheld.
+SELECT '-- a stored view is flattened once it is inlined';
+DROP VIEW IF EXISTS v_inline_05039;
+CREATE VIEW v_inline_05039 AS SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y;
+SELECT count() FROM (
+    EXPLAIN SELECT a.c0, v.d0
+    FROM t_a_05039 AS a
+    INNER JOIN v_inline_05039 AS v
+    ON a.c0 = v.d0
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0, analyzer_inline_views = 1
+) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
+
+SELECT '-- and is opaque when it is not';
+SELECT count() FROM (
+    EXPLAIN SELECT a.c0, v.d0
+    FROM t_a_05039 AS a
+    INNER JOIN v_inline_05039 AS v
+    ON a.c0 = v.d0
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0, analyzer_inline_views = 0
+) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
+
+-- Values must be correct on the inlined path too, so read a stored view whose output name shadows its
+-- own input's.
+SELECT '-- an inlined view whose output shadows its own input name';
+DROP VIEW IF EXISTS v_shadow_05039;
+CREATE VIEW v_shadow_05039 AS SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y;
 SELECT a.c0, v.c0
 FROM t_a_05039 AS a
-INNER JOIN view(SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y) AS v
+INNER JOIN v_shadow_05039 AS v
 ON a.c0 = v.c0
 ORDER BY ALL
 SETTINGS analyzer_inline_views = 1;
@@ -97,7 +133,8 @@ SELECT count() FROM (
     INNER JOIN view(SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y) AS v
     ON a.c0 = v.d0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
 SELECT '-- a plain subquery still flattens into it';
@@ -107,12 +144,15 @@ SELECT count() FROM (
     INNER JOIN (SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y) AS s
     ON a.c0 = s.d0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
 -- Making the view opaque must not stop the enclosing join from being reordered: the relations beside the
--- view are still costed. Paired with a reordering-off control, so it cannot pass on a query the
--- optimizer skipped entirely.
+-- view are still costed. Require all three of them in ONE join label, because the traversal continues
+-- into children and a label produced by an independently reordered descendant would otherwise satisfy
+-- an arm that only asked for one of them. Paired with a reordering-off control, so it cannot pass on a
+-- query the optimizer skipped entirely.
 SELECT '-- relations beside an opaque view are still reordered';
 SELECT count() > 0 FROM (
     EXPLAIN SELECT count()
@@ -120,8 +160,9 @@ SELECT count() > 0 FROM (
          view(SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y) AS v
     WHERE b.c0 = v.c0 AND c.c0 = v.c0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%b[%' OR explain LIKE '%c[%';
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
+) WHERE explain LIKE '%b[%' AND explain LIKE '%c[%' AND explain LIKE '% v %';
 
 SELECT '-- and nothing is costed once reordering is off';
 SELECT count() > 0 FROM (
@@ -129,9 +170,55 @@ SELECT count() > 0 FROM (
     FROM t_b_05039 AS b, t_c_05039 AS c,
          view(SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y) AS v
     WHERE b.c0 = v.c0 AND c.c0 = v.c0
-    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%b[%' OR explain LIKE '%c[%';
+    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
+) WHERE explain LIKE '%b[%' AND explain LIKE '%c[%' AND explain LIKE '% v %';
 
+-- No view is read on a replica handed an already-expanded plan fragment, so the boundary cannot be
+-- re-derived there and has to travel with the step itself. Decorrelating a correlated subquery without
+-- the in-memory buffer emits a subplan reference, which is materialized by cloning the referenced
+-- subplan, and that clone happens before join reordering runs, so a boundary lost in `clone` leaves a
+-- flattenable view behind. Both copies of the view join must stay opaque; the plain-subquery arm after
+-- it is the control that this shape does flatten what it may.
+SELECT '-- a cloned subplan keeps the view opaque';
+SELECT count() FROM (
+    EXPLAIN WITH w AS (
+        SELECT a.c0 AS o0, v.d0 AS o1
+        FROM t_a_05039 AS a
+        INNER JOIN view(SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y) AS v
+        ON a.c0 = v.d0
+    )
+    SELECT *, (SELECT w.o0 WHERE or(173, w.o0 >= 0)) AS r FROM w ORDER BY 1
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0, allow_experimental_correlated_subqueries = 1,
+             correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'right'
+) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
+
+SELECT '-- and still flattens a plain subquery in both copies';
+SELECT count() FROM (
+    EXPLAIN WITH w AS (
+        SELECT a.c0 AS o0, s.d0 AS o1
+        FROM t_a_05039 AS a
+        INNER JOIN (SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y) AS s
+        ON a.c0 = s.d0
+    )
+    SELECT *, (SELECT w.o0 WHERE or(173, w.o0 >= 0)) AS r FROM w ORDER BY 1
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0, allow_experimental_correlated_subqueries = 1,
+             correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'right'
+) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
+
+-- The wire is the other way a step travels, and it is deliberately NOT asserted here. Setting
+-- `serialize_query_plan = 1` is not enough to reach `serialize`/`deserialize`: a plan is only written
+-- to a stream for a shard that is actually remote, and a single-server test has none, so the local
+-- shard takes the local-plan path instead. Measured by instrumenting both functions and running this
+-- shape, `remote()` over this server's own port, a `remote()` that ships the whole view join, and two
+-- joined remote legs: zero calls in every one, while a probe at `clone` in the same build fired. An
+-- arm here would pass whatever the `flags` byte did, so none is shipped.
+DROP VIEW v_shadow_05039;
+DROP VIEW v_inline_05039;
 DROP VIEW v_merge_05039;
 DROP TABLE t_c_05039;
 DROP TABLE t_b_05039;
