@@ -27,7 +27,7 @@ ColumnsDescription StorageSystemCodecs::getColumnsDescription()
         { "is_generic_compression", std::make_shared<DataTypeUInt8>(), "The codec is a generic compression algorithm like lz4, zstd."},
         { "is_encryption",          std::make_shared<DataTypeUInt8>(), "The codec encrypts."},
         { "is_timeseries_codec",    std::make_shared<DataTypeUInt8>(), "The codec is for floating point timeseries codec."},
-        { "is_experimental",        std::make_shared<DataTypeUInt8>(), "The codec is experimental. Kept for backward compatibility (equivalent to tier = 'Experimental'); prefer `tier`."},
+        { "is_experimental",        std::make_shared<DataTypeUInt8>(), "The codec is experimental."}, /// TODO: remove.
         { "tier",                   getSettingsTierEnum(), "Support level for this codec (e.g. 'Production', 'Beta' or 'Experimental'). Derived from the declared tier of the setting that gates the codec (e.g. `enable_alp_codec`); codecs without a gate are 'Production'."},
         { "description",            std::make_shared<DataTypeString>(), "A high-level description of the codec."},
     };
