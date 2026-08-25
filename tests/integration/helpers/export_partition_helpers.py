@@ -137,15 +137,17 @@ def make_rmt(
     partition_by,
     replica_name="r1",
     order_by="tuple()",
+    extra_settings="",
 ):
     """Create a ReplicatedMergeTree table with block-number settings."""
+    settings = f"{_BLOCK_SETTINGS}, {extra_settings}" if extra_settings else _BLOCK_SETTINGS
     node.query(
         f"""
         CREATE TABLE {name} ({columns})
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{name}', '{replica_name}')
         PARTITION BY {partition_by}
         ORDER BY {order_by}
-        SETTINGS {_BLOCK_SETTINGS}
+        SETTINGS {settings}
         """
     )
 

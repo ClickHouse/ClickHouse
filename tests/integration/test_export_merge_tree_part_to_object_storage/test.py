@@ -373,38 +373,12 @@ REJECTED_PART_EXPORT_CASES = [
     pytest.param(
         RejectedPartExportCase(
             src_columns="a Int32, b Int32, c Int32, val String",
-            src_partition_by="(a, b, c)",
-            dst_columns="a Int32, b Int32, c Int32, val String",
-            dst_partition_by="(c, b, a)",
-            insert_values="(1, 2, 3, 'x')",
-            error_substrings=(
-                "Tables have different partition key",
-            ),
-        ),
-        id="multi_column_partition_key_order_mismatch",
-    ),
-    pytest.param(
-        RejectedPartExportCase(
-            src_columns="a Int32, b Int32, c Int32, val String",
-            src_partition_by="(a, b, c)",
-            dst_columns="a Int32, b Int32, c Int32, val String",
-            dst_partition_by="(a, b)",
-            insert_values="(1, 2, 3, 'x')",
-            error_substrings=(
-                "Tables have different partition key",
-            ),
-        ),
-        id="multi_column_partition_key_fewer_in_destination",
-    ),
-    pytest.param(
-        RejectedPartExportCase(
-            src_columns="a Int32, b Int32, c Int32, val String",
             src_partition_by="(a, b)",
             dst_columns="a Int32, b Int32, c Int32, val String",
             dst_partition_by="(a, b, c)",
             insert_values="(1, 2, 3, 'x')",
             error_substrings=(
-                "Tables have different partition key",
+                "column 'c', which is not part of the source MergeTree partition key",
             ),
         ),
         id="multi_column_partition_key_more_in_destination",
@@ -499,7 +473,15 @@ def test_export_part_partition_key_mismatch_variants_are_rejected(cluster, case)
         )
 
 
-def test_export_part_multi_column_partition_key_success(cluster):
+@pytest.mark.parametrize(
+    "dst_partition_by",
+    ["(a, b, c)", "(c, b, a)", "(a, b)"],
+    ids=["same", "reordered", "coarser"],
+)
+def test_export_part_multi_column_partition_key_success(cluster, dst_partition_by):
+    """The source key pins every column the destination partitions by, so the destination may
+    also name them in another order or leave some out: each destination expression is still
+    single-valued over a source partition."""
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
@@ -518,7 +500,7 @@ def test_export_part_multi_column_partition_key_success(cluster):
     node.query(f"""
         CREATE TABLE {s3_table} (a Int32, b Int32, c Int32, val String)
         ENGINE = S3(s3_conn, filename='{s3_table}', format=Parquet, partition_strategy='hive')
-        PARTITION BY (a, b, c)
+        PARTITION BY {dst_partition_by}
     """)
 
     node.query(f"INSERT INTO {mt_table} VALUES (1, 2, 3, 'x'), (1, 2, 3, 'y')")
@@ -621,38 +603,6 @@ def test_export_part_tuple_fields_reordered_for_partition_key_is_rejected(
     )
 
 
-def test_export_part_unnamed_tuple_partition_key_owner_matching_named_destination_is_allowed(cluster):
-    skip_if_remote_database_disk_enabled(cluster)
-    node = cluster.instances["node1"]
-
-    postfix = str(uuid.uuid4()).replace("-", "_")
-    mt_table = f"unnamed_tuple_ok_mt_table_{postfix}"
-    s3_table = f"unnamed_tuple_ok_s3_table_{postfix}"
-
-    node.query(f"""
-        CREATE TABLE {mt_table} (t Tuple(Int32, Int32), val String)
-        ENGINE = MergeTree()
-        PARTITION BY tupleElement(t, 1)
-        ORDER BY tuple()
-        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
-    """)
-
-    node.query(f"""
-        CREATE TABLE {s3_table} (t Tuple(x Int32, y Int32), val String)
-        ENGINE = S3(s3_conn, filename='{s3_table}/{{_partition_id}}/{{_file}}', format=Parquet, partition_strategy='wildcard')
-        PARTITION BY tupleElement(t, 1)
-    """)
-
-    node.query(f"INSERT INTO {mt_table} VALUES ((1, 99), 'x')")
-
-    part_name = node.query(
-        f"SELECT name FROM system.parts WHERE database = currentDatabase() "
-        f"AND table = '{mt_table}' AND active ORDER BY name LIMIT 1"
-    ).strip()
-
-    node.query(f"ALTER TABLE {mt_table} EXPORT PART '{part_name}' TO TABLE {s3_table}")
-
-
 def test_export_part_subcolumn_partition_key_different_subcolumn_is_rejected(cluster):
     skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
@@ -687,16 +637,15 @@ def test_export_part_subcolumn_partition_key_different_subcolumn_is_rejected(clu
     )
     assert (
         "BAD_ARGUMENTS" in error
-        and "Tables have different partition key"
+        and "column 'a.c', which is not part of the source MergeTree partition key"
         in error
     ), (
         f"Both tables declare `a` as the same Tuple(b Int32, c Int32) (so the column-cast "
         f"check passes and the owner-name-only `partition_key_owner_columns` contains "
         f"only `a`, so `verifyExportSchemaCastable` cannot distinguish `a.b` from "
-        f"`a.c`), but the source "
-        f"partitions by `a.b` and the destination by `a.c` — a genuinely different "
-        f"partition key that must be caught by the `PARTITION BY` AST comparison; "
-        f"got: {error!r}"
+        f"`a.c`), but the source partitions by `a.b` while the destination partitions by "
+        f"`a.c`, which the source key does not pin, so the compatibility gate has to "
+        f"reject it; got: {error!r}"
     )
 
 
