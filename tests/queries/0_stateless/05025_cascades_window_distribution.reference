@@ -2,8 +2,8 @@
 GatherExchange
   Expression ((Project names + Projection))
     Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
-      Sorting
-        Expression ((Before WINDOW + Change column names to column identifiers))
+      Expression ((Before WINDOW + Change column names to column identifiers))
+        Sorting
           ShuffleExchange
             ReadFromMergeTree (ParallelRead default.t_win)
 -- 2. results match the single-node plan
@@ -34,8 +34,8 @@ Expression (Project names)
   GatherExchange
     Expression ((Before ORDER BY + Projection))
       Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
-        Sorting
-          Expression ((Before WINDOW + Change column names to column identifiers))
+        Expression ((Before WINDOW + Change column names to column identifiers))
+          Sorting
             ShuffleExchange
               ReadFromMergeTree (ParallelRead default.t_win)
 -- 7. the window sort keeps per-partition streams: the aggregation above skips merging
@@ -44,12 +44,12 @@ Expression (Project names)
 GatherExchange
   Expression ((Project names + Projection))
     Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
-      Sorting
-        Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
+      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
+        Sorting
           ShuffleExchange
             Window (Partitioned Window step for window \'PARTITION BY __table2.k, __table2.v\')
-              Sorting
-                Expression ((Before WINDOW + Change column names to column identifiers))
+              Expression ((Before WINDOW + Change column names to column identifiers))
+                Sorting
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.t_win)
 -- 9. stacked window results match the single-node plan
@@ -90,3 +90,17 @@ Expression (Project names)
 5	13	30
 2	18	48
 5	21	69
+-- 11. same-key stacked windows through an expression share one shuffle and sort
+GatherExchange
+  Expression ((Project names + Projection))
+    Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
+      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))) [lifted up part])
+        Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
+          Window (Partitioned Window step for window \'PARTITION BY __table2.k\')
+            Expression ((Before WINDOW + Change column names to column identifiers))
+              Sorting
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_win)
+-- 12. same-key stacked window results match the single-node plan
+100000	50050000	49999500000000
+100000	50050000	49999500000000

@@ -112,5 +112,22 @@ SETTINGS query_plan_enable_multithreading_after_window_functions = 0, max_thread
     param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1000,"sequential_weight":1}';
 DROP TABLE t_ord;
 
+-- The inner window's shuffle and sort already give the distribution and order the outer
+-- window needs, and the expression between them keeps rows in place, so the plan has no
+-- second shuffle or sort between the windows.
+SELECT '-- 11. same-key stacked windows through an expression share one shuffle and sort';
+EXPLAIN SELECT k, t, sum(s1) OVER (PARTITION BY k) AS s2
+FROM (SELECT k, sum(v) OVER (PARTITION BY k) AS s1, k + 1 AS t FROM t_win);
+
+SELECT '-- 12. same-key stacked window results match the single-node plan';
+SELECT count(), sum(t), sum(s2) FROM (
+    SELECT k, t, sum(s1) OVER (PARTITION BY k) AS s2
+    FROM (SELECT k, sum(v) OVER (PARTITION BY k) AS s1, k + 1 AS t FROM t_win)
+);
+SELECT count(), sum(t), sum(s2) FROM (
+    SELECT k, t, sum(s1) OVER (PARTITION BY k) AS s2
+    FROM (SELECT k, sum(v) OVER (PARTITION BY k) AS s1, k + 1 AS t FROM t_win)
+) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
 DROP TABLE t_win;
 DROP TABLE t_wfloat;
