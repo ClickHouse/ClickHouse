@@ -223,7 +223,7 @@ String composeMarkdown(
     const String trimmed_syntax = boost::algorithm::trim_copy(syntax);
     /// Some complete page descriptions embed their syntax without a Markdown section header. Do not append the
     /// same syntax a second time, while still composing it for short descriptions which do not contain it.
-    if (!trimmed_syntax.empty() && result.find(trimmed_syntax) == String::npos)
+    if (!trimmed_syntax.empty() && !result.contains(trimmed_syntax))
         add_block("Syntax", trimmed_syntax, /*as_code=*/ true);
     add_block("Arguments", arguments, /*as_code=*/ false);
     add_block("Parameters", parameters, /*as_code=*/ false);
