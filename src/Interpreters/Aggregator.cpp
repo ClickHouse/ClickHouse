@@ -4722,6 +4722,11 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     }
     else
     {
+        /// This loop goes through the rows in order, like the one that aggregates them does, so a
+        /// method that prepares a block's keys ahead of it may do so here too. The `no_more_keys`
+        /// branch above may not: it looks a row up without taking a key holder first.
+        state.enableKeyRegion(data.getBufferSizeInBytes());
+
         for (size_t i = row_begin; i < row_end; i++)
         {
             /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
@@ -4829,6 +4834,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
         else
         {
+            /// In order, as above, so the keys of a block may be prepared ahead of the loop.
+            state.enableKeyRegion(data.getBufferSizeInBytes());
+
             for (size_t row = row_begin; row < row_end; row++)
             {
                 /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
