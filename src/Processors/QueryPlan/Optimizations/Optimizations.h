@@ -91,6 +91,10 @@ struct Optimization
         /// optimization when the plan is going to be distributed or serialized.
         bool make_distributed_plan = false;
         bool serialize_query_plan = false;
+        /// When short-circuit is off, a FilterStep still masks a throwing atom by splitting the AND into
+        /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
+        /// AND in this mode.
+        bool short_circuit_function_evaluation_disabled = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

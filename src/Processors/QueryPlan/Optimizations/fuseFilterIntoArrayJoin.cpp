@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -63,7 +64,15 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     if (!fully_fused)
         return 0;
 
-    String element_filter_column = split->dag.getOutputs()[split->filter_pos]->result_name;
+    /// With short-circuit off, a FilterStep still masks a throwing atom by splitting the AND into sequential
+    /// filters. The fused path runs the whole predicate at once, so don't fuse a multi-atom AND in this mode.
+    const auto * filter_node = split->dag.getOutputs()[split->filter_pos];
+    if (settings.short_circuit_function_evaluation_disabled
+        && filter_node->type == ActionsDAG::ActionType::FUNCTION
+        && filter_node->function_base && filter_node->function_base->getName() == "and")
+        return 0;
+
+    String element_filter_column = filter_node->result_name;
     array_join->setElementFilter(std::move(split->dag), element_filter_column, split->remove_filter);
 
     /// The whole filter is now the element filter; replace it with its residual (an all-columns pass-through).
