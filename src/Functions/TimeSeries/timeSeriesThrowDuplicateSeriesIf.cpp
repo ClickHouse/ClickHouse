@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
@@ -156,6 +157,9 @@ private:
         }
 
         const auto & in_data = in->getData();
+        if (memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
+            return static_cast<size_t>(-1); /// Not found.
+
         for (size_t i = 0; i != in->size(); ++i)
         {
             if (in_data[i] != 0)
