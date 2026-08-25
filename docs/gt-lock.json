@@ -7,36 +7,36 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "ko": {
-          "updatedAt": "2026-08-25T15:54:16.755Z",
+          "updatedAt": "2026-08-25T19:20:27.804Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-25T15:54:17.270Z",
+          "updatedAt": "2026-08-25T19:20:28.460Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-25T15:54:16.387Z",
+          "updatedAt": "2026-08-25T19:20:27.345Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-25T15:54:17.086Z",
+          "updatedAt": "2026-08-25T19:20:28.245Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-25T15:54:17.652Z",
+          "updatedAt": "2026-08-25T19:20:28.908Z",
           "fileName": "docs.json",
           "postProcessHash": "7ed10f5b099c6e1af68f6d6dcd994ed9a52bc625d927628e57ad9b379731132a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-25T15:54:16.923Z",
+          "updatedAt": "2026-08-25T19:20:28.038Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-25T15:54:16.574Z",
+          "updatedAt": "2026-08-25T19:20:27.575Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-25T15:54:17.471Z",
+          "updatedAt": "2026-08-25T19:20:28.676Z",
           "fileName": "docs.json"
         }
       },
@@ -100203,51 +100203,50 @@
     },
     {
       "fileId": "15ab5422c785698f34c66a96ab907b2b455c286c3e2b383e699b478bd1d4b608",
-      "versionId": "a84748b12c03c70c7654da85c7f1e99863a989dca61fe5a2a3abc30949cd9623",
+      "versionId": "e164bb1cd2493d95b60e68013a9ab1d322fd0278e32d972017a05e6f64cac074",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.637Z",
-          "fileName": "fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "3e3ab26904bf298a758d72f72c840c41000267aa8fefbd696a2b66ce27810f5d"
-        },
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.636Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "e2225bd0d0cefd6caf746e3394aa8313864b94e8359640378d3f1afa320ca030"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.636Z",
+          "updatedAt": "2026-08-25T19:20:36.643Z",
           "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "9998bd135aef773203b6fef75ce5e2b8faee7931a41e8f75b881abbf95c692b4"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.637Z",
-          "fileName": "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "0a2352f9c2d2a295a73bad93bbf3d20ab33bb9e7dc2c6aa7d5402b73730fdef7"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.637Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "f7fc5ff8bf6e759f3305883ed0b466e299eab0b0afdada750335eb4109aa97dc"
+          "postProcessHash": "7bdf1a99886361d35a737ad152c797e68422221372932c464859e14ef5ae7846"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.637Z",
+          "updatedAt": "2026-08-25T19:20:36.644Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "6e73db0ef4f9a789424b6664c077c19de10b6d9501fade2f47610448187d4431"
+          "postProcessHash": "ae3a74abc8d65223634becff4ef6f80a4d182c1bfc656d9067c51c1d442a74d4"
+        },
+        "fr": {
+          "updatedAt": "2026-08-25T19:20:36.645Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "cb5181173a6842f3ffe455a05f1250fda6c15dbaaff2ea81f54e1dfe870f66fb"
+        },
+        "es": {
+          "updatedAt": "2026-08-25T19:20:36.646Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "f6513c5cfbe6c50546bcd45d158ec54c998cda721f074a369140e1959117b5b4"
+        },
+        "zh": {
+          "updatedAt": "2026-08-25T19:20:36.648Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "f47c68a26ba6425b3fcd7c39371aa5ccb45eca404ed41801ee97157d86b53715"
+        },
+        "ar": {
+          "updatedAt": "2026-08-25T19:20:36.649Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
+          "postProcessHash": "e8a6bc25da4419bdfd412d41201390241abc267501cd34d204449622f102f8df"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.636Z",
+          "updatedAt": "2026-08-25T19:20:36.650Z",
           "fileName": "ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "414313c5d1e90f5cfb9c18b55556ea1baa8ab473240272674b8ff67d91c8eb2c"
+          "postProcessHash": "3e38a261087b6c22e3bab3de1d46c7d5ff06429cffc02c3418df5f096e50bc71"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.636Z",
+          "updatedAt": "2026-08-25T19:20:36.651Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-          "postProcessHash": "035e23988aae0bab30aa389eb8279a8865512fc5a9233f0f9e8fdd77c2578f78"
+          "postProcessHash": "a9e1a7912a099b92d9ee0133e4e2df03341aa048bba18f9f7af040727c393ace"
         }
       },
-      "fileName": "products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/security/cloud-access-management/saml-sso-setup.mdx"
     },
     {
       "fileId": "add1b1b70b9df022b392ec6667a8c9d2ef05a73c99d8f2bc79d50586a7801b63",
