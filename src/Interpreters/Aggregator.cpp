@@ -1624,6 +1624,11 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else if (!no_more_keys)
         {
+            /// In order, like the general loop below, so a method may prepare the block's keys ahead
+            /// of it. The `no_more_keys` branch may not, for the same reason as there: it looks a
+            /// row up without taking a key holder first.
+            state.enableKeyRegion(method.data.getBufferSizeInBytes());
+
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
