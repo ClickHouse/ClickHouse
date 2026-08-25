@@ -1223,7 +1223,7 @@ SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStddevToGrid = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStddevToGrid = {26, 9};
     FunctionDocumentation::Category category_timeSeriesStddevToGrid = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesStddevToGrid = {description_timeSeriesStddevToGrid, syntax_timeSeriesStddevToGrid, arguments_timeSeriesStddevToGrid, parameters_timeSeriesStddevToGrid, returned_value_timeSeriesStddevToGrid, examples_timeSeriesStddevToGrid, introduced_in_timeSeriesStddevToGrid, category_timeSeriesStddevToGrid};
 
@@ -1310,7 +1310,7 @@ SELECT timeSeriesStdvarToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStdvarToGrid = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesStdvarToGrid = {26, 9};
     FunctionDocumentation::Category category_timeSeriesStdvarToGrid = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesStdvarToGrid = {description_timeSeriesStdvarToGrid, syntax_timeSeriesStdvarToGrid, arguments_timeSeriesStdvarToGrid, parameters_timeSeriesStdvarToGrid, returned_value_timeSeriesStdvarToGrid, examples_timeSeriesStdvarToGrid, introduced_in_timeSeriesStdvarToGrid, category_timeSeriesStdvarToGrid};
 
