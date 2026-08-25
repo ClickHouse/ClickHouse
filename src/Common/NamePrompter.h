@@ -41,8 +41,17 @@ public:
         size_t work_left = max_prompting_work;
         DistanceIndexQueue queue;
         for (size_t i = 0; i < prompting_strings.size(); ++i)
+        {
             if (!appendToQueue(i, name, queue, prompting_strings, work_left))
+            {
+                checkPromptingNotCancelled();
                 return {};
+            }
+        }
+        /// Cancellation arriving during the scoring above has to be observed on both exit paths: every
+        /// caller throws its unresolved-name exception as soon as this returns, and that exception
+        /// would then be reported in place of the cancellation.
+        checkPromptingNotCancelled();
         return release(queue, prompting_strings);
     }
 
@@ -60,6 +69,7 @@ private:
         if (prompt.size() <= name.size() + mistake_factor && prompt.size() + mistake_factor >= name.size())
         {
             /// Compare by division so the product never has to be formed before it is known to fit.
+            /// The divisor is non-zero: an empty name yields no hints and never reaches here.
             if (prompt.size() > work_left / name.size())
                 return false;
             work_left -= prompt.size() * name.size();
