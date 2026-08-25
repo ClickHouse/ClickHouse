@@ -293,9 +293,11 @@ echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' 
 echo "$page" | grep -q -F 'accumulateResourceEvents(cell.resources, events);' && echo 'background meter batches accumulate: OK'
 echo "$page" | grep -q -F 'progressEl.adoptResourceState(run_cell.resources);' && echo 'meter state re-adopted on tab open: OK'
 echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : activeCell(tab);' && echo 'shared chrome follows the running cell: OK'
-# One query runs at a time per tab, so the cell header's run action ends the tab's current run
-# through the same path as the Run/Stop button instead of starting a second request beside it.
-[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 2 ] && echo 'a cell run ends the tab run first: OK'
+# One query runs at a time per tab, so the cell header's run action - and a sort/filter/page change
+# in a cell's result, which re-runs that cell - end the tab's current run through the same path as
+# the Run/Stop button instead of starting a second request beside it. Two call sites each: one for a
+# cell that already holds the editor, one after handing it the editor first.
+[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 4 ] && echo 'a cell run ends the tab run first: OK'
 echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline

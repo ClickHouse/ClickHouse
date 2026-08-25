@@ -50,7 +50,7 @@ Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the 
 
 The `Logs` and `Metrics` views and the resource meters in the progress line belong to the cell whose result they describe: each cell keeps its own selection and its own meters, and the shared toggles show what the active cell produced. Switching cells brings that cell's own logs, metrics and meters back. While a query is running, the row stays with the cell it is running in — moving the editor to another cell to write the next query neither blanks the live progress nor retargets those toggles at the other cell's result.
 
-Column color coding and pinned columns belong to a cell too: they are chosen on a result, so they follow that result. A cell whose `Run all` produced several tables shares one choice across them, and every cell keeps its own; the shared link and the browser history carry the active cell's choice, while the others travel with their own cell.
+Column color coding, pinned columns and the [result shape](/concepts/features/interfaces/web-ui-result-shaping) — the sort, the filters and the page — belong to a cell too: they are chosen on a result, so they follow that result. Sorting or filtering a cell's result re-runs that cell, taking the editor first if it was in another one. A cell whose `Run all` produced several tables shares one choice across them, and every cell keeps its own; the shared link and the browser history carry the active cell's choice, while the others travel with their own cell.
 
 ## Text cells {#text-cells}
 
