@@ -361,6 +361,10 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         size_t memory_low_watermark = 2ul << 20;
         size_t memory_high_watermark = 4ul << 30;
+        /// Reader scheduler knobs: share of the column-data memory budget given to compressed
+        /// read-ahead vs decode, and ColumnData's share of the parsing thread pool.
+        double prefetch_memory_fraction = 0.6;
+        double decode_thread_fraction = 0.375;
 
         /// Write.
         UInt64 row_group_rows = 1000000;

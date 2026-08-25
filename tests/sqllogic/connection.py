@@ -103,6 +103,7 @@ def default_clickhouse_native_conn_args():
             "max_bytes_before_external_sort": 128 * 1024 * 1024,
             "max_bytes_ratio_before_external_group_by": 0.0,
             "max_bytes_ratio_before_external_sort": 0.0,
+            "max_threads": 1,
         }
     )
 

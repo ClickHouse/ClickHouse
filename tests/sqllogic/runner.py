@@ -142,7 +142,9 @@ def _child_process(setup_kwargs, runner_kwargs, input_dir, output_dir, test):
 
 
 def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir):
-    process_count = max(1, os.cpu_count() - 4)
+    cpu_count = os.cpu_count() or 2
+    process_count = max(1, min(10, cpu_count - 4))
+    logger.info("Running tests with %s worker processes (cpu_count=%s)", process_count, cpu_count)
     tests = list(TestRunner.list_tests(input_dir))
     with multiprocessing.Pool(process_count) as pool:
         async_results = [

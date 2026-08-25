@@ -247,6 +247,7 @@ namespace Setting
     extern const SettingsBool allow_insert_into_iceberg;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+    extern const SettingsTimezone iceberg_partition_timezone;
 }
 
 
@@ -8645,9 +8646,6 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     ExportPartitionUtils::verifyExportSchemaCastable(
         src_snapshot, destination_snapshot, dest_storage->getStorageID(), query_context);
 
-    if (!dest_storage->isDataLake())
-        ExportPartitionUtils::assertPartitionKeyASTAreEqual(src_snapshot, destination_snapshot);
-
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
     const String partition_id = getPartitionIDFromQuery(command.partition, query_context);
@@ -8765,6 +8763,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.filename_pattern = query_context->getSettingsRef()[Setting::export_merge_tree_part_filename_pattern].value;
     manifest.write_full_path_in_iceberg_metadata = query_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata];
     manifest.allow_lossy_cast = query_context->getSettingsRef()[Setting::export_merge_tree_part_allow_lossy_cast];
+    manifest.iceberg_partition_timezone = query_context->getSettingsRef()[Setting::iceberg_partition_timezone].toString();
     manifest.schema_mismatch_mode = query_context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode].value;
 
     if (dest_storage->isDataLake())
@@ -8800,7 +8799,11 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
 
         ExportPartitionUtils::verifyIcebergPartitionCompatibility(
             metadata_object,
-            src_snapshot->getPartitionKeyAST());
+            src_snapshot,
+            destination_snapshot,
+            parts,
+            partition_id,
+            query_context);
 
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
@@ -8813,6 +8816,15 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data lake export requires Avro support");
 #endif
+    }
+    else
+    {
+        ExportPartitionUtils::verifyPlainPartitionCompatibility(
+            src_snapshot,
+            destination_snapshot,
+            parts,
+            partition_id,
+            query_context);
     }
 
     ops.emplace_back(zkutil::makeCreateRequest(

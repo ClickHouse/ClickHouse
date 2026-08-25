@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# EXPORT PART runs in the background, so wait for it instead of sleeping.
+# $1 is how many exports should have completed by this point, counted from the start of
+# the test (part_log is not cleared during a run, so the number is cumulative).
+function wait_for_exports()
+{
+    local expected=$1
+    local database=${2:-$CLICKHOUSE_DATABASE}
+    local timeout=${3:-120}
+
+    while [[ $timeout -gt 0 ]]
+    do
+        ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS" > /dev/null 2>&1
+        res=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.part_log WHERE event_type = 'ExportPart' AND database = '$database'")
+        [[ $res -ge $expected ]] && return 0
+
+        sleep 1
+        timeout=$((timeout - 1))
+    done
+
+    echo "Timed out while waiting for $expected export(s) to complete!" >&2
+    ${CLICKHOUSE_CLIENT} --query="SELECT source_table, part_name, elapsed FROM system.exports WHERE source_database = '$database'"
+    return 2
+}
+
+# EXPORT PARTITION runs in the background, so wait for it instead of sleeping.
+# $1 is how many partition exports should have completed by this point, counted from the
+# start of the test (the table keeps one row per export operation).
+function wait_for_partition_exports()
+{
+    local expected=$1
+    local database=${2:-$CLICKHOUSE_DATABASE}
+    local timeout=${3:-120}
+
+    while [[ $timeout -gt 0 ]]
+    do
+        res=$(${CLICKHOUSE_CLIENT} --query="SELECT countIf(status = 'COMPLETED') FROM system.replicated_partition_exports WHERE source_database = '$database'")
+        [[ $res -ge $expected ]] && return 0
+
+        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT countIf(status IN ('FAILED', 'KILLED')) FROM system.replicated_partition_exports WHERE source_database = '$database'") -gt 0 ]]; then
+            echo "Partition export failed!" >&2
+            ${CLICKHOUSE_CLIENT} --query="SELECT partition_id, status, exception_count, last_exception_per_replica FROM system.replicated_partition_exports WHERE source_database = '$database'"
+            return 2
+        fi
+
+        sleep 1
+        timeout=$((timeout - 1))
+    done
+
+    echo "Timed out while waiting for $expected partition export(s) to complete!" >&2
+    ${CLICKHOUSE_CLIENT} --query="SELECT partition_id, status, parts_count, parts_to_do FROM system.replicated_partition_exports WHERE source_database = '$database'"
+    return 2
+}
+
+# vi: ft=bash

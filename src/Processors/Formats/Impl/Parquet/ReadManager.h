@@ -88,7 +88,11 @@ private:
         /// Tasks that are either in thread pool's queue or executing.
         std::atomic<size_t> batches_in_progress {0};
 
+        /// Share of the query-global memory budget for this stage, kept separate from the thread
+        /// share so a stage needing parallelism but little memory isn't forced to trade one off.
         double memory_target_fraction = 1;
+        /// Share of the parsing thread pool for this stage, independent of the memory share.
+        double thread_target_fraction = 1;
 
         /// We take advantage of the fact that each <row group, stage> pair can have at most one group
         /// of tasks in flight at a time. E.g. we create tasks to read columns in subgroup n, then

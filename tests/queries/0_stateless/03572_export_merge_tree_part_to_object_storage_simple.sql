@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-fasttest
 
-DROP TABLE IF EXISTS 03572_mt_table, 03572_invalid_schema_table, 03572_ephemeral_mt_table, 03572_matching_ephemeral_s3_table, 03572_partition_type_mismatch_mt, 03572_partition_type_mismatch_s3, 03572_lossy_mt, 03572_lossy_s3, 03572_lossless_mt, 03572_lossless_s3;
+DROP TABLE IF EXISTS 03572_mt_table, 03572_invalid_schema_table, 03572_ephemeral_mt_table, 03572_matching_ephemeral_s3_table, 03572_partition_type_mismatch_mt, 03572_partition_type_mismatch_s3, 03572_lossy_mt, 03572_lossy_s3, 03572_lossless_mt, 03572_lossless_s3, 03572_coarser_source_mt, 03572_finer_dest_s3;
 
 SET allow_experimental_export_merge_tree_part=1;
 
@@ -8,9 +8,10 @@ CREATE TABLE 03572_mt_table (id UInt64, year UInt16) ENGINE = MergeTree() PARTIT
 
 INSERT INTO 03572_mt_table VALUES (1, 2020);
 
--- Create a table with a different partition key and export a partition to it. It should throw
--- on the partition-key AST mismatch (schema compat now follows INSERT SELECT positional semantics,
--- so the column shape matches and the partition-key check is what fires).
+-- Create a table partitioned by a column that is not part of the source partition key. The unified
+-- plain-storage partition gate rejects it because the destination partition column is not covered by
+-- the source partition key (schema compat follows INSERT SELECT positional semantics, so the column
+-- shape matches and the partition-compatibility check is what fires).
 CREATE TABLE 03572_invalid_schema_table (id UInt64, x UInt16) ENGINE = S3(s3_conn, filename='03572_invalid_schema_table', format='Parquet', partition_strategy='hive') PARTITION BY x;
 
 ALTER TABLE 03572_mt_table EXPORT PART '2020_1_1_0' TO TABLE 03572_invalid_schema_table
@@ -67,4 +68,16 @@ CREATE TABLE 03572_lossless_s3 (id Int64, year UInt16) ENGINE = S3(s3_conn, file
 ALTER TABLE 03572_lossless_mt EXPORT PART '2020_1_1_0' TO TABLE 03572_lossless_s3
 SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError NO_SUCH_DATA_PART}
 
-DROP TABLE IF EXISTS 03572_mt_table, 03572_invalid_schema_table, 03572_ephemeral_mt_table, 03572_matching_ephemeral_s3_table, 03572_partition_type_mismatch_mt, 03572_partition_type_mismatch_s3, 03572_lossy_mt, 03572_lossy_s3, 03572_lossless_mt, 03572_lossless_s3;
+-- Unified plain-storage partition gate: the destination partitioning must be single-valued within
+-- each exported source part. The source is partitioned monthly (toYYYYMM(dt)) while the destination
+-- is partitioned by the raw date, so a single source part holding two different days would map to two
+-- destination partitions. The gate rejects it (the part exists, so the data-dependent check runs).
+CREATE TABLE 03572_coarser_source_mt (id UInt64, dt Date) ENGINE = MergeTree() PARTITION BY toYYYYMM(dt) ORDER BY tuple();
+CREATE TABLE 03572_finer_dest_s3 (id UInt64, dt Date) ENGINE = S3(s3_conn, filename='03572_finer_dest_s3', format='Parquet', partition_strategy='hive') PARTITION BY dt;
+
+INSERT INTO 03572_coarser_source_mt VALUES (1, '2024-03-05'), (2, '2024-03-20');
+
+ALTER TABLE 03572_coarser_source_mt EXPORT PART '202403_1_1_0' TO TABLE 03572_finer_dest_s3
+SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError BAD_ARGUMENTS}
+
+DROP TABLE IF EXISTS 03572_mt_table, 03572_invalid_schema_table, 03572_ephemeral_mt_table, 03572_matching_ephemeral_s3_table, 03572_partition_type_mismatch_mt, 03572_partition_type_mismatch_s3, 03572_lossy_mt, 03572_lossy_s3, 03572_lossless_mt, 03572_lossless_s3, 03572_coarser_source_mt, 03572_finer_dest_s3;

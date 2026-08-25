@@ -6,6 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./export_part.lib
+. "$CURDIR"/export_part.lib
+
 mt_alias="mt_alias_${RANDOM}"
 mt_materialized="mt_materialized_${RANDOM}"
 s3_alias_export="s3_alias_export_${RANDOM}"
@@ -112,7 +115,8 @@ query "ALTER TABLE $mt_mixed EXPORT PART '$mixed_part_2' TO TABLE FUNCTION s3(s3
 query "ALTER TABLE $mt_complex_expr EXPORT PART '$complex_expr_part' TO TABLE $s3_complex_expr_export SETTINGS allow_experimental_export_merge_tree_part = 1"
 
 # ONE BIG SLEEP after all exports
-sleep 20
+# wait until part_log has 6 ExportPart records
+wait_for_exports 6
 
 # ============================================================================
 # ALL SELECTS/VERIFICATIONS HAPPEN HERE

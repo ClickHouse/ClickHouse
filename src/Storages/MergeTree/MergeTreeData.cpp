@@ -7237,17 +7237,26 @@ void MergeTreeData::exportPartToTable(
     auto source_metadata_ptr = getInMemoryMetadataPtr(query_context, false);
     auto destination_metadata_ptr = dest_storage->getInMemoryMetadataPtr(query_context, false);
 
+    if (dest_storage->isDataLake() && !query_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg writes are experimental. "
+            "To allow its usage, enable the setting `allow_insert_into_iceberg`.");
+    }
+
+    ExportPartitionUtils::verifyExportSchemaCastable(
+        source_metadata_ptr, destination_metadata_ptr, dest_storage->getStorageID(), query_context);
+
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+    if (!part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to export in table '{}'",
+                        part_name, getStorageID().getFullTableName());
+
     std::string iceberg_metadata_json;
 
     if (dest_storage->isDataLake())
     {
-        if (!query_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Iceberg writes are experimental. "
-                "To allow its usage, enable the setting `allow_insert_into_iceberg`.");
-        }
-
 #if USE_AVRO
         if (iceberg_metadata_json_)
         {
@@ -7282,26 +7291,29 @@ void MergeTreeData::exportPartToTable(
 
             ExportPartitionUtils::verifyIcebergPartitionCompatibility(
                 metadata_object,
-                source_metadata_ptr->getPartitionKeyAST());
+                source_metadata_ptr,
+                destination_metadata_ptr,
+                {part},
+                part->info.getPartitionId(),
+                query_context);
         }
 #else
         (void)iceberg_metadata_json_;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data lake export requires Avro support");
 #endif
     }
-
-    /// Positional CAST matching, like `INSERT INTO dest SELECT * FROM src`.
-    ExportPartitionUtils::verifyExportSchemaCastable(
-        source_metadata_ptr, destination_metadata_ptr, dest_storage->getStorageID(), query_context);
-
-    if (!dest_storage->isDataLake())
-        ExportPartitionUtils::assertPartitionKeyASTAreEqual(source_metadata_ptr, destination_metadata_ptr);
-
-    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-
-    if (!part)
-        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to export in table '{}'",
-                        part_name, getStorageID().getFullTableName());
+    else
+    {
+        /// Plain (hive) object storage writes every row of the part to the one directory computed from
+        /// the destination PARTITION BY on the part's min row, so the source partition must map to a
+        /// single destination partition. Equivalent or finer source keys are accepted.
+        ExportPartitionUtils::verifyPlainPartitionCompatibility(
+            source_metadata_ptr,
+            destination_metadata_ptr,
+            {part},
+            part->info.getPartitionId(),
+            query_context);
+    }
 
     if (part->getState() == MergeTreeDataPartState::Outdated && !allow_outdated_parts)
         throw Exception(
