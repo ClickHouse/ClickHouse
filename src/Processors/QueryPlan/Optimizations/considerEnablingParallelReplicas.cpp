@@ -215,52 +215,38 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
-/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
+/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
+///
+/// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
+/// `node->children`. A delayed set can also sit inside a plan a step owns through `getChildPlans`
+/// (`ReadFromMerge`, `JoinStepLogicalLookup`), inside a set's own source plan (a nested `IN`), or -
+/// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`.
+/// A set missed here is not adopted from the single-replica plan and its subquery runs a second time
+/// at execution, which is exactly what this transplant exists to avoid.
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    Stack stack;
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *single_replica_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &single_replica_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                const auto sets = creating_sets_step->detachSets();
-                for (const auto & future_set : sets)
-                {
-                    if (auto set = future_set->detachSetAndKey())
-                        sets_map[future_set->getHash()] = std::move(set);
-                }
-            }
+            if (auto set = future_set.detachSetAndKey())
+                sets_map[future_set.getHash()] = std::move(set);
         });
 
     // Now transplant the sets
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *parallel_replicas_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &parallel_replicas_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (const auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                for (const auto & future_set : creating_sets_step->getSets())
-                {
-                    if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
-                    {
-                        future_set->replaceSetAndKey(it->second);
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-                    }
-                }
-            }
+            auto it = sets_map.find(future_set.getHash());
+            if (it == sets_map.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
+
+            future_set.replaceSetAndKey(it->second);
         });
 }
 }

@@ -104,6 +104,14 @@ private:
     PreparedSetsCachePtr prepared_sets_cache;
 };
 
+/// Visit every `FutureSetFromSubquery` reachable from `root` (which may be null). Sets do not live
+/// only in the plan's own nodes: a set's source is a plan of its own (that is where a nested `IN`
+/// keeps its set), steps such as `ReadFromMerge` and `JoinStepLogicalLookup` own nested plans
+/// reachable through `getChildPlans`, and the parallel-replicas local branch hangs off
+/// `ReadFromLocalParallelReplicaStep`, which is not a child node and has no `getChildPlans`. All of
+/// them have to be followed or a walk misses exactly the sets that get rebuilt.
+void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureSetFromSubquery &)> & visit);
+
 /// Collect every set in `plan` that is already filled, keyed by `FutureSet::getHash`.
 BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan);
 
