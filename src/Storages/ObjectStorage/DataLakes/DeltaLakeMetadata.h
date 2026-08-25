@@ -5,6 +5,7 @@
 #if USE_PARQUET
 
 #include <Interpreters/Context_fwd.h>
+#include <Core/Names.h>
 #include <Core/Types.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -76,6 +77,15 @@ public:
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 
+    /// Throws when a requested column is a logical name of a column-mapped table:
+    /// this reader does not translate names, and reading would return only NULLs.
+    ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements) override;
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -87,6 +97,8 @@ protected:
 private:
     mutable Strings data_files;
     NamesAndTypesList schema;
+    /// Logical name -> physical name, holding only the columns whose names differ.
+    NameToNameMap physical_names_map;
     DeltaLakePartitionColumns partition_columns;
     ObjectStoragePtr object_storage;
 

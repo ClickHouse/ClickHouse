@@ -168,6 +168,7 @@ struct DeltaLakeMetadataImpl
     struct DeltaLakeMetadata
     {
         NamesAndTypesList schema;
+        NameToNameMap physical_names_map;
         Strings data_files;
         DeltaLakePartitionColumns partition_columns;
     };
@@ -176,8 +177,10 @@ struct DeltaLakeMetadataImpl
     {
         std::set<String> result_files;
         NamesAndTypesList current_schema;
+        NameToNameMap current_physical_names_map;
         DeltaLakePartitionColumns current_partition_columns;
-        const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
+        const auto checkpoint_version = getCheckpointIfExists(
+            result_files, current_schema, current_physical_names_map, current_partition_columns);
 
         if (checkpoint_version)
         {
@@ -190,7 +193,7 @@ struct DeltaLakeMetadataImpl
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, current_schema, current_partition_columns, result_files);
+                processMetadataFile(file_path, current_schema, current_physical_names_map, current_partition_columns, result_files);
             }
 
             LOG_TRACE(
@@ -205,10 +208,14 @@ struct DeltaLakeMetadataImpl
             auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
             std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files);
+                processMetadataFile(key, current_schema, current_physical_names_map, current_partition_columns, result_files);
         }
 
-        return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
+        return DeltaLakeMetadata{
+            current_schema,
+            current_physical_names_map,
+            Strings(result_files.begin(), result_files.end()),
+            current_partition_columns};
     }
 
     /**
@@ -249,6 +256,7 @@ struct DeltaLakeMetadataImpl
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
+        NameToNameMap & file_physical_names_map,
         DeltaLakePartitionColumns & file_partition_columns,
         std::set<String> & result) const
     {
@@ -301,11 +309,13 @@ struct DeltaLakeMetadataImpl
                 if (!fields_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
-                auto current_schema = parseMetadata(fields_object);
+                NameToNameMap current_physical_names_map;
+                auto current_schema = parseMetadata(fields_object, current_physical_names_map);
                 validatePartitionColumns(metadata_object, fields_object);
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;
+                    file_physical_names_map = current_physical_names_map;
                 }
                 else if (file_schema != current_schema)
                 {
@@ -385,7 +395,9 @@ struct DeltaLakeMetadataImpl
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
     }
 
-    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
+    /// Returns the schema in physical names, and fills `physical_names_map` (logical -> physical)
+    /// with the columns whose two names differ, i.e. the ones column mapping renamed.
+    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json, NameToNameMap & physical_names_map) const
     {
         NamesAndTypesList schema;
         const auto fields = metadata_json->get("fields").extract<Poco::JSON::Array::Ptr>();
@@ -405,6 +417,9 @@ struct DeltaLakeMetadataImpl
 
             LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
                         column_name, type, is_nullable, physical_name);
+
+            if (physical_name != column_name)
+                physical_names_map[column_name] = physical_name;
 
             schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
@@ -516,6 +531,7 @@ struct DeltaLakeMetadataImpl
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
+        NameToNameMap & file_physical_names_map,
         DeltaLakePartitionColumns & file_partition_columns) const
     {
         const auto version = readLastCheckpointIfExists();
@@ -593,7 +609,8 @@ struct DeltaLakeMetadataImpl
                 Poco::Dynamic::Var json = parser.parse(metadata);
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-                auto current_schema = parseMetadata(object);
+                NameToNameMap current_physical_names_map;
+                auto current_schema = parseMetadata(object, current_physical_names_map);
                 if (partition_columns_column)
                 {
                     Field partition_names;
@@ -609,6 +626,7 @@ struct DeltaLakeMetadataImpl
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;
+                    file_physical_names_map = current_physical_names_map;
                     LOG_TEST(log, "Processed schema from checkpoint: {}", file_schema.toString());
                 }
                 else if (file_schema != current_schema)
@@ -688,11 +706,41 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
     auto result = impl.processMetadataFiles();
     data_files = result.data_files;
     schema = result.schema;
+    physical_names_map = result.physical_names_map;
     partition_columns = result.partition_columns;
     object_storage = object_storage_;
 
     LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
              data_files.size(), partition_columns.size(), schema.toString());
+}
+
+ReadFromFormatInfo DeltaLakeMetadata::prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
+{
+    auto info = IDataLakeMetadata::prepareReadingFromFormat(
+        requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
+
+    /// The table columns are logical when they come from outside the log - a `DataLakeCatalog`
+    /// database or an explicit column list in `CREATE TABLE`. The data files store physical
+    /// names, so reading a logical name would silently return only NULLs; fail instead.
+    /// A schema taken from the log is already physical, so it is not a key of the map.
+    for (const auto & column : info.requested_columns)
+    {
+        auto it = physical_names_map.find(column.getNameInStorage());
+        if (it != physical_names_map.end())
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
+                "Table uses column mapping: column '{}' is stored under the physical name '{}', "
+                "and the legacy DeltaLake reader does not translate column names. "
+                "Enable the setting `allow_delta_kernel_rs`, or create the table without an explicit column list",
+                column.getNameInStorage(), it->second);
+    }
+
+    return info;
 }
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)

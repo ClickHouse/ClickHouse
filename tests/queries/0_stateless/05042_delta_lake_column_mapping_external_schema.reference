@@ -1,0 +1,19 @@
+-- schema from the log: physical names, unchanged behaviour
+col_iiii	Nullable(Int64)
+col_pppp	Nullable(String)
+0	1
+1	1
+2	1
+-- schema supplied externally: logical names are rejected
+UNSUPPORTED_METHOD
+-- schema supplied externally: physical names still work
+0	1
+1	1
+2	1
+-- control: no column mapping, both schema sources
+0	1
+1	1
+2	1
+0	1
+1	1
+2	1
