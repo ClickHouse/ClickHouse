@@ -57,9 +57,13 @@ SELECT c FROM t_all_dropped ORDER BY c;
 SELECT count() FROM t_all_dropped;
 OPTIMIZE TABLE t_all_dropped FINAL;
 SELECT c FROM t_all_dropped ORDER BY c;
-
-SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
 "
+
+# Drop the table before releasing the failpoint. The pending mutation would drop every column the
+# part holds, and a mutation that leaves a part with no columns aborts the server -- a separate
+# pre-existing defect. This test's subject is the read path, so do not let that mutation run.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped SYNC"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 
 echo 'all columns dropped, non-adaptive granularity'
 
@@ -90,7 +94,7 @@ SELECT c, count() FROM t_all_dropped_non_adaptive GROUP BY c;
 "
 
 # Drop the table before releasing the failpoint, so the pending mutations never run.
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped_non_adaptive"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped_non_adaptive SYNC"
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 
 echo 'dropped and readded columns, non-adaptive granularity'
@@ -122,7 +126,7 @@ ALTER TABLE t_dropped_readded ADD COLUMN h UInt8 DEFAULT 9;
 SELECT count(), min(value), max(value) FROM t_dropped_readded;
 "
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dropped_readded"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dropped_readded SYNC"
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 
 echo 'stale part re-attached'
@@ -212,6 +216,8 @@ ALTER TABLE t_rename_then_drop
     RENAME COLUMN a TO b, RENAME COLUMN h TO d, DROP COLUMN b, DROP COLUMN d;
 
 SELECT count(), min(value), max(value) FROM t_rename_then_drop;
-
-SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
 "
+
+# Drop before releasing the failpoint, as above: this ALTER too drops every column of the part.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_rename_then_drop SYNC"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
