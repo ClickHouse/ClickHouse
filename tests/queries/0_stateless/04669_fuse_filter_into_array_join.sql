@@ -75,11 +75,12 @@ SELECT
     (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE (elem != 0 OR payload = 'zzz') AND (intDiv(1, elem) > 0) ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 1)
   = (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE (elem != 0 OR payload = 'zzz') AND (intDiv(1, elem) > 0) ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 0);
 
--- Regression: two element atoms ANDed where the later one throws. With short-circuit off a FilterStep masks
--- it by splitting the AND, so fusion must not collapse them into one eager evaluation (would divide by 0).
-SELECT
-    (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE elem != 0 AND intDiv(1, elem) > 0 ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 1, short_circuit_function_evaluation = 'disable')
-  = (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE elem != 0 AND intDiv(1, elem) > 0 ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 0, short_circuit_function_evaluation = 'disable');
+-- Regression: with short-circuit off a FilterStep masks a throwing atom by splitting the AND, which the
+-- fused single evaluation can't reproduce, so a multi-atom AND must not fuse in that mode. Assert the bail
+-- via EXPLAIN (no element filter) rather than by executing, whose masking also depends on query_plan_merge_filters.
+SELECT countIf(explain LIKE '%Element filter%') = 0 FROM (EXPLAIN actions = 1 SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE elem != 0 AND intDiv(1, elem) > 0 SETTINGS query_plan_fuse_filter_into_array_join = 1, short_circuit_function_evaluation = 'disable', serialize_query_plan = 0);
+-- but with short-circuit on the same multi-atom AND still fuses
+SELECT countIf(explain LIKE '%Element filter%') > 0 FROM (EXPLAIN actions = 1 SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE elem != 0 AND intDiv(1, elem) > 0 SETTINGS query_plan_fuse_filter_into_array_join = 1, short_circuit_function_evaluation = 'enable', serialize_query_plan = 0);
 
 DROP TABLE t_fuse;
 DROP TABLE t_fuse2;
