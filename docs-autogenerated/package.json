@@ -7,6 +7,7 @@
     "export": "node scripts/export-reference-docs.mjs",
     "prepare:content": "node scripts/prepare-content.mjs",
     "prepare:site": "npm run export && npm run prepare:content",
+    "test": "node scripts/smoke-test-reference-pipeline.mjs",
     "predev": "npm run prepare:site",
     "dev": "astro dev",
     "prebuild": "npm run prepare:site",
