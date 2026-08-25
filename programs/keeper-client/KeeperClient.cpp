@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <KeeperClient.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
