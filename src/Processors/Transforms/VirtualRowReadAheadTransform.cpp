@@ -37,12 +37,21 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
             has_collation = true;
 
     lanes.resize(num_lanes);
+    lane_touch_epoch.resize(num_lanes, 0);
     size_t i = 0;
     for (auto & input : inputs)
-        lanes[i++].input = &input;
+    {
+        lanes[i].input = &input;
+        port_to_lane[&input] = i;
+        ++i;
+    }
     i = 0;
     for (auto & output : outputs)
-        lanes[i++].output = &output;
+    {
+        lanes[i].output = &output;
+        port_to_lane[&output] = i;
+        ++i;
+    }
 }
 
 Columns VirtualRowReadAheadTransform::extractBoundary(const Chunk & chunk) const
@@ -81,10 +90,23 @@ bool VirtualRowReadAheadTransform::boundaryLess(const Lane & lhs, const Lane & r
     return false;
 }
 
-void VirtualRowReadAheadTransform::grantCredit(Lane & lane)
+void VirtualRowReadAheadTransform::touchLane(size_t lane_num)
 {
+    if (lane_touch_epoch[lane_num] != touch_epoch)
+    {
+        lane_touch_epoch[lane_num] = touch_epoch;
+        touched_lanes.push_back(lane_num);
+    }
+}
+
+void VirtualRowReadAheadTransform::grantCredit(size_t lane_num)
+{
+    auto & lane = lanes[lane_num];
     lane.credit = 1;
     lane.input->setNeeded();
+    /// The input may already hold a chunk pushed just before the lane parked; the setNeeded
+    /// above wakes only the upstream, so make sure this pass processes the lane too.
+    touchLane(lane_num);
 }
 
 void VirtualRowReadAheadTransform::topUpReadAhead()
@@ -118,7 +140,7 @@ void VirtualRowReadAheadTransform::topUpReadAhead()
         [&](size_t a, size_t b) { return boundaryLess(lanes[a], lanes[b]); });
 
     for (size_t i = 0; i < slots; ++i)
-        grantCredit(lanes[candidates[i]]);
+        grantCredit(candidates[i]);
 }
 
 void VirtualRowReadAheadTransform::onMiss(size_t lane_num)
@@ -127,7 +149,7 @@ void VirtualRowReadAheadTransform::onMiss(size_t lane_num)
 
     /// Demand-driven read: always allowed, this is not speculation.
     if (lane.credit == 0)
-        grantCredit(lane);
+        grantCredit(lane_num);
     else
         lane.input->setNeeded();
 
@@ -187,7 +209,7 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             /// every source the merge only glanced at.
             if (!is_virtual_row && speculationAllowed() && lane.credit == 0 && underBufferCaps(lane)
                 && !lane.boundary.empty() && !input.isFinished())
-                grantCredit(lane);
+                grantCredit(lane_num);
         }
         else if (input.isFinished())
         {
@@ -217,11 +239,21 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             if (isVirtualRow(chunk))
             {
                 lane.boundary = extractBoundary(chunk);
-                --lane.credit;
                 lane.buffer.push(std::move(chunk));
 
-                /// A read-ahead slot was freed: keep the window full so the lanes closest
-                /// to the merge keep reading concurrently.
+                if (lane.rows_in_current_group == 0)
+                    ++lane.dataless_groups;
+                else
+                    lane.dataless_groups = 0;
+                lane.rows_in_current_group = 0;
+
+                /// See Lane::dataless_groups: while whole groups are filtered out, keep the
+                /// lane free-running instead of parking it at every boundary.
+                if (!(speculationAllowed() && lane.dataless_groups >= free_run_dataless_groups))
+                    --lane.credit;
+
+                /// A read-ahead slot may have been freed: keep the window full so the lanes
+                /// closest to the merge keep reading concurrently.
                 if (cross_lane_read_ahead && speculationAllowed())
                     topUpReadAhead();
             }
@@ -233,6 +265,7 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             else
             {
                 lane.num_processed_rows += chunk.getNumRows();
+                lane.rows_in_current_group += chunk.getNumRows();
                 lane.buffered_rows += chunk.getNumRows();
                 lane.buffered_bytes += chunk.bytes();
                 compactReplicatedColumns(chunk);
@@ -257,8 +290,89 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
     return progress;
 }
 
+IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    if (!did_full_prepare)
+        return prepare();
+
+    ++touch_epoch;
+    touched_lanes.clear();
+    bool port_finished = false;
+
+    auto touch = [&](const Port * port)
+    {
+        size_t lane_num = port_to_lane.at(port);
+        if (lane_touch_epoch[lane_num] != touch_epoch)
+        {
+            lane_touch_epoch[lane_num] = touch_epoch;
+            touched_lanes.push_back(lane_num);
+        }
+    };
+
+    for (const auto * port : updated_inputs)
+    {
+        port_finished |= port->isFinished();
+        touch(port);
+    }
+    for (const auto * port : updated_outputs)
+    {
+        port_finished |= port->isFinished();
+        touch(port);
+    }
+
+    if (port_finished || touched_lanes.empty())
+        return prepare();
+
+    /// A pull can unblock a push on the same lane and vice versa, and our own port updates do
+    /// not reschedule this processor, so iterate to a fixpoint. Lanes outside the touched set
+    /// are at their fixpoint already (every state transition here is driven by a port event);
+    /// credits granted to them only mark their input ports needed, which needs no processing.
+    bool progress = true;
+    while (progress)
+    {
+        progress = false;
+        /// Index-based: `grantCredit` may append lanes while we iterate.
+        for (size_t i = 0; i < touched_lanes.size(); ++i)
+            progress |= processLane(touched_lanes[i]);
+    }
+
+    return tryFinish();
+}
+
+IProcessor::Status VirtualRowReadAheadTransform::tryFinish()
+{
+    /// Both prepare variants must end here: the terminal transition can be our own doing
+    /// (finishing the last live output when its input drained), and a flag our side already
+    /// set makes the downstream close() skip the version bump — no event would ever come
+    /// back to conclude the processor.
+    bool all_lanes_done = true;
+    for (const auto & lane : lanes)
+    {
+        if (!lane.output->isFinished() && !(lane.input->isFinished() && lane.buffer.empty()))
+        {
+            all_lanes_done = false;
+            break;
+        }
+    }
+
+    if (!all_lanes_done)
+        return Status::NeedData;
+
+    for (auto & lane : lanes)
+    {
+        if (!lane.output->isFinished())
+            lane.output->finish();
+        lane.input->close();
+    }
+    return Status::Finished;
+}
+
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
+    did_full_prepare = true;
+    ++touch_epoch;
+    touched_lanes.clear();
+
     bool all_outputs_finished = true;
     for (const auto & lane : lanes)
     {
@@ -286,28 +400,7 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
             progress |= processLane(i);
     }
 
-    bool all_lanes_done = true;
-    for (const auto & lane : lanes)
-    {
-        if (!lane.output->isFinished() && !(lane.input->isFinished() && lane.buffer.empty()))
-        {
-            all_lanes_done = false;
-            break;
-        }
-    }
-
-    if (all_lanes_done)
-    {
-        for (auto & lane : lanes)
-        {
-            if (!lane.output->isFinished())
-                lane.output->finish();
-            lane.input->close();
-        }
-        return Status::Finished;
-    }
-
-    return Status::NeedData;
+    return tryFinish();
 }
 
 }

@@ -5,6 +5,7 @@
 #include <Processors/IProcessor.h>
 
 #include <queue>
+#include <unordered_map>
 
 namespace DB
 {
@@ -42,6 +43,11 @@ public:
 
     String getName() const override { return "VirtualRowReadAhead"; }
     Status prepare() override;
+    /// The hot path: with N lanes and a chunk (or a virtual row) per wake, a full pass per
+    /// event would put O(N) port inspections on the single-threaded critical path. Process
+    /// only the lanes whose ports changed; fall back to the full pass for the first call and
+    /// whenever a port finished (rare, and the full pass owns the termination bookkeeping).
+    Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
 
 private:
     struct Lane
@@ -66,11 +72,22 @@ private:
         /// finishes the merge early, the waste is bounded by one group per lane in the window
         /// (the window bounds how many lanes read at once, the credit bounds how deep each
         /// goes). A demand-paced lane re-earns its credit at every delivery, so a busy lane
-        /// is not throttled by this. Deeper credit is a possible follow-up for the per-block
-        /// mode, where a scan pays a wake-up per group. A lane that never produces virtual
-        /// rows keeps its credit and streams like a plain bounded buffer.
+        /// is not throttled by this. A lane that never produces virtual rows keeps its credit
+        /// and streams like a plain bounded buffer.
         size_t credit = 0;
+
+        /// Real rows seen since the last virtual row, and how many consecutive groups ended
+        /// with none. While a filter discards entire groups, parking the lane at every group
+        /// boundary buys nothing (the merge consumes the boundaries and comes right back) and
+        /// only stalls the scan behind per-group wake-ups; after `free_run_dataless_groups`
+        /// such groups the virtual rows stop consuming the credit and the lane free-runs like
+        /// a single-shot one until real data appears.
+        size_t rows_in_current_group = 0;
+        size_t dataless_groups = 0;
     };
+
+    /// See Lane::dataless_groups. The initial virtual row counts as the first one.
+    static constexpr size_t free_run_dataless_groups = 2;
 
     /// Returns true if any port state changed (more progress may be possible).
     bool processLane(size_t lane_num);
@@ -79,7 +96,9 @@ private:
     {
         return lane.buffered_rows < max_rows_to_buffer || lane.buffered_bytes < max_bytes_to_buffer;
     }
-    void grantCredit(Lane & lane);
+    Status tryFinish();
+    void grantCredit(size_t lane_num);
+    void touchLane(size_t lane_num);
     void topUpReadAhead();
     bool speculationAllowed() const { return read_ahead_window > 0 && !has_collation; }
     bool boundaryLess(const Lane & lhs, const Lane & rhs) const;
@@ -106,6 +125,13 @@ private:
     /// and the other lanes must stay unread.
     ssize_t first_miss_lane = -1;
     bool cross_lane_read_ahead = false;
+
+    /// State of the partial `prepare`: lane lookup by port, dedup of touched lanes per call.
+    std::unordered_map<const Port *, size_t> port_to_lane;
+    std::vector<UInt64> lane_touch_epoch;
+    std::vector<size_t> touched_lanes;
+    UInt64 touch_epoch = 0;
+    bool did_full_prepare = false;
 };
 
 }
