@@ -65,6 +65,7 @@
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
+#include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -106,6 +107,7 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
+#include <Storages/System/StorageSystemHandlers.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
@@ -127,6 +129,7 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
 #endif
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
@@ -202,13 +205,14 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
-    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts along with their embedded documentation.");
-    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
-    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
-    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
+    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts.");
+    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types.");
+    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources.");
+    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types.");
     attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the components of the system (functions, table engines, data types, settings, profile events, metrics, system tables, etc.) into a single table, with the reference documentation rendered as Markdown and the path to the source file where it is defined.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
+    attach<StorageSystemStatements>(context, system_database, "statements", "Contains a list of all SQL statements of ClickHouse.");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
     attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
     attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");
@@ -295,6 +299,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #endif
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
+    attachNoDescription<StorageSystemHandlers>(context, system_database, "handlers", "Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
@@ -303,6 +308,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>>(context, system_database, "s3_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object and, on demand, their contents. Unlike system.s3queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object and, on demand, their contents. Unlike system.azure_queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>>(context, system_database, "azure_queue_settings", "Contains a list of settings of AzureQueue tables.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");

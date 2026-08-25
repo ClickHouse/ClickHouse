@@ -79,7 +79,7 @@ Estimation:
 Pour éviter l’analyse empirique en mémoire et estimer plutôt à partir des [statistiques de colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), définissez-les d’abord sur les colonnes concernées (elles sont désactivées par défaut), attendez la fin de la mutation de matérialisation, puis désactivez cette méthode empirique :
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

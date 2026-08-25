@@ -732,16 +732,20 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     waitDatabaseStarted();
     std::lock_guard lock(mutex);
 
+    /// A longer database name leaves less room for the table name in the dropped-metadata file
+    /// name metadata_dropped/{db}.{table}.{uuid}.sql, so a rename can leave a table that cannot
+    /// be dropped. Detached tables are checked too, because ATTACH does not re-check the length.
+    for (const auto & table : tables)
+        checkTableNameLengthUnlocked(new_name, table.first, getContext());
+    for (const auto & detached_table : snapshot_detached_tables)
+        checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         for (auto & table : tables)
-        {
-            checkTableNameLengthUnlocked(new_name, table.first, getContext());
-
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
-        }
     }
 
 
@@ -906,7 +910,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
 :::note
-On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default and also supports
+On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
 :::
 
@@ -964,7 +968,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in atomic database {#replicatedmergetree-in-atomic-database}
 
-For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [`default_replica_name`](/reference/settings/server-settings/settings/default-replica#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
+For [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [`default_replica_name`](/reference/settings/server-settings/settings/default-replica#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
 ### Metadata disk {#metadata-disk}
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.

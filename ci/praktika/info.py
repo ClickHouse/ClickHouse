@@ -46,6 +46,10 @@ class Info:
         return self.env.EVENT_TIME
 
     @property
+    def event_action(self):
+        return self.env.EVENT_ACTION
+
+    @property
     def job_config(self):
         return self.env.JOB_CONFIG
 

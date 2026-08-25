@@ -3,6 +3,9 @@
 #include <Common/SipHash.h>
 
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -49,6 +52,9 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
+        hash_state.update(stream_settings->subscribe_for_updates);
+        hash_state.update(stream_settings->unordered);
+
         if (stream_settings->cursor)
         {
             for (const auto & entry : cursorTreeToMap(stream_settings->cursor))
@@ -110,6 +116,25 @@ String TableExpressionModifiers::formatForErrorMessage() const
     }
 
     return buffer.str();
+}
+
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers)
+{
+    if (!modifiers.hasStream())
+        return metadata;
+
+    const auto & stream_settings = modifiers.getStreamSettings();
+    if (!stream_settings->watermark)
+        return metadata;
+
+    auto column = metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, stream_settings->watermark->column);
+    if (!column)
+        return metadata;
+
+    auto extended = std::make_shared<StorageInMemoryMetadata>(*metadata);
+    extended->virtuals.addEphemeral(std::string(TimeAttributeColumn::name), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
+    extended->virtuals.addEphemeral(std::string(WatermarkColumn::name), column->type, "Watermark expression value of the current row.", VirtualsMaterializationPlace::Streaming);
+    return extended;
 }
 
 }

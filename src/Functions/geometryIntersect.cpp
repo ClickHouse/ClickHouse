@@ -150,17 +150,17 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectCartesian`](#polygonsIntersectCartesian), it accepts any geometry data type
-        ([`Point`](/sql-reference/data-types/geo#point), [`MultiPoint`](/sql-reference/data-types/geo#multipoint), [`LineString`](/sql-reference/data-types/geo#linestring),
-        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
-        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
+        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
+        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted in the Cartesian plane.
     )",
         .syntax = "geometryIntersectCartesian(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
@@ -178,17 +178,17 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectSpherical`](#polygonsIntersectSpherical), it accepts any geometry data type
-        ([`Point`](/sql-reference/data-types/geo#point), [`MultiPoint`](/sql-reference/data-types/geo#multipoint), [`LineString`](/sql-reference/data-types/geo#linestring),
-        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
-        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
+        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
+        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted as being on an ideal sphere.
     )",
         .syntax = "geometryIntersectSpherical(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
