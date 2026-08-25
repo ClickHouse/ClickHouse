@@ -1,4 +1,5 @@
 #include <memory>
+#include <Core/QueryLogElementType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -42,7 +43,7 @@ ColumnsDescription QueryPlanLogElement::getColumnsDescription()
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
         {"ascii_plan", std::make_shared<DataTypeString>(), "The executed query plan rendered as text, with per-step runtime statistics: rows and bytes in and out, time, and parallelism."},
-        {"status", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
+        {"status", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution. The numbering is shared with `system.query_log.type`, so that the same event has the same value in both tables; `QueryStart` = 1 is absent here because no plan exists yet at that point."},
     };
 }
 
@@ -66,7 +67,7 @@ void QueryPlanLogElement::appendToBlock(MutableColumns & columns) const
 
 void logQueryPlan(const ContextPtr & context,
                   const QueryLogElement & elem,
-                  QueryPlanLogElement::Status status)
+                  QueryLogElementType status)
 {
 
     chassert(context->getPlanProfiler());

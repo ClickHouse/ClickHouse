@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/QueryLogElementType.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
@@ -14,13 +15,6 @@ struct QueryLogElement;
 
 struct QueryPlanLogElement
 {
-    enum Status : int8_t
-    {
-        QUERY_FINISH = 1,
-        EXCEPTION_BEFORE_START = 2,
-        EXCEPTION_WHILE_PROCESSING = 3,
-    };
-
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     Decimal64 query_start_time{};
@@ -31,7 +25,7 @@ struct QueryPlanLogElement
     UInt64 normalized_query_hash{};
 
     String ascii_plan;
-    Status status{};
+    QueryLogElementType status{};
 
     static std::string name() { return "QueryPlanLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -47,5 +41,5 @@ public:
 
 void logQueryPlan(const ContextPtr & context,
                   const QueryLogElement & elem,
-                  QueryPlanLogElement::Status status);
+                  QueryLogElementType status);
 }

@@ -17,6 +17,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
 
+#include <Core/QueryLogElementType.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <IO/WriteBufferFromVector.h>
@@ -845,7 +846,7 @@ static void logQueryFinishImpl(
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-        logQueryPlan(context, elem, QueryPlanLogElement::QUERY_FINISH);
+        logQueryPlan(context, elem, QueryLogElementType::QUERY_FINISH);
 }
 
 void logQueryFinish(
@@ -960,7 +961,7 @@ void logQueryException(
     }
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-        logQueryPlan(context, elem, QueryPlanLogElement::EXCEPTION_WHILE_PROCESSING);
+        logQueryPlan(context, elem, QueryLogElementType::EXCEPTION_WHILE_PROCESSING);
 }
 
 void logExceptionBeforeStart(
@@ -1099,7 +1100,7 @@ void logExceptionBeforeStart(
     }
 
     if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-          logQueryPlan(context, elem, QueryPlanLogElement::EXCEPTION_BEFORE_START);
+          logQueryPlan(context, elem, QueryLogElementType::EXCEPTION_BEFORE_START);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
