@@ -296,6 +296,10 @@ void Set::checkIsCreated() const
 
 std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
 {
+    /// The result is cached on first use, so reading `set_elements` before the set is filled would not
+    /// merely give one wrong answer - it would pin an empty range set for every later caller.
+    checkIsCreated();
+
     callOnce(
         plain_ranges_once,
         [this]
