@@ -7,36 +7,36 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "ko": {
-          "updatedAt": "2026-08-25T13:17:29.269Z",
+          "updatedAt": "2026-08-25T13:30:24.835Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-25T13:17:29.779Z",
+          "updatedAt": "2026-08-25T13:30:25.466Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-25T13:17:28.890Z",
+          "updatedAt": "2026-08-25T13:30:24.432Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-25T13:17:29.612Z",
+          "updatedAt": "2026-08-25T13:30:25.262Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-25T13:17:30.100Z",
+          "updatedAt": "2026-08-25T13:30:25.850Z",
           "fileName": "docs.json",
           "postProcessHash": "7ed10f5b099c6e1af68f6d6dcd994ed9a52bc625d927628e57ad9b379731132a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-25T13:17:29.435Z",
+          "updatedAt": "2026-08-25T13:30:25.048Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-25T13:17:29.101Z",
+          "updatedAt": "2026-08-25T13:30:24.662Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-25T13:17:29.945Z",
+          "updatedAt": "2026-08-25T13:30:25.652Z",
           "fileName": "docs.json"
         }
       },
@@ -48326,51 +48326,50 @@
     },
     {
       "fileId": "d3dcc2b7d5d1ed1980a5f378e7252008e8d257fb1b0cfcd532442a80b2912909",
-      "versionId": "d7e570f71e814168142e8c8ab4de65c0eaaa14b2f9c933059226dfe28d4aca00",
+      "versionId": "8697c292069b7f640f09cfd57c0026518456af21bbec514c118254ef502ee445",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-18T23:24:56.795Z",
+          "updatedAt": "2026-08-25T13:30:30.832Z",
           "fileName": "es/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "8bb6187cd04d102b3a5f8196adf5482b29c31caf622f90b2577f21ca85674129"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:24:56.796Z",
-          "fileName": "ja/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "2c1919f24fc599234761284aa9dd2454236adc71ff013623b6ba29ea008155be"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:24:56.797Z",
-          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "62ed261fa7a15dda3ab6e56b14795235442d97a81a39cd72247f9b347cbd5cba"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:24:56.797Z",
-          "fileName": "pt-BR/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "b1e1f4f7672c21c8df080dfaca0beaf1dcc24303df6eff6fa69604874d14e536"
-        },
-        "ru": {
-          "updatedAt": "2026-08-18T23:24:56.798Z",
-          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "9bb256a5af500dca83577ecd587dba1d28a7186c47bc1d2fdfba31aa28b0d4ca"
+          "postProcessHash": "08c3c17fdee1e1e0e692320b716f954c82b3bc44a9a2666dbb21fe2f45180669"
         },
         "zh": {
-          "updatedAt": "2026-08-18T23:24:56.798Z",
+          "updatedAt": "2026-08-25T13:30:30.833Z",
           "fileName": "zh/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "50d6f887abe7b756ca10462093d3a280994775bb1fc070cc062b8475d626ca48"
+          "postProcessHash": "7f63bf31a089c7fc9a4ac8b8507c1ab7c231fb81524efbf33c900afd62409fac"
         },
         "ar": {
-          "updatedAt": "2026-08-18T23:24:56.799Z",
+          "updatedAt": "2026-08-25T13:30:30.834Z",
           "fileName": "ar/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "5afd7c4c4ad794ac4546bd8ea86184b03ed1817eef1eec97c94b636957da95a6"
+          "postProcessHash": "a52e888e4f4d2b7c900c43d2b519caaf6b28535d726d2a3de08f8870c483f4b4"
+        },
+        "ru": {
+          "updatedAt": "2026-08-25T13:30:30.835Z",
+          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "9da4503950ff32cbc74f066c5d80571460d334de0ae05a6c1698798e9909d870"
+        },
+        "ja": {
+          "updatedAt": "2026-08-25T13:30:30.836Z",
+          "fileName": "ja/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "750ed538153396dcff35782e668a41dee9b11e641f95d176c884619a3f731d94"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T13:30:30.836Z",
+          "fileName": "pt-BR/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "768454e37086d42f51065bf183a9b3cee846376f461494ad3e249565ca20cd83"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:24:56.799Z",
+          "updatedAt": "2026-08-25T13:30:30.837Z",
           "fileName": "fr/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "7ac3beb149b4ba1d955886eb0eca5fcf425d27a20df3963435216d3913c094e8"
+          "postProcessHash": "0a9d4207e0ddaf081fbc8b04ce5c48304e6e05512102b5449bc799f315e83238"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T13:30:30.837Z",
+          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "c95d26fc601879f25bfbaecee24295597b629530300db9071940365748fb4e79"
         }
       },
-      "fileName": "products/cloud/reference/supported-regions.mdx",
-      "staged": false
+      "fileName": "products/cloud/reference/supported-regions.mdx"
     },
     {
       "fileId": "9878343168a47755a7d7cef28bdbf866edbc8d42d6ec57de823658772eaf307c",
@@ -102897,51 +102896,50 @@
     },
     {
       "fileId": "353a1d8cd5ab3733dab36c7f882d249a995ca108ac57bb32f75c9b5fd45e7e72",
-      "versionId": "fc1ec595ae5ec49545bb00d051fa7aca7fe1f2e965786fdec05d8c5d2fa53cbe",
+      "versionId": "096da9daef8568c3d682741148b23df45c2e42613adfb0a7c432aa5bbfe60013",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-18T23:25:00.048Z",
-          "fileName": "es/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "731f1b09dbd2beff55c1530bac818e651235c0395f7ddac4a3b5ce4621dfe735"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:25:00.049Z",
-          "fileName": "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "f4832513905a909d48c316610f764b297f68bfbf75f30c18d899c27f8725ce14"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.049Z",
-          "fileName": "ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "8419c8d2eb5b6679975e1e172f375d8f2ab0d1e1db312bb8ce6367a221a02f8c"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.050Z",
+          "updatedAt": "2026-08-25T13:30:30.835Z",
           "fileName": "pt-BR/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "56b6d8f824de8cb8932396c4f935b6c0736049e2ede3b03db95cdbe61a74ac28"
+          "postProcessHash": "ca8c0b64d8985f555d5271fde80a10bb952028dec89aa3db5d79ae014816cb06"
         },
         "ru": {
-          "updatedAt": "2026-08-18T23:25:00.050Z",
+          "updatedAt": "2026-08-25T13:30:30.838Z",
           "fileName": "ru/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "660af5b679dc1cd5f7b8356a0e7f87d150e4d9599b752cbfc65a875cdf110486"
+          "postProcessHash": "40050d99c298a1b902604cbd597a045cd318d20feb5b3be9b31f5f9725e110c5"
         },
-        "zh": {
-          "updatedAt": "2026-08-18T23:25:00.051Z",
-          "fileName": "zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "22d7397bdce49632f545eb2243a78b97c3dd8cad6f70f61bfea037d563bda8ba"
+        "ko": {
+          "updatedAt": "2026-08-25T13:30:30.838Z",
+          "fileName": "ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
+          "postProcessHash": "381fe59dcbd5510b4047bb4dbb6cb418d63006468541a1f32fbd1e4130dbba36"
+        },
+        "es": {
+          "updatedAt": "2026-08-25T13:30:30.839Z",
+          "fileName": "es/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
+          "postProcessHash": "d70bdf7cb46e5be51b5ab9086f61c4ddeb05c726685f7e1ad36e24182b255b72"
+        },
+        "ja": {
+          "updatedAt": "2026-08-25T13:30:30.840Z",
+          "fileName": "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
+          "postProcessHash": "0f9a59142d2e0845d0fa828c68755949c879db9f4934f27b62e05bcaa4ffbd3e"
         },
         "ar": {
-          "updatedAt": "2026-08-18T23:25:00.052Z",
+          "updatedAt": "2026-08-25T13:30:30.841Z",
           "fileName": "ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "95d7dcbe9786ce6a5fa05395f1ba8f1756cdf8ee373d38bafbf5d636c7e04a90"
+          "postProcessHash": "399885fb2639becfa00fb4e86f75278a68ec7cb3398a84bbb9a56ad3e631f8aa"
+        },
+        "zh": {
+          "updatedAt": "2026-08-25T13:30:30.841Z",
+          "fileName": "zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
+          "postProcessHash": "06c900c1f7521d6704c08d16ff3c846bd6ab875d6763179f4c87cfbb7dffc867"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:25:00.052Z",
+          "updatedAt": "2026-08-25T13:30:30.842Z",
           "fileName": "fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-          "postProcessHash": "68712706fd18aaeaa080a522fb9f2a31b5c0eba04db376bc5384afa914007f53"
+          "postProcessHash": "48f7440f3cc0ec4fda03571d89243dbeaf327e471fde17cb7b6f856672b34dc0"
         }
       },
-      "fileName": "products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/security/connectivity/private-networking/aws-privatelink.mdx"
     },
     {
       "fileId": "2613d2ef864d6c5cc477bfb3ef3a30601433bbf34eff14077a25f2ad8185d0c2",
