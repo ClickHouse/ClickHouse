@@ -531,6 +531,14 @@ public:
 
     ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
+    bool ALWAYS_INLINE erase(Key x, size_t hash_value)
+    {
+        size_t buck = getBucketFromHash(hash_value);
+        return impls[buck].erase(x, hash_value);
+    }
+
+    bool ALWAYS_INLINE erase(Key x) { return erase(x, hash(x)); }
+
 
     /// One part for direct-addressed storage: its buckets share a buffer.
     static constexpr UInt32 serializedPartitionCount() { return isFixedRangeStorage() ? 1 : numBuckets(); }

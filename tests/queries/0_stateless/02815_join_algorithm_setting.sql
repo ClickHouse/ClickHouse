@@ -109,7 +109,3 @@ SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) 
 CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
 SETTINGS enable_analyzer = 1;
 
--- ... (not for old analyzer)
-SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) AS t1
-CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
-SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }

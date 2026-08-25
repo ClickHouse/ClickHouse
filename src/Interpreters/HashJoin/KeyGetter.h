@@ -33,7 +33,8 @@ struct LowCardinalityKeyGetterForJoin
     BaseMethod base;
     const IColumn * positions = nullptr;
     size_t size_of_index_type = 0;
-    const UInt64 * saved_hash = nullptr;
+    /// Dictionary positions outside it have no saved hash and are hashed from the key.
+    std::span<const UInt64> saved_hash;
     ColumnPtr dictionary_holder;
 
     /// Pointers into the cells, not copies: the join result dereferences them lazily, and a copy
@@ -101,7 +102,8 @@ struct LowCardinalityKeyGetterForJoin
 
         const size_t row = getIndexAt(row_);
         /// The saved hash is of the key value, which is what the map places by.
-        if (saved_hash)
+        /// Dictionary positions outside the snapshot have no saved hash and are hashed from the key.
+        if (row < saved_hash.size())
             return saved_hash[row];
 
         auto key_holder = base.getKeyHolder(row, pool);
@@ -148,7 +150,7 @@ struct LowCardinalityKeyGetterForJoin
         auto key_holder = base.getKeyHolder(row, pool);
         const auto key = keyHolderGetKey(key_holder);
 
-        auto it = saved_hash ? data.find(key, saved_hash[row]) : data.find(key);
+        auto it = row < saved_hash.size() ? data.find(key, saved_hash[row]) : data.find(key);
 
         const bool found = it;
         Mapped * mapped = found ? &it->getMapped() : nullptr;
