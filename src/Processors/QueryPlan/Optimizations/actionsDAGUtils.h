@@ -56,6 +56,22 @@ MatchedTrees::Matches matchTrees(
     bool check_monotonicity = true,
     size_t max_size_for_sets_from_tuple_to_compare = 0);
 
+/// A path from a node down to an input, where every function on the path has a single non-constant argument.
+/// `non_const_arg_pos` holds the position of that argument for every function on the path, top-down.
+struct PossiblyMonotonicChain
+{
+    const ActionsDAG::Node * input_node = nullptr;
+    std::vector<size_t> non_const_arg_pos;
+    bool changes_order = false;
+    bool is_strict = true;
+};
+
+/// Build a chain of functions which may be monotonic. `input_node` is nullptr if the node is not such a chain.
+PossiblyMonotonicChain buildPossiblyMonotonicChain(const ActionsDAG::Node * node);
+
+/// Check whether all the function in chain are monotonic
+bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain);
+
 /// Update SortDescription (inplace) by applying ActionsDAG.
 ///
 /// Assuming that sorting properties are fulfilled for inputs, calculate sorting properties for the outputs.

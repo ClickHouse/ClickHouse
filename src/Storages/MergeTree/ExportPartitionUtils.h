@@ -8,6 +8,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include "Storages/IStorage.h"
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <config.h>
 
 #if USE_AVRO
@@ -29,16 +30,9 @@ namespace ExportPartitionUtils
 
     ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest);
 
-    /// Returns the representative source partition-key columns (the first active local part's
-    /// minmax block) for the given partition_id. The destination recomputes the Iceberg partition
-    /// tuple from this block by casting to its column types and applying the partition transform.
-    ///
-    /// Edge case: if the partition was dropped after export started, or this replica
-    /// has not yet received any part for this partition (extreme replication lag on a
-    /// recovery path), no active part will be found and the commit will fail. The task
-    /// will be retried on the next poll cycle or picked up by a different replica.
+    /// Get the min/max values from the partition expression columns
     Block getPartitionSourceBlockForIcebergCommit(
-        MergeTreeData & storage, const String & partition_id);
+        MergeTreeData & storage, const String & partition_id, const std::vector<String> & exported_part_names);
 
     void commit(
         const ExportReplicatedMergeTreePartitionManifest & manifest,
@@ -110,13 +104,28 @@ namespace ExportPartitionUtils
         const StorageID & destination_storage_id,
         const ContextPtr & context);
 
+    void verifyPlainPartitionCompatibility(
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata,
+        const MergeTreeData::DataPartsVector & parts,
+        const String & partition_id,
+        const ContextPtr & context);
+
 #if USE_AVRO
-    /// Verifies the source MergeTree partition key matches the destination Iceberg
-    /// partition spec (source-ids and transforms in order). Throws BAD_ARGUMENTS on
-    /// mismatch.
+    /// Verifies the source MergeTree partition key is compatible with the destination Iceberg
+    /// partition spec: every destination partition field must be single-valued across the exported
+    /// source partition (which the commit path requires - it writes one partition tuple per export).
+    /// A field is proven either structurally (the source key already applies the matching transform
+    /// on that column) or dynamically, by checking the destination transform is constant over the
+    /// partition's actual [min, max] folded across `parts`. `bucket` is non-monotonic and can only be
+    /// matched structurally. Throws BAD_ARGUMENTS when a field cannot be proven.
     void verifyIcebergPartitionCompatibility(
         const Poco::JSON::Object::Ptr & metadata_object,
-        const ASTPtr & partition_key_ast);
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata,
+        const MergeTreeData::DataPartsVector & parts,
+        const String & partition_id,
+        const ContextPtr & context);
 #endif
 }
 

@@ -5,6 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./export_part.lib
+. "$CURDIR"/export_part.lib
+
 rmt_table="rmt_table_${RANDOM}"
 s3_table="s3_table_${RANDOM}"
 rmt_table_roundtrip="rmt_table_roundtrip_${RANDOM}"
@@ -31,8 +34,8 @@ query "ALTER TABLE $rmt_table EXPORT PARTITION ID '2020' TO TABLE $s3_table SETT
 
 query "ALTER TABLE $rmt_table EXPORT PARTITION ID '2021' TO TABLE $s3_table SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# todo poll some kind of status
-sleep 15
+# wait until 2 partition exports have completed
+wait_for_partition_exports 2
 
 echo "Select from source table"
 query "SELECT * FROM $rmt_table ORDER BY id"
@@ -43,8 +46,8 @@ query "SELECT * FROM $s3_table ORDER BY id"
 echo "Export partition 2022"
 query "ALTER TABLE $rmt_table EXPORT PARTITION ID '2022' TO TABLE $s3_table SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# todo poll some kind of status
-sleep 5
+# wait until 3 partition exports have completed (2 from the previous exports)
+wait_for_partition_exports 3
 
 echo "Select from destination table again"
 query "SELECT * FROM $s3_table ORDER BY id"

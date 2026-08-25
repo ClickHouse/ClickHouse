@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/castColumn.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -694,9 +695,28 @@ SinkToStoragePtr StorageObjectStorage::import(
 
     std::string partition_key;
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
     if (configuration->getPartitionStrategy())
     {
-        const auto column_with_partition_key = configuration->getPartitionStrategy()->computePartitionKey(block_with_partition_values);
+        /// The values still carry the source table's types, but the partition key is rendered as text into the
+        /// object path and read back in this table's types, so it must be expressed in them first. A DateTime
+        /// in another time zone is the sharpest case: the epoch is the same, yet its text names another instant.
+        Block block_in_destination_types = block_with_partition_values;
+        const auto destination_sample = metadata_snapshot->getSampleBlock();
+        for (auto & column : block_in_destination_types)
+        {
+            if (!destination_sample.has(column.name))
+                continue;
+
+            const auto & destination_type = destination_sample.getByName(column.name).type;
+            column.column = castColumn(column, destination_type);
+            /// castColumn is a no-op between types IDataType::equals considers equal, which includes DateTime
+            /// with different time zones, so relabel the column: serialization follows the type, not the values.
+            column.type = destination_type;
+        }
+
+        const auto column_with_partition_key = configuration->getPartitionStrategy()->computePartitionKey(block_in_destination_types);
 
         if (!column_with_partition_key->empty())
         {
@@ -705,8 +725,6 @@ SinkToStoragePtr StorageObjectStorage::import(
     }
 
     const auto base_path = configuration->getPathForWrite(partition_key, file_name).path;
-
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     return std::make_shared<MultiFileStorageObjectStorageSink>(
         base_path,

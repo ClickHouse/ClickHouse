@@ -563,7 +563,10 @@ class ClickHouseCluster:
         with_dolor=False,
     ):
         for param in list(os.environ.keys()):
-            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+            value = os.environ[param]
+            if sensitive_var_pattern.match(param):
+                value = f"SECRET[{param}]"
+            logging.debug("ENV %40s %s" % (param, value))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)

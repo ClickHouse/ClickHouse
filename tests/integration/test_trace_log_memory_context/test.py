@@ -58,12 +58,19 @@ def test_memory_context_in_trace_log(started_cluster):
     #     server-wide allocations including background activity, not just
     #     this query's allocations.
     # Retrying bounds the test runtime while keeping it reliable.
-    for _ in range(0, 15):
+    for attempt in range(0, 15):
         # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
         for i in range(10):
             node.query("SELECT logTrace('foo')")
         query_id = uuid.uuid4().hex
         node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
+
+        # `Memory`/`MemoryPeak` with `memory_context = 'Global'` are sent only when the
+        # server-wide memory usage grows past its previous peak by at least
+        # `total_memory_profiler_step` (4 MiB). The peak reached during server startup can
+        # be above anything the small queries here allocate, in which case retrying alone
+        # never helps. Force a new global peak by allocating more memory on every attempt.
+        node.query(f"SELECT groupArray(number) FROM numbers({(attempt + 1) * 12500000}) FORMAT Null")
 
         node.query("SYSTEM FLUSH LOGS system.trace_log")
         if (
