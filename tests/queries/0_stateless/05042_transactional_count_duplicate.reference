@@ -1,0 +1,4 @@
+baseline outside a transaction, 4 rows in 4 parts
+4
+inside a transaction the count must stay 4, not be multiplied by the number of replicas
+4

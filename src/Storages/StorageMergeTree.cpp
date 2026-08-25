@@ -415,9 +415,19 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
-    return getTotalActiveSizeInRows();
+    /// `local_context` should not be nullptr, but still preserve the non-transaction-aware behavior in case there's code that
+    /// relies on it.
+    if (!local_context || !local_context->getCurrentTransaction())
+        return getTotalActiveSizeInRows();
+
+    UInt64 total_rows = 0;
+    const auto parts = getVisibleDataPartsVector(local_context);
+    for (const auto & part : parts)
+        total_rows += part->rows_count;
+
+    return total_rows;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
