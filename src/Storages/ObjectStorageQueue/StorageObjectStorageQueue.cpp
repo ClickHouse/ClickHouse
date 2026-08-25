@@ -1532,6 +1532,37 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "metadata_cache_size_elements",
 };
 
+static const std::unordered_set<std::string_view> changeable_settings_exclusive_mode{
+    "processing_threads_num",
+    /// Is not allowed to change on fly:
+    /// "parallel_inserts",
+    "loading_retries",
+    "after_processing",
+    "polling_min_timeout_ms",
+    "polling_max_timeout_ms",
+    "polling_backoff_ms",
+    "max_processed_files_before_commit",
+    "max_processed_rows_before_commit",
+    "max_processed_bytes_before_commit",
+    "max_processing_time_sec_before_commit",
+    "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
+    "deduplication_v2",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
+};
+
 static std::string normalizeSetting(const std::string & name)
 {
     /// We support this prefix for compatibility.
@@ -1550,8 +1581,10 @@ bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, Ob
 {
     checkNormalizedSetting(name);
 
-    if (mode == ObjectStorageQueueMode::UNORDERED || mode == ObjectStorageQueueMode::EXCLUSIVE)
+    if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
+    else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+        return changeable_settings_exclusive_mode.contains(name);
     else
         return changeable_settings_ordered_mode.contains(name);
 }
