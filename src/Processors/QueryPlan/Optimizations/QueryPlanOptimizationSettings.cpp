@@ -181,9 +181,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
-    /// The lift only pays off when the copied conjunct feeds primary-key pruning on the target
-    /// side; with `use_primary_key` disabled `KeyCondition` skips analysis and the conjunct would
-    /// remain a plain filter evaluated over the full target scan
+    /// With `use_primary_key` disabled the copied conjunct would just be a full scan filter
     lift_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_predicate_across_join]
         && from[Setting::use_primary_key];
     push_down_volume_reducing_functions

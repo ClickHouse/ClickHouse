@@ -20,8 +20,7 @@ namespace
 
 using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
 
-/// Walk down a single-child chain of Expression/Filter steps until `predicate` matches or
-/// the chain ends. Returns the matching node or nullptr
+/// Walk down a single-child chain of Expression/Filter steps, until `predicate` matches or the chain ends
 template <typename Predicate>
 const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && predicate)
 {
@@ -62,10 +61,8 @@ NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
     return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// A lifted predicate is useful only when every substituted key that it uses belongs to the
-/// target's primary key. This avoids adding a full-scan target filter for joins on columns that
-/// are unrelated to `ORDER BY`. Secondary-index propagation can be added independently once it
-/// can use the same per-part applicability analysis as `ReadFromMergeTree`.
+/// Only worth lifting when every substituted key is in the target's primary key, otherwise the
+/// copy is just a full scan filter. Secondary indexes need per-part analysis, so they are left out
 bool atomCanUseTargetPrimaryKey(
     const QueryPlan::Node * target_root,
     const NameSet & primary_key_columns,
@@ -100,10 +97,8 @@ std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * targe
     return result;
 }
 
-/// Moving an atom to the other join side makes it execute on rows that the source-side
-/// predicate did not see. Restrict the pass to predicates that cannot raise an exception
-/// for those additional values. In particular, do not propagate arbitrary deterministic
-/// functions such as `intDiv` or casts.
+/// The atom will run on target rows the source predicate never saw, so allow only shapes that
+/// cannot throw on them - no `intDiv`, no casts
 bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & sub)
 {
     if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
@@ -113,9 +108,7 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
     const bool is_null_check = name == "isNull" || name == "isNotNull";
     const bool is_comparison = name == "equals" || name == "notEquals"
         || name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
-    /// `x IN <set>` is as safe as a comparison: the set is a prepared constant, so evaluating it
-    /// on the target-only rows cannot raise. It is also one of the most selective shapes for
-    /// target-side primary key pruning, because `KeyCondition` turns a constant set into ranges.
+    /// `x IN <set>` is as safe as a comparison and `KeyCondition` turns a constant set into ranges
     const bool is_set_check = name == "in";
     if ((!is_null_check && !is_comparison && !is_set_check) || node->children.size() != (is_null_check ? 1 : 2))
         return false;
@@ -127,9 +120,7 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
             const auto it = sub.find(child->result_name);
             if (it == sub.end())
                 return false;
-            /// The set carries the types it was built with, and `FunctionIn` rejects a left
-            /// argument of a different type, so an equi-key pair with differing types (the JOIN
-            /// casts them itself) must not be substituted into an `IN`
+            /// `FunctionIn` rejects a left argument whose type differs from the one the set was built with
             if (is_set_check && !it->second.type->equals(*child->result_type))
                 return false;
         }
@@ -211,7 +202,7 @@ size_t tryLiftSide(
     if (lifted_dag->getOutputs().size() != 1)
         return 0;
 
-    /// drop conjuncts the target already has. result_name is computed deterministically from structure, so structurally equivalent atoms match
+    /// Drop conjuncts the target already has: equal result_name means structurally equal atom
     auto existing_target_atoms = collectTargetAtoms(target_root);
     if (!existing_target_atoms.empty())
     {
@@ -260,14 +251,11 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     SubstitutionMap l_to_r;
     SubstitutionMap r_to_l;
-    /// The substituted column ends up as an INPUT of the lifted FilterStep that sits above the
-    /// target child, so its name must exist in the child's output header. For computed equi-keys
-    /// like `ON l.k = r.k + 1` the rhs name is `plus(...)` which is not in the right child
+    /// The substituted column becomes an INPUT of the lifted filter, so it must be in the child's
+    /// header - for a computed key like `ON l.k = r.k + 1` the rhs is `plus(...)`, which is not
     const auto & left_header  = *parent_node->children[0]->step->getOutputHeader();
     const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
-    /// `buildEquialentSetsForJoinStepLogical` proves transitive key equivalences through nested
-    /// INNER joins, so a filter written on an inner-child key equivalent to `from` can be
-    /// substituted by `to` as well
+    /// Keys proven equal through nested INNER joins can be substituted by `to` as well
     auto collect = [&](JoinActionRef from, JoinActionRef to, bool from_left, SubstitutionMap & substitution)
     {
         substitution[from.getColumnName()] = to.getColumn();
@@ -286,7 +274,7 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
             collect(rhs, lhs, /*from_left=*/false, r_to_l);
     }
 
-    /// LEFT keeps unmatched left rows, so only L->R is safe/ mirror for RIGHT/ INNER allows both
+    /// LEFT keeps unmatched left rows, so only L->R is safe there; mirrored for RIGHT, both for INNER
     const bool can_l_to_r = (op.kind == JoinKind::Inner || op.kind == JoinKind::Left)  && !l_to_r.empty();
     const bool can_r_to_l = (op.kind == JoinKind::Inner || op.kind == JoinKind::Right) && !r_to_l.empty();
 

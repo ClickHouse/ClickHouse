@@ -296,25 +296,17 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            /// The lift must run before `tryAddJoinRuntimeFilter`: the latter wraps the probe side
-            /// in an `Apply runtime join filter` `FilterStep` and the build side in `BuildRuntimeFilterStep`,
-            /// which would hide the original source filters and indexed reads from the lift's walk.
-            /// The lift only pays off when the copied conjunct is consumed by the PK re-analysis
-            /// below; with `query_plan_optimize_primary_key` disabled it would survive as a plain
-            /// target-side `FilterStep` evaluated over the full scan, so skip the pass entirely.
+            /// Must run before `tryAddJoinRuntimeFilter`, which wraps both sides and would hide the
+            /// source filters from the lift's walk. Without the PK re-analysis below the copied
+            /// conjunct is just a full scan filter, so skip the pass entirely then
             if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
             {
                 if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
                 {
                     join_runtime_filters_were_added = true;
-                    /// Re-run PK condition analysis on the JOIN's children RIGHT HERE — before
-                    /// `convertLogicalJoinToPhysical` reorganizes them. Invalidate
-                    /// `ReadFromMergeTree::indexes` first because the initial PK pass already
-                    /// populated it and `applyFilters` short-circuits when `indexes` is set
-                    /// (it also drops the cached `analyzed_result_ptr` so EXPLAIN/range
-                    /// selection rerun against the rebuilt `indexes`).
-                    /// Inner traversal needs its own stack: `traverseQueryPlan` starts with
-                    /// `stack.clear()`, which would corrupt the outer walk's stack.
+                    /// Re-run PK analysis here, before `convertLogicalJoinToPhysical` reorganizes the
+                    /// children. `applyFilters` short-circuits on a populated `indexes`, hence the reset.
+                    /// The walk needs its own stack: `traverseQueryPlan` clears the one it is given
                     Stack inner_stack;
                     for (auto * child : frame_node.children)
                     {

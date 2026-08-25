@@ -14,12 +14,12 @@ INSERT INTO lift_throwing_src VALUES (1);
 INSERT INTO lift_throwing_dst VALUES (0), (1);
 INSERT INTO lift_unindexed_dst VALUES (0, 'zero'), (1, 'one');
 
--- The target-only row with `k = 0` must not evaluate the throwing source predicate.
+-- The target-only row `k = 0` must not evaluate the throwing source predicate
 SELECT count()
 FROM (SELECT * FROM lift_throwing_src WHERE intDiv(1, k) = 1) AS s
 INNER JOIN lift_throwing_dst AS d ON s.k = d.k;
 
--- A join key outside the target primary key must not gain a full-scan lifted filter.
+-- A join key outside the target primary key must not gain a full scan filter
 SELECT countIf(explain LIKE '%ilter column:%k = 1%')
 FROM
 (

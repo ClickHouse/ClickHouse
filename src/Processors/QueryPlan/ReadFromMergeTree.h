@@ -436,9 +436,7 @@ public:
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
 
-    /// Force the next `applyFilters` to rebuild key/skip-index conditions, and drop the cached
-    /// analysis so `getAnalysisResult` reruns range selection against the rebuilt `indexes`.
-    /// Used by passes that add new filters after the initial PK analysis has already populated both.
+    /// Let a pass that adds filters after the initial PK analysis rebuild the conditions and ranges
     void invalidateIndexes()
     {
         indexes.reset();
