@@ -111,7 +111,13 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/IInterpreter.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
@@ -291,12 +297,22 @@ namespace Setting
     extern const SettingsDouble page;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
+    extern const SettingsBool enable_lightweight_delete;
+    extern const SettingsLightweightDeleteMode lightweight_delete_mode;
+    extern const SettingsBool enable_lightweight_update;
+    extern const SettingsAlterUpdateMode alter_update_mode;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
+    extern const ServerSettingsBool disable_insertion_and_mutation;
 }
 
 namespace ErrorCodes
@@ -1774,6 +1790,356 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     return false;
 }
 
+/// The mutation/partition carriers (`DELETE`, `UPDATE`, `ALTER`) need the same kind of stop-before-sources
+/// guard as `CREATE` (see `createQueryStopsBeforeSources`): their interpreters fast-fail on the *target*
+/// table — engine capability (`supportsDelete`, `supportsLightweightUpdate`, `checkMutationIsPossible`,
+/// `checkAlterPartitionIsPossible`), a static storage, server-wide mutation prohibition — before they ever
+/// touch the auxiliary tables the statement's predicates, update expressions, or partition `FROM`/`TO TABLE`
+/// clauses name. Without the guard, `DELETE FROM log_t WHERE a IN (SELECT a FROM src)` would `DETACH`/`ATTACH`
+/// `src` and only then fail on the unsupported `log_t`, breaking the side-effect-free invariant this hook
+/// keeps for failing queries.
+///
+/// The helpers below mirror the fast-fail checks each interpreter runs before its sources, resolving the
+/// target side-effect free and probing the storage's own check methods where outcomes cannot be predicted
+/// otherwise. Like the other preflights, they are best-effort, point-in-time checks that err toward
+/// suppressing randomization for a succeeding statement rather than reattaching a source of a failing one.
+
+/// Resolves the target of a mutation-carrying statement in the ordinary namespace, returning nullptr
+/// whenever the statement is going to stop on it or the probe would not be side-effect free (a database
+/// that does not support detaching tables performs remote work even in `isTableExist`/`tryGetTable`).
+StoragePtr tryResolveMutationTarget(const String & database_name, const String & table_name, const ContextPtr & context)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    auto resolved = context->tryResolveStorageID(
+        database_name.empty() ? StorageID("", table_name) : StorageID(database_name, table_name),
+        Context::ResolveOrdinary);
+    if (!resolved)
+        return nullptr;
+
+    if (const auto database = DatabaseCatalog::instance().tryGetDatabase(resolved.getDatabaseName());
+        !database || !database->supportsDetachingTables())
+        return nullptr;
+
+    return DatabaseCatalog::instance().tryGetTable(resolved, context);
+}
+
+/// The single `DELETE` mutation command `InterpreterDeleteQuery::execute` builds for its heavy
+/// (`supportsDelete`) path. The lightweight path rewrites the statement into
+/// `UPDATE _row_exists = 0 WHERE <predicate>` instead, but for the checks the probes below exercise
+/// (`checkMutationIsPossible`, the replicated non-determinism validation) the two shapes are
+/// interchangeable — both are rewriting mutations carrying the same predicate — so this one command
+/// serves both paths.
+MutationCommands deleteQueryMutationCommands(const ASTDeleteQuery & delete_query, const ContextPtr & context)
+{
+    MutationCommand mut_command;
+    mut_command.type = MutationCommand::Type::DELETE;
+
+    auto alter_command = make_intrusive<ASTAlterCommand>();
+    alter_command->type = ASTAlterCommand::DELETE;
+    alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+    mut_command.ast_text = alter_command->formatWithSecretsOneLine();
+    mut_command.max_parser_depth = context->getSettingsRef()[Setting::max_parser_depth];
+    mut_command.max_parser_backtracks = context->getSettingsRef()[Setting::max_parser_backtracks];
+
+    MutationCommands mutation_commands;
+    mutation_commands.emplace_back(std::move(mut_command));
+    return mutation_commands;
+}
+
+/// Whether a `DELETE` statement stops on its own target before `MutationsInterpreter`'s validation reads
+/// the tables its predicate names, mirroring the fast-fail order of `InterpreterDeleteQuery::execute`.
+bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// An `ON CLUSTER` statement is handed to the cluster's DDL queue after its access check; the local
+    /// interpreter never reaches the predicate's tables on the way, and the hook only handles initial
+    /// user queries, so the per-host executions are out of its scope anyway.
+    if (!delete_query.cluster.empty())
+        return true;
+
+    /// A predicate-less statement cannot be executed; nothing to predict for it.
+    if (!delete_query.predicate)
+        return true;
+
+    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+        && table->getStorageID().getDatabaseName() != DatabaseCatalog::SYSTEM_DATABASE)
+        return true;
+
+    try
+    {
+        IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    const auto mutation_commands = deleteQueryMutationCommands(delete_query, context);
+
+    /// The probes must run before reporting that the sources are reached: `checkMutationIsPossible`
+    /// rejects e.g. immutable disks and `UNIQUE KEY` tables, and the replicated non-determinism
+    /// validation rejects a predicate with a subquery on a replicated target — all before
+    /// `MutationsInterpreter::validate` reads the predicate's tables.
+    const auto mutation_checks_pass = [&]
+    {
+        try
+        {
+            table->checkMutationIsPossible(mutation_commands, settings);
+            MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, context);
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+        return true;
+    };
+
+    /// The heavy path: the statement becomes an `ALTER ... DELETE`-style mutation directly.
+    if (table->supportsDelete())
+        return !mutation_checks_pass();
+
+    /// The lightweight path, gated exactly as in the interpreter.
+    if (table->supportsLightweightDelete())
+    {
+        if (!settings[Setting::enable_lightweight_delete])
+            return true;
+
+        if (const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false); metadata_snapshot->hasProjections())
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get());
+                merge_tree_data
+                && (*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::THROW)
+                return true;
+
+        const auto lightweight_delete_mode = settings[Setting::lightweight_delete_mode];
+        const bool supports_lightweight_update
+            = settings[Setting::enable_lightweight_update] && bool(table->supportsLightweightUpdate());
+
+        if (!supports_lightweight_update && lightweight_delete_mode == LightweightDeleteMode::LIGHTWEIGHT_UPDATE_FORCE)
+            return true;
+
+        /// Rewritten to a lightweight `UPDATE`, whose interpreter reads the predicate right after the
+        /// capability checks that just passed here.
+        if (supports_lightweight_update && lightweight_delete_mode != LightweightDeleteMode::ALTER_UPDATE)
+            return false;
+
+        /// Rewritten to `ALTER TABLE ... UPDATE _row_exists = 0 WHERE <predicate>`. That statement can
+        /// itself be forced into a failing lightweight update (`alter_update_mode`), and otherwise
+        /// re-runs the mutation checks before its `MutationsInterpreter` reads the predicate's tables.
+        if (!supports_lightweight_update && settings[Setting::alter_update_mode] == AlterUpdateMode::LIGHTWEIGHT_FORCE)
+            return true;
+
+        return !mutation_checks_pass();
+    }
+
+    /// Neither path applies: the statement throws `BAD_ARGUMENTS` on the target.
+    return true;
+}
+
+/// Whether a lightweight `UPDATE` statement stops on its own target before its interpreter reads the
+/// tables its predicate and assignments name, mirroring the fast-fail order of
+/// `InterpreterUpdateQuery::execute`.
+bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const ContextPtr & context)
+{
+    /// Same `ON CLUSTER` reasoning as in `deleteQueryStopsBeforeSources`.
+    if (!update_query.cluster.empty())
+        return true;
+
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        return true;
+
+    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    if (!table->supportsLightweightUpdate())
+        return true;
+
+    return false;
+}
+
+/// Whether an `ALTER` statement stops on its own target before its interpreter reaches the auxiliary
+/// tables its mutation predicates/expressions and partition `FROM`/`TO TABLE` clauses name, mirroring
+/// `InterpreterAlterQuery`: the command classification of `parseAlterCommandSegments`, the segment
+/// validation, and the per-segment fast-fail checks of `runCommandSegments`.
+bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr & context)
+{
+    /// The database form (`ALTER DATABASE ... MODIFY COMMENT`) names no auxiliary tables.
+    if (alter.alter_object != ASTAlterQuery::AlterObjectType::TABLE || !alter.command_list)
+        return false;
+
+    /// Same `ON CLUSTER` reasoning as in `deleteQueryStopsBeforeSources`.
+    if (!alter.cluster.empty())
+        return true;
+
+    const auto & settings = context->getSettingsRef();
+
+    /// Classify the commands the way `parseAlterCommandSegments` does — without its
+    /// non-deterministic-scalar and timezone rewrites, which change neither a command's classification
+    /// nor the fields the probes below read. Only the mutation commands' predicates/expressions and the
+    /// partition commands' `FROM`/`TO TABLE` clauses can name auxiliary tables; a statement without
+    /// either carrier has nothing to guard.
+    MutationCommands mutation_commands;
+    PartitionCommands partition_commands;
+    size_t partition_command_runs = 0;
+    bool last_command_was_partition = false;
+    bool has_plain_alter_or_execute = false;
+    bool carries_sources = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command_ast = child->as<ASTAlterCommand>();
+        if (!command_ast)
+            return true;
+
+        bool is_partition_command = false;
+        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
+        {
+            has_plain_alter_or_execute = true;
+        }
+        else if (auto alter_command = AlterCommand::parse(command_ast))
+        {
+            has_plain_alter_or_execute = true;
+        }
+        else if (auto partition_command = PartitionCommand::parse(command_ast))
+        {
+            is_partition_command = true;
+            if (!last_command_was_partition)
+                ++partition_command_runs;
+            carries_sources |= !command_ast->from_table.empty() || !command_ast->to_table.empty();
+            partition_commands.push_back(std::move(*partition_command));
+        }
+        else if (auto mutation_command = MutationCommand::parse(
+                     *command_ast,
+                     /* parse_alter_commands = */ false,
+                     /* with_pure_metadata_commands = */ false,
+                     settings[Setting::max_parser_depth],
+                     settings[Setting::max_parser_backtracks]))
+        {
+            carries_sources |= mutation_command->type == MutationCommand::DELETE || mutation_command->type == MutationCommand::UPDATE;
+            mutation_commands.push_back(std::move(*mutation_command));
+        }
+        else
+        {
+            /// `parseAlterCommandSegments` throws on such a command before any segment runs.
+            return true;
+        }
+        last_command_was_partition = is_partition_command;
+    }
+
+    if (!carries_sources)
+        return false;
+
+    /// `validateSegmentsCombination` rejects these combinations before any segment runs.
+    if (!partition_commands.empty() && (has_plain_alter_or_execute || partition_command_runs != 1))
+        return true;
+
+    /// The interpreter executes the parsed segments in statement order, so a plain-alter or `EXECUTE`
+    /// segment mixed with the source-carrying commands can fail (`AlterCommands::validate`, the
+    /// engine's own execution) between the probes below and the sources — not predictable here.
+    if (has_plain_alter_or_execute)
+        return true;
+
+    /// `validateMutationsAllowed` rejects the statement before any segment runs.
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+        && (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty()))
+    {
+        const String database_name = alter.getDatabase().empty() ? context->getCurrentDatabase() : alter.getDatabase();
+        if (database_name != DatabaseCatalog::SYSTEM_DATABASE)
+            return true;
+    }
+
+    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), context);
+    if (!table)
+        return true;
+
+    if (table->isStaticStorage())
+        return true;
+
+    try
+    {
+        IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, context);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    /// A pure-update statement can be diverted to a lightweight update before the mutation checks
+    /// (see `tryRewriteToLightweightUpdate`), succeeding or failing on its own gates.
+    if (mutation_commands.hasAnyUpdateCommand() && settings[Setting::alter_update_mode] != AlterUpdateMode::HEAVY)
+    {
+        const bool force = settings[Setting::alter_update_mode] == AlterUpdateMode::LIGHTWEIGHT_FORCE;
+        if (!partition_commands.empty())
+        {
+            /// "Not only update commands were passed to alter": under FORCE the statement throws
+            /// before any segment runs; otherwise it falls through to the heavy path probed below.
+            if (force)
+                return true;
+        }
+        else if (settings[Setting::enable_lightweight_update] && mutation_commands.hasOnlyUpdateCommands()
+                 && table->supportsLightweightUpdate())
+        {
+            /// Diverted to `updateLightweight`, which reads the expressions' tables.
+            return false;
+        }
+        else if (force)
+        {
+            return true;
+        }
+    }
+
+    /// `runCommandSegments` runs `checkMutationIsPossible` (plus the replicated non-determinism
+    /// validation) and `checkAlterPartitionIsPossible` before `MutationsInterpreter::validate` /
+    /// `alterPartition` reach the auxiliary tables. Segment order does not matter for the probes:
+    /// probing every check and suppressing on any failure only errs toward suppression.
+    try
+    {
+        if (!mutation_commands.empty())
+        {
+            table->checkMutationIsPossible(mutation_commands, settings);
+            MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, context);
+        }
+        if (!partition_commands.empty())
+        {
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, settings, context);
+        }
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/// Dispatch for the mutation/partition carriers, used by the collector the same way
+/// `createQueryStopsBeforeSources` is: a statement that stops on its target is skipped whole,
+/// children included.
+bool mutationQueryStopsBeforeSources(const IAST & ast, const ContextPtr & context)
+{
+    if (const auto * delete_query = ast.as<ASTDeleteQuery>())
+        return deleteQueryStopsBeforeSources(*delete_query, context);
+    if (const auto * update_query = ast.as<ASTUpdateQuery>())
+        return updateQueryStopsBeforeSources(*update_query, context);
+    if (const auto * alter_query = ast.as<ASTAlterQuery>())
+        return alterQueryStopsBeforeSources(*alter_query, context);
+    return false;
+}
+
 /// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
 /// enumerated here — including `SHOW CREATE TABLE`, `EXISTS TABLE` and plain `DROP`/`DETACH TABLE`, which
 /// accept any object kind — places no constraint on the resolved storage. The kind-specific `DROP`/`DETACH`
@@ -1995,6 +2361,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         if (const auto * create_query = ast->as<ASTCreateQuery>())
             if (createQueryStopsBeforeSources(*create_query, data.context))
                 return;
+
+        /// The mutation/partition carriers (`DELETE`, `UPDATE`, `ALTER`) get the same treatment: a
+        /// statement that stops on its own target before its interpreter reaches the tables its
+        /// predicates, update expressions, or partition `FROM`/`TO TABLE` clauses name is skipped whole,
+        /// children included (see `mutationQueryStopsBeforeSources`).
+        if (mutationQueryStopsBeforeSources(*ast, data.context))
+            return;
 
         /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
         /// `CREATE ... IF NOT EXISTS`, `UNDROP`, the failing/no-op shapes of `CREATE INDEX`, and the

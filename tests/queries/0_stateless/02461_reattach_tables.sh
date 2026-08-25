@@ -979,3 +979,53 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${REMOTE_USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${REMOTE_DB}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_remote_under"
+
+# The mutation/partition carriers must stop before their sources when the target itself rejects the
+# operation: `InterpreterDeleteQuery` / `InterpreterUpdateQuery` / `InterpreterAlterQuery` fast-fail on
+# the target engine (`supportsDelete`, `supportsLightweightUpdate`, `checkMutationIsPossible`,
+# `checkAlterPartitionIsPossible`) before the tables named by the predicate, the update expressions, or
+# the partition `FROM`/`TO TABLE` clause are ever read, so the hook must not `DETACH`/`ATTACH` those
+# sources on the way to the rejection (see `mutationQueryStopsBeforeSources`).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_log (a UInt64) ENGINE = Log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+function check_source_not_detached_for_failing_mutation()
+{
+    query="$1"
+    expected_error="$2"
+    check_if_detached_impl "$query" "t_reattach_mut_src"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "$expected_error"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_src"; then
+        echo "FAIL (source detached for a query failing on its target)"
+    else
+        echo "OK"
+    fi
+}
+
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_log WHERE a IN (SELECT a FROM t_reattach_mut_src)" "BAD_ARGUMENTS"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_log SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log REPLACE PARTITION ID 'all' FROM t_reattach_mut_src" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log MOVE PARTITION ID 'all' TO TABLE t_reattach_mut_src" "NOT_IMPLEMENTED"
+
+# Positive controls: the same statement shapes on a supporting (`MergeTree`) target succeed and do
+# randomize their sources. Mutations are synchronous here so a background mutation cannot outlive the
+# source table it reads.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_mt (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_mt VALUES (1)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_src VALUES (2)"
+
+check_if_detached "DELETE FROM t_reattach_mut_mt WHERE a IN (SELECT a FROM t_reattach_mut_src)" "t_reattach_mut_src"
+check_if_detached "ALTER TABLE t_reattach_mut_mt DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
+check_if_detached "ALTER TABLE t_reattach_mut_mt REPLACE PARTITION ID 'all' FROM t_reattach_mut_src" "t_reattach_mut_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"
