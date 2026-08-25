@@ -1153,6 +1153,27 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                 attachParameters(function, std::move(parameters));
             }
         }},
+        {"array_agg", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// Trino `array_agg` keeps NULL elements, while the ClickHouse
+            /// `groupArray` (which `array_agg` is an alias of) skips them:
+            /// wrapping the value into a tuple makes the argument non-Nullable,
+            /// so nothing is skipped.
+            requireArguments(function, arguments, 1, 1, "(x)");
+            ASTPtr group_array
+                = makeFunctionWithArguments("groupArray", {makeFunctionWithArguments("tuple", {arguments[0]})});
+            transferWindow(function, group_array);
+            node = makeFunctionWithArguments("tupleElement", {group_array, make_intrusive<ASTLiteral>(UInt64(1))});
+        }},
+        {"array_aggdistinct", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// `array_agg(DISTINCT x)`: the same, over distinct values.
+            requireArguments(function, arguments, 1, 1, "(x)");
+            ASTPtr group_array
+                = makeFunctionWithArguments("groupArrayDistinct", {makeFunctionWithArguments("tuple", {arguments[0]})});
+            transferWindow(function, group_array);
+            node = makeFunctionWithArguments("tupleElement", {group_array, make_intrusive<ASTLiteral>(UInt64(1))});
+        }},
         {"map_agg", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             requireNotWindow(function);
@@ -1285,8 +1306,14 @@ void visit(ASTPtr & node)
         if (auto * final_function = node->as<ASTFunction>())
         {
             String lower = Poco::toLower(final_function->name);
-            bool value_aggregate = lower == "sum" || lower == "avg"
-                || ((lower == "min" || lower == "max") && final_function->arguments
+            /// `sum(DISTINCT x)` and friends are parsed into a name carrying the
+            /// `Distinct` combinator; the base name decides, and `OrNull` is
+            /// appended after it (combinators are applied from left to right).
+            std::string_view base = lower;
+            if (base.ends_with("distinct"))
+                base.remove_suffix(std::string_view("distinct").size());
+            bool value_aggregate = base == "sum" || base == "avg"
+                || ((base == "min" || base == "max") && final_function->arguments
                     && final_function->arguments->children.size() == 1);
             if (value_aggregate && !final_function->parameters)
                 final_function->name += "OrNull";

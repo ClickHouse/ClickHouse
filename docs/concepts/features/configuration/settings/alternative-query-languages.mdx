@@ -118,6 +118,11 @@ translated to their ClickHouse counterparts. Since the ClickHouse `JSON` type st
 (top-level arrays and scalars) are rejected when they are materialized as `JSON` values; the path functions accept
 any JSON text.
 
+Some Trino semantics are not expressible in the translated query text; they are applied to the query context
+instead: outer joins produce `NULL` (`join_use_nulls`), set operations use the numeric supertype rather than
+`Variant` (`use_variant_as_common_type`), and the query analyzer is required (`enable_analyzer`). An explicit
+`SETTINGS` clause in the query still takes precedence over these.
+
 Semantics that cannot be fixed by a translation at the query level remain the ClickHouse ones. Most notably,
 the division operator `/` performs integer division in Trino but floating-point division in ClickHouse, and
 `round` uses banker's rounding in ClickHouse for `Float` arguments.

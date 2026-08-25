@@ -8921,6 +8921,10 @@ syntax (`ARRAY[...]` literals, `TRY_CAST`, `UNNEST`, `ROW` types, `OFFSET` befor
 is translated to ClickHouse SQL, and Trino function names are mapped to their
 ClickHouse equivalents. The `SET` query is still parsed as plain SQL so that the
 dialect can be switched back.
+
+The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
+on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
+An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.

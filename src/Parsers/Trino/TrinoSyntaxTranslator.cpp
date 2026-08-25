@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
+#include <set>
 
 namespace DB
 {
@@ -64,13 +66,26 @@ enum class UnnestKind : uint8_t
     Standalone,       /// FROM UNNEST(...) - no table on the left
 };
 
+/// The column aliases of a joined UNNEST, by table alias:
+/// `CROSS JOIN UNNEST(a) AS t (x)` binds `t.x`.
+using JoinedUnnestAliases = std::map<String, std::set<String>>;
+
 class Translator
 {
 public:
-    Translator(const std::vector<Token> & tokens_, const char * source_begin_, const char * source_end_)
-        : tokens(tokens_), source_begin(source_begin_), source_end(source_end_)
+    Translator(
+        const std::vector<Token> & tokens_,
+        const char * source_begin_,
+        const char * source_end_,
+        JoinedUnnestAliases known_unnest_aliases_ = {})
+        : tokens(tokens_)
+        , source_begin(source_begin_)
+        , source_end(source_end_)
+        , known_unnest_aliases(std::move(known_unnest_aliases_))
     {
     }
+
+    const JoinedUnnestAliases & getJoinedUnnestAliases() const { return joined_unnest_aliases; }
 
     std::optional<String> run()
     {
@@ -91,32 +106,11 @@ public:
         else
             translateRange(0, tokens.size(), /*type_context=*/ false);
 
-        /// Settings that align query semantics with Trino: outer joins produce
-        /// NULLs (not type defaults), and set operations use the numeric
-        /// supertype (not Variant). Skipped when the query sets anything itself.
-        if (!tokens.empty()
-            && (tokenIsKeyword(tokens[0], "SELECT") || tokenIsKeyword(tokens[0], "WITH") || tokenIsKeyword(tokens[0], "VALUES")))
-        {
-            bool has_settings = false;
-            size_t depth = 0;
-            for (const auto & token : tokens)
-            {
-                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
-                    ++depth;
-                else if (token.type == TokenType::ClosingRoundBracket || token.type == TokenType::ClosingSquareBracket)
-                {
-                    if (depth > 0)
-                        --depth;
-                }
-                else if (depth == 0 && tokenIsKeyword(token, "SETTINGS"))
-                    has_settings = true;
-            }
-            if (!has_settings)
-            {
-                changed = true;
-                out += "SETTINGS join_use_nulls = 1, use_variant_as_common_type = 0 ";
-            }
-        }
+        /// The settings that align query semantics with Trino (`join_use_nulls`,
+        /// `use_variant_as_common_type`, `enable_analyzer`) are applied to the query
+        /// context instead of the query text, so that they also hold for statements
+        /// that carry their own `SETTINGS` clause and for wrappers such as
+        /// `INSERT ... SELECT` or `EXPLAIN SELECT`. See `executeQuery.cpp`.
 
         if (!changed)
             return std::nullopt;
@@ -130,6 +124,12 @@ private:
 
     String out;
     bool changed = false;
+
+    /// Filled while translating; seeded from a previous pass so that the
+    /// qualified references in the SELECT list (which precede the FROM clause)
+    /// are rewritten too.
+    JoinedUnnestAliases joined_unnest_aliases;
+    JoinedUnnestAliases known_unnest_aliases;
 
     [[noreturn]] void throwNotSupported(const Token & token, std::string_view what, std::string_view hint) const
     {
@@ -340,6 +340,24 @@ private:
             emitText("0." + String(tokens[i + 1].begin, tokens[i + 1].size()));
             i += 2;
             return;
+        }
+
+        /// A qualified reference to a joined UNNEST alias: `t.x` -> `x`. The
+        /// aliases of a ClickHouse ARRAY JOIN are unqualified, so the table
+        /// qualifier would not resolve after the translation.
+        if (!type_context && !known_unnest_aliases.empty()
+            && (token.type == TokenType::BareWord || token.type == TokenType::QuotedIdentifier)
+            && isTypeAt(i + 1, TokenType::Dot)
+            && (isTypeAt(i + 2, TokenType::BareWord) || isTypeAt(i + 2, TokenType::QuotedIdentifier)))
+        {
+            auto it = known_unnest_aliases.find(String(token.begin, token.size()));
+            if (it != known_unnest_aliases.end() && it->second.contains(String(tokens[i + 2].begin, tokens[i + 2].size())))
+            {
+                changed = true;
+                emitToken(tokens[i + 2]);
+                i += 3;
+                return;
+            }
         }
 
         if (token.type != TokenType::BareWord)
@@ -1436,24 +1454,61 @@ private:
             return;
         }
 
-        /// ARRAY JOIN attaches to the table on the left.
-        out += (kind == UnnestKind::LeftArrayJoin) ? "LEFT ARRAY JOIN " : "ARRAY JOIN ";
+        /// The column aliases of a joined UNNEST are bound to its table alias in
+        /// Trino (`t.x`), while an ARRAY JOIN alias is unqualified: remember the
+        /// alias so that the qualified references are rewritten (see translateOne).
+        if (!table_alias.empty())
+            joined_unnest_aliases[table_alias].insert(columns.begin(), columns.end());
 
-        std::vector<String> items;
+        /// ARRAY JOIN attaches to the table on the left.
+        const bool is_left = kind == UnnestKind::LeftArrayJoin;
+        out += is_left ? "LEFT ARRAY JOIN " : "ARRAY JOIN ";
+
+        /// `LEFT ARRAY JOIN` over an empty array emits the default value of the
+        /// element type, while Trino emits NULL: making the elements Nullable
+        /// turns that default into NULL. Element types that cannot be wrapped
+        /// into `Nullable` (arrays, tuples, maps) are rejected by the analyzer -
+        /// there is no way to represent the Trino result for them.
+        auto nullable_if_left = [is_left](const String & array) -> String
+        {
+            if (!is_left)
+                return array;
+            return "arrayMap(__trino_e -> toNullable(__trino_e), " + array + ")";
+        };
+
+        /// One array per unnested column, all of the same length.
+        std::vector<String> unnested;
         if (is_map)
         {
-            items.push_back("mapKeys(" + args[0] + ") AS " + columns[0]);
-            items.push_back("mapValues(" + args[0] + ") AS " + columns[1]);
-            if (with_ordinality)
-                items.push_back("arrayEnumerate(mapKeys(" + args[0] + ")) AS " + columns[2]);
+            unnested.push_back("mapKeys(" + args[0] + ")");
+            unnested.push_back("mapValues(" + args[0] + ")");
+        }
+        else if (n_args == 1)
+        {
+            unnested.push_back(args[0]);
         }
         else
         {
+            /// Trino zips several arrays of different lengths, padding the
+            /// shorter ones with NULLs, so the raw arrays cannot be joined
+            /// directly (that would require them to be aligned).
+            String zip = "arrayZipUnaligned(";
             for (size_t k = 0; k < n_args; ++k)
-                items.push_back(args[k] + " AS " + columns[k]);
-            if (with_ordinality)
-                items.push_back("arrayEnumerate(" + args[0] + ") AS " + columns.back());
+            {
+                if (k > 0)
+                    zip += ", ";
+                zip += args[k];
+            }
+            zip += ")";
+            for (size_t k = 0; k < n_args; ++k)
+                unnested.push_back("arrayMap(__trino_z -> (__trino_z)." + std::to_string(k + 1) + ", " + zip + ")");
         }
+
+        std::vector<String> items;
+        for (size_t k = 0; k < unnested.size(); ++k)
+            items.push_back(nullable_if_left(unnested[k]) + " AS " + columns[k]);
+        if (with_ordinality)
+            items.push_back(nullable_if_left("arrayEnumerate(" + unnested[0] + ")") + " AS " + columns.back());
 
         for (size_t k = 0; k < items.size(); ++k)
         {
@@ -1711,7 +1766,19 @@ private:
 std::optional<String> translateTrinoSyntax(const std::vector<Token> & tokens, const char * begin, const char * end)
 {
     Translator translator(tokens, begin, end);
-    return translator.run();
+    std::optional<String> result = translator.run();
+
+    /// A joined UNNEST binds its column aliases to a table alias (`AS t (x)`),
+    /// but the ClickHouse `ARRAY JOIN` aliases are unqualified. The qualified
+    /// references can appear before the FROM clause, so the aliases discovered
+    /// by the first pass are fed into a second one.
+    if (!translator.getJoinedUnnestAliases().empty())
+    {
+        Translator second_pass(tokens, begin, end, translator.getJoinedUnnestAliases());
+        result = second_pass.run();
+    }
+
+    return result;
 }
 
 }

@@ -2329,6 +2329,23 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_trino_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Settings that align the query semantics with Trino: outer joins
+            /// produce NULLs (not type defaults), set operations use the numeric
+            /// supertype (not `Variant`), and the analyzer is required - the
+            /// column alias lists (`AS t (x, y)`) and the type resolution the
+            /// translation relies on do not work without it.
+            /// They are applied to the context rather than injected into the
+            /// query text, so that they also hold for a query that carries its
+            /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
+            /// or `EXPLAIN SELECT`. An explicit `SETTINGS` clause is applied
+            /// afterwards and still wins.
+            if (!out_ast->as<ASTSetQuery>())
+            {
+                context->setSetting("join_use_nulls", true);
+                context->setSetting("use_variant_as_common_type", false);
+                context->setSetting("enable_analyzer", true);
+            }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
