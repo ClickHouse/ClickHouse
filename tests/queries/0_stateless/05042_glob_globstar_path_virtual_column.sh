@@ -95,3 +95,13 @@ SETTINGS rename_files_after_processing = 'processed_%f%e';
 "
 [ -f "${WREN_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
 [ -f "${WREN_DIR}/x.csv" ] && echo "the lexical sibling was left alone"
+
+# The rename must not reach outside user_files either. A wildcard keeps the `..`, so the file
+# read here lives under the symlink's target; the access check resolves the directory before
+# approving it, so the outside file has to keep its name.
+ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/escw"
+$CLICKHOUSE_CLIENT -q "
+SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64')
+SETTINGS rename_files_after_processing = 'processed_%f%e';
+" > /dev/null 2>&1
+[ -f "${OUTSIDE_DIR}/secret.csv" ] && echo "the file outside user_files kept its name"

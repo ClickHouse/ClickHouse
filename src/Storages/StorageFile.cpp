@@ -1556,8 +1556,14 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
+                // Checking access rights. The directory is resolved first, because the check
+                // folds `..` lexically while the rename below follows it through any symlink,
+                // which would otherwise let the two disagree about where the file lands.
+                checkCreationIsAllowed(
+                    getContext(),
+                    getContext()->getUserFilesPath(),
+                    fs::weakly_canonical(file_path.parent_path()) / file_path.filename(),
+                    true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
