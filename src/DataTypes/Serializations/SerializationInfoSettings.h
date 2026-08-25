@@ -13,11 +13,6 @@ struct SerializationInfoSettings
 {
     double ratio_of_defaults_for_sparse = 1.0;
     bool choose_kind = false;
-    /// When true, `SerializationInfo::Data::add(const IColumn &)` counts defaults
-    /// exactly (O(rows) per column) and marks the result with `exact_num_defaults`.
-    /// When false, defaults are estimated by the sampling logic used to pick sparse
-    /// serialization; the resulting stat is unfit for trivial-count/pruning consumers.
-    bool compute_exact_num_defaults = false;
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
@@ -30,7 +25,6 @@ struct SerializationInfoSettings
     SerializationInfoSettings(
         double ratio_of_defaults_for_sparse_,
         bool choose_kind_,
-        bool compute_exact_num_defaults_,
         MergeTreeSerializationInfoVersion version_,
         MergeTreeStringSerializationVersion string_serialization_version_,
         MergeTreeNullableSerializationVersion nullable_serialization_version_,
@@ -51,9 +45,7 @@ struct SerializationInfoSettings
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
     /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
     /// Additional serialization versions can be added here in the future.
-    /// `with_string_size_stream` also enables the size-stream String layout (including nested Strings); it is
-    /// not self-describing on the wire, so enable it only when the peer protocol revision supports it.
-    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false);
+    static SerializationInfoSettings enableAllSupportedSerializations();
 };
 
 }

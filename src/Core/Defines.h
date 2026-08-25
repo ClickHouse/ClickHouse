@@ -40,16 +40,6 @@ static constexpr auto DEFAULT_BLOCK_SIZE
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
-/// Defaults and the 4 KiB floor for the experimental `ReaderExecutor` window, block, and
-/// connection tunables (`use_reader_executor`). The `reader_executor_*` settings, their
-/// `ReadSettings` mapping, the validation, and the executor `Options` share these constants.
-/// One definition stops the values from drifting apart.
-static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 4 * 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
-static constexpr size_t MIN_READER_EXECUTOR_SIZE = 4_KiB;
-
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
@@ -126,15 +116,10 @@ static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES = 1'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
-static constexpr auto DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE = 256_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES = 1000;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE = 1_GiB;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES = 1000;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE = 512_MiB;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO = 0.5;
@@ -142,9 +127,6 @@ static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES = 5000;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE = 50_MiB;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
@@ -161,8 +143,6 @@ static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS = 1'000'000uz;
 
-/// Not `uz`: the value does not fit into `size_t` on 32-bit platforms, and it is compared against
-/// a row count read from the wire as `UInt64`.
-static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000ULL;
+static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000uz;
 
 }

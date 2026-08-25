@@ -221,26 +221,23 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
     int64_t size,
     const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    if (prefetches_log)
+    FilesystemReadPrefetchesLogElement elem
     {
-        prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
-        {
-            element = FilesystemReadPrefetchesLogElement
-            {
-                .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-                .query_id = query_id,
-                .path = impl->getFileName(),
-                .offset = file_offset_of_buffer_end,
-                .size = size,
-                .prefetch_submit_time = last_prefetch_info.submit_time,
-                .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-                .priority = last_prefetch_info.priority,
-                .state = state,
-                .thread_id = getThreadId(),
-                .reader_id = current_reader_id,
-            };
-        });
-    }
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .path = impl->getFileName(),
+        .offset = file_offset_of_buffer_end,
+        .size = size,
+        .prefetch_submit_time = last_prefetch_info.submit_time,
+        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+        .priority = last_prefetch_info.priority,
+        .state = state,
+        .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
+    };
+
+    if (prefetches_log)
+        prefetches_log->add(std::move(elem));
 }
 
 
@@ -538,13 +535,6 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
     }
 
     return impl->readBigAt(to, n, range_begin, progress_callback);
-}
-
-std::optional<Field> AsynchronousBoundedReadBuffer::getMetadata(const String & name) const
-{
-    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(impl.get()))
-        return provider->getMetadata(name);
-    return std::nullopt;
 }
 
 }

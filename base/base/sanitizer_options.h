@@ -16,13 +16,11 @@ extern "C" {
 #ifdef ADDRESS_SANITIZER
 const char * __asan_default_options()
 {
-    /// allocator_may_return_null=1: oversized allocation returns null (recoverable) instead of
-    /// aborting. Removable once llvm/llvm-project#206649 lands in our toolchain.
-    return "halt_on_error=1 abort_on_error=1 allocator_may_return_null=1";
+    return "halt_on_error=1 abort_on_error=1";
 }
 const char * __lsan_default_options()
 {
-    return "max_allocation_size_mb=32768 allocator_may_return_null=1";
+    return "max_allocation_size_mb=32768";
 }
 const char * __lsan_default_suppressions()
 {
@@ -47,51 +45,21 @@ const char * __lsan_default_suppressions()
 #ifdef MEMORY_SANITIZER
 const char * __msan_default_options()
 {
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
+    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
 }
 #endif
 
 #ifdef THREAD_SANITIZER
 const char * __tsan_default_options()
 {
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
-}
-const char * __tsan_default_suppressions()
-{
-    /// The release/acquire handoff on `slot.pos` orders every access to a slot payload, so the
-    /// reports these entries suppress are not real races (see the comment in
-    /// Common/NonblockingBoundedQueue.h). A function attribute cannot suppress them, because the
-    /// element type's implicitly generated move assignment is a separate, still-instrumented
-    /// function, and the attribute additionally prevents it from being inlined.
-    ///
-    /// Of the queue entries, only `tryPush` is listed. Both Keeper queues have a single consumer
-    /// thread, so two `tryPop` calls never overlap and every reported pair contains the `tryPush` write.
-    /// Patterns are matched against each frame's function, file and module name, so an unqualified
-    /// name would also match this header's file name and the unrelated asynchronous logging queue.
-    /// Keep them narrow: a `race:` entry also hides heap-use-after-free reports through the frame
-    /// it names.
-    /// The same handoff orders the request, so reports on the request the dispatch thread just
-    /// popped are not real races either: `KeeperTCPHandler::receiveRequest` writes every payload
-    /// field before publishing the request with `putRequest`, and `getRequestBytesCost` only reads
-    /// the vptr and those fields.
-    ///
-    /// Its entry has to be `race:` rather than `race_top:`. `race_top:` matches the innermost frame
-    /// only, so it covered the vptr read, which is attributed to the call site inside
-    /// `getRequestBytesCost` - and suppressing that just moved the report one frame down, to the
-    /// `path` read inside `bytesSize`, which aborted the Keeper container all the same. `race:`
-    /// matches any frame, so it covers the whole callee subtree. That subtree is only
-    /// `bytesSize`, a read-only size computation, and a use-after-free blinded there still
-    /// surfaces on the next access to the same request in `dispatchThread`.
-    return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
-           "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
-           "race:^DB::getRequestBytesCost\n";
+    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
 }
 #endif
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
 const char * __ubsan_default_options()
 {
-    return "print_stacktrace=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
+    return "print_stacktrace=1 max_allocation_size_mb=32768";
 }
 #endif
 }

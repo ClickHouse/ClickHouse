@@ -1,6 +1,0 @@
--- hash DISTINCT keeps binary identity: all four rows survive
-4	[0,9221120237041090561,9221120237041090562,9223372036854775808]
--- the in-order plan: final sorted distinct above the sort, hash pre-distinct below it
-['DistinctSortedStreamTransform','DistinctTransform']
--- final sorted distinct groups the Float prefix by comparison equality: one row per class
-2	['nan','zero']
