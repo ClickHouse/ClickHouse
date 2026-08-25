@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -70,13 +69,21 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
+    /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
+    /// - createForMaterializedView()
+    /// - createForFlushAsyncInsertQueue()
+    /// - createForExplainAnalyze()
+    /// Required for raw pointers to memory_tracker/performance_counters
+    ThreadGroupPtr parent;
+
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent, bool charge_memory_to_parent = true);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -91,13 +98,9 @@ public:
     /// `createForWorkNotChargedToTheQuery`; kept even if that work runs a query of its own.
     const bool charge_memory_to_query_user = true;
 
-    /// A group chained on a parent shares its counters, memory tracker and callbacks, so the parent must
-    /// outlive it. Declared first so it is destroyed last.
-    const ThreadGroupPtr parent_group;
-
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -139,7 +142,8 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
 
     /// For work a query only triggers (e.g. loading a dictionary) that outlives it and can't be uncharged from
     /// the query: memory is accounted globally, covering spawned threads too, unlike `MemoryTrackerBlockerInThread`.
@@ -171,6 +175,9 @@ private:
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).

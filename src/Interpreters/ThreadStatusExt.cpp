@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySpillScheduler.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -131,14 +132,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for methods createForMaterializedView and createForWorkNotChargedToTheQuery
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent, bool charge_memory_to_parent)
-    : master_thread_id(parent->master_thread_id)
+// c-tor for methods createForMaterializedView, createForExplainAnalyze and createForWorkNotChargedToTheQuery
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
     , charge_memory_to_query_user(charge_memory_to_parent)
-    , parent_group(parent)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
@@ -150,13 +151,12 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent, bool charge_memory_to_parent)
 {
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
-    , parent_group(parent)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
@@ -257,7 +257,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
     {
@@ -268,14 +268,19 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForWorkNotChargedToTheQuery(ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForWorkNotChargedToTheQuery(ThreadGroupPtr parent_thread_group)
 {
-    return std::make_shared<ThreadGroup>(std::move(parent), /*charge_memory_to_parent=*/ false);
+    return ThreadGroupPtr(new ThreadGroup(std::move(parent_thread_group), /*charge_memory_to_parent=*/ false));
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)
+{
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
@@ -550,6 +555,8 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
+    progress_in.reset();
+    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
