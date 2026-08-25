@@ -3,6 +3,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
+#include <base/RapidStringHash.h>
+
 #include <bit>
 #include <new>
 
@@ -45,86 +47,19 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 
 struct StringHashTableHash
 {
-#if defined(__SSE4_2__)
+    /// The fixed-size keys are zero-padded, so hashing `sizeof(key)` bytes hashes the whole key.
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
-        res = _mm_crc32_u64(res, key);
-        return res;
+        return rapid::rapidhash(&key, sizeof(key), STRING_HASH_SEED);
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
-        res = _mm_crc32_u64(res, key.items[0]);
-        res = _mm_crc32_u64(res, key.items[1]);
-        return res;
+        return rapid::rapidhash(&key, sizeof(key), STRING_HASH_SEED);
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
-        res = _mm_crc32_u64(res, key.a);
-        res = _mm_crc32_u64(res, key.b);
-        res = _mm_crc32_u64(res, key.c);
-        return res;
+        return rapid::rapidhash(&key, sizeof(key), STRING_HASH_SEED);
     }
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    size_t ALWAYS_INLINE operator()(StringKey8 key) const
-    {
-        size_t res = -1ULL;
-        res = __crc32cd(static_cast<UInt32>(res), key);
-        return res;
-    }
-    size_t ALWAYS_INLINE operator()(StringKey16 key) const
-    {
-        size_t res = -1ULL;
-        res = __crc32cd(static_cast<UInt32>(res), key.items[0]);
-        res = __crc32cd(static_cast<UInt32>(res), key.items[1]);
-        return res;
-    }
-    size_t ALWAYS_INLINE operator()(StringKey24 key) const
-    {
-        size_t res = -1ULL;
-        res = __crc32cd(static_cast<UInt32>(res), key.a);
-        res = __crc32cd(static_cast<UInt32>(res), key.b);
-        res = __crc32cd(static_cast<UInt32>(res), key.c);
-        return res;
-    }
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    size_t ALWAYS_INLINE operator()(StringKey8 key) const
-    {
-        size_t res = -1ULL;
-        res = s390x_crc32c(res, key);
-        return res;
-    }
-    size_t ALWAYS_INLINE operator()(StringKey16 key) const
-    {
-        size_t res = -1ULL;
-        res = s390x_crc32c(res, key.items[UInt128::_impl::little(0)]);
-        res = s390x_crc32c(res, key.items[UInt128::_impl::little(1)]);
-        return res;
-    }
-    size_t ALWAYS_INLINE operator()(StringKey24 key) const
-    {
-        size_t res = -1ULL;
-        res = s390x_crc32c(res, key.a);
-        res = s390x_crc32c(res, key.b);
-        res = s390x_crc32c(res, key.c);
-        return res;
-    }
-#else
-    size_t ALWAYS_INLINE operator()(StringKey8 key) const
-    {
-        return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 8);
-    }
-    size_t ALWAYS_INLINE operator()(StringKey16 key) const
-    {
-        return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 16);
-    }
-    size_t ALWAYS_INLINE operator()(StringKey24 key) const
-    {
-        return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 24);
-    }
-#endif
     size_t ALWAYS_INLINE operator()(std::string_view key) const
     {
         return StringViewHash()(key);

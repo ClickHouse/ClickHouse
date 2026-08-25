@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include <base/RapidStringHash.h>
 #include <base/defines.h>
 #include <base/simd.h>
 #include <base/types.h>
@@ -329,8 +330,6 @@ struct CRC32Hash
     }
 };
 
-struct StringViewHash : CRC32Hash {};
-
 #else
 
 struct CRC32Hash
@@ -341,9 +340,16 @@ struct CRC32Hash
     }
 };
 
-struct StringViewHash : StringViewHash64 {};
-
 #endif
+
+/// The default hash for strings: `rapidhash` for short keys, `taotie` for long ones.
+struct StringViewHash
+{
+    size_t operator() (std::string_view x) const
+    {
+        return rapidStringHash(x);
+    }
+};
 
 namespace ZeroTraits
 {
