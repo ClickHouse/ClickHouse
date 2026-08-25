@@ -7,6 +7,9 @@
 -- support case-insensitive LIKE.
 
 SET enable_analyzer = 1;
+-- The exact granule counts below are only meaningful while the query condition cache cannot
+-- serve a verdict recorded under a different skip-index profile.
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 

@@ -7,6 +7,11 @@
 -- handlers.
 
 SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+-- The exact granule counts below are only meaningful while the query condition cache cannot
+-- serve a verdict recorded under a different skip-index profile.
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -14,7 +19,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -36,8 +41,6 @@ INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'literal 50 discount token' FROM numbers(1024);
 
 SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
-
-SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 
 SELECT count() FROM tab WHERE message LIKE '%World%';
 SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|';
@@ -122,7 +125,7 @@ CREATE TABLE tab
 (
     id UInt32,
     tag String,
-    INDEX idx(tag) TYPE text(tokenizer = array) GRANULARITY 1
+    INDEX idx(tag) TYPE text(tokenizer = array)
 )
 ENGINE = MergeTree
 ORDER BY (id)
