@@ -13,6 +13,21 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
+<Update label="August 24, 2026">
+
+This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, and completes Private Service Connect with cross-region connectivity.
+
+### New AWS regions: Taipei and Malaysia {#new-aws-regions-taipei-and-malaysia}
+
+ClickHouse Cloud is now available in AWS Taipei (`ap-east-2`) and AWS Malaysia (`ap-southeast-5`). Both are set up as Private Regions with ClickPipes support. See the [supported regions documentation](/cloud/reference/supported-regions) and [Private Region considerations](/cloud/reference/supported-regions#private-regions) for details.
+
+### Private Service Connect adds cross-region connectivity {#private-service-connect-adds-cross-region-connectivity}
+
+Private Service Connect (PSC) on GCP now supports cross-region connectivity via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). This lets you connect to private endpoints from GCP regions not natively supported in ClickHouse Cloud, such as `asia-northeast3` (Seoul).
+
+</Update>
+
+
 <Update label="August 17, 2026">
 
 This week's updates bring broader platform reach and better operational visibility. Managed Postgres is now available on GCP for selected design partners, ClickStack resources can be managed through the official Terraform provider, and new billing notifications give customers early warning before credits expire or service is interrupted. We also shipped improved tracing for ClickHouse Agents and a smoother SAML sign-in experience.
