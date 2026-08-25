@@ -218,11 +218,10 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
 ///
 /// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
-/// `node->children`. A delayed set can also sit inside a plan a step owns through `getChildPlans`
-/// (`ReadFromMerge`, `JoinStepLogicalLookup`), inside a set's own source plan (a nested `IN`), or -
-/// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`.
-/// A set missed here is not adopted from the single-replica plan and its subquery runs a second time
-/// at execution, which is exactly what this transplant exists to avoid.
+/// `node->children`. A delayed set can also sit inside a set's own source plan (a nested `IN`) or -
+/// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`,
+/// which is not a child node. A set missed here is not adopted from the single-replica plan and its
+/// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;

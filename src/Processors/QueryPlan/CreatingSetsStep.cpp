@@ -356,9 +356,15 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureS
             forEachSubquerySet(read_from_local->getQueryPlan(), visit);
         }
 
-        for (auto * child_plan : node->step->getChildPlans())
-            forEachSubquerySet(child_plan, visit);
-
+        /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike the other plan-wide
+        /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). A set can sit inside a plan a
+        /// step owns that way, but `ReadFromMerge::getChildPlans` builds those plans on the spot
+        /// instead of just handing them out, and paying for that here loses more than the sharing
+        /// wins: on `SELECT ... WHERE key IN (SELECT ... FROM <merge table>)` under automatic
+        /// parallel replicas it made the nested subquery run one extra time rather than one time
+        /// fewer. Such a step also disqualifies the plan from automatic parallel replicas altogether
+        /// (`supportsDataflowStatisticsCollection`), so the sets missed here are only the ones below
+        /// a set's own source plan.
         for (auto * child : node->children)
             stack.push_back(child);
     }
