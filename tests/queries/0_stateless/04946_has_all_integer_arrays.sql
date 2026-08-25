@@ -13,7 +13,9 @@ CREATE TABLE t_has_all (id UInt32, n UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_has_all SELECT number, number FROM numbers(200);
 
 -- Values 0..n-1 as the haystack, needles taken from it, so a length change
--- alone moves the match depth across the whole scan.
+-- alone moves the match depth across the whole scan. The longest length here is
+-- 200, which is under 256, so the 8-bit casts stay injective too: the `absent`
+-- needle really is absent at every width and the deepest hit is the last element.
 WITH
     lengths AS (SELECT arrayJoin([1, 2, 3, 4, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 200]) AS n),
     shapes AS (
@@ -32,16 +34,16 @@ WITH
         FROM lengths
     )
 SELECT DISTINCT
-    hasAll(arrayMap(x -> toInt8(x % 100), hay), arrayMap(x -> toInt8(x % 100), needles))
-        = (length(arrayFilter(y -> NOT has(arrayMap(x -> toInt8(x % 100), hay), y), arrayMap(x -> toInt8(x % 100), needles))) = 0)
+    hasAll(arrayMap(x -> toInt8(x), hay), arrayMap(x -> toInt8(x), needles))
+        = (length(arrayFilter(y -> NOT has(arrayMap(x -> toInt8(x), hay), y), arrayMap(x -> toInt8(x), needles))) = 0)
     AND hasAll(arrayMap(x -> toInt16(x), hay), arrayMap(x -> toInt16(x), needles))
         = (length(arrayFilter(y -> NOT has(arrayMap(x -> toInt16(x), hay), y), arrayMap(x -> toInt16(x), needles))) = 0)
     AND hasAll(arrayMap(x -> toInt32(x), hay), arrayMap(x -> toInt32(x), needles))
         = (length(arrayFilter(y -> NOT has(arrayMap(x -> toInt32(x), hay), y), arrayMap(x -> toInt32(x), needles))) = 0)
     AND hasAll(arrayMap(x -> toInt64(x), hay), arrayMap(x -> toInt64(x), needles))
         = (length(arrayFilter(y -> NOT has(arrayMap(x -> toInt64(x), hay), y), arrayMap(x -> toInt64(x), needles))) = 0)
-    AND hasAll(arrayMap(x -> toUInt8(x % 100), hay), arrayMap(x -> toUInt8(x % 100), needles))
-        = (length(arrayFilter(y -> NOT has(arrayMap(x -> toUInt8(x % 100), hay), y), arrayMap(x -> toUInt8(x % 100), needles))) = 0)
+    AND hasAll(arrayMap(x -> toUInt8(x), hay), arrayMap(x -> toUInt8(x), needles))
+        = (length(arrayFilter(y -> NOT has(arrayMap(x -> toUInt8(x), hay), y), arrayMap(x -> toUInt8(x), needles))) = 0)
     AND hasAll(arrayMap(x -> toUInt16(x), hay), arrayMap(x -> toUInt16(x), needles))
         = (length(arrayFilter(y -> NOT has(arrayMap(x -> toUInt16(x), hay), y), arrayMap(x -> toUInt16(x), needles))) = 0)
     AND hasAll(arrayMap(x -> toUInt32(x), hay), arrayMap(x -> toUInt32(x), needles))
