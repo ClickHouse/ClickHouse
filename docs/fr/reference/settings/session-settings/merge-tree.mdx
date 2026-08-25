@@ -130,6 +130,26 @@ Valeurs possibles :
 
 * Tout entier positif.
 
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "Nouveau paramètre limitant le nombre de flux pour les parcours locaux, non ordonnés et ordinaires de colonnes étroites `MergeTree`, à l’aide d’un modèle de coût en racine carrée, afin de réduire la surcharge par flux sur les machines dotées d’un grand nombre de cœurs. previous_value=0 (désactivé), de sorte que la `compatibility` avec les versions antérieures à 26.8 rétablit le nombre de flux précédent."}]}]} />
+
+Coût de surcharge par flux exprimé en équivalent octets. Contrôle le nombre maximal de flux de lecture créés pour les parcours locaux, non ordonnés et ordinaires de `MergeTree`. Les lectures ordonnées, `FINAL`, en couches et sur réplicas parallèles ne sont pas modifiées. La limite basée sur le volume est `ceil(sqrt(estimated_read_bytes / this_setting))`. ClickHouse conserve également au moins 16 flux et au moins un quart des flux demandés avant application de cette limite, de sorte que le nombre effectif de flux est `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))`. Ces seuils minimaux préservent le parallélisme en aval pour les expressions et agrégations gourmandes en CPU, dont le coût n’est pas représenté par `estimated_read_bytes`.
+
+`estimated_read_bytes` correspond à la taille non compressée des colonnes lues sur les plages de marques restantes après l’élagage des index et des partitions. La taille non compressée est utilisée, car la surcharge par flux est mise en balance avec le travail effectué par flux, qui augmente avec le nombre de valeurs traitées plutôt qu’avec leur niveau de compression.
+
+La limite n’est pas appliquée lorsque le volume de lecture ne peut pas être estimé de manière prudente, par exemple lorsqu’une ancienne partie nécessite d’autres colonnes physiques pour évaluer une colonne `DEFAULT` récemment ajoutée, ou lorsqu’une plage sélectionnée ne lit qu’une partie d’une colonne à largeur variable.
+
+La valeur par défaut de 64 Ko est dérivée du modèle de coût `T(N) = W/N + F + V·N`, où `W` est le travail utile, `F` est la surcharge fixe du pipeline et `V` est le coût variable par flux. Le nombre optimal de flux est `sqrt(W/V)`. L’expression de `W` en octets à l’aide du débit donne `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`. Augmenter cette valeur réduit le nombre de flux (approche plus prudente) ; la diminuer autorise davantage de flux. Définissez-la sur 0 pour désactiver cette optimisation.
+
+Valeurs possibles :
+
+* Entier non négatif.
+
 <div id="merge_tree_min_bytes_per_task_for_remote_reading">
   ## merge_tree_min_bytes_per_task_for_remote_reading
 </div>

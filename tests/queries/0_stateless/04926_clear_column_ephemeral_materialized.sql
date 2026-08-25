@@ -1,7 +1,7 @@
 -- CLEAR COLUMN recomputes the MATERIALIZED columns that read the cleared one. A MATERIALIZED column
 -- derived from an EPHEMERAL column cannot be recomputed outside INSERT, so it must be left alone:
 -- recomputing it fails to resolve the EPHEMERAL name and the whole mutation dies with
--- "Missing columns: 'e' while processing 'x + e'".
+-- "There is no column or subcolumn e in table".
 
 SET mutations_sync = 2;
 

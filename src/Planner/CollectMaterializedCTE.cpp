@@ -37,11 +37,12 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
         if (auto * table_node = current_node->as<TableNode>())
         {
             const auto & cte = table_node->getMaterializedCTE();
-            /// Skip a subquery-less reference that is not plan-backed: it is the CTE's temp storage
-            /// resolved by name (e.g. a per-shard local plan reading the table the initiator shipped
-            /// as an external table). It has no subquery to materialize, so it is read directly and
-            /// must not be wrapped in a materializing step.
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()))
+            /// A subquery-less, non-plan-backed reference is the CTE's temp storage resolved by name
+            /// (e.g. a per-shard local plan reading a shipped external table): nothing to materialize.
+            /// A plan that may run as a standalone pipeline is the exception - nothing above it can
+            /// gate its readers, so it plants its own gate.
+            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
+                        || select_query_options.force_materialize_cte))
             {
                 auto [it, _] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{current_node, level});
 
@@ -52,12 +53,13 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
             }
         }
     },
-    [&level](const QueryTreeNodePtr & current_node)
+    [&level, &select_query_options](const QueryTreeNodePtr & current_node)
     {
         if (auto * table_node = current_node->as<TableNode>())
         {
             const auto & cte = table_node->getMaterializedCTE();
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()))
+            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
+                        || select_query_options.force_materialize_cte))
                 --level;
         }
     });
