@@ -2273,7 +2273,24 @@ static bool isMaterializedByMerge(const MutationCommands & commands)
 
     return std::all_of(commands.begin(), commands.end(), [](const auto & command)
     {
-        return AlterConversions::isSupportedMetadataMutation(command.type);
+        if (!AlterConversions::isSupportedMetadataMutation(command.type))
+            return false;
+
+        /// `CLEAR COLUMN` is a `DROP_COLUMN` with `clear`. A merge does replace its values with
+        /// defaults, because `AlterConversions` reports the column as dropped while the mutation is
+        /// pending, but the command keeps the column in the metadata, so re-running it later is a
+        /// no-op rather than a loss. There is nothing to gain from recording it in the merged part,
+        /// and the equivalence is subtle enough that it is not worth relying on: leave it pending.
+        if (command.clear)
+            return false;
+
+        /// A command scoped to a partition is not applied to the parts of the other partitions, and
+        /// a merged part has to record only what the merge materialized for it. The scope is per
+        /// command, while the data version is per part, so do not record such an entry at all.
+        if (auto alter = command.ast(); alter && alter->partition)
+            return false;
+
+        return true;
     });
 }
 
