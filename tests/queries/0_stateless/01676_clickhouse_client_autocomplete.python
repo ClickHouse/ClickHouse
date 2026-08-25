@@ -185,10 +185,14 @@ if __name__ == "__main__":
     ]
 
     print("# clickhouse-client, suggestion limit 1")
-    truncated_args = shlex.split(clickhouse_client)
-    truncated_args.append("--wait_for_suggestions_to_load")
-    truncated_args.append("--highlight=0")
-    truncated_args.append("--suggestion_limit=1")
+    # Derived from the argv above by replacing the pinned bound, so removing that pin breaks this
+    # run rather than silently leaving it to pass at the default.
+    high_limit_arg = "--suggestion_limit=1000000"
+    if high_limit_arg not in args:
+        raise AssertionError(f"expected {high_limit_arg} in the client argv")
+    truncated_args = [
+        "--suggestion_limit=1" if arg == high_limit_arg else arg for arg in args
+    ]
     [
         run_with_timeout(
             test_completion,
