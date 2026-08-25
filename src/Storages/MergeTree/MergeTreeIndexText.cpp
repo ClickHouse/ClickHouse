@@ -1676,8 +1676,6 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 
     const auto row = static_cast<UInt32>(current_row);
 
-    /// The hash map requires the mapped value of an inserted key to be constructed in place.
-    /// When positions are enabled, the builder records the position of every occurrence of the token.
     if (inserted)
         new (&it->getMapped()) PostingListBuilder(row, token_position, context);
     else

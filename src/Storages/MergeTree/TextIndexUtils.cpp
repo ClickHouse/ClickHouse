@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -276,6 +277,20 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     inputs.resize(segments.size());
     input_streams.resize(segments.size());
 
+    SortDescription postings_sort_description;
+    postings_sort_description.emplace_back("row_id");
+
+    /// The sort cursor of every postings cursor is built once and points at the cursor's
+    /// own column; a segment refill only rewinds it (see resetToColumnStart).
+    postings_merge_cursors.resize(segments.size());
+    for (size_t i = 0; i < postings_merge_cursors.size(); ++i)
+    {
+        auto & cursor = postings_merge_cursors[i];
+        cursor.column = ColumnUInt32::create();
+        Block postings_header{ColumnWithTypeAndName{cursor.column->getPtr(), std::make_shared<DataTypeUInt32>(), "row_id"}};
+        cursor.impl = SortCursorImpl(postings_header, postings_sort_description, i);
+    }
+
     output_tokens = ColumnString::create();
 
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
@@ -382,16 +397,16 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
 {
     cursor.source = &source;
     cursor.next_segment = 0;
-    cursor.pos = 0;
-    cursor.buffer.clear();
 
     const auto & info = source.info;
 
     if (!info.embedded_postings.empty())
     {
-        cursor.buffer.insert(info.embedded_postings.begin(), info.embedded_postings.end());
-        adjustPartOffsets({cursor.buffer.data(), cursor.buffer.size()}, segments[source.source_num].part_index);
+        auto & row_ids = cursor.rowIds();
+        row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
+        adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source.source_num].part_index);
         cursor.next_segment = info.offsets.size();
+        cursor.resetToColumnStart();
     }
     else
     {
@@ -410,21 +425,22 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     stream->seekToMark({info.offsets[cursor.next_segment], 0});
 
-    cursor.buffer.clear();
-    cursor.pos = 0;
-    source_postings_serializations[source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, cursor.buffer);
-    adjustPartOffsets({cursor.buffer.data(), cursor.buffer.size()}, segments[source_num].part_index);
+    auto & row_ids = cursor.rowIds();
+    row_ids.clear();
+    source_postings_serializations[source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, row_ids);
+    adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source_num].part_index);
     ++cursor.next_segment;
+    cursor.resetToColumnStart();
 
-    chassert(!cursor.buffer.empty());
-    chassert(std::is_sorted(cursor.buffer.begin(), cursor.buffer.end()));
+    chassert(!row_ids.empty());
+    chassert(std::is_sorted(row_ids.begin(), row_ids.end()));
     return true;
 }
 
 template <typename Sink>
 void MergeTextIndexesTask::mergePostings(Sink && sink)
 {
-    absl::InlinedVector<PostingsMergeCursor *, 16> cursor_heap;
+    chassert(!postings_queue.isValid());
     size_t num_cursors = 0;
 
     for (const auto & source : output_sources)
@@ -434,40 +450,57 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 
         auto & cursor = postings_merge_cursors[num_cursors++];
         initCursor(cursor, source);
-        cursor_heap.push_back(&cursor);
     }
 
-    /// Min-heap by the cursor's current row id.
-    auto greater = [](const auto * lhs, const auto * rhs) { return lhs->current() > rhs->current(); };
-    std::make_heap(cursor_heap.begin(), cursor_heap.end(), greater);
-
-    while (!cursor_heap.empty())
+    /// Most tokens live in a single source and need no merging at all.
+    if (num_cursors == 1)
     {
-        std::pop_heap(cursor_heap.begin(), cursor_heap.end(), greater);
-        auto * best = cursor_heap.back();
-        cursor_heap.pop_back();
+        auto & cursor = postings_merge_cursors.front();
 
-        /// Row ids are globally unique across sources.
-        /// So the next cursor's head is a strict upper bound for the current cursor.
-        bool has_next = !cursor_heap.empty();
-        UInt32 next_value = has_next ? cursor_heap.front()->current() : 0;
+        do
+        {
+            const auto & row_ids = cursor.rowIds();
+            sink(std::span<const UInt32>(row_ids.data(), row_ids.size()));
+        }
+        while (advanceCursorSegment(cursor));
 
-        const UInt32 * begin = best->buffer.data() + best->pos;
-        const UInt32 * end = best->buffer.data() + best->buffer.size();
-        const UInt32 * run_end = has_next ? std::lower_bound(begin, end, next_value) : end;
+        return;
+    }
 
-        if (begin == run_end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate row id {} in source posting lists on merge of text indexes", best->current());
+    for (size_t i = 0; i < num_cursors; ++i)
+        postings_queue.push(postings_merge_cursors[i].impl);
 
-        sink(std::span<const UInt32>(begin, run_end));
-        best->pos += run_end - begin;
+    /// Row ids are globally unique across sources, so the merged stream must be strictly increasing.
+    UInt32 last_row_id = 0;
+    bool has_last_row_id = false;
 
-        /// The segment is exhausted: load the next one or drop the cursor.
-        if (run_end == end && !advanceCursorSegment(*best))
-            continue;
+    while (postings_queue.isValid())
+    {
+        auto [current_ptr, batch_size] = postings_queue.current();
+        PostingsSortCursor & current = *current_ptr;
+        auto & cursor = postings_merge_cursors[current->order];
 
-        cursor_heap.push_back(best);
-        std::push_heap(cursor_heap.begin(), cursor_heap.end(), greater);
+        const UInt32 * begin = cursor.rowIds().data() + current->getPos();
+
+        if (has_last_row_id && *begin <= last_row_id)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate row id {} in source posting lists on merge of text indexes", *begin);
+
+        sink(std::span<const UInt32>(begin, batch_size));
+        last_row_id = begin[batch_size - 1];
+        has_last_row_id = true;
+
+        if (!current->isLast(batch_size))
+        {
+            postings_queue.next(batch_size);
+        }
+        else
+        {
+            /// The segment is exhausted: load the source's next one or drop the cursor.
+            postings_queue.removeTop();
+
+            if (advanceCursorSegment(cursor))
+                postings_queue.push(cursor.impl);
+        }
     }
 }
 
@@ -511,6 +544,14 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     output_postings_buffer.clear();
     mergePostings([&](std::span<const UInt32> row_ids)
     {
+        /// A granularity-aligned chunk arriving on an empty buffer (typically a whole
+        /// segment of the only or a disjoint source) goes to the encoder directly, without staging.
+        if (output_postings_buffer.empty() && row_ids.size() % IPostingListEncoder::append_granularity == 0)
+        {
+            encoder->append(row_ids, segment_size);
+            return;
+        }
+
         output_postings_buffer.insert(row_ids.begin(), row_ids.end());
 
         if (output_postings_buffer.size() >= max_buffered_size)

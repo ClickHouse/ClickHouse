@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/ISimpleTransform.h>
 
 #include <span>
@@ -123,18 +124,29 @@ private:
         TokenPostingsInfo info;
     };
 
+    /// Cursor over the single UInt32 row id column with statically dispatched comparisons.
+    using PostingsSortCursor = SpecializedSingleColumnSortCursor<ColumnUInt32>;
+
     /// Streams the sorted (remapped) row ids of one source, one decoded segment at a time.
     struct PostingsMergeCursor
     {
         const TokenSource * source = nullptr;
         /// Next entry of info.offsets to decode.
         size_t next_segment = 0;
-        /// Current position in buffer.
-        size_t pos = 0;
         /// Decoded and remapped row ids of the current segment.
-        PaddedPODArray<UInt32> buffer;
+        /// The sort cursor points at this column once, in the task constructor.
+        ColumnUInt32::MutablePtr column;
+        SortCursorImpl impl;
 
-        UInt32 current() const { return buffer[pos]; }
+        PaddedPODArray<UInt32> & rowIds() { return column->getData(); }
+        const PaddedPODArray<UInt32> & rowIds() const { return column->getData(); }
+
+        /// Rewinds the sort cursor to the start of the refilled column.
+        void resetToColumnStart()
+        {
+            impl.rows = column->size();
+            impl.getPosRef() = 0;
+        }
     };
 
     /// Points the cursor at a source and decodes its first postings.
@@ -142,8 +154,9 @@ private:
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advanceCursorSegment(PostingsMergeCursor & cursor);
 
-    /// K-way merges the postings of token_sources and passes sorted
-    /// non-empty chunks of row ids to the sink in the globally sorted order.
+    /// Merges the postings of output_sources and passes sorted non-empty chunks of row ids
+    /// to the sink in the globally sorted order. A token from a single source is drained
+    /// directly, otherwise the sources are k-way merged through postings_queue.
     template <typename Sink>
     void mergePostings(Sink && sink);
 
@@ -194,6 +207,8 @@ private:
     PaddedPODArray<UInt32> output_postings_buffer;
     /// Resusable cursors for merging of posting lists.
     std::vector<PostingsMergeCursor> postings_merge_cursors;
+    /// Min-queue over the postings cursors of the current token; drained by every mergePostings call.
+    SortingQueueBatch<PostingsSortCursor> postings_queue;
     /// Reusable buffer for position entries of one token read from a source.
     PaddedPODArray<RoaringishEntry> position_entries_buffer;
     /// Positions accumulated for the current token (phrase query support).
