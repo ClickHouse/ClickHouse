@@ -1,9 +1,8 @@
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserPipeOperators.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/ASTExpressionList.h>
-
 
 namespace DB
 {
@@ -22,23 +21,21 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     /// If we got only one child which is ASTSelectWithUnionQuery, just lift it up
     auto & expr_list = list_node->as<ASTExpressionList &>();
-    if (expr_list.children.size() == 1 && expr_list.children.at(0)->as<ASTSelectWithUnionQuery>())
+    if (expr_list.children.size() == 1)
     {
-        node = std::move(expr_list.children.at(0));
-    }
-    else
-    {
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-
-        node = select_with_union_query;
-        select_with_union_query->list_of_selects = list_node;
-        select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
-        select_with_union_query->list_of_modes = parser.getUnionModes();
+        if (expr_list.children.at(0)->as<ASTSelectWithUnionQuery>())
+        {
+            node = std::move(expr_list.children.at(0));
+            return true;
+        }
     }
 
-    /// The query can be followed by a chain of pipe operators, e.g.: FROM t |> WHERE x |> LIMIT 1.
-    if (pos->type == TokenType::PipeOperator)
-        return parsePipeOperators(pos, node, expected);
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+
+    node = select_with_union_query;
+    select_with_union_query->list_of_selects = list_node;
+    select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+    select_with_union_query->list_of_modes = parser.getUnionModes();
 
     return true;
 }

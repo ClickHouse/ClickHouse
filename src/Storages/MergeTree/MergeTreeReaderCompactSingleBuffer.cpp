@@ -9,7 +9,7 @@ namespace DB
 {
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
-    size_t from_mark,
+    size_t from_mark, size_t current_task_last_mark,
     bool continue_reading, size_t max_rows_to_read,
     size_t rows_offset, Columns & res_columns)
 try
@@ -62,7 +62,7 @@ try
             if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
                 continue;
 
-            stream->adjustRightMark(last_mark_to_read); /// Must go before seek.
+            stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
@@ -75,7 +75,7 @@ try
         /// use deserialization prefixes cache and substreams cache during deserialization of subcolumns of the same column.
         if (has_substream_marks && has_subcolumns)
         {
-            readSubcolumnsPrefixes(from_mark);
+            readSubcolumnsPrefixes(from_mark, current_task_last_mark);
             initSubcolumnsDeserializationOrder();
             /// Deserialize all subcolumns according to subcolumns_deserialization_order.
             for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
@@ -89,17 +89,8 @@ try
 
                     readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
-
-                /// Before dropping the substreams cache, verify the reference counts of the columns
-                /// shared with the result columns; see the comment near the same check in
-                /// MergeTreeReaderWide::readRows.
-                validateColumnsOwnership(res_columns, nullptr, nullptr, &substreams_cache, &deserialize_states_caches);
             }
         }
-
-        /// The same check for the full-column reads of this granule; see the comment near the same
-        /// check in MergeTreeReaderWide::readRows.
-        validateColumnsOwnership(res_columns, &columns_cache, &columns_cache_for_subcolumns, nullptr, &deserialize_states_caches);
 
         ++from_mark;
         read_rows += rows_to_read;

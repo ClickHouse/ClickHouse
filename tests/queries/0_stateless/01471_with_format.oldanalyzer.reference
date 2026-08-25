@@ -1,2 +1,6 @@
-WITH\n    1\nSELECT 1
-WITH\n    1,\n    2\nSELECT 1
+WITH 1
+SELECT 1
+WITH
+    1,
+    2
+SELECT 1
