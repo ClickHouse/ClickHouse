@@ -28,12 +28,12 @@ import clickhouse_grpc_pb2_grpc
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.xml", "configs/cluster.xml"],
+    main_configs=["configs/config.xml", "configs/cluster.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.xml", "configs/cluster.xml"],
+    main_configs=["configs/config.xml", "configs/cluster.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
 # A node with an empty global `default_session_user`: connections without a user name are
@@ -41,7 +41,7 @@ node2 = cluster.add_instance(
 # reject mode can only be enabled globally, which needs a separate node.
 node_reject = cluster.add_instance(
     "node_reject",
-    main_configs=["configs/config_reject.xml"],
+    main_configs=["configs/config_reject.xml", "configs/config_reloader.xml"],
     user_configs=["configs/users.xml"],
 )
 
@@ -54,6 +54,14 @@ def started_cluster():
         # port that the readiness check uses.
         node1.wait_until_port_is_ready(9110, timeout=10)
         node_reject.wait_until_port_is_ready(9110, timeout=10)
+        # `SYSTEM RELOAD CONFIG` is the only reloader every test below relies on.
+        for node in (node1, node2, node_reject):
+            assert (
+                node.query(
+                    "SELECT value FROM system.server_settings WHERE name = 'config_reload_interval_ms'"
+                ).strip()
+                == "3600000"
+            )
         yield cluster
     finally:
         cluster.shutdown()

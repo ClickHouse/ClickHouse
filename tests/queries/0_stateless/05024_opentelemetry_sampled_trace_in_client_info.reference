@@ -1,1 +1,1 @@
-sampled trace joins remote query: OK
+remote query span attached under initiator query span: OK
