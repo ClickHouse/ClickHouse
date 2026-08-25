@@ -1089,6 +1089,28 @@ TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasExtraHea
     EXPECT_EQ(client->counters.headObject, 0u);
 }
 
+/// Transport and billing headers such as `x-amz-request-payer` are sent on every request but do not
+/// change which object a successful completion produces, so they must not disable the replay recovery.
+TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadWithRequestPayerHeader)
+{
+    client = MockS3::Client::CreateClient(
+        bucket, {{"x-amz-request-payer", "requester"}, {"X-Amz-Expected-Bucket-Owner", "123456789012"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_multipart_upload_request_payer");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_request_payer"], "A");
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
 /// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier
 /// object. Acknowledging it would report a write that never stored any of its data.
 TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObject) {
@@ -1238,6 +1260,20 @@ TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadForOwnObject)
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["copy_completion_recovery_own_object"], payload);
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// The transport/billing exemption must hold on the copy path too: `x-amz-request-payer` does not
+/// change the created object, so a lost completion response is still recoverable.
+TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadWithRequestPayerHeader)
+{
+    client = MockS3::Client::CreateClient(bucket, {{"x-amz-request-payer", "requester"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    runCopy("copy_completion_recovery_request_payer");
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_request_payer"], payload);
     EXPECT_EQ(client->counters.headObject, 1u);
 }
 

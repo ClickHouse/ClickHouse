@@ -264,7 +264,15 @@ bool Client::hasExtraHeadersRequiringFullWriteIdentity() const
 {
     /// Extra headers can affect the requested write but are not represented by the completed
     /// part list. Do not recover a lost completion response unless its identity is fully known.
-    return !client_configuration.extra_headers.empty();
+    /// Headers that only affect transport or billing are exempt: they must be sent on every
+    /// request but do not change which object a successful completion produces.
+    for (const auto & header : client_configuration.extra_headers)
+    {
+        if (!equalsCaseInsensitive(header.name, "x-amz-request-payer")
+            && !equalsCaseInsensitive(header.name, "x-amz-expected-bucket-owner"))
+            return true;
+    }
+    return false;
 }
 
 std::unique_ptr<Client> Client::create(
