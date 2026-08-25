@@ -1623,7 +1623,7 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
-  
+
     rebuildSortedTypedPathColumns();
 
     for (const auto & path : sorted_dynamic_paths)
