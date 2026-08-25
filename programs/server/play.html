@@ -2688,6 +2688,24 @@ function duplicateColumnNames(header) {
     return duplicates;
 }
 
+/// Whether the sort and filter controls are worth offering on a result at all. A result of at most
+/// one row on its first page has nothing to sort and nothing to filter: any order of a single row is
+/// the same order, and a filter on it can only keep it or drop it, so the controls could do nothing
+/// but re-run the query for the same rows - and an empty result has not even a row to drop. They are
+/// therefore not offered there, for the same reason the colorize toggles are not (see
+/// `_updateColorizeToggleVisibility`): with no more than one row there is nothing to compare either.
+///
+/// Two single-row results are exempted, because there the controls are the only way back:
+///  - one the user has already shaped (`has_shape`), whose sort must stay reversible and whose
+///    filter must stay clearable - a filter matching a single row is exactly how a long result
+///    becomes a short one, and taking the controls away with it would strand the user with it on;
+///  - one CUT OFF at the display limit (`incomplete`), which is the first page of a longer result:
+///    the page size is capped by the cell budget, so a very wide result can be cut to a single row,
+///    and the rows past it are precisely what sorting and paging are there to reach.
+function resultIsWorthShaping(row_count, incomplete, has_shape) {
+    return !!has_shape || !!incomplete || row_count > 1;
+}
+
 /// Commit a result-shape change made in `el`'s result view - a sort, a filter, a page - by persisting
 /// it and re-running the query so the server returns the newly shaped result.
 ///
@@ -3126,6 +3144,22 @@ class QueryResultElement extends HTMLElement
                 #data-table:not(.shapeable) .filter-toggle,
                 #data-table:not(.shapeable) .filter-state,
                 #data-table:not(.shapeable) .filter-popover
+                {
+                    display: none;
+                }
+
+                /* The same for a result there is nothing to sort or filter in: at most one row, and
+                   no more of it beyond the page (see resultIsWorthShaping), which the
+                   "hide-shape-controls" class marks. Any order of a single row is the same order and
+                   a filter on it can only keep it or drop it, so the controls would do nothing but
+                   re-run the query - just as the colorize toggles, which compare values across rows,
+                   are hidden there (see hide-colorize-toggle above). Removed outright, exactly as
+                   above, so the header looks the same whichever of the two reasons keeps the controls
+                   away. */
+                #data-table.hide-shape-controls .sort-toggles,
+                #data-table.hide-shape-controls .filter-toggle,
+                #data-table.hide-shape-controls .filter-state,
+                #data-table.hide-shape-controls .filter-popover
                 {
                     display: none;
                 }
@@ -4247,6 +4281,11 @@ class QueryResultElement extends HTMLElement
         /// the toggles follow the default hover behavior instead of staying hidden because the
         /// previous result had at most a single row.
         this._dataTable.classList.remove('hide-colorize-toggle');
+        /// Drop the stale "nothing to shape" marker for the same reason: it is recomputed once the new
+        /// result has finished rendering (see `_updateShapeControlsVisibility`), and until then the
+        /// header controls follow the default hover behavior instead of staying hidden because the
+        /// PREVIOUS result had at most a single row.
+        this._dataTable.classList.remove('hide-shape-controls');
         /// The pager describes the result that is going away; `renderPagination` puts back the one the
         /// new result needs. The open filter input goes with the header it lived in.
         this._clearElement(this._pager);
@@ -4989,7 +5028,7 @@ class QueryResultElement extends HTMLElement
         /// The arrows are hidden (and out of the tab order) unless shaping applies, but guard anyway:
         /// a stale header from the previous, shapeable result can still be on screen while the current
         /// query text is not. A duplicate-named column has no arrows at all, but guard it here too.
-        if (!this._shapeable || this._duplicate_columns.has(name)) { return; }
+        if (!this._shapingOffered() || this._duplicate_columns.has(name)) { return; }
         /// `this._sortColumns` IS the owning tab's array (see the constructor), and `applySortToggle`
         /// mutates it in place, so every element of the tab sees the new sort.
         applySortToggle(this._sortColumns, name, desc, shift);
@@ -5025,6 +5064,36 @@ class QueryResultElement extends HTMLElement
         /// lexer is awaited, so the answer always arrives a microtask late at best). Re-render it, which
         /// is idempotent and a no-op until there is a table to page.
         this.renderPagination();
+    }
+
+    /// Whether the sort and filter controls are offered on what is displayed: the statement must be
+    /// one the query-construction settings can shape (`_shapeable`, see `_refreshShapeAvailability`)
+    /// AND the result must be one they have something to do to (see `resultIsWorthShaping`).
+    ///
+    /// The pager is gated by `_shapeable` alone: it is built only for a result that is longer than the
+    /// page it is shown on, or that is already paged - and both of those are results the second
+    /// condition keeps, so the two gates never disagree about it.
+    _shapingOffered()
+    {
+        return this._shapeable
+            && resultIsWorthShaping(this.rowCount, this._incomplete_result, this._hasResultShape());
+    }
+
+    /// Mirror `_shapingOffered` into the `hide-shape-controls` class of the table, which takes the
+    /// sort arrows and the filter controls out of every column header (`display: none`, so out of the
+    /// tab order too) for a result there is nothing to sort or filter in.
+    ///
+    /// Recomputed whenever the pager is (re)rendered: that is the pass every render path ends with,
+    /// and the one the asynchronous availability check triggers when it resolves, so the class is
+    /// evaluated exactly when the row count and `_shapeable` are final - never per row.
+    ///
+    /// The row count is taken from `rowCount` (the rows the result received) rather than from the
+    /// rendered `<tbody>`, whose row count means something else in the two layouts a single-row result
+    /// can end up in: the vertical one turns one row into one row per COLUMN, and a shaped empty
+    /// result carries the `empty result` marker as a row (see `transposeIfNeeded`).
+    _updateShapeControlsVisibility()
+    {
+        this._dataTable.classList.toggle('hide-shape-controls', !this._shapingOffered());
     }
 
     /// The hint shown in a column's empty filter input: the shape of a predicate that fits the
@@ -5235,7 +5304,7 @@ class QueryResultElement extends HTMLElement
     {
         /// No filtering on a duplicate-named column (see `appendHeader`): the filter is keyed by
         /// the name and could not tell it from its namesakes.
-        if (!this._shapeable || this._duplicate_columns.has(name)) { return; }
+        if (!this._shapingOffered() || this._duplicate_columns.has(name)) { return; }
         const value = String(suffix === undefined || suffix === null ? '' : suffix).trim();
         this._closeFilterInput();
         /// In place: `_filters` is the owning tab's object, aliased by every element of the tab.
@@ -5314,7 +5383,7 @@ class QueryResultElement extends HTMLElement
     /// takes it away again when the selection moves on.
     _appendCellFilterButton(td)
     {
-        if (!this._shapeable) { return; }
+        if (!this._shapingOffered()) { return; }
         if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
         /// The leading row-number cell is at index 0, so data column `j` is at cell index `j + 1`.
         const column = this._header[td.cellIndex - 1];
@@ -5427,6 +5496,10 @@ class QueryResultElement extends HTMLElement
     /// apart would mean counting the rows of the whole result.)
     renderPagination()
     {
+        /// The header controls rest on the same facts as the pager - `_shapeable`, the row count, the
+        /// shape - and so are (re)evaluated in the same pass (see `_updateShapeControlsVisibility`),
+        /// before the early returns below: each of those is a case where they are not on offer either.
+        this._updateShapeControlsVisibility();
         this._clearElement(this._pager);
         if (!this._shapeable) { return; }
         /// Only a normal tabular result pages: no header (raw text, a chart, an image, an error) or no

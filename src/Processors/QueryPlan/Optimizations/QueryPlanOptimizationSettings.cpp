@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
@@ -172,8 +173,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
-    /// Always on under the master toggle: the result is bit-exact, so there is no behavior to preserve.
-    aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations];
+    aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_bucket_top_k];
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
