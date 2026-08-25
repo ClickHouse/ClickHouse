@@ -39,6 +39,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -535,6 +536,26 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     return underlying;
 }
 
+/// A view is analyzed on its own, so `createUniqueAliasesIfNecessary` numbers its relations from
+/// `__table1` again and they can collide with the enclosing query's. Mark the view's own topmost join
+/// so an enclosing join graph keeps it whole instead of flattening its relations in.
+static void markRootJoinAsReorderBoundary(QueryPlan & query_plan)
+{
+    const auto * node = query_plan.getRootNode();
+    if (!node)
+        return;
+
+    /// The topmost join sits under the plan's single-child spine (a "Project names" expression step,
+    /// and for the legacy branch a materializing one). Descend the same way the join graph builder
+    /// does, so both agree on which node is the view's join.
+    while (node->children.size() == 1)
+        node = node->children[0];
+
+    /// Not a join (a plain read, a UNION, an aggregation): nothing an enclosing graph could flatten.
+    if (auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get()))
+        join_step->setJoinReorderBoundary();
+}
+
 void StorageView::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -594,6 +615,8 @@ void StorageView::readImpl(
                             "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
                             getStorageID().getFullTableName());
     }
+
+    markRootJoinAsReorderBoundary(query_plan);
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             header->getColumnsWithTypeAndName(),

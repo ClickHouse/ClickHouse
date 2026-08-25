@@ -27,10 +27,10 @@
 -- shadowing only on an internal node keeps its values
 3	3
 3	3
--- non-shadowing output is still merged into the join graph
-1
--- shadowing only on an internal node is still merged into the join graph
-1
+-- non-shadowing output is not flattened into the join graph either
+0
+-- shadowing only on an internal node is not flattened into the join graph either
+0
 -- shadowing output is not merged into the join graph
 0
 -- nothing is merged when the setting is off
@@ -48,8 +48,8 @@
 4
 -- stored view shadowing output is not merged into the join graph
 0
--- stored view non-shadowing output is still merged into the join graph
-1
+-- stored view non-shadowing output is not flattened into the join graph either
+0
 -- the parent join of a refused stored view merge is still reordered
 1
 -- and the same stored view query is not reordered once reordering is off

@@ -58,12 +58,13 @@ INNER JOIN view(SELECT toInt32(t.c0 + 1) AS d0 FROM (SELECT toInt32(x.c0 + 1) AS
 ON a.c0 = v.d0
 ORDER BY ALL;
 
--- All three relation labels appear in one join label only when the inner join was flattened into
--- the parent graph, so a `1` here means the expression is still merged. Label row estimates vary
--- with randomized statistics settings, so match the relation names and not the estimates.
--- The settings below are repeated per EXPLAIN because a `SETTINGS` clause on the explained query
--- is what the runner's randomized values cannot override.
-SELECT '-- non-shadowing output is still merged into the join graph';
+-- All three relation labels appear in one join label only when the view's inner join was flattened
+-- into the parent graph. A view restarts the `__tableN` namespace, so it is kept whole and these read
+-- 0 whether or not the expression above its inner join could be merged. Label row estimates vary with
+-- randomized statistics settings, so match the relation names and not the estimates. The settings
+-- below are repeated per EXPLAIN because a `SETTINGS` clause on the explained query is what the
+-- runner's randomized values cannot override.
+SELECT '-- non-shadowing output is not flattened into the join graph either';
 SELECT count() FROM (
     EXPLAIN SELECT a.c0, v.d0
     FROM t_a_05038 AS a
@@ -73,7 +74,7 @@ SELECT count() FROM (
              query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
-SELECT '-- shadowing only on an internal node is still merged into the join graph';
+SELECT '-- shadowing only on an internal node is not flattened into the join graph either';
 SELECT count() FROM (
     EXPLAIN SELECT a.c0, v.d0
     FROM t_a_05038 AS a
@@ -152,7 +153,7 @@ SELECT count() FROM (
              query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
-SELECT '-- stored view non-shadowing output is still merged into the join graph';
+SELECT '-- stored view non-shadowing output is not flattened into the join graph either';
 SELECT count() FROM (
     EXPLAIN SELECT a.c0, w.d0 FROM t_a_05038 AS a INNER JOIN v_plain_05038 AS w ON a.c0 = w.d0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,

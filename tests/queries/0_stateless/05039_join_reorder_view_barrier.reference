@@ -1,0 +1,41 @@
+-- view whose output shadows its own input name
+2	2
+2	2
+3	3
+3	3
+-- view whose output does not shadow an input name
+2	2
+2	2
+3	3
+3	3
+-- view whose own inner join is reordered
+3	3
+3	3
+-- merge() inside a view
+2	2
+2	2
+3	3
+3	3
+-- view read with analyzer_inline_views
+2	2
+2	2
+3	3
+3	3
+-- plain subquery values
+2	2
+2	2
+3	3
+3	3
+-- CTE values
+2	2
+2	2
+3	3
+3	3
+-- a view is one relation of the enclosing join graph
+0
+-- a plain subquery still flattens into it
+1
+-- relations beside an opaque view are still reordered
+1
+-- and nothing is costed once reordering is off
+0
