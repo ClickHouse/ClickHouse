@@ -18,22 +18,31 @@ namespace CurrentMetrics
 /// There was a bug: if local ThreadPool cannot allocate even a single thread,
 ///  the job will be scheduled but never get executed.
 
+namespace
+{
+
+/// Fault injection is process-global, so it has to be switched off on every path out of the
+/// scope, including an exception or a fatal assertion: while it is on, no thread pool anywhere
+/// in this binary can start a thread.
+struct AlwaysFailToAllocateThread
+{
+    AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(1.0); }
+    ~AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(0.0); }
+};
+
+}
+
 
 TEST(ThreadPool, GlobalFull1)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
-
     static constexpr size_t capacity = 5;
-
-    global_pool.setMaxThreads(capacity);
-    global_pool.setMaxFreeThreads(1);
-    global_pool.setQueueSize(capacity);
-    global_pool.wait();
 
     std::atomic<size_t> counter = 0;
     static constexpr size_t num_jobs = capacity + 1;
 
-    auto func = [&] { ++counter; while (counter != num_jobs) {} };
+    /// The counter only ever grows, and an unexpectedly admitted job pushes it past the target,
+    /// so the predicate has to be an inequality for the spin to terminate at all.
+    auto func = [&] { ++counter; while (counter < num_jobs) {} };
 
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_jobs);
 
@@ -42,57 +51,42 @@ TEST(ThreadPool, GlobalFull1)
 
     for (size_t i = capacity; i < num_jobs; ++i)
     {
+        AlwaysFailToAllocateThread always_fail;
         EXPECT_THROW(pool.scheduleOrThrowOnError(func), DB::Exception);
         ++counter;
     }
 
     pool.wait();
     EXPECT_EQ(counter, num_jobs);
-
-    global_pool.setMaxThreads(10000);
-    global_pool.setMaxFreeThreads(1000);
-    global_pool.setQueueSize(10000);
 }
 
 
 TEST(ThreadPool, GlobalFull2)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
-
     static constexpr size_t capacity = 5;
 
-    global_pool.setMaxThreads(capacity);
-    global_pool.setMaxFreeThreads(1);
-    global_pool.setQueueSize(capacity);
-
-    /// ThreadFromGlobalPool from local thread pools from previous test case have exited
-    ///  but their threads from global_pool may not have finished (they still have to exit).
-    /// If we will not wait here, we can get "Cannot schedule a task exception" earlier than we expect in this test.
-    global_pool.wait();
-
     std::atomic<size_t> counter = 0;
-    auto func = [&] { ++counter; while (counter != capacity + 1) {} };
+    auto func = [&] { ++counter; while (counter < capacity + 1) {} };
 
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, capacity, 0, capacity);
     for (size_t i = 0; i < capacity; ++i)
         pool.scheduleOrThrowOnError(func);
 
     ThreadPool another_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
-    EXPECT_THROW(another_pool.scheduleOrThrowOnError(func), DB::Exception);
+    {
+        AlwaysFailToAllocateThread always_fail;
+        EXPECT_THROW(another_pool.scheduleOrThrowOnError(func), DB::Exception);
+    }
 
     ++counter;
 
     pool.wait();
 
-    global_pool.wait();
-
+    /// Injection has to be off by this point, otherwise these jobs are rejected too and the
+    /// pool never gets to demonstrate that it recovers.
     for (size_t i = 0; i < capacity; ++i)
         another_pool.scheduleOrThrowOnError([&] { ++counter; });
 
     another_pool.wait();
     EXPECT_EQ(counter, capacity * 2 + 1);
-
-    global_pool.setMaxThreads(10000);
-    global_pool.setMaxFreeThreads(1000);
-    global_pool.setQueueSize(10000);
 }
