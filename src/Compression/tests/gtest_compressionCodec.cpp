@@ -1496,18 +1496,13 @@ TEST(T64Test, TranscodeRawInput)
 
 TEST(T64Test, CompressedBytesMatchPreTransposeRewrite)
 {
-    /// The payloads below are little-endian: the values are handed to the codec in native order and
-    /// the min/max header is written in native order too, so a big-endian host cannot reproduce them.
-    /// The vectorized transposes are little-endian-only as well, so nothing is lost by skipping here.
+    /// The payloads below are little-endian, and so are the transposes they pin.
     if constexpr (std::endian::native == std::endian::big)
         return;
 
-    /// `T64` is an on-disk format, and encode and decode are built from the same permutations
-    /// applied in opposite orders. Changing one of those permutations therefore changes both
-    /// directions together, which still round-trips within one binary while writing a stream that
-    /// older binaries decode to different values. Round-trip tests cannot observe that, so these
-    /// payloads are pinned: they come from the scalar transposes, and every later implementation
-    /// of either transpose has to keep reproducing them byte for byte.
+    /// These payloads are the `T64` on-disk format, produced by the scalar transposes. Every
+    /// implementation of either transpose has to keep reproducing them byte for byte, including
+    /// one that changes encode and decode together.
     constexpr unsigned char bit_u64_nb16[] = {
         0x93, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x84, 0x07, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE2, 0x96, 0x00, 0x00, 0x00, 0x00,
