@@ -41,6 +41,13 @@ SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_dir
 SELECT countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index
 FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
       SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1);
+-- hasAny reaches the index through a different RPN element and evaluator than hasAll, so it
+-- needs its own plan proof. The mode token pins which element: the condition reads Any only
+-- for the one-query hasAny element, and All for the per-element fallback and for hasAll.
+SELECT countIf(explain ILIKE '%__text_index_idx_hasAny%') > 0 AS reads_through_index,
+       countIf(explain ILIKE '%mode: Any%') > 0 AS any_tokens_element
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz'])
+      SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1);
 
 SELECT '-- matching ids, index on, pruning only --';
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz']) ORDER BY id
@@ -51,6 +58,11 @@ SELECT countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule,
        countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index
 FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
       SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0);
+SELECT countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule,
+       countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index,
+       countIf(explain ILIKE '%mode: Any%') > 0 AS any_tokens_element
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz'])
+      SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0);
 
 -- Negative control for both probes above: with the index off neither token may appear, so a
 -- token that happens to match something unrelated in the plan text cannot read as a pass.
@@ -59,6 +71,12 @@ SELECT countIf(explain ILIKE '%Name: idx%') > 0 AS index_used,
        countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index,
        countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule
 FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
+      SETTINGS use_skip_indexes = 0);
+SELECT countIf(explain ILIKE '%Name: idx%') > 0 AS index_used,
+       countIf(explain ILIKE '%__text_index_idx_hasAny%') > 0 AS reads_through_index,
+       countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule,
+       countIf(explain ILIKE '%mode: Any%') > 0 AS any_tokens_element
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz'])
       SETTINGS use_skip_indexes = 0);
 
 SELECT '-- control: a needle that is genuinely present in both rows --';
