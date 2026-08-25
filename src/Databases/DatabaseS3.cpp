@@ -357,9 +357,12 @@ void registerDatabaseS3(DatabaseFactory & factory)
         {
             ASTs & engine_args = engine->arguments->children;
             /// A database is replayed from its stored statement with a plain `ATTACH` on startup, not
-            /// `FORCE_ATTACH` as tables are, so `isLoadingFromExistingMetadata` is too narrow here. Keying on
-            /// `internal` keeps a user `ATTACH DATABASE` fail-closed, matching `registerDatabaseDataLake`.
-            const bool is_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+            /// `FORCE_ATTACH` as tables are, so `isLoadingFromExistingMetadata` is too narrow here. A short
+            /// `ATTACH DATABASE d` likewise replays a stored statement, while
+            /// `ATTACH DATABASE d ENGINE = S3(...)` supplies a fresh definition. Note the field name differs
+            /// by factory: databases read `args.create_query`, storages read `args.query`.
+            const bool is_metadata_replay = (args.internal && args.mode >= LoadingStrictnessLevel::ATTACH)
+                || args.create_query.attach_short_syntax;
             config = DatabaseS3::parseArguments(engine_args, args.context, is_metadata_replay);
         }
 

@@ -2,6 +2,13 @@
 refused
 --- same origin, different path: still allowed
 payload
+--- each origin component alone is enough to refuse
+refused
+refused
+refused
+--- a url that writes no port compares against the scheme default
+reached-s3
+refused
 --- credential-free collection keeps full override freedom
 reached-s3
 --- explicit OVERRIDABLE wins over the credential binding
@@ -28,6 +35,13 @@ key-on-the-wire
 refused
 --- the same rule reaches DatabaseS3, where an absent url means every table name is a full url
 refused
+--- a fresh credentialed cross-origin CREATE is refused for both S3 engines
+refused
+refused
+--- a JSON-AST payload cannot claim the definition came from stored metadata
+flagset 1
+refused
+created 0
 --- filename cannot move the origin: an absolute value is rejected before any request
 no-host
 no-host
@@ -51,5 +65,8 @@ refused
 warning	1
 secret	0
 --- and the destination it names is masked too, not only the origin it compares against
+warning	1
+secret	0
+--- a presigned signature in the destination is masked as well as userinfo
 warning	1
 secret	0

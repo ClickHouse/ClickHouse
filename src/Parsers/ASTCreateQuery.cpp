@@ -560,18 +560,20 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
-    /// `attach_short_syntax`, `has_attach_from_path` / `attach_from_path`, and `attach_as_replicated`
-    /// are produced only for `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and
-    /// `AS [NOT] REPLICATED` clauses behind `attach`, and `attach_short_syntax` is set only when the
-    /// interpreter re-attaches a detached table. Reject them from non-`ATTACH` JSON so `clickhouse_json`
-    /// cannot build a parser-impossible `CREATE TABLE` whose formatting hides attach-only state that
-    /// `InterpreterCreateQuery` still consumes (and which would also trip the `attach || !has_attach_from_path`
-    /// assertion in `formatImpl`).
+    /// A short `ATTACH TABLE t` is recognised from the query's own shape after deserialization (no
+    /// storage clause, no column list), so this flag is never an input: no SQL syntax sets it and no
+    /// formatter emits it. Accepting it from JSON would let a payload claim a definition came from this
+    /// server's metadata when it came from the sender, which storage creators read to skip validation
+    /// that only a freshly supplied definition needs.
+    if (attach_short_syntax)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'attach_short_syntax' is not accepted during AST JSON deserialization");
+
+    /// The remaining attach-only fields ARE parser inputs, gated behind `attach` by the parser and by
+    /// `formatImpl`'s `attach || !has_attach_from_path` assertion, so they are rejected only for a
+    /// non-`ATTACH` payload that could not have been written as SQL.
     if (!attach)
     {
-        if (attach_short_syntax)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'attach_short_syntax' is only valid for ATTACH queries during AST JSON deserialization");
         if (has_attach_from_path || !attach_from_path.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'attach_from_path' / 'has_attach_from_path' are only valid for ATTACH queries during AST JSON deserialization");
