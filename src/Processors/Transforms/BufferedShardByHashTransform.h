@@ -144,8 +144,20 @@ public:
 private:
     void generateOutputChunks();
 
-    /// Default back-pressure threshold. Once any queue hits this length the transform stops pulling new
-    /// input until the slow consumer drains it. Otherwise, we can have very high memory usage.
+    /// Default back-pressure threshold for the bounded mode (`max_queue_length != 0`). Pulling stops once
+    /// any queue reaches this length, unless a demanded output has an empty queue and nothing else is
+    /// drainable - then a queue can exceed it, bounded only by memory.
+    ///
+    /// That escape is only reachable under a consumer that activates our outputs one at a time,
+    /// `ConcatProcessor` being the one that produces it: its `prepare` calls `setNeeded` on a
+    /// single input and advances only once that input finishes, so every other shard's port
+    /// reports `canPush() == false` until then. Buffering the not-yet-demanded shards in full is
+    /// therefore inherent to that topology rather than something the escape introduces - a
+    /// producer feeding a `Concat` has to hold its later inputs' rows somewhere. Honouring the cap
+    /// instead deadlocks, because the demanded empty queue can only ever be filled from input.
+    /// Queued chunks are tracked memory, so overflow surfaces as a memory-limit exception rather
+    /// than the `Pipeline stuck` logical error the cap would cause. Making the cap a hard bound
+    /// needs an overflow/spill path for the over-cap shard.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     /// A buffered shard chunk, carrying the physical buffers (by pointer) its own budget charge registered, so
@@ -296,7 +308,9 @@ private:
     /// it is split.
     std::vector<const void *> pending_input_touched;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
+    /// Per-shard FIFO of chunks waiting to be pushed downstream. Soft-capped at `max_queue_length` when it
+    /// is nonzero (bounded mode); unbounded chunk-wise in demand-driven mode, where `max_buffered_bytes`
+    /// bounds the resident bytes instead.
     std::vector<std::deque<QueuedChunk>> output_queues;
 
     /// For each shard, the budget charge of the chunk currently parked in its output port (empty if the port

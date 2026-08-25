@@ -547,8 +547,11 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
+        if (queued_output_it->isFinished())
+            continue;
+
         const auto & queue = output_queues[shard];
-        const bool can_push = !queued_output_it->isFinished() && queued_output_it->canPush();
+        const bool can_push = queued_output_it->canPush();
         if (max_queue_length != 0 && queue.size() >= max_queue_length)
             any_queue_at_capacity = true;
         if (!queue.empty())
@@ -614,8 +617,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     ///     (a merge may need this scatter's EOF to make progress, and reaching EOF requires buffering
     ///     everything in between), so with a selective consumer the only bounded-memory behavior that cannot
     ///     hang is to fail the query.
-    ///   - Bounded mode: classic back-pressure — pull unless some queue is at capacity.
-    const bool may_pull = (max_queue_length == 0) ? has_starving_ready_output : !any_queue_at_capacity;
+    ///   - Bounded mode: classic back-pressure — pull unless some queue is at capacity. The cap yields
+    ///     when the sole demand is a starving output with an empty queue: nothing is drainable anywhere
+    ///     (push-priority above already returned Ready otherwise), and an empty demanded queue can only ever
+    ///     be filled from input, so honouring the cap would deadlock the pipeline. See `MAX_QUEUE_LENGTH` for
+    ///     why yielding is the only non-deadlocking option there.
+    const bool may_pull = (max_queue_length == 0)
+        ? has_starving_ready_output
+        : (!any_queue_at_capacity || has_starving_ready_output);
     if (may_pull)
     {
         /// Short-circuit: if bytes actually buffered elsewhere in the stage already exceed the cap (a sibling
