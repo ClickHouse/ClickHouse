@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemHandlers.h>
+#include <Common/SystemTableDocumentation.h>
 
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
@@ -100,5 +101,16 @@ void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[col++]->insert(format({context, *ast}));
     }
 }
+
+}
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "handlers",
+    .description = R"DOCS_MD(
+Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.
+)DOCS_MD")
 
 }

@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Core/Settings.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeDate.h>
@@ -99,4 +100,37 @@ void insertDeltaRowToLogTable(
             .metadata_content = row};
     });
 }
+}
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "delta_lake_metadata_log",
+    .description = R"DOCS_MD(
+The `system.delta_lake_metadata_log` table records metadata access and parsing events for Delta Lake tables read by ClickHouse. It provides detailed information about each metadata file, which is useful for debugging, auditing, and understanding Delta table structure evolution.
+
+This table logs every metadata file read from Delta Lake tables. It helps users trace how ClickHouse interprets Delta table metadata and diagnose issues related to schema evolution, snapshot resolution, or query planning.
+
+<Note>
+This table is primarily intended for debugging purposes.
+</Note>
+
+### Controlling log verbosity {#controlling-log-verbosity}
+
+You can control which metadata events are logged using the [`delta_lake_log_metadata`](/reference/settings/session-settings/delta-lake#delta_lake_log_metadata) setting.
+
+To log all metadata used in the current query:
+
+```sql
+SELECT * FROM my_delta_table SETTINGS delta_lake_log_metadata = 1;
+
+SYSTEM FLUSH LOGS delta_lake_metadata_log;
+
+SELECT *
+FROM system.delta_lake_metadata_log
+WHERE query_id = '{previous_query_id}';
+```
+)DOCS_MD")
+
 }

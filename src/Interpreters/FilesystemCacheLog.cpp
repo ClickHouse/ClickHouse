@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -68,5 +69,18 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(read_buffer_id);
     columns[i++]->insert(user_id);
 }
+
+}
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "filesystem_cache_log",
+    .description = R"DOCS_MD(
+Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.
+
+It is safe to truncate or drop this table at any time.
+)DOCS_MD")
 
 }

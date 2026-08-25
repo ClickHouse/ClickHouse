@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
@@ -158,3 +159,14 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrivileges) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "privileges",
+    .description = R"DOCS_MD(
+Contains a list of all available privileges that could be granted to a user or role.
+)DOCS_MD")
+
+}

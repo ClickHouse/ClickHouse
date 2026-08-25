@@ -9,6 +9,7 @@
 #include <Common/FunctionDocumentation.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Common/re2.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Field.h>
@@ -36,7 +37,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/System/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -971,8 +971,19 @@ void replaceDocumentationPlaceholder(String & document, std::string_view placeho
         document.replace(offset, placeholder.size(), value);
 }
 
-/// Render the complete reference page when it has been embedded. Tables which are supplied by optional/private
-/// components and do not yet have an embedded page retain the concise table-comment-and-columns representation.
+void appendSystemTableSection(String & result, std::string_view title, std::string_view anchor, const String & body)
+{
+    const String trimmed_body = boost::algorithm::trim_copy(body);
+    if (trimmed_body.empty())
+        return;
+    if (!result.empty())
+        result += "\n\n";
+    result += "## " + String(title) + " {#" + String(anchor) + "}\n\n" + trimmed_body;
+}
+
+/// Render every system table with the same page-level structure. Optional or
+/// private tables which have not registered structured documentation use their
+/// metadata comment as the description and omit the optional sections.
 String renderSystemTableDoc(
     const String & table_name,
     const String & comment,
@@ -980,21 +991,28 @@ String renderSystemTableDoc(
     ContextPtr context)
 {
     const auto * documentation = getSystemTableDocumentation(table_name);
-    if (!documentation)
+    String result;
+    appendSystemTableSection(result, "Description", "description", documentation ? documentation->description : comment);
+    String columns_section = renderSystemTableColumns(table_name, columns);
+    if (documentation)
     {
-        String result = boost::algorithm::trim_copy(comment);
-        const String columns_list = renderSystemTableColumns(table_name, columns);
-        if (!columns_list.empty())
+        const String columns_notes = boost::algorithm::trim_copy(documentation->columns_notes);
+        if (!columns_notes.empty())
         {
-            if (!result.empty())
-                result += "\n\n";
-            result += "**Columns**\n\n" + columns_list;
+            if (!columns_section.empty())
+                columns_section += "\n\n";
+            columns_section += columns_notes;
         }
-        return result;
     }
-
-    String result = boost::algorithm::trim_copy(String(documentation->page_template));
-    replaceDocumentationPlaceholder(result, "{{SYSTEM_TABLE_COLUMNS}}", renderSystemTableColumns(table_name, columns));
+    appendSystemTableSection(result, "Columns", "columns", columns_section);
+    if (documentation)
+    {
+        appendSystemTableSection(result, "Examples", "examples", documentation->examples);
+        const String additional_sections = boost::algorithm::trim_copy(documentation->additional_sections);
+        if (!additional_sections.empty())
+            result += "\n\n" + additional_sections;
+        appendSystemTableSection(result, "See also", "see-also", documentation->see_also);
+    }
 
     if (result.contains("{{PROFILE_EVENTS}}"))
     {
@@ -1134,8 +1152,9 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
     addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
-    /// System tables expose their embedded full reference page, with the live column schema and metric/event catalogs
-    /// rendered into its placeholders. Optional/private tables without an embedded page use their table comment.
+    /// System tables expose their structured embedded documentation, with the live column schema and metric/event
+    /// catalogs rendered into the complete reference page. Optional/private tables without registered documentation
+    /// use their table comment as the description and still get the same page-level structure.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -1150,7 +1169,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                     const IStorage & storage = *table;
                     const auto * documentation = getSystemTableDocumentation(iterator->name());
                     const String source = documentation
-                        ? String(documentation->source)
+                        ? makeRepoRelative(documentation->source)
                         : makeRepoRelative(getSystemTableSource(typeid(storage)));
                     addRow(res_columns, EntityType::SystemTable, iterator->name(),
                         renderSystemTableDoc(iterator->name(), metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
@@ -1165,3 +1184,100 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDocumentation) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "documentation",
+    .description = R"DOCS_MD(
+Collects the embedded documentation of the uniform components of the system into a single table. Every row corresponds to one entity (a function, a table engine, a data type, and so on) and contains the reference documentation of that entity rendered as Markdown — the same content that is published on the website and exposed by the per-kind `system.*` tables.
+
+The `description` is assembled from the structured parts of the embedded documentation (`description`, `syntax`, arguments, examples, and so on), so a single column holds the complete documentation of an entity. When the embedded documentation carries the entire reference page in its `description` (as is the case for the components whose website pages are autogenerated from it: table engines, database engines, data types, formats, table functions), the page is published as-is, without appending sections composed from the structured metadata fields — the page body already covers that material. Aliases are rendered as a short reference to the canonical entity, e.g. ``Alias of `trunc`.``
+
+This table, in a certain way, collects the information available in the per-kind documentation tables ([`system.functions`](/reference/system-tables/functions), [`system.table_engines`](/reference/system-tables/table_engines), [`system.data_type_families`](/reference/system-tables/data_type_families), and others). It is meant, in particular, to back an interactive `help` command in the client, but is useful on its own.
+
+The following kinds of entities are collected (the value of the `type` column is shown in parentheses):
+
+- Functions (`Function`)
+- Aggregate functions (`Aggregate Function`)
+- Table functions (`Table Function`)
+- Table engines (`Table Engine`)
+- Database engines (`Database Engine`)
+- Data types (`Data Type`)
+- Dictionary layouts (`Dictionary Layout`)
+- Dictionary sources (`Dictionary Source`)
+- Aggregate function combinators (`Aggregate Function Combinator`)
+- Data skipping index types (`Data Skipping Index`)
+- Disk types (`Disk Type`)
+- Settings (`Setting`)
+- MergeTree settings (`MergeTree Setting`)
+- Server settings (`Server Setting`)
+- Formats (`Format`)
+- Compression codecs (`Compression Codec`)
+- Profile events (`Profile Event`)
+- Current metrics (`Current Metric`)
+- Asynchronous metrics (`Asynchronous Metric`)
+- System tables (`System Table`)
+- SQL statements (`Statement`)
+
+For settings (of any kind), the documentation is the setting's description, together with its type and default value; obsolete settings are not exposed. It also carries the history of the changes of the setting's default value across ClickHouse versions: the version in which the setting was introduced and every later change of its default, with the previous value, the new value and the reason for the change. This is the same data that backs the `compatibility` setting and [`system.settings_changes`](/reference/system-tables/settings_changes), so it covers the changes recorded since that mechanism was introduced: an older setting whose default never changed has no history, and neither do server settings, which `compatibility` does not cover. A change recorded under an alias of a setting belongs to the history of that setting, the same way `compatibility` applies it, so the history of a setting that was renamed is not cut at the rename; the exception is a record written under an alias for the sole purpose of registering that alias, which is the history of the alias alone. An alias carries the history of its own name: every record written under it, plus the record that registered it as an alias, which the history file sometimes writes under another name of the same setting.
+
+For system tables, the description, examples, and related material are embedded as structured fields in the source which defines the table. The complete page is assembled from those fields and the live column schema. Event and metric catalogs are rendered from their registries, so generated details stay synchronized with the running binary.
+
+For SQL statements, the documentation is the same as the one exposed by `system.statements`: it also names the enclosing statement, if any, e.g. the `WHERE` clause is a part of `SELECT`.
+
+The `source` column holds the path of the source file where the entity's documentation is defined, relative to the repository root. For most entities it is captured automatically at the place where the documentation object is constructed (the registration site of the component); for the kinds that are documented in a single source file each (such as settings, profile events and current metrics), it is that file.
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+Read the documentation of a particular entity:
+
+```sql title="Query"
+SELECT description
+FROM system.documentation
+WHERE type = 'Table Engine' AND name = 'MergeTree'
+FORMAT TSVRaw;
+```
+
+The same name can refer to several kinds of entities (for example, there is both a `file` table function and a `file` dictionary source), so it is convenient to look a name up across all kinds:
+
+```sql title="Query"
+SELECT type, name
+FROM system.documentation
+WHERE name = 'file'
+ORDER BY type;
+```
+
+Count the documented entities of each kind:
+
+```sql title="Query"
+SELECT type, count()
+FROM system.documentation
+GROUP BY type
+ORDER BY count() DESC;
+```
+
+Find out in which version a setting was introduced and how its default value changed since:
+
+```sql title="Query"
+SELECT description
+FROM system.documentation
+WHERE type = 'Setting' AND name = 'async_insert_max_data_size'
+FORMAT TSVRaw;
+```
+)DOCS_MD",
+    .see_also = R"DOCS_MD(
+- [`system.functions`](/reference/system-tables/functions) — Regular and aggregate functions.
+- [`system.table_functions`](/reference/system-tables/table_functions) — Table functions.
+- [`system.table_engines`](/reference/system-tables/table_engines) — Table engines.
+- [`system.database_engines`](/reference/system-tables/database_engines) — Database engines.
+- [`system.data_type_families`](/reference/system-tables/data_type_families) — Data types.
+- [`system.disk_types`](/reference/system-tables/disk_types) — Disk types.
+- [`system.settings`](/reference/system-tables/settings) — Settings.
+- [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings) — MergeTree settings.
+- [`system.server_settings`](/reference/system-tables/server_settings) — Server settings.
+- [`system.settings_changes`](/reference/system-tables/settings_changes) — The history of the changes of the default values of settings.
+- [`system.formats`](/reference/system-tables/formats) — Formats.
+)DOCS_MD")
+
+}

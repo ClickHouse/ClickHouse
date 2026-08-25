@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDate.h>
+#include <Common/SystemTableDocumentation.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -63,5 +64,18 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
     columns[i++]->insert(thread_id);
     columns[i++]->insert(reader_id);
 }
+
+}
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "filesystem_read_prefetches_log",
+    .description = R"DOCS_MD(
+Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem.
+
+It is safe to truncate or drop this table at any time.
+)DOCS_MD")
 
 }

@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemQuotas.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
@@ -173,3 +174,17 @@ void StorageSystemQuotas::restoreDataFromBackup(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotas) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "quotas",
+    .description = R"DOCS_MD(
+Contains information about [quotas](/reference/system-tables/quotas).
+)DOCS_MD",
+    .see_also = R"DOCS_MD(
+- [SHOW QUOTAS](/reference/statements/show#show-quotas)
+)DOCS_MD")
+
+}

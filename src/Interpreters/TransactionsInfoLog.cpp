@@ -1,4 +1,5 @@
 #include <Core/NamesAndTypes.h>
+#include <Common/SystemTableDocumentation.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -113,5 +114,18 @@ catch (...)
 {
     tryLogCurrentException(log);
 }
+
+}
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "transactions_info_log",
+    .description = R"DOCS_MD(
+Contains information about all transactions executed on a current server.
+
+It is safe to truncate or drop this table at any time.
+)DOCS_MD")
 
 }

@@ -1,4 +1,5 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
@@ -51,3 +52,14 @@ void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_co
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAggregateFunctionCombinators) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "aggregate_function_combinators",
+    .description = R"DOCS_MD(
+Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.
+)DOCS_MD")
+
+}

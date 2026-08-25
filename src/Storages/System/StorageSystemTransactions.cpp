@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemTransactions.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeEnum.h>
@@ -55,3 +56,14 @@ void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPt
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTransactions) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "transactions",
+    .description = R"DOCS_MD(
+Contains a list of transactions and their state.
+)DOCS_MD")
+
+}

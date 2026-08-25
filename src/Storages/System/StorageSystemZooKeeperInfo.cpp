@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -442,3 +443,14 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperInfo) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "zookeeper_info",
+    .description = R"DOCS_MD(
+This table outputs combined introspection about zookeeper and the nodes are taken from config.
+)DOCS_MD")
+
+}

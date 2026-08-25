@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemFailPoints.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnString.h>
@@ -51,3 +52,28 @@ void StorageSystemFailPoints::fillData(
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFailPoints) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "fail_points",
+    .description = R"DOCS_MD(
+Contains a list of all available failpoints registered in the server, along with their type and whether they are currently enabled.
+
+Failpoints can be enabled and disabled at runtime using the `SYSTEM ENABLE FAILPOINT` and `SYSTEM DISABLE FAILPOINT` statements.
+)DOCS_MD",
+    .examples = R"DOCS_MD(
+```sql title="Query"
+SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause;
+SELECT * FROM system.fail_points WHERE enabled = 1
+```
+
+```text title="Response"
+┌─name──────────────────────────────────────┬─type────────────┬─enabled─┐
+│ replicated_merge_tree_insert_retry_pause  │ pauseable_once  │       1 │
+└───────────────────────────────────────────┴─────────────────┴─────────┘
+```
+)DOCS_MD")
+
+}
