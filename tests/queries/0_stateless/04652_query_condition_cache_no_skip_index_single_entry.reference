@@ -6,7 +6,7 @@ with an effective skip index: the profiled key is kept
 14
 2
 1
-distributed_index_analysis keeps the profiled key
+the distributed_index_analysis setting alone keeps the profiled key
 14
 2
 the collapsed entry is applied: same rows, fewer marks, one consultation

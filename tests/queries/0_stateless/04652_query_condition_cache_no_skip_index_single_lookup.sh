@@ -53,10 +53,14 @@ settings="use_query_condition_cache = 1, ast_fuzzer_runs = 0, optimize_move_to_p
 # to this client regardless of the server's own log level, so the count does not depend on the
 # server configuration. Counting hits AND misses together makes the number independent of whether a
 # concurrent test dropped the cache in between, so no no-parallel tag is needed here.
+# The count only describes a completed read, so a query that threw must not reach it: the client's
+# status is checked before the lines are counted.
 lookups() {
-    $CLICKHOUSE_CLIENT --send_logs_level=test -q "
+    local logs
+    logs=$($CLICKHOUSE_CLIENT --send_logs_level=test -q "
         SELECT sum(b) FROM $1 WHERE a > 1200 AND b = 7 SETTINGS $settings
-    " 2>&1 >/dev/null | grep -cE 'QueryConditionCache: (Read|Could not find) entry'
+    " 2>&1 >/dev/null) || { echo "query on $1 failed:" >&2; grep -F 'Received exception' -A1 <<< "$logs" >&2; return 1; }
+    grep -cE 'QueryConditionCache: (Read|Could not find) entry' <<< "$logs"
 }
 
 parts() {

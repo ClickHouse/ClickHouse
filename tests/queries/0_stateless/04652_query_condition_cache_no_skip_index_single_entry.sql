@@ -84,7 +84,11 @@ SELECT max(entries_per_part) FROM
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(b) FROM tab_indexed WHERE a > 1200 AND b = 7)
 WHERE explain ILIKE '%bx%';
 
-SELECT 'distributed_index_analysis keeps the profiled key';
+-- The setting alone keeps the two keys apart, before any of the thresholds that would actually
+-- start remote analysis are met. That is the conservative direction and the only part of the
+-- exception this single-node test can observe: whether a remote replica really contributed an
+-- exclusion is not visible here, so this check does not claim to cover that.
+SELECT 'the distributed_index_analysis setting alone keeps the profiled key';
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT sum(b) FROM tab WHERE a > 1200 AND b = 7 SETTINGS distributed_index_analysis = 1;
 SELECT max(entries_per_part) FROM
