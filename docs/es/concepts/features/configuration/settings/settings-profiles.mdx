@@ -1,0 +1,89 @@
+---
+description: 'Una colección de configuraciones agrupadas bajo un mismo nombre.'
+sidebarTitle: 'Perfiles de configuración'
+slug: /operations/settings/settings-profiles
+title: 'Perfiles de configuración'
+doc_type: 'reference'
+---
+
+Un perfil de configuración es una colección de configuraciones agrupadas bajo un mismo nombre.
+
+<Note>
+  ClickHouse también admite el [flujo de trabajo basado en SQL](/es/concepts/features/security/access-rights#access-control-usage) para gestionar perfiles de configuración. Recomendamos usarlo.
+</Note>
+
+El perfil puede tener cualquier nombre. Puede especificar el mismo perfil para distintos usuarios. Lo más importante que puede definir en el perfil de configuración es `readonly=1`, que garantiza acceso de solo lectura.
+
+Los perfiles de configuración pueden heredar entre sí. Para usar la herencia, indique una o varias configuraciones `profile` antes que las demás configuraciones incluidas en el perfil. Si una misma configuración está definida en distintos perfiles, se usa la última que se haya definido.
+
+Para aplicar todas las configuraciones de un perfil, establezca la configuración `profile`.
+
+Ejemplo:
+
+Instale el perfil `web`.
+
+```sql
+SET profile = 'web'
+```
+
+Los perfiles de configuración se definen en el archivo de configuración de usuarios. Suele ser `users.xml`.
+
+Ejemplo:
+
+```xml
+<!-- Perfiles de configuración -->
+<profiles>
+    <!-- Configuración predeterminada -->
+    <default>
+        <!-- El número máximo de hilos al ejecutar una sola consulta. -->
+        <max_threads>8</max_threads>
+    </default>
+
+    <!-- Configuración de operaciones en segundo plano -->
+    <background>
+        <!-- Redefinición del número máximo de hilos para operaciones en segundo plano -->
+        <max_threads>12</max_threads>
+    </background>
+
+    <!-- Configuración para consultas desde la interfaz de usuario -->
+    <web>
+        <max_rows_to_read>1000000000</max_rows_to_read>
+        <max_bytes_to_read>100000000000</max_bytes_to_read>
+
+        <max_rows_to_group_by>1000000</max_rows_to_group_by>
+        <group_by_overflow_mode>any</group_by_overflow_mode>
+
+        <max_rows_to_sort>1000000</max_rows_to_sort>
+        <max_bytes_to_sort>1000000000</max_bytes_to_sort>
+
+        <max_result_rows>100000</max_result_rows>
+        <max_result_bytes>100000000</max_result_bytes>
+        <result_overflow_mode>break</result_overflow_mode>
+
+        <max_execution_time>600</max_execution_time>
+        <min_execution_speed>1000000</min_execution_speed>
+        <timeout_before_checking_execution_speed>15</timeout_before_checking_execution_speed>
+
+        <max_columns_to_read>25</max_columns_to_read>
+        <max_temporary_columns>100</max_temporary_columns>
+        <max_temporary_non_const_columns>50</max_temporary_non_const_columns>
+
+        <max_subquery_depth>2</max_subquery_depth>
+        <max_pipeline_depth>25</max_pipeline_depth>
+        <max_ast_depth>50</max_ast_depth>
+        <max_ast_elements>100</max_ast_elements>
+
+        <max_sessions_for_user>4</max_sessions_for_user>
+
+        <readonly>1</readonly>
+    </web>
+</profiles>
+```
+
+El ejemplo especifica dos perfiles: `default` y `web`.
+
+El perfil `default` tiene un propósito especial: siempre debe estar presente y se aplica al iniciar el servidor. En otras palabras, el perfil `default` contiene la configuración predeterminada. El nombre del perfil predeterminado puede cambiarse mediante la opción de configuración del servidor `default_profile`.
+
+El perfil `background` tiene un propósito especial: puede estar presente para sobrescribir la configuración de las operaciones en segundo plano. El parámetro es opcional y su nombre puede cambiarse mediante la opción de configuración del servidor `background_profile`.
+
+El perfil `web` es un perfil normal que puede establecerse mediante la consulta `SET` o usando un parámetro de URL en una consulta HTTP.

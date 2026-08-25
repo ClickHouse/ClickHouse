@@ -1,0 +1,66 @@
+---
+description: 'Documentação sobre tipos de dados no ClickHouse'
+sidebarTitle: 'Lista de tipos de dados'
+slug: /sql-reference/data-types/
+title: 'Tipos de dados no ClickHouse'
+doc_type: 'reference'
+mode: wide
+---
+
+Esta seção descreve os tipos de dados compatíveis com o ClickHouse, por exemplo [integers](/pt-BR/reference/data-types/int-uint), [floats](/pt-BR/reference/data-types/float) e [strings](/pt-BR/reference/data-types/string).
+
+Diferentes tipos de dados podem se beneficiar de diferentes [codecs de compressão](/pt-BR/reference/statements/create/table/codec).
+
+A tabela de sistema [system.data&#95;type&#95;families](/pt-BR/reference/system-tables/data_type_families) fornece uma
+visão geral de todos os tipos de dados disponíveis.
+Ela também mostra se um tipo de dado é um alias de outro tipo de dado e se seu nome diferencia maiúsculas de minúsculas (por exemplo, `bool` vs. `BOOL`).
+
+<div id="data-type-categories">
+  ## Categorias de tipos de dados
+</div>
+
+<CardGroup cols={2}>
+  <Card title="Tipos numéricos">
+    Armazene [inteiros](/pt-BR/reference/data-types/int-uint), [valores de ponto flutuante](/pt-BR/reference/data-types/float), valores [`Decimal`](/pt-BR/reference/data-types/decimal) de precisão fixa e sinalizadores [`Bool`](/pt-BR/reference/data-types/boolean).
+  </Card>
+
+  <Card title="Tipos String">
+    Armazene valores [`String`](/pt-BR/reference/data-types/string) de comprimento variável ou valores [`FixedString`](/pt-BR/reference/data-types/fixedstring) de comprimento fixo.
+  </Card>
+
+  <Card title="Tipos de data e hora">
+    Represente datas com [`Date`](/pt-BR/reference/data-types/date) e [`Date32`](/pt-BR/reference/data-types/date32), timestamps com [`DateTime`](/pt-BR/reference/data-types/datetime) e [`DateTime64`](/pt-BR/reference/data-types/datetime64), ou valores de hora com [`Time`](/pt-BR/reference/data-types/time) e [`Time64`](/pt-BR/reference/data-types/time64).
+  </Card>
+
+  <Card title="Tipos de rede">
+    Armazene endereços [`IPv4`](/pt-BR/reference/data-types/ipv4) e [`IPv6`](/pt-BR/reference/data-types/ipv6) em formato binário compacto.
+  </Card>
+
+  <Card title="Tipos compostos">
+    Combine valores em estruturas [`Array`](/pt-BR/reference/data-types/array), [`Tuple`](/pt-BR/reference/data-types/tuple), [`Map`](/pt-BR/reference/data-types/map) e [`Nested`](/pt-BR/reference/data-types/nested-data-structures/index).
+  </Card>
+
+  <Card title="Tipos semiestruturados">
+    Armazene dados em evolução ou heterogêneos com [`JSON`](/pt-BR/reference/data-types/newjson), [`Dynamic`](/pt-BR/reference/data-types/dynamic) e [`Variant`](/pt-BR/reference/data-types/variant).
+  </Card>
+
+  <Card title="Tipos Nullable e opcionais">
+    Represente valores ausentes com [`Nullable`](/pt-BR/reference/data-types/nullable) ou reduza o armazenamento necessário para valores repetidos com [`LowCardinality`](/pt-BR/reference/data-types/lowcardinality).
+  </Card>
+
+  <Card title="Tipos especializados">
+    Modele valores [`UUID`](/pt-BR/reference/data-types/uuid), valores [`Enum`](/pt-BR/reference/data-types/enum), [objetos geográficos](/pt-BR/reference/data-types/geo), [vetores para busca aproximada](/pt-BR/reference/data-types/qbit) e [domínios](/pt-BR/reference/data-types/domains/index).
+  </Card>
+
+  <Card title="Tipos de funções de agregação">
+    Armazene estados intermediários de agregação com [`AggregateFunction`](/pt-BR/reference/data-types/aggregatefunction) e [`SimpleAggregateFunction`](/pt-BR/reference/data-types/simpleaggregatefunction).
+  </Card>
+
+  <Card title="Tipos de dados especiais">
+    Saiba mais sobre [`Expression`](/pt-BR/reference/data-types/special-data-types/expression), [`Interval`](/pt-BR/reference/data-types/special-data-types/interval), [`Nothing`](/pt-BR/reference/data-types/special-data-types/nothing) e [`Set`](/pt-BR/reference/data-types/special-data-types/set), usados em resultados intermediários de consultas.
+  </Card>
+
+  <Card title="Codificação binária">
+    Consulte a [especificação de codificação binária](/pt-BR/reference/data-types/data-types-binary-encoding) para conhecer a representação serializada de cada tipo de dado.
+  </Card>
+</CardGroup>

@@ -1,3 +1,5 @@
+-- Tags: long
+SET explain_query_plan_default = 'legacy';
 SET enable_optimize_predicate_expression = 0;
 SET convert_query_to_cnf = 0;
 SET cross_to_inner_join_rewrite = 1;
@@ -11,54 +13,6 @@ CREATE TABLE t1 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 CREATE TABLE t2 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 CREATE TABLE t3 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 CREATE TABLE t4 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
-
-SET enable_analyzer = 0;
-
---- EXPLAIN SYNTAX (old AST based optimization)
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2 WHERE t1.b = t2.b);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t2.a = t1.a AND t2.a = t3.a AND t2.a = t4.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1, t2 CROSS JOIN t3);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3);
-
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3);
 
 -- {echoOn}
 --- EXPLAIN QUERY TREE

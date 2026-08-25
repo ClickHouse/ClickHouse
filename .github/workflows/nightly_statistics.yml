@@ -50,10 +50,10 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci --timestamp
 
-  collect_statistics:
+  collect_job_duration_statistics:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
-    name: "Collect Statistics"
+    name: "Collect Job Duration Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -82,4 +82,38 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Job Duration Statistics' --workflow "NightlyStatistics" --ci --timestamp
+
+  collect_test_duration_statistics:
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [config_workflow]
+    name: "Collect Test Duration Statistics"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Test Duration Statistics' --workflow "NightlyStatistics" --ci --timestamp

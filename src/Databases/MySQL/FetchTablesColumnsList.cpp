@@ -89,7 +89,7 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
 
     query << " TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
-    StreamSettings mysql_input_stream_settings(settings);
+    MySQLStreamSettings mysql_input_stream_settings(settings);
     auto result = std::make_unique<MySQLSource>(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 

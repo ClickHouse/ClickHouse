@@ -56,20 +56,19 @@ private:
     };
 
     void ensureAllQuotasRead();
-    void quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota);
-    void quotaRemoved(const UUID & quota_id);
-    void chooseQuotaToConsume();
-    void chooseQuotaToConsumeIfNeeded();
-    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota, bool throw_if_client_key_empty);
+    void quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota) TSA_REQUIRES(mutex);
+    void quotaRemoved(const UUID & quota_id) TSA_REQUIRES(mutex);
+    void chooseQuotaToConsumeIfNeeded() TSA_REQUIRES(mutex);
+    void chooseQuotaToConsume() TSA_REQUIRES(mutex);
+    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota, bool throw_if_client_key_empty) TSA_REQUIRES(mutex);
 
     const AccessControl & access_control;
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
-    /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
+    /// Set while applying a batch of changes; the rebuild is coalesced to once per notification batch.
     bool need_choose_quota TSA_GUARDED_BY(mutex) = false;
     scope_guard subscription;
-    scope_guard batch_subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;
 };
 }

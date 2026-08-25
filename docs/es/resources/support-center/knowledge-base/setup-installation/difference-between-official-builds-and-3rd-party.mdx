@@ -1,0 +1,34 @@
+---
+title: Diferencias entre las compilaciones oficiales de ClickHouse y las compilaciones de terceros
+description: Conozca las diferencias clave entre las compilaciones oficiales de ClickHouse y las compilaciones de terceros, incluidas las actualizaciones, la compatibilidad y las consideraciones de seguridad.
+date: 2023-06-26
+tags: ['Conceptos']
+keywords: ['compilaciones oficiales', 'compilaciones de terceros']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+Veo que otros proveedores ofrecen sus propias compilaciones de ClickHouse. ¿Cuál es la diferencia entre las compilaciones oficiales de ClickHouse y estas compilaciones de terceros?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Estas son algunas de las diferencias que hemos observado en otras compilaciones:
+
+* Las cadenas **&quot;official&quot;** se sustituyen por el nombre del proveedor
+* Aparecen con varios meses de retraso y ***no incluyen correcciones de errores recientes***, lo que significa que estas compilaciones pueden contener vulnerabilidades ya corregidas en las versiones oficiales
+* Las compilaciones no son idénticas bit a bit, y las direcciones en el código son distintas. Como resultado, las trazas de pila de estas compilaciones no se pueden analizar, y el equipo de ClickHouse no puede responder preguntas sobre ellas
+* Las compilaciones no son auditables ni reproducibles; no existe ningún sistema de CI accesible públicamente con los mismos logs de compilación
+* La suite de pruebas de ClickHouse no se ejecuta en estas compilaciones, por lo que su funcionamiento no está verificado por dicha suite
+* Puede que no estén disponibles para todas las arquitecturas (como ARM, etc.)
+* A veces incluyen parches dirigidos a un cliente concreto que pueden romper la compatibilidad e introducir riesgos adicionales
+
+Recomendamos ejecutar la versión más reciente de ClickHouse con las compilaciones oficiales, siguiendo las [instrucciones de instalación](/es/get-started/setup/install) de la documentación:
+
+* Publicamos una **versión estable** cada mes, y las tres versiones estables más recientes cuentan con soporte en términos de diagnóstico y retroportación de correcciones de errores.
+* También publicamos una **versión de soporte a largo plazo (LTS)** dos veces al año, con soporte durante un año desde su lanzamiento inicial, y está pensada realmente solo para empresas que no permiten actualizaciones frecuentes ni el uso de software que no sea LTS. (¡Somos muy partidarios de las compilaciones estables mensuales!)
+
+Encontrará [más detalles sobre las versiones estables frente a las LTS](/es/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases) en la documentación.

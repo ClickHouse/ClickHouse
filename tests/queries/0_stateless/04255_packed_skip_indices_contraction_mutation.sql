@@ -6,6 +6,8 @@
 -- untouched index's data. CHECK TABLE still passed because the inherited skp_idx.packed
 -- checksum was removed, but the index became unmaterialized (Granules: 2/2 in EXPLAIN).
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_shrink_mutate;
 CREATE TABLE t_shrink_mutate
 (

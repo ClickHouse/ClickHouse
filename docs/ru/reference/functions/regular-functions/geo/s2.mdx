@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'Геометрия S2'
+title: 'Функции для работы с индексами S2'
+description: 'Документация по функциям для работы с индексами S2'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## Индекс S2
+</div>
+
+[S2](https://s2geometry.io/) — это географическая система индексирования, в которой все географические данные представлены на сфере (аналогично глобусу).
+
+В библиотеке S2 точки представлены в виде индекса S2 — специального числа, которое кодирует точку на поверхности единичной сферы, в отличие от традиционных пар (широта, долгота). Чтобы получить индекс точки S2 для заданной точки в формате (широта, долгота), используйте функцию [geoToS2](#geotos2). Также можно использовать функцию [s2ToGeo](#s2togeo), чтобы получить географические координаты, соответствующие указанному индексу точки S2.
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+Возвращает индекс точки [S2](#s2index), соответствующий указанным координатам `(longitude, latitude)`.
+
+**Синтаксис**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**Аргументы**
+
+* `lon` — Долгота. [Float64](/ru/reference/data-types/float).
+* `lat` — Широта. [Float64](/ru/reference/data-types/float).
+
+**Возвращаемые значения**
+
+* Индекс точки S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+Возвращает географические координаты `(longitude, latitude)`, соответствующие указанному индексу точки [S2](#s2index).
+
+**Синтаксис**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**Аргументы**
+
+* `s2index` — индекс S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* [Кортеж](/ru/reference/data-types/tuple), состоящий из двух значений:
+  * `lon`. [Float64](/ru/reference/data-types/float).
+  * `lat`. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+Возвращает соседние индексы S2 для указанного [S2](#s2index). Каждая ячейка в системе S2 представляет собой четырёхугольник, ограниченный четырьмя геодезическими линиями. Поэтому у каждой ячейки 4 соседа.
+
+**Синтаксис**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**Аргументы**
+
+* `s2index` — индекс S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Массив из 4 соседних индексов: `array[s2index1, s2index3, s2index2, s2index4]`. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+Определяет, пересекаются ли две заданные [S2](#s2index) ячейки.
+
+**Синтаксис**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**Аргументы**
+
+* `siIndex1`, `s2index2` — индекс S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — Если ячейки пересекаются. [UInt8](/ru/reference/data-types/int-uint).
+* `0` — Если ячейки не пересекаются. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+Определяет, содержит ли сферическая шапка точку S2. Сферическая шапка — это часть сферы, отсечённая плоскостью. Она задаётся точкой на сфере и радиусом в градусах.
+
+**Синтаксис**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**Аргументы**
+
+* `center` — индекс точки S2, соответствующий сферической шапке. [UInt64](/ru/reference/data-types/int-uint).
+* `degrees` — радиус сферической шапки в градусах. [Float64](/ru/reference/data-types/float).
+* `point` — индекс точки S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — Если сферическая шапка содержит точку S2 с указанным индексом. [UInt8](/ru/reference/data-types/int-uint).
+* `0` — Если сферическая шапка не содержит точку S2 с указанным индексом. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+Определяет наименьшую сферическую шапку, содержащую две указанные входные сферические шапки. Сферическая шапка представляет собой часть сферы, отсечённую плоскостью. Она задаётся точкой на сфере и радиусом в градусах.
+
+**Синтаксис**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**Аргументы**
+
+* `center1`, `center2` — индексы точек S2, соответствующие двум входным сферическим шапкам. [UInt64](/ru/reference/data-types/int-uint).
+* `radius1`, `radius2` — радиусы двух входных сферических шапок в градусах. [Float64](/ru/reference/data-types/float).
+
+**Возвращаемые значения**
+
+* `center` — индекс точки S2, соответствующий центру наименьшей сферической шапки, содержащей обе входные сферические шапки. [UInt64](/ru/reference/data-types/int-uint).
+* `radius` — радиус наименьшей сферической шапки, содержащей обе входные сферические шапки. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+Увеличивает ограничивающий прямоугольник так, чтобы он включал заданную точку S2. В системе S2 прямоугольник задаётся типом `S2Region` под названием `S2LatLngRect`, который представляет прямоугольник в координатах широты и долготы.
+
+**Синтаксис**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**Аргументы**
+
+* `s2PointLow` — Нижний индекс точки S2, соответствующий прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2PointHigh` — Верхний индекс точки S2, соответствующий прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2Point` — Целевой индекс точки S2, который должен быть включён в расширяемый ограничивающий прямоугольник. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* `s2PointLow` — Нижний идентификатор ячейки S2, соответствующий расширенному прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2PointHigh` — Верхний идентификатор ячейки S2, соответствующий расширенному прямоугольнику. [UInt64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+Определяет, содержит ли заданный прямоугольник точку S2. В системе S2 прямоугольник представляется типом `S2Region` с именем `S2LatLngRect`, который задаёт прямоугольник в пространстве широты и долготы.
+
+**Синтаксис**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**Аргументы**
+
+* `s2PointLow` — Нижний индекс точки S2, соответствующий прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2PointHigh` — Верхний индекс точки S2, соответствующий прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2Point` — Индекс целевой точки S2. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — Если прямоугольник содержит указанную точку S2.
+* `0` — Если прямоугольник не содержит указанную точку S2.
+
+**Пример**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+Возвращает наименьший прямоугольник, содержащий объединение этого прямоугольника с заданным. В системе S2 прямоугольник представлен типом `S2Region` с именем `S2LatLngRect`, который задаёт прямоугольник в пространстве широты и долготы.
+
+**Синтаксис**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**Аргументы**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — Нижний и верхний индексы точек S2, соответствующие первому прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — Нижний и верхний индексы точек S2, соответствующие второму прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* `s2UnionRect2PointLow` — Нижний идентификатор ячейки S2, соответствующий объединённому прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — Верхний идентификатор ячейки S2, соответствующий объединённому прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+Возвращает наименьший прямоугольник, содержащий пересечение данного прямоугольника с заданным. В системе S2 прямоугольник представляется типом `S2LatLngRect`, относящимся к `S2Region` и описывающим прямоугольник в пространстве широты и долготы.
+
+**Синтаксис**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**Аргументы**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — нижний и верхний индексы точек S2, соответствующие первому прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — нижний и верхний индексы точек S2, соответствующие второму прямоугольнику. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* `s2UnionRect2PointLow` — нижний идентификатор ячейки S2, соответствующий прямоугольнику, содержащему пересечение заданных прямоугольников. [UInt64](/ru/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — верхний идентификатор ячейки S2, соответствующий прямоугольнику, содержащему пересечение заданных прямоугольников. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```

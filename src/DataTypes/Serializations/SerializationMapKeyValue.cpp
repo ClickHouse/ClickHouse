@@ -62,6 +62,20 @@ struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::Deserializ
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (nested_column)
+            callback(nested_column);
+    }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (reading_info_state)
+            callback(reading_info_state);
+        if (nested_state)
+            callback(nested_state);
+    }
 };
 
 void SerializationMapKeyValue::enumerateStreams(
@@ -212,6 +226,8 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
             settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
             map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_column, rows_offset, limit, settings_copy, map_key_value_state->nested_state, cache);
             num_read_rows = nested_column->size();
+            /// Add the whole Map to cache so other key-value subcolumns reuse it instead of re-reading the same range.
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
         }
     }
     /// Multiple buckets. Only the bucket containing our key was opened, so read it directly.

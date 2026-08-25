@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -117,6 +119,13 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
+        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
+        /// can declare a huge size and make reserve allocate gigabytes before any
+        /// event is read.
+        if (size > 100'000'000)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
+
         /// If we lose these flags, functionality is broken
         /// If we serialize/deserialize these flags, we have compatibility issues
         /// If we set these flags to 1, we have a minor performance penalty, which seems acceptable
@@ -169,7 +178,7 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -268,8 +277,12 @@ private:
 
                     UInt64 duration = 0;
                     const auto * prev_pos = pos;
-                    pos = tryReadIntText(duration, pos, end);
-                    if (pos == prev_pos)
+                    ReadBufferFromMemory duration_buf(pos, end - pos);
+                    /// Both checks are load-bearing: a lone sign is consumed and then rejected,
+                    /// while a leading non-digit is rejected without consuming anything.
+                    const bool parsed_duration = tryReadIntText(duration, duration_buf);
+                    pos += duration_buf.count();
+                    if (pos == prev_pos || !parsed_duration)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -288,7 +301,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number > arg_count - 1)
+                    if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
@@ -855,9 +868,9 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {}});
+    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

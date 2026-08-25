@@ -71,6 +71,10 @@ struct DatabaseDataLakeSettings
 
     SettingsChanges allChanged() const;
 
+    /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
+    /// so catalog code can match `SettingsChanges` entries without magic strings.
+    static const String & getSettingName(DatabaseDataLakeSettingsString setting);
+
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;
 };

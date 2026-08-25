@@ -1,5 +1,7 @@
 #if !defined(SANITIZER)
 
+#include "config.h"
+
 #include <gtest/gtest.h>
 
 #include <Common/CurrentMemoryTracker.h>
@@ -9,7 +11,11 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/memory.h>
+#include <base/getPageSize.h>
 #include <base/scope_guard.h>
+#include <cerrno>
+#include <cstdlib>
 #include <limits>
 
 namespace DB::ErrorCodes
@@ -319,6 +325,43 @@ TEST(AllocationInterceptors, MinAllocSizeToThrowRespectsLockMemoryExceptionInThr
     *ptr = 'a';
     delete[] ptr;
 }
+
+/// The strict aligned_alloc override lives in src/Common/malloc.cpp only under this condition;
+/// without it glibc's lenient aligned_alloc(4096, 47808) succeeds and these assertions do not hold.
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_FREEBSD))
+
+/// Our aligned_alloc override (src/Common/malloc.cpp) strictly enforces the C11 rule that size
+/// be a multiple of alignment, unlike glibc's lenient implementation. ThreadStack::getSize() can
+/// produce a non-page-aligned size (MINSIGSTKSZ on glibc >= 2.34 is a runtime sysconf value, e.g.
+/// 47808 on Sapphire Rapids/AMX), which used to abort startup via this override (issue #108811).
+TEST(AllocationInterceptors, AlignedAllocRejectsNonMultipleOfAlignment)
+{
+    const size_t page_size = getPageSize();
+    /// A size between 32 KiB and the next page boundary, not a multiple of the page size.
+    const size_t unaligned_size = 47808;
+    ASSERT_NE(unaligned_size % page_size, 0u);
+
+    errno = 0;
+    void * ptr = aligned_alloc(page_size, unaligned_size);
+    EXPECT_EQ(ptr, nullptr);
+    EXPECT_EQ(errno, EINVAL);
+    free(ptr);
+}
+
+TEST(AllocationInterceptors, AlignedAllocAcceptsPageRoundedSize)
+{
+    const size_t page_size = getPageSize();
+    /// The fix rounds the requested size up to a page multiple before allocating.
+    const size_t rounded_size = ::Memory::alignUp(static_cast<size_t>(47808), page_size);
+    ASSERT_EQ(rounded_size % page_size, 0u);
+
+    void * ptr = aligned_alloc(page_size, rounded_size);
+    ASSERT_NE(ptr, nullptr);
+    useMisterPointer(ptr);
+    free(ptr);
+}
+
+#endif // USE_JEMALLOC && (OS_LINUX || OS_FREEBSD)
 
 /// NOLINTEND
 

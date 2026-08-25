@@ -8,6 +8,9 @@
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <map>
 
 #include <string_view>
 #include <unordered_map>
@@ -62,6 +65,7 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \
     M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
@@ -102,6 +106,7 @@ class WriteBuffer;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
+    M(CLASS_NAME, SnappyMode) \
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
@@ -120,7 +125,9 @@ class WriteBuffer;
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
-    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
+    M(CLASS_NAME, UniqueKeyProbeImplementation) \
+    M(CLASS_NAME, SkipUnavailableShardsMode)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
@@ -142,26 +149,45 @@ struct Settings
     bool isChanged(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
     std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
+    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
+    /// built-in setting. Used to transport query parameters (whose names may match a setting name).
+    void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
-    std::vector<String> getHints(const String & name) const;
+    /// Whether any setting currently holds a value that was set by the `compatibility` setting.
+    bool hasSettingsChangedByCompatibility() const;
+
+    /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
+    /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
+    /// `compatibility` itself instead of being forced to the sender's derived values.
+    void resetSettingsChangedByCompatibility();
+
+    VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
-    std::vector<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getAllAliasNames() const;
-    std::vector<std::string_view> getChangedAndObsoleteNames() const;
-    std::vector<std::string_view> getUnchangedNames() const;
+
+    /// Reject `SET name` with no value unless `name` is a Bool setting - `SET name` stands for
+    /// `SET name = true`. `applyChanges` does this itself; `Context` needs it separately because it
+    /// applies changes through `Context::setSetting`, which only sees a name and a value.
+    void checkShorthandChange(const SettingChange & change) const;
+    void checkShorthandChanges(const SettingsChanges & changes) const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
+    VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
+    VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    NameToNameMap toNameToNameMap() const;
+    std::map<String, String> changedToMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
@@ -184,4 +210,11 @@ struct Settings
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
+
+/// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
+/// wire encoding (SettingsWriteFormat::STRINGS_WITH_FLAGS), but bypassing Settings::set/read and
+/// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
+/// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);
+NameToNameMap readQueryParameters(ReadBuffer & in);
 }

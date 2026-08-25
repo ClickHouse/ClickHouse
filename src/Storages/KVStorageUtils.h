@@ -57,6 +57,9 @@ std::vector<std::string> serializeKeysToRawString(
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys);
 
+std::vector<std::string> serializeKeysToRawString(
+    const ColumnWithTypeAndName & keys, const DataTypePtr & serialization_type, PaddedPODArray<UInt8> * null_map);
+
 /// In current implementation redis / keeper can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key);
 

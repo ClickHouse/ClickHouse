@@ -33,9 +33,9 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     const IcebergPathFromMetadata & manifest_file_path_,
     const DB::FormatSettings & format_settings)
 try
-    : buffer(std::move(buffer_))
-    , manifest_file_path(manifest_file_path_)
+    : manifest_file_path(manifest_file_path_)
 {
+    auto buffer = std::move(buffer_);
     auto manifest_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
@@ -114,9 +114,26 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 {
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
-    if (format_version > 1)
-        content_type = FileContentType(getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-    const auto status = ManifestEntryStatus(getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
+    if (format_version > 1 && hasPath(c_data_file_content))
+    {
+        /// The value comes from the file and has to be validated: casting an arbitrary integer to
+        /// the enum and switching over it below would be undefined behaviour.
+        const auto content_type_value = getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>();
+        if (content_type_value > UInt64(FileContentType::EQUALITY_DELETE))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: unexpected value {} of 'data_file.content' in a manifest file",
+                content_type_value);
+        content_type = FileContentType(content_type_value);
+    }
+
+    const auto status_value = getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>();
+    if (status_value > UInt64(ManifestEntryStatus::DELETED))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: unexpected value {} of 'status' in a manifest file",
+            status_value);
+    const auto status = ManifestEntryStatus(status_value);
 
     const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
     std::optional<Int64> snapshot_id;
@@ -140,23 +157,40 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     if (format_version > 1)
     {
-        const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
-        if (sequence_number_value.isNull())
+        if (!hasPath(f_sequence_number))
         {
-            if (status == ManifestEntryStatus::EXISTING)
-            {
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
-                    manifest_file_path);
-            }
+            sequence_number = 0;
         }
         else
         {
-            sequence_number = sequence_number_value.safeGet<Int64>();
+            const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
+            if (sequence_number_value.isNull())
+            {
+                if (status == ManifestEntryStatus::EXISTING)
+                {
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
+                        manifest_file_path);
+                }
+            }
+            else
+            {
+                sequence_number = sequence_number_value.safeGet<Int64>();
+            }
         }
     }
 
+    /// `file_sequence_number` can differ from the data `sequence_number` and, like it, is inherited from the
+    /// manifest's sequence number when null. Keep it raw here; the inherited value is resolved by the caller.
+    std::optional<Int64> file_sequence_number;
+
+    if (format_version > 1 && hasPath(f_file_sequence_number))
+    {
+        const auto file_sequence_number_value = getValueFromRowByName(row_index, f_file_sequence_number);
+        if (!file_sequence_number_value.isNull())
+            file_sequence_number = file_sequence_number_value.safeGet<Int64>();
+    }
 
     const auto file_path_key = IcebergPathFromMetadata::deserialize(
         getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
@@ -251,6 +285,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -298,6 +333,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -329,6 +365,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -342,6 +379,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_size_in_bytes);
         }
     }
+
+    throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot read Iceberg table: unexpected content type {} of a manifest file entry", UInt64(content_type));
 }
 
 

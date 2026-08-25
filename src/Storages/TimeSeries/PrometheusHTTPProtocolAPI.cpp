@@ -1,20 +1,24 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -26,14 +30,47 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <fmt/format.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_materialized_cte;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+}
+
+namespace
+{
+constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
+
+Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
+{
+    const auto high_precision_value = parseTimeSeriesDuration(value, LOOKBACK_DELTA_SCALE);
+    if (high_precision_value <= 0 || timestamp_scale >= LOOKBACK_DELTA_SCALE)
+        return high_precision_value;
+
+    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(LOOKBACK_DELTA_SCALE - timestamp_scale);
+    auto timestamp_ticks = high_precision_value.value / divisor;
+    if (high_precision_value.value % divisor)
+        ++timestamp_ticks;
+
+    return Decimal64{timestamp_ticks};
+}
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -47,7 +84,8 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
-    const Params & params)
+    const Params & params,
+    QueryFinishCallback query_finish_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
@@ -55,6 +93,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
+
+    if (!params.lookback_delta_param.empty())
+    {
+        const auto lookback_delta = parsePrometheusLookbackDelta(params.lookback_delta_param, timestamp_scale);
+        if (lookback_delta > 0)
+            evaluation_settings.instant_selector_window = lookback_delta;
+    }
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
@@ -87,20 +132,46 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        getContext()->setSetting("enable_materialized_cte", true);
+
+    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
 
-    /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-    writeQueryResponse(response, executor, converter.getResultType());
+        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+        writeQueryResponse(response, executor, converter.getResultType());
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early so a slow client draining the response does not keep occupying it,
+    /// then flush the response (query_finish_callback) and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
-    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryAPIImpl.
+    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
     bool has_output = false;
     Block block;
     while (pulling_executor.pull(block))
@@ -329,12 +400,146 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
 void PrometheusHTTPProtocolAPI::getSeries(
     WriteBuffer & response,
-    const String & /* match_param */,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const Strings & match_params,
+    const String & start_param,
+    const String & end_param,
+    UInt64 limit,
+    QueryFinishCallback query_finish_callback)
 {
-    UNUSED(response);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The series endpoint is not implemented");
+    /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
+    if (match_params.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Prometheus /api/v1/series endpoint requires at least one 'match[]' series selector");
+
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+    /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.
+    std::optional<DateTime64> min_time;
+    std::optional<DateTime64> max_time;
+    if (!start_param.empty())
+        min_time = parseTimeSeriesTimestamp(start_param, timestamp_scale);
+    if (!end_param.empty())
+        max_time = parseTimeSeriesTimestamp(end_param, timestamp_scale);
+    if (min_time && max_time && (*max_time < *min_time))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
+
+    /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
+    auto time_series_settings = time_series_storage->getStorageSettings();
+    if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
+        || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
+    {
+        min_time.reset();
+        max_time.reset();
+    }
+
+    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+
+    /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
+    String inner_query;
+    for (const auto & match_param : match_params)
+    {
+        PrometheusQueryTree selector;
+        String error_message;
+        if (!selector.tryParse(match_param, timestamp_scale, &error_message))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the value {} of the 'match[]' parameter: {}",
+                            quoteString(match_param), error_message);
+
+        const auto * root = selector.getRoot();
+        if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector",
+                            quoteString(match_param));
+
+        const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers;
+        if (matchers.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter must contain at least one matcher",
+                            quoteString(match_param));
+
+        if (!inner_query.empty())
+            inner_query += " UNION ALL ";
+        inner_query += StorageTimeSeriesSelector::makeSelectIDsQuery(
+            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type)->formatWithSecretsOneLine();
+    }
+
+    /// timeSeriesIdToTags() returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
+    String sql_query = fmt::format(
+        "SELECT DISTINCT timeSeriesIdToTags(series_id) AS {} FROM ({})", TimeSeriesColumnNames::Tags, inner_query);
+    if (limit)
+        sql_query += fmt::format(" LIMIT {}", limit + 1);
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
+
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+
+    auto [ast, io] = executeQuery(sql_query, getContext(), {}, QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        /// Pull the first non-empty block before writing the header so an early exception still produces the correct error response.
+        bool has_output = false;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() > 0)
+            {
+                has_output = true;
+                break;
+            }
+        }
+
+        writeString(R"({"status":"success","data":[)", response);
+
+        UInt64 written = 0;
+        bool truncated = false;
+
+        auto write_block = [&](const Block & result_block)
+        {
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                if (limit && (written == limit))
+                {
+                    truncated = true;
+                    return;
+                }
+                if (written)
+                    writeString(",", response);
+                writeTags(response, result_block, i);
+                ++written;
+            }
+        };
+
+        if (has_output)
+        {
+            write_block(block);
+            while (!truncated && executor.pull(block))
+            {
+                if (block.rows() > 0)
+                    write_block(block);
+            }
+        }
+
+        if (truncated)
+            writeString(R"(],"warnings":["results truncated due to limit"]})", response);
+        else
+            writeString("]}", response);
+
+        /// Finalize the query result cache write before the executor's destructor cancels the pipeline; a truncated (incomplete) result must not be cached.
+        if (!truncated)
+            io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::getLabels(
@@ -413,11 +618,6 @@ void PrometheusHTTPProtocolAPI::writeScalar(WriteBuffer & response, Float64 valu
     }
 }
 
-
-void PrometheusHTTPProtocolAPI::writeSeriesResponse(WriteBuffer & response, const Block & /* result_block */)
-{
-    writeString(R"({"status":"success","data":[]})", response);
-}
 
 void PrometheusHTTPProtocolAPI::writeLabelsResponse(WriteBuffer & response, const Block & /* result_block */)
 {

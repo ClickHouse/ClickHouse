@@ -1,0 +1,557 @@
+---
+description: 'Liste d’outils et d’applications GUI tiers pour utiliser ClickHouse'
+sidebarTitle: 'Interfaces visuelles'
+slug: /interfaces/third-party/gui
+title: 'Interfaces visuelles développées par des tiers'
+doc_type: 'reference'
+---
+
+<div id="open-source">
+  ## Open source
+</div>
+
+<Accordion title="agx">
+  [agx](https://github.com/agnosticeng/agx) est une application de bureau construite avec Tauri et SvelteKit qui fournit une interface moderne pour explorer et interroger des données à l’aide du moteur de base de données embarqué de ClickHouse (chdb).
+
+  * Utilisez ch-db lors de l’exécution de l’application native.
+  * L’instance web peut se connecter à une instance ClickHouse.
+  * Éditeur Monaco pour une prise en main immédiate.
+  * Visualisations de données multiples et évolutives.
+</Accordion>
+
+<Accordion title="ch-ui">
+  [ch-ui](https://github.com/caioricciuti/ch-ui) est une interface d’application React.js simple pour les bases de données ClickHouse, conçue pour exécuter des requêtes et visualiser des données. Construite avec React et le client ClickHouse pour le web, elle offre une UI élégante et intuitive pour faciliter les interactions avec les bases de données.
+
+  Fonctionnalités :
+
+  * Intégration ClickHouse : gérez facilement les connexions et exécutez des requêtes.
+  * Gestion réactive des onglets : gérez dynamiquement plusieurs onglets, tels que les onglets de requête et de table.
+  * Optimisations des performances : utilise Indexed DB pour une mise en cache et une gestion de l’état efficaces.
+  * Stockage local des données : toutes les données sont stockées localement dans le navigateur, garantissant qu’aucune donnée n’est envoyée ailleurs.
+</Accordion>
+
+<Accordion title="ChartDB">
+  [ChartDB](https://chartdb.io) est un outil gratuit et open source qui permet de visualiser et de concevoir des schémas de base de données, y compris pour ClickHouse, à partir d’une simple requête. Développé avec React, il offre une expérience fluide et intuitive, sans nécessiter d’identifiants de base de données ni d’inscription pour démarrer.
+
+  Fonctionnalités :
+
+  * Visualisation du schéma : importez et visualisez instantanément votre schéma ClickHouse, y compris des diagrammes entité-relation avec des vues matérialisées et des vues standard, affichant les références aux tables.
+  * Export DDL basé sur l’IA : générez facilement des scripts DDL pour mieux gérer et documenter votre schéma.
+  * Prise en charge de plusieurs dialectes SQL : compatible avec différents dialectes SQL, ce qui en fait un outil adapté à divers environnements de base de données.
+  * Sans inscription ni identifiants requis : toutes les fonctionnalités sont accessibles directement dans le navigateur, pour une utilisation simple et sécurisée.
+
+  [Code source de ChartDB](https://github.com/chartdb/chartdb).
+</Accordion>
+
+<Accordion title="CHOps">
+  [CHOps](https://ch-ops.io) est un tableau de bord web gratuit, open source et auto-hébergé destiné à l’administration et à la surveillance des clusters ClickHouse. Il encapsule l’interface HTTP de ClickHouse dans une UI de navigateur permettant d’exécuter du SQL, d’inspecter les requêtes lentes, de configurer des alertes, de gérer les sauvegardes et de contrôler les accès. Il fonctionne avec les déploiements ClickHouse accessibles via HTTP. CHOps prend actuellement en charge ClickHouse 26.3 LTS ; d’autres versions récentes fonctionnent également, bien que certaines fonctionnalités puissent présenter de légères lacunes.
+
+  Fonctionnalités :
+
+  * Éditeur SQL avec complétion automatique, types `EXPLAIN`, export des résultats dans 22 formats, profileur de requêtes et chronologie des métriques de requête.
+  * Vue d’ensemble du cluster : moniteur de requêtes en direct avec contrôles d’arrêt, analytique et journal des requêtes, inspection des tables et des parties de table, fusions et mutations, file DDL distribuée.
+  * Tableaux de bord personnalisés avec un générateur de graphiques, plus de 10 types de graphiques et des dispositions de grille configurables.
+  * Surveillance avec lecture de type DVR pour rejouer les métriques historiques image par image.
+  * Règles d’alerte basées sur SQL avec évaluation des seuils et notifications par e-mail.
+  * Contrôle d’accès : gestion des utilisateurs et rôles ClickHouse, visualisation des autorisations et modification des profils de paramètres.
+  * Orchestration de sauvegarde et de restauration vers un stockage compatible S3, avec découverte des sauvegardes et gestion des profils de stockage.
+  * Outils d’index : visualisation des index de saut de données, gestion des projections et création d’index secondaires.
+  * Visionneuses de journaux d’exceptions, d’erreurs et de texte avec cartes thermiques de calendrier et recherche filtrée.
+  * Se déploie sous la forme d’un unique binaire autonome, via Docker ou depuis le code source.
+
+  [Code source de CHOps](https://github.com/Quantrail-Data/CH-Ops).
+</Accordion>
+
+<Accordion title="LibreDB Studio">
+  [LibreDB Studio](https://github.com/libredb/libredb-studio) est un IDE de base de données auto-hébergé sous licence MIT qui s’exécute dans le navigateur et se déploie à côté de la base de données : sous forme de conteneur, de chart Helm, d’opérateur OLM ou de package npm intégré à un autre produit. Le fournisseur ClickHouse utilise l’interface HTTP documentée sur `8123`/`8443` et ne dépend d’aucun pilote.
+
+  Fonctionnalités :
+
+  * Éditeur SQL basé sur Monaco avec complétion automatique tenant compte du schéma, exécution dans plusieurs onglets et rendu de `EXPLAIN` sous forme d’arbre de plan.
+  * Explorateur de schéma avec grilles de résultats virtualisées, filtrage et export CSV/JSON.
+  * Surveillance à partir des tables `system` : vue d’ensemble du serveur et tailles des parts depuis `system.metrics`, `system.parts` et `system.disks`, instructions terminées depuis `system.query_log`, instructions en cours depuis `system.processes`, avec commande kill.
+  * ClickHouse dans la même interface que PostgreSQL, MySQL, Oracle, SQL Server, SQLite, MongoDB, Redis, Couchbase et Apache Druid, afin que le stockage analytique et la base de données OLTP qui l’alimente se trouvent dans un même onglet de navigateur.
+  * Authentification unique OIDC, accès basé sur les rôles et piste d’audit des requêtes, le tout dans la version MIT.
+
+  [Référence du fournisseur ClickHouse pour LibreDB Studio](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
+</Accordion>
+
+<Accordion title="DataStoria">
+  [DataStoria](https://github.com/FrankChen021/datastoria) est une application de console web basée sur l’IA qui permet de gérer plusieurs clusters ClickHouse depuis un même endroit.
+
+  Fonctionnalités :
+
+  * **Intelligence basée sur l’IA** : utilisez le langage naturel pour explorer les données, optimiser et corriger des requêtes SQL, et visualiser vos données.
+  * **Intégration officielle des Agent Skills ClickHouse** : exploitez les [bonnes pratiques officielles](https://github.com/ClickHouse/agent-skills) pour demander à l’IA des optimisations et des suggestions pour votre base de données.
+  * **Diagnostic intelligent des erreurs** : identifiez instantanément les erreurs de syntaxe grâce à une mise en évidence précise des lignes et des colonnes, et obtenez des suggestions de correction basées sur l’IA en un clic.
+  * **Inspection des tables système** : analysez en profondeur `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log` et `system.processes` à l’aide d’un puissant tableau de bord de visualisation et de filtres pour mieux comprendre votre cluster.
+  * **Explain en un clic** : comprenez instantanément les plans d’exécution des requêtes grâce à des vues visuelles de l’AST et du pipeline.
+  * **Graphe de dépendances** : visualisez les relations entre les tables et suivez les flux de données à travers les vues matérialisées, les tables Distributed et les systèmes externes.
+  * **Surveillance des clusters** : surveillez tous les nœuds à l’aide de métriques en temps réel, des opérations de fusion, de l’état de réplication, des performances des requêtes, et plus encore.
+  * **Confidentialité et sécurité** : toutes les requêtes SQL sont exécutées directement depuis votre navigateur vers votre serveur ClickHouse, garantissant une confidentialité totale.
+
+  [Documentation DataStoria](https://docs.datastoria.app).
+</Accordion>
+
+<Accordion title="DataPup">
+  [DataPup](https://github.com/DataPupOrg/DataPup) est un client de base de données moderne, multiplateforme et assisté par l’IA, avec prise en charge native de ClickHouse.
+
+  Fonctionnalités :
+
+  * Assistance IA pour les requêtes SQL avec suggestions intelligentes
+  * Prise en charge native des connexions à ClickHouse avec gestion sécurisée des identifiants
+  * Interface élégante et accessible avec plusieurs thèmes (clair, sombre et variantes colorées)
+  * Filtrage et exploration avancés des résultats de requêtes
+  * Prise en charge multiplateforme (macOS, Windows, Linux)
+  * Performances rapides et réactives
+  * Open source et sous licence MIT
+</Accordion>
+
+<Accordion title="Dory">
+  [Dory](https://github.com/dorylab/dory) est un espace de travail SQL natif pour l’IA, avec prise en charge de premier ordre de ClickHouse et IA intégrée.
+
+  Fonctionnalités :
+
+  * Copilote IA pour la génération, l’explication et le débogage SQL
+  * Gérez et interrogez plusieurs clusters ClickHouse depuis un espace de travail unifié
+  * Complétion automatique SQL tenant compte du schéma et espace de travail de requêtes à plusieurs onglets
+  * Exploration interactive des résultats de requêtes avec filtrage et visualisation
+  * Résumés de tables basés sur l’IA pour mieux comprendre les jeux de données
+  * Connexions directes à ClickHouse avec prise en charge des tunnels SSH
+  * Interface moderne adaptée aux développeurs, avec prise en charge des thèmes clair, sombre et personnalisés
+  * Application de bureau multiplateforme (macOS, Windows, Linux), avec prise en charge de Docker
+  * Open source et sous licence MIT
+</Accordion>
+
+<Accordion title="ClickHouse Schema Flow Visualizer">
+  [ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) est une application web open source qui permet de visualiser les relations entre les tables ClickHouse.
+  Elle se connecte à une instance ClickHouse, analyse les métadonnées de `system.tables` (types de moteur, dépendances, requêtes SELECT des vues matérialisées) et affiche des diagrammes interactifs de flux de données au niveau des tables, ainsi que des relations au niveau des colonnes avec l&#39;expression de transformation indiquée sur chaque arête. Les diagrammes sont agencés avec Dagre et rendus sous forme de simple SVG intégré — aucun runtime de création de diagrammes côté client n&#39;est chargé.
+
+  Fonctionnalités :
+
+  * Parcours des bases de données et des tables ClickHouse via une barre latérale intuitive
+  * Vue Data Flow : sources en amont et vues matérialisées en aval au niveau des tables
+  * Vue Relationships : correspondance au niveau des colonnes avec l&#39;expression de transformation analysée sur chaque arête (par ex. `toStartOfHour(scheduled_departure)`, `avgState(delay_minutes)`)
+  * Icônes et code couleur tenant compte des moteurs pour `MergeTree`, `Replicated*`, `Distributed`, `MaterializedView` et `Dictionary`
+  * Cliquez sur une colonne dans la vue Relationships pour mettre en évidence l&#39;intégralité de son chemin de données dans le pipeline
+  * Filtre dynamique dans la barre latérale et palette de commandes `Ctrl+K` / `⌘K` pour accéder rapidement à n&#39;importe quelle table, colonne ou moteur
+  * Superposition facultative de métadonnées affichant le nombre de lignes et la taille sur disque par table
+  * Export du diagramme actuel sous forme de fichier HTML autonome
+  * Connexion TLS à ClickHouse, avec désactivation facultative de la vérification et certificats CA / client personnalisés
+
+  [ClickHouse Schema Flow Visualizer - code source](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
+</Accordion>
+
+<Accordion title="Tabix">
+  Interface web pour ClickHouse du projet [Tabix](https://github.com/tabixio/tabix).
+
+  Fonctionnalités :
+
+  * Fonctionne avec ClickHouse directement depuis le navigateur, sans nécessiter l’installation de logiciels supplémentaires.
+  * Éditeur de requêtes avec coloration syntaxique.
+  * Complétion automatique des commandes.
+  * Outils d’analyse graphique de l’exécution des requêtes.
+  * Options de thèmes de couleurs.
+
+  [Documentation Tabix](https://tabix.io/doc/).
+</Accordion>
+
+<Accordion title="HouseOps">
+  [HouseOps](https://github.com/HouseOps/HouseOps) est une interface utilisateur / IDE pour macOS, Linux et Windows.
+
+  Fonctionnalités :
+
+  * Générateur de requêtes avec coloration syntaxique. Affichez le résultat dans une table ou une vue JSON.
+  * Exportez les résultats des requêtes au format CSV ou JSON.
+  * Liste des processus avec descriptions. Mode écriture. Possibilité d’arrêter (`KILL`) un processus.
+  * Graphe de la base de données. Affiche toutes les tables et leurs colonnes avec des informations supplémentaires.
+  * Aperçu rapide de la taille des colonnes.
+  * Configuration du serveur.
+
+  Les fonctionnalités suivantes sont prévues :
+
+  * Gestion de la base de données.
+  * Gestion des utilisateurs.
+  * Analyse des données en temps réel.
+  * Surveillance des clusters.
+  * Gestion des clusters.
+  * Surveillance des tables répliquées et Kafka.
+</Accordion>
+
+<Accordion title="LightHouse">
+  [LightHouse](https://github.com/VKCOM/lighthouse) est une interface web légère pour ClickHouse.
+
+  Fonctionnalités :
+
+  * Liste des tables avec filtrage et métadonnées.
+  * Aperçu des tables avec filtrage et tri.
+  * Exécution de requêtes en lecture seule.
+</Accordion>
+
+<Accordion title="Redash">
+  [Redash](https://github.com/getredash/redash) est une plateforme de visualisation des données.
+
+  Redash prend en charge plusieurs sources de données, dont ClickHouse, et peut joindre les résultats de requêtes provenant de différentes sources en un seul jeu de données final.
+
+  Fonctionnalités :
+
+  * Puissant éditeur de requêtes.
+  * Explorateur de bases de données.
+  * Outil de visualisation permettant de représenter les données sous différentes formes.
+</Accordion>
+
+<Accordion title="Grafana">
+  [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) est une plateforme de surveillance et de visualisation.
+
+  « Grafana vous permet d’interroger, de visualiser, d’alerter et de comprendre vos métriques, quel que soit leur emplacement de stockage. Créez, explorez et partagez des tableaux de bord avec votre équipe, et favorisez une culture axée sur les données. Adopté et apprécié par la communauté » — grafana.com.
+
+  Le plugin de source de données ClickHouse prend en charge ClickHouse en tant que base de données principale.
+</Accordion>
+
+<Accordion title="qryn">
+  [qryn](https://metrico.in) est une pile d’observabilité polyglotte et hautes performances pour ClickHouse *(anciennement cLoki)*, avec des intégrations Grafana natives permettant aux utilisateurs d’ingérer et d’analyser des logs, des métriques et des traces de télémétrie provenant de tout agent prenant en charge Loki/LogQL, Prometheus/PromQL, OTLP/Tempo, Elastic, InfluxDB et bien d’autres.
+
+  Fonctionnalités :
+
+  * Interface Explore intégrée et CLI LogQL pour interroger, extraire et visualiser les données
+  * Prise en charge des API Grafana natives pour interroger, traiter, ingérer, tracer et alerter sans plugins
+  * Pipeline puissant pour rechercher, filtrer et extraire dynamiquement des données à partir de logs, d’événements, de traces et plus encore
+  * API d’ingestion et PUSH compatibles en toute transparence avec LogQL, PromQL, InfluxDB, Elastic et bien d’autres
+  * Prêt à l’emploi avec des agents tels que Promtail, Grafana-Agent, Vector, Logstash, Telegraf et bien d’autres
+</Accordion>
+
+<Accordion title="DBeaver">
+  [DBeaver](https://dbeaver.io/) est un client de bases de données universel pour ordinateur de bureau prenant en charge ClickHouse.
+
+  Fonctionnalités :
+
+  * Développement de requêtes avec coloration syntaxique et autocomplétion.
+  * Liste des tables avec filtres et recherche dans les métadonnées.
+  * Aperçu des données des tables.
+  * Recherche en texte intégral.
+
+  Par défaut, DBeaver ne se connecte pas à l’aide d’une session (contrairement à la CLI, par exemple). Si vous avez besoin de la prise en charge des sessions, par exemple pour définir des paramètres de session, modifiez les propriétés de connexion du pilote et attribuez une chaîne aléatoire à `session_id` (DBeaver utilise une connexion HTTP en interne). Vous pourrez ensuite utiliser n’importe quel paramètre depuis la fenêtre de requête.
+</Accordion>
+
+<Accordion title="clickhouse-cli">
+  [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) est un client en ligne de commande alternatif pour ClickHouse, écrit en Python 3.
+
+  Fonctionnalités :
+
+  * Autocomplétion.
+  * Coloration syntaxique des requêtes et des données de sortie.
+  * Prise en charge d’un pager pour les données de sortie.
+  * Commandes personnalisées de type PostgreSQL.
+</Accordion>
+
+<Accordion title="clickhouse-flamegraph">
+  [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) est un outil spécialisé permettant de visualiser le `system.trace_log` sous forme de [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+</Accordion>
+
+<Accordion title="clickhouse-plantuml">
+  [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) est un script permettant de générer un diagramme [PlantUML](https://plantuml.com/) des schémas de tables.
+</Accordion>
+
+<Accordion title="ClickHouse table graph">
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) est un outil CLI simple permettant de visualiser les dépendances entre les tables ClickHouse. Cet outil récupère les relations entre les tables dans la table `system.tables` et génère un diagramme de flux des dépendances au format [mermaid](https://mermaid.js.org/syntax/flowchart.html). Il permet de visualiser facilement les dépendances entre les tables et de comprendre le flux de données dans votre base de données ClickHouse. Grâce à mermaid, le diagramme obtenu est esthétique et peut facilement être ajouté à votre documentation Markdown.
+</Accordion>
+
+<Accordion title="xeus-clickhouse">
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) est un noyau Jupyter pour ClickHouse qui permet d’interroger des données ClickHouse avec SQL dans Jupyter.
+</Accordion>
+
+<Accordion title="MindsDB Studio">
+  [MindsDB](https://mindsdb.com/) est une couche d’IA open source pour les bases de données, y compris ClickHouse, qui vous permet de développer, d’entraîner et de déployer sans effort des modèles de machine learning de pointe. MindsDB Studio (GUI) vous permet d’entraîner de nouveaux modèles à partir de bases de données, d’interpréter les prédictions du modèle, d’identifier d’éventuels biais dans les données, ainsi que d’évaluer et de visualiser la précision des modèles à l’aide de la fonction Explainable AI afin d’adapter et d’ajuster plus rapidement vos modèles de machine learning.
+</Accordion>
+
+<Accordion title="DBM">
+  [DBM](https://github.com/devlive-community/dbm) DBM est un outil visuel de gestion pour ClickHouse !
+
+  Fonctionnalités :
+
+  * Prise en charge de l’historique des requêtes (pagination, tout effacer, etc.)
+  * Prise en charge des requêtes sur les clauses SQL sélectionnées
+  * Prise en charge de l’arrêt des requêtes
+  * Prise en charge de la gestion des tables (métadonnées, suppression, aperçu)
+  * Prise en charge de la gestion des bases de données (suppression, création)
+  * Prise en charge des requêtes personnalisées
+  * Prise en charge de la gestion de plusieurs sources de données (test de connexion, surveillance)
+  * Prise en charge de la surveillance (processeur, connexion, requête)
+  * Prise en charge de la migration de données
+</Accordion>
+
+<Accordion title="Bytebase">
+  [Bytebase](https://bytebase.com) est un outil web open source de gestion des modifications de schéma et de contrôle de version destiné aux équipes. Il prend en charge diverses bases de données, dont ClickHouse.
+
+  Fonctionnalités :
+
+  * Révision des schémas entre développeurs et DBA.
+  * Database-as-Code : contrôle de version du schéma dans un VCS tel que GitLab et déclenchement du déploiement lors de la validation du code.
+  * Déploiement simplifié grâce à des politiques par environnement.
+  * Historique complet des migrations.
+  * Détection de la dérive de schéma.
+  * Sauvegarde et restauration.
+  * RBAC.
+</Accordion>
+
+<Accordion title="Zeppelin-Interpreter-for-ClickHouse">
+  [Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) est un interpréteur [Zeppelin](https://zeppelin.apache.org) pour ClickHouse. Comparé à l’interpréteur JDBC, il offre un meilleur contrôle des délais d’expiration pour les requêtes de longue durée.
+</Accordion>
+
+<Accordion title="ClickCat">
+  [ClickCat](https://github.com/clickcat-project/ClickCat) est une interface utilisateur conviviale qui vous permet de rechercher, d’explorer et de visualiser vos données ClickHouse.
+
+  Fonctionnalités :
+
+  * Un éditeur SQL en ligne permettant d’exécuter votre code SQL sans installation.
+  * Vous pouvez observer tous les processus et toutes les mutations. Vous pouvez arrêter les processus non terminés dans l’interface utilisateur.
+  * Les métriques incluent l’analyse du cluster, des données et des requêtes.
+</Accordion>
+
+<Accordion title="ClickVisual">
+  [ClickVisual](https://clickvisual.net/) est une plateforme open source légère permettant d’interroger et d’analyser les logs, ainsi que de visualiser les alertes.
+
+  Fonctionnalités :
+
+  * Prise en charge de la création en un clic de bibliothèques d’analyse de logs
+  * Prise en charge de la gestion de la configuration de collecte des logs
+  * Prise en charge de la configuration d’index définis par l’utilisateur
+  * Prise en charge de la configuration des alertes
+  * Prise en charge d’une granularité fine des autorisations, jusqu’aux autorisations par bibliothèque et par table
+</Accordion>
+
+<Accordion title="ClickHouse-Mate">
+  [ClickHouse-Mate](https://github.com/metrico/clickhouse-mate) est un client web Angular et une interface utilisateur permettant de rechercher et d’explorer des données dans ClickHouse.
+
+  Fonctionnalités :
+
+  * Autocomplétion des requêtes ClickHouse SQL
+  * Navigation rapide dans l’arborescence des bases de données et des tables
+  * Filtrage et tri avancés des résultats
+  * Documentation ClickHouse SQL intégrée
+  * Préréglages et historique des requêtes
+  * Entièrement basé sur le navigateur, sans serveur ni back-end
+
+  Le client est immédiatement disponible via les pages GitHub : https://metrico.github.io/clickhouse-mate/
+</Accordion>
+
+<Accordion title="Uptrace">
+  [Uptrace](https://github.com/uptrace/uptrace) est un outil APM qui fournit du traçage distribué et des métriques basés sur OpenTelemetry et ClickHouse.
+
+  Fonctionnalités :
+
+  * [Traçage OpenTelemetry](https://uptrace.dev/opentelemetry/distributed-tracing.html), métriques et logs.
+  * Notifications par e-mail, Slack ou PagerDuty à l’aide d’AlertManager.
+  * Langage de requête de type SQL pour agréger les spans.
+  * Langage de type PromQL pour interroger les métriques.
+  * Tableaux de bord de métriques prédéfinis.
+  * Prise en charge de plusieurs utilisateurs et projets via une configuration YAML.
+</Accordion>
+
+<Accordion title="clickhouse-monitoring">
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) est un tableau de bord Next.js simple qui s’appuie sur les tables `system.*` pour vous aider à surveiller votre cluster ClickHouse et à en obtenir une vue d’ensemble.
+
+  Fonctionnalités :
+
+  * Moniteur de requêtes : requêtes en cours, historique des requêtes, ressources utilisées par les requêtes (mémoire, part lues, file&#95;open, ...), requêtes les plus coûteuses, tables ou colonnes les plus utilisées, etc.
+  * Moniteur de cluster : utilisation totale de la mémoire et du processeur, file distribuée, paramètres globaux, paramètres MergeTree, métriques, etc.
+  * Informations sur les tables et les parties : taille, nombre de lignes, compression, taille des parties, etc., avec un niveau de détail par colonne.
+  * Outils utiles : exploration des données ZooKeeper, requête EXPLAIN, arrêt des requêtes, etc.
+  * Graphiques de métriques : requêtes et utilisation des ressources, nombre de fusions/mutations, performances des fusions, performances des requêtes, etc.
+</Accordion>
+
+<Accordion title="CKibana">
+  [CKibana](https://github.com/TongchengOpenSource/ckibana) est un service léger qui vous permet de rechercher, d’explorer et de visualiser facilement les données ClickHouse à l’aide de l’interface utilisateur native de Kibana.
+
+  Fonctionnalités :
+
+  * Traduit les requêtes de graphiques de l’interface utilisateur native de Kibana en syntaxe de requête ClickHouse.
+  * Prend en charge des fonctionnalités avancées telles que l’échantillonnage et la mise en cache afin d’améliorer les performances des requêtes.
+  * Réduit au minimum le temps d’apprentissage pour les utilisateurs après la migration d’ElasticSearch vers ClickHouse.
+</Accordion>
+
+<Accordion title="Telescope">
+  [Telescope](https://iamtelescope.net/) est une interface web moderne permettant d’explorer les logs stockés dans ClickHouse. Elle propose une interface utilisateur conviviale pour interroger, visualiser et gérer les données de journalisation avec un contrôle d’accès granulaire.
+
+  Fonctionnalités :
+
+  * Interface utilisateur épurée et réactive, avec des filtres puissants et une sélection de champs personnalisable.
+  * Syntaxe FlyQL pour un filtrage des logs intuitif et expressif.
+  * Graphe temporel prenant en charge les regroupements, y compris sur des champs JSON imbriqués, Map et Array.
+  * Prise en charge facultative de clauses SQL `WHERE` brutes pour un filtrage avancé (avec vérification des autorisations).
+  * Vues enregistrées : enregistrez et partagez des configurations d’interface utilisateur personnalisées pour les requêtes et la mise en page.
+  * Contrôle d’accès basé sur les rôles (RBAC) et intégration de l’authentification GitHub.
+  * Aucun agent ni composant supplémentaire n’est requis côté ClickHouse.
+
+  [Code source de Telescope](https://github.com/iamtelescope/telescope) · [Démo en direct](https://demo.iamtelescope.net)
+</Accordion>
+
+<Accordion title="ClickLens">
+  [ClickLens](https://ntk148v.github.io/clicklens/) est une interface web moderne, puissante et conviviale destinée à gérer et surveiller les bases de données ClickHouse. Elle offre une suite complète d’outils permettant aux développeurs, analystes et administrateurs d’interagir efficacement avec leurs clusters ClickHouse. ClickHouse est une base de données analytique exceptionnelle, mais sa gestion via une CLI ou des outils basiques peut s’avérer complexe. ClickLens comble cette lacune en proposant :
+
+  * Découverte - Exploration flexible des données, similaire à Kibana, pour toute table
+  * Console SQL - Écrivez, exécutez et analysez des requêtes avec coloration syntaxique et résultats en streaming
+  * Surveillance en temps réel - Surveillez l’état de votre cluster, les performances des requêtes et l’utilisation des ressources
+  * Explorateur de schéma - Naviguez entre les bases de données, tables, colonnes, parts et plus encore
+  * Contrôle d’accès - Gérez les utilisateurs et les rôles directement depuis l’interface utilisateur
+  * RBAC natif - Vos autorisations d’interface utilisateur sont directement dérivées de vos privilèges ClickHouse
+
+  [Code source de ClickLens](https://github.com/ntk148v/clicklens)
+</Accordion>
+
+<Accordion title="CHouse UI">
+  [CHouse UI](https://chouse-ui.com) est une interface web ClickHouse open source et auto-hébergée conçue pour **les équipes qui exploitent ClickHouse en production**. La plupart des outils excellent sur un point précis — un espace de travail de requêtes, un tableau de bord, un assistant IA, un outil de surveillance de cluster ; CHouse UI en est la *combinaison* : une couche d’accès pour les équipes, associée à une supervision de flotte multi-cluster et à un SRE IA autonome en lecture seule. Contrairement aux clients qui nécessitent des identifiants directs de base de données, il les stocke chiffrés côté serveur et contrôle l’accès via sa propre couche de **Role-Based Access Control (RBAC)**, de sorte que le navigateur ne voit jamais le mot de passe ClickHouse.
+
+  Fonctionnalités :
+
+  * **Accès des équipes et sécurité** - RBAC au niveau de l’application (rôles prédéfinis + rôles personnalisés, règles granulaires d’accès aux données par base de données/table), journalisation d’audit avec contexte de session réel, et identifiants chiffrés côté serveur avec AES-256-GCM.
+  * **Flotte multi-cluster** - Surveillez chaque cluster configuré dans un seul panneau (statut, mémoire, requêtes actives, exceptions, mini-graphiques de tendance), chaque carte étant interrogée indépendamment, avec un poller backend de snapshots en arrière-plan.
+  * **Chouse AI — Fleet Doctor** - Un SRE IA autonome en lecture seule : il analyse la flotte avec un outil `SELECT` protégé, limité à `system.*` (ClickHouse `readonly=1`), identifie les causes racines et rédige un rapport structuré avec une analyse approfondie des requêtes lourdes et des réécritures suggérées. Il ne modifie jamais le cluster.
+  * **IA dans les onglets de surveillance** - « Optimize with Chouse AI » sur une ligne de Query Logs (réécriture + estimation `EXPLAIN` avant→après + ouverture dans l’espace de travail SQL), ainsi qu’un « Diagnose » en un clic sur une ligne `system.errors` ou une entrée du journal des parts.
+  * **Alertes par seuil** - Règles sur le % de mémoire des nœuds, la mémoire par requête et les requêtes de longue durée, envoyées vers Slack et par e-mail — avec une analyse autonome des causes racines jointe en cas de dépassement.
+  * **Espace de travail complet** - Éditeur SQL Monaco, explorateur de schéma, vue des requêtes en direct avec possibilité de les interrompre, surveillance native ClickHouse (répartition de la mémoire, parts/merges, retard des replicas, percentiles de latence), et import/export de données.
+
+  Open source (Apache 2.0), pensé d’abord pour l’on-prem — toutes les fonctionnalités sont incluses d’emblée, sans offre payante.
+
+  [Code source de CHouse UI](https://github.com/daun-gatal/chouse-ui)
+</Accordion>
+
+<Accordion title="clickhouse-flow">
+  [clickhouse-flow](https://github.com/MikeAmputer/clickhouse-flow) est un outil open source permettant de visualiser les flux de données et les dépendances entre les tables, les vues et les vues matérialisées ClickHouse.
+
+  Fonctionnalités :
+
+  * Construit automatiquement un graphe de schéma à partir des métadonnées ClickHouse.
+  * Visualise les flux de données via des vues matérialisées.
+  * Interface utilisateur interactive pour explorer la structure du schéma.
+  * Exporte les diagrammes au format PDF ou SVG pour la documentation et le partage.
+  * Déploiement basé sur Docker pour une configuration rapide dans les environnements de développement.
+</Accordion>
+
+<div id="commercial">
+  ## Commercial
+</div>
+
+<Accordion title="DataGrip">
+  [DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains offrant une prise en charge dédiée de ClickHouse. Il est également intégré à d’autres outils basés sur IntelliJ : PyCharm, IntelliJ IDEA, GoLand, PhpStorm et d’autres.
+
+  Fonctionnalités :
+
+  * Complétion de code très rapide.
+  * Coloration syntaxique ClickHouse.
+  * Prise en charge de fonctionnalités spécifiques à ClickHouse, par exemple les colonnes Nested et les moteurs de table.
+  * Éditeur de données.
+  * Refactorisations.
+  * Recherche et navigation.
+</Accordion>
+
+<Accordion title="Yandex DataLens">
+  [Yandex DataLens](https://yandex.cloud/en/services/datalens) est un service de visualisation et d’analyse de données.
+
+  Fonctionnalités :
+
+  * Large gamme de visualisations disponibles, des simples graphiques à barres aux tableaux de bord complexes.
+  * Les tableaux de bord peuvent être rendus accessibles publiquement.
+  * Prise en charge de plusieurs sources de données, notamment ClickHouse.
+  * Stockage de données matérialisées basé sur ClickHouse.
+
+  DataLens est [disponible gratuitement](https://yandex.cloud/en/docs/datalens/pricing) pour les projets à faible charge, y compris pour un usage commercial.
+
+  * [Documentation de DataLens](https://yandex.cloud/en/docs/datalens/).
+  * [Tutoriel](https://yandex.cloud/en/docs/solutions/datalens/data-from-ch-visualization) sur la visualisation de données provenant d’une base de données ClickHouse.
+</Accordion>
+
+<Accordion title="Holistics Software">
+  [Holistics](https://www.holistics.io/) est une plateforme de données full-stack et un outil de business intelligence.
+
+  Fonctionnalités :
+
+  * Planification automatisée de l’envoi de rapports par e-mail, Slack et Google Sheets.
+  * Éditeur SQL avec visualisations, gestion des versions, complétion automatique, composants de requête réutilisables et filtres dynamiques.
+  * Analytique embarquée des rapports et tableaux de bord via iframe.
+  * Capacités de préparation des données et d’ETL.
+  * Prise en charge de la modélisation des données SQL pour le mappage relationnel des données.
+</Accordion>
+
+<Accordion title="Looker">
+  [Looker](https://looker.com) est une plateforme de données et un outil de business intelligence prenant en charge plus de 50 dialectes de bases de données, dont ClickHouse. Looker est disponible sous forme de plateforme SaaS et en version auto-hébergée. Les utilisateurs peuvent utiliser Looker dans leur navigateur pour explorer les données, créer des visualisations et des tableaux de bord, planifier des rapports et partager leurs analyses avec leurs collègues. Looker fournit un large éventail d’outils permettant d’intégrer ces fonctionnalités à d’autres applications, ainsi qu’une API
+  permettant d’intégrer les données à d’autres applications.
+
+  Fonctionnalités :
+
+  * Développement simple et agile à l’aide de LookML, un langage qui prend en charge une
+    [modélisation des données](https://looker.com/platform/data-modeling) organisée pour aider les rédacteurs de rapports et les utilisateurs finaux.
+  * Intégration puissante aux workflows via les [Data Actions](https://looker.com/platform/actions) de Looker.
+
+  [Comment configurer ClickHouse dans Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
+</Accordion>
+
+<Accordion title="SeekTable">
+  [SeekTable](https://www.seektable.com) est un outil de self-service BI pour l’exploration de données et le reporting opérationnel. Il est disponible à la fois comme service cloud et en version auto-hébergée. Les rapports SeekTable peuvent être intégrés à n’importe quelle application web.
+
+  Fonctionnalités :
+
+  * Générateur de rapports convivial pour les utilisateurs métier.
+  * Paramètres de rapport puissants pour le filtrage SQL et la personnalisation des requêtes propres à chaque rapport.
+  * Peut se connecter à ClickHouse via un endpoint TCP/IP natif ou une interface HTTP(S) (2 drivers différents).
+  * Il est possible d’utiliser toute la puissance du dialecte ClickHouse SQL dans les définitions des dimensions/mesures.
+  * [API Web](https://www.seektable.com/help/web-api-integration) pour la génération automatisée de rapports.
+  * Prend en charge un workflow de développement des rapports avec [sauvegarde/restauration](https://www.seektable.com/help/self-hosted-backup-restore) des données du compte ; la configuration des modèles de données (cubes) / rapports est en XML lisible et peut être stockée dans un système de gestion de versions.
+
+  SeekTable est [gratuit](https://www.seektable.com/help/cloud-pricing) pour un usage personnel/individuel.
+
+  [Comment configurer une connexion ClickHouse dans SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+</Accordion>
+
+<Accordion title="Chadmin">
+  [Chadmin](https://github.com/bun4uk/chadmin) est une interface utilisateur simple permettant de visualiser les requêtes en cours d’exécution sur votre cluster ClickHouse, ainsi que les informations les concernant, et de les arrêter si nécessaire.
+</Accordion>
+
+<Accordion title="TABLUM.IO">
+  [TABLUM.IO](https://tablum.io/) — un outil en ligne de requêtes et d’analyse pour l’ETL et la visualisation. Il permet de se connecter à ClickHouse, d’interroger des données via une console SQL polyvalente, ainsi que de charger des données depuis des fichiers statiques et des services tiers. TABLUM.IO peut visualiser les résultats sous forme de graphiques et de tables.
+
+  Fonctionnalités :
+
+  * ETL : chargement de données depuis des bases de données populaires, des fichiers locaux et distants, et des appels d’API.
+  * Console SQL polyvalente avec coloration syntaxique et générateur de requêtes visuel.
+  * Visualisation des données sous forme de graphiques et de tables.
+  * Matérialisation des données et sous-requêtes.
+  * Création de rapports de données vers Slack, Telegram ou par e-mail.
+  * Pipelines de données via une API propriétaire.
+  * Exportation des données aux formats JSON, CSV, SQL et HTML.
+  * Interface web.
+
+  TABLUM.IO peut être exécuté comme solution auto-hébergée (sous forme d’image Docker) ou dans le cloud.
+
+  En savoir plus sur le produit sur [TABLUM.IO](https://tablum.io/)
+</Accordion>
+
+<Accordion title="CKMAN">
+  [CKMAN](https://www.github.com/housepower/ckman) est un outil de gestion et de surveillance des clusters ClickHouse !
+
+  Fonctionnalités :
+
+  * Déploiement automatisé rapide et pratique de clusters via une interface web
+  * Les clusters peuvent être mis à l’échelle ou réduits
+  * Équilibrage de charge des données du cluster
+  * Mise à niveau du cluster en ligne
+  * Modification de la configuration du cluster depuis l’interface
+  * Fournit la surveillance des nœuds du cluster et de ZooKeeper
+  * Surveille l’état des tables et des partitions, ainsi que les instructions SQL lentes
+  * Fournit une page d’exécution SQL facile à utiliser
+</Accordion>
+
+<Accordion title="1bench">
+  [1bench](https://1bench.dev) est une interface graphique native pour ordinateur, compatible avec plusieurs bases de données et offrant une excellente prise en charge de ClickHouse — vue d’ensemble du serveur, gestion des schémas, recherche vectorielle et navigation dans de grands ensembles de résultats.
+
+  Fonctionnalités :
+
+  * Vue d’ensemble du serveur à la connexion — version, temps de fonctionnement, requêtes en cours, merges actifs, parts et volumes de stockage, état des réplicas, clusters et nœuds en un coup d’œil.
+  * Générateur de requêtes visuel (sélecteurs de colonnes, filtres, tri, limite), avec un éditeur SQL Monaco doté de la coloration syntaxique et d’un historique des requêtes par connexion.
+  * Assistant visuel `CREATE TABLE` prenant en charge les variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` et l’ajout automatique de `Nullable()`.
+  * Gestion native des types ClickHouse — `Nullable`, `Array`, `LowCardinality`, objets imbriqués.
+  * Prise en charge de la recherche vectorielle — colonnes d’embeddings `Array(Float32)` affichées sous forme de cellules vectorielles compactes, visualisation 2D des embeddings et fonction Find Similar via `cosineDistance`.
+  * Édition directe des données dans les tables de résultats avec enregistrement par lots, ainsi qu’export et import CSV/JSON/SQL à l’aide des formats natifs de ClickHouse.
+  * Options de connexion : HTTP/HTTPS, tunnel SSH pour les clusters privés derrière un pare-feu, mode lecture seule facultatif pour naviguer en toute sécurité en production.
+  * Fonctionne avec ClickHouse Cloud et en auto-hébergé.
+</Accordion>

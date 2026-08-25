@@ -1,0 +1,67 @@
+---
+sidebarTitle: '정렬 키'
+description: '사용자 지정 정렬 키를 정의하는 방법입니다.'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: '정렬 키'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+순서 지정 키(Ordering Keys, 즉 sorting keys)는 ClickHouse에서 테이블 데이터가 디스크에 어떻게 정렬되고 인덱싱되는지를 정의합니다. Postgres에서 복제할 때 ClickPipes는 기본적으로 Postgres 테이블의 프라이머리 키를 ClickHouse의 해당 테이블에 대한 순서 지정 키로 사용합니다. 대부분의 경우 Postgres 프라이머리 키만으로도 충분한 순서 지정 키가 됩니다. ClickHouse는 이미 빠른 스캔에 최적화되어 있으므로, 사용자 지정 순서 지정 키가 필요하지 않은 경우가 많습니다.
+
+[migration guide](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part3)에서 설명한 것처럼, 더 큰 규모의 사용 사례에서는 쿼리 최적화를 위해 ClickHouse 순서 지정 키에 Postgres 프라이머리 키 외의 추가 컬럼을 포함해야 합니다.
+
+기본적으로 CDC에서는 Postgres 프라이머리 키와 다른 순서 지정 키를 선택하면 ClickHouse에서 데이터 중복 제거 문제를 일으킬 수 있습니다. 이는 ClickHouse의 순서 지정 키가 두 가지 역할을 하기 때문입니다. 즉, 데이터 인덱싱과 정렬을 제어하는 동시에 중복 제거 키로도 작동합니다. 이 문제를 해결하는 가장 쉬운 방법은 갱신 가능 구체화 뷰를 정의하는 것입니다.
+
+<div id="use-refreshable-materialized-views">
+  ## 갱신 가능 구체화 뷰 사용
+</div>
+
+사용자 지정 순서 지정 키(ORDER BY)를 정의하는 간단한 방법은 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)(MV)를 사용하는 것입니다. 이를 사용하면 원하는 순서 지정 키를 적용해 전체 테이블을 주기적으로(예: 5분 또는 10분마다) 복사할 수 있습니다.
+
+아래는 사용자 지정 ORDER BY와 필요한 중복 제거를 포함한 갱신 가능 MV의 예시입니다:
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- 다른 정렬 키이지만 postgres 기본 키에 접미사가 추가된 형태
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- 중복 제거 수행
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## 갱신 가능 구체화 뷰 없이 사용자 지정 순서 지정 키 정의
+</div>
+
+데이터 규모가 커서 갱신 가능 구체화 뷰가 적합하지 않은 경우, 대규모 테이블에 사용자 지정 순서 지정 키를 정의하고 중복 제거 관련 문제를 해결하는 데 도움이 되는 몇 가지 권장 사항을 소개합니다.
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### 특정 행에서 변경되지 않는 순서 지정 키 컬럼을 선택합니다
+</div>
+
+ClickHouse의 순서 지정 키에 추가 컬럼을 포함할 때(Postgres의 프라이머리 키 제외)에는 각 행에서 값이 바뀌지 않는 컬럼을 선택하는 것이 좋습니다. 이렇게 하면 ReplacingMergeTree에서 데이터 일관성 및 중복 제거 문제를 방지하는 데 도움이 됩니다.
+
+예를 들어 멀티 테넌트 SaaS 애플리케이션에서는 (`tenant_id`, `id`)를 순서 지정 키로 사용하는 것이 좋은 선택입니다. 이 컬럼들은 각 행을 고유하게 식별하며, 다른 컬럼이 변경되더라도 `tenant_id`는 특정 `id`에 대해 변하지 않습니다. `id` 기준 중복 제거가 (`tenant_id`, `id`) 기준 중복 제거와 일치하므로, `tenant_id`가 변경될 때 발생할 수 있는 데이터 [중복 제거 문제](https://docs.peerdb.io/mirror/ordering-key-different)를 피하는 데 도움이 됩니다.
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### Postgres 테이블의 Replica Identity를 사용자 지정 순서 지정 키로 설정하기
+</div>
+
+Postgres CDC가 예상대로 작동하려면 테이블의 `REPLICA IDENTITY`를 수정해 순서 지정 키 컬럼이 포함되도록 해야 합니다. 이는 DELETE를 정확하게 처리하는 데 필수적입니다.
+
+`REPLICA IDENTITY`에 순서 지정 키 컬럼이 포함되지 않으면 Postgres CDC는 프라이머리 키를 제외한 다른 컬럼의 값을 캡처하지 못합니다. 이는 Postgres logical decoding의 한계입니다. 이 경우 Postgres에서 프라이머리 키를 제외한 모든 순서 지정 키 컬럼은 null이 됩니다. 이는 중복 제거에 영향을 미치므로, 행의 이전 버전이 최신 삭제 버전(`_peerdb_is_deleted`가 1로 설정된 버전)과 중복 제거되지 않을 수 있습니다.
+
+위의 `owneruserid`와 `id` 예시에서 프라이머리 키에 `owneruserid`가 아직 포함되어 있지 않다면, (`owneruserid`, `id`)에 `UNIQUE INDEX`를 생성하고 이를 해당 테이블의 `REPLICA IDENTITY`로 설정해야 합니다. 이렇게 하면 정확한 복제와 중복 제거에 필요한 컬럼 값을 Postgres CDC가 캡처할 수 있습니다.
+
+아래는 `events` 테이블에서 이를 수행하는 예시입니다. 순서 지정 키를 수정한 모든 테이블에 동일하게 적용해야 합니다.
+
+```sql
+-- (owneruserid, id)에 UNIQUE INDEX 생성
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- 이 인덱스를 사용하도록 REPLICA IDENTITY 설정
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

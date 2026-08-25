@@ -79,12 +79,32 @@ def kafka_create_topic(
 
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
+    # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
+    # UnknownTopicOrPartitionError means the topic is absent, which is the requested end
+    # state, so it is not retried; the listing loop below is what confirms it.
+    result = None
+    retries = 0
+    while True:
+        try:
+            result = admin_client.delete_topics([topic])
+            break
+        except kafka.errors.UnknownTopicOrPartitionError as e:
+            logging.debug(f"Topic {topic} is already absent: {e}")
+            break
+        except Exception as e:
+            retries += 1
+            time.sleep(0.5)
+            if retries < max_retries:
+                logging.warning(f"Failed to delete topic {e}")
+            else:
+                raise
+
+    if result is not None:
+        for deleted_topic, e in result.topic_error_codes:
+            if e == 0:
+                logging.debug(f"Topic {deleted_topic} deleted")
+            else:
+                logging.error(f"Failed to delete topic {deleted_topic}: {e}")
 
     retries = 0
     while True:
@@ -560,7 +580,19 @@ def clean_test_database_and_topics(instance, cluster):
 
     topics = get_topics_to_delete()
     logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
+    # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
+    retries = 0
+    while True:
+        try:
+            result = admin_client.delete_topics(topics)
+            break
+        except Exception as e:
+            retries += 1
+            time.sleep(0.5)
+            if retries < 50:
+                logging.warning(f"Failed to delete topics {e}")
+            else:
+                raise
     for topic, error in result.topic_error_codes:
         if error != 0:
             logging.warning(f"Received error {error} while deleting topic {topic}")

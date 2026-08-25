@@ -1,0 +1,174 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'hashed 딕셔너리 레이아웃 유형'
+sidebarTitle: 'hashed'
+description: '해시 테이블을 사용해 딕셔너리를 메모리에 저장합니다: hashed, sparse_hashed, complex_key_hashed, complex_key_sparse_hashed'
+doc_type: '참고'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+딕셔너리는 해시 테이블 형태로 메모리에 완전히 저장됩니다. 딕셔너리에는 어떤 식별자든 임의 개수의 요소를 담을 수 있습니다. 실제로 키 수는 수천만 개에 이를 수 있습니다.
+
+딕셔너리 키는 [UInt64](/ko/reference/data-types/int-uint) 타입입니다.
+
+모든 소스 유형을 지원합니다. 업데이트할 때는 데이터(파일 또는 테이블의 데이터) 전체를 읽습니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+설정을 포함한 구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- 세그먼트 수가 1보다 크면(기본값은 `1`) 딕셔너리가
+             데이터를 병렬로 로드합니다. 하나의 딕셔너리에 요소가
+             매우 많을 때 유용합니다. -->
+        <shards>10</shards>
+
+        <!-- 병렬 큐에 쌓아둘 block의 백로그 크기입니다.
+
+             병렬 로딩의 병목은 리해시이므로,
+             스레드가 리해시를 수행하느라 멈춰 있는 동안
+             정체를 피하려면 어느 정도의 백로그가 필요합니다.
+
+             10000은 메모리와 속도 사이에서 좋은 균형점입니다.
+             10e10개의 요소가 있어도 기아 상태 없이 전체 부하를 처리할 수 있습니다. -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- 해시 테이블의 최대 load factor입니다. 값이 클수록 메모리를
+             더 효율적으로 활용할 수 있지만(낭비되는 메모리가 줄어듭니다)
+             읽기 성능이 저하될 수 있습니다.
+
+             유효한 값: [0.5, 0.99]
+             기본값: 0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+`hashed`와 유사하지만, 메모리 사용량을 줄이는 대신 CPU를 더 많이 사용합니다.
+
+딕셔너리 키는 [UInt64](/ko/reference/data-types/int-uint) 타입입니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+이 유형의 딕셔너리에서도 `shards`를 사용할 수 있으며, `sparse_hashed`는 `hashed`보다 더 느리므로 `hashed`보다 `sparse_hashed`에서 그 중요성이 더 큽니다.
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+이 저장소 유형은 복합 [키](/ko/reference/statements/create/dictionary/attributes#composite-key)에 사용됩니다. `hashed`와 유사합니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+이 저장소 유형은 복합 [키](/ko/reference/statements/create/dictionary/attributes#composite-key)에 사용됩니다. [sparse&#95;hashed](#sparse_hashed)와 유사합니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

@@ -1,0 +1,14 @@
+GatherExchange
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+    JoinLogical
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.big04613)
+      BroadcastExchange
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.small04613)
+5	5
+0	0
+1	10
+2	20
+3	30
+4	40

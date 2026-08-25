@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/hash
+title: 'CityHash'
+description: 'تجزئة البروتوكول الأصلي'
+doc_type: 'مرجع'
+keywords: ['CityHash', 'تجزئة البروتوكول الأصلي', 'دالة تجزئة', 'Google CityHash', 'تجزئة البروتوكول']
+---
+
+يستخدم ClickHouse **أحد** الإصدارات السابقة من [CityHash من Google](https://github.com/google/cityhash).
+
+<Info>
+  غيّر CityHash الخوارزمية بعد أن أضفناه إلى ClickHouse.
+
+  وتنص وثائق CityHash صراحةً على أنه لا ينبغي للمستخدم الاعتماد على
+  قيم hash محددة، ولا حفظها في أي مكان أو استخدامها كمفتاح للتقسيم.
+
+  لكن بما أننا أتحنا هذه الدالة للمستخدم، كان علينا تثبيت إصدار CityHash (على 1.0.2). ولهذا نضمن الآن أن سلوك دوال CityHash المتاحة في SQL لن يتغير.
+
+  — Alexey Milovidov
+</Info>
+
+<Info>
+  **ملاحظة**
+
+  يختلف الإصدار الحالي من CityHash من Google [عن](https://github.com/ClickHouse/ClickHouse/issues/8354) متغير ClickHouse `cityHash64`.
+
+  لا تستخدم `farmHash64` للحصول على قيمة CityHash الخاصة بـ Google! [FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html) هو الإصدار اللاحق لـ CityHash، لكنهما غير متوافقين بالكامل.
+
+  | String                                                     | ClickHouse64         | CityHash64          | FarmHash64           |
+  | ---------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
+  | `Moscow`                                                   | 12507901496292878638 | 5992710078453357409 | 5992710078453357409  |
+  | `How can you write a big system without C++?  -Paul Glick` | 6237945311650045625  | 749291162957442504  | 11716470977470720228 |
+</Info>
+
+انظر أيضًا [Introducing CityHash](https://opensource.googleblog.com/2011/04/introducing-cityhash.html) للاطلاع على الوصف
+والدوافع وراء تطويره. باختصار: إنها دالة تجزئة **غير تشفيرية** أسرع من [MurmurHash](http://en.wikipedia.org/wiki/MurmurHash)، لكنها أكثر تعقيدًا.
+
+<div id="implementations">
+  ## تطبيقات التنفيذ
+</div>
+
+<div id="go">
+  ### Go
+</div>
+
+يمكنك استخدام حزمة Go ‏[go-faster/city](https://github.com/go-faster/city) التي تدعم كلا الخيارين.

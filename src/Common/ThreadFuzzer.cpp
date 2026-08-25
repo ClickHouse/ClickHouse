@@ -44,6 +44,14 @@
 namespace DB
 {
 
+ThreadFuzzer & ThreadFuzzer::instance()
+{
+    static ThreadFuzzer res;
+    return res;
+}
+
+std::atomic<bool> ThreadFuzzer::started{false};
+
 namespace ErrorCodes
 {
     extern const int CANNOT_MANIPULATE_SIGSET;

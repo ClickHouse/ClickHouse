@@ -1,0 +1,106 @@
+---
+title: 'Régions cloud prises en charge'
+sidebarTitle: 'Régions cloud prises en charge'
+keywords: ['aws', 'gcp', 'Google Cloud', 'azure', 'cloud', 'régions']
+description: 'Régions prises en charge dans ClickHouse Cloud'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="supported-regions">
+  ## Régions prises en charge
+</div>
+
+Les tableaux suivants répertorient les régions prises en charge par fournisseur de Cloud. Les badges indiquent la disponibilité des options région privée, HIPAA et PCI. Les régions sans badge ne proposent actuellement aucune de ces options.
+
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | Région           | Disponibilité                                                                                            |
+    | ---------------- | -------------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-northeast-1` | —                                                                                                        |
+    | `ap-northeast-2` | —                                                                                                        |
+    | `ap-south-1`     | —                                                                                                        |
+    | `ap-southeast-1` | —                                                                                                        |
+    | `ap-southeast-2` | —                                                                                                        |
+    | `ap-southeast-3` | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">Private</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-north-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `il-central-1`   | —                                                                                                        |
+    | `mx-central-1`   | <Badge color="purple">Private</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `sa-east-1`      | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+  </Tab>
+
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | Région                    | Disponibilité                                                      |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `asia-northeast1`         | —                                                                  |
+    | `asia-southeast1`         | —                                                                  |
+    | `australia-southeast1`    | <Badge color="purple">Private</Badge>                              |
+    | `europe-west2`            | —                                                                  |
+    | `europe-west3`            | <Badge color="purple">Private</Badge>                              |
+    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">Private</Badge>                              |
+    | `northamerica-northeast1` | <Badge color="purple">Private</Badge>                              |
+    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">Private</Badge>                              |
+  </Tab>
+
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | Région                 | Disponibilité                         |
+    | ---------------------- | ------------------------------------- |
+    | `Australia East`       | <Badge color="purple">Private</Badge> |
+    | `East US 2`            | —                                     |
+    | `Germany West Central` | —                                     |
+    | `Japan East`           | <Badge color="purple">Private</Badge> |
+    | `UAE North`            | <Badge color="purple">Private</Badge> |
+    | `West US 3`            | —                                     |
+  </Tab>
+</Tabs>
+
+<Note>
+  Vous devez déployer dans une région qui n&#39;est pas encore répertoriée ? [Envoyez une demande](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## Régions privées
+</div>
+
+<EnterprisePlanFeatureBadge feature="Fonctionnalité Régions privées" />
+
+Nous proposons des régions privées pour les services du niveau Enterprise. Veuillez [nous contacter](https://clickhouse.com/company/contact) pour demander une région privée.
+
+Points importants à prendre en compte pour les régions privées :
+
+* Les services ne bénéficient pas de la mise à l’échelle automatique ; en revanche, la mise à l’échelle verticale et horizontale manuelle est prise en charge.
+* Les services ne peuvent pas être mis en veille.
+
+Des exigences supplémentaires peuvent s’appliquer pour la conformité HIPAA, notamment la signature d’un Business Associate Agreement (BAA). HIPAA est actuellement disponible uniquement pour les services du niveau Enterprise.
+
+<div id="hipaa-compliant-regions">
+  ## Régions conformes à HIPAA
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+Les clients doivent signer un BAA et demander l’onboarding auprès des équipes commerciales ou du support afin de mettre en place des services dans les régions indiquées comme conformes à HIPAA dans le tableau.
+
+<div id="pci-compliant-regions">
+  ## Régions conformes PCI
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+Les clients doivent demander un onboarding auprès des équipes commerciales ou du support afin de configurer des services dans les régions indiquées comme conformes PCI dans le tableau.
