@@ -48,9 +48,9 @@ public:
                 return {};
             }
         }
-        /// Cancellation arriving during the scoring above has to be observed on both exit paths: every
-        /// caller throws its unresolved-name exception as soon as this returns, and that exception
-        /// would then be reported in place of the cancellation.
+        /// Cancellation arriving during the scoring above has to be observed on both exit paths: a
+        /// query-analysis caller runs this while building an unresolved-name exception, which would
+        /// otherwise be reported in place of the cancellation.
         checkPromptingNotCancelled();
         return release(queue, prompting_strings);
     }
