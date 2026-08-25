@@ -771,7 +771,6 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `time_series` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)) |
-| `is_stale_marker` | `Array(UInt8)` | One flag per sample of `time_series` marking Prometheus staleness markers; empty means no sample is a marker |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -843,31 +842,6 @@ The _samples_ table must have columns:
 | `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
-| `is_stale_marker` | [ ] | `UInt8` | `UInt8` | Whether this sample is a Prometheus staleness marker instead of a real value; absent on legacy tables (see below) |
-
-Inner samples tables get `is_stale_marker UInt8 DEFAULT 0` automatically. An [external](#external-target-tables) samples
-table created without that column (for example one created before it existed) keeps working with the pre-column
-behavior: the Prometheus remote-write protocol stores staleness markers as their raw `NaN` payload with no flag, and
-every stored row is treated as non-stale. The two read surfaces then differ: the PromQL functions
-[`prometheusQuery()`](/reference/functions/table-functions/prometheusQuery) and
-[`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) return such a row as an ordinary
-sample still carrying the raw payload, while the Prometheus remote-read protocol replaces the unflagged payload with an
-ordinary quiet `NaN`, not the reserved stale-marker payload. A warning is logged that points at the
-`ALTER TABLE ... ADD COLUMN is_stale_marker UInt8` migration. Adding the column is not sufficient on its own: every
-historical row starts at `is_stale_marker = 0`, so markers written before the migration keep reading as ordinary
-samples until they are backfilled with
-`ALTER TABLE ... UPDATE is_stale_marker = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002`
-(that backfill applies to a `Float64` `value`; a `Float32` one cannot carry the marker payload).
-A non-zero `is_stale_marker` flag written to such a table degrades the same way when its sample value is `NaN`
-(a RemoteWrite stale marker), and is rejected when the sample value is not `NaN`, because the flag would
-otherwise vanish without a trace.
-For an inner legacy samples table the migration survives `BACKUP`/`RESTORE`: restoring recreates the inner
-table from the outer definition, and the restore adds `is_stale_marker` to a samples schema that lacks it,
-so both migrated and unmigrated legacy backups come back with the column in place (the backfill state is
-part of the data and restores as backed up). The same applies to an inner recent samples
-table. Since every inserted sample is also written to the recent samples table, the flag is stored only when both
-tables carry the column: a legacy recent samples table degrades the pair to the pre-column behavior above
-(with the warning naming it) so that reads inside and outside its TTL window stay consistent.
 
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
@@ -919,7 +893,6 @@ CREATE TABLE my_table
     `metric_name` String,
     `tags` Map(String, String),
     `time_series` Array(Tuple(DateTime64(3), Float64)),
-    `is_stale_marker` Array(UInt8),
     `metric_family` String,
     `type` String,
     `unit` String,
@@ -930,8 +903,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3)),
-    `is_stale_marker` UInt8 DEFAULT 0
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -965,8 +937,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3)),
-    `is_stale_marker` UInt8 DEFAULT 0
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -1107,8 +1078,7 @@ CREATE TABLE samples_for_my_table
 (
     `id` UUID,
     `timestamp` DateTime64(3),
-    `value` Float64,
-    `is_stale_marker` UInt8 DEFAULT 0
+    `value` Float64
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp);
@@ -1120,7 +1090,7 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
-The external tables' column types (`id`, `timestamp`, `value`, `is_stale_marker`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time. An external samples table may omit `is_stale_marker` entirely; it is then attached with the warning-based compatibility behavior described in [Samples table](#samples-table).
+The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
 The id-generator expression for an external tags target is resolved at INSERT time in the following order: the [`id_generator`](#settings) setting (if set), then the `DEFAULT` declared on the external table's `id` column (if any), then the canonical generator derived from the `id` type. The setting therefore overrides whatever `DEFAULT` is declared on the external table — see [The `id` column](#id-column) for details.
 

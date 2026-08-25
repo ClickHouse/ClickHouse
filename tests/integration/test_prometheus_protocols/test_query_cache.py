@@ -21,8 +21,7 @@ def start_cluster():
     try:
         cluster.start()
         node.query(
-            "CREATE TABLE prometheus_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64,"
-            " is_stale_marker UInt8)"
+            "CREATE TABLE prometheus_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64)"
             " ENGINE = MergeTree ORDER BY (id, timestamp)"
         )
         node.query(
@@ -47,7 +46,7 @@ def start_cluster():
         )
         node.query(
             "INSERT INTO prometheus_data VALUES"
-            " ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1, 0)"
+            " ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1)"
         )
         yield cluster
     finally:

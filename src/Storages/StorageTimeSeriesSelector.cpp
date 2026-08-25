@@ -1,7 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
 #include <Common/Exception.h>
-#include <Common/LoggingHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
@@ -12,7 +11,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -388,12 +386,11 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
-                                        ASTs whole_metric_id_range_conditions,
-                                        bool has_stale_marker_column)
+                                        ASTs whole_metric_id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT id, timestamp, value, is_stale_marker
+        /// SELECT id, timestamp, value
         ///
         /// The columns are read as is, without casts to the data types declared by this storage.
         /// A cast aliased in the SELECT list (e.g. `toDateTime64(timestamp, 3) AS timestamp`) would
@@ -408,9 +405,6 @@ namespace
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
-
-            if (has_stale_marker_column)
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -454,8 +448,7 @@ namespace
     /// Makes the final select query by wrapping the select query from the data table into an outer
     /// SELECT which casts the columns to the data types expected by this storage:
     ///
-    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp,
-    ///        _CAST(value, 'Float64') AS value, _CAST(is_stale_marker, 'UInt8') AS is_stale_marker
+    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
     /// FROM (select_query_from_data_table)
     ///
     /// The inner query reads the samples table columns as is (see makeSelectQueryFromDataTable()),
@@ -469,13 +462,11 @@ namespace
     ASTPtr makeSelectQuery(ASTPtr select_query_from_data_table,
                            const DataTypePtr & id_data_type,
                            const DataTypePtr & timestamp_data_type,
-                           const DataTypePtr & scalar_data_type,
-                           ASTPtr is_stale_marker_expression)
+                           const DataTypePtr & scalar_data_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp,
-        ///        _CAST(value, 'Float64') AS value, _CAST(is_stale_marker, 'UInt8') AS is_stale_marker
+        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
@@ -493,16 +484,6 @@ namespace
             select_list.push_back(makeASTFunction(
                 "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(scalar_data_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
-
-            /// The type declared for this column by TableFunctionTimeSeriesSelector, which the samples
-            /// table is validated against too (see normalizeTimeSeriesDefinition.cpp). A legacy 3-column
-            /// samples table has no such column; every row then reads as non-stale, which is exactly how
-            /// such tables behaved before the column existed.
-            select_list.push_back(makeASTFunction(
-                "_CAST",
-                std::move(is_stale_marker_expression),
-                make_intrusive<ASTLiteral>(std::make_shared<DataTypeUInt8>()->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::IsStaleMarker);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -836,27 +817,22 @@ void StorageTimeSeriesSelector::readImpl(
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
-    /// The oldest timestamp the recent samples table is still guaranteed to hold, when it has a TTL.
-    /// Rows below it exist only in the main samples table.
-    std::optional<Int64> recent_window_start;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
-    if (recent_samples_ttl_seconds)
+    if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
         /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
         static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
         Int64 now_seconds = std::time(nullptr);
-        recent_window_start = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
+        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
             * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
-    }
-    const bool range_fits_recent_window = recent_window_start && config.min_time.value >= *recent_window_start;
-    const bool range_overlaps_recent_window = recent_window_start && config.max_time.value >= *recent_window_start;
-    if (range_fits_recent_window && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table]
-        && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
-    {
-        samples_table_kind = ViewTarget::RecentSamples;
-        LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
-                  quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+        if ((config.min_time.value >= min_guaranteed_time)
+            && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
+        {
+            samples_table_kind = ViewTarget::RecentSamples;
+            LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
+                      quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+        }
     }
 
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
@@ -878,55 +854,6 @@ void StorageTimeSeriesSelector::readImpl(
 
     auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
-
-    /// PromQL query evaluation relies on the `is_stale_marker` column of the "samples" table to tell
-    /// Prometheus stale markers apart from ordinary samples (see PrometheusRemoteWriteProtocol.cpp's
-    /// `isPrometheusStaleMarker()` and fromSelector.cpp, which builds both explicit range-selector and bare
-    /// instant-selector queries against this table function). A "samples" table predating that column (or an
-    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts)
-    /// cannot represent that flag; such tables keep their pre-column behavior - every row reads as an
-    /// ordinary non-stale sample - so an upgrade does not break existing tables.
-    const bool read_table_has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
-    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) only for the rows the sibling table
-    /// could serve too - just those can read differently through the two paths. Reading `samples`, that is
-    /// the recent window alone, so a marker older than the window keeps its flag; reading `recent_samples`
-    /// the whole range is inside the window, and `samples` covers all of it, so every row degrades.
-    bool degrade_whole_range = false;
-    std::optional<Int64> degrade_from_timestamp;
-    if (read_table_has_stale_marker_column)
-    {
-        const auto sibling_kind = (samples_table_kind == ViewTarget::Samples) ? ViewTarget::RecentSamples : ViewTarget::Samples;
-        const bool sibling_can_serve_range = (sibling_kind == ViewTarget::Samples) || range_overlaps_recent_window;
-        if (sibling_can_serve_range && time_series_storage->hasTarget(sibling_kind))
-        {
-            auto sibling_metadata = time_series_storage->getTargetTable(sibling_kind, context)->getInMemoryMetadataPtr(context, false);
-            if (!sibling_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
-            {
-                if (sibling_kind == ViewTarget::Samples || range_fits_recent_window)
-                    degrade_whole_range = true;
-                else
-                    degrade_from_timestamp = recent_window_start;
-            }
-        }
-    }
-    /// The inner query reads the column whenever the expression below still refers to it.
-    const bool has_stale_marker_column = read_table_has_stale_marker_column && !degrade_whole_range;
-    /// Informational, not a warning: a samples table without the column is a supported configuration
-    /// that keeps its previous behavior. It would otherwise be reported on *every* query against such a
-    /// table, which also puts it on the client's stderr at the default send_logs_level.
-    if (!read_table_has_stale_marker_column)
-        LOG_INFO(LogFrequencyLimiter(log, 300),
-            "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers stored in it (as raw NaN "
-            "samples) are treated as ordinary samples. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "
-            "stale-marker handling (existing rows become non-stale; with a Float64 \"value\" backfill markers with "
-            "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002)",
-            config.time_series_storage_id.getNameForLogs(),
-            samples_table_id.getNameForLogs(),
-            TimeSeriesColumnNames::IsStaleMarker,
-            samples_table_id.getNameForLogs(),
-            TimeSeriesColumnNames::IsStaleMarker,
-            samples_table_id.getNameForLogs(),
-            TimeSeriesColumnNames::IsStaleMarker);
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
         matchers,
@@ -968,30 +895,13 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
-        std::move(whole_metric_id_range_conditions),
-        has_stale_marker_column);
-
-    ASTPtr is_stale_marker_expression = make_intrusive<ASTLiteral>(UInt64{0});
-    if (has_stale_marker_column)
-    {
-        is_stale_marker_expression = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker);
-        if (degrade_from_timestamp)
-            is_stale_marker_expression = makeASTFunction(
-                "if",
-                makeASTFunction(
-                    "greaterOrEquals",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                    timeSeriesTimestampToAST(DateTime64{*degrade_from_timestamp}, config.timestamp_data_type)),
-                make_intrusive<ASTLiteral>(UInt64{0}),
-                std::move(is_stale_marker_expression));
-    }
+        std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type,
-        std::move(is_stale_marker_expression));
+        config.scalar_data_type);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());

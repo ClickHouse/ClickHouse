@@ -94,16 +94,6 @@ private:
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
 
-    /// Type of the `is_stale_marker` column, or null when a samples-carrying target doesn't have it
-    /// (`stale_marker_missing_table` then names that target for the degrade diagnostics).
-    DataTypePtr is_stale_marker_type;
-    const char * stale_marker_missing_table = "samples";
-
-    /// Set when the pair degraded but that target still carries the column physically: its insert
-    /// then gets explicit zeros, so an external DEFAULT expression can never materialize instead.
-    DataTypePtr degraded_samples_stale_marker_type;
-    DataTypePtr degraded_recent_stale_marker_type;
-
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 

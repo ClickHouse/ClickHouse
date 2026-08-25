@@ -31,8 +31,7 @@ CREATE TABLE ts_samples
 (
     id UInt64,
     timestamp DateTime64(3),
-    value Float64,
-    is_stale_marker UInt8
+    value Float64
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE ts ENGINE = TimeSeries SAMPLES ts_samples TAGS ts_tags;

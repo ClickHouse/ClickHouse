@@ -184,28 +184,6 @@ def send_bar_via_remote_write():
     send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
 
 
-# Checks that a PromQL read works against the current samples table (with or without
-# `is_stale_marker`: a legacy 3-column table treats every stored row as non-stale).
-def check_bar_via_promql():
-    result = node.query(
-        "SELECT value FROM prometheusQuery(default.prometheus, 'bar', 2000)",
-        settings={"allow_experimental_time_series_table": 1},
-    )
-    assert result.strip() == "20"
-
-
-# Finds the name of the "samples"/"data" inner table currently backing `prometheus` and adds the
-# `is_stale_marker` column to it, simulating the migration an operator would run after upgrading.
-# IF NOT EXISTS: a table restored from a backup regains the column during the restore itself.
-def migrate_data_table_add_is_stale_marker():
-    data_table_name = node.query(
-        "SELECT _table FROM timeSeriesData(prometheus) LIMIT 1"
-    ).strip()
-    node.query(
-        f"ALTER TABLE `{data_table_name}` ADD COLUMN IF NOT EXISTS is_stale_marker UInt8 DEFAULT 0"
-    )
-
-
 # Checks that both `foo` and `bar` metrics exist.
 def check_foo_and_bar():
     result = node.query(
@@ -229,17 +207,10 @@ def cleanup_after_test():
 
 
 # Checks that an prealpha-version TimeSeries table can be attached and used.
-# The "data" table upgraded from prealpha still has the old 3-column schema (no `is_stale_marker`);
-# remote writes and PromQL reads keep working with the prealpha behavior (stale markers, if any,
-# are stored and read back as raw NaN samples) until the operator migrates the table.
 def test_upgrade_from_prealpha():
     create_and_fill_prealpha_time_series()
     send_bar_via_remote_write()
     check_foo_and_bar()
-    check_bar_via_promql()
-    migrate_data_table_add_is_stale_marker()
-    check_foo_and_bar()
-    check_bar_via_promql()
 
 
 # Checks that an prealpha-version TimeSeries table can be attached and used (Ordinary database).
@@ -253,10 +224,6 @@ def test_upgrade_from_prealpha_ordinary_db():
     create_and_fill_prealpha_time_series()
     send_bar_via_remote_write()
     check_foo_and_bar()
-    check_bar_via_promql()
-    migrate_data_table_add_is_stale_marker()
-    check_foo_and_bar()
-    check_bar_via_promql()
 
     node.query("DROP TABLE default.prometheus SYNC")
     node.query("DROP DATABASE default SYNC")
@@ -270,25 +237,3 @@ def test_restore_from_prealpha():
     node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'time_series_prealpha.zip')")
     send_bar_via_remote_write()
     check_foo_and_bar()
-    check_bar_via_promql()
-    migrate_data_table_add_is_stale_marker()
-    check_foo_and_bar()
-    check_bar_via_promql()
-
-
-# The `is_stale_marker` migration must survive BACKUP/RESTORE: the restore recreates the inner
-# samples table from the outer definition, which regains the column during the restore itself
-# (a legacy 3-column definition would otherwise refuse the migrated 4-column parts).
-def test_restore_after_migration():
-    create_and_fill_prealpha_time_series()
-    migrate_data_table_add_is_stale_marker()
-    send_bar_via_remote_write()
-    node.query("BACKUP TABLE default.prometheus TO Disk('backups', 'migrated_prealpha')")
-    node.query("DROP TABLE default.prometheus SYNC")
-    node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'migrated_prealpha')")
-    check_foo_and_bar()
-    check_bar_via_promql()
-    data_table_name = node.query(
-        "SELECT _table FROM timeSeriesData(prometheus) LIMIT 1"
-    ).strip()
-    assert "is_stale_marker" in node.query(f"SHOW CREATE TABLE `{data_table_name}`")

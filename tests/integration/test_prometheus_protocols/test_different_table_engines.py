@@ -1,19 +1,11 @@
-import math
 import pytest
 import re
-import requests
-import struct
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import (
-    PROMETHEUS_STALE_NAN,
-    convert_read_request_to_protobuf,
-    convert_time_series_to_protobuf,
     execute_query_via_http_api,
-    get_response_to_remote_write,
     load_preset,
-    receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
 )
 
@@ -315,80 +307,6 @@ def test_float32_scalar():
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
 
-# Checks that a Prometheus stale marker survives a RemoteWrite -> RemoteRead round trip on a `Float32`
-# "samples" table, where narrowing at insert already collapsed its exact NaN payload to a quiet NaN.
-# The stale-marker coverage in test_evaluation.py uses the default `Float64` table, in which the payload
-# happens to survive in `value`, so it cannot catch this.
-def test_float32_stale_marker_remote_read():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (value Float32)")
-
-    # Real samples, then a stale marker, then the series returns after the gap.
-    send_protobuf_to_remote_write(
-        node.ip_address,
-        9093,
-        "/write",
-        convert_time_series_to_protobuf(
-            [
-                (
-                    {"__name__": "float32_stale"},
-                    {100: 10, 115: 11, 130: 12, 145: PROMETHEUS_STALE_NAN, 300: 20},
-                )
-            ]
-        ),
-    )
-
-    # The marker was stored as a flagged row, and its payload is indeed no longer in `value`.
-    assert node.query(
-        "SELECT count() FROM timeSeriesSamples(prometheus) "
-        "WHERE is_stale_marker AND timestamp = toDateTime64(145, 3)"
-    ) == TSV([["1"]])
-    assert node.query(
-        "SELECT reinterpretAsUInt64(toFloat64(value)) = 0x7FF0000000000002 "
-        "FROM timeSeriesSamples(prometheus) WHERE is_stale_marker"
-    ) == TSV([["0"]])
-
-    # RemoteRead must nevertheless return the exact marker payload for that sample and the stored values for
-    # the others, compared as raw bits because NaNs never compare equal (see PrometheusRemoteReadProtocol.cpp).
-    read_response = receive_protobuf_from_remote_read(
-        node.ip_address,
-        9093,
-        "/read",
-        convert_read_request_to_protobuf("^float32_stale$", 50, 350),
-    )
-    assert len(read_response.results) == 1
-    assert len(read_response.results[0].timeseries) == 1
-    assert [
-        (sample.timestamp, struct.pack("<d", sample.value))
-        for sample in read_response.results[0].timeseries[0].samples
-    ] == [
-        (100000, struct.pack("<d", 10.0)),
-        (115000, struct.pack("<d", 11.0)),
-        (130000, struct.pack("<d", 12.0)),
-        (145000, struct.pack("<d", PROMETHEUS_STALE_NAN)),
-        (300000, struct.pack("<d", 20.0)),
-    ]
-
-    # So the "prometheus_reader" service, which sees this table only through RemoteRead, reports the series
-    # absent from the marker until the next real sample instead of keeping it alive at NaN.
-    def query_reader(query_timestamp):
-        return execute_query_via_http_api(
-            cluster.prometheus_ip["reader"],
-            cluster.prometheus_port["reader"],
-            "/api/v1/query",
-            "float32_stale",
-            query_timestamp,
-        )
-
-    present_at_130 = '{"resultType": "vector", "result": [{"metric": {"__name__": "float32_stale"}, "value": [130, "12"]}]}'
-    present_at_300 = '{"resultType": "vector", "result": [{"metric": {"__name__": "float32_stale"}, "value": [300, "20"]}]}'
-    absent = '{"resultType": "vector", "result": []}'
-
-    assert query_reader(130) == present_at_130
-    assert query_reader(150) == absent
-    assert query_reader(250) == absent
-    assert query_reader(300) == present_at_300
-
-
 # Checks that custom compression codecs can be applied to the `id`, `timestamp`, and `value` columns.
 def test_custom_codecs():
     node.query(
@@ -475,7 +393,7 @@ def test_index_granularity():
 # instead of its own inner tables.
 def test_external_tables():
     node.query(
-        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64, is_stale_marker UInt8) "
+        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
 
@@ -499,81 +417,6 @@ def test_external_tables():
         "SAMPLES mysamples TAGS mytags METRICS mymetrics"
     )
     check()
-
-
-# Checks that a "samples" table missing the `is_stale_marker` column (either a genuinely external
-# table using the old 3-column `id`/`timestamp`/`value` schema, or an inner table upgraded from
-# before `is_stale_marker` was added -- see test_upgrade_from_prealpha.py) is still accepted by
-# `CREATE TABLE ... ENGINE = TimeSeries` (that compatibility path is intentional, see
-# normalizeTimeSeriesDefinition.cpp), but is rejected by the Prometheus-specific remote-write and
-# PromQL query paths with a clear, actionable error instead of silently treating every row as fresh
-# (see PrometheusRemoteWriteProtocol::writeTimeSeries and StorageTimeSeriesSelector::readImpl).
-def test_external_samples_table_without_is_stale_marker_keeps_working():
-    node.query(
-        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
-    )
-    node.query(
-        "CREATE TABLE mytags ("
-        "id UUID, "
-        "metric_name LowCardinality(String), "
-        "tags Map(LowCardinality(String), String), "
-        "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "SETTINGS allow_dimensions_outside_sorting_key = 1"
-    )
-    node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
-    )
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES mysamples TAGS mytags METRICS mymetrics"
-    )
-
-    # A legacy 3-column samples table keeps working with the pre-column behavior: the write
-    # succeeds (a stale marker is stored as its raw NaN payload) and a PromQL read treats
-    # every stored row as an ordinary non-stale sample.
-    protobuf = convert_time_series_to_protobuf(
-        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0, timestamp + 10: PROMETHEUS_STALE_NAN})]
-    )
-    response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
-    assert response.status_code == requests.codes.no_content
-
-    # The degraded marker is stored as a raw NaN sample.
-    assert (
-        node.query("SELECT count() FROM mysamples WHERE isNaN(value)").strip() == "1"
-    )
-
-    result = node.query(f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp})")
-    assert result.strip() == "1"
-
-    # The point of the legacy contract: evaluating *at* the marker must return it as an ordinary
-    # sample rather than reporting the series absent, which is what a recognised stale marker does.
-    # Querying only at `timestamp` above never reaches it, so it would pass either way.
-    result = node.query(
-        f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp + 10})"
-    )
-    assert result.strip() == "nan", f"marker was treated as stale on a legacy table: {result!r}"
-
-    # RemoteRead sanitizes the unflagged marker payload to a plain quiet NaN (the synthesized flag is
-    # 0 on a legacy table, and the flag is the only source of truth). Compared as raw bits.
-    read_response = receive_protobuf_from_remote_read(
-        node.ip_address,
-        9093,
-        "/read",
-        convert_read_request_to_protobuf("^up$", timestamp - 10, timestamp + 20),
-    )
-    assert len(read_response.results) == 1
-    assert len(read_response.results[0].timeseries) == 1
-    values = [
-        struct.pack("<d", sample.value)
-        for sample in read_response.results[0].timeseries[0].samples
-    ]
-    assert values[0] == struct.pack("<d", 1.0)
-    assert math.isnan(struct.unpack("<d", values[1])[0])
-    assert values[1] != struct.pack("<d", PROMETHEUS_STALE_NAN)
 
 
 # Checks that the `DATA` keyword works as an alias for `SAMPLES`
@@ -590,7 +433,7 @@ def test_data_keyword():
     drop_prometheus_table()
 
     node.query(
-        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64, is_stale_marker UInt8) "
+        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
     node.query(

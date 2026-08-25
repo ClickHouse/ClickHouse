@@ -1,13 +1,10 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
-
-#include <cmath>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -143,24 +140,17 @@ namespace
         }
     }
 
-    /// Fills columns id, timestamp, value, and (if the samples table has it) is_stale_marker for the "samples" table.
-    /// The stale-marker flags come from the outer `is_stale_marker` column, which carries one flag per sample
-    /// (see isPrometheusStaleMarker() in PrometheusRemoteWriteProtocol.cpp); an empty array means none are markers.
+    /// Fills columns id, timestamp, value for the "samples" table.
     void fillSamplesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
         const IColumn & ts_timestamps,
         const IColumn & ts_values,
         const ColumnArray::Offsets & ts_offsets,
-        const ColumnArray & ts_is_stale_markers,
         IColumn & out_id_column,
         IColumn & out_timestamp_column,
-        IColumn & out_value_column,
-        IColumn * out_is_stale_marker_column)
+        IColumn & out_value_column)
     {
-        const auto & markers_offsets = ts_is_stale_markers.getOffsets();
-        const auto & markers_data = ts_is_stale_markers.getData();
-
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
@@ -183,19 +173,6 @@ namespace
                 out_id_column.insertManyFrom(id_column, id_index, num_samples);
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
-                if (out_is_stale_marker_column)
-                {
-                    size_t markers_start = (i == 0) ? 0 : markers_offsets[i - 1];
-                    size_t num_markers = markers_offsets[i] - markers_start;
-                    if (num_markers == 0)
-                        out_is_stale_marker_column->insertManyDefaults(num_samples);
-                    else if (num_markers == num_samples)
-                        out_is_stale_marker_column->insertRangeFrom(markers_data, markers_start, num_samples);
-                    else
-                        throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Column `{}` has {} flags for a time series with {} samples, it must be empty or have one flag per sample",
-                            TimeSeriesColumnNames::IsStaleMarker, num_markers, num_samples);
-                }
             }
 
             ++id_index;
@@ -455,12 +432,9 @@ TimeSeriesSink::TimeSeriesSink(
         return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
     };
 
-    /// `is_stale_marker` is part of the outer schema too, so an INSERT naming only it must still take
-    /// this path - otherwise it is silently dropped instead of reaching the checks below.
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::TimeSeries)
-        || is_insert_column(TimeSeriesColumnNames::IsStaleMarker);
+        || is_insert_column(TimeSeriesColumnNames::TimeSeries);
 
     insert_metrics = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
@@ -601,51 +575,15 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
 
     /// Build source header for samples block.
-    auto samples_target_metadata
-        = time_series_storage.getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataPtr(getContext(), false);
-    if (samples_target_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
-        is_stale_marker_type = samples_target_metadata->columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
-
-    /// The recent samples table receives a copy of every samples block, so the flag column can be
-    /// written only when both targets carry it; a legacy target degrades the pair to the raw-NaN behavior.
-    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-    {
-        auto recent_samples_metadata
-            = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext())->getInMemoryMetadataPtr(getContext(), false);
-        DataTypePtr recent_stale_marker_type;
-        if (recent_samples_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
-            recent_stale_marker_type = recent_samples_metadata->columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
-
-        /// A degraded target still carrying the column keeps it in its insert with explicit zeros:
-        /// omitting it would materialize the external table's DEFAULT, which needs not be 0.
-        if (is_stale_marker_type && !recent_stale_marker_type)
-        {
-            degraded_samples_stale_marker_type = is_stale_marker_type;
-            is_stale_marker_type = nullptr;
-            stale_marker_missing_table = "recent samples";
-        }
-        else if (!is_stale_marker_type && recent_stale_marker_type)
-            degraded_recent_stale_marker_type = recent_stale_marker_type;
-    }
-
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
-    Block recent_samples_header = samples_header;
-    if (is_stale_marker_type || degraded_samples_stale_marker_type)
-        samples_header.insert(ColumnWithTypeAndName{
-            is_stale_marker_type ? is_stale_marker_type : degraded_samples_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
     /// The recent samples table (if any) receives a copy of every samples block.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-    {
-        if (is_stale_marker_type || degraded_recent_stale_marker_type)
-            recent_samples_header.insert(ColumnWithTypeAndName{
-                is_stale_marker_type ? is_stale_marker_type : degraded_recent_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, recent_samples_header);
-    }
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
 }
 
 
@@ -672,64 +610,6 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the time_series column data, got {}", ts_tuples->tupleSize());
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
-
-    const auto & is_stale_marker_col = block.getByName(TimeSeriesColumnNames::IsStaleMarker);
-    const auto * ts_is_stale_markers = typeid_cast<const ColumnArray *>(is_stale_marker_col.column.get());
-    if (!ts_is_stale_markers)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the {} column, got {}",
-            TimeSeriesColumnNames::IsStaleMarker, is_stale_marker_col.column->getName());
-
-    /// The flags are parallel to the samples; check every row here, before the samples block can be
-    /// skipped for a chunk with no samples at all, where mismatched flags would vanish silently.
-    {
-        const auto & markers_offsets = ts_is_stale_markers->getOffsets();
-        for (size_t i = 0; i != markers_offsets.size(); ++i)
-        {
-            size_t num_markers = markers_offsets[i] - (i == 0 ? 0 : markers_offsets[i - 1]);
-            size_t num_samples = ts_offsets[i] - (i == 0 ? 0 : ts_offsets[i - 1]);
-            if (num_markers != 0 && num_markers != num_samples)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Column `{}` has {} flags for a time series with {} samples, it must be empty or have one flag per sample",
-                    TimeSeriesColumnNames::IsStaleMarker, num_markers, num_samples);
-        }
-    }
-
-    /// A samples table without the column has nowhere to persist a marker flag. A flag on a NaN
-    /// sample (a RemoteWrite stale marker) degrades to the pre-column behavior - the NaN value is
-    /// stored as is - with the migration warning; a flag on a non-NaN sample would vanish without
-    /// a trace, so that fails instead.
-    if (!is_stale_marker_type)
-    {
-        const auto & marker_flags = ts_is_stale_markers->getData();
-        const auto & markers_offsets = ts_is_stale_markers->getOffsets();
-        const IColumn & sample_values = ts_tuples->getColumn(1);
-        bool dropped_marker_on_nan = false;
-        for (size_t row = 0; row != markers_offsets.size(); ++row)
-        {
-            size_t markers_start = (row == 0) ? 0 : markers_offsets[row - 1];
-            size_t num_markers = markers_offsets[row] - markers_start;
-            size_t samples_start = (row == 0) ? 0 : ts_offsets[row - 1];
-            for (size_t k = 0; k != num_markers; ++k)
-            {
-                if (marker_flags.isDefaultAt(markers_start + k))
-                    continue;
-                if (std::isnan(sample_values.getFloat64(samples_start + k)))
-                {
-                    dropped_marker_on_nan = true;
-                    continue;
-                }
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot store a non-zero {} flag for a non-NaN sample: the \"{}\" table has no such column. "
-                    "Run ALTER TABLE <that table> ADD COLUMN {} UInt8 to enable stale-marker storage",
-                    TimeSeriesColumnNames::IsStaleMarker, stale_marker_missing_table, TimeSeriesColumnNames::IsStaleMarker);
-            }
-        }
-        if (dropped_marker_on_nan)
-            LOG_WARNING(log,
-                "Prometheus stale markers are stored as raw NaN samples: the \"{}\" table has no {} column. "
-                "Run ALTER TABLE <that table> ADD COLUMN {} UInt8 to enable stale-marker handling",
-                stale_marker_missing_table, TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
-    }
 
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
@@ -856,18 +736,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto value_column = scalar_type->createColumn();
         value_column->reserve(total_samples);
 
-        MutableColumnPtr is_stale_marker_column;
-        if (is_stale_marker_type)
-        {
-            is_stale_marker_column = is_stale_marker_type->createColumn();
-            is_stale_marker_column->reserve(total_samples);
-        }
-
         fillSamplesColumns(
             filter,
-            *id_column, ts_timestamps, ts_values, ts_offsets, *ts_is_stale_markers,
-            *samples_id_column, *timestamp_column, *value_column,
-            is_stale_marker_column.get());
+            *id_column, ts_timestamps, ts_values, ts_offsets,
+            *samples_id_column, *timestamp_column, *value_column);
 
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
@@ -876,29 +748,8 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
 
         /// The copy is cheap: a Block copy only copies column pointers.
-        Block recent_samples_block = samples_block;
-
-        if (is_stale_marker_column)
-        {
-            ColumnWithTypeAndName flag_column{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker};
-            recent_samples_block.insert(flag_column);
-            samples_block.insert(std::move(flag_column));
-        }
-        else
-        {
-            /// A degraded target still carrying the column gets explicit zeros, never its own DEFAULT.
-            if (degraded_samples_stale_marker_type)
-                samples_block.insert(ColumnWithTypeAndName{
-                    degraded_samples_stale_marker_type->createColumnConstWithDefaultValue(total_samples)->convertToFullColumnIfConst(),
-                    degraded_samples_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
-            if (degraded_recent_stale_marker_type)
-                recent_samples_block.insert(ColumnWithTypeAndName{
-                    degraded_recent_stale_marker_type->createColumnConstWithDefaultValue(total_samples)->convertToFullColumnIfConst(),
-                    degraded_recent_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
-        }
-
         if (recent_samples_pipeline)
-            recent_samples_pipeline->push(recent_samples_block);
+            recent_samples_pipeline->push(samples_block);
 
         samples_pipeline->push(std::move(samples_block));
     }

@@ -76,36 +76,8 @@ namespace
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 
-    /// The exact bit pattern of a Prometheus stale marker, kept in sync with `isPrometheusStaleMarker`
-    /// in PrometheusRemoteWriteProtocol.cpp, which flags such samples at ingest.
-    constexpr UInt64 PROMETHEUS_STALE_MARKER_BITS = 0x7FF0000000000002ULL;
-    constexpr UInt64 QUIET_NAN_BITS = 0x7FF8000000000000ULL;
-
-    /// reinterpretAsFloat64(multiIf(is_stale_marker, <marker bits>, <value bits> = <marker bits>, <quiet NaN bits>, <value bits>))
-    ///
-    /// Re-emits the exact marker payload for a row flagged in `is_stale_marker` instead of the stored `value`:
-    /// a `Float32` "samples" table lost that payload at insert, and a plain NaN is a real datapoint to a reader.
-    ASTPtr buildValueExpression()
-    {
-        auto value_bits = makeASTFunction(
-            "reinterpretAsUInt64", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-
-        /// Assembled in `UInt64` space to keep the marker out of a literal: a NaN literal formats as `nan`.
-        /// An unflagged row carrying the reserved payload becomes a plain NaN, so the flag stays the only
-        /// thing that makes a reader see a stale marker, as on the PromQL paths.
-        return makeASTFunction(
-            "reinterpretAsFloat64",
-            makeASTFunction(
-                "multiIf",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker),
-                make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS),
-                makeASTFunction("equals", value_bits->clone(), make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS)),
-                make_intrusive<ASTLiteral>(QUIET_NAN_BITS),
-                value_bits));
-    }
-
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, <value expression>) AS time_series
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
@@ -117,7 +89,7 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, <value expression>) AS time_series
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -128,7 +100,7 @@ namespace
             select_list_exp->children.push_back(makeASTFunction(
                 "timeSeriesGroupArray",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                buildValueExpression()));
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
 
@@ -193,8 +165,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, Float64)) - the value expression
-        /// built above always yields Float64, matching the protobuf's `double` sample type.
+        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::TimeSeries).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());

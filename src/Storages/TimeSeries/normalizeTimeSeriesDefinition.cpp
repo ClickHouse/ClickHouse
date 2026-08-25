@@ -412,19 +412,6 @@ namespace
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
                     value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
 
-                /// Column "is_stale_marker" - defaults to 0 for ordinary samples; set to 1 only for a
-                /// Prometheus stale marker kept at ingest (see TimeSeriesColumnNames::IsStaleMarker).
-                if (add_column_if_missing(TimeSeriesColumnNames::IsStaleMarker, makeASTDataType("UInt8")))
-                {
-                    auto & column = new_list->children.back();
-                    column = column->clone();
-                    auto & new_decl = column->as<ASTColumnDeclaration &>();
-                    new_decl.default_specifier = ColumnDefaultSpecifier::Default;
-                    new_decl.ephemeral_default = false;
-                    new_decl.setDefaultExpression(make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}));
-                    changed = true;
-                }
-
                 break;
             }
 
@@ -996,14 +983,6 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
-                /// `is_stale_marker` is optional so a plain 3-column (`id`/`timestamp`/`value`)
-                /// "samples" table can still be attached to a TimeSeries table definition (e.g. an external
-                /// table, or one predating this column). The Prometheus remote-write and PromQL read paths
-                /// then keep the pre-column behavior for it - stale markers are stored and read back as raw
-                /// NaN samples - and log a warning pointing at the ALTER migration (see
-                /// PrometheusRemoteWriteProtocol::writeTimeSeries and StorageTimeSeriesSelector::readImpl).
-                if (target_table_columns.has(TimeSeriesColumnNames::IsStaleMarker))
-                    check_column_type(TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>());
                 break;
             }
 
@@ -1114,10 +1093,6 @@ namespace
         add_column(TimeSeriesColumnNames::TimeSeries,
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
 
-        /// One flag per element of `time_series`; an empty array means no sample of that row is a stale marker.
-        add_column(TimeSeriesColumnNames::IsStaleMarker,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()));
-
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Unit, std::make_shared<DataTypeString>());
@@ -1143,32 +1118,6 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             settings_for_prealpha.loadFromQuery(*create_query.storage);
         upgradeFromPrealpha(create_query, settings_for_prealpha);
         chassert(!isPrealpha(create_query));
-    }
-
-    /// A restore recreates the inner samples-carrying tables from this definition; a legacy 3-column
-    /// list would drop an `ALTER ... ADD COLUMN is_stale_marker` migration done on an inner table.
-    if (is_restore_from_backup)
-    {
-        for (auto kind : {ViewTarget::Samples, ViewTarget::RecentSamples})
-        {
-            auto * samples_columns = create_query.getTargetInnerColumns(kind);
-            if (!samples_columns || !samples_columns->columns)
-                continue;
-            bool has_stale_marker = false;
-            for (const auto & child : samples_columns->columns->children)
-                if (const auto * existing_decl = child->as<ASTColumnDeclaration>(); existing_decl && existing_decl->name == TimeSeriesColumnNames::IsStaleMarker)
-                    has_stale_marker = true;
-            if (!has_stale_marker)
-            {
-                auto decl = make_intrusive<ASTColumnDeclaration>();
-                decl->name = TimeSeriesColumnNames::IsStaleMarker;
-                decl->setType(makeASTDataType("UInt8"));
-                decl->default_specifier = ColumnDefaultSpecifier::Default;
-                decl->ephemeral_default = false;
-                decl->setDefaultExpression(make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}));
-                samples_columns->columns->children.push_back(decl);
-            }
-        }
     }
 
     /// Apply the clause `AS <other_table>` if any.

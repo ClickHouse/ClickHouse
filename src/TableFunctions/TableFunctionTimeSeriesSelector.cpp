@@ -1,6 +1,5 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -31,8 +30,7 @@ ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(Cont
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.id_data_type},
         {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
-        {TimeSeriesColumnNames::Value, config.scalar_data_type},
-        {TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>()}
+        {TimeSeriesColumnNames::Value, config.scalar_data_type}
     });
 }
 
