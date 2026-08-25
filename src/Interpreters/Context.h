@@ -598,6 +598,9 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
+    bool is_recovery_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -1020,6 +1023,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
+    void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace
     {
@@ -1223,6 +1227,7 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1353,6 +1358,20 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
+
+    /// The server-level distributed cache switches. They live in `shared`, which is common to every context
+    /// (including the background and buffer contexts created once at startup), so a config reload is observed
+    /// by background operations as well. A query may deviate from them with the `force_*` settings.
+    bool getReadThroughDistributedCache() const;
+    void setReadThroughDistributedCache(bool read_through_distributed_cache) const;
+
+    bool getWriteThroughDistributedCache() const;
+    void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
+
+    /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
+    /// it is the startup snapshot serving operations without a query context, which follow the server switch.
+    bool resolveReadThroughDistributedCache() const;
+    bool resolveWriteThroughDistributedCache() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1821,6 +1840,9 @@ public:
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
+    bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+    void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
