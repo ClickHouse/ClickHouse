@@ -3,8 +3,6 @@
 // #include <DataTypes/DataTypeString.h>
 // #include <Storages/ColumnsDescription.h>
 // #include <Storages/IStorage.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -50,7 +48,7 @@ private:
     std::optional<ActionsDAG> filter;
 };
 
-void IStorageSystemOneBlock::readImpl(
+void IStorageSystemOneBlock::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -61,7 +59,7 @@ void IStorageSystemOneBlock::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     std::vector<UInt8> columns_mask;
 
     if (supportsColumnsMask())
@@ -88,10 +86,7 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
     UInt64 num_rows = res_columns.at(0)->size();
-
-    Chunk chunk;
-    if (num_rows > 0)
-        chunk = Chunk(std::move(res_columns), num_rows);
+    Chunk chunk(std::move(res_columns), num_rows);
 
     pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk))));
 }
@@ -107,19 +102,11 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
     if (sample.columns() == 0)
         return;
 
-    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample, context);
+    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample);
 
     /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
     if (filter)
         VirtualColumnUtils::buildSetsForDAG(*filter, context);
-}
-
-VirtualColumnsDescription IStorageSystemOneBlock::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 }

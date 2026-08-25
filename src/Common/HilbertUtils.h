@@ -75,14 +75,12 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
 
     if (start_chunk == finish_chunk)
     {
-        /// Use a 64-bit literal: `next_bits` can be up to 62, and shifting
-        /// a 32-bit `int` by more than 31 bits is undefined behaviour.
-        if ((finish - start + 1) == (UInt64{1} << next_bits)) // it means that [begin, end] is a range
+        if ((finish - start + 1) == (1 << next_bits)) // it means that [begin, end] is a range
         {
             callback(HilbertDetails::Segment{.begin = start, .end = finish});
             return;
         }
-        segmentBinaryPartition(start, finish, static_cast<UInt8>(next_bits), callback);
+        segmentBinaryPartition(start, finish, next_bits, callback);
         return;
     }
 
@@ -98,7 +96,7 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
     }
     else
     {
-        segmentBinaryPartition(start, start_range.end, static_cast<UInt8>(next_bits), callback);
+        segmentBinaryPartition(start, start_range.end, next_bits, callback);
     }
 
     const auto finish_range = construct_range(finish_chunk);
@@ -108,7 +106,7 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
     }
     else
     {
-        segmentBinaryPartition(finish_range.begin, finish, static_cast<UInt8>(next_bits), callback);
+        segmentBinaryPartition(finish_range.begin, finish, next_bits, callback);
     }
 }
 
@@ -144,7 +142,7 @@ void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback
 {
     const auto equal_bits_count = getLeadingZeroBits(last | first);
     const auto even_equal_bits_count = equal_bits_count - equal_bits_count % 2;
-    segmentBinaryPartition(first, last, static_cast<UInt8>(64 - even_equal_bits_count), [&](HilbertDetails::Segment range)
+    segmentBinaryPartition(first, last, 64 - even_equal_bits_count, [&](HilbertDetails::Segment range)
     {
         auto interval1 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.begin);
         auto interval2 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.end);

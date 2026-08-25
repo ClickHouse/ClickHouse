@@ -1,12 +1,13 @@
 #include <Common/Config/ConfigReloader.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <filesystem>
 #include <memory>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Poco/Util/Application.h>
 
 
 namespace fs = std::filesystem;
@@ -24,8 +25,8 @@ ConfigReloader::ConfigReloader(
         std::string_view config_path_,
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir_,
-        std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
-        const Coordination::EventPtr & zk_changed_event_,
+        zkutil::ZooKeeperNodeCache && zk_node_cache_,
+        const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
@@ -83,7 +84,7 @@ ConfigReloader::~ConfigReloader()
 
 void ConfigReloader::run()
 {
-    DB::setThreadName(ThreadName::CONFIG_RELOADER);
+    setThreadName("ConfigReloader");
 
     while (true)
     {
@@ -131,7 +132,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }
         catch (const Coordination::Exception & e)
         {
@@ -170,11 +171,6 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             files = std::move(new_files);
             need_reload_from_zk = false;
         }
-
-        /// The config determines its own substitutions file by the <include_from> element,
-        /// which is not known until the config is loaded. Remember it to watch for its changes.
-        /// If it just appeared or changed, the next check will see a different file list and reload once more.
-        include_from_path = loaded_config.configuration->getString("include_from", "");
 
         LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);
 
@@ -237,7 +233,6 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
     FilesChangesTracker file_list;
 
     file_list.addIfExists(config_path);
-    file_list.addIfExists(include_from_path);
     for (const std::string& path : extra_paths)
         file_list.addIfExists(path);
 

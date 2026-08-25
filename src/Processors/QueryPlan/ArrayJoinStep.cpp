@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -31,7 +30,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
+ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
@@ -39,7 +38,6 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
-    , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
 }
 
@@ -50,7 +48,7 @@ void ArrayJoinStep::updateOutputHeader()
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
+    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size);
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
@@ -60,7 +58,7 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     bool first = true;
 
     settings.out << prefix << (array_join.is_left ? "LEFT " : "") << "ARRAY JOIN ";
@@ -71,7 +69,7 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         first = false;
 
 
-        settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+        settings.out << column;
     }
     settings.out << '\n';
 }
@@ -87,7 +85,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
@@ -99,11 +97,6 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (is_unaligned)
         flags |= 2;
-    /// Carried here rather than through serializeSettings: a step's settings object only ever holds
-    /// the names that same step writes, and readers that predate this bit ignore it and keep doing
-    /// eager replication, which is the correct fallback for a performance-only flag.
-    if (enable_lazy_columns_replication)
-        flags |= 4;
 
     writeIntBinary(flags, ctx.out);
 
@@ -112,21 +105,15 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr ArrayJoinStep::clone() const
+std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<ArrayJoinStep>(*this);
-}
-
-QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
-{
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
-    bool enable_lazy_columns_replication = bool(flags & 4);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
@@ -136,15 +123,9 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(
-        ctx.input_headers.front(),
-        std::move(array_join),
-        is_unaligned,
-        ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        enable_lazy_columns_replication);
+    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings[QueryPlanSerializationSetting::max_block_size]);
 }
 
-void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);

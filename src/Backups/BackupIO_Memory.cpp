@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -85,8 +84,6 @@ void BackupWriterMemory::removeEmptyDirectories()
 }
 
 
-void registerBackupEngineMemory(BackupFactory & factory);
-
 void registerBackupEngineMemory(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
@@ -99,30 +96,23 @@ void registerBackupEngineMemory(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory->getBackup(backup_name);
+            const auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory.getBackup(backup_name);
             auto reader = std::make_shared<BackupReaderMemory>(backup_in_memory, params.read_settings, params.write_settings);
+
             return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, reader);
         }
         else
         {
-            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory->createBackup(backup_name);
+            auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory.createBackup(backup_name);
             auto writer = std::make_shared<BackupWriterMemory>(backup_in_memory, params.read_settings, params.write_settings);
+
             return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
         }
     };
 
-    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Memory backup destinations do not have a persistent identity");
-    };
-
-    /// No external location: nothing to authorize against the SOURCES grant model.
-    auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
-        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
-
-    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("Memory", creator_fn);
 }
 
 }

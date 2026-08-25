@@ -1,6 +1,3 @@
-#include <cstring>
-#include <memory>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -10,10 +7,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <Common/TargetSpecific.h>
-#include <base/extended_types.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -44,14 +38,13 @@ struct AggregateFunctionGroupBitOrData
     T value = 0;
     static const char * name() { return "groupBitOr"; }
     void update(T x) { value |= x; }
-    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value |= x & keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr);
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -68,14 +61,13 @@ struct AggregateFunctionGroupBitAndData
     T value = -1; /// Two's complement arithmetic, sign extension.
     static const char * name() { return "groupBitAnd"; }
     void update(T x) { value &= x; }
-    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value &= x | ~keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr);
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -92,14 +84,13 @@ struct AggregateFunctionGroupBitXorData
     T value = 0;
     static const char * name() { return "groupBitXor"; }
     void update(T x) { value ^= x; }
-    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value ^= x & keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr);
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -115,78 +106,6 @@ struct AggregateFunctionGroupBitXorData
 template <typename T, typename Data>
 class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>
 {
-private:
-    MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(
-    static void NO_INLINE
-    ), addManyImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end) /// NOLINT
-    {
-        /// Clang cannot vectorize the loop if the accumulator is not a local variable.
-        Data local;
-        for (size_t i = row_begin; i < row_end; ++i)
-            local.update(ptr[i]);
-        data.update(local.value);
-    })
-    )
-
-    static void addMany(Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            addManyImpl_x86_64_v4(data, ptr, row_begin, row_end);
-            return;
-        }
-#endif
-
-        addManyImpl(data, ptr, row_begin, row_end);
-    }
-
-    MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(
-    template <bool add_if_zero>
-    static void NO_INLINE
-    ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
-    {
-        /// The flag is applied as an arithmetic all-ones/all-zeros mask: unlike a branch or a
-        /// ternary select, this form is if-converted and vectorized at the baseline instruction set.
-        Data local;
-        if constexpr (is_over_big_int<T>)
-        {
-            /// For wide integers only a mask built with memset is vectorized.
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                T keep_mask; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned by the memset below
-                std::memset(&keep_mask, -static_cast<int>(!condition_map[i] == add_if_zero), sizeof(T));
-                local.updateMasked(ptr[i], keep_mask);
-            }
-        }
-        else
-        {
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                T keep_mask = T(0) - T(!condition_map[i] == add_if_zero);
-                local.updateMasked(ptr[i], keep_mask);
-            }
-        }
-        data.update(local.value);
-    })
-    )
-
-    template <bool add_if_zero>
-    static void addManyConditional(Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
-            return;
-        }
-#endif
-
-        addManyConditionalImpl<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
-    }
-
 public:
     explicit AggregateFunctionBitwise(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
@@ -206,55 +125,7 @@ public:
         this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena *,
-        ssize_t if_argument_pos) const override
-    {
-        const auto & column = assert_cast<const ColumnVector<T> &>(*columns[0]);
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            addManyConditional<false>(this->data(place), column.getData().data(), flags.data(), row_begin, row_end);
-        }
-        else
-        {
-            addMany(this->data(place), column.getData().data(), row_begin, row_end);
-        }
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena *,
-        ssize_t if_argument_pos) const override
-    {
-        const auto & column = assert_cast<const ColumnVector<T> &>(*columns[0]);
-        if (if_argument_pos >= 0)
-        {
-            /// Merging the two sets of flags into a temporary buffer vectorizes better
-            /// than fusing both flags into the accumulation loop.
-            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
-            for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
-
-            addManyConditional<false>(this->data(place), column.getData().data(), final_flags.get(), row_begin, row_end);
-        }
-        else
-        {
-            addManyConditional<true>(this->data(place), column.getData().data(), null_map, row_begin, row_end);
-        }
-    }
-
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).update(this->data(rhs).value);
     }
@@ -296,11 +167,10 @@ public:
 
         auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
-        value->setAlignment(llvm::Align(alignof(T)));
 
         auto * result_value = Data::compileUpdate(builder, value, arguments[0].value);
 
-        b.CreateStore(result_value, value_ptr)->setAlignment(llvm::Align(alignof(T)));
+        b.CreateStore(result_value, value_ptr);
     }
 
     void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
@@ -311,15 +181,13 @@ public:
 
         auto * value_dst_ptr = aggregate_data_dst_ptr;
         auto * value_dst = b.CreateLoad(return_type, value_dst_ptr);
-        value_dst->setAlignment(llvm::Align(alignof(T)));
 
         auto * value_src_ptr = aggregate_data_src_ptr;
         auto * value_src = b.CreateLoad(return_type, value_src_ptr);
-        value_src->setAlignment(llvm::Align(alignof(T)));
 
         auto * result_value = Data::compileUpdate(builder, value_dst, value_src);
 
-        b.CreateStore(result_value, value_dst_ptr)->setAlignment(llvm::Align(alignof(T)));
+        b.CreateStore(result_value, value_dst_ptr);
     }
 
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -329,9 +197,7 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * value_ptr = aggregate_data_ptr;
 
-        auto * res = b.CreateLoad(return_type, value_ptr);
-        res->setAlignment(llvm::Align(alignof(T)));
-        return res;
+        return b.CreateLoad(return_type, value_ptr);
     }
 
 #endif
@@ -361,140 +227,11 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
 
 }
 
-void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description_or = R"(
-Applies bitwise OR for series of numbers.
-    )";
-    FunctionDocumentation::Syntax syntax_or = R"(
-groupBitOr(expr)
-    )";
-    FunctionDocumentation::Arguments arguments_or = {
-        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::Parameters parameters_or = {};
-    FunctionDocumentation::ReturnedValue returned_value_or = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
-    FunctionDocumentation::Examples examples_or = {
-    {
-        "Bitwise OR example",
-        R"(
-CREATE TABLE t (num UInt32) ENGINE = Memory;
-INSERT INTO t VALUES (44), (28), (13), (85);
-
--- Test data:
--- binary     decimal
--- 00101100 = 44
--- 00011100 = 28
--- 00001101 = 13
--- 01010101 = 85
-
-SELECT groupBitOr(num) FROM t;
-        )",
-        R"(
--- Result:
--- binary     decimal
--- 01111101 = 125
-
-┌─groupBitOr(num)─┐
-│             125 │
-└─────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_or = {1, 1};
-    FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
-
-    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, documentation_or});
-
-    FunctionDocumentation::Description description = R"(
-Applies bitwise AND for series of numbers.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-groupBitAnd(expr)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Bitwise AND example",
-        R"(
-CREATE TABLE t (num UInt32) ENGINE = Memory;
-INSERT INTO t VALUES (44), (28), (13), (85);
-
--- Test data:
--- binary     decimal
--- 00101100 = 44
--- 00011100 = 28
--- 00001101 = 13
--- 01010101 = 85
-
-SELECT groupBitAnd(num) FROM t;
-            )",
-            R"(
--- Result:
--- binary     decimal
--- 00000100 = 4
-
-┌─groupBitAnd(num)─┐
-│                4 │
-└──────────────────┘
-            )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, documentation});
-
-    FunctionDocumentation::Description description_xor = R"(
-Applies bitwise XOR for series of numbers.
-    )";
-    FunctionDocumentation::Syntax syntax_xor = R"(
-groupBitXor(expr)
-    )";
-    FunctionDocumentation::Arguments arguments_xor = {
-        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::Parameters parameters_xor = {};
-    FunctionDocumentation::ReturnedValue returned_value_xor = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
-    FunctionDocumentation::Examples examples_xor = {
-    {
-        "Bitwise XOR example",
-        R"(
-CREATE TABLE t (num UInt32) ENGINE = Memory;
-INSERT INTO t VALUES (44), (28), (13), (85);
-
--- Test data:
--- binary     decimal
--- 00101100 = 44
--- 00011100 = 28
--- 00001101 = 13
--- 01010101 = 85
-
-SELECT groupBitXor(num) FROM t;
-        )",
-        R"(
--- Result:
--- binary     decimal
--- 01101000 = 104
-
-┌─groupBitXor(num)─┐
-│              104 │
-└──────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_xor = {1, 1};
-    FunctionDocumentation::Category category_xor = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_xor = {description_xor, syntax_xor, arguments_xor, parameters_xor, returned_value_xor, examples_xor, introduced_in_xor, category_xor};
-
-    factory.registerFunction("groupBitXor", {createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>, documentation_xor});
+    factory.registerFunction("groupBitOr", createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>);
+    factory.registerFunction("groupBitAnd", createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>);
+    factory.registerFunction("groupBitXor", createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>);
 
     /// Aliases for compatibility with MySQL.
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);

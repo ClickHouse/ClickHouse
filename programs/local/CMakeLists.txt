@@ -25,7 +25,3 @@ endif()
 
 # Always use internal readpassphrase
 target_link_libraries(clickhouse-local-lib PRIVATE readpassphrase)
-
-if (ENABLE_FUZZING)
-    add_subdirectory(fuzzers)
-endif()

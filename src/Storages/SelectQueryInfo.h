@@ -42,11 +42,16 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ActionsDAG prewhere_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
+    bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
@@ -54,10 +59,10 @@ struct PrewhereInfo
 
     std::string dump() const;
 
-    PrewhereInfo clone() const;
+    PrewhereInfoPtr clone() const;
 
     void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    static PrewhereInfoPtr deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -68,9 +73,6 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
-
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -135,16 +137,10 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    TableExpressionNodePtr table_expression;
+    QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
-
-    /// Value of the `analyzer_compatibility_apply_final_to_all_joined_tables` setting.
-    /// When true, `isFinal` falls back to the query-level FINAL (the left-most table's modifier)
-    /// for table expressions without their own modifiers, restoring the pre-26.6 behavior
-    /// where FINAL on one table of a JOIN leaked onto the other joined tables.
-    bool apply_query_level_final_if_no_modifiers = false;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
@@ -186,7 +182,7 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
-    /// The analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
+    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 
@@ -194,10 +190,6 @@ struct SelectQueryInfo
     bool has_window = false;
     bool has_order_by = false;
     bool need_aggregate = false;
-
-    /// Actions for row level security filter. Applied separately before prewhere.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
 
     /// If query has aggregate functions
@@ -207,6 +199,7 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool parallel_replicas_disabled = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
@@ -216,10 +209,10 @@ struct SelectQueryInfo
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    bool isFinal() const;
+    /// During read from MergeTree parts will be removed from snapshot after they are not needed
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
-    /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    bool isFinal() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemSettings.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Core/Settings.h>
@@ -34,7 +33,7 @@ ColumnsDescription StorageSystemSettings::getColumnsDescription()
          "1 — Current user can't change the setting."},
         {"type", std::make_shared<DataTypeString>(), "The type of the value that can be assigned to this setting."},
         {"default", std::make_shared<DataTypeString>(), "Setting default value."},
-        {"alias_for", std::make_shared<DataTypeString>(), "The name of the original setting if the setting is an alias for another setting."},
+        {"alias_for", std::make_shared<DataTypeString>(), "Flag that shows whether this name is an alias to another setting."},
         {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
         {"tier", getSettingsTierEnum(), R"(
 Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their
@@ -42,7 +41,6 @@ development and the expectations one might have when using them:
 * PRODUCTION: The feature is stable, safe to use and does not have issues interacting with other PRODUCTION features.
 * BETA: The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
 * EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
-* PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
     };
@@ -59,6 +57,3 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettings) }

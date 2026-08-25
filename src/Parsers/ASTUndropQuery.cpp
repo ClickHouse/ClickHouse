@@ -1,7 +1,6 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Core/UUID.h>
 
 
 namespace DB
@@ -14,10 +13,9 @@ String ASTUndropQuery::getID(char delim) const
 
 ASTPtr ASTUndropQuery::clone() const
 {
-    auto res = make_intrusive<ASTUndropQuery>(*this);
-    res->children.clear();
-    cloneTableOptions(*res);
+    auto res = std::make_shared<ASTUndropQuery>(*this);
     cloneOutputOptions(*res);
+    cloneTableOptions(*res);
     return res;
 }
 
