@@ -80,8 +80,7 @@ bool injectRequiredColumnsRecursively(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
     Names & columns,
-    NameSet & required_columns,
-    NameSet & injected_columns)
+    NameSet & required_columns)
 {
     /// This is needed to prevent stack overflow in case of cyclic defaults or
     /// huge AST which for some reason was not validated on parsing/interpreter
@@ -95,7 +94,6 @@ bool injectRequiredColumnsRecursively(
         {
             columns.emplace_back(name);
             required_columns.emplace(name);
-            injected_columns.emplace(name);
         }
     };
 
@@ -138,8 +136,8 @@ bool injectRequiredColumnsRecursively(
         }
     }
 
-    /// Column doesn't have default value and don't exist in part
-    /// don't need to add to required set.
+    /// The column is not in the part, so it will be filled from its default. Whatever that default
+    /// expression reads has to be added to `columns` as well; with no default there is nothing to add.
     auto column_default = storage_snapshot->getDefault(column_name);
 
     /// A subcolumn does not have its own default expression: it is extracted from the evaluated
@@ -160,26 +158,25 @@ bool injectRequiredColumnsRecursively(
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            options, columns, required_columns);
 
     return result;
-}
-
 }
 
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
+  * Throws when the part holds data that neither the table structure nor a pending conversion
+  * accounts for, since such a part must not be read as rows of defaults.
   */
-NameSet injectRequiredColumns(
+void injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
-    NameSet injected_columns;
 
     bool have_at_least_one_physical_column = false;
     AlterConversionsPtr alter_conversions;
@@ -206,14 +203,13 @@ NameSet injectRequiredColumns(
             data_part_info_for_reader,
             options,
             columns,
-            required_columns,
-            injected_columns);
+            required_columns);
     }
 
-    /** Add a column of the minimum size.
-        * Used in case when no column is needed or files are missing, but at least you need to know number of rows.
-        * Adds to the columns.
-        */
+    /// No requested column has a file in this part, possibly because none was requested. Where the
+    /// part can serve a column of its own, one of the minimum size is injected in their place; where
+    /// it cannot, nothing is injected and the part is checked instead for data that the table
+    /// structure does not account for.
     if (!have_at_least_one_physical_column)
     {
         /// The injected column has to be readable from the part *and* resolvable by the caller, which
@@ -230,8 +226,8 @@ NameSet injectRequiredColumns(
         std::unordered_map<String, String> metadata_name_by_part_name;
 
         /// Iterated directly rather than through `getAllPhysical`, which would build a list of every
-        /// physical column for each part while only the name is wanted here. The skipped kinds are the
-        /// ones that function skips; neither is ever stored in a part.
+        /// physical column for each part while only the names are wanted here. `Alias` and `Ephemeral`
+        /// are exactly what that function skips, and neither is ever stored in a part.
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             if (column.default_desc.kind == ColumnDefaultKind::Alias
@@ -255,12 +251,11 @@ NameSet injectRequiredColumns(
 
         if (available_columns.empty())
         {
-            /// Nothing in the part can serve as the row-count column. Reading it as rows of defaults is
-            /// only correct when the current structure and the pending conversions account for
-            /// everything the part holds: then each requested column is legitimately absent. A part
-            /// column that is neither in the structure nor being dropped is unexplained data — a part
-            /// attached after the schema moved on, say — and reporting defaults for it would hide rows
-            /// that do exist on disk, so this read is refused (see issue #79110).
+            /// The part can serve no column at all. Reading it as rows of defaults is correct only
+            /// when the structure and the pending conversions account for everything it holds: then
+            /// each requested column is legitimately absent. A part column that is neither in the
+            /// structure nor being dropped is unexplained data — a part attached after the schema
+            /// moved on, say — and defaults for it would hide rows that exist on disk (issue #79110).
             for (const auto & column : data_part_info_for_reader.getColumns())
             {
                 if (storage_snapshot->tryGetColumn(options, column.name))
@@ -294,12 +289,10 @@ NameSet injectRequiredColumns(
             /// the metadata and the reader maps it back to the part on its own.
             auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
             columns.push_back(metadata_name_by_part_name.at(minimum_size_column_name));
-            /// correctly report added column
-            injected_columns.insert(columns.back());
         }
     }
+}
 
-    return injected_columns;
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
