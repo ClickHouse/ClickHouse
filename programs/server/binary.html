@@ -57,9 +57,30 @@
         let password = '';
         let add_http_cors_header = true;
 
+        /// The address of the server that served this page: the default connection, also used when a host
+        /// hands a connection over without a `url` (see `applyConnectionFromHost`).
+        ///
+        /// The path of that address belongs to the endpoint rather than being decoration: it is sent
+        /// verbatim with every request, and a reverse proxy can expose the server as
+        /// `https://proxy.example/clickhouse/`, in which case this page is served as
+        /// `https://proxy.example/clickhouse/binary` while `https://proxy.example/` is an unrelated site.
+        /// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+        /// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+        /// URL may carry a suffix - `/binary/`, `/binary?user=x` - and the prefix is therefore taken as
+        /// everything up to and including the last `/` before the route name.
+        function defaultServerAddress() {
+            if (location.protocol == 'file:') return 'http://localhost:8123/';
+            const url = new URL(location.href);
+            url.search = '';
+            url.hash = '';
+            const route = url.pathname.lastIndexOf('/binary');
+            if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+            return url.href;
+        }
+
         /// If it is hosted on server, assume that it is the address of ClickHouse.
         if (location.protocol != 'file:') {
-            host = location.origin;
+            host = defaultServerAddress();
             add_http_cors_header = false;
         }
 
@@ -364,6 +385,16 @@
             url = buildURL();
             cached_tiles = {};
             layer.redraw();
+            /// A symbol popup that already rendered keeps showing the former server's binary: the
+            /// generation checks above only stop a *late* response from repainting, they do nothing to
+            /// content that arrived in time. Re-request it under the new connection, so the page never
+            /// shows one server's map together with another server's symbol. The coordinates are the
+            /// user's selection and stay as they are; `showPopup` repaints the address immediately and
+            /// fills in the symbol when the new server answers.
+            if (popup.isOpen()) {
+                const position = latLngToPixel(popup.getLatLng());
+                showPopup(position.x, position.y);
+            }
         }
 
         {

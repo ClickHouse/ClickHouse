@@ -5989,6 +5989,26 @@ let restoring_connection_from_history = false;
 const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
+/// The address of the server that served this page: the default connection when neither the query
+/// string, nor the history entry, nor a `postMessage` handover names one.
+///
+/// The path of that address belongs to the endpoint rather than being decoration: `postImpl` sends it
+/// verbatim, and a reverse proxy can expose the server as `https://proxy.example/clickhouse/`, in which
+/// case this page is served as `https://proxy.example/clickhouse/play` while `https://proxy.example/`
+/// is an unrelated site. Defaulting to `location.origin` would aim every query at that unrelated root.
+/// The built-in pages are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`),
+/// so the served URL may carry a suffix - `/play/`, `/play?user=x` - and the prefix is therefore taken
+/// as everything up to and including the last `/` before the route name.
+function defaultServerAddress() {
+    if (opened_locally) return 'http://localhost:8123/';
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+    const route = url.pathname.lastIndexOf('/play');
+    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    return url.href;
+}
+
 /// Run query instantly after page is loaded if the run parameter is present.
 /// An immutable load-time fact: whether THIS page load was asked to auto-run. Whether the deferred
 /// startup auto-run actually fires is decided by `reconcileStartup`, and whether a WRITTEN history
@@ -6064,11 +6084,9 @@ if (url_elem.value == '') {
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
         url_elem.value = server_address;
-    } else if (!opened_locally) {
-        /// Substitute the address of the server where the page is served.
-        url_elem.value = location.origin;
     } else {
-        url_elem.value = 'http://localhost:8123/';
+        /// Substitute the address of the server where the page is served.
+        url_elem.value = defaultServerAddress();
     }
 }
 
@@ -12193,7 +12211,7 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     /// `fromRun` is the caller's FULL decision (`writeHistoryEntry`'s `stamp_run`: the raw
     /// `fromRun`, the connection-divergence check and the tab's own `runnableUrl` policy).
     if (fromRun) out.push('run=1');
-    if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
+    if (!sameServerAddress(server_address, defaultServerAddress())) out.push('url=' + encodeURIComponent(server_address));
     /// The selected database is a connection-scoped setting (like `user`/`url`): carry it so a
     /// shared or reloaded link resolves unqualified table names against the same database, and an
     /// auto-run `run=1` link reproduces the run instead of hitting the server default database.
@@ -12699,8 +12717,7 @@ window.onpopstate = function(event) {
     /// live connection inputs stay on whatever server/user was active before the Back/Forward,
     /// and a Run launched from this "restored" entry would execute against the wrong target.
     const popped_url = new URL(location.href);
-    const target_server = popped_url.searchParams.get('url')
-        || (opened_locally ? 'http://localhost:8123/' : location.origin);
+    const target_server = popped_url.searchParams.get('url') || defaultServerAddress();
     const target_user = popped_url.searchParams.get('user') || '';
     if (url_elem.value !== target_server || user_elem.value !== target_user) {
         url_elem.value = target_server;

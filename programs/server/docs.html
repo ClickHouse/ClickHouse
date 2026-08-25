@@ -433,8 +433,29 @@
     const $user = document.getElementById('user');
     const $password = document.getElementById('password');
 
+    /// The address of the server that served this page: the default connection, also used when a host
+    /// hands a connection over without a `url` (see `applyConnectionFromHost`).
+    ///
+    /// The path of that address belongs to the endpoint rather than being decoration: it is sent
+    /// verbatim with every request, and a reverse proxy can expose the server as
+    /// `https://proxy.example/clickhouse/`, in which case this page is served as
+    /// `https://proxy.example/clickhouse/docs` while `https://proxy.example/` is an unrelated site.
+    /// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+    /// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+    /// URL may carry a suffix - `/docs/`, `/docs?user=x` - and the prefix is therefore taken as
+    /// everything up to and including the last `/` before the route name.
+    function defaultServerAddress() {
+        if (location.protocol == 'file:') return 'http://localhost:8123/';
+        const url = new URL(location.href);
+        url.search = '';
+        url.hash = '';
+        const route = url.pathname.lastIndexOf('/docs');
+        if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+        return url.href;
+    }
+
     if (!$url.value) {
-        $url.value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+        $url.value = defaultServerAddress();
     }
 
     {

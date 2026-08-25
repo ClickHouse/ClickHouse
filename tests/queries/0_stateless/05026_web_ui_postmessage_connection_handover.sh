@@ -26,11 +26,31 @@ fetch_page()
 # A trusted host can aim a page at a server of its own, so trust must be granted to whole origins
 # named one by one: neither to a domain suffix, nor to a bare host name, which would ignore the
 # scheme and accept a plaintext `http://` impostor.
+#
+# The whole allowlist is pinned, not just one entry of it: dropping an origin silently breaks the
+# consoles that embed these pages, and adding one silently widens who may hand over a connection.
+# A bare host name is rejected in both spellings, so a regression to a scheme-less comparison
+# (`h === 'clickhouse.com'`) is caught rather than passing because the exact origin is also present.
+TRUSTED_ORIGINS="https://console.clickhouse.cloud https://console.clickhouse-staging.com https://clickhouse.com"
+
 exact_origins()
 {
-    echo "$1" | grep -qF "'https://console.clickhouse.cloud'" \
-        && ! echo "$1" | grep -qE "endsWith\('\.clickhouse\.(cloud|com)'\)" \
-        && ! echo "$1" | grep -qF "'clickhouse.cloud'" \
+    local content="$1"
+    local origin
+
+    for origin in ${TRUSTED_ORIGINS}
+    do
+        echo "${content}" | grep -qF "'${origin}'" || { echo loose; return; }
+    done
+
+    # The allowlist must contain nothing but those origins: count the entries of the array itself.
+    local declared
+    declared=$(echo "${content}" | sed -n "/TRUSTED_\(HOST\|PARENT\)_ORIGINS = \[/,/\];/p" | grep -c "^ *'")
+    [ "${declared}" = "$(echo ${TRUSTED_ORIGINS} | wc -w)" ] || { echo loose; return; }
+
+    ! echo "${content}" | grep -qE "endsWith\('\.clickhouse\.(cloud|com)'\)" \
+        && ! echo "${content}" | grep -qF "'clickhouse.cloud'" \
+        && ! echo "${content}" | grep -qF "'clickhouse.com'" \
         && echo exact || echo loose
 }
 
@@ -45,7 +65,14 @@ do
     # with `&`. Starting them with a second `?` would fold the first one into the value of the last
     # existing parameter and send the query to a different endpoint than the one handed over.
     endpoint_query=$(echo "$content" | grep -qF "indexOf('?') >= 0" && echo preserved || echo dropped)
-    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query}"
+    # A handover may omit `url`, and then the page keeps the endpoint it already has. That default is
+    # the address the page was served from, path prefix included: a reverse proxy can expose the server
+    # as `https://proxy.example/clickhouse/`, where `https://proxy.example/` is an unrelated site.
+    # Seeding the connection from `location.origin` would aim every query at that unrelated root.
+    default_endpoint=$(echo "$content" | grep -qF "function defaultServerAddress()" \
+        && ! echo "$content" | grep -qE "= location.protocol != 'file:' \\? location.origin" \
+        && echo prefixed || echo origin)
+    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint}"
 done
 
 content=$(fetch_page webterminal)

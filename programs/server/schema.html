@@ -681,16 +681,36 @@
 const $ = id => document.getElementById(id);
 
 /// Connection defaults, mirroring `play.html`: the URL, user, and password can all be
-/// supplied in the query string; otherwise the URL falls back to this server's origin
-/// (or localhost when the page is opened from disk).
+/// supplied in the query string; otherwise the URL falls back to the address this page
+/// was served from (or localhost when the page is opened from disk).
 const currentUrl = new URL(window.location);
 const openedLocally = location.protocol === 'file:';
+
+/// The address of the server that served this page: the default connection, also used when a host
+/// hands a connection over without a `url` (see `applyConnectionFromHost`).
+///
+/// The path of that address belongs to the endpoint rather than being decoration: it is sent
+/// verbatim with every request, and a reverse proxy can expose the server as
+/// `https://proxy.example/clickhouse/`, in which case this page is served as
+/// `https://proxy.example/clickhouse/schema` while `https://proxy.example/` is an unrelated site.
+/// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+/// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+/// URL may carry a suffix - `/schema/`, `/schema?user=x` - and the prefix is therefore taken as
+/// everything up to and including the last `/` before the route name.
+function defaultServerAddress() {
+    if (location.protocol == 'file:') return 'http://localhost:8123/';
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+    const route = url.pathname.lastIndexOf('/schema');
+    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    return url.href;
+}
 
 if (!$('url').value) {
     const serverAddress = currentUrl.searchParams.get('url');
     if (serverAddress) $('url').value = serverAddress;
-    else if (!openedLocally) $('url').value = location.origin;
-    else $('url').value = 'http://localhost:8123/';
+    else $('url').value = defaultServerAddress();
 }
 
 const userFromUrl = currentUrl.searchParams.get('user');
