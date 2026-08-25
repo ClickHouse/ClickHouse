@@ -686,6 +686,9 @@ private:
         if (!apply_preprocessor && !apply_tokenizer && !apply_postprocessor)
             return;
 
+        /// Spliced into the postprocessor DAG below: merging two DAGs would unify their `__lambda` nodes by name.
+        ASTPtr preprocessor_source_ast;
+
         if (apply_preprocessor)
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
@@ -696,11 +699,18 @@ private:
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
-                ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
+                if (apply_postprocessor)
+                {
+                    preprocessor_source_ast = preprocessor->getExpressionAST(new_children[0]->result_name);
+                }
+                else
+                {
+                    ActionsDAG::NodeRawConstPtrs merged_outputs;
+                    actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
 
-                chassert(merged_outputs.size() == 1);
-                new_children[0] = merged_outputs.front();
+                    chassert(merged_outputs.size() == 1);
+                    new_children[0] = merged_outputs.front();
+                }
 
                 /// Needles in array are not processed and passed as is.
                 if (needles_field.getType() == Field::Types::String)
@@ -751,7 +761,7 @@ private:
             const auto & haystack_name = new_children[0]->result_name;
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
+                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
