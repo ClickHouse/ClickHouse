@@ -70,9 +70,6 @@ public:
   virtual void enterLabelMatcher(PromQLParser::LabelMatcherContext *ctx) = 0;
   virtual void exitLabelMatcher(PromQLParser::LabelMatcherContext *ctx) = 0;
 
-  virtual void enterSelectorIdentifier(PromQLParser::SelectorIdentifierContext *ctx) = 0;
-  virtual void exitSelectorIdentifier(PromQLParser::SelectorIdentifierContext *ctx) = 0;
-
   virtual void enterLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext *ctx) = 0;
   virtual void exitLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext *ctx) = 0;
 
