@@ -3771,7 +3771,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         return false;
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
-    /// to prefix_size, which appends null ASTPtr children when the prefix is longer than the key.
+    /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
         return false;
 
