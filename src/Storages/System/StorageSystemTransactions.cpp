@@ -64,6 +64,18 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "transactions",
     .description = R"DOCS_MD(
 Contains a list of transactions and their state.
+
+<Info>
+**Availability**
+
+`system.transactions` is created only when the `allow_experimental_transactions` server configuration option is enabled. By default, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. Enable it in the server configuration with:
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+</Info>
 )DOCS_MD",
     .get_columns = StorageSystemTransactions::getColumnsDescription)
 
