@@ -416,6 +416,8 @@ struct HashMethodSerialized
     /// caller has had its chance to ask for the chunk.
     bool layout_decided = false;
 
+    size_t avg_row_size = 0;
+
     /// Whether the block's keys are laid out a chunk at a time, one key column at a time, rather
     /// than a row at a time. Only a caller that goes through the rows in order may turn it on.
     bool can_use_key_region = false;
@@ -520,13 +522,13 @@ struct HashMethodSerialized
             /// stays in cache between being written and being probed, so it is worth taking at any
             /// width - measured from 40 to 1024 bytes per row, on Graviton4, Zen5 and Granite
             /// Rapids, at one thread and at 32, it never costs anything and is worth up to 3x.
+            avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
             can_use_key_region = total_size != 0;
 
             /// Any other caller - the adaptive aggregator visits a block's rows grouped by bucket -
             /// can only take the whole block at once, which is written to memory and read back
             /// rather than kept in cache. That pays while a row is narrow: 44% at 56 bytes per row,
             /// against 22-40% lost at 192 and beyond once threads compete for bandwidth.
-            const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
             whole_block_allowed = avg_row_size < 128;
         }
 
@@ -579,6 +581,25 @@ struct HashMethodSerialized
 
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    /// `table_bytes` is what the table the rows are about to be probed against occupies now.
+    ///
+    /// Laying the keys out pays for itself as soon as the probe misses, at any width: from 13
+    /// thousand keys on it is worth 20-50% out to 1024 bytes per row. Against a table small enough
+    /// to stay in cache it buys only the batch serialization, and writing a wide row out and reading
+    /// it back costs more than that once a row grows past about 500 bytes - measured at a thousand
+    /// keys on Zen5 and Granite Rapids, one to eight threads, the layout still gains at 464 bytes
+    /// per row, breaks even at 528 and is worth -2 to -30% to skip at 656 and beyond. Both bounds
+    /// have to hold before it is worth skipping.
+    void enableKeyRegion(size_t table_bytes)
+    {
+        static constexpr size_t cache_resident_table_max_bytes = 256 * 1024;
+        static constexpr size_t cache_resident_max_row_size = 512;
+        if (table_bytes <= cache_resident_table_max_bytes && avg_row_size >= cache_resident_max_row_size)
+            return;
+
+        enableKeyRegion();
+    }
 
     void enableKeyRegion()
     {

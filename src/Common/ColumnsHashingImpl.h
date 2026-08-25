@@ -392,10 +392,11 @@ public:
         }
     }
 
-    /// Called by a loop that goes through the rows of a block in order. A method that can prepare
-    /// their keys ahead of the loop overrides this to turn that on - it is off by default, because a
-    /// caller that visits rows in any other order would make it prepare them over and over.
-    void enableKeyRegion() {}
+    /// Called by a loop that goes through the rows of a block in order, with the size of the table
+    /// those rows are about to be probed against. A method that can prepare their keys ahead of the
+    /// loop overrides this to turn that on - it is off by default, because a caller that visits rows
+    /// in any other order would make it prepare them over and over.
+    void enableKeyRegion(size_t /*table_bytes*/) {}
 
     /// Called for every row that goes through `emplaceKey`. A method that materialises the block's
     /// keys upfront overrides this to learn which row ended up owning which cell. `key` is the
