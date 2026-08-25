@@ -1834,7 +1834,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Cannot ATTACH VIEW {}.{}, it is a Table",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
-        /// `isView()` also covers Window Views, which the view parser cannot spell, so the stub would
+        /// `isView` also covers Window Views, which the view parser cannot spell, so the stub would
         /// silently take the stored kind.
         if (create.isView() && create_query.is_window_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
