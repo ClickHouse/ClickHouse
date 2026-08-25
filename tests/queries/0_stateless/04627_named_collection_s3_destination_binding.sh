@@ -12,8 +12,59 @@ OTHER="http://127.0.0.1:11112/test"
 c() { echo "${CLICKHOUSE_TEST_UNIQUE_NAME}_$1"; }
 
 DATA="${CLICKHOUSE_TEST_UNIQUE_NAME}_row.csv"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION
-    s3('$OWN/$DATA', 'test', 'testtest', 'CSV', 'a String') SELECT 'payload'"
+
+# Every fixture whose position in the file does not matter, in one invocation. Each assertion arm keeps
+# an invocation of its own: an arm's stdout is its oracle, and a multi-statement query stops at the
+# first error, which is what the refusal arms are reading.
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO FUNCTION s3('$OWN/$DATA', 'test', 'testtest', 'CSV', 'a String') SELECT 'payload';
+    INSERT INTO FUNCTION
+        s3('$OWN/${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', 'test', 'testtest', 'CSV', 'a UInt8') SELECT 1;
+    DROP NAMED COLLECTION IF EXISTS $(c keys);
+    CREATE NAMED COLLECTION $(c keys) AS
+        url = '$OWN/', access_key_id = 'test', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c dflt);
+    CREATE NAMED COLLECTION $(c dflt) AS
+        url = 'http://localhost/', access_key_id = 'test', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c anon);
+    CREATE NAMED COLLECTION $(c anon) AS url = '$OTHER/';
+    DROP NAMED COLLECTION IF EXISTS $(c open);
+    CREATE NAMED COLLECTION $(c open) AS
+        url = '$OTHER/' OVERRIDABLE, access_key_id = 'test', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c otherkeys);
+    CREATE NAMED COLLECTION $(c otherkeys) AS
+        url = '$OTHER/', access_key_id = 'stored', secret_access_key = 'storedsecret';
+    DROP NAMED COLLECTION IF EXISTS $(c gcp);
+    CREATE NAMED COLLECTION $(c gcp) AS
+        url = '$OWN/', http_client = 'gcp_oauth',
+        google_adc_client_id = 'cid', google_adc_client_secret = 'csecret',
+        google_adc_refresh_token = 'rtoken';
+    DROP NAMED COLLECTION IF EXISTS $(c gcpnosign);
+    CREATE NAMED COLLECTION $(c gcpnosign) AS
+        url = '$OWN/', http_client = 'gcp_oauth', no_sign_request = 1,
+        google_adc_client_id = 'cid', google_adc_client_secret = 'csecret',
+        google_adc_refresh_token = 'rtoken';
+    DROP NAMED COLLECTION IF EXISTS $(c gcpkeys);
+    CREATE NAMED COLLECTION $(c gcpkeys) AS
+        url = '$OWN/', http_client = 'gcp_oauth',
+        access_key_id = 'test', secret_access_key = 'testtest',
+        google_adc_client_id = 'cid', google_adc_client_secret = 'csecret',
+        google_adc_refresh_token = 'rtoken';
+    DROP NAMED COLLECTION IF EXISTS $(c nosign);
+    CREATE NAMED COLLECTION $(c nosign) AS url = '$OTHER/',
+        access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest', no_sign_request = 1;
+    DROP NAMED COLLECTION IF EXISTS $(c signing);
+    CREATE NAMED COLLECTION $(c signing) AS url = '$OTHER/' OVERRIDABLE,
+        access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c keysonly);
+    CREATE NAMED COLLECTION $(c keysonly) AS access_key_id = 'test', secret_access_key = 'testtest';
+    DROP NAMED COLLECTION IF EXISTS $(c rel);
+    CREATE NAMED COLLECTION $(c rel) AS url = '${CLICKHOUSE_TEST_UNIQUE_NAME}.csv',
+        access_key_id = 'test', secret_access_key = 'testtest', format = 'CSV';
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t (a UInt8) ENGINE = Memory;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mem;
+    CREATE DATABASE ${CLICKHOUSE_DATABASE}_mem ENGINE = Memory"
 
 # For the refusal arms: the check either fires or it does not, and nothing downstream can produce this
 # message.
@@ -103,9 +154,6 @@ capture_must_not_leak() {
 }
 
 echo '--- credentialed collection, url moved to another origin'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c keys)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c keys) AS
-    url = '$OWN/', access_key_id = 'test', secret_access_key = 'testtest'"
 run "SELECT * FROM s3($(c keys), url = '$OTHER/x.csv', format = 'CSV', structure = 'a String')"
 
 echo '--- same origin, different path: still allowed'
@@ -122,31 +170,20 @@ echo '--- a url that writes no port compares against the scheme default'
 # `Poco::URI::getPort` substitutes the well-known port, so a stored `http://localhost/` authorises :80.
 # Nothing listens there, so the passing half asserts the request went out rather than a row coming back;
 # the retry cap keeps that from taking minutes.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c dflt)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c dflt) AS
-    url = 'http://localhost/', access_key_id = 'test', secret_access_key = 'testtest'"
 allowed_reaches_s3 "SELECT * FROM s3($(c dflt), url = 'http://localhost:80/x.csv', format = 'CSV',
     structure = 'a String') SETTINGS s3_retry_attempts = 1, max_execution_time = 25"
 run "SELECT * FROM s3($(c dflt), url = 'http://localhost:81/x.csv', format = 'CSV',
     structure = 'a String') SETTINGS s3_retry_attempts = 1, max_execution_time = 25"
 
 echo '--- credential-free collection keeps full override freedom'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c anon)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c anon) AS url = '$OTHER/'"
 # A credential-free collection reads anonymously, which this bucket refuses, so assert the request was
 # issued rather than a row returned.
 allowed_reaches_s3 "SELECT * FROM s3($(c anon), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
 
 echo '--- explicit OVERRIDABLE wins over the credential binding'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c open)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c open) AS
-    url = '$OTHER/' OVERRIDABLE, access_key_id = 'test', secret_access_key = 'testtest'"
 allowed_reads "SELECT * FROM s3($(c open), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
 
 echo '--- query replaces the whole key pair: the collection supplies nothing, so no binding'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c otherkeys)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c otherkeys) AS
-    url = '$OTHER/', access_key_id = 'stored', secret_access_key = 'storedsecret'"
 allowed_reads "SELECT * FROM s3($(c otherkeys), url = '$OWN/$DATA',
     access_key_id = 'test', secret_access_key = 'testtest', format = 'CSV', structure = 'a String')"
 
@@ -161,17 +198,9 @@ allowed_fails_with "role" "SELECT * FROM s3($(c keys), url = '$OTHER/x.csv',
     role_arn = 'arn:aws:iam::111111111111:role/r', format = 'CSV', structure = 'a String')"
 
 echo '--- gcp_oauth sends a bearer token, so its ADC secrets bind the destination too'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c gcp)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c gcp) AS
-    url = '$OWN/', http_client = 'gcp_oauth',
-    google_adc_client_id = 'cid', google_adc_client_secret = 'csecret', google_adc_refresh_token = 'rtoken'"
 run "SELECT * FROM s3($(c gcp), url = '$OTHER/x.csv', format = 'CSV', structure = 'a String')"
 
 echo '--- no_sign_request disables SigV4 only, the bearer token still goes out'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c gcpnosign)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c gcpnosign) AS
-    url = '$OWN/', http_client = 'gcp_oauth', no_sign_request = 1,
-    google_adc_client_id = 'cid', google_adc_client_secret = 'csecret', google_adc_refresh_token = 'rtoken'"
 run "SELECT * FROM s3($(c gcpnosign), url = '$OTHER/x.csv', format = 'CSV', structure = 'a String')"
 
 echo '--- partial ADC replacement keeps the binding'
@@ -179,19 +208,11 @@ run "SELECT * FROM s3($(c gcp), url = '$OTHER/x.csv',
     google_adc_client_id = 'other', format = 'CSV', structure = 'a String')"
 
 echo '--- under gcp_oauth the stored AWS keys are inert, so a complete ADC replacement releases'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c gcpkeys)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c gcpkeys) AS
-    url = '$OWN/', http_client = 'gcp_oauth',
-    access_key_id = 'test', secret_access_key = 'testtest',
-    google_adc_client_id = 'cid', google_adc_client_secret = 'csecret', google_adc_refresh_token = 'rtoken'"
 run "SELECT * FROM s3($(c gcpkeys), url = '$OTHER/x.csv',
     google_adc_client_id = 'own', google_adc_client_secret = 'ownsecret',
     google_adc_refresh_token = 'owntoken', format = 'CSV', structure = 'a String')"
 
 echo '--- no_sign_request with static keys: nothing signs, so the destination is not bound'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c nosign)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c nosign) AS
-    url = '$OTHER/', access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest', no_sign_request = 1"
 # Two path segments: `S3::URI` reads the first as the bucket, so a single-segment path leaves no key
 # and no request is ever issued.
 capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
@@ -200,16 +221,10 @@ capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
 echo '--- control: the same listener does see the key once SigV4 is on, so the arm above can fail'
 # Without this, "no key on the wire" would also be the reading for a listener nothing ever reaches.
 # `OVERRIDABLE` is what lets the destination move at all here; the credentials are otherwise identical.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c signing)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c signing) AS
-    url = '$OTHER/' OVERRIDABLE, access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest'"
 capture_must_not_leak AKIAIOSFODNN7EXAMPLE \
     "SELECT * FROM s3($(c signing), url = '__CAPTURE__/test/$DATA', format = 'CSV', structure = 'a String')"
 
 echo '--- a collection that stores no url authorises no destination for its keys'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c keysonly)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c keysonly) AS
-    access_key_id = 'test', secret_access_key = 'testtest'"
 run "SELECT * FROM s3($(c keysonly), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
 
 echo '--- the same rule reaches DatabaseS3, where an absent url means every table name is a full url'
@@ -231,8 +246,6 @@ echo '--- a JSON-AST payload cannot claim the definition came from stored metada
 # The replay exemption keys on `attach_short_syntax`, which no SQL syntax sets, so the `clickhouse_json`
 # dialect must not accept it as an input. An `ATTACH TABLE ... ENGINE =` form only reaches the check in a
 # `Memory`-engine database; `Atomic` rejects that shape upstream, which would measure nothing.
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mem"
-${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_mem ENGINE = Memory"
 FORGE_SQL="ATTACH TABLE ${CLICKHOUSE_DATABASE}_mem.forged (a String) ENGINE = S3($(c keys), url = '$OTHER/x.csv', format = 'CSV')"
 # TabSeparatedRaw: the default JSON envelope escapes the slashes, and the escaped payload then fails
 # upstream with `Host is empty in S3 URI` on both arms.
@@ -244,6 +257,15 @@ ${CLICKHOUSE_CLIENT} --enable_json_ast_dialect=1 --dialect=clickhouse_json --que
     | grep -qF "'attach_short_syntax' is not accepted" && echo refused || echo allowed
 echo "created $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}_mem' AND name = 'forged'")"
 
+echo '--- PARALLEL WITH runs its children internally, which must not read as a stored definition'
+# The replay exemption is what a fresh cross-origin ATTACH must not reach, and `internal` alone does not
+# separate them: a wrapped statement arrives internal and at mode ATTACH, exactly like the startup replay.
+# The second assertion is the load-bearing one - the refusal is reported before the database is created,
+# so an exemption that came back would leave the first line unchanged.
+run "ATTACH DATABASE ${CLICKHOUSE_DATABASE}_wrapped ENGINE = S3($(c keys), url = '$OTHER/')
+    PARALLEL WITH CREATE DATABASE ${CLICKHOUSE_DATABASE}_wrapsink ENGINE = Memory"
+echo "wrapped $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name = '${CLICKHOUSE_DATABASE}_wrapped'")"
+
 echo '--- filename cannot move the origin: an absolute value is rejected before any request'
 # `path::operator/` replaces the left operand when the right is absolute, so pin the rejection: were
 # `S3::URI` ever to accept such a value, the destination would move and this arm must be revisited.
@@ -254,37 +276,32 @@ for f in '//127.0.0.1:11112/test/x.csv' '/steal/x.csv'; do
 done
 
 echo '--- backups: BackupInfo does not go through findOverrideForbiddingKey, so the seam is its own'
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t; CREATE TABLE ${CLICKHOUSE_DATABASE}.t (a UInt8) ENGINE = Memory"
 run "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO S3($(c keys), url = '$OTHER/bk')"
 
 echo '--- DatabaseS3: getTableImpl rebuilds positional s3() args, so provenance is gone downstream'
 run "CREATE DATABASE ${CLICKHOUSE_DATABASE}_db ENGINE = S3($(c keys), url = '$OTHER/')"
 
 echo '--- a relative stored url declares no origin, so a materialized s3_base replay still attaches'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c rel)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c rel) AS
-    url = '${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', access_key_id = 'test', secret_access_key = 'testtest', format = 'CSV'"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION
-    s3('$OWN/${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', 'test', 'testtest', 'CSV', 'a UInt8') SELECT 1"
+# `s3_base` is set only for the CREATE, so the url the replay reads is the one materialized there.
 ${CLICKHOUSE_CLIENT} -q "SET s3_base = '$OWN/';
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.replay (a UInt8) ENGINE = S3($(c rel))"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.replay"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.replay"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.replay"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.replay;
+    ATTACH TABLE ${CLICKHOUSE_DATABASE}.replay;
+    SELECT count() FROM ${CLICKHOUSE_DATABASE}.replay"
 
 echo '--- a definition persisted before this rule loads with a warning instead of aborting startup'
 # Built with supported statements only: create the table while the collection has no credentials (so
 # the cross-origin override is allowed), then add them. That is the upgrade shape - a definition that
 # was legal when written and is not now - and for a table loaded at startup a refusal here is the
 # server failing to start rather than one unreadable table.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c later)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c later) AS url = '$OTHER/', format = 'CSV'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted;
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.persisted (a String) ENGINE = S3($(c later), url = '$OWN/$DATA')"
-${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c later)
-    SET access_key_id = 'test', secret_access_key = 'testtest'"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.persisted"
+${CLICKHOUSE_CLIENT} -q "
+    DROP NAMED COLLECTION IF EXISTS $(c later);
+    CREATE NAMED COLLECTION $(c later) AS url = '$OTHER/', format = 'CSV';
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.persisted (a String) ENGINE = S3($(c later), url = '$OWN/$DATA');
+    ALTER NAMED COLLECTION $(c later) SET access_key_id = 'test', secret_access_key = 'testtest';
+    DETACH TABLE ${CLICKHOUSE_DATABASE}.persisted"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.persisted" 2>&1 \
     | grep -qF "Override not allowed for 'url'" && echo "REFUSED" || echo "loaded"
 allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}.persisted"
@@ -297,8 +314,8 @@ echo '--- RESTORE replays the stored definition too, so it loads rather than fai
 # restore runs the stored CREATE at strictness SECONDARY_CREATE, which is neither FORCE_* nor a short
 # ATTACH, so `mode` alone does not mark it.
 BK="${CLICKHOUSE_TEST_UNIQUE_NAME}_bk"
-${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${CLICKHOUSE_DATABASE}.persisted TO Disk('backups', '$BK')" > /dev/null
-${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.persisted"
+${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${CLICKHOUSE_DATABASE}.persisted TO Disk('backups', '$BK');
+    DROP TABLE ${CLICKHOUSE_DATABASE}.persisted" > /dev/null
 allowed_fails_with RESTORED "RESTORE TABLE ${CLICKHOUSE_DATABASE}.persisted FROM Disk('backups', '$BK')"
 allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}.persisted"
 
@@ -308,20 +325,20 @@ run "SELECT * FROM s3($(c later), url = '$OWN/$DATA', format = 'CSV', structure 
 echo '--- the replay warning names the destination without disclosing a url credential'
 # A stored url may carry userinfo or a presigned signature, and the server log sits outside the
 # `SHOW_NAMED_COLLECTIONS_SECRETS` grant that reading the collection needs.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c userinfo)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c userinfo) AS
-    url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw@127.0.0.1:11112/test/', format = 'CSV'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked;
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.masked (a String) ENGINE = S3($(c userinfo), url = '$OWN/$DATA')"
-${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c userinfo)
-    SET access_key_id = 'test', secret_access_key = 'testtest'"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.masked"
+${CLICKHOUSE_CLIENT} -q "
+    DROP NAMED COLLECTION IF EXISTS $(c userinfo);
+    CREATE NAMED COLLECTION $(c userinfo) AS
+        url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw@127.0.0.1:11112/test/', format = 'CSV';
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.masked (a String) ENGINE = S3($(c userinfo), url = '$OWN/$DATA');
+    ALTER NAMED COLLECTION $(c userinfo) SET access_key_id = 'test', secret_access_key = 'testtest';
+    DETACH TABLE ${CLICKHOUSE_DATABASE}.masked"
 MASK_QID="${CLICKHOUSE_TEST_UNIQUE_NAME}_mask"
 ${CLICKHOUSE_CLIENT} --query_id "$MASK_QID" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.masked" > /dev/null 2>&1
 # Both assertions in one arm: a warning that vanished would otherwise read as a redaction. Scoped by
 # query_id and logger_name, so the probe query's own text is not what is being counted.
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log;
+    SELECT 'warning', count() >= 1 FROM system.text_log
     WHERE query_id = '$MASK_QID' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning';
     SELECT 'secret', count() FROM system.text_log
     WHERE query_id = '$MASK_QID' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
@@ -330,18 +347,18 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
 echo '--- and the destination it names is masked too, not only the origin it compares against'
 # The two sides of that message are redacted independently: the origin cannot hold a credential by
 # construction, the reported destination can, so each needs its own arm.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c effuserinfo)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c effuserinfo) AS url = '$OTHER/', format = 'CSV'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff;
+${CLICKHOUSE_CLIENT} -q "
+    DROP NAMED COLLECTION IF EXISTS $(c effuserinfo);
+    CREATE NAMED COLLECTION $(c effuserinfo) AS url = '$OTHER/', format = 'CSV';
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.maskedeff (a String)
-    ENGINE = S3($(c effuserinfo), url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw2@localhost:11111/test/$DATA')"
-${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c effuserinfo)
-    SET access_key_id = 'test', secret_access_key = 'testtest'"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.maskedeff"
+        ENGINE = S3($(c effuserinfo), url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw2@localhost:11111/test/$DATA');
+    ALTER NAMED COLLECTION $(c effuserinfo) SET access_key_id = 'test', secret_access_key = 'testtest';
+    DETACH TABLE ${CLICKHOUSE_DATABASE}.maskedeff"
 MASK_QID2="${CLICKHOUSE_TEST_UNIQUE_NAME}_maskeff"
 ${CLICKHOUSE_CLIENT} --query_id "$MASK_QID2" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.maskedeff" > /dev/null 2>&1
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log;
+    SELECT 'warning', count() >= 1 FROM system.text_log
     WHERE query_id = '$MASK_QID2' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning';
     SELECT 'secret', count() FROM system.text_log
     WHERE query_id = '$MASK_QID2' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
@@ -350,34 +367,50 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
 echo '--- a presigned signature in the destination is masked as well as userinfo'
 # `maskedForLog` runs two independent scans, and userinfo is the only one the arms above reach, so a
 # dropped presigned scan would leave them green.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c presigned)"
-${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c presigned) AS url = '$OTHER/', format = 'CSV'"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.presigned;
+${CLICKHOUSE_CLIENT} -q "
+    DROP NAMED COLLECTION IF EXISTS $(c presigned);
+    CREATE NAMED COLLECTION $(c presigned) AS url = '$OTHER/', format = 'CSV';
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.presigned;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.presigned (a String) ENGINE = S3($(c presigned),
-    url = '$OWN/$DATA?X-Amz-Signature=${CLICKHOUSE_TEST_UNIQUE_NAME}_sig&X-Amz-Credential=x')"
-${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c presigned)
-    SET access_key_id = 'test', secret_access_key = 'testtest'"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.presigned"
+        url = '$OWN/$DATA?X-Amz-Signature=${CLICKHOUSE_TEST_UNIQUE_NAME}_sig&X-Amz-Credential=x');
+    ALTER NAMED COLLECTION $(c presigned) SET access_key_id = 'test', secret_access_key = 'testtest';
+    DETACH TABLE ${CLICKHOUSE_DATABASE}.presigned"
 MASK_QID3="${CLICKHOUSE_TEST_UNIQUE_NAME}_maskpre"
 ${CLICKHOUSE_CLIENT} --query_id "$MASK_QID3" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.presigned" > /dev/null 2>&1
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log;
+    SELECT 'warning', count() >= 1 FROM system.text_log
     WHERE query_id = '$MASK_QID3' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning';
     SELECT 'secret', count() FROM system.text_log
     WHERE query_id = '$MASK_QID3' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
       AND position(message, '${CLICKHOUSE_TEST_UNIQUE_NAME}_sig') > 0"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.presigned"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.freshtbl"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.freshq"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mem"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_kodb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
-for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later userinfo effuserinfo dflt presigned; do
-    ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c $n)"
-done
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.presigned;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.freshtbl;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.freshq;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mem;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_kodb;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_wrapped;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_wrapsink;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t;
+    DROP NAMED COLLECTION IF EXISTS $(c keys);
+    DROP NAMED COLLECTION IF EXISTS $(c anon);
+    DROP NAMED COLLECTION IF EXISTS $(c open);
+    DROP NAMED COLLECTION IF EXISTS $(c otherkeys);
+    DROP NAMED COLLECTION IF EXISTS $(c gcp);
+    DROP NAMED COLLECTION IF EXISTS $(c gcpnosign);
+    DROP NAMED COLLECTION IF EXISTS $(c gcpkeys);
+    DROP NAMED COLLECTION IF EXISTS $(c nosign);
+    DROP NAMED COLLECTION IF EXISTS $(c signing);
+    DROP NAMED COLLECTION IF EXISTS $(c keysonly);
+    DROP NAMED COLLECTION IF EXISTS $(c rel);
+    DROP NAMED COLLECTION IF EXISTS $(c later);
+    DROP NAMED COLLECTION IF EXISTS $(c userinfo);
+    DROP NAMED COLLECTION IF EXISTS $(c effuserinfo);
+    DROP NAMED COLLECTION IF EXISTS $(c dflt);
+    DROP NAMED COLLECTION IF EXISTS $(c presigned)"

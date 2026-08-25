@@ -42,6 +42,9 @@ refused
 flagset 1
 refused
 created 0
+--- PARALLEL WITH runs its children internally, which must not read as a stored definition
+refused
+wrapped 0
 --- filename cannot move the origin: an absolute value is rejected before any request
 no-host
 no-host

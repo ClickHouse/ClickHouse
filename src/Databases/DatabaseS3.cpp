@@ -361,7 +361,9 @@ void registerDatabaseS3(DatabaseFactory & factory)
             /// `ATTACH DATABASE d` likewise replays a stored statement, while
             /// `ATTACH DATABASE d ENGINE = S3(...)` supplies a fresh definition. Note the field name differs
             /// by factory: databases read `args.create_query`, storages read `args.query`.
-            const bool is_metadata_replay = (args.internal && args.mode >= LoadingStrictnessLevel::ATTACH)
+            /// `args.internal` would not be enough: `PARALLEL WITH` runs a user's own statement internally
+            /// and at mode `ATTACH`, so on those two fields a fresh definition looks like the replay.
+            const bool is_metadata_replay = (args.loading_stored_metadata && args.mode >= LoadingStrictnessLevel::ATTACH)
                 || args.create_query.attach_short_syntax;
             config = DatabaseS3::parseArguments(engine_args, args.context, is_metadata_replay);
         }
