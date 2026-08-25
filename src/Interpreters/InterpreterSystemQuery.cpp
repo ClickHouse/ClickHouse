@@ -98,6 +98,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -2362,11 +2363,20 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
-    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
-    const auto deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(timeout);
-    while (std::chrono::steady_clock::now() < deadline)
+    const auto start = std::chrono::steady_clock::now();
+    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+    /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
+    /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
+    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
+    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
+    /// time the command out long before the configured limit.
+    while (true)
     {
+        if (max_execution_time_us != 0
+            && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count()
+                >= max_execution_time_us)
+            break;
+
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
