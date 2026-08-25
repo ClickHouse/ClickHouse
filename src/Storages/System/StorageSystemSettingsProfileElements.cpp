@@ -223,7 +223,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Describes the content of the settings profile:
 
-- Сonstraints.
+- Constraints.
 - Roles and users that the setting applies to.
 - Parent settings profiles.
 )DOCS_MD")
