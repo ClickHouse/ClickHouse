@@ -27,6 +27,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -720,7 +721,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {

@@ -38,9 +38,9 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
 
@@ -218,10 +218,6 @@ ASTPtr ASTCreateUserQuery::clone() const
         res->children.push_back(ast_clone);
     }
 
-    /// `global_valid_until` is a child too (the parser pushes it after the authentication methods);
-    /// without re-cloning it here the clone would keep a member pointer that is absent from
-    /// `children`, so `getTreeHash` and the `children`-based AST walks would silently lose the
-    /// `VALID UNTIL` clause of the clone.
     if (global_valid_until)
     {
         res->global_valid_until = global_valid_until->clone();
@@ -229,6 +225,11 @@ ASTPtr ASTCreateUserQuery::clone() const
     }
 
     return res;
+}
+
+void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &global_valid_until);
 }
 
 
@@ -257,6 +258,14 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (new_name)
         formatRenameTo(*new_name, ostr, format);
 
+    /// The global (user-level) VALID UNTIL/VALID FOR clause must be printed before the IDENTIFIED list:
+    /// the parser treats VALID UNTIL/VALID FOR as global only while no authentication method has been
+    /// parsed yet, and after an IDENTIFIED list the clause would bind to the last authentication method.
+    /// Formatting it first keeps the round-trip exact, which matters when the query text is re-parsed,
+    /// e.g. by the replicas of an ON CLUSTER DDL query.
+    if (global_valid_until)
+        formatValidUntil(*global_valid_until, global_valid_until_is_interval, ostr, format);
+
     if (!authentication_methods.empty())
     {
         if (add_identified_with)
@@ -265,9 +274,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
-
-    if (global_valid_until)
-        formatValidUntil(*global_valid_until, ostr, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);
@@ -358,7 +364,11 @@ void ASTCreateUserQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
         hash_state.update(*new_name);
 
     /// `authentication_methods` and `global_valid_until` are kept in `children` and are already
-    /// hashed by the base `IAST::updateTreeHashImpl`. Everything below is kept outside `children`.
+    /// hashed by the base `IAST::updateTreeHashImpl`, but the deadline expression alone cannot
+    /// distinguish `VALID UNTIL <timestamp>` from `VALID FOR <interval>`, so fold the flag too.
+    hash_state.update(global_valid_until_is_interval);
+
+    /// Everything below is kept outside `children`.
     /// Fold a presence flag before each optional member so that, for example, `CREATE USER u ROLE r`
     /// and `CREATE USER u GRANTEES r` (both a single `ASTRolesOrUsersSet`) cannot collide.
     hash_state.update(static_cast<bool>(names));

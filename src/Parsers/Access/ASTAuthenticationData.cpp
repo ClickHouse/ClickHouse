@@ -16,11 +16,40 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
+}
+
+ASTPtr ASTAuthenticationData::clone() const
+{
+    auto res = make_intrusive<ASTAuthenticationData>(*this);
+    res->children.clear();
+    res->valid_until = nullptr;
+
+    for (const auto & child : children)
+    {
+        auto child_clone = child->clone();
+        if (valid_until && child.get() == valid_until.get())
+            res->valid_until = child_clone;
+        res->children.push_back(std::move(child_clone));
+    }
+
+    return res;
+}
+
+void ASTAuthenticationData::setValidUntil(ASTPtr ast)
+{
+    if (!ast)
+        return;
+    setOrReplace(valid_until, std::move(ast));
+}
+
+void ASTAuthenticationData::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &valid_until);
 }
 
 std::optional<String> ASTAuthenticationData::getPassword() const
@@ -38,7 +67,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
-    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && children.size() == 2)
+    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && numPayloadChildren() == 2)
     {
         if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
@@ -69,9 +98,10 @@ void ASTAuthenticationData::updateTreeHashImpl(SipHash & hash_state, bool ignore
     if (ssl_cert_subject_type)
         hash_state.update(*ssl_cert_subject_type);
 
-    hash_state.update(static_cast<bool>(valid_until));
-    if (valid_until)
-        valid_until->updateTreeHash(hash_state, ignore_aliases);
+    /// `valid_until` is registered in `children` (see `setValidUntil`), so the base hash already
+    /// covers the deadline expression; fold the flag that distinguishes `VALID UNTIL <timestamp>`
+    /// from `VALID FOR <interval>` - the expression child alone cannot.
+    hash_state.update(valid_until_is_interval);
 }
 
 void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
@@ -83,7 +113,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
         if (valid_until)
         {
-            formatValidUntil(*valid_until, ostr, settings);
+            formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
         }
 
         return;
@@ -116,7 +146,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     salt = true;
                 break;
             }
@@ -127,7 +157,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     salt = true;
                 break;
             }
@@ -154,7 +184,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::KERBEROS:
             {
-                if (!children.empty())
+                if (numPayloadChildren() != 0)
                 {
                     prefix = "REALM";
                     parameter = true;
@@ -186,7 +216,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             {
                 prefix = "SERVER";
                 parameter = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     scheme = true;
                 break;
             }
@@ -244,11 +274,11 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
     {
         ostr << " ";
         bool need_comma = false;
-        for (const auto & child : children)
+        for (size_t i = 0; i < numPayloadChildren(); ++i)
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            child->format(ostr, settings);
+            children[i]->format(ostr, settings);
         }
     }
 
@@ -260,7 +290,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (valid_until)
     {
-        formatValidUntil(*valid_until, ostr, settings);
+        formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
     }
 
 }
