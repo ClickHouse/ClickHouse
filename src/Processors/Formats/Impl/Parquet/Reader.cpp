@@ -217,7 +217,7 @@ void Reader::init(const ReadOptions & options_, const Block & sample_block_, For
     format_filter_info = format_filter_info_;
 }
 
-parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
+parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size)
 {
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
@@ -231,7 +231,6 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
     /// footer - FileMetaData for wider range of layouts - in one read. A non-zero
     /// `footer_read_size` overrides this adaptive size with a fixed read size.
-    size_t footer_read_size = options.format.parquet.footer_read_size;
     if (footer_read_size == 0)
         footer_read_size = std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
     /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
