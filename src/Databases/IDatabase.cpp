@@ -278,4 +278,16 @@ DiskPtr IDatabase::getDisk() const
 {
     return Context::getGlobalContextInstance()->getDatabaseDisk();
 }
+
+void handleCannotListTables(const IDatabase & database, UnavailableDatabasePolicy policy)
+{
+    const auto level = database.toleratedListTablesFailureLogLevel();
+    if (!level && policy == UnavailableDatabasePolicy::SkipIfUnreachable)
+        throw;
+
+    tryLogCurrentException(
+        "ListTables",
+        fmt::format("Cannot list the tables of database {}, skipping it", backQuoteIfNeed(database.getDatabaseName())),
+        level.value_or(LogsLevel::error));
+}
 }

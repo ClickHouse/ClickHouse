@@ -177,6 +177,17 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
 }
 
 
+std::optional<LogsLevel> DatabasePostgreSQL::toleratedListTablesFailureLogLevel() const
+{
+    /// The classifier returns `warning` exactly for a tolerated connection failure to the remote,
+    /// and `error` for anything else - which must not be hidden behind a skip.
+    const auto level = toleratedConnectionFailureLogLevel();
+    if (level == LogsLevel::warning)
+        return level;
+    return {};
+}
+
+
 bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 {
     if (table_name.contains('\'') || table_name.contains('\\'))

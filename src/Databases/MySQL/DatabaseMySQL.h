@@ -65,6 +65,16 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
+    std::optional<LogsLevel> toleratedListTablesFailureLogLevel() const override
+    {
+        /// The classifier returns `warning` exactly for a tolerated connection failure to the
+        /// remote, and `error` for anything else - which must not be hidden behind a skip.
+        const auto level = mysqlToleratedConnectionFailureLogLevel();
+        if (level == LogsLevel::warning)
+            return level;
+        return {};
+    }
+
     bool isTableExist(const String & name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;

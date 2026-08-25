@@ -2448,7 +2448,20 @@ VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
         return {};
     if (database->isRemoteDatabase() && context && !context->getSettingsRef()[Setting::show_remote_databases_in_system_tables])
         return {};
-    auto names = database->getAllTableNames(context);
+
+    /// A hint must never change the error the user sees, so a database that cannot list its tables
+    /// (an unreachable `MySQL` / `PostgreSQL` remote) only costs its own suggestions. Otherwise a
+    /// mere typo answers with the connection failure instead of `UNKNOWN_TABLE`.
+    VectorWithMemoryTracking<String> names;
+    try
+    {
+        names = database->getAllTableNames(context);
+    }
+    catch (...)
+    {
+        handleCannotListTables(*database, UnavailableDatabasePolicy::AlwaysSkip);
+        return {};
+    }
 
     /// Filter out names the user cannot `SHOW`, otherwise the hint can leak the existence of
     /// tables (e.g. for the cross-database hint search in `getExtendedHintForTable`).

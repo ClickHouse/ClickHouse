@@ -194,7 +194,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 
 namespace detail
 {
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
+FilteredDatabases getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -210,14 +210,18 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
         column->insert(database_name);
     }
 
+    const size_t total_databases = column->size();
     Block block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database")};
     VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
-    return block.getByPosition(0).column;
+
+    ColumnPtr filtered = block.getByPosition(0).column;
+    return {filtered, filtered->size() < total_databases};
 }
 
 ColumnPtr getFilteredTables(
-    const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, const bool is_detached)
+    const ActionsDAG::Node * predicate, const FilteredDatabases & filtered_databases, ContextPtr context, const bool is_detached)
 {
+    const ColumnPtr & filtered_databases_column = filtered_databases.column;
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
@@ -262,6 +266,8 @@ ColumnPtr getFilteredTables(
 
         if (is_detached)
         {
+            /// Outside the tolerance below: a database that does not implement this throws
+            /// NOT_IMPLEMENTED, which is structural and must not be swallowed.
             auto table_it = database->getDetachedTablesIterator(context, {}, false);
             for (; table_it->isValid(); table_it->next())
             {
@@ -269,8 +275,11 @@ ColumnPtr getFilteredTables(
                 if (uuid_column)
                     uuid_column->insert(table_it->uuid());
             }
+            continue;
         }
-        else
+
+        /// Listing the tables of one database can fail; see `handleCannotListTables`.
+        try
         {
             if (engine_column || uuid_column)
             {
@@ -304,6 +313,12 @@ ColumnPtr getFilteredTables(
                     table_column->insert(table_detail.name);
                 }
             }
+        }
+        catch (...)
+        {
+            if (filtered_databases.narrowed_by_query)
+                throw;
+            handleCannotListTables(*database, UnavailableDatabasePolicy::SkipIfUnreachable);
         }
     }
 
@@ -430,6 +445,7 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
+        bool databases_narrowed_by_query_,
         ColumnPtr tables_,
         ContextPtr context_,
         TablesFilter tables_filter_)
@@ -437,6 +453,7 @@ public:
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
+        , databases_narrowed_by_query(databases_narrowed_by_query_)
         , context(Context::createCopy(context_))
         , tables_filter(std::move(tables_filter_))
     {
@@ -508,10 +525,21 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
+        std::vector<LightWeightTableDetails> table_details;
+        try
+        {
+            table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
                                 /* filter_by_table_name */ {},
                                 /* skip_not_loaded */ false,
                                 tables_filter);
+        }
+        catch (...)
+        {
+            if (databases_narrowed_by_query)
+                throw;
+            handleCannotListTables(*databases_cursor.getDatabase(), UnavailableDatabasePolicy::SkipIfUnreachable);
+            return 0;
+        }
 
         size_t count = 0;
 
@@ -709,10 +737,23 @@ protected:
 
             const DatabasePtr & database = databases_cursor.getDatabase();
             if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
-                        /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false,
-                        tables_filter));
+            {
+                try
+                {
+                    databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
+                            /* filter_by_table_name */ {},
+                            /* skip_not_loaded */ false,
+                            tables_filter));
+                }
+                catch (...)
+                {
+                    if (databases_narrowed_by_query)
+                        throw;
+                    handleCannotListTables(*database, UnavailableDatabasePolicy::SkipIfUnreachable);
+                    databases_cursor.skipCurrentDatabase();
+                    continue;
+                }
+            }
 
             auto & tables_it = databases_cursor.getTablesIterator();
             for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
@@ -1147,6 +1188,7 @@ private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
+    bool databases_narrowed_by_query;
     NameSet tables;
     ContextPtr context;
     bool done = false;
@@ -1184,7 +1226,7 @@ private:
     std::vector<UInt8> columns_mask;
     size_t max_block_size;
 
-    ColumnPtr filtered_databases_column;
+    detail::FilteredDatabases filtered_databases;
     ColumnPtr filtered_tables_column;
     TablesFilter tables_filter;
 };
@@ -1218,8 +1260,8 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, false);
+    filtered_databases = detail::getFilteredDatabases(predicate, context);
+    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases, context, false);
 
     /// Extract the namespace hint from the `name` predicate so downstream
     /// databases (DataLake catalogs) can fetch only the relevant namespace
@@ -1235,7 +1277,14 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context, std::move(tables_filter)));
+        std::move(columns_mask),
+        getOutputHeader(),
+        max_block_size,
+        std::move(filtered_databases.column),
+        filtered_databases.narrowed_by_query,
+        std::move(filtered_tables_column),
+        context,
+        std::move(tables_filter)));
     pipeline.init(std::move(pipe));
 }
 

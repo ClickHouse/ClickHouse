@@ -241,8 +241,9 @@ void ReadFromSystemDetachedTables::applyFilters(ActionDAGNodes added_filter_node
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, true);
+    auto filtered_databases = detail::getFilteredDatabases(predicate, context);
+    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases, context, true);
+    filtered_databases_column = std::move(filtered_databases.column);
 }
 
 void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

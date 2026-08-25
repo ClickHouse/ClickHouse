@@ -12,9 +12,22 @@ class Context;
 namespace detail
 {
 
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context);
-ColumnPtr
-getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, bool is_detached);
+struct FilteredDatabases
+{
+    ColumnPtr column;
+    /// True when the query's predicate narrowed the database list, that is, the query named the
+    /// databases it is interested in rather than scanning every one of them. A scan that named no
+    /// database must not fail because a single database cannot list its tables (an unreachable
+    /// `MySQL` / `PostgreSQL` remote); a query that named one must report that failure.
+    bool narrowed_by_query = false;
+};
+
+FilteredDatabases getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context);
+ColumnPtr getFilteredTables(
+    const ActionsDAG::Node * predicate,
+    const FilteredDatabases & filtered_databases,
+    ContextPtr context,
+    bool is_detached);
 
 }
 
