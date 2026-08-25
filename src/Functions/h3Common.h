@@ -9,8 +9,22 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <base/types.h>
+
+#include <string_view>
+
 namespace DB
 {
+
+/// Converts a vertex of a geometry - longitude and latitude in degrees, as ClickHouse geometry types store
+/// them - to the H3 `LatLng` in radians, rejecting coordinates outside the domain H3 is defined on.
+///
+/// The check is not cosmetic. H3 itself only rejects coordinates that are not finite, and its polyfill
+/// algorithms derive the part of the grid they have to walk from the polygon's bounding box, so one
+/// out-of-domain vertex is enough to defeat that heuristic and make the walk cover the whole grid at the
+/// target resolution. The walk happens inside a single library call, which observes neither
+/// `max_execution_time` nor `KILL QUERY`.
+LatLng h3LatLngFromDegrees(Float64 longitude_degrees, Float64 latitude_degrees, std::string_view function_name);
 
 /// H3 functions that take a cell index don't behave well when given an invalid index.
 /// Let's be careful to never call h3 functions on invalid cell indices.

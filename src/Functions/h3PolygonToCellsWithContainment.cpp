@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/h3Common.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
@@ -42,21 +43,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point)
-{
-    Float64 lon = get<0>(degree_point) * M_PI / 180.0;
-    Float64 lat = get<1>(degree_point) * M_PI / 180.0;
-    return SphericalPointInRadians(lon, lat);
-}
-
-LatLng toH3LatLng(const SphericalPointInRadians & point)
-{
-    LatLng result;
-    result.lat = point.get<1>();
-    result.lng = point.get<0>();
-    return result;
-}
 
 [[noreturn]] void throwInvalidContainmentFlag(Int64 flags, std::string_view function_name)
 {
@@ -256,7 +242,7 @@ public:
                     VectorWithMemoryTracking<LatLng> exterior;
                     exterior.reserve(polygon.outer().size());
                     for (const auto & point : polygon.outer())
-                        exterior.push_back(toH3LatLng(toRadianPoint(point)));
+                        exterior.push_back(h3LatLngFromDegrees(get<0>(point), get<1>(point), function_name));
 
                     VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
                     holes.reserve(polygon.inners().size());
@@ -265,7 +251,7 @@ public:
                         VectorWithMemoryTracking<LatLng> hole;
                         hole.reserve(inner.size());
                         for (const auto & point : inner)
-                            hole.push_back(toH3LatLng(toRadianPoint(point)));
+                            hole.push_back(h3LatLngFromDegrees(get<0>(point), get<1>(point), function_name));
                         holes.emplace_back(std::move(hole));
                     }
 

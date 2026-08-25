@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/h3Common.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -34,27 +35,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
-}
-
-namespace
-{
-
-SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point)
-{
-    Float64 lon = get<0>(degree_point) * M_PI / 180.0;
-    Float64 lat = get<1>(degree_point) * M_PI / 180.0;
-
-    return SphericalPointInRadians(lon, lat);
-}
-
-LatLng toH3LatLng(const SphericalPointInRadians & point)
-{
-    LatLng result;
-    result.lat = point.get<1>();
-    result.lng = point.get<0>();
-    return result;
-}
-
 }
 
 /// Takes a geometry (Ring, Polygon or MultiPolygon) and returns an array of H3 hexagons that cover this geometry.
@@ -107,6 +87,7 @@ public:
                 arguments[1].column->getName(), getName());
 
         const auto & data_resolution = col_resolution->getData();
+        const String function_name = getName();
 
         auto dst_data_column = ColumnUInt64::create();
         auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
@@ -182,7 +163,7 @@ public:
                     VectorWithMemoryTracking<LatLng> exterior;
                     exterior.reserve(polygon.outer().size());
                     for (const auto & point : polygon.outer())
-                        exterior.push_back(toH3LatLng(toRadianPoint(point)));
+                        exterior.push_back(h3LatLngFromDegrees(get<0>(point), get<1>(point), function_name));
 
                     VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
                     holes.reserve(polygon.inners().size());
@@ -191,7 +172,7 @@ public:
                         VectorWithMemoryTracking<LatLng> hole;
                         hole.reserve(inner.size());
                         for (const auto & point : inner)
-                            hole.push_back(toH3LatLng(toRadianPoint(point)));
+                            hole.push_back(h3LatLngFromDegrees(get<0>(point), get<1>(point), function_name));
 
                         holes.emplace_back(std::move(hole));
                     }
