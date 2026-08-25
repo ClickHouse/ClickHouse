@@ -98,7 +98,7 @@ public:
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        PatchPartIndex patch_part_index,
         ContextPtr context,
         bool may_have_leftover = true);
 
@@ -137,7 +137,7 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
         UInt64 block_number,
         bool may_have_leftover);

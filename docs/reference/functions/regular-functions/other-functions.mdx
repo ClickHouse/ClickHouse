@@ -5467,6 +5467,10 @@ An empty map is returned if the server has no certificate, for example, when the
 See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     
 
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
 **Syntax**
 
 ```sql
