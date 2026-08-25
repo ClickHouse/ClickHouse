@@ -56,8 +56,8 @@ struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
 /// TCPHandlerPocoChunkedWriter is used in TCPHandler
-/// and it uses `sync` for explicit protocol delivery.
-/// Hide `next` because it is used internally by the buffer.
+/// and it uses `sync` api for explicit protocol delivery.
+/// Hide `next` api because it is used internally by the buffer.
 class TCPHandlerPocoChunkedWriter : public WriteBufferFromPocoSocketChunked
 {
 public:
