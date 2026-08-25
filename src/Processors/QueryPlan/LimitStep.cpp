@@ -135,6 +135,9 @@ enum LimitStepIdentityTag : UInt64
 
 void LimitStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
 {
+    /// Not on the wire (`markAsShardLimit` sets it after construction).
+    /// `QueryPipeline::initRowsBeforeLimit` special-cases a shard limit, so the rows it discards
+    /// still count toward the parent limit's `rows_before_limit_at_least`, a user-visible field.
     extras.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
 }
 

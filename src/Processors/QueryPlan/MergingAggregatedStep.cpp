@@ -324,6 +324,10 @@ enum MergingAggregatedStepIdentityTag : UInt64
 
 void MergingAggregatedStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
 {
+    /// Not on the wire (`deserialize` re-derives both from session settings): they are the
+    /// parallelism of the physical plan - how many streams `transformPipeline` resizes to, and the
+    /// thread count of its memory-efficient merge branch. `max_threads` covers `params.max_threads`
+    /// too: the two are equal at construction and re-resolved together in `transformPipeline`.
     extras.addVarUInt(MAX_THREADS_TAG, max_threads);
     extras.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
 

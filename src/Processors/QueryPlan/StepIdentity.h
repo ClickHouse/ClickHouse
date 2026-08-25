@@ -54,6 +54,8 @@ private:
 /// it is display-only. Caller guarantees `step.supportsCascadesIdentity()`.
 /// This is the only encoding writer - both the hash and the byte-exact comparison in
 /// Optimizations/Cascades/StepIdentity.h go through it so they cannot diverge.
+/// How to opt a step in, or classify a new field: Optimizations/Cascades/ARCHITECTURE.md,
+/// "Cross-Group Expression Identity".
 void writeCascadesIdentityEncoding(const IQueryPlanStep & step, WriteBuffer & out);
 
 }

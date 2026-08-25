@@ -6688,11 +6688,9 @@ bool ReadFromMergeTree::supportsCascadesIdentity() const
         return false;
 
     /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. Check every DAG the encoding
-    /// writes, not only the step-level filter that `hasCorrelatedExpressions()` looks at. This is not
-    /// exhaustive: `hasCorrelatedColumns` is non-recursive, so a `PLACEHOLDER` inside a
-    /// `FunctionCapture` sub-DAG escapes it, and `serialize` has other throw paths (duplicate nodes,
-    /// unexpected constant columns) shared with the distributed wire path - pre-existing gaps, to be
-    /// tracked upstream.
+    /// writes, not only the step-level filter that `hasCorrelatedExpressions()` looks at. These checks
+    /// are not exhaustive - see the residual gap in Optimizations/Cascades/ARCHITECTURE.md,
+    /// "Cross-Group Expression Identity".
     if (hasCorrelatedExpressions())
         return false;
     if (query_info.filter_actions_dag && query_info.filter_actions_dag->hasCorrelatedColumns())

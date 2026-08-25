@@ -814,7 +814,9 @@ void SortingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) 
     extras.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
     extras.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
 
-    /// Passed to the final `MergingSortedTransform` on both serializable branches.
+    /// Passed to the final `MergingSortedTransform` on both serializable branches, where it decides
+    /// whether exhausted-but-unneeded inputs are still drained. Not derivable from `type`: only the
+    /// `MergingSorted` constructor sets it, but `convertToFinishSorting` can convert that instance.
     extras.addBool(ALWAYS_READ_TILL_END_TAG, always_read_till_end);
 
     /// On the wire only for `FinishSorting`, but `fullSort` reads it too (it adds a

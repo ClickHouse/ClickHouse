@@ -107,96 +107,18 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity. Field audit of every member of `JoinStepLogical` and
-    /// `IQueryPlanStep`. Reachability is checked against `buildPhysicalJoin`, which is what a logical
-    /// join is turned into (this step has no `transformPipeline`; `updatePipeline` throws), and against
-    /// the optimizer passes that test the step directly.
-    ///
-    /// Own fields:
-    ///  - `expression_actions` - on the wire: `serialize` writes the whole `ActionsDAG`. Its
-    ///    `expression_sources` companion map is derived - `deserialize` rebuilds it from the DAG's
-    ///    inputs and the two input headers, and `swapInputs` / `resetNodeSources` keep the two in
-    ///    step; the non-input entries are lazily folded from the children.
-    ///  - `join_operator` - `kind`, `strictness`, `locality`, `expression` and `residual_filter` are on
-    ///    the wire (`JoinOperator::serialize` writes the enums and the two node lists as DAG node
-    ///    ids). `shared_runtime_filter_descriptors` is **extras**: nothing serializes it, and the
-    ///    `joinRuntimeFilter` pass sets it so that `HashJoin` publishes those shared runtime filters -
-    ///    the readers of those filters prune rows.
-    ///  - `actions_after_join` - on the wire (`serialize` writes it as a DAG node id list).
-    ///  - `join_settings` - on the wire (`JoinSettings::updatePlanSettings`) except four members:
-    ///     - `join_analyze_mode` - **extras**. `updatePlanSettings` does not write it at all, and
-    ///       `MergeJoinTransform` and `MatchedRowsStats` branch on it. In practice every construction
-    ///       site takes it from the query context, so it is uniform within a plan; encoded anyway
-    ///       rather than relying on that.
-    ///     - `max_block_size`, `temporary_files_codec`, `temporary_files_buffer_size` - **extras**.
-    ///       `JoinSettings::updatePlanSettings` does assign all three, but `serializeSettings` runs it
-    ///       first and `sorting_settings.updatePlanSettings` second, and
-    ///       `SortingStep::Settings::updatePlanSettings` assigns the same three plan-setting names.
-    ///       `QueryPlanSerializationSettings` is a keyed map, so the later write wins: only the
-    ///       sorting values reach the wire and the join's three are dropped (which is also why
-    ///       `deserialize` reconstructs `JoinSettings` from the sorting values). Encoded fail-closed:
-    ///       the join algorithms read `max_block_size` and the two temporary-file settings when they
-    ///       spill, nothing forces the two settings structs to agree, and per-query uniformity is a
-    ///       property of today's construction sites rather than an invariant. Note that the dropped
-    ///       `join_settings.temporary_files_buffer_size` is still *validated* on assignment, which is
-    ///       why `supportsCascadesIdentity()` below has to check it for zero.
-    ///  - `sorting_settings` - on the wire the same way `SortingStep` has it
-    ///    (`Settings::updatePlanSettings`), except: `max_bytes_in_query_before_external_sort`, derived
-    ///    from the wire-covered ratio and the machine's memory, excluded; and
-    ///    `read_in_order_use_buffering` / `read_in_order_use_virtual_row_per_block`, which are
-    ///    **extras** because `updatePlanSettings` writes neither and these settings are handed to the
-    ///    sorting steps the physical join builds.
-    ///  - `optimized` - **extras**. Load-bearing: it is what `optimizeJoin` tests to decide whether a
-    ///    join may be reordered, and correlated-subquery decorrelation pins the layout of its result
-    ///    join through it (see the comment in `clone`) because only that layout guarantees the
-    ///    in-memory buffer of the common subplan is fully written before it is read.
-    ///  - `result_rows_estimation` - **extras**. Not just display: the Cascades
-    ///    `StatisticsDerivation` prefers it over its own derivation, so it feeds the cost model, and
-    ///    `optimizeJoin` reuses it as the statistics of an already-optimized sub-join.
-    ///  - `result_column_stats` - **extras**, for the same reason (`optimizeJoin` reads it next to
-    ///    `result_rows_estimation`). Encoded sorted by column name, since the map's own iteration
-    ///    order is not part of its value.
-    ///  - `imprecise_estimate` - **extras**, read together with the two above by `optimizeJoin`.
-    ///    Follow-up for the three estimation fields above: they are cost-only, and they are in the
-    ///    extras fail-closed. Once a join-rebuild path that clears estimates lands (the feature
-    ///    branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), they must be revisited -
-    ///    otherwise a rebuilt join will never deduplicate against an ingested one.
-    ///  - `right_hash_table_cache_key` - **extras**. Read by `buildPhysicalJoin` (it becomes the
-    ///    `JoinAlgorithmParams` hash-table key and the `StatsCollectingParams` key that seeds the
-    ///    right-side size estimate) and by `joinRuntimeFilter`.
-    ///  - `left_relation`, `right_relation` (`RelationEstimateInfo`) - `estimated_rows` of both sides
-    ///    is **extras**: `buildPhysicalJoin` copies the right side's into
-    ///    `JoinAlgorithmParams::rhs_size_estimation`, which picks the join algorithm, and
-    ///    `joinRuntimeFilter` reads the left side's through `getInputRowsEstimation`. The other
-    ///    members - `name`, `source`, `imprecise_estimate`, `composite` - are excluded: they are read
-    ///    only by `displayName` / `getReadableRelationName`, i.e. the EXPLAIN label.
-    ///  - `table_stats_hint` - **extras**. `optimizeJoin` feeds it to the query-graph builder as
-    ///    `stats_hint`, which replaces the relation estimates with synthetic ones.
-    ///  - `join_algorithm_params` - excluded: a build-time cache. `buildPhysicalJoin` is its only
-    ///    writer and it fills it only when null, from `join_settings`, the optimization settings and
-    ///    the two extras above; `clone` does not copy it, so it is null on every step the optimizer
-    ///    sees.
-    ///  - `tmp_volume`, `tmp_data` - excluded: dead members. The class is `final` and no code in
-    ///    `JoinStepLogical.cpp` reads or writes either of them.
-    ///  - `disjunctions_optimization_applied` - **extras**. Not on the wire; `filterPushDown` refuses
-    ///    to push a filter through a join that has it set, so the two are not interchangeable.
-    ///
-    /// Inherited:
-    ///  - `output_header` - covered by the identity encoding itself.
-    ///  - `input_headers` - derived, excluded: the DAG on the wire carries its own inputs with names
-    ///    and types, `expression_sources` is rebuilt from them, and which side each input belongs to
-    ///    follows from the ordered child groups that `GroupExpression::globallyEqualTo` compares
-    ///    separately (`swapInputs` swaps the headers and the sources together).
-    ///  - `step_description`, `step_index`, `processors`, `dataflow_cache_updater` - display or
-    ///    runtime instrumentation only, excluded.
-    ///
-    /// `isSerializable()` is unconditionally `true`, but a correlated `PLACEHOLDER` node makes
-    /// `ActionsDAG::serialize` throw, so the predicate also requires `!hasCorrelatedExpressions()`.
-    /// The node-list writers cannot throw here: `getNodeToIdMap` maps every node of the DAG, and the
-    /// three lists hold pointers into that DAG. `serializeSettings` can throw as well: it assigns
-    /// three `NonZeroUInt64` plan settings (`grace_hash_join_initial_buckets`,
-    /// `grace_hash_join_max_buckets` and `temporary_files_buffer_size`, the last one from both
-    /// settings structs), and a zero value there throws `BAD_ARGUMENTS`.
+    /// Cascades cross-group identity; audit rules in
+    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
+    /// `optimized` is an extra: it pins the join layout that correlated-subquery decorrelation
+    /// depends on (see the comment in `clone`).
+    /// `serializeSettings` runs `sorting_settings.updatePlanSettings` after the join's, and the two
+    /// overlap in three plan-setting names, so those three `join_settings` members never reach the
+    /// wire and are extras. One of them is still validated on assignment, which is why the predicate
+    /// checks the `NonZeroUInt64` settings for zero.
+    /// `result_rows_estimation`, `result_column_stats` and `imprecise_estimate` are cost-only and
+    /// are in the extras fail-closed; revisit them once a join-rebuild path that clears estimates
+    /// lands (the feature branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), otherwise a
+    /// rebuilt join will never deduplicate against an ingested one.
     bool supportsCascadesIdentity() const override;
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

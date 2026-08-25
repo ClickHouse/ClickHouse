@@ -35,28 +35,11 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity. Field audit of every member of `ExpressionStep`,
-    /// `ITransformingStep` and `IQueryPlanStep`:
-    ///  - on the wire (written by `serialize`): `actions_dag`.
-    ///  - covered by the identity encoding itself: `output_header`.
-    ///  - extras: `prevent_input_removal` - not on the wire, and it blocks later input pruning,
-    ///    so two otherwise identical steps are not interchangeable.
-    ///  - derived: `input_headers` - the DAG carries its own inputs' names and types, and the
-    ///    pass-through columns are exactly the tail of `output_header` (see
-    ///    `ExpressionTransform::transformHeader`); only the order of the input columns is not
-    ///    recoverable, and it does not constrain execution because `ExpressionActions` resolves
-    ///    columns by name. `transform_traits` and `data_stream_traits` - computed from
-    ///    `actions_dag` by `getTraits` and never mutated for this step. `collect_processors` -
-    ///    always default for this step.
-    ///  - display or runtime instrumentation only: `step_description`, `step_index`,
-    ///    `processors`, `dataflow_cache_updater` (only ever set on source reading steps).
-    ///
-    /// `isSerializable()` is unconditionally `true`, but a correlated `PLACEHOLDER` node makes
-    /// `actions_dag.serialize` throw ("Unknown node type"), so the predicate also requires
-    /// `!hasCorrelatedExpressions()`. That check is not exhaustive: `hasCorrelatedColumns` is
-    /// non-recursive, so a `PLACEHOLDER` inside a `FunctionCapture` sub-DAG escapes it, and
-    /// `serialize` has other throw paths (duplicate nodes, unexpected constant columns) shared with
-    /// the distributed wire path - pre-existing gaps, to be tracked upstream.
+    /// Cascades cross-group identity; audit rules in
+    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
+    /// `prevent_input_removal` is the one non-wire field that constrains execution: it blocks the
+    /// input pruning a `FINAL` child depends on, so it is an extra. Correlated DAGs are
+    /// predicate-gated (`actions_dag.serialize` throws on a `PLACEHOLDER` node).
     bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 
