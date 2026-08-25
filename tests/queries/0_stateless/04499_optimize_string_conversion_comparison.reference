@@ -73,6 +73,13 @@ QUERY id: 0
 1	0	1
 -- Needles that could match the escaping of String elements are not destructured (and stay correct)
 1	0
+-- Invalid LIKE/NOT LIKE patterns keep raising their exception instead of being pruned to a constant
+-- Dynamic/Variant elements with embedded newline are not destructured either (and stay correct)
+1	1
+-- Tuples with Dynamic/Variant/JSON elements are never destructured (0 = no OR chain in the query tree)
+0
+0
+0
 -- Patterns that must not be destructured (0 = no OR chain in the query tree)
 0
 0
