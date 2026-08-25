@@ -1111,6 +1111,7 @@
         "reference/system-tables/query_condition_cache",
         "reference/system-tables/query_log",
         "reference/system-tables/query_metric_log",
+        "reference/system-tables/query_plan_log",
         "reference/system-tables/query_thread_log",
         "reference/system-tables/query_views_log",
         "reference/system-tables/quota_limits",
