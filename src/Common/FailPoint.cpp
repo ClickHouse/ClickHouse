@@ -138,6 +138,7 @@ static struct InitFiu
     REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    PAUSEABLE_ONCE(merge_tree_prefetched_read_pool_pause_before_create_readers) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
