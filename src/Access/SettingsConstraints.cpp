@@ -190,14 +190,11 @@ void SettingsConstraints::check(
     check(current_settings, profile_elements.add_settings, source);
     check(current_settings, profile_elements.modify_settings, source);
 
-    /// The checks above only see what the query writes, compared against the caller's own session. What
-    /// matters is what changes for the entity being altered, which is the diff of its effective settings.
-    auto changed = old_elements.findChangedSettings(profile_elements, *access_control);
-    for (const auto & change : changed.values)
-        check(current_settings, change, changed.sourceOf(change.name, source), /*is_known_change=*/true);
-
-    /// A change of the constraints alone carries no value, so only the tier can be checked.
-    for (const auto & setting_name : changed.constraints)
+    /// The checks above see only what the statement writes, and they compare it with the caller's own
+    /// settings, which is what decides the constraints and whether the setting may be set from there at
+    /// all. `allow_feature_tier` answers a different question - whether the entity's settings change at
+    /// all - so it is the only thing decided by the diff of the entity's effective settings.
+    for (const auto & setting_name : old_elements.findChangedSettings(profile_elements, *access_control))
     {
         if (auto tier_checker = getTierChecker(setting_name, settingGetTier(setting_name)))
             throw Exception(tier_checker->explain, tier_checker->code);
@@ -252,9 +249,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool is_known_change) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, is_known_change);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const
@@ -323,10 +320,10 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
 /// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
 /// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure, bool is_known_change = false)
+Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
 {
     Field current_value;
-    bool has_current_value = !is_known_change && current_settings.tryGet(change.name, current_value);
+    bool has_current_value = current_settings.tryGet(change.name, current_value);
 
     if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
         return {};
@@ -356,8 +353,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
-                                    bool ignore_unchanged_settings,
-                                    bool is_known_change) const
+                                    bool ignore_unchanged_settings) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -385,11 +381,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION, is_known_change);
+    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
     if (new_value.isNull())
         return false;
 
-    if (ignore_unchanged_settings && !is_known_change)
+    if (ignore_unchanged_settings)
     {
         Field current_value;
         if (current_settings.tryGet(change.name, current_value) && new_value == current_value)

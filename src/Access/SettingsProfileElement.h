@@ -5,10 +5,8 @@
 #include <Core/UUID.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingConstraintWritability.h>
-#include <Common/SettingSource.h>
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 
@@ -96,28 +94,12 @@ public:
     /// Applies changes from an "ALTER PROFILE (USER/ROLE)" command. Always normalizes the result.
     void applyChanges(const AlterSettingsProfileElements & changes);
 
-    struct EffectiveChanges
-    {
-        /// Settings whose effective value changes, each with the value it changes to (the compiled default
-        /// where the change reverts it).
-        SettingsChanges values;
-        /// Settings whose effective MIN/MAX/writability/disallowed values change. They carry no value.
-        Strings constraints;
-        /// Of the names above, those the entity gets through an attached profile. Their source is that
-        /// profile, which decides whether the setting may be set at all: `max_sessions_for_user` can be
-        /// set in a profile and not on a user.
-        std::unordered_set<String> from_profile;
-
-        SettingSource sourceOf(const String & setting_name, SettingSource entity_source) const
-        {
-            return from_profile.contains(setting_name) ? SettingSource::PROFILE : entity_source;
-        }
-    };
-
-    /// What `applyChanges(changes)` would change. Effective means alias-resolved and with inherited profiles
-    /// substituted, so how the change is written does not matter: an explicit value, an inherited profile, a
-    /// DROP and an omission in a full replacement all show up the same.
-    EffectiveChanges findChangedSettings(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const;
+    /// The settings whose effective value or constraints `applyChanges(changes)` would change. Effective
+    /// means alias-resolved and with inherited profiles substituted, so how the change is written does not
+    /// matter: an explicit value, an inherited profile, a DROP and an omission in a full replacement all
+    /// show up the same. Only names: what the values may be is decided against the caller's own settings,
+    /// by the checks over the elements the statement writes.
+    Strings findChangedSettings(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const;
 
     bool isBackupAllowed() const;
     static bool isAllowBackupSetting(const String & setting_name);

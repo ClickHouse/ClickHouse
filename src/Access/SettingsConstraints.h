@@ -79,9 +79,8 @@ public:
 
     void merge(const SettingsConstraints & other);
 
-    /// Checks whether `change` violates these constraints and throws an exception if so. Set `is_known_change`
-    /// when the change is already known to be one, so that it is checked even if it matches `current_settings`.
-    void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool is_known_change = false) const;
+    /// Checks whether `change` violates these constraints and throws an exception if so.
+    void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
@@ -179,8 +178,7 @@ private:
         SettingChange & change,
         ReactionOnViolation reaction,
         SettingSource source,
-        bool ignore_unchanged_settings = false,
-        bool is_known_change = false) const;
+        bool ignore_unchanged_settings = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
