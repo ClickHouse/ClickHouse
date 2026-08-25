@@ -2671,12 +2671,6 @@ void MergeTreeSettingsImpl::sanityCheck(
             background_pool_tasks);
     }
 
-    /// Both force merges of partitions that stopped receiving inserts, but through different paths.
-    /// `min_age_to_force_merge_on_partition_only` routes such a partition to the whole-partition
-    /// merge, which is the only one marked final - and so the only one that can run a
-    /// ReplacingMergeTree CLEANUP. `min_partition_age_to_force_merge_seconds` makes the regular
-    /// selector pick those partitions first, which would pre-empt that path and silently stop
-    /// cleanup from ever running. Refuse the combination instead of quietly disabling one of them.
     if ((*this)[MergeTreeSetting::min_partition_age_to_force_merge_seconds]
         && (*this)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
         && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds])

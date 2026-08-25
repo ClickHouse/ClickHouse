@@ -30,14 +30,9 @@ public:
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
         {
-            /// `allow()` checked the floor on the untrimmed range, so trimming here must stop at it,
-            /// otherwise the accepted range shrinks back below `min_parts_to_merge_at_once`.
-            const size_t min_parts_after_trim = std::max<size_t>(settings.min_parts_to_merge_at_once, 2);
-
             size_t size_delta = 0;
             size_t rows_delta = 0;
-            while (end >= begin + 3 && static_cast<size_t>(end - begin) > min_parts_after_trim
-                && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
+            while (end >= begin + 3 && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
             {
                 size_delta += (end - 1)->size;
                 rows_delta += (end - 1)->rows;
@@ -148,13 +143,13 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
+    double min_partition_age,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
     PartsIterator begin,
     PartsIterator end,
     const IMergeSelector::RangeFilter & range_filter,
-    bool force_merge_by_partition_age,
     const SimpleMergeSelector::Settings & settings)
 {
     if (range_filter && !range_filter({begin, end}))
@@ -163,14 +158,13 @@ bool allow(
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
 
+    if (settings.min_partition_age_to_force_merge && min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge))
+        return true;
+
     const size_t size = end - begin;
 
     if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
         return false;
-
-    /// Only the size-ratio heuristic below is bypassed; every other knob still applies on its own.
-    if (force_merge_by_partition_age)
-        return true;
 
     /// Map size to 0..1 using logarithmic scale
     /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
@@ -234,12 +228,9 @@ void selectWithinPartsRange(
     if (parts_count <= 1)
         return;
 
-    bool force_merge_by_partition_age = false;
+    double min_partition_age = 0;
     if (settings.min_partition_age_to_force_merge && settings.partitions_stats)
-    {
-        const auto & partition_stats = settings.partitions_stats->at(parts.front().info.getPartitionId());
-        force_merge_by_partition_age = partition_stats.min_age >= static_cast<time_t>(settings.min_partition_age_to_force_merge);
-    }
+        min_partition_age = static_cast<double>(settings.partitions_stats->at(parts.front().info.getPartitionId()).min_age);
 
     /// If the parts in the parts vector are sorted by block number,
     /// it may not be ideal to only select parts for merging from the first N ones.
@@ -325,13 +316,13 @@ void selectWithinPartsRange(
                     static_cast<double>(sum_size),
                     static_cast<double>(max_size),
                     static_cast<double>(min_age),
+                    min_partition_age,
                     static_cast<double>(parts_count),
                     min_size_to_lower_base_log,
                     max_size_to_lower_base_log,
                     range_begin,
                     range_end,
                     range_filter,
-                    force_merge_by_partition_age,
                     settings))
                 estimator.consider(
                     range_it,
