@@ -10,9 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is separate from the Memory one - a post-collecting task writing binary strings from Keeper
 # instead of a native block stream - so it needs its own arm.
 #
-# Expansion is a per-frame property, so a small table shows it. Every phase here costs one
-# Keeper round trip per row - insert, backup, restore, drop - so the row count alone sets the
-# runtime, and the ratio the oracle reads is the same at any of them.
+# Expansion is a per-frame property, so a small table shows it. Row count is what this test
+# costs: it is one Keeper node per row, and dropping the table walks all of them, so keep it
+# only as large as the ratio needs, which is any size at all.
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test SYNC;
