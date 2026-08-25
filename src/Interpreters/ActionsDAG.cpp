@@ -2914,46 +2914,40 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
         return {};
 
     const std::string name = array_join->result_name;
-    auto element_type = array_join->result_type;
 
-    /// after: clone, then replace the ARRAY_JOIN node with an input of the element type.
-    std::unordered_map<const Node *, const Node *> after_map;
-    ActionsDAG after = clone(after_map);
-    const auto * aj_after = after_map.at(array_join);
-    const auto & elem_input = after.addInput(name, element_type);
-    for (auto & node : after.nodes)
-        for (auto & child : node.children)
-            if (child == aj_after)
-                child = &elem_input;
-    for (auto & output : after.outputs)
-        if (output == aj_after)
-            output = &elem_input;
-    after.removeUnusedActions(/*allow_remove_inputs=*/true);
+    /// after: split puts the ARRAY_JOIN in `first`, so `second` is array-join-free and consumes the array
+    /// join result as an input named `name` (element type) - exactly the ArrayJoinStep output.
+    ActionsDAG after = split({array_join}).second;
 
-    /// The array join result must actually be used, otherwise there is nothing to lower.
-    bool elem_used = false;
-    for (const auto * input : after.inputs)
-        elem_used |= input == &elem_input;
-    if (!elem_used)
-        return {};
-
-    /// before: clone, output the array argument under `name` plus exactly the columns `after` consumes.
-    std::unordered_map<const Node *, const Node *> before_map;
-    ActionsDAG before = clone(before_map);
-    const auto * arg_before = before_map.at(array_join)->children.at(0);
+    /// before: splitting on the array argument leaves the ARRAY_JOIN (its parent) out of `first`, so
+    /// `before` is array-join-free; it computes the argument, which we output under `name` (array type).
+    const Node * arg = array_join->children.at(0);
+    auto before_split = split({arg}, /*create_split_nodes_mapping=*/true);
+    ActionsDAG before = std::move(before_split.first);
+    const Node * arg_before = before_split.split_nodes_mapping.at(arg);
 
     std::unordered_map<std::string_view, const Node *> before_inputs_by_name;
     for (const auto * input : before.inputs)
         before_inputs_by_name.emplace(input->result_name, input);
 
+    /// Output exactly what `after` consumes: the array under `name`, and a pass-through of every other input.
     NodeRawConstPtrs before_outputs;
     before_outputs.reserve(after.inputs.size());
     for (const auto * after_input : after.inputs)
     {
         if (after_input->result_name == name)
+        {
             before_outputs.push_back(arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name));
+        }
         else
-            before_outputs.push_back(before_inputs_by_name.at(after_input->result_name));
+        {
+            auto it = before_inputs_by_name.find(after_input->result_name);
+            const Node * in = it != before_inputs_by_name.end()
+                ? it->second
+                : &before.addInput(after_input->result_name, after_input->result_type);
+            before_inputs_by_name.emplace(after_input->result_name, in);
+            before_outputs.push_back(in);
+        }
     }
     before.getOutputs() = std::move(before_outputs);
     before.removeUnusedActions(/*allow_remove_inputs=*/false);

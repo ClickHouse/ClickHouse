@@ -29,4 +29,14 @@ SELECT countIf(explain LIKE '%ArrayJoin%') > 0 FROM (EXPLAIN SELECT arrayJoin(a)
 -- and the step 1 filter fusion then applies to the lowered step
 SELECT countIf(explain LIKE '%Element filter%') > 0 FROM (EXPLAIN actions = 1 SELECT arrayJoin(a) AS x FROM t_laj WHERE x = 'x' SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 
+-- #112241 headline: three independent arrayJoins, one per-array filter each. Each array is filtered before
+-- its expansion - every element filter fuses into its own lowered step.
+DROP TABLE IF EXISTS t_cart;
+CREATE TABLE t_cart (A Array(String), B Array(String), C Array(String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_cart VALUES (['a', 'X-A'], ['b', 'X-B'], ['c', 'X-C']), (['a'], ['b'], ['c']);
+SELECT (SELECT count() FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM t_cart WHERE a = 'X-A' AND b = 'X-B' AND c = 'X-C') SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT count() FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM t_cart WHERE a = 'X-A' AND b = 'X-B' AND c = 'X-C') SETTINGS query_plan_lower_array_join_function = 0);
+SELECT countIf(explain LIKE '%Element filter%') = 3 FROM (EXPLAIN actions = 1 SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM t_cart WHERE a = 'X-A' AND b = 'X-B' AND c = 'X-C' SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0, query_plan_merge_filters = 1);
+DROP TABLE t_cart;
+
 DROP TABLE t_laj;
