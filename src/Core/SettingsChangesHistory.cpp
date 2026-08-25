@@ -46,8 +46,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distinct_two_level_threshold", 0, 1000000, "New setting controlling when DistinctTransform converts its hash set to a two-level layout for parallel filter building. previous_value=0 disables the new two-level path so `compatibility` before 26.9 keeps the pre-existing single-level DISTINCT."},
             {"distinct_two_level_threshold_bytes", 0, 50000000, "New setting: byte-based threshold for converting the DistinctTransform hash set to a two-level layout, analogous to group_by_two_level_threshold_bytes. previous_value=0 disables the new two-level path so `compatibility` before 26.9 keeps the pre-existing single-level DISTINCT."},
             {"distinct_two_level_parallel_build_min_rows", 10000, 10000, "New setting: minimum chunk size for DistinctTransform to build the two-level filter in parallel across buckets. Inert under `compatibility` because the two-level path is already disabled by the threshold settings above."},
+            {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
+            {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
         });
-
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
