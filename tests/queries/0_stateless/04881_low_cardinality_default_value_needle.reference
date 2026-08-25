@@ -38,9 +38,12 @@ SELECT has(materialize(CAST([0, 5], 'Array(LowCardinality(UInt8))')), toUInt64(0
 -- so representability is decided by comparing the needle against its own cast image.
 SELECT has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(LowCardinality(IPv4))')), toUInt32(0)) AS lc, has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(IPv4)')), toUInt32(0)) AS oracle;
 1	1
--- A FixedString needle is padded to its own width and equality ignores that padding.
-SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc, length(arrayFilter(x -> x = CAST('', 'FixedString(4)'), materialize(CAST(['', 'xy'], 'Array(String)')))) AS oracle;
-1	1
+-- A FixedString needle is padded to its own width and equality ignores that padding. The plain-array
+-- arrayFilter oracle of the original test is dropped on 25.8: the vectorized `String = FixedString`
+-- comparison on this branch does not ignore the padding yet, so it reads 0 even though the
+-- constant-folded `'' = CAST('', 'FixedString(4)')` reads 1.
+SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc;
+1
 -- -0.0 and 0.0 are equal but a text format stores them apart, so either zero as a needle must match
 -- either spelling, and a count must see both. stored_bits is asserted in the same row: if it ever
 -- reads 0 the array no longer holds -0.0 and the arm is void.
