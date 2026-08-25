@@ -47,8 +47,13 @@ query_id="04741_${CLICKHOUSE_DATABASE}"
 
 # A small read buffer makes the marks read span several buffer fills, so a second fill exists for
 # the assertion below to be about cancellation rather than about the read simply having finished.
+#
+# query_plan_direct_read_from_text_index reads a text index in the query plan instead of through
+# MergeTreeIndexReader, so with it enabled this query never performs the marks read the test is
+# about. It is pinned off in every arm that has to reach the interruption point.
 $CLICKHOUSE_CLIENT --query_id "$query_id" \
     --max_read_buffer_size 500 \
+    --query_plan_direct_read_from_text_index 0 \
     --query "SELECT count() FROM t_marks_cancel WHERE hasToken(s, 'tok4242')" > /dev/null 2>&1 &
 query_pid=$!
 
@@ -125,6 +130,7 @@ $CLICKHOUSE_CLIENT --query_id "$exec_query_id" \
     --max_read_buffer_size 500 \
     --use_reader_executor 1 \
     --remote_filesystem_read_method read \
+    --query_plan_direct_read_from_text_index 0 \
     --query "SELECT count() FROM t_marks_cancel WHERE hasToken(s, 'tok4242')" > /dev/null 2>&1 &
 exec_query_pid=$!
 
