@@ -1734,8 +1734,15 @@ bool MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     if (position_map)
     {
         TokenToPositionListMap::LookupResult pos_it;
-        if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
-            position_map->emplace(key_holder, pos_it, inserted);
+        if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match
+            && TokenToPositionListMap::usesStringViewSubmap(token))
+        {
+            /// The NOT IN map is seeded from the filter set. For long keys, reuse its stable string for the
+            /// position map, otherwise a surviving token would be copied into the arena a second time.
+            auto filter_it = postprocessor_drop_filter->tokens.find(token);
+            chassert(filter_it != postprocessor_drop_filter->tokens.end());
+            position_map->emplace(std::string_view{*filter_it}, pos_it, inserted);
+        }
         else
             position_map->emplace(key_holder.key, pos_it, inserted);
         auto & positions_builder = pos_it->getMapped();

@@ -247,17 +247,19 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(message NOT IN ('fox', 'cat'), '', message), support_phrase_search = 1)
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(message NOT IN ('fox', 'cat', 'keepthisisalongtokenforpositions'), '', message), support_phrase_search = 1)
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS allow_experimental_text_index_phrase_search = 1;
 
+-- Keep a long token too, so the NOT IN path covers out-of-line string keys.
 INSERT INTO tab VALUES
     (1, 'fox junk cat'),
     (2, 'fox dog cat'),
     (3, 'fox red cat'),
     (4, 'fox dog bird'),
-    (5, 'cat fox')
+    (5, 'cat fox'),
+    (6, 'keepthisisalongtokenforpositions noise cat')
 SETTINGS log_comment = 'text_index_positions_fast_path_not_in';
 
 SYSTEM FLUSH LOGS query_log;
@@ -272,6 +274,8 @@ ORDER BY log_comment;
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions cat') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions cat') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 
