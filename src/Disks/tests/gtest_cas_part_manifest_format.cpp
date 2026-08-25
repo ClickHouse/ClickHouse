@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Common/Exception.h>
 #include <utility>
+#include <vector>
 
 using namespace DB::Cas;
 
@@ -68,7 +69,7 @@ TEST(CASFormatBattery, PartManifest)
         "{\"p\":\"a/b.bin\",\"pm\":\"blob\",\"ha\":\"ch128\",\"h\":\"00112233445566778899aabbccddeeff\",\"sz\":4096}\n"
         "{\"p\":\"c/small.txt\",\"pm\":\"inline\",\"il\":12}\n"
         "{\"n\":2}\n"
-        "==> c/small.txt il=12 <==\n"
+        "==> \"c/small.txt\" il=12 <==\n"
         "hello world!\n";
     runFormatBattery({FormatId::PartManifest,
         [&] { return sealObject(FormatId::PartManifest, encodePartManifest(m)); },
@@ -146,6 +147,56 @@ TEST(CASPartManifestFormat, InlineBytesWithEmbeddedSpecialCharsRoundTripByteFait
     ASSERT_EQ(got.entries.size(), 1u);
     EXPECT_EQ(got.entries[0].inline_bytes, m.entries[0].inline_bytes);
     EXPECT_EQ(got.entries[0].inline_bytes.size(), e.inline_bytes.size());
+}
+
+/// The path is written twice: escaped into the entry-record line, and -- before this fix -- raw into the
+/// payload-zone banner. Only a byte that breaks the banner's physical line framing actually corrupts the
+/// object, which today means LF alone; the rest of these cases pin the round trip so a future escaping
+/// change cannot quietly start mangling them.
+TEST(CASPartManifestFormat, InlineEntryPathSurvivesEveryEscapableByte)
+{
+    const std::vector<String> paths{
+        String("p\nq.proj/columns.txt"),   /// the reported reproducer: LF splits the banner line
+        String("a\rb.txt"),
+        String("tab\there.txt"),
+        String("quote\"and\\slash.txt"),
+        String("nul\0byte.txt", 12),       /// length-explicit, or the NUL is lost to the terminator
+    };
+    for (const String & path : paths)
+    {
+        SCOPED_TRACE(path);
+        PartManifest m;
+        m.ref = ManifestRef{17, 66, 7};
+        m.root_namespace_id = RootNamespace("00/ff@cas@");
+        ManifestEntry e;
+        e.path = path;
+        e.placement = EntryPlacement::Inline;
+        e.inline_bytes = "hello world!";
+        m.entries = {e};
+        m.payload_digest = computePayloadDigest(m);
+
+        const PartManifest got = decodePartManifest(encodePartManifest(m));
+        ASSERT_EQ(got.entries.size(), 1u);
+        EXPECT_EQ(got.entries[0].path, path);
+        EXPECT_EQ(got.entries[0].inline_bytes, "hello world!");
+    }
+}
+
+/// The banner quotes and escapes the path with the SAME writer the entry-record line uses. Pin the byte
+/// shape, so a future hand-rolled escaper here cannot silently diverge from the record line again.
+TEST(CASPartManifestFormat, InlineBannerCarriesTheEscapedPath)
+{
+    PartManifest m;
+    m.ref = ManifestRef{17, 66, 7};
+    m.root_namespace_id = RootNamespace("00/ff@cas@");
+    ManifestEntry e;
+    e.path = "p\nq.proj/c.txt";
+    e.placement = EntryPlacement::Inline;
+    e.inline_bytes = "x";
+    m.entries = {e};
+    m.payload_digest = computePayloadDigest(m);
+
+    EXPECT_NE(encodePartManifest(m).find("==> \"p\\nq.proj/c.txt\" il=1 <=="), String::npos);
 }
 
 TEST(CASPartManifestFormat, ByteDeterminism)

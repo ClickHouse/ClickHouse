@@ -84,7 +84,7 @@ A round is one pass of 18 named phases ending in exactly one `gc/state` `CAS`
 | 15 | `manifest_deletes` | Delete manifest bodies whose owner-removal minus-one edge the `CAS` in phase 13 just adopted |
 | 16 | `namespace_cleanup` | One bounded page of the perpetual namespace janitor, reclaiming dead-life debris |
 | 17 | `ref_object_cleanup` | Prune ref logs and snapshots once both fold coverage and a live snapshot make them safe to delete |
-| 18 | `orphan_sweep` | One cursor-paced page of the [orphan-manifest sweep](/antalya/cas/architecture/manifests-and-refs#orphan-sweep); wrapped so it can never fail the round |
+| 18 | `orphan_sweep` | Post-`CAS` exact-token deletion for the [orphan-manifest sweep](/antalya/cas/architecture/manifests-and-refs#orphan-sweep), after phase 13 adopted each candidate's exact blob-source retirements and the cursor. Planning retains, counts, logs, and advances past undecodable bodies without wedging later candidates; a decoded identity mismatch during planning or token ABA during deletion still fails the round with `CORRUPTED_DATA` |
 
 Phases 5 through 18 run only when phase 4 decides to fold. A `DEFER` verdict is not a bare no-op:
 it still runs one bounded namespace-janitor page with `suppress_destructive = true` — cursor

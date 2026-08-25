@@ -89,33 +89,65 @@ a live precommit would clamp `GC`'s fold barrier forever.
 
 ### The orphan-manifest sweep {#orphan-sweep}
 
-Runs as the last phase of the `GC` round, cursor-paced and budgeted, wrapped so it can never fail
-a round (`Gc/CasOrphanManifestSweep.cpp`). Eligibility comes **exclusively** from the durable
-watermark in the mount lease — there is no age threshold and no time-based grace period anywhere
-in this protocol. No mount lease for the `server_root_id` means no deletion authority means
-nothing is swept for that root.
+The cursor-paced, budgeted sweep has two stages (`Gc/CasOrphanManifestSweep.cpp`). During fold
+planning, it freezes candidates with exact `GET`s, opens and decodes their bodies, and derives the
+state changes needed to make deletion safe. Only after the round `CAS` adopts those changes does
+phase 18 perform physical deletion. Eligibility comes **exclusively** from the durable watermark
+in the mount lease — there is no age threshold and no time-based grace period anywhere in this
+protocol. No mount lease for the `server_root_id` means no deletion authority means nothing is
+swept for that root.
 
 ```mermaid
 flowchart TD
-    A["LIST one page of cas/manifests/<br/>budget: manifest_sweep_list_budget_keys"] --> B{"build-prefix eligible?<br/>durable watermark fact only"}
+    A["LIST one page of cas/manifests/<br/>freeze candidates with exact GET"] --> B{"build-prefix eligible?<br/>durable watermark fact only"}
     B -->|"epoch less than lease epoch"| ELIG["eligible, old-epoch debris"]
     B -->|"same epoch, min_active clears build_seq"| ELIG
     B -->|"no lease, or epoch ahead, or build may be live"| SKIP["skip"]
     ELIG --> C["protection view: committed manifests<br/>plus live precommits<br/>plus manifests with an unfolded minus-one"]
     C -->|"key protected"| SKIP2["skip"]
-    C -->|"not protected"| D["deleteExact key, token"]
-    D -->|Deleted| E["emit ManifestDelete audit event"]
-    D -->|"NotFound or TokenMismatch"| SKIP3["spared, a fresh owner reclaimed the key"]
-    E --> F["CAS gc/state with the advanced cursor"]
+    C -->|"not protected"| D{"open and decode<br/>frozen body"}
+    D -->|"cannot open or decode"| U["retain; skipped++ and undecodable++<br/>log exact key; advance decision cursor<br/>continue to later candidates"]
+    D -->|decoded| I{"body ref and namespace<br/>match key?"}
+    I -->|no| BAD["CORRUPTED_DATA<br/>fail-closed round error"]
+    I -->|yes| R["derive exact blob-source<br/>retirement records"]
+    R --> F["round CAS adopts retirements<br/>and advanced cursor"]
+    F --> X["phase 18: deleteExact<br/>key and frozen token"]
+    X -->|Deleted| E["emit ManifestDelete audit event"]
+    X -->|NotFound| NF["spared"]
+    X -->|"token ABA"| ABA["retain replacement;<br/>CORRUPTED_DATA round error"]
 ```
 
 The protection view is built from the **same complete replay** that writer recovery uses, and a
 namespace whose view fails to build is added to an errored set with **all** of its deletions
-skipped — an empty owner set is never substituted for a failed one. The sweep deletes only
-manifest bodies and emits no blob deltas, correct precisely because a pre-precommit body never
-contributed a `+1`. Contrast with the owner-removal path, which is ordered the other way: fold the
-`-1` edges, adopt the decrements in the round `CAS`, *then* delete the body — a crash there leaks
-a body to this sweep, never a dangle.
+skipped — an empty owner set is never substituted for a failed one. A body that cannot be opened
+or decoded is likewise retained: it increments both `skipped` and `undecodable`, advances the page
+decision cursor, logs the exact key, and does not prevent later candidates from being examined. It
+is not repaired or deleted, and remains visible to `ca-fsck` as an unreachable object. A decoded
+body whose ref or namespace does not match its key instead fails the round with `CORRUPTED_DATA`.
+
+For every legal nomination, the sweep derives exact source-retirement records for the body's blob
+entries. The fold places those retirements in the new generation, and the round `CAS` adopts both
+that generation and the advanced sweep cursor before any manifest body is deleted. This is the
+same adopt-before-delete safety ordering as owner removal; here the retirements come directly from
+the frozen body rather than from a ref-log minus-one. Phase 18 then calls `deleteExact` with the
+frozen token. Every outcome emits a `ManifestDelete` audit event: `Deleted` records a physical
+deletion, `NotFound` is spared, and a token ABA retains the replacement and fails the round with
+`CORRUPTED_DATA`.
+
+Operators can find rounds that retained undecodable bodies through
+`system.cas_gc_log` and the `phase_metrics['undecodable']` count on `Phase` rows for
+`orphan_sweep`:
+
+```sql
+SELECT event_time, round_id,
+       phase_metrics['skipped'] AS skipped,
+       phase_metrics['undecodable'] AS undecodable
+FROM system.cas_gc_log
+WHERE event_type = 'Phase'
+  AND phase = 'orphan_sweep'
+  AND phase_metrics['undecodable'] > 0
+ORDER BY event_time DESC;
+```
 
 ## Source edges: how a manifest makes blobs live {#source-edges}
 

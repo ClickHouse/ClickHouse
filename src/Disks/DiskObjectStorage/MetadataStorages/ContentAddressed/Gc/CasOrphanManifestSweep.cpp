@@ -875,9 +875,28 @@ ManifestSweepResult planManifestCursorPage(
             decided_through = listed.key;
             continue;
         }
-        const PartManifest body = decodePartManifest(openObject(FormatId::PartManifest, got->bytes));
+        std::optional<PartManifest> body;
+        try
+        {
+            body = decodePartManifest(openObject(FormatId::PartManifest, got->bytes));
+        }
+        catch (const Exception &)
+        {
+            /// A body we cannot decode cannot be shown safe to delete: proving that needs the source
+            /// edges this decode would have produced. So retain it, record it, and walk on. The object
+            /// stays visible to fsck, which counts it as unreachable; the alternative -- letting this
+            /// escape -- aborts the round and every later round on the same object, which stops
+            /// reclamation for the whole pool rather than for this one key.
+            LOG_ERROR(getLogger("CasOrphanManifestSweep"),
+                "CAS orphan sweep: manifest at {} cannot be decoded and was retained; run cas-fsck to "
+                "enumerate such objects", parsed->key);
+            ++result.undecodable;
+            ++result.skipped;
+            decided_through = listed.key;
+            continue;
+        }
         const ManifestId id{parsed->ns, parsed->ref};
-        if (!refMatchesBody(id.ref, body) || !manifestNamespaceMatches(id.root_namespace, body))
+        if (!refMatchesBody(id.ref, *body) || !manifestNamespaceMatches(id.root_namespace, *body))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "CAS orphan sweep: manifest identity mismatch at {} while deriving exact source edges",
                 parsed->key);
@@ -887,7 +906,7 @@ ManifestSweepResult planManifestCursorPage(
             .key = parsed->key,
             .token = got->token,
             .source_retirements = {}};
-        for (const ManifestEntry & entry : body.entries)
+        for (const ManifestEntry & entry : body->entries)
             if (entry.placement == EntryPlacement::Blob)
                 nomination.source_retirements.push_back(BlobSourceRetirement{
                     .ref = entry.ref,

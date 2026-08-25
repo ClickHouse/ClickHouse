@@ -245,6 +245,7 @@ TEST(CASOrphanNomination, RetiresExactManifestSourcesBeforeDelete)
 }
 
 /// A nomination must exact-GET and decode the manifest before it can derive any source-edge identity.
+/// An undecodable body is retained and surfaced without aborting the rest of the round.
 TEST(CASOrphanNomination, CorruptManifestIsRetainedAndSurfaced)
 {
     ReadyFixture f = makeReadyFixture();
@@ -252,7 +253,14 @@ TEST(CASOrphanNomination, CorruptManifestIsRetainedAndSurfaced)
     ASSERT_TRUE(got.has_value());
     f.backend->putOverwrite(f.backend->watched_manifest_key, "not a sealed manifest", got->token);
 
-    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { runRegularRoundReclaiming(*f.gc); });
+    std::optional<GcPhaseRecord> orphan_sweep;
+    f.gc->setPhaseSink([&](const GcPhaseRecord & rec) { if (rec.phase == "orphan_sweep") orphan_sweep = rec; });
+
+    RoundReport report;
+    ASSERT_NO_THROW(report = runRegularRoundReclaiming(*f.gc));
+    EXPECT_TRUE(report.acquired_lease);
+    ASSERT_TRUE(orphan_sweep.has_value());
+    EXPECT_EQ(orphan_sweep->metrics.at("undecodable"), 1u);
     EXPECT_TRUE(f.backend->head(f.backend->watched_manifest_key).exists);
 }
 

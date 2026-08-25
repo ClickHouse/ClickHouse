@@ -122,6 +122,9 @@ struct ManifestSweepResult
     uint64_t listed = 0;
     uint64_t deleted = 0;
     uint64_t skipped = 0;
+    /// A non-zero value is an operator signal rather than a transient: each body was retained instead
+    /// of being deleted because the sweep could not decode it well enough to prove deletion safe.
+    uint64_t undecodable = 0;
     uint64_t retained_no_coverage = 0;
     uint64_t retained_hold = 0;
     uint64_t retained_unconsumed_seal = 0;

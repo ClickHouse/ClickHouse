@@ -62,12 +62,20 @@ void writeEntryRecord(CasJsonWriter & out, const ManifestEntry & e)
     writeChar('\n', out);
 }
 
-/// The exact banner text for one Inline entry's payload-zone chunk: `==> <path> il=<n> <==`. Takes
-/// `path`/`n` explicitly (not a `ManifestEntry`): on decode, `inline_bytes` is not yet populated at
-/// the point the expected banner is computed (that's the whole point of reading it from here first).
+/// The path is written into the banner through the SAME escaper the entry-record line uses. It has to be
+/// the same one: the decoder rebuilds this banner from the path it read out of the record line and
+/// compares byte-wise, so any spelling difference between the two writers is an object the writer cannot
+/// read back. Concatenating the path raw here is what made a part-file path containing a newline
+/// undecodable -- the LF split this line, and no reader could match it again.
 String bannerFor(std::string_view path, uint64_t n)
 {
-    return "==> " + String(path) + " il=" + std::to_string(n) + " <==";
+    CasJsonWriter w(path.size() + 32);
+    w.append("==> ");
+    w.stringValue(path);
+    w.append(" il=");
+    w.u64Number(n);
+    w.append(" <==");
+    return std::move(w).take();
 }
 
 }

@@ -68,6 +68,26 @@ struct OrphanFixture
     bool orphanExists() const { return backend->head(orphanKey()).exists; }
 };
 
+/// The same admissible orphan shape as `OrphanFixture`, but without its legal manifest write: the
+/// test below must plant undecodable bytes as the key's first and only incarnation.
+struct UndecodableOrphanFixture
+{
+    std::shared_ptr<InMemoryBackend> backend = std::make_shared<InMemoryBackend>();
+    PoolPtr store;
+    RootNamespace ns{"00/aa@cas@"};
+    ManifestRef orphan = ref(5, 0xAB);
+
+    UndecodableOrphanFixture()
+    {
+        store = openPoolForTest(backend);
+        casAdmitRecoverableEntry(*backend, store->layout(), ns);
+        setWatermarkMinActive(*backend, store->layout(), kServerRoot, kBuildEpoch, /*min_active*/6);
+    }
+
+    String orphanKey() const { return store->layout().manifestKey(ManifestId{ns, orphan}); }
+    bool orphanExists() const { return backend->head(orphanKey()).exists; }
+};
+
 }
 
 /// Rule (1), the load-bearing case. The cursor is still INSIDE the build's own epoch, so epoch 1's
@@ -193,6 +213,57 @@ TEST(CASSweepDeletionPremise, TheCursorPagePathHonoursTheSamePremise)
     const ManifestSweepResult freed = sweepManifestCursorPageForTest(*f.store, "", /*list_budget*/100, /*delete_budget*/10);
     EXPECT_EQ(freed.deleted, 1u);
     EXPECT_FALSE(f.orphanExists());
+}
+
+/// One undecodable body must be retained without preventing the same page from deciding a later key.
+TEST(CASSweepDeletionPremise, AnUndecodableManifestDoesNotWedgeTheCursorPage)
+{
+    UndecodableOrphanFixture f;
+    seedFoldCursorForTest(*f.backend, f.store->layout(), f.ns, RefTxnId{kBuildEpoch + 1, 1});
+
+    /// A payload-zone banner that no longer matches its entry path: the exact shape the reproducer
+    /// produced -- built by hand, because a correct encoder never emits a banner that disagrees with
+    /// its own entry record.
+    ManifestEntry inline_entry;
+    inline_entry.path = "a.txt";
+    inline_entry.placement = EntryPlacement::Inline;
+    inline_entry.inline_bytes = "payload";
+    PartManifest good;
+    good.ref = f.orphan;
+    good.root_namespace_id = f.ns;
+    good.entries = {inline_entry};
+    good.payload_digest = computePayloadDigest(good);
+    String bytes = encodePartManifest(good);
+    /// The canonical banner quotes the path. Searching for the former unquoted spelling would fail
+    /// before the sweep is called.
+    const size_t at = bytes.find("==> \"a.txt\"");
+    ASSERT_NE(at, String::npos) << "no banner line to corrupt -- the entry must be Inline, not Blob";
+    bytes[at + 5] = 'X';   /// Inside the quoted path, same length, so no other offset shifts.
+    const PutResult put = f.backend->putIfAbsent(f.orphanKey(), sealObject(FormatId::PartManifest, bytes));
+    /// `putIfAbsent` over an existing key writes nothing and reports `PreconditionFailed`, so a
+    /// silently legal body would make every assertion below pass against the wrong object.
+    ASSERT_EQ(put.outcome, PutOutcome::Done) << "the poison body was not the one planted";
+
+    const ManifestId legal = writeManifestRaw(
+        *f.backend, f.store->layout(), f.ns, ref(5, 0xCD), {blobEntryFor("b", DB::UInt128(2))});
+    const String legal_key = f.store->layout().manifestKey(legal);
+    /// Both keys have the same epoch/build prefix; fixed-width ordinal `0xCD` sorts after poison
+    /// ordinal `0xAB`, so reaching `legal_key` proves that the page walked beyond the poison key.
+    ASSERT_LT(f.orphanKey(), legal_key);
+
+    ManifestSweepResult result;
+    ASSERT_NO_THROW(result = sweepManifestCursorPageForTest(*f.store, "", /*list_budget*/8, /*delete_budget*/8));
+
+    EXPECT_EQ(result.undecodable, 1u) << "the anomaly must be recorded, not silently swallowed";
+    EXPECT_GE(result.skipped, 1u) << "a key the sweep declined to nominate counts as skipped";
+    EXPECT_TRUE(f.orphanExists()) << "an undecodable body is retained, never deleted on a guess";
+    /// The page reached the end of the keyspace, so the cursor did not stall on the poison key. Assert
+    /// `wrapped` rather than a moved `next_cursor`: `InMemoryBackend` leaves `next_cursor` empty when no
+    /// keys remain, so a moved-cursor assertion fails after a correct fix, not before it.
+    EXPECT_TRUE(result.wrapped);
+    /// And the strong form: the object beyond the poison key was still decided this page.
+    EXPECT_FALSE(f.backend->head(legal_key).exists)
+        << "the sweep stopped at the poison key instead of walking past it";
 }
 
 /// WHAT THE PREMISE COSTS, pinned so it is a stated behaviour rather than something a later reader

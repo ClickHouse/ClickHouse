@@ -1270,6 +1270,7 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
         t.metric("listed", sweep.listed);
         t.metric("deleted", sweep.deleted);
         t.metric("skipped", sweep.skipped);
+        t.metric("undecodable", sweep.undecodable);
         /// THE §6 PREMISE'S SHARE OF `skipped`, BY REASON CLASS. Rule (1) is satisfiable only for a
         /// closed-and-folded epoch, so a pass in which everything examined was RETAINED is an ordinary
         /// outcome, and without these numbers it is indistinguishable on the row from a pass that found

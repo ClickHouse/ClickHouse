@@ -22,8 +22,10 @@ namespace DB::Cas
 ///                                {"ha","h","sz"} or the Inline's {"il"}}, in canonical path order
 ///   trailer line                 {"n":entry-count}
 ///   PAYLOAD ZONE (raw, follows the trailer): for each Inline entry, in path order, a
-///                                `head -v`-style banner line `==> <path> il=<n> <==\n`, then
-///                                exactly `n` raw bytes, then `\n`. Blob entries carry no
+///                                `head -v`-style banner line `==> "<escaped path>" il=<n> <==\n`, then
+///                                exactly `n` raw bytes, then `\n`. The path uses the same writer as
+///                                the entry-record line, so decode can rebuild the banner byte-wise.
+///                                Blob entries carry no
 ///                                payload-zone bytes — their bytes live in a separately addressed
 ///                                CAS blob; the manifest carries only the `BlobRef` + size.
 ///
