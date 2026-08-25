@@ -322,7 +322,7 @@ String ManifestFilesPruner::partitionFilterHash() const
     {
         if (i != 0)
             writeChar(';', buf);
-        buf << simplified[i].toString(names);
+        writeString(simplified[i].toString(names), buf);
     }
     return buf.str();
 }
