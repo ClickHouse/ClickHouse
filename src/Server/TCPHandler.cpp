@@ -992,6 +992,13 @@ void TCPHandler::runImpl()
 
                 if (query_state->run_query_in_background && !query_state->read_all_data)
                 {
+                    /// This is an early flush specifically for the detached-query path.
+                    /// `skipData` can block while waiting for the trailing client `Data` packet,
+                    /// so `EndOfStream` must reach the client before entering it.
+                    ///
+                    /// Other successful paths proceed directly to `finalizeOut`, which finalizes
+                    /// the compression wrapper and synchronizes `out`, so moving `sync` before
+                    /// the condition would be redundant for them.
                     out->sync();
                     skipData(*query_state);
                 }
