@@ -26,7 +26,7 @@ INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1
 INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
--- This row matches the pattern below only when the ESCAPE clause is ignored.
+-- The index keeps this row as a candidate for the pattern below only when the ESCAPE clause is ignored.
 INSERT INTO tab SELECT number, 'literal 50 discount token' FROM numbers(1024);
 
 SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
@@ -64,7 +64,7 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%'
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
-SELECT 'The same pattern without its ESCAPE clause matches a second part and selects 16 of 48 granules';
+SELECT 'The same pattern without its ESCAPE clause keeps a second part as a candidate and selects 16 of 48 granules';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1

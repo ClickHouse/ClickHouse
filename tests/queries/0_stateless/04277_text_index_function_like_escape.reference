@@ -22,7 +22,7 @@ Parts: 1 | Granules: 8
 Granules: 48/48
 Name: idx
 Granules: 8/48
-The same pattern without its ESCAPE clause matches a second part and selects 16 of 48 granules
+The same pattern without its ESCAPE clause keeps a second part as a candidate and selects 16 of 48 granules
 Parts: 2 | Granules: 16
 Granules: 48/48
 Name: idx
