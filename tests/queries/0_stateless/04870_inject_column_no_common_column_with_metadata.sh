@@ -153,13 +153,12 @@ ALTER TABLE t_stale_attach ATTACH PART 'all_1_1_0';
 SELECT count(), min(b), max(b) FROM t_stale_attach;
 " 2>&1 | grep -oF 'NO_SUCH_COLUMN_IN_TABLE' | head -1
 
-echo 'renamed columns, non-adaptive granularity'
+echo 'renamed columns'
 
-# With adaptive granularity the row count comes from the marks, so a part with no usable column can
-# still be read and the mapping of renamed columns is not observable. With `index_granularity_bytes =
-# 0` the granularity is not adaptive and a column really must be read, so this is where the mapping of
-# a renamed column to its name in the part carries its weight: without it no candidate is found and
-# the read fails.
+# What this pins is the mapping of a renamed column to its name in the part. Without it the pairing
+# comes out empty, the part is then found to hold `a` -- neither in the structure nor being dropped --
+# and the read is refused. That happens under either granularity; `index_granularity_bytes = 0` here
+# only makes the injected column come from a part whose marks are not adaptive.
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE IF EXISTS t_non_adaptive_rename;
 

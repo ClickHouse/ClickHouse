@@ -10,7 +10,7 @@ dropped and readded columns, non-adaptive granularity
 10000	42	42
 stale part re-attached
 NO_SUCH_COLUMN_IN_TABLE
-renamed columns, non-adaptive granularity
+renamed columns
 20000	42	42
 20000	42	42
 pending rename and drop of the same column
