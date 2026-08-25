@@ -547,7 +547,7 @@ private:
 /// Retires a whole fan-in of upstreams at once, so that a single `prepare` queues an edge per
 /// input slot. Every one of those edges points at a processor of the batch being retired, which
 /// widens the window in which a queued edge can be freed. Each chain ends in a processor that
-/// needs one more work() call before it reports Finished, so the batch is still unfinished when
+/// needs one more `work` call before it reports `Finished`, so the batch is still unfinished when
 /// it is queued for removal and is therefore retired by a later, arbitrary frame.
 class WideFanInCyclingCoordinator final : public IProcessor
 {

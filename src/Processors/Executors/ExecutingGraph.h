@@ -171,7 +171,7 @@ private:
     /// Changes nothing, so a throw here leaves the graph as it was.
     Node * findNodeToRemove(const ProcessorPtr & processor);
 
-    /// Destroy a node found by findNodeToRemove, together with the edges it owns.
+    /// Destroy a node found by `findNodeToRemove`, together with the edges it owns.
     void eraseNode(Node * node);
 
     /// Add single edge to edges list. Check processor is known.
@@ -185,13 +185,6 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-
-    /// Edges of `node` that point at one of `removed_nodes`, split the same way as node removal:
-    /// collectAffectedEdges only reads, eraseAffectedEdges is what destroys them.
-    static void collectAffectedEdges(
-        const Node & node, const std::unordered_set<const Node *> & removed_nodes, std::unordered_set<const void *> & removed_edge_ids);
-    static void eraseAffectedEdges(
-        Node & node, const std::unordered_set<const Node *> & removed_nodes, const std::unordered_set<const void *> & removed_edge_ids);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
