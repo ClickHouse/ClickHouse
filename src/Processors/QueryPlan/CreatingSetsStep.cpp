@@ -362,14 +362,21 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureS
         /// instead of just handing them out, and paying for that here loses more than the sharing
         /// wins: on `SELECT ... WHERE key IN (SELECT ... FROM <merge table>)` under automatic
         /// parallel replicas it made the nested subquery run one extra time rather than one time
-        /// fewer. Such a step also disqualifies the plan from automatic parallel replicas altogether
-        /// (`supportsDataflowStatisticsCollection`), so the sets missed here are only the ones below
-        /// a set's own source plan.
+        /// fewer. Such a step is unsupported for dataflow statistics collection anyway, so it keeps
+        /// the whole optimization off the plan it appears in.
         for (auto * child : node->children)
             stack.push_back(child);
     }
 }
 
+/// Note that on the single-node plan this only ever reaches the sets held directly by a
+/// `DelayedCreatingSetsStep`, never the ones a nested `IN` keeps below them: by the time automatic
+/// parallel replicas runs, every set here has been through `FutureSetFromSubquery::build`, which moves
+/// the source plan out, so `getQueryPlan` returns null and the recursion stops (measured for both
+/// values of `use_index_for_in_with_subqueries`, with the `IN` on an indexed and on a plain column).
+/// A nested set is therefore not shareable through any walk - it exists only inside a plan that no
+/// longer hangs off the set. The recursion still pays off on the probe plan in `reuseBuiltSets`, which
+/// runs before that plan is optimized and so still has its source plans.
 BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan)
 {
     auto built = std::make_shared<BuiltSetsByHash>();
