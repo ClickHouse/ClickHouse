@@ -63,12 +63,6 @@ CREATE MATERIALIZED VIEW val_mv_noblock
     TO val_tgt EMPTY
     AS SELECT k, v FROM val_src_noblock; -- { serverError BAD_ARGUMENTS }
 
--- FINAL cannot be re-applied across already-consumed rows, so it is rejected.
-CREATE MATERIALIZED VIEW val_mv_final
-    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
-    TO val_tgt EMPTY
-    AS SELECT k, v FROM val_src FINAL; -- { serverError NOT_IMPLEMENTED }
-
 -- A merging engine (ReplacingMergeTree) rewrites historical rows on merge, so it is rejected.
 CREATE TABLE val_src_repl (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;

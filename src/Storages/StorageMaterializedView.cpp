@@ -163,11 +163,6 @@ namespace
     {
         auto & source_table_expr = getIncrementalSourceTableExpression(select_with_union);
 
-        if (source_table_expr.final)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh does not support FINAL on the source: the cursor only reads new blocks and cannot "
-                "re-apply FINAL across already-consumed rows");
-
         /// The cursor advances only on the source, so any other table (a JOIN or a subquery) would silently diverge from a full refresh.
         if (countTableExpressions(*select_with_union) != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
