@@ -1373,24 +1373,11 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
         mysql_node.query("DROP TABLE test_perm_marker.permanent_table")
         mysql_node.query("DROP TABLE test_perm_marker.ordinary_table")
 
-        # Trigger on-demand reconciliation (destroyLocalCacheExtraTables via fetchTablesIntoLocalCache)
-        clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
-
-        # After on-demand reconciliation:
-        # - Permanent marker should be PRESERVED
-        # - Ordinary detach should be PRUNED
-        detached_after_drop = clickhouse_node.query(
-            "SELECT table, is_permanently FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' "
-            "ORDER BY table FORMAT TabSeparated"
-        ).strip()
-        assert detached_after_drop == "permanent_table\t1", (
-            f"REGRESSION: On-demand reconciliation did not preserve permanent marker or prune ordinary entry. "
-            f"Expected 'permanent_table\\t1', got '{detached_after_drop}'"
-        )
-
         # Wait for background reconciliation thread to run (cleanOutdatedTables sleeps 30s between runs)
-        # Use polling pattern like PostgreSQL test (commit e2c7af2524a) to ensure reconciliation actually runs
+        # DO NOT call SHOW TABLES or any other on-demand trigger here - that would bypass the background
+        # reconciliation path we're testing (destroyLocalCacheExtraTables would prune ordinary_table
+        # immediately, causing has_non_permanent_detach to become false, which skips the background fetch).
+        # Use polling pattern to ensure background cleaner genuinely executes its fetch+reconcile path
         max_wait = 65
         start_time = time.time()
         bg_reconciliation_verified = False
