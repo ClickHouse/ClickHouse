@@ -82,7 +82,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
      * ANY join behavior can also be different with this optimization,
      * but it's ok because we don't guarantee which row to choose for ANY, unlike ASOF, where we have to pick the closest one.
      */
-    if (table_join.strictness == JoinStrictness::Asof)
+    if (table_join.strictness == JoinStrictness::Asof || table_join.strictness == JoinStrictness::Nearest)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();

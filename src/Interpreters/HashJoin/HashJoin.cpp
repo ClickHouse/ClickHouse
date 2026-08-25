@@ -2,6 +2,8 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <base/getL2CacheSize.h>
@@ -10,6 +12,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Common/CurrentThread.h>
@@ -51,6 +54,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_TYPE_OF_FIELD;
 extern const int NOT_IMPLEMENTED;
 extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
@@ -172,6 +176,7 @@ HashJoin::HashJoin(
     , reserve_num(reserve_num_)
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
+    , nearest_distance_function(table_join->getNearestDistanceFunction())
     , data(std::make_shared<RightTableData>())
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
@@ -231,7 +236,8 @@ HashJoin::HashJoin(
     /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
     /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
     std::optional<Type> low_cardinality_method;
-    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
+    if (table_join->oneDisjunct() && !use_two_level_maps
+        && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Nearest)
     {
         const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
         if (only_clause_key_names.size() == 1)
@@ -285,6 +291,29 @@ HashJoin::HashJoin(
             auto & asof_key_sizes = key_sizes.emplace_back();
             selected_join_method = chooseMethod(key_columns, asof_key_sizes, use_two_level_maps);
             asof_key_sizes.push_back(asof_size);
+        }
+        else if (strictness == JoinStrictness::Nearest)
+        {
+            chassert(disjuncts_num == 1);
+
+            if (!isLeft(kind) && !isInner(kind))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Wrong NEAREST JOIN type. Only NEAREST and LEFT NEAREST joins are supported");
+
+            if (key_columns.size() <= 1)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NEAREST join with hash algorithm needs at least one equi-join column");
+
+            nearest_vector_element_type = NearestVectorMatcherBase::getVectorElementType(*key_columns.back());
+            if (!nearest_vector_element_type)
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "NEAREST join is not supported for the vector column type: {}", key_columns.back()->getFamilyName());
+            key_columns.pop_back();
+
+            /// As for ASOF: the hash table is built on the equality keys only, but the vector column
+            /// stays the last stored key column, so give it a zero size entry to keep key_columns and
+            /// key_sizes aligned.
+            auto & nearest_key_sizes = key_sizes.emplace_back();
+            selected_join_method = chooseMethod(key_columns, nearest_key_sizes, use_two_level_maps);
+            nearest_key_sizes.push_back(0);
         }
         else
         {
@@ -668,9 +697,9 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
     }
-    else if (strictness == JoinStrictness::Asof)
+    else if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Nearest)
     {
-        /// Save ASOF key
+        /// Save the ASOF key or the NEAREST vector column
         saved_block_sample.insert(right_table_keys.safeGetByPosition(right_table_keys.columns() - 1));
     }
 
@@ -1138,7 +1167,8 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    return runJoinDispatch(ScatteredBlock(std::move(block)));
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
+    return captureNearestSwapOutputSample(std::move(result));
 }
 
 JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
@@ -1159,7 +1189,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
-    return runJoinDispatch(std::move(block));
+    return captureNearestSwapOutputSample(runJoinDispatch(std::move(block)));
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
@@ -1298,7 +1328,7 @@ struct CollectorNonJoined
 
         if constexpr (mapped_asof)
         {
-            /// Do nothing
+            /// Do nothing: ASOF supports only LEFT/INNER kinds, so there are no non-joined rows to emit.
         }
         else if constexpr (mapped_one)
         {
@@ -1598,6 +1628,361 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
 
     auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, flag_per_row, bucket_idx, num_buckets);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
+}
+
+bool HashJoin::nearestSwapped() const
+{
+    return table_join->nearestSwapped();
+}
+
+JoinResultPtr HashJoin::captureNearestSwapOutputSample(JoinResultPtr result)
+{
+    if (!nearestSwapped())
+        return result;
+    if (nearest_swap_output_sample_captured.load(std::memory_order_acquire))
+        return result;
+
+    std::lock_guard lock(nearest_swap_mutex);
+    if (nearest_swap_output_sample_captured.load(std::memory_order_relaxed))
+        return result;
+
+    auto first = result->next();
+    chassert(first.is_last);
+    nearest_swap_output_sample = first.block.cloneEmpty();
+    nearest_swap_output_sample_captured.store(true, std::memory_order_release);
+    for (const auto & state : nearest_swap_states)
+    {
+        if (state->capture_column.size() != nearest_swap_probe_sample.columns())
+            continue;
+        for (size_t i = 0; i < nearest_swap_probe_sample.columns(); ++i)
+            state->capture_column[i] = nearestSwapCaptureProbeColumn(nearest_swap_probe_sample.getByPosition(i).name) ? 1 : 0;
+    }
+    return IJoinResult::createFromBlock(std::move(first.block));
+}
+
+bool HashJoin::nearestSwapCaptureProbeColumn(const String & name) const
+{
+    /// Follow the planned join output, not the first joinBlock leftover header.
+    /// That leftover still carries the probe vector (needed only to compute distance),
+    /// and copying it is what OOMs a swapped ConcurrentHashJoin of this size.
+    /// Do not match getOutputColumns(Right) by name: both sides often call the vector
+    /// `vec`, and the build-side vector is read from stored blocks, not from capture.
+    for (const auto & column : table_join->getOutputColumns(JoinTableSide::Left))
+    {
+        if (column.name == name)
+            return true;
+    }
+    for (const auto & source_name : required_right_keys_sources)
+    {
+        if (source_name == name)
+            return true;
+    }
+    return false;
+}
+
+NearestSwapState * HashJoin::acquireNearestSwapState(const Block & probe_block) const
+{
+    if (!nearestSwapped())
+        return nullptr;
+
+    std::lock_guard lock(nearest_swap_mutex);
+
+    if (!nearest_swap_probe_sample_captured)
+    {
+        nearest_swap_probe_sample = probe_block.cloneEmpty();
+        nearest_swap_probe_sample_captured = true;
+    }
+
+    NearestSwapState * state;
+    if (!nearest_swap_free_states.empty())
+    {
+        state = nearest_swap_free_states.back();
+        nearest_swap_free_states.pop_back();
+    }
+    else
+    {
+        auto owned = std::make_unique<NearestSwapState>();
+        owned->captured = nearest_swap_probe_sample.cloneEmptyColumns();
+        owned->capture_column.resize(nearest_swap_probe_sample.columns());
+        for (size_t i = 0; i < nearest_swap_probe_sample.columns(); ++i)
+            owned->capture_column[i] = nearestSwapCaptureProbeColumn(nearest_swap_probe_sample.getByPosition(i).name) ? 1 : 0;
+        state = owned.get();
+        nearest_swap_states.push_back(std::move(owned));
+    }
+
+    if (nearest_swap_output_sample_captured.load(std::memory_order_relaxed)
+        && state->capture_column.size() == nearest_swap_probe_sample.columns())
+    {
+        for (size_t i = 0; i < nearest_swap_probe_sample.columns(); ++i)
+            state->capture_column[i]
+                = nearestSwapCaptureProbeColumn(nearest_swap_probe_sample.getByPosition(i).name) ? 1 : 0;
+    }
+
+    /// The plan-time header derivation probes before the build phase, when the dense index is
+    /// still empty, so the arrays are (re)sized lazily here instead of at state creation.
+    if (state->best_distance.size() < nearest_swap_total_rows)
+    {
+        size_t old_size = state->best_distance.size();
+        state->best_distance.resize(nearest_swap_total_rows);
+        state->best_capture_row.resize(nearest_swap_total_rows);
+        for (size_t i = old_size; i < nearest_swap_total_rows; ++i)
+        {
+            state->best_distance[i] = std::numeric_limits<Float64>::infinity();
+            state->best_capture_row[i] = -1;
+        }
+    }
+
+    return state;
+}
+
+void HashJoin::releaseNearestSwapState(NearestSwapState * state) const
+{
+    if (!state)
+        return;
+
+    std::lock_guard lock(nearest_swap_mutex);
+
+    /// The capture buffer appends one probe row per improvement. For a random probe order the
+    /// improvements per build row are logarithmic in its candidate count, but an adversarial
+    /// order (probe rows sorted by decreasing distance) improves on every candidate pair, so
+    /// compact the buffer down to the currently-best rows once the garbage dominates.
+    if (!state->captured.empty())
+    {
+        size_t captured_rows = state->captured.front()->size();
+        if (captured_rows > DEFAULT_BLOCK_SIZE && captured_rows > 2 * nearest_swap_total_rows)
+        {
+            MutableColumns compacted;
+            compacted.reserve(state->captured.size());
+            for (const auto & column : state->captured)
+                compacted.push_back(column->cloneEmpty());
+
+            for (size_t i = 0; i < state->best_capture_row.size(); ++i)
+            {
+                if (state->best_capture_row[i] < 0)
+                    continue;
+                for (size_t c = 0; c < compacted.size(); ++c)
+                    compacted[c]->insertFrom(*state->captured[c], state->best_capture_row[i]);
+                state->best_capture_row[i] = static_cast<Int64>(compacted.front()->size() - 1);
+            }
+            state->captured = std::move(compacted);
+        }
+    }
+
+    nearest_swap_free_states.push_back(state);
+}
+
+namespace
+{
+
+/// Emits the results of a swapped NEAREST join once the probe stream is consumed: one row per
+/// build row that found a nearest probe row. The stream is shared by all
+/// DelayedJoinedBlocksWorkerTransforms, so `nextImpl` is internally synchronized.
+class NearestSwapResultStream : public IBlocksStream
+{
+public:
+    /// Where an output column takes its values from: the captured probe rows or the stored
+    /// (build-side) columns.
+    struct OutputColumnSource
+    {
+        bool from_capture;
+        size_t position;
+    };
+
+    struct Winner
+    {
+        UInt32 block_no;
+        UInt32 row_no;
+        UInt32 state_id;
+        UInt64 capture_row;
+    };
+
+    NearestSwapResultStream(
+        Block output_sample_,
+        std::vector<OutputColumnSource> sources_,
+        std::vector<const NearestSwapState *> states_,
+        const StoredColumnsIndex & stored_columns_index_,
+        const std::vector<UInt64> & block_row_offsets,
+        UInt64 total_rows)
+        : output_sample(std::move(output_sample_))
+        , sources(std::move(sources_))
+        , states(std::move(states_))
+        , stored_columns_index(stored_columns_index_)
+    {
+        /// Merge the per-stream argmin states into one winner per build row.
+        PaddedPODArray<Float64> merged_best(total_rows, std::numeric_limits<Float64>::infinity());
+        PaddedPODArray<Int32> winner_state(total_rows, -1);
+        for (size_t state_id = 0; state_id < states.size(); ++state_id)
+        {
+            const auto & state = *states[state_id];
+            size_t known_rows = std::min<size_t>(state.best_distance.size(), total_rows);
+            for (size_t i = 0; i < known_rows; ++i)
+            {
+                if (state.best_capture_row[i] < 0)
+                    continue;
+                if (winner_state[i] < 0 || state.best_distance[i] < merged_best[i])
+                {
+                    merged_best[i] = state.best_distance[i];
+                    winner_state[i] = static_cast<Int32>(state_id);
+                }
+            }
+        }
+
+        /// ConcurrentHashJoin zero-copy scatter stores the same columns under many
+        /// block_no values (one StoredBlock per slot, shared ColumnPtrs). Those
+        /// aliases already share a dense-index span; emit each span once.
+        std::unordered_set<const IColumn *> emitted_stored_column_identities;
+        for (size_t block_no = 0; block_no < block_row_offsets.size(); ++block_no)
+        {
+            const StoredBlock * stored_block = stored_columns_index.blocksData()[block_no];
+            if (!stored_block || stored_block->columns.empty())
+                continue;
+            const IColumn * stored_column_identity = stored_block->columns.front().get();
+            if (!emitted_stored_column_identities.insert(stored_column_identity).second)
+                continue;
+
+            UInt64 begin = block_row_offsets[block_no];
+            UInt64 end = begin + stored_block->columns.front()->size();
+            for (UInt64 dense_index = begin; dense_index < end; ++dense_index)
+            {
+                if (winner_state[dense_index] < 0)
+                    continue;
+                winners.push_back(Winner{
+                    static_cast<UInt32>(block_no),
+                    static_cast<UInt32>(dense_index - begin),
+                    static_cast<UInt32>(winner_state[dense_index]),
+                    static_cast<UInt64>(states[winner_state[dense_index]]->best_capture_row[dense_index])});
+            }
+        }
+    }
+
+protected:
+    Block nextImpl() override
+    {
+        std::lock_guard lock(mutex);
+
+        if (cursor >= winners.size())
+            return {};
+
+        size_t batch_end = std::min<size_t>(cursor + DEFAULT_BLOCK_SIZE, winners.size());
+        MutableColumns result_columns = output_sample.cloneEmptyColumns();
+
+        for (size_t w = cursor; w < batch_end; ++w)
+        {
+            const Winner & winner = winners[w];
+            const StoredBlock * stored_block = stored_columns_index.blocksData()[winner.block_no];
+
+            for (size_t c = 0; c < sources.size(); ++c)
+            {
+                const auto & source = sources[c];
+                if (source.from_capture)
+                {
+                    result_columns[c]->insertFrom(
+                        *states[winner.state_id]->captured[source.position], winner.capture_row);
+                }
+                else
+                {
+                    const IColumn * column = stored_block->columns[source.position].get();
+                    size_t row_no = winner.row_no;
+                    if (const ColumnReplicated * replicated = stored_block->replicated_columns[source.position])
+                    {
+                        row_no = replicated->getIndexes().getIndexAt(row_no);
+                        column = replicated->getNestedColumn().get();
+                    }
+                    result_columns[c]->insertFrom(*column, row_no);
+                }
+            }
+        }
+
+        cursor = batch_end;
+        return output_sample.cloneWithColumns(std::move(result_columns));
+    }
+
+private:
+    std::mutex mutex;
+    Block output_sample;
+    std::vector<OutputColumnSource> sources;
+    std::vector<const NearestSwapState *> states;
+    const StoredColumnsIndex & stored_columns_index;
+    std::vector<Winner> winners;
+    size_t cursor = 0;
+};
+
+}
+
+IBlocksStreamPtr HashJoin::getDelayedBlocks()
+{
+    if (!nearestSwapped())
+        return nullptr;
+    if (nearest_swap_results_emitted.exchange(true))
+        return nullptr;
+
+    std::lock_guard lock(nearest_swap_mutex);
+    if (!nearest_swap_output_sample_captured.load(std::memory_order_relaxed) || nearest_swap_states.empty() || nearest_swap_total_rows == 0)
+        return nullptr;
+
+    /// Map every output column to its source. The probe-side columns come from the captured
+    /// winning probe rows; the build-side output columns come from the stored blocks; a build-side
+    /// key column that is required in the output equals the probe-side key value of the match, so
+    /// it also comes from the capture (as the normal emission takes it from the left key column).
+    const auto & clause = table_join->getOnlyClause();
+    const Block & saved_sample = savedBlockSample();
+    std::vector<NearestSwapResultStream::OutputColumnSource> sources;
+    sources.reserve(nearest_swap_output_sample.columns());
+    for (const auto & out_column : nearest_swap_output_sample)
+    {
+        if (nearest_swap_probe_sample.has(out_column.name))
+        {
+            sources.push_back({true, nearest_swap_probe_sample.getPositionByName(out_column.name)});
+            continue;
+        }
+
+        std::optional<size_t> saved_position;
+        for (size_t position = 0; position < saved_sample.columns(); ++position)
+        {
+            if (table_join->renamedRightColumnName(saved_sample.getByPosition(position).name) == out_column.name)
+            {
+                saved_position = position;
+                break;
+            }
+        }
+        if (saved_position)
+        {
+            sources.push_back({false, *saved_position});
+            continue;
+        }
+
+        std::optional<size_t> capture_position;
+        for (size_t key = 0; key + 1 < clause.key_names_right.size(); ++key)
+        {
+            if (table_join->renamedRightColumnName(clause.key_names_right[key]) == out_column.name
+                && nearest_swap_probe_sample.has(clause.key_names_left[key]))
+            {
+                capture_position = nearest_swap_probe_sample.getPositionByName(clause.key_names_left[key]);
+                break;
+            }
+        }
+        if (capture_position)
+        {
+            sources.push_back({true, *capture_position});
+            continue;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot map output column {} of a swapped NEAREST join to a source", out_column.name);
+    }
+
+    std::vector<const NearestSwapState *> states;
+    states.reserve(nearest_swap_states.size());
+    for (const auto & state : nearest_swap_states)
+        states.push_back(state.get());
+
+    return std::make_shared<NearestSwapResultStream>(
+        nearest_swap_output_sample,
+        std::move(sources),
+        std::move(states),
+        *data->stored_columns_index,
+        nearest_swap_block_row_offsets,
+        nearest_swap_total_rows);
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
@@ -2467,6 +2852,37 @@ void HashJoin::onBuildPhaseFinish()
 
     if (matched_rows_stats)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
+
+    /// Swapped NEAREST: build the dense build-row index (block_row_offsets[block_no] + row_no)
+    /// that addresses the per-build-row argmin state during the probe.
+    if (nearestSwapped())
+    {
+        std::lock_guard lock(nearest_swap_mutex);
+        const auto & stored_columns_index = *data->stored_columns_index;
+        nearest_swap_block_row_offsets.resize(stored_columns_index.size());
+        UInt64 running_rows = 0;
+        /// Zero-copy ConcurrentHashJoin scatter registers one StoredBlock per slot
+        /// against the same ColumnPtrs. Count each physical column once so the
+        /// per-build-row argmin arrays stay sized to unique build rows, not
+        /// slots × build rows.
+        std::unordered_map<const IColumn *, UInt64> stored_column_identity_to_offset;
+        for (size_t block_no = 0; block_no < stored_columns_index.size(); ++block_no)
+        {
+            const StoredBlock * stored_block = stored_columns_index.blocksData()[block_no];
+            if (!stored_block || stored_block->columns.empty())
+            {
+                nearest_swap_block_row_offsets[block_no] = running_rows;
+                continue;
+            }
+            const IColumn * stored_column_identity = stored_block->columns.front().get();
+            auto [offset_iterator, inserted] = stored_column_identity_to_offset.try_emplace(
+                stored_column_identity, running_rows);
+            nearest_swap_block_row_offsets[block_no] = offset_iterator->second;
+            if (inserted)
+                running_rows += stored_block->columns.front()->size();
+        }
+        nearest_swap_total_rows = running_rows;
+    }
 
     build_phase_finished = true;
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());

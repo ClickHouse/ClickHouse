@@ -1281,8 +1281,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness)
                 && !should_worry_about_partial_merge_join
                 && !skip_flip_any_join;
-            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
+            /// A swapped NEAREST join keeps its per-original-left-row semantics through the
+            /// `nearest_swapped` marker. Grace is unsupported for NEAREST, so the spilling
+            /// wrapper is never chosen.
+            const bool suitable_nearest_swap = join_operator.strictness == JoinStrictness::Nearest
+                && join_operator.kind == JoinKind::Inner
+                && !should_worry_about_partial_merge_join;
+            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join && !suitable_nearest_swap)
                 flip_join = false;
+
+            /// NEAREST does not decline the swap when estimated candidate pairs exceed the
+            /// streamed side. That is the shape this join exists for: the pairs must not be
+            /// materialized, and building the large vector-bearing side is what runs out of memory.
+            /// `query_plan_join_swap_table = 0` still forces the unswapped plan.
 
             if (flip_join)
             {
@@ -1290,6 +1301,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 std::swap(left_rels, right_rels);
                 std::swap(left_child_node, right_child_node);
                 join_operator.kind = reverseJoinKind(join_operator.kind);
+                if (join_operator.strictness == JoinStrictness::Nearest)
+                    join_operator.nearest_swapped = true;
             }
 
             auto left_header_ptr = left_child_node->step->getOutputHeader();
@@ -1617,8 +1630,13 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
+    /// NEAREST INNER joins may be swapped (never reordered): the flip is marked on the join
+    /// operator and the physical join then finds the nearest probe row per build row. The flag
+    /// is not serialized, so distributed plans keep the written side order.
+    bool nearest_swap_candidate = strictness == JoinStrictness::Nearest && kind == JoinKind::Inner
+        && !optimization_settings.make_distributed_plan && !optimization_settings.keep_logical_steps;
     if (!optimization_settings.query_plan_optimize_join_order_limit
-        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
+        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness) && !nearest_swap_candidate)
         || locality != JoinLocality::Unspecified
         || kind == JoinKind::Paste
         || !join_operator.residual_filter.empty()
@@ -1629,7 +1647,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind) || nearest_swap_candidate) && query_graph_size_limit > 2)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 

@@ -63,13 +63,18 @@ template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictn
 template <JoinKind kind, bool prefer_use_maps_all>
 struct MapGetter<kind, JoinStrictness::Asof, prefer_use_maps_all> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
 
-static constexpr std::array<JoinStrictness, 6> STRICTNESSES = {
+/// Only LEFT NEAREST and INNER NEAREST are valid. RIGHT and FULL are here for templates instantiation.
+template <JoinKind kind, bool prefer_use_maps_all>
+struct MapGetter<kind, JoinStrictness::Nearest, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+
+static constexpr std::array<JoinStrictness, 7> STRICTNESSES = {
     JoinStrictness::RightAny,
     JoinStrictness::Any,
     JoinStrictness::All,
     JoinStrictness::Asof,
     JoinStrictness::Semi,
     JoinStrictness::Anti,
+    JoinStrictness::Nearest,
 };
 
 static constexpr std::array<JoinKind, 4> KINDS = {

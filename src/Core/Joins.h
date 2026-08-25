@@ -51,9 +51,10 @@ enum class JoinStrictness : uint8_t
     Asof, /// For the last JOIN column, pick the latest value
     Semi, /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
+    Nearest, /// For the last JOIN column pair (vectors), pick the right row with the minimal distance to the left row.
 };
 
-constexpr uint8_t JoinStrictnessMax = static_cast<uint8_t>(JoinStrictness::Anti);
+constexpr uint8_t JoinStrictnessMax = static_cast<uint8_t>(JoinStrictness::Nearest);
 
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
 JoinStrictness deserializeJoinStrictness(ReadBuffer & in);
@@ -115,6 +116,26 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
         return ASOFJoinInequality::LessOrEquals;
 
     return ASOFJoinInequality::None;
+}
+
+/// Distance function used by NEAREST JOIN to pick the closest right-side row within an equal-keys group.
+enum class NearestJoinDistanceFunction : uint8_t
+{
+    None,
+    L2Distance,
+    CosineDistance,
+};
+
+const char * toString(NearestJoinDistanceFunction distance_function);
+
+constexpr NearestJoinDistanceFunction getNearestJoinDistanceFunction(std::string_view func_name)
+{
+    if (func_name == "L2Distance")
+        return NearestJoinDistanceFunction::L2Distance;
+    if (func_name == "cosineDistance")
+        return NearestJoinDistanceFunction::CosineDistance;
+
+    return NearestJoinDistanceFunction::None;
 }
 
 enum class JoinAlgorithm : uint8_t

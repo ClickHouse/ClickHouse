@@ -60,6 +60,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
+    if (table_join.strictness() == JoinStrictness::Nearest)
+        description.emplace_back("NEAREST distance function", toString(table_join.getNearestDistanceFunction()));
+
     if (!table_join.getClauses().empty())
     {
         if (settings.pretty)

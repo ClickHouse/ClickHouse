@@ -393,6 +393,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             bool can_split_join = frame.results.back() != std::nullopt && can_split_left_table
                 && (isLeft(kind) || isRight(kind) || isInner(kind) || isFull(kind))
                 && strictness != JoinStrictness::Asof
+                && strictness != JoinStrictness::Nearest
                 && clauses.size() == 1;
 
             // std::cerr << "can_split_join " << can_split_join << std::endl;

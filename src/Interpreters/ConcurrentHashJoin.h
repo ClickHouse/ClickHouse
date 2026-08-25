@@ -70,6 +70,9 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
+    bool hasDelayedBlocks() const override;
+    IBlocksStreamPtr getDelayedBlocks() override;
+
     /// Number of internal hash join slots.
     size_t getNumSlots() const { return slots; }
 
