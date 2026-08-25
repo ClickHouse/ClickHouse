@@ -21,7 +21,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 </div>
 
 `SYSTEM RELOAD DICTIONARIES` 查询会重新加载状态为 `LOADED` 的字典 (参见 [`system.dictionaries`](/zh/reference/system-tables/dictionaries) 的 `status` 列) ，即此前已成功加载的字典。
-默认情况下，字典采用延迟加载 (参见 [dictionaries&#95;lazy&#95;load](/zh/reference/settings/server-settings/settings#dictionaries_lazy_load)) ，因此不会在启动时自动加载，而是在首次访问时通过调用 [`dictGet`](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet) 函数，或对 `ENGINE = Dictionary` 的表执行 `SELECT` 时初始化。
+默认情况下，字典采用延迟加载 (参见 [dictionaries&#95;lazy&#95;load](/zh/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)) ，因此不会在启动时自动加载，而是在首次访问时通过调用 [`dictGet`](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet) 函数，或对 `ENGINE = Dictionary` 的表执行 `SELECT` 时初始化。
 
 **语法**
 
@@ -119,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-重新计算所有[异步指标](/zh/reference/system-tables/asynchronous_metrics)。由于异步指标会根据设置 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/zh/reference/settings/server-settings/settings) 定期更新，因此通常无需使用此语句手动更新。
+重新计算所有[异步指标](/zh/reference/system-tables/asynchronous_metrics)。由于异步指标会根据设置 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/zh/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s) 定期更新，因此通常无需使用此语句手动更新。
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -144,7 +144,7 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 </div>
 
 清除主索引缓存。该缓存会在内存中保存 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的主键。
-其大小由服务器级设置 [`primary_index_cache_size`](/zh/reference/settings/server-settings/settings#primary_index_cache_size) 控制。
+其大小由服务器级设置 [`primary_index_cache_size`](/zh/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) 控制。
 
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
@@ -323,15 +323,15 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 清除未压缩数据缓存。
-可通过查询/用户/profile 级设置 [`use_uncompressed_cache`](/zh/reference/settings/session-settings#use_uncompressed_cache) 启用或禁用未压缩数据缓存。
-其大小可通过服务器级设置 [`uncompressed_cache_size`](/zh/reference/settings/server-settings/settings#uncompressed_cache_size) 配置。
+可通过查询/用户/profile 级设置 [`use_uncompressed_cache`](/zh/reference/settings/session-settings/use#use_uncompressed_cache) 启用或禁用未压缩数据缓存。
+其大小可通过服务器级设置 [`uncompressed_cache_size`](/zh/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) 配置。
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP 编译 expression 缓存
 </div>
 
-清除已编译 expression 缓存。
-可通过查询/用户/profile 级设置 [`compile_expressions`](/zh/reference/settings/session-settings#compile_expressions) 启用或禁用已编译 expression 缓存。
+清除已编译表达式缓存。
+可通过查询/用户/profile 级设置 [`compile_expressions`](/zh/reference/settings/session-settings/compile#compile_expressions) 启用或禁用已编译表达式缓存。
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
@@ -361,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-清除从 [`format_schema_path`](/zh/reference/settings/server-settings/settings#format_schema_path) 加载的 schema 缓存。
+清除从 [`format_schema_path`](/zh/reference/settings/server-settings/settings/format#format_schema_path) 加载的 schema 缓存。
 
 支持的目标：
 
 * Protobuf：从内存中移除已导入的 Protobuf 消息定义。
-* Files：删除本地 [`format_schema_path`](/zh/reference/settings/server-settings/settings#format_schema_path) 中缓存的 schema 文件，这些文件会在 `format_schema_source` 设置为 `query` 时生成。
+* Files：删除本地 [`format_schema_path`](/zh/reference/settings/server-settings/settings/format#format_schema_path) 中缓存的 schema 文件，这些文件会在 `format_schema_source` 设置为 `query` 时生成。
   注意：如果未指定目标，则会同时清除这两类缓存。
 
 ```sql
@@ -523,7 +523,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## 管理分布式表
 </div>
 
-ClickHouse 可以管理[Distributed](/zh/reference/engines/table-engines/special/distributed)表。当用户向这些表插入数据时，ClickHouse 会先为需要发送到集群节点的数据创建一个队列，然后再异步发送。你可以使用 [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends)、[FLUSH DISTRIBUTED](#flush-distributed) 和 [`START DISTRIBUTED SENDS`](#start-distributed-sends) 查询来控制队列处理。你也可以通过 [`distributed_foreground_insert`](/zh/reference/settings/session-settings#distributed_foreground_insert) 设置，以同步方式向分布式表插入数据。
+ClickHouse 可以管理[Distributed](/zh/reference/engines/table-engines/special/distributed)表。当用户向这些表插入数据时，ClickHouse 会先为需要发送到集群节点的数据创建一个队列，然后再异步发送。你可以使用 [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends)、[FLUSH DISTRIBUTED](#flush-distributed) 和 [`START DISTRIBUTED SENDS`](#start-distributed-sends) 查询来控制队列处理。你也可以通过 [`distributed_foreground_insert`](/zh/reference/settings/session-settings/distributed#distributed_foreground_insert) 设置，以同步方式向分布式表插入数据。
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -536,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  如果启用了 [`prefer_localhost_replica`](/zh/reference/settings/session-settings#prefer_localhost_replica) (默认启用) ，数据仍会照常插入本地分片。
+  如果启用了 [`prefer_localhost_replica`](/zh/reference/settings/session-settings/prefer#prefer_localhost_replica) (默认启用) ，数据仍会照常插入本地分片。
 </Note>
 
 <div id="flush-distributed">
@@ -1070,6 +1070,88 @@ SYSTEM WAIT VIEW [db.]name
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+<div id="managing-background-activity">
+  ## 管理后台活动
+</div>
+
+用于控制单个表或服务器上所有此类表后台活动的引擎无关命令，涵盖：
+
+* [可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view) (定期刷新) ；以及
+* 持续从外部来源消费数据的流式表引擎：[Kafka](/zh/reference/engines/table-engines/integrations/kafka)、[RabbitMQ](/zh/reference/engines/table-engines/integrations/rabbitmq)、[NATS](/zh/reference/engines/table-engines/integrations/nats)、[S3Queue](/zh/reference/engines/table-engines/integrations/s3queue) 和 [AzureQueue](/zh/reference/engines/table-engines/integrations/azure-queue)。
+
+对于可刷新materialized view，每个动词都是[管理可刷新 Materialized View](#managing-refreshable-materialized-views)中对应 `SYSTEM ... VIEW` 命令的别名。因此，`SYSTEM STOP [db.]name` 的行为与 `SYSTEM STOP VIEW [db.]name` 完全相同，其他命令也同样如此。
+
+按表形式和通配符形式对没有后台活动的表处理方式不同。按表形式 (`SYSTEM STOP [db.]table`) 中，如果指定的表既不是流式引擎，也不是可刷新materialized view，则会抛出错误。通配符形式会静默跳过此类表，因此始终可安全运行。
+
+`STOP` 和 `CANCEL` 会尽快中断消费。对于 [Kafka](/zh/reference/engines/table-engines/integrations/kafka)、[RabbitMQ](/zh/reference/engines/table-engines/integrations/rabbitmq) 和 [NATS](/zh/reference/engines/table-engines/integrations/nats)，它们会停止从来源读取数据，但不会中断已开始的插入：正在写入 materialized view 的块仍会完成并提交。[S3Queue](/zh/reference/engines/table-engines/integrations/s3queue) 和 [AzureQueue](/zh/reference/engines/table-engines/integrations/azure-queue) 会在同一管道中读取和插入数据。启用去重 (默认) 时，插入也会被取消，文件会在之后重新处理。禁用去重时，为避免重复行，正在处理的批次会完成并提交 (与上述引擎相同) 。已读取但尚未提交的数据会在之后再次消费，因此不会丢失数据；但核心 NATS (不含 JetStream) 例外，它无法重新投递，会丢弃这些数据。
+
+`PAUSE` 不会中断正在进行的插入，因此通常不会导致数据丢失。核心 NATS 是例外：暂停会停止消费，并丢弃已接收但尚未插入的消息，而核心 NATS 无法重新投递这些消息。
+
+<Note>
+  这些状态不会在服务器重启后保留。重启后，可刷新视图会恢复按配置计划刷新，流式引擎会恢复消费。
+</Note>
+
+<div id="stop-background">
+  ### SYSTEM STOP
+</div>
+
+停止后台活动并使其保持停止状态：中断当前正在运行的操作，在执行 `SYSTEM START` 前不再运行任何操作。等同于 `PAUSE` + `CANCEL`。
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+<div id="start-background">
+  ### SYSTEM START
+</div>
+
+恢复活动，撤销之前执行的 `SYSTEM STOP` 或 `SYSTEM PAUSE`。不会中断任何活动。
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+<div id="pause-background">
+  ### SYSTEM PAUSE
+</div>
+
+阻止新的后台活动，但允许当前正在运行的操作完成。
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+<div id="cancel-background">
+  ### SYSTEM CANCEL
+</div>
+
+仅中断当前正在进行的活动，不会阻止后续活动——表仍会按计划继续刷新或消费。如果当前没有正在进行的活动，则不执行任何操作。
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+<div id="refresh-background">
+  ### SYSTEM REFRESH
+</div>
+
+在计划之外额外运行一个周期。对于流式表，即使表已停止或暂停，也会立即执行一次。对于可刷新materialized view，其行为与 `SYSTEM REFRESH VIEW` 相同：如果该 view 已停止，会记住此次刷新请求，并在 `SYSTEM START` 将其恢复后执行一次。
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+<div id="background-privileges">
+  ### 特权
+</div>
+
+每条命令都需要相应目标引擎的特权：可刷新materialized view 需要 `SYSTEM VIEWS`，流式表需要 `SYSTEM STREAMING ENGINES`。两者均为 `SYSTEM BACKGROUND` 的子项，因此授予 `SYSTEM BACKGROUND` 后，便可控制所有此类表的后台活动。`ALL BACKGROUND` 形式仅适用于用户有权控制的表，其他表将被静默跳过。
 
 <div id="flush-object-storage-queue">
   ## SYSTEM FLUSH OBJECT STORAGE QUEUE

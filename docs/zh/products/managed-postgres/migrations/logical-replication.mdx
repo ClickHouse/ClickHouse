@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/logical-replication
 sidebarTitle: '逻辑复制'
-title: '使用逻辑复制迁移到 Managed Postgres'
+title: '使用逻辑复制迁移到 ClickHouse Managed Postgres'
 description: '了解如何使用逻辑复制将 PostgreSQL 数据迁移到 ClickHouse Managed Postgres'
 keywords: ['postgres', 'postgresql', '逻辑复制', '迁移', '数据传输', 'Managed Postgres']
 doc_type: 'guide'
@@ -20,7 +20,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * 能够访问源 PostgreSQL 数据库。
 * 在本地计算机上安装 `psql`、`pg_dump` 和 `pg_restore`。这些工具用于在目标数据库中创建空表，通常会随 PostgreSQL 一同安装。若未安装，可从 [PostgreSQL 官方网站](https://www.postgresql.org/download/) 下载。
-* 源数据库必须可从 ClickHouse Managed Postgres 访问。请确保所需的防火墙规则或安全组 (Security Group) 设置允许此连接。你可以通过以下方式获取 Managed Postgres 实例的出口 IP：
+* 源数据库必须可从 ClickHouse Managed Postgres 访问。请确保所需的防火墙规则或安全组 (Security Group) 设置允许此连接。你可以通过以下方式获取 ClickHouse Managed Postgres 实例的出口 IP：
 
 ```shell
 dig +short <your-managed-postgres-hostname>
@@ -79,10 +79,10 @@ pg_dump \
 <Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="源 PostgreSQL 表设置" size="xl" border />
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### 创建 Managed Postgres 实例
+  ### 创建 ClickHouse Managed Postgres 实例
 </div>
 
-首先，请确保您已创建好一个 Managed Postgres 实例，最好与源实例位于同一区域。您可以参考[此处](/zh/products/managed-postgres/quickstart#create-postgres-database)的快速指南。以下是本指南中将要创建的实例：
+首先，请确保您已创建好一个 ClickHouse Managed Postgres 实例，最好与源实例位于同一区域。您可以参考[此处](/zh/products/managed-postgres/quickstart#create-postgres-database)的快速指南。以下是本指南中将要创建的实例：
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="创建 ClickHouse Managed Postgres 实例" size="md" border />
 
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## 后续步骤
 </div>
 
-恭喜！您已成功使用 pg&#95;dump 和 pg&#95;restore 将 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。现在，您可以开始了解 Managed Postgres 的功能及其与 ClickHouse 的集成。以下这份 10 分钟快速入门指南可帮助您快速上手：
+恭喜！您已成功使用 pg&#95;dump 和 pg&#95;restore 将 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。现在，您可以开始了解 ClickHouse Managed Postgres 的功能及其与 ClickHouse 的集成。以下这份 10 分钟快速入门指南可帮助您快速上手：
 
-* [Managed Postgres 快速入门指南](/zh/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres 快速入门指南](/zh/products/managed-postgres/quickstart)

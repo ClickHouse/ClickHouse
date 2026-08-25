@@ -18,7 +18,9 @@ Par défaut, le S3 ClickPipe part du principe que les fichiers sont ajoutés à 
   ## Fonctionnement
 </div>
 
-Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** du chemin sélectionné, puis écoute dans la file d’attente les événements `ObjectCreated:*` qui correspondent au chemin spécifié. Tout message concernant un fichier déjà traité, un fichier ne correspondant pas au chemin ou un événement d’un autre type sera **ignoré**. Les fichiers sont ingérés lorsque le seuil configuré dans `max insert bytes` ou `max file count` est atteint, ou après un intervalle configurable (30 secondes par défaut). Il est **impossible** de démarrer l’ingestion à partir d’un fichier précis ou d’un instant donné — ClickPipes chargera toujours tous les fichiers du chemin sélectionné.
+Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** du chemin sélectionné, puis écoute dans la file d’attente les événements `ObjectCreated:*` qui correspondent au chemin spécifié. Tout message concernant un fichier déjà traité, un fichier ne correspondant pas au chemin ou un événement d’un autre type sera **ignoré**. Les fichiers sont ingérés lorsque le seuil configuré dans `max insert bytes` ou `max file count` est atteint, ou après un intervalle configurable (30 secondes par défaut).
+
+Pour ingérer uniquement les fichiers transmis par la file d’attente, activez **Ignorer le chargement initial**. Lorsqu’elle est activée, ClickPipes ignore le parcours initial des fichiers existants dans le chemin sélectionné et traite uniquement les fichiers transmis via la file d’attente SQS.
 
 Différents types de défaillances peuvent survenir lors de l’ingestion des données, ce qui peut entraîner des insertions partielles ou des doublons. Les Object Storage ClickPipes tolèrent les échecs d’insertion et offrent une sémantique exactly-once grâce à des tables de staging temporaires. Les données sont d’abord insérées dans une table de staging ; si un problème survient, la table de staging est vidée avec TRUNCATE et l’insertion est relancée depuis un état propre. Les partitions ne sont déplacées vers la table cible qu’une fois l’insertion terminée avec succès.
 
@@ -196,10 +198,10 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
   <Step title="Créer un ClickPipe en mode non ordonné" id="create-clickpipe">
     **1.** Dans la console ClickHouse Cloud, accédez à **Sources de données &gt; Créer un ClickPipe** et sélectionnez **Amazon S3**. Renseignez les informations nécessaires pour vous connecter à votre bucket S3. Sous **Méthode d’authentification**, choisissez **IAM role** et fournissez l’ARN du rôle que vous avez créé à l’étape précédente.
 
-    **2.** Sous **Données entrantes**, activez **Ingestion continue**. Sélectionnez **N’importe quel ordre** comme mode d’ingestion et indiquez l’**URL de la file d’attente SQS** associée à votre bucket. La file d’attente doit être utilisée exclusivement par ce ClickPipe — voir [Créer une file d’attente Amazon SQS](#create-sqs-queue).
+    **2.** Sous **Données entrantes**, activez **Ingestion continue**. Sélectionnez **N’importe quel ordre** comme mode d’ingestion et indiquez l’**URL de la file d’attente SQS** associée à votre bucket. Pour ne traiter que les fichiers de la file d’attente et ignorer l’analyse initiale des fichiers existants dans le chemin sélectionné, activez **Ignorer le chargement initial**. La file d’attente doit être utilisée exclusivement par ce ClickPipe — voir [Créer une file d’attente Amazon SQS](#create-sqs-queue).
 
     **3.** Sous **Informations d’analyse**, définissez une **clé de tri** pour la table cible. Apportez les ajustements nécessaires au schéma mappé, puis configurez un rôle pour l’utilisateur de base de données ClickPipes.
 
-    **4.** Vérifiez la configuration et cliquez sur **Créer un ClickPipe**. ClickPipes effectuera une analyse initiale de votre bucket pour charger tous les fichiers existants correspondant au chemin spécifié, puis commencera à traiter les fichiers à mesure que de nouveaux événements `ObjectCreated:*` arriveront dans la file d’attente.
+    **4.** Vérifiez la configuration et cliquez sur **Créer un ClickPipe**. Sauf si **Ignorer le chargement initial** est activé, ClickPipes effectuera une analyse initiale de votre bucket pour charger tous les fichiers existants correspondant au chemin spécifié, puis commencera à traiter les fichiers à mesure que les événements `ObjectCreated:*` correspondants seront remis depuis la file d’attente.
   </Step>
 </Steps>
