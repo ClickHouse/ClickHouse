@@ -28,9 +28,6 @@ namespace ErrorCodes
   * rand   - values from the range 0 .. 2^32 - 1.
   * rand64 - values from the range 0 .. 2^64 - 1.
   *
-  * Which generator produces those bytes is selected per target at compile time, so the
-  * sequence is not comparable across builds.
-  *
   * randConstant - service function, produces a constant column with a random value.
   *
   * The time is used as the seed.
@@ -40,8 +37,7 @@ namespace ErrorCodes
 
 struct RandImpl
 {
-    /// Fill memory with random data. Up to PADDING_FOR_SIMD - 1 bytes past size may be overwritten,
-    /// so the memory region must be padded by at least that much.
+    /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
