@@ -296,6 +296,12 @@ as a noun (e.g. "Faster Float-to-String conversion").
 
 Observed across releases:
 
+- `Clickhouse` / `clickHouse` / `Click House` → `ClickHouse`. The
+  `clickhouse_spelling` style check accepts only `ClickHouse` and the token
+  spellings `clickhouse` and `CLICKHOUSE`, so a misspelling inherited from a
+  pull request body fails the CI of the changelog pull request itself (it did,
+  on 2026-08-25).
+- `loose` → `lose`
 - `Propogate` → `Propagate`
 - `on fly` → `on the fly`
 - `FIx` → `Fix`
