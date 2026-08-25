@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/MemorySettings.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -94,6 +95,11 @@ void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
 bool MemorySettings::hasBuiltin(std::string_view name)
 {
     return MemorySettingsImpl::hasBuiltin(name);
+}
+
+void MemorySettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(columns);
 }
 }
 

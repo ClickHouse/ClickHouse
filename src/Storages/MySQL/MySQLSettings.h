@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace Poco::Util
@@ -48,6 +49,7 @@ struct MySQLSettings
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
     static bool hasBuiltin(std::string_view name);
+    static void fillEngineSettingsColumns(MutableColumns & columns);
 
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;

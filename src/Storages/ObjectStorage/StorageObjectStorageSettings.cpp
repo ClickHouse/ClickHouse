@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
@@ -53,6 +54,11 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
         if (impl->has(name))
             impl->set(name, value);
     }
+}
+
+void StorageObjectStorageSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<StorageObjectStorageSettingsImpl>(columns);
 }
 
 }

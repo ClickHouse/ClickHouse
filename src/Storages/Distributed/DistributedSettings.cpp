@@ -3,6 +3,7 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Common/Exception.h>
@@ -105,6 +106,11 @@ void DistributedSettings::applyChanges(const SettingsChanges & changes)
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
+}
+
+void DistributedSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<DistributedSettingsImpl>(columns);
 }
 }
 

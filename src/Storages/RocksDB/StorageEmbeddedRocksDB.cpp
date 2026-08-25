@@ -1068,6 +1068,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
+        .fill_engine_settings_fn = RocksDBSettings::fillEngineSettingsColumns,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{

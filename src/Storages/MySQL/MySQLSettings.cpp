@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -135,5 +136,10 @@ void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collec
 bool MySQLSettings::hasBuiltin(std::string_view name)
 {
     return MySQLSettingsImpl::hasBuiltin(name);
+}
+
+void MySQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<MySQLSettingsImpl>(columns);
 }
 }
