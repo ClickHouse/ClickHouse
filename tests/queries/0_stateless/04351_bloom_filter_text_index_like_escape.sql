@@ -118,7 +118,7 @@ SELECT trimLeft(explain) AS explain FROM (
 
 DROP TABLE tab;
 
-SELECT 'A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 16 granules)';
+SELECT 'A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 24 granules)';
 
 CREATE TABLE tab
 (
@@ -132,6 +132,7 @@ SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merg
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World ClickHouse fast' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
 
 SELECT count() FROM tab WHERE message LIKE '%World%';
 SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|';
@@ -141,6 +142,15 @@ SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|' SETTINGS force_d
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+SELECT 'Index analysis with a consumed escape character also narrows to 8 of 24 granules';
+
+SELECT count() FROM tab WHERE message LIKE '%50#%off%' ESCAPE '#';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%50#%off%' ESCAPE '#'
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE tab;

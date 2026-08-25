@@ -43,14 +43,20 @@ Parts: 2 | Granules: 16
 Granules: 32/32
 Name: idx
 Granules: 16/32
-A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 16 granules)
+A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 24 granules)
 1024
 1024
 1024
 Parts: 1 | Granules: 8
-Granules: 16/16
+Granules: 24/24
 Name: idx
-Granules: 8/16
+Granules: 8/24
+Index analysis with a consumed escape character also narrows to 8 of 24 granules
+1024
+Parts: 1 | Granules: 8
+Granules: 24/24
+Name: idx
+Granules: 8/24
 A non-ASCII ESCAPE byte is rejected at planning time so a granule cannot be skipped for a query that must raise
 An unknown backslash escape in the folded 3-argument form is not pruned by the bloom-filter text index
 Correctness check (3-argument ESCAPE form): the row containing the literal backslash is returned
