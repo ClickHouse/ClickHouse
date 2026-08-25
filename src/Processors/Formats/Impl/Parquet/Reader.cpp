@@ -1729,7 +1729,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
 
     /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
-    parquet::ColumnDescriptor desc = makeColumnDescriptor(getFileMetadata(), column_info);
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
     std::optional<std::vector<uint64_t>> hashes;
     if (column.dictionary.mode == Dictionary::Mode::Column)
     {
