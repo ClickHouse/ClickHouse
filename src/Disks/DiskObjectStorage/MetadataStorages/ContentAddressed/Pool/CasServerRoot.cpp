@@ -1640,7 +1640,10 @@ MountRenewResult MountLeaseKeeper::terminalResult(
     {
     }
     if (keeper_state != MountLeaseKeeperState::Active)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount-lease: terminal renewal outside Active state");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "CAS mount-lease: terminal renewal outside Active state (observed state {})",
+            static_cast<uint32_t>(keeper_state));
     keeper_state = MountLeaseKeeperState::RenewalTerminal;
     return MountRenewResult{
         .outcome = MountRenewOutcome::Terminal,
@@ -1658,7 +1661,11 @@ MountRenewResult MountLeaseKeeper::renew(
     const MountRenewObservabilityCallGuard observability_guard(observability_registration);
 
     if (keeper_state != MountLeaseKeeperState::Active)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount-lease: renew is allowed only in Active state for key '{}'", key);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "CAS mount-lease: renew is allowed only in Active state for key '{}' (observed state {})",
+            key,
+            static_cast<uint32_t>(keeper_state));
 
     const auto boot_clock = environment.boot_ms ? environment.boot_ms : boot_ms_fn;
     const auto stop_cause = environment.stop_cause

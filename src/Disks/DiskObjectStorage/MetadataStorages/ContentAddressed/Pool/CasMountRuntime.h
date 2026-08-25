@@ -376,6 +376,13 @@ private:
         MountLeaseKeeper * keeper = nullptr;
     };
 
+    /// The renewal worker may drive a renewal only while it exclusively owns the driver and the keeper
+    /// is Active. Requires `driver_mutex`. `admitKeeperCall` enforces the same three conditions for every
+    /// other driver; the worker loop must park rather than throw when they do not hold, so it needs the
+    /// predicate separately. Both the park test and the wake predicate use this one definition, so they
+    /// cannot drift apart.
+    bool renewalWorkerMayRenew() const;
+
     AdmittedKeeperCall admitKeeperCall(RenewalDriverState required, RenewalDriverState active);
     uint64_t renewKeeperOnce(
         AdmittedKeeperCall call,

@@ -256,6 +256,13 @@ CasMountRuntime::DriverLease::DriverLease(CasMountRuntime & runtime_, RenewalDri
 {
 }
 
+bool CasMountRuntime::renewalWorkerMayRenew() const
+{
+    return renewal_driver_state == RenewalDriverState::WorkerIdle
+        && mount_keeper
+        && mount_keeper->state() == MountLeaseKeeperState::Active;
+}
+
 CasMountRuntime::DriverLease::~DriverLease()
 {
     if (finished)
@@ -664,19 +671,17 @@ void CasMountRuntime::renewalLoop()
                 renewal_driver_state = RenewalDriverState::Parked;
                 driver_cv.notify_all();
             }
-            if (renewal_driver_state == RenewalDriverState::Parked
-                || (mount_keeper && mount_keeper->state() == MountLeaseKeeperState::RenewalTerminal))
+            if (!renewalWorkerMayRenew())
             {
                 driver_cv.wait(lock, [this]
                 {
                     const bool terminal = remountTerminal();
                     if (!workers_stop_requested
                         && !terminal
-                        && renewal_driver_state != RenewalDriverState::WorkerIdle
+                        && !renewalWorkerMayRenew()
                         && config.renewal_parked_predicate_false_hook_for_test)
                         config.renewal_parked_predicate_false_hook_for_test();
-                    return workers_stop_requested || terminal
-                        || renewal_driver_state == RenewalDriverState::WorkerIdle;
+                    return workers_stop_requested || terminal || renewalWorkerMayRenew();
                 });
                 if (workers_stop_requested || remountTerminal())
                     return;
@@ -707,11 +712,36 @@ void CasMountRuntime::renewalLoop()
 
         if (config.renewal_admitted_hook_for_test)
             config.renewal_admitted_hook_for_test();
-        (void)renewKeeperOnce(
-            std::move(call),
-            RenewalDriverState::WorkerCall,
-            /*propagate_failure=*/false,
-            /*worker_call=*/true);
+        try
+        {
+            (void)renewKeeperOnce(
+                std::move(call),
+                RenewalDriverState::WorkerCall,
+                /*propagate_failure=*/false,
+                /*worker_call=*/true);
+        }
+        catch (...)
+        {
+            /// The worker path does not propagate renewal failures, so anything arriving here is this
+            /// loop's own state machine reporting that it was driven out of contract. A background loop
+            /// must not take the process down, but it must not keep driving a state machine that just
+            /// proved wrong either: every later renewal would be unaudited.
+            ///
+            /// Exiting is safe because write admission is bounded by the fence deadline, not by this
+            /// thread's existence -- `mayMutate` requires `bootMsNow() < mount_fence.deadline_boot_ms`, so
+            /// writes stop being admitted within one TTL whether or not anyone is renewing. Tripping the
+            /// fence first brings that boundary forward instead of waiting for the TTL to lapse.
+            ///
+            /// Residual, deliberately not handled here: `scheduleRemount` also has an external caller, so
+            /// a later remount can still re-arm the fence and buy another bounded TTL. That makes the pool
+            /// flap rather than settle. Pairing this exit with a terminal publication would settle it, but
+            /// which terminal state means "this runtime's own driver broke" is a user-visible choice that
+            /// does not belong in a rescue path.
+            tripMountLost();
+            tryLogCurrentException(getLogger("CasPool"), "CAS mount-lease renewal loop");
+            chassert(false);
+            return;
+        }
     }
 }
 
