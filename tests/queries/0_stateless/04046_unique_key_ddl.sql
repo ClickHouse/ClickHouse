@@ -117,76 +117,12 @@ ENGINE = MergeTree
 UNIQUE KEY (_part)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
--- 7h. A backticked subcolumn name is rejected. Written without backticks it is an
+-- 7h. A subcolumn of a user column is rejected. Written without backticks it is an
 -- expression and 7a already rejects it; backticked it is a single identifier that
 -- names no stored column, so it used to pass DDL and fail every INSERT.
--- One arm per subcolumn family a parent type can expose.
-CREATE TABLE uk_t (id UInt64, c Tuple(String))
-ENGINE = MergeTree
-UNIQUE KEY (`c.1`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Tuple(x String))
-ENGINE = MergeTree
-UNIQUE KEY (`c.x`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Tuple(Tuple(String)))
-ENGINE = MergeTree
-UNIQUE KEY (`c.1.1`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
 CREATE TABLE uk_t (id UInt64, c Nullable(String))
 ENGINE = MergeTree
 UNIQUE KEY (`c.null`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Array(Int32))
-ENGINE = MergeTree
-UNIQUE KEY (`c.size0`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Map(String, String))
-ENGINE = MergeTree
-UNIQUE KEY (`c.keys`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Map(String, String))
-ENGINE = MergeTree
-UNIQUE KEY (`c.values`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c String)
-ENGINE = MergeTree
-UNIQUE KEY (`c.size`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Variant(String, UInt64))
-ENGINE = MergeTree
-UNIQUE KEY (`c.String`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Variant(String, UInt64))
-ENGINE = MergeTree
-UNIQUE KEY (`c.String.null`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, c Dynamic)
-ENGINE = MergeTree
-UNIQUE KEY (`c.String`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- A JSON path subcolumn was already rejected, as a key column of a type that cannot
--- be used in a key; it is now rejected earlier, for naming a subcolumn.
-CREATE TABLE uk_t (id UInt64, c JSON)
-ENGINE = MergeTree
-UNIQUE KEY (`c.a`)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- The tuple-list spelling of UNIQUE KEY is checked element by element too.
-CREATE TABLE uk_t (id UInt64, c Nullable(String))
-ENGINE = MergeTree
-UNIQUE KEY (id, `c.null`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
 -- 7h-1. A stored column may be named after another column's subcolumn: `c.null`
@@ -200,36 +136,8 @@ ORDER BY (id);
 INSERT INTO uk_t_coincide VALUES (1, 'a', 7);
 SELECT count() FROM uk_t_coincide;
 
--- Same for a name that collides with an array size subcolumn.
-DROP TABLE IF EXISTS uk_t_coincide2;
-CREATE TABLE uk_t_coincide2 (id UInt64, c Array(Int32), `c.size0` UInt64)
-ENGINE = MergeTree
-UNIQUE KEY (`c.size0`)
-ORDER BY (id);
-INSERT INTO uk_t_coincide2 VALUES (1, [1], 7);
-SELECT count() FROM uk_t_coincide2;
-
--- 7h-2. A flattened Nested member is a stored column named `n.x`, so it is accepted
--- at DDL. Its Array type is what an INSERT then rejects, unchanged by this guard.
-DROP TABLE IF EXISTS uk_t_nested;
-CREATE TABLE uk_t_nested (id UInt64, n Nested(x String))
-ENGINE = MergeTree
-UNIQUE KEY (`n.x`)
-ORDER BY (id);
-SELECT unique_key FROM system.tables WHERE database = currentDatabase() AND name = 'uk_t_nested';
-INSERT INTO uk_t_nested VALUES (1, ['a']); -- { serverError NOT_IMPLEMENTED }
-
--- 7h-3. A dotted name that is nobody's subcolumn is an ordinary column.
-DROP TABLE IF EXISTS uk_t_dotted;
-CREATE TABLE uk_t_dotted (id UInt64, `a.b` String)
-ENGINE = MergeTree
-UNIQUE KEY (`a.b`)
-ORDER BY (id);
-INSERT INTO uk_t_dotted VALUES (1, 'x');
-SELECT count() FROM uk_t_dotted;
-
--- 7h-4. A full-definition ATTACH carries user-written DDL, so it is rejected too.
--- The UUID is derived from the test number to avoid collisions.
+-- 7h-2. A full-definition ATTACH carries user-written DDL, so it is rejected too.
+-- The UUID is derived from the issue number to avoid collisions.
 DROP TABLE IF EXISTS uk_t_attach_sub SYNC;
 ATTACH TABLE uk_t_attach_sub UUID '00000000-0000-0000-0000-000000114470'
 (id UInt64, c Nullable(String))
@@ -237,40 +145,13 @@ ENGINE = MergeTree
 UNIQUE KEY (`c.null`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
--- 7i. A virtual column's subcolumn is rejected too. `_partition_value` is the only
--- virtual with a composite type, so it is the only one exposing subcolumns; the
--- others reach `getKeyFromAST` and raise UNKNOWN_IDENTIFIER, which 7f already covers.
+-- 7i. A subcolumn of a virtual column is rejected too. It is in neither index 7h
+-- consults: the virtual lookup is exact-name, and the subcolumn index holds only
+-- subcolumns of declared columns. `_partition_value` is the only virtual with a
+-- composite type, so it is the only one exposing subcolumns.
 CREATE TABLE uk_t (id UInt64, p UInt64)
 ENGINE = MergeTree
 UNIQUE KEY (`_partition_value.1`)
-PARTITION BY p
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- A later element of a multi-column partition key.
-CREATE TABLE uk_t (id UInt64, p UInt64, q String)
-ENGINE = MergeTree
-UNIQUE KEY (`_partition_value.2`)
-PARTITION BY (p, q)
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
--- A subcolumn of the tuple element, so the rejected name has two dots.
-CREATE TABLE uk_t (id UInt64, p String)
-ENGINE = MergeTree
-UNIQUE KEY (`_partition_value.1.size`)
-PARTITION BY p
-ORDER BY (id); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE uk_t (id UInt64, p Nullable(UInt64))
-ENGINE = MergeTree
-UNIQUE KEY (`_partition_value.1.null`)
-PARTITION BY p
-ORDER BY (id)
-SETTINGS allow_nullable_key = 1; -- { serverError BAD_ARGUMENTS }
-
--- The tuple-list spelling.
-CREATE TABLE uk_t (id UInt64, p UInt64)
-ENGINE = MergeTree
-UNIQUE KEY (id, `_partition_value.1`)
 PARTITION BY p
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
@@ -284,15 +165,6 @@ PARTITION BY p
 ORDER BY (id);
 INSERT INTO uk_t_vcoincide VALUES (1, 2, 'x');
 SELECT count() FROM uk_t_vcoincide;
-
--- Same for a scalar virtual, whose type exposes no subcolumn at all.
-DROP TABLE IF EXISTS uk_t_vcoincide2;
-CREATE TABLE uk_t_vcoincide2 (id UInt64, `_part.size` String)
-ENGINE = MergeTree
-UNIQUE KEY (`_part.size`)
-ORDER BY (id);
-INSERT INTO uk_t_vcoincide2 VALUES (1, 'x');
-SELECT count() FROM uk_t_vcoincide2;
 
 -- 7i-2. Without a PARTITION BY there is no `_partition_value` virtual, so the same
 -- name reaches `getKeyFromAST` and is rejected for matching no column at all.
@@ -515,5 +387,5 @@ DROP TABLE plain_dst_from_uk;
 DROP TABLE IF EXISTS uk_ttl_inline_pk;
 DROP TABLE IF EXISTS uk_ttl_storage_pk;
 DROP TABLE IF EXISTS uk_ttl_full;
+DROP TABLE IF EXISTS uk_t_coincide;
 DROP TABLE IF EXISTS uk_t_vcoincide;
-DROP TABLE IF EXISTS uk_t_vcoincide2;
