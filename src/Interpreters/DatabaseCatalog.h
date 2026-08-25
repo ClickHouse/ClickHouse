@@ -131,15 +131,15 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
-    /// Guards the storage under its current name, retrying if a concurrent RENAME moves it. Waits on
-    /// the table lock in short chunks (blocking, no polling sleeps) and gives up without waiting when
-    /// an exclusive database DDL holds the database lock. Returns nullptr on timeout or when
-    /// `is_alive()` turns false, so background callers can bail out on shutdown and retry later.
+
+    /// Guards the storage under its current name, following a concurrent RENAME. Waits without
+    /// polling sleeps. Returns nullptr on timeout or when `is_alive()` turns false.
     DDLGuardPtr tryGetDDLGuardForStorage(
         const StoragePtr & storage,
         const Poco::Timespan & timeout,
         std::function<bool()> is_alive = [] { return true; });
-    /// Same, but throws TIMEOUT_EXCEEDED instead of returning nullptr. For foreground queries.
+
+    /// Same, but throws TIMEOUT_EXCEEDED instead of returning nullptr.
     DDLGuardPtr getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
@@ -304,8 +304,8 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    /// Waits on the table lock at most `table_lock_timeout` (zero = single attempt), single attempt
-    /// on the database lock. Always returns a guard, check `ownsTableLock` for the outcome.
+    /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
+    /// Always returns a guard, check `ownsTableLock` for the outcome.
     DDLGuardPtr tryGetDDLGuard(
         const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout);
 

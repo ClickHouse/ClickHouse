@@ -2371,8 +2371,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
     if (try_timeout)
     {
         table_lock = std::unique_lock(*it->second.mutex, std::defer_lock);
-        bool acquired = (*try_timeout == std::chrono::milliseconds::zero()) ? table_lock.try_lock() : table_lock.try_lock_for(*try_timeout);
-        if (!acquired)
+        if (!table_lock.try_lock_for(*try_timeout))
             return;
     }
     else
@@ -2380,18 +2379,20 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
         table_lock = std::unique_lock(*it->second.mutex);
     }
     is_database_guard = elem.empty();
-    if (!is_database_guard && try_timeout)
+    if (is_database_guard)
+        return;
+
+    if (try_timeout)
     {
-        /// Single attempt: callers of the try variant handle contention themselves, never sleep or throw here.
+        /// Single attempt: try-variant callers handle contention themselves, never sleep or throw here.
         if (!db_mutex.try_lock_shared())
         {
             database_lock_busy = true;
             table_lock.unlock();
             return;
         }
-        db_mutex_held = true;
     }
-    else if (!is_database_guard)
+    else
     {
         static constexpr int MAX_TRY = 10;
         static constexpr UInt64 INTERVAL_MS = 100;
@@ -2419,8 +2420,8 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
                 database_name,
                 MAX_TRY * INTERVAL_MS);
         }
-        db_mutex_held = true;
     }
+    db_mutex_held = true;
 }
 
 void DDLGuard::releaseTableLock() noexcept

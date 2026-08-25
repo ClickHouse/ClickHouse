@@ -27,7 +27,7 @@ public:
     using Map = std::map<String, Entry>;
 
     /// With no try_timeout blocks until the guard is acquired. With try_timeout waits on the table
-    /// mutex at most that long (zero = single attempt), never sleeps and never throws on contention.
+    /// mutex at most that long, never sleeps and never throws on contention.
     DDLGuard(
         Map & map_,
         SharedMutex & db_mutex_,
@@ -37,12 +37,10 @@ public:
         std::optional<std::chrono::milliseconds> try_timeout = {});
     ~DDLGuard();
 
-    /// True when the guard was fully acquired.
-    /// Only ever false when constructed with try_timeout and some lock was busy.
+    /// True when the guard was fully acquired. Only ever false when constructed with try_timeout.
     bool ownsTableLock() const { return table_lock.owns_lock(); }
 
-    /// True when acquisition failed on the database-level lock (an exclusive database DDL is
-    /// running), as opposed to the per-table lock. Waiting it out on the table mutex is pointless.
+    /// True when acquisition failed on the database-level lock (an exclusive database DDL is running).
     bool databaseLockBusy() const { return database_lock_busy; }
 
     /// Unlocks table name, keeps holding read lock for database name

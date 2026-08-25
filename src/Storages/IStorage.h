@@ -547,8 +547,8 @@ public:
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       *
-      * `ddl_guard` serializes with RENAME/EXCHANGE TABLES. Storages that wait on replicas or
-      * mutations may `ddl_guard.reset()` once the change is durably submitted.
+      * `ddl_guard` serializes with RENAME/EXCHANGE TABLES, null when the caller already holds it.
+      * Storages that wait on replicas or mutations may `ddl_guard.reset()` once the change is durably submitted.
       */
     virtual void alter(
         const AlterCommands & params,
