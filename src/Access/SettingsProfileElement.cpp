@@ -664,7 +664,7 @@ SettingsProfileElements::findChangedSettings(const AlterSettingsProfileElements 
     new_elements.applyChanges(changes);
 
     auto old_effective = getEffectiveSettings(*this, access_control);
-    auto new_effective = getEffectiveSettings(std::move(new_elements), access_control);
+    auto new_effective = getEffectiveSettings(new_elements, access_control);
 
     /// A setting the change reverts is gone from the new elements: add it back as empty so the diff sees it.
     for (const auto & old_one : old_effective)
