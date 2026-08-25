@@ -330,7 +330,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark)
+void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark)
 {
     if (!has_subcolumns || !has_substream_marks)
         return;
@@ -339,7 +339,7 @@ void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t cur
     /// We don't call it during prefixes deserialization because we can get prefixes from cache and
     /// don't call it at all.
     for (auto index : column_to_subcolumns_indexes | std::views::values | std::views::join)
-        getStream(columns_to_read[index]).adjustRightMark(current_task_last_mark);
+        getStream(columns_to_read[index]).adjustRightMark(last_mark_to_read);
 
     /// Second, deserialize prefixes of get the from cache.
     auto deserialize = [&]() -> DeserializeBinaryBulkStateMap
@@ -413,9 +413,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
         enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            auto substream = ISerialization::getFileNameForStream(
-                column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            return columns_substreams.tryGetSubstreamPosition(column_pos, substream).has_value();
+            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, storage_settings).has_value();
         };
 
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -466,9 +464,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
     {
         check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            auto substream = ISerialization::getFileNameForStream(
-                column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], substream).has_value();
+            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings).has_value();
         };
     }
 

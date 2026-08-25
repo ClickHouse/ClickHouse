@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: 'Descripción general'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: 'El client oficial de JS para conectarse a ClickHouse.'
@@ -33,7 +33,7 @@ El código fuente del client está disponible en el [repositorio de GitHub de Cl
   El client de JS incluye skills de AI agent que pueden ayudar a los agentes de programación a trabajar con el client. Instálalas con:
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1011,7 +1011,7 @@ Aunque el server puede aceptarlo como un número, en los formatos de salida de l
 el desbordamiento de enteros, ya que los valores máximos de estos tipos son mayores que `Number.MAX_SAFE_INTEGER`.
 
 Sin embargo, este comportamiento se puede modificar
-con el [ajuste `output_format_json_quote_64bit_integers`](/es/reference/settings/formats#output_format_json_quote_64bit_integers)
+con el [ajuste `output_format_json_quote_64bit_integers`](/es/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **Ejemplo:** Ajusta el formato de salida JSON para números de 64 bits.

@@ -29,6 +29,10 @@ import urllib3
 
 temp_dir = "../../ci/tmp"
 
+# Emitted once per RabbitMQ container recreation. ci/jobs/integration_test_job.py
+# matches this literal, so it is an interface: renaming it zeroes the reported count.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -41,7 +45,6 @@ try:
     import pymongo
     import pymysql
     import nats
-    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
@@ -52,12 +55,14 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from filelock import FileLock, Timeout
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
+from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
@@ -86,6 +91,9 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+# `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
+# the cwd, which differs between a CI job and a native pytest run.
+TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
 
 
 def find_default_config_path():
@@ -162,6 +170,10 @@ def _create_env_file(path, variables):
     return path
 
 
+# The python-side budget a command gets when its caller forwards none.
+RUN_AND_CHECK_DEFAULT_TIMEOUT = 300
+
+
 def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
@@ -169,7 +181,7 @@ def run_and_check(
     input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
-    timeout=300,
+    timeout=RUN_AND_CHECK_DEFAULT_TIMEOUT,
     nothrow=False,
     detach=False,
 ) -> str:
@@ -417,41 +429,25 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "status",
-        ),
-        stdout=subprocess.PIPE,
+    # The container state shows whether it is still running and whether it was OOM-killed,
+    # and the process list shows where the entrypoint is stuck if the node never came up.
+    run_and_check(
+        ["docker", "inspect", "--format", "{{json .State}}", rabbitmq_id],
+        nothrow=True,
     )
-    p.communicate()
+    run_and_check(docker_exec(rabbitmq_id, "ps"), nothrow=True)
 
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "listeners",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "environment",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
+    for diagnostic in ("status", "listeners", "environment"):
+        run_and_check(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmq-diagnostics",
+                diagnostic,
+            ),
+            nothrow=True,
+        )
 
 
 async def check_nats_is_available(cluster, connect_timeout=10):
@@ -681,6 +677,7 @@ class ClickHouseCluster:
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
+        self.base_hdfs_cmd = []
         self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
@@ -707,6 +704,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
+        self.with_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
@@ -823,6 +821,8 @@ class ClickHouseCluster:
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
         self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
+        # Counts calls to wait_rabbitmq_to_start; `attempt` restarts at 0 in each one.
+        self.rabbitmq_wait_calls = 0
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -830,6 +830,15 @@ class ClickHouseCluster:
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
         self.nats_ssl_context = None
+
+        # available when with_hdfs == True
+        self.hdfs_host = "hdfs1"
+        self.hdfs_ip = None
+        self.hdfs_name_port = 50070
+        self.hdfs_data_port = 50075
+        self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
+        self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
+        self.hdfs_api = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1975,6 +1984,24 @@ class ClickHouseCluster:
         )
         return self.base_jdbc_bridge_cmd
 
+    def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hdfs = True
+        env_variables["HDFS_HOST"] = self.hdfs_host
+        env_variables["HDFS_NAME_PORT"] = str(self.hdfs_name_port)
+        env_variables["HDFS_DATA_PORT"] = str(self.hdfs_data_port)
+        env_variables["HDFS_LOGS"] = self.hdfs_logs_dir
+        env_variables["HDFS_FS"] = "bind"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml")]
+        )
+        self.base_hdfs_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml"),
+        )
+        return self.base_hdfs_cmd
+
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nginx = True
 
@@ -2101,6 +2128,7 @@ class ClickHouseCluster:
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_arrowflight=False,
+        with_hdfs=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -2439,6 +2467,11 @@ class ClickHouseCluster:
         if with_nats and not self.with_nats:
             cmds.append(
                 self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_hdfs and not self.with_hdfs:
+            cmds.append(
+                self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -2907,6 +2940,7 @@ class ClickHouseCluster:
     def wait_mysql8_to_start(self, timeout=180):
         self.mysql8_ip = self.get_instance_ip("mysql80")
         start = time.time()
+        errors = []
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
@@ -2919,10 +2953,11 @@ class ClickHouseCluster:
                 logging.debug("Mysql 8 Started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to MySQL 8 " + str(ex))
+                errors += [str(ex)]
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to MySQL 8:{}".format(errors))
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -3117,33 +3152,80 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait MySQL C# Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=120, retries=2):
         self.print_all_docker_pieces()
-        self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+        self.rabbitmq_wait_calls += 1
+        call = self.rabbitmq_wait_calls
 
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
-                    logging.debug("RabbitMQ is available")
-                    return True
-            except Exception as ex:
-                logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(1)
+        for attempt in range(retries):
+            if attempt > 0:
+                # The container occasionally hangs on startup: the entrypoint produces
+                # no output at all and the Erlang node never registers with epmd, while
+                # a fresh container on the same host starts in seconds. Recreate it and
+                # wait again instead of failing the whole test module.
+                #
+                # The broker log is copied out first: it lives under `instances_dir`,
+                # which is removed on teardown and on a second `start()`. S3 upload keys
+                # are built from the basename alone, so it must be unique along every
+                # axis that can produce two copies in one job: the pytest process, the
+                # cluster, the waiter call and the attempt.
+                #
+                # Only that name is logged, never the directory: `project_name` is
+                # stripped of everything non-alphanumeric so the name holds no
+                # whitespace, while the directory above it may.
+                name = (
+                    f"rabbit-{self.project_name}-pid{os.getpid()}"
+                    f"-call{call}-attempt{attempt}.log"
+                )
+                snapshot = name
+                try:
+                    os.makedirs(TEMP_ABS_DIR, exist_ok=True)
+                    shutil.copyfile(
+                        os.path.join(self.rabbitmq_logs_dir, "rabbit.log"),
+                        os.path.join(TEMP_ABS_DIR, name),
+                    )
+                except Exception as ex:
+                    logging.debug("Unable to preserve the RabbitMQ log: %s", ex)
+                    snapshot = ""
+                logging.warning(
+                    "%s attempt=%s snapshot=%s RabbitMQ did not start in %s seconds,"
+                    " recreating the container",
+                    RABBITMQ_RECREATE_TOKEN,
+                    attempt,
+                    snapshot,
+                    timeout,
+                )
+                run_and_check(
+                    ["docker", "rm", "-f", "-v", self.rabbitmq_docker_id],
+                    nothrow=True,
+                )
+                run_and_check(
+                    self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"]
+                )
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
 
-        start = time.time()
-        while time.time() - start < timeout:
+            self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+
+            start = time.time()
+            while time.time() - start < timeout:
+                try:
+                    if check_rabbitmq_is_available(
+                        self.rabbitmq_docker_id, self.rabbitmq_cookie
+                    ):
+                        logging.debug("RabbitMQ is available")
+                        return True
+                except Exception as ex:
+                    logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                    time.sleep(1)
+
             try:
-                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "a+") as f:
                     subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
-                time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
@@ -3226,6 +3308,32 @@ class ClickHouseCluster:
         raise Exception(
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
+
+    def make_hdfs_api(self, timeout=180):
+        self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
+        self.hdfs_api = HDFSApi(
+            user="root",
+            timeout=timeout,
+            host=self.hdfs_host,
+            data_port=self.hdfs_data_port,
+            proxy_port=self.hdfs_name_port,
+            hdfs_ip=self.hdfs_ip,
+        )
+
+    def wait_hdfs_to_start(self, timeout=300):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
+                logging.debug("Connected to HDFS and SafeMode disabled! ")
+                return
+            except Exception as ex:
+                logging.exception(
+                    "Can't connect to HDFS or preparations are not done yet " + str(ex)
+                )
+                time.sleep(1)
+
+        raise Exception("Can't wait HDFS to start")
 
     def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
@@ -3976,6 +4084,15 @@ class ClickHouseCluster:
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
                 self.wait_nats_is_available()
+
+            if self.with_hdfs and self.base_hdfs_cmd:
+                logging.debug("Setup HDFS")
+                os.makedirs(self.hdfs_logs_dir)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.up_called = True
+                self.make_hdfs_api()
+                self.wait_hdfs_to_start()
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")
@@ -5040,6 +5157,10 @@ class ClickHouseInstance:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
+        if not sanitizer_name:
+            # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
+            # also matches CFI, which traps on a bad vcall or cast with no sanitizer runtime attached.
+            return "-DSANITIZER" in build_opts
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
     def is_debug_build(self):
@@ -5502,7 +5623,7 @@ class ClickHouseInstance:
                 time.sleep(1)
                 continue
             else:
-                logging.debug("Clickhouse process running.")
+                logging.debug("ClickHouse process running.")
                 if expected_to_fail:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
@@ -5708,12 +5829,18 @@ class ClickHouseInstance:
         look_behind_lines=10000,
     ):
         start_time = time.time()
+        # The outer (python) budget must exceed the container-side `timeout` below, so
+        # that one expires first and the pipeline can exit with the lines it collected.
+        # It is also never shorter than the default: the container-side `timeout` signals
+        # only its direct child, while `docker exec` returns once the whole pipeline has
+        # exited, so a short inner value does not bound the outer wait.
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
                 f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
-            ]
+            ],
+            timeout=max(timeout + 60, RUN_AND_CHECK_DEFAULT_TIMEOUT),
         )
 
         # if repetitions>1 grep will return success even if not enough lines were collected,

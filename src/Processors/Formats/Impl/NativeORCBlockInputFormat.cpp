@@ -41,6 +41,8 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Functions/DateTimeTransforms.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -182,12 +184,118 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
+/// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
+/// names through the same recursive walk, so pruning and reading always agree on the column.
+static const orc::Type *
+traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case);
+
+/// The default ORC memory pool allocates with `std::malloc`, which returns a null pointer when it
+/// fails - and the library dereferences it - and which is invisible to the memory tracker. A
+/// malformed file can ask for an arbitrarily large buffer, so allocate through `operator new`
+/// instead: it is accounted for and it throws instead of returning null.
+class ORCMemoryPool : public orc::MemoryPool
 {
-    for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
-        if (boost::equals(schema.getFieldName(i), name) || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
-            return schema.getSubtype(i);
+public:
+    char * malloc(uint64_t size) override { return new char[size]; }
+    void free(char * p) override { delete[] p; }
+};
+
+orc::MemoryPool & getORCMemoryPool()
+{
+    static ORCMemoryPool pool;
+    return pool;
+}
+
+/// Resolves the CH type of `name` against `header`, following dots into tuple elements when the
+/// header carries only the parent column (which is the case for ORC, whose reader is not asked for
+/// individual tuple elements). Returns nullptr when no prefix of `name` is a header column.
+static DataTypePtr findHeaderTypeByPath(const Block & header, const String & name, bool ignore_case)
+{
+    if (const auto * column = header.findByName(name, ignore_case))
+        return column->type;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column)
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
     return nullptr;
+}
+
+/// True when `path` is a named tuple element at every level, so it is a file leaf with its own
+/// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
+/// which is what rejects Map/Variant/JSON/Dynamic and `.null`, `.size0`, `.keys`, `.values`.
+static bool isNamedTupleElementPath(const IDataType & type, std::string_view path, bool ignore_case)
+{
+    const IDataType * current = &type;
+    while (true)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(current))
+            current = nullable->getNestedType().get();
+        else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(current))
+            current = low_cardinality->getDictionaryType().get();
+        else if (const auto * array = typeid_cast<const DataTypeArray *>(current))
+            current = array->getNestedType().get();
+        else
+            break;
+    }
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(current);
+    if (!tuple || !tuple->hasExplicitNames())
+        return false;
+
+    if (tuple->tryGetPositionByName(path, ignore_case))
+        return true;
+
+    /// An element name may itself contain dots, so every split has to be considered.
+    for (size_t dot = path.find('.'); dot != std::string_view::npos; dot = path.find('.', dot + 1))
+    {
+        auto head = path.substr(0, dot);
+        auto tail = path.substr(dot + 1);
+        if (head.empty() || tail.empty())
+            continue;
+        if (auto position = tuple->tryGetPositionByName(head, ignore_case))
+            if (isNamedTupleElementPath(*tuple->getElement(*position), tail, ignore_case))
+                return true;
+    }
+    return false;
+}
+
+/// Resolves `name` as a named tuple element of a header column, through the same
+/// tryGetSubcolumnType lookup the search argument builder resolves it with.
+static DataTypePtr findTupleElementKeyType(const Block & header, const String & name, bool ignore_case)
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
+    return nullptr;
+}
+
+/// KeyCondition derives its key names from this block, and the ORC header carries only the parent
+/// column, so a tuple element predicate would degrade to `unknown`. Only the local copy grows;
+/// the reader header stays as it is, so the read path is unaffected.
+static Block buildORCKeyConditionBlock(const Block & header, const ActionsDAG * filter_dag, bool ignore_case)
+{
+    if (!filter_dag)
+        return header;
+
+    Block keys = header;
+    for (const auto & required : filter_dag->getRequiredColumns())
+    {
+        if (keys.has(required.name))
+            continue;
+        if (auto type = findTupleElementKeyType(header, required.name, ignore_case))
+            keys.insert({type->createColumn(), type, required.name});
+    }
+    return keys;
 }
 
 static bool isDictionaryEncoded(const orc::StripeInformation * stripe_info, const orc::Type * orc_type)
@@ -670,7 +778,22 @@ static void buildORCSearchArgumentImpl(
             }
 
             String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
-            const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
+            const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+
+            /// The predicate column may be a tuple element (`t.x`), which the ORC header does not
+            /// carry as a flat entry, so resolve it through the type as well as through the schema.
+            auto column_type = findHeaderTypeByPath(header, column_name, ignore_case);
+            if (!column_type)
+            {
+                builder.literal(orc::TruthValue::YES_NO_NULL);
+                break;
+            }
+
+            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
+            /// Nested column), so give it a scratch copy: the guards below must judge the key's
+            /// own type, which is what KeyCondition's RPN holds.
+            auto resolved_type = column_type;
+            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
             if (!orc_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -688,14 +811,13 @@ static void buildORCSearchArgumentImpl(
             ///     down filters would result in different outputs.
             bool skipped = false;
             auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
-            const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!expect_type || !column)
+            if (!expect_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
 
-            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column->type));
+            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column_type));
             auto expect_nested_type = removeNullable(expect_type);
             if (!nested_type->equals(*expect_nested_type))
             {
@@ -705,10 +827,10 @@ static void buildORCSearchArgumentImpl(
 
             /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
             /// have the same result, we still should push down current filter.
-            if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
+            if (format_settings.null_as_default && !column_type->isNullable() && !column_type->isLowCardinalityNullable())
             {
                 bool match_if_null = evaluateRPNElement({}, curr);
-                bool match_if_default = evaluateRPNElement(column->type->getDefault(), curr);
+                bool match_if_default = evaluateRPNElement(column_type->getDefault(), curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -905,6 +1027,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(getORCMemoryPool());
     /// ORC library requires rangeSizeLimit > holeSizeLimit.
     static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
     /// Clamp to avoid overflow when computing holeSizeLimit + 1.
@@ -1113,7 +1236,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initKeyConditionOnce(getPort().getHeader());
+        format_filter_info->initKeyConditionOnce(buildORCKeyConditionBlock(
+            getPort().getHeader(),
+            format_filter_info->filter_actions_dag.get(),
+            format_settings.orc.case_insensitive_column_matching));
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1141,7 +1267,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*format_filter_info->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+        sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
@@ -1855,11 +1981,24 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 }
 
 static ColumnWithTypeAndName readColumnWithDateData(
-    const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
+    const orc::ColumnVectorBatch * orc_column,
+    const String & column_name,
+    const DataTypePtr & raw_type_hint,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
+    /// The hint is the raw header type: `readColumnFromORCColumn` strips an outer Nullable but not
+    /// LowCardinality, so e.g. a LowCardinality(DateTime('UTC')) target would fall through to the
+    /// raw Int32 branch below and the later context-less cast would read the day count as unix
+    /// seconds. Strip the wrappers so such targets take the same branches as the plain types.
+    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
+
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;
+    bool check_datetime_range = false;
+    bool check_datetime64_range = false;
+    Int32 datetime64_min_day = 0;
+    Int32 datetime64_max_day = 0;
 
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || isDate32(*type_hint))
@@ -1875,6 +2014,29 @@ static ColumnWithTypeAndName readColumnWithDateData(
         internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
     }
+    else if (isDateTime(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as unix seconds. The cast is context-less, so
+        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does
+        /// not fit into DateTime would wrap to an unrelated timestamp. Validate the range here
+        /// against the same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime_range = true;
+    }
+    else if (isDateTime64(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as raw DateTime64 ticks. The cast is context-less and
+        /// therefore clamps whole seconds that do not fit the target scale, so validate the day
+        /// number here against what the scale can represent - at scale 9 that is only up to
+        /// `2262-04-11`, far below the Date32 upper bound.
+        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime64_range = true;
+    }
     else
     {
         internal_type = std::make_shared<DataTypeInt32>();
@@ -1889,25 +2051,65 @@ static ColumnWithTypeAndName readColumnWithDateData(
     {
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
-            Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
-                    days_num,
-                    column_name,
-                    -DAYNUM_OFFSET_EPOCH,
-                    DATE_LUT_MAX_EXTEND_DAY_NUM);
+            /// Range-check the original Int64 day count before narrowing to Int32,
+            /// otherwise a malformed value could wrap into an apparently valid date.
+            Int64 days_num = orc_int_column->data[i];
+            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MIN_EXTEND_DAY_NUM,
+                        DATE_LUT_MAX_EXTEND_DAY_NUM);
+            }
 
             if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
-                    days_num,
-                    column_name,
-                    DATE_LUT_MAX_DAY_NUM);
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MAX_DAY_NUM);
+            }
 
-            column_data.push_back(days_num);
+            if (check_datetime64_range && (days_num > datetime64_max_day || days_num < datetime64_min_day))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < datetime64_min_day) ? datetime64_min_day : datetime64_max_day;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range representable by type {}, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        type_hint->getName(),
+                        datetime64_min_day,
+                        datetime64_max_day);
+            }
+
+            if (check_datetime_range && (days_num > MAX_DATETIME_DAY_NUM || days_num < 0))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range of type DateTime, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        MAX_DATETIME_DAY_NUM);
+            }
+
+            column_data.push_back(static_cast<Int32>(days_num));
         }
         else
         {
@@ -2144,6 +2346,10 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         }
         case orc::TypeKind::UNION:
             return which.isVariant();
+        case orc::TypeKind::GEOMETRY:
+        case orc::TypeKind::GEOGRAPHY:
+            /// Added in ORC 2.3. We do not read these, so no target type can match such a branch.
+            return false;
     }
 
     return false;
@@ -2602,7 +2808,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case orc::DOUBLE:
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DATE:
-            return readColumnWithDateData(orc_column, column_name, type_hint);
+            return readColumnWithDateData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
@@ -2886,35 +3092,35 @@ void registerInputFormatORC(FormatFactory & factory)
 
 ## Data types matching {#data-types-matching-orc}
 
-The table below compares supported ORC data types and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+The table below compares supported ORC data types and their corresponding ClickHouse [data types](/reference/data-types) in `INSERT` and `SELECT` queries.
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [Bool](/sql-reference/data-types/boolean.md)                                                              | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/sql-reference/data-types/float.md)                                                             | `Float`                  |
-| `Double`                              | [Float64](/sql-reference/data-types/float.md)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/sql-reference/data-types/date32.md)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Varchar`, `Binary`         | [String](/sql-reference/data-types/string.md)                                                             | `String`                 |
-| `Char`                                | [FixedString](/sql-reference/data-types/fixedstring.md)                                                   | `String`                 |
-| `List`                                | [Array](/sql-reference/data-types/array.md)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/sql-reference/data-types/map.md)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
-| `Union`                               | [Variant](/sql-reference/data-types/variant.md)                                                           | `Union`                  |
+| `Boolean`                             | [Bool](/reference/data-types/boolean)                                                              | `Boolean`                |
+| `Tinyint`                             | [Int8/UInt8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)    | `Tinyint`                |
+| `Smallint`                            | [Int16/UInt16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) | `Smallint`               |
+| `Int`                                 | [Int32/UInt32](/reference/data-types/int-uint)                                                     | `Int`                    |
+| `Bigint`                              | [Int64/UInt64](/reference/data-types/int-uint)                                                     | `Bigint`                 |
+| `Float`                               | [Float32](/reference/data-types/float)                                                             | `Float`                  |
+| `Double`                              | [Float64](/reference/data-types/float)                                                             | `Double`                 |
+| `Decimal`                             | [Decimal](/reference/data-types/decimal)                                                           | `Decimal`                |
+| `Date`                                | [Date32](/reference/data-types/date32)                                                             | `Date`                   |
+| `Timestamp`                           | [DateTime64](/reference/data-types/datetime64)                                                     | `Timestamp`              |
+| `String`, `Varchar`, `Binary`         | [String](/reference/data-types/string)                                                             | `String`                 |
+| `Char`                                | [FixedString](/reference/data-types/fixedstring)                                                   | `String`                 |
+| `List`                                | [Array](/reference/data-types/array)                                                               | `List`                   |
+| `Struct`                              | [Tuple](/reference/data-types/tuple)                                                               | `Struct`                 |
+| `Map`                                 | [Map](/reference/data-types/map)                                                                   | `Map`                    |
+| `Int`                                 | [IPv4](/reference/data-types/int-uint)                                                             | `Int`                    |
+| `Binary`                              | [IPv6](/reference/data-types/ipv6)                                                                 | `Binary`                 |
+| `Binary`                              | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                                    | `Binary`                 |
+| `Binary`                              | [Decimal256](/reference/data-types/decimal)                                                        | `Binary`                 |
+| `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
 
 - Other types are not supported.
-- An ORC `Union` column is read as a [Variant](/sql-reference/data-types/variant.md) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 

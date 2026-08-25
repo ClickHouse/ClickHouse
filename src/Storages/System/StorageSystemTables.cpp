@@ -2,6 +2,8 @@
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <set>
+
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
@@ -17,6 +19,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -30,6 +33,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -50,7 +54,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -217,7 +220,7 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
     MutableColumnPtr table_column = ColumnString::create();
@@ -347,6 +350,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -455,6 +459,26 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
+    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
+    {
+        Array skipping_indices_types;
+        if (metadata_snapshot)
+        {
+            /// Collect distinct types, sorted, so the result is deterministic.
+            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
+            /// so the column reports only skip indices explicitly defined on the table.
+            std::set<String> types;
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                if (!index.isImplicitlyCreated())
+                    types.insert(index.type);
+
+            skipping_indices_types.reserve(types.size());
+            for (const auto & type : types)
+                skipping_indices_types.push_back(type);
+        }
+        columns[res_index++]->insert(skipping_indices_types);
+    }
+
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
         /// `table` can be null for an unresolvable table (e.g. a DataLakeCatalog table whose
@@ -534,6 +558,9 @@ protected:
 
                     for (auto & table : external_tables)
                     {
+                        const auto * alias = table.second->as<StorageAlias>();
+                        const bool can_expose_metadata
+                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -586,7 +613,9 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
+                            ASTPtr ast = can_expose_metadata && temp_db
+                                ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
+                                : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
                         }
 
@@ -600,9 +629,16 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(res_columns, table.second, res_index);
+                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            // skipping_indices_types
+                            else if (src_index == 20 && columns_mask[src_index])
+                            {
+                                const auto metadata_snapshot
+                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
+                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+                            }
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -620,7 +656,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 23 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -697,12 +733,16 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
+                const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                const bool can_expose_metadata
+                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                 /// and it's not protected internally by other mutexes
                 static const size_t DATA_PATHS_INDEX = 5;
-                if (table && columns_mask[DATA_PATHS_INDEX])
+                if (can_expose_metadata && columns_mask[DATA_PATHS_INDEX])
                 {
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                     if (!lock)
@@ -739,7 +779,7 @@ protected:
                 {
                     Array table_paths_array;
                     /// `lock` is only acquired above when `table` is non-null.
-                    if (table)
+                    if (can_expose_metadata)
                     {
                         chassert(lock != nullptr);
                         if (auto paths = table->tryGetDataPaths())
@@ -761,7 +801,7 @@ protected:
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 StorageMetadataHandle metadata_snapshot;
-                if (table)
+                if (can_expose_metadata)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
                 if (columns_mask[src_index++])
@@ -798,52 +838,33 @@ protected:
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
                     /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
-                    /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
-                    /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
-                    /// and abort the whole scan. A null ast makes the block below emit defaults.
-                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
-                    auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+                    /// table, or one dropped concurrently with the scan): it re-enters
+                    /// `DatabaseDataLake::getCreateTableQueryImpl`, which can throw again and abort
+                    /// the whole scan. An inaccessible or null storage renders as empty strings.
+                    const RenderedCreateQueryFields fields{
+                        .create_table_query = columns_mask[src_index] != 0,
+                        .engine_full = columns_mask[src_index + 1] != 0,
+                        .as_select = columns_mask[src_index + 2] != 0};
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
-                    {
-                        ast_create->uuid = UUIDHelpers::Nil;
-                        if (ast_create->targets)
-                            ast_create->targets->resetInnerUUIDs();
-                    }
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                    auto rendered = can_expose_metadata
+                        ? database->getRenderedCreateTableQuery(table_name, context, fields)
+                        : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
-                    {
-                        String engine_full;
-
-                        if (ast_create && ast_create->storage)
-                        {
-                            engine_full = format({context, *ast_create->storage});
-
-                            static const char * const extra_head = " ENGINE = ";
-                            if (startsWith(engine_full, extra_head))
-                                engine_full = engine_full.substr(strlen(extra_head));
-                        }
-
-                        res_columns[res_index++]->insert(engine_full);
-                    }
+                        res_columns[res_index++]->insert(rendered->create_table_query);
 
                     if (columns_mask[src_index++])
-                    {
-                        String as_select;
-                        if (ast_create && ast_create->select)
-                            as_select = format({context, *ast_create->select});
-                        res_columns[res_index++]->insert(as_select);
-                    }
+                        res_columns[res_index++]->insert(rendered->engine_full);
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(rendered->as_select);
                 }
                 else
                     src_index += 3;
 
                 // parameterized view parameters
                 if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, table, res_index);
+                    fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -887,8 +908,11 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+
+                if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
+                    auto policy = can_expose_metadata ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -942,7 +966,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
+                        auto total_bytes_uncompressed = can_expose_metadata ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -1015,7 +1039,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_rows = can_expose_metadata ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -1024,7 +1048,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_bytes = can_expose_metadata ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
@@ -1202,7 +1226,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
     /// instead of enumerating the entire catalog.
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
         tables_filter = extractTableNameFilter(dag->getOutputs().at(0));

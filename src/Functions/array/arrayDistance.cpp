@@ -440,6 +440,8 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        /// Keep this outer loop scalar: `clang-22` otherwise vectorizes it into a slow strided gather instead of letting the unrolled inner loop SLP-vectorize into contiguous loads (worst for `Linf`/`BFloat16`).
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -514,6 +516,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -590,6 +593,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
@@ -661,6 +665,7 @@ MULTITARGET_FUNCTION_HEADER(
         size_t i = 0;
         const size_t unrolled_end = array_size / unroll_count * unroll_count;
 
+        _Pragma("clang loop vectorize(disable)")
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(

@@ -283,6 +283,14 @@ Replace `<clickhouse_cloud_host>` with your ClickHouse hostname and `<database_n
 
 <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Get ClickHouse host" size="md" border/>
 
+<Note>
+If you're using the ClickHouse Cloud console to run SQL, grant the console admin user access to the foreign server:
+
+```sql
+GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+```
+</Note>
+
 Now, we map the Postgres user to the ClickHouse service's credentials:
 ```sql
 CREATE USER MAPPING FOR CURRENT_USER SERVER ch 

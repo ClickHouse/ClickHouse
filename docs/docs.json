@@ -114,9 +114,6 @@
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
-              },
-              {
-                "$ref": "./products/clickhouse-private/navigation.json"
               }
             ],
             "tab": "Solutions"
@@ -216,6 +213,9 @@
     },
     {
       "src": "/_site/customizations/tab-nav.js"
+    },
+    {
+      "src": "/_site/customizations/webterminal.js"
     },
     {
       "src": "/_site/customizations/nav-icon-preload.js"
