@@ -5,8 +5,6 @@
 #include <base/types.h>
 #include <base/unit.h>
 
-#include <map>
-
 namespace DB
 {
 
@@ -363,10 +361,10 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         size_t memory_low_watermark = 2ul << 20;
         size_t memory_high_watermark = 4ul << 30;
-        /// Optional per-stage budget weight overrides for the reader scheduler, keyed by
-        /// "<stage>.<resource>" (resource = "memory" | "threads"). Empty means use the built-in
-        /// defaults. Parsed from the input_format_parquet_read_stage_weights setting.
-        std::map<String, double> read_stage_weights;
+        /// Reader v3 scheduler knobs: share of the column-data memory budget given to compressed
+        /// read-ahead vs decode, and ColumnData's share of the parsing thread pool.
+        double prefetch_memory_fraction = 0.6;
+        double decode_thread_fraction = 0.375;
 
         /// Write.
         UInt64 row_group_rows = 1000000;

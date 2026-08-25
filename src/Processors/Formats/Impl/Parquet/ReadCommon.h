@@ -42,10 +42,10 @@ struct SharedResourcesExt
 {
     size_t total_memory_low_watermark = 0;
     size_t total_memory_high_watermark = 0;
-    /// Optional per-stage budget weight overrides, keyed by "<stage>.<resource>"
-    /// (resource = "memory" | "threads"). Empty means use the built-in defaults.
-    /// Applied in ReadManager::init. See input_format_parquet_read_stage_weights.
-    std::map<String, double> read_stage_weights;
+    /// Reader scheduler knobs applied in ReadManager::init. See
+    /// input_format_parquet_prefetch_memory_fraction / input_format_parquet_decode_thread_fraction.
+    double prefetch_memory_fraction = 0.6;
+    double decode_thread_fraction = 0.375;
 
     struct Limits
     {

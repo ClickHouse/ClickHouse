@@ -91,7 +91,8 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
                 ext->total_memory_high_watermark = format_settings.parquet.memory_high_watermark;
-                ext->read_stage_weights = format_settings.parquet.read_stage_weights;
+                ext->prefetch_memory_fraction = format_settings.parquet.prefetch_memory_fraction;
+                ext->decode_thread_fraction = format_settings.parquet.decode_thread_fraction;
                 parser_shared_resources->opaque = ext;
             });
 

@@ -13,7 +13,6 @@
 #include <shared_mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace DB::ErrorCodes
@@ -76,72 +75,48 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
 
-    /// Static per-stage memory and thread budgets so no stage starves the others (e.g. ColumnData
-    /// eating all memory and blocking the small index reads other row groups need).
+    /// Static per-stage memory and thread budgets (fractions summing to 1 within each resource) so no
+    /// stage starves the others (e.g. ColumnData eating all memory and blocking the small index reads
+    /// other row groups need). Memory and threads are budgeted separately because a single shared
+    /// fraction coupled read-ahead and decode: ColumnDataPrefetch holds small compressed pages, so it
+    /// gets most of the memory to keep many reads outstanding and hide latency; ColumnData holds large
+    /// decoded columns, so its memory is bounded but it gets most threads (decode is the real CPU work).
+    /// Index/bloom stages only issue async reads, so they get one thread-share each and a small memory
+    /// floor.
     ///
-    /// Values are relative weights, not fractions; the normalization loop below divides each by the
-    /// per-resource sum to get the actual fraction of the memory watermark / parsing pool per stage.
-    /// Memory and threads are weighted separately (a single shared fraction coupled them, capping
-    /// read-ahead and decode together): ColumnDataPrefetch holds small compressed pages, so it gets
-    /// the most memory to keep many GETs outstanding and hide S3 latency; ColumnData holds large
-    /// decoded columns, so its memory is bounded but it gets most threads (decode is the real CPU
-    /// work). Index/bloom stages only issue async reads, so 1 thread and a small memory floor each.
-    /// Integers are empirical priorities, not derived constants.
-    auto set_weights = [&](ReadStage s, double memory_weight, double thread_weight)
-    {
-        stages[size_t(s)].memory_target_fraction = memory_weight;
-        stages[size_t(s)].thread_target_fraction = thread_weight;
-    };
-    set_weights(ReadStage::NotStarted, 0, 0);
-    set_weights(ReadStage::BloomFilterHeader, 1, 1);
-    set_weights(ReadStage::BloomFilterBlocksOrDictionary, 2, 1);
-    set_weights(ReadStage::ColumnIndexAndOffsetIndex, 1, 1);
-    set_weights(ReadStage::OffsetIndex, 1, 1);
-    set_weights(ReadStage::ColumnDataPrefetch, 9, 1);
-    set_weights(ReadStage::ColumnData, 6, 3);
-    set_weights(ReadStage::Deliver, 0, 0);
-
-    /// Expert override of the weights above, from input_format_parquet_read_stage_weights.
-    /// Keys are "<stage>.<resource>"; only listed keys override, the rest keep the defaults.
+    /// Two knobs re-balance the data stages (index/bloom shares are fixed):
+    ///  - prefetch_memory_fraction: of the memory budget reserved for column data (0.75 of the total),
+    ///    the share given to ColumnDataPrefetch (compressed read-ahead) vs ColumnData (decoded output).
+    ///  - decode_thread_fraction: ColumnData's share of the thread pool; the five read-issuing stages
+    ///    split the remainder equally.
+    /// The defaults (0.6, 0.375) reproduce the previously hard-coded fractions.
     const auto & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources->opaque.get());
-    if (!ext.read_stage_weights.empty())
-    {
-        static const std::unordered_map<std::string_view, ReadStage> stage_by_name =
-        {
-            {"bloom_filter_header", ReadStage::BloomFilterHeader},
-            {"bloom_filter_blocks_or_dictionary", ReadStage::BloomFilterBlocksOrDictionary},
-            {"column_index_and_offset_index", ReadStage::ColumnIndexAndOffsetIndex},
-            {"offset_index", ReadStage::OffsetIndex},
-            {"column_data_prefetch", ReadStage::ColumnDataPrefetch},
-            {"column_data", ReadStage::ColumnData},
-        };
-        for (const auto & [key, weight] : ext.read_stage_weights)
-        {
-            if (weight < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Negative weight {} for '{}' in input_format_parquet_read_stage_weights", weight, key);
-            size_t dot = key.rfind('.');
-            if (dot == String::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Key '{}' in input_format_parquet_read_stage_weights must have the form '<stage>.<resource>'", key);
-            std::string_view stage_name(key.data(), dot);
-            std::string_view resource(key.data() + dot + 1, key.size() - dot - 1);
-            auto it = stage_by_name.find(stage_name);
-            if (it == stage_by_name.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown stage '{}' in input_format_parquet_read_stage_weights key '{}'", stage_name, key);
-            Stage & stage = stages[size_t(it->second)];
-            if (resource == "memory")
-                stage.memory_target_fraction = weight;
-            else if (resource == "threads")
-                stage.thread_target_fraction = weight;
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown resource '{}' in input_format_parquet_read_stage_weights key '{}' (expected 'memory' or 'threads')",
-                    resource, key);
-        }
-    }
+    const double mem_frac = ext.prefetch_memory_fraction;
+    const double dec_thr = ext.decode_thread_fraction;
+    if (!(mem_frac >= 0 && mem_frac <= 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "input_format_parquet_prefetch_memory_fraction must be in [0, 1], got {}", mem_frac);
+    if (!(dec_thr >= 0 && dec_thr <= 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "input_format_parquet_decode_thread_fraction must be in [0, 1], got {}", dec_thr);
 
+    auto set_fractions = [&](ReadStage s, double memory_fraction, double thread_fraction)
+    {
+        stages[size_t(s)].memory_target_fraction = memory_fraction;
+        stages[size_t(s)].thread_target_fraction = thread_fraction;
+    };
+    const double data_mem = 0.75;                        // index/bloom take the remaining 0.25
+    const double issuer_thr = (1.0 - dec_thr) / 5.0;     // five read-issuing stages split the rest
+    set_fractions(ReadStage::NotStarted, 0, 0);
+    set_fractions(ReadStage::BloomFilterHeader, 0.05, issuer_thr);
+    set_fractions(ReadStage::BloomFilterBlocksOrDictionary, 0.10, issuer_thr);
+    set_fractions(ReadStage::ColumnIndexAndOffsetIndex, 0.05, issuer_thr);
+    set_fractions(ReadStage::OffsetIndex, 0.05, issuer_thr);
+    set_fractions(ReadStage::ColumnDataPrefetch, data_mem * mem_frac, issuer_thr);
+    set_fractions(ReadStage::ColumnData, data_mem * (1.0 - mem_frac), dec_thr);
+    set_fractions(ReadStage::Deliver, 0, 0);
+
+    /// Normalize (defensive: the fractions already sum to 1 within each resource).
     double memory_sum = 0;
     double thread_sum = 0;
     for (const Stage & stage : stages)
@@ -149,10 +124,6 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         memory_sum += stage.memory_target_fraction;
         thread_sum += stage.thread_target_fraction;
     }
-    if (memory_sum <= 0 || thread_sum <= 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "input_format_parquet_read_stage_weights leaves the total {} weight at zero",
-            memory_sum <= 0 ? "memory" : "thread");
     for (Stage & stage : stages)
     {
         stage.memory_target_fraction /= memory_sum;
