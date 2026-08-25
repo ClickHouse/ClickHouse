@@ -118,8 +118,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected a list of key=value arguments");
 
         auto function_args = function_args_expr->children;
-        if (function_args.empty())
-            throwBadConfiguration("expected a non-empty list of key=value arguments");
+        /// The parser always gives `equals` two children, but the AST may come from somewhere else,
+        /// e.g. a query fuzzer, and the key and the value are indexed below.
+        if (function_args.size() != 2)
+            throwBadConfiguration("expected a key and a value in every key=value argument");
 
         auto * key_identifier = function_args[0]->as<ASTIdentifier>();
         if (!key_identifier)

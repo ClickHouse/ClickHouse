@@ -66,7 +66,7 @@ private:
     const NamesAndTypesList storage_columns;
     const NamesAndTypesList requested_columns;
 
-    /// The parts are read without the settings of the table that owns them, so defaults are used.
+    /// The defaults with the settings carried in `table_settings(...)` applied.
     const MergeTreeSettingsPtr storage_settings;
 
     const size_t min_marks_per_task;

@@ -42,22 +42,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
-/// The parts are read without the settings of the table that wrote them, so everything starts from the
-/// defaults; only the settings that the reader cannot do without are carried in the description.
-MergeTreeSettingsPtr buildStorageSettings(const StorageMergeTreeParts::ReadFromPartsInfo & read_from_parts_info)
-{
-    auto settings = std::make_shared<MergeTreeSettings>();
-    settings->set("index_granularity", Field(read_from_parts_info.index_granularity));
-    settings->set("index_granularity_bytes", Field(read_from_parts_info.index_granularity_bytes));
-    settings->set("share_nested_offsets", Field(read_from_parts_info.share_nested_offsets));
-    return settings;
-}
-
-}
-
 MergeTreeReadPoolStatelessParts::MergeTreeReadPoolStatelessParts(
     ReadFromPartsInfo read_from_parts_info_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -87,7 +71,7 @@ MergeTreeReadPoolStatelessParts::MergeTreeReadPoolStatelessParts(
     , read_from_parts_info(std::move(read_from_parts_info_))
     , storage_columns(storage_snapshot_->metadata->getColumns().getAllPhysical())
     , requested_columns(storage_snapshot_->getSampleBlockForColumns(column_names_).getNamesAndTypesList())
-    , storage_settings(buildStorageSettings(read_from_parts_info))
+    , storage_settings(read_from_parts_info.buildStorageSettings())
     , min_marks_per_task(
           std::max<size_t>(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size], settings_.min_marks_for_concurrent_read))
     , part_info_built(read_from_parts_info.parts.size())

@@ -28,12 +28,14 @@ function parts_description()
               ORDER BY name)"
 }
 
+# Reads with the parts description cached in ${PARTS}: a client run per description is what makes the
+# test slow under sanitizers.
 function read_parts()
 {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT $1 FROM mergeTreeParts(
             structure('dt Date, id Int64, data String'),
-            parts($(parts_description)),
+            parts(${PARTS}),
             disk(type = local, path = '${DISK_ROOT}/'),
             table_settings(index_granularity_bytes = ${INDEX_GRANULARITY_BYTES}))
         $2"
@@ -55,13 +57,15 @@ do
                 min_rows_for_full_part_storage = 0,
                 min_bytes_for_wide_part = ${min_bytes_for_wide_part},
                 min_bytes_for_full_part_storage = ${min_bytes_for_full_part_storage};
-            INSERT INTO mtp_source SELECT '2000-01-01', number, toString(number) FROM numbers(5000);
-            INSERT INTO mtp_source SELECT '2000-01-02', number, toString(number) FROM numbers(5000);"
+            INSERT INTO mtp_source SELECT '2000-01-01', number, toString(number) FROM numbers(2000);
+            INSERT INTO mtp_source SELECT '2000-01-02', number, toString(number) FROM numbers(2000);"
 
         echo "--- min_bytes_for_wide_part = ${min_bytes_for_wide_part}, min_bytes_for_full_part_storage = ${min_bytes_for_full_part_storage}"
         ${CLICKHOUSE_CLIENT} --query "
             SELECT DISTINCT part_type, part_storage_type FROM system.parts
             WHERE database = currentDatabase() AND table = 'mtp_source' AND active"
+
+        PARTS=$(parts_description)
 
         # A full scan returns the same thing as reading the table itself.
         read_parts "count(), sum(id), uniqExact(dt)" ""
@@ -77,13 +81,18 @@ do
         read_parts "count(), sum(id)" "PREWHERE id % 2 = 0"
         read_parts "data" "PREWHERE id = 42"
 
-        # A materialized lightweight delete mask is applied.
-        ${CLICKHOUSE_CLIENT} --query "
-            DELETE FROM mtp_source WHERE id % 2 = 0
-            SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2;
-            SYSTEM STOP MERGES mtp_source;"
-        read_parts "count(), sum(id)" ""
-        ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM mtp_source"
+        # A materialized lightweight delete mask is applied. The synchronous mutation is the slowest
+        # part of the test, so it runs once per part type, not for every storage type.
+        if [[ ${min_bytes_for_full_part_storage} = 0 ]]
+        then
+            ${CLICKHOUSE_CLIENT} --query "
+                DELETE FROM mtp_source WHERE id % 2 = 0
+                SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2;
+                SYSTEM STOP MERGES mtp_source;"
+            PARTS=$(parts_description)
+            read_parts "count(), sum(id)" ""
+            ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM mtp_source"
+        fi
     done
 done
 

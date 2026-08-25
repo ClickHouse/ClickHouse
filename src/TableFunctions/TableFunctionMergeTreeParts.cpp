@@ -285,7 +285,29 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
                         if (range_tuple.size() != 2)
                             throw_bad_argument(arg_num, "expected tuples of two elements in `ranges = [(x1, x2), ...]`");
 
-                        part.ranges.emplace_back(range_tuple[0].safeGet<UInt64>(), range_tuple[1].safeGet<UInt64>());
+                        /// A negative bound would slip through `safeGet<UInt64>`, which lets `Int64`
+                        /// through by reinterpretation.
+                        if (range_tuple[0].getType() != Field::Types::UInt64 || range_tuple[1].getType() != Field::Types::UInt64)
+                            throw_bad_argument(arg_num, "expected non-negative integers in `ranges = [(x1, x2), ...]`");
+
+                        const auto range_begin = range_tuple[0].safeGet<UInt64>();
+                        const auto range_end = range_tuple[1].safeGet<UInt64>();
+
+                        /// The ranges drive the read scheduler directly, and `MarkRange` checks
+                        /// `begin <= end` only with an assertion that release builds compile out, so
+                        /// anything invalid here would underflow the mark arithmetic instead of failing.
+                        if (range_begin >= range_end)
+                            throw_bad_argument(arg_num, fmt::format(
+                                "expected `begin < end` in every range of `ranges`, got ({}, {})", range_begin, range_end));
+                        if (range_end > part.marks_count)
+                            throw_bad_argument(arg_num, fmt::format(
+                                "range ({}, {}) ends beyond `marks_count` = {}", range_begin, range_end, part.marks_count));
+                        if (!part.ranges.empty() && range_begin < part.ranges.back().end)
+                            throw_bad_argument(arg_num, fmt::format(
+                                "expected the ranges of `ranges` to be sorted and non-overlapping, got ({}, {}) after ({}, {})",
+                                range_begin, range_end, part.ranges.back().begin, part.ranges.back().end));
+
+                        part.ranges.emplace_back(range_begin, range_end);
                     }
                 }
 
@@ -437,7 +459,7 @@ parts(
 |--------------------------|--------------------------------------------------------------------|
 | `path`                   | Path of the part directory, relative to the root of the disk.        |
 | `marks_count`            | Number of marks in the part (`marks` in `system.parts`).             |
-| `ranges`                 | Mark ranges to read, as an array of half-open `(begin, end)` tuples. |
+| `ranges`                 | Mark ranges to read, as an array of half-open `(begin, end)` tuples. The ranges must be non-empty, sorted, non-overlapping, and end at or before `marks_count`. |
 | `has_lightweight_delete` | Whether the part has a materialized lightweight delete mask.         |
 
 `table_settings` carries the settings of the table the parts belong to that cannot be inferred from the

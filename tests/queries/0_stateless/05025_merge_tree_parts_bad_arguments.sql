@@ -77,3 +77,49 @@ SELECT * FROM mergeTreeParts(
     parts(),
     disk(type = local, path = '/'),
     table_settings(index_granularity_bytes = 10485760, nonexistent_setting = 1)); -- { serverError BAD_ARGUMENTS }
+
+-- The mark ranges drive the read scheduler directly, and `MarkRange` checks `begin <= end` only with an
+-- assertion that release builds compile out, so every invalid shape must be rejected during parsing:
+-- negative bounds, `begin >= end`, ends beyond `marks_count`, and unsorted or overlapping ranges.
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 1, ranges = [(-9223372036854775808, 255)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 2, ranges = [(1, 0)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 2, ranges = [(1, 1)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 2, ranges = [(0, 3)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 4, ranges = [(0, 2), (1, 3)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'a/', marks_count = 4, ranges = [(2, 3), (0, 1)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+-- Every disk argument must be a `key = value` pair with both the key and the value present.
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(),
+    disk(equals(type)),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }

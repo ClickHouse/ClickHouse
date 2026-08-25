@@ -9,6 +9,9 @@ namespace DB
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
 
 /// Reads a set of MergeTree data parts described explicitly (by path, type and mark ranges)
 /// from a disk, without any of the table metadata that `MergeTree` normally keeps.
@@ -45,6 +48,10 @@ public:
         /// The `share_nested_offsets` of the table that wrote the parts: it decides the names of the
         /// offsets streams of a `Nested` column, so a part cannot be read without it.
         bool share_nested_offsets = true;
+
+        /// The settings of the table that wrote the parts, as far as they are known here: the defaults
+        /// with the carried settings applied. Everything that sizes reads by granularity must use these.
+        MergeTreeSettingsPtr buildStorageSettings() const;
     };
 
     StorageMergeTreeParts(

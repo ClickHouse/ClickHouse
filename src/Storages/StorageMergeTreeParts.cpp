@@ -31,6 +31,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
 
+MergeTreeSettingsPtr StorageMergeTreeParts::ReadFromPartsInfo::buildStorageSettings() const
+{
+    auto settings = std::make_shared<MergeTreeSettings>();
+    settings->set("index_granularity", Field(index_granularity));
+    settings->set("index_granularity_bytes", Field(index_granularity_bytes));
+    settings->set("share_nested_offsets", Field(share_nested_offsets));
+    return settings;
+}
+
 VirtualColumnsDescription StorageMergeTreeParts::createVirtuals()
 {
     VirtualColumnsDescription desc;
@@ -95,8 +104,9 @@ Pipe StorageMergeTreeParts::read(
     if (!sum_marks)
         return {};
 
-    /// The parts are read without the settings of the table that owns them, so defaults are used.
-    const auto storage_settings = std::make_shared<const MergeTreeSettings>();
+    /// Concurrency is sized in marks, and a mark is as big as the granularity of the table that wrote
+    /// the parts, which only `table_settings(...)` knows.
+    const auto storage_settings = read_from_parts_info.buildStorageSettings();
 
     /// The remote-filesystem thresholds, because the point of reading parts this way is to read them
     /// from a disk that does not belong to this server.
