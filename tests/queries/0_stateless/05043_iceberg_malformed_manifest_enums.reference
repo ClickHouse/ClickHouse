@@ -1,0 +1,12 @@
+-- the table reads fine before the metadata is patched
+1
+2
+3
+-- out-of-range 'status' of a manifest entry
+ICEBERG_SPECIFICATION_VIOLATION
+-- out-of-range 'data_file.content' of a manifest entry
+ICEBERG_SPECIFICATION_VIOLATION
+-- out-of-range 'content' of a manifest list entry
+ICEBERG_SPECIFICATION_VIOLATION
+-- negative 'content' of a manifest list entry
+ICEBERG_SPECIFICATION_VIOLATION
