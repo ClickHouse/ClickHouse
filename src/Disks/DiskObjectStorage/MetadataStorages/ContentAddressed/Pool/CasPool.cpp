@@ -469,13 +469,18 @@ PoolPtr Pool::open(BackendPtr backend, PoolConfig config)
         else
         {
             /// skip_access_check: skip the access-check-class probe I/O (store preconditions + the
-            /// `_probe/` round trip, both folded into runCapabilityProbe above) but NOT the
-            /// single-attempt conditional-write gate — see `PoolConfig::skip_access_check`. Run it
-            /// directly so a Native-mode backend with no working single-attempt client still fails
-            /// closed at open instead of silently corrupting CAS state under blind retries later.
-            /// The skipped store-precondition check also covers GCS bucket-versioning/delete-marker
-            /// detection — that risk is purely environmental (slower GC reclaim, not data loss) and
-            /// gets re-checked the next time this pool is opened without skip_access_check.
+            /// `_probe/` round trip, both folded into runCapabilityProbe above) but NOT the two
+            /// fail-closed gates below — see `PoolConfig::skip_access_check`.
+            ///
+            /// First, whether this backend may skip the battery AT ALL. A generation-dialect (GCS)
+            /// backend may not: the battery is the only thing that proves a token-exact DELETE
+            /// actually carries its generation precondition, so skipping it here would let GC delete
+            /// an incarnation it never condemned. Asking the backend keeps that policy where the
+            /// dialect is known, instead of type-testing the concrete object storage from here.
+            backend->checkSkipAccessCheckSupport();
+            /// Then the single-attempt conditional-write gate, so a Native-mode backend with no
+            /// working single-attempt client still fails closed at open instead of silently
+            /// corrupting CAS state under blind retries later.
             backend->checkConditionalWriteSingleAttemptSupport();
         }
     }
@@ -806,7 +811,13 @@ PoolPtr Pool::openForDecommission(BackendPtr backend, PoolConfig config, const S
 
     config.server_root_id = victim_srid;
     config.read_only = false;
-    config.skip_access_check = true;   /// the pool exists (the calling disk validated it); no probe writes
+    /// The pool exists (the calling disk validated it), so no probe writes are needed. This also
+    /// means the capability battery never runs here, and — unlike the writable `Pool::open` path —
+    /// `checkSkipAccessCheckSupport` is deliberately NOT consulted, so a generation-dialect (GCS)
+    /// backend can still be decommissioned. The fail-closed tradeoff inverts for this operation:
+    /// refusing an ordinary mount costs availability and protects data, whereas refusing a
+    /// decommission strands a pool with a dead replica in it and leaves the operator no way forward.
+    config.skip_access_check = true;
     /// The admin claim must be RENEWED like any writable mount: the host disk may be observe-only
     /// (background_watermark=false), but an unrenewed claim (TTL ~30s) aborts any long drain midway.
     config.background_watermark = true;

@@ -62,8 +62,23 @@ inline void setChecksumAlgorithm(R & request)
 }
 };
 
+/// Non-template interface so callers that only see the SDK's `Aws::AmazonWebServiceRequest` base
+/// (e.g. `Client::BuildHttpRequest`) can still ask whether a request opted into the typed
+/// `NativeConditional` request mode, without knowing which `ExtendedRequest<BaseRequest>` it is.
+class RequestWithNativeConditionalMode
+{
+public:
+    RequestWithNativeConditionalMode() = default;
+    RequestWithNativeConditionalMode(const RequestWithNativeConditionalMode &) = default;
+    RequestWithNativeConditionalMode & operator=(const RequestWithNativeConditionalMode &) = default;
+    RequestWithNativeConditionalMode(RequestWithNativeConditionalMode &&) = default;
+    RequestWithNativeConditionalMode & operator=(RequestWithNativeConditionalMode &&) = default;
+    virtual ~RequestWithNativeConditionalMode() = default;
+    virtual bool isNativeConditional() const = 0;
+};
+
 template <typename BaseRequest>
-class ExtendedRequest : public BaseRequest
+class ExtendedRequest : public BaseRequest, public RequestWithNativeConditionalMode
 {
 public:
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
@@ -135,12 +150,20 @@ public:
         RequestChecksum::setChecksumAlgorithm(*this);
     }
 
+    /// Marks this request as eligible for the typed `NativeConditional` HTTP mode (see
+    /// `WriteSettings::object_storage_request_mode`). `Client::BuildHttpRequest` re-derives the
+    /// resulting HTTP bit from this on every SDK attempt, so setting it once here is enough to
+    /// survive retries and redirects, which each rebuild the HTTP request from scratch.
+    void setNativeConditional(bool value = true) const { native_conditional = value; }
+    bool isNativeConditional() const override { return native_conditional; }
+
 protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
     bool is_s3express_bucket = false;
+    mutable bool native_conditional = false;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>

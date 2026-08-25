@@ -180,6 +180,54 @@ TEST(CASProbe, MissingSingleAttemptClientFiresThroughInstrumentedWrapper)
 namespace
 {
 
+/// Honors every conditional WRITE but ignores the token on a token-exact DELETE. This is what a GCS
+/// delete degenerates to when its numeric generation leaves as a raw `If-Match` — no
+/// `x-goog-if-generation-match` — and the service ignores the header it does not recognise.
+class IgnoresDeleteTokenBackend : public InMemoryBackend
+{
+public:
+    DeleteOutcome deleteExact(const String & key, const Token &) override
+    {
+        return InMemoryBackend::deleteExact(key, head(key).token);
+    }
+};
+
+/// The other half of that degeneracy: the service refuses the unrecognised header outright, so even
+/// the correct token never removes anything.
+class RejectsDeleteTokenBackend : public InMemoryBackend
+{
+public:
+    DeleteOutcome deleteExact(const String &, const Token &) override
+    {
+        DeleteOutcome d;
+        d.kind = DeleteOutcome::Kind::TokenMismatch;
+        return d;
+    }
+};
+
+}
+
+/// A GCS mount whose exact deletes lost their generation semantics can fail in either direction, and
+/// the probe's delete battery must reject the mount both times. Both backends enforce every
+/// conditional write, so every step before the battery passes and only step 6's wrong-token
+/// preservation check and step 8's correct-token deletion check can be what fires —
+/// `PassesOnEnforcingBackend` above is the control showing the same probe succeeds when only
+/// `deleteExact` is left alone.
+///
+/// This is about the battery, not about the marking: that the `NativeConditional` mode actually
+/// reaches the production request object is proven where the request is built, not here.
+TEST(CASProbe, ExactDeleteBatteryDetectsMissingGenerationMode)
+{
+    IgnoresDeleteTokenBackend ignores;
+    EXPECT_THROW(runCapabilityProbe(ignores, "p/.cas_probe"), DB::Exception);
+
+    RejectsDeleteTokenBackend rejects;
+    EXPECT_THROW(runCapabilityProbe(rejects, "p/.cas_probe"), DB::Exception);
+}
+
+namespace
+{
+
 /// Models the exact shape of the trust-flip this suite must catch a regression of
 /// (codex-review-triage §3.18, Critical): like the production `ObjectStorageBackend` in Native mode,
 /// this backend mints and expects tokens under a dialect (`TokenType::ETag`) OTHER than

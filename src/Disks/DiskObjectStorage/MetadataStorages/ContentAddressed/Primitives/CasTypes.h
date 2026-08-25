@@ -252,7 +252,10 @@ enum class TokenType : uint8_t
     Emulated = 3,    /// test backends (in-memory fake, Local emulation)
 };
 
-/// A backend-native incarnation token. Opaque; sent back to the backend EXACTLY as observed.
+/// A backend-native incarnation token. Opaque to every CAS caller and sent back to the backend
+/// EXACTLY as held here. The backend owns the one conversion between its transport representation and
+/// this value — see `ObjectStorageBackend::normalizeTokenValue`, which removes the quoting the GCS
+/// generation picks up from riding the SDK's ETag field.
 struct Token
 {
     String value;

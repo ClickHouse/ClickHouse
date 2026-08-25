@@ -30,6 +30,28 @@ Bucket **versioning is not required** — in fact it must be **disabled** on the
 dialect (see below), because a token-exact delete on a versioned bucket archives a noncurrent
 generation instead of reclaiming storage, silently stopping GC reclamation.
 
+On the generation-token dialect that requirement is checked, and checked strictly: a writable mount
+proceeds only when the probe *confirms* versioning is disabled. A bucket reported as versioned and a
+probe that could not answer — the credential may not read the bucket's versioning configuration, or
+the backend cannot report it — both refuse the mount. `CAS` does not assume the safe answer, because
+the failure it would be assuming away is `GC` deleting objects it believes it reclaimed.
+
+Because that check is part of the mount battery, `skip_access_check = true` is refused on a writable
+generation-token disk. Mount the disk read-only if you need to start before the access check can
+pass.
+
+## Soft delete is an operator precondition {#soft-delete}
+
+Object **soft delete must be disabled** on a `CAS` bucket, and unlike versioning this one is *not*
+verified at mount. Google Cloud Storage exposes the soft-delete policy through its JSON API, while
+this backend and both of its authentication modes speak the XML API, so the storage path `CAS` uses
+cannot inspect it. Disabling it is therefore your responsibility, not something a successful mount
+attests to.
+
+Soft delete does not leave the deleted generation live, so it does not break exact-token semantics
+the way versioning does. What it does is delay physical reclamation until the retention period
+expires: `GC` reports space as reclaimed while the bill still reflects it.
+
 ## Platform support {#platform-support}
 
 | Platform | Status | Notes |

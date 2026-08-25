@@ -115,6 +115,13 @@ struct ClientSettings
     bool is_s3express_bucket = false;
 };
 
+/// True for the two `http_client` values (case-insensitive) that select a GCS-native HTTP layer:
+/// `gcp_oauth` and `gcs_hmac`. The single source of truth for what "GCS generation dialect" means
+/// from configuration alone -- `Client::supportsGcsNativeConditionalRequests` below is this applied to
+/// a constructed client's own configuration; a caller that needs the answer before a client exists
+/// (e.g. deciding whether a config change would flip the dialect) calls this directly instead.
+bool httpClientImpliesGcsGenerationDialect(const String & http_client);
+
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
@@ -253,9 +260,9 @@ public:
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
-    /// True when this client's HTTP layer runs the GCS conditional dialect (http_client =
-    /// gcs_hmac or gcp_oauth): conditional tokens are GCS generations riding the ETag plumbing.
-    bool usesGcsConditionalDialect() const { return client_configuration.gcs_conditional_dialect; }
+    /// True when this client's HTTP layer can honor the typed `NativeConditional` request mode
+    /// (http_client = gcs_hmac or gcp_oauth), independent of whether any given request opts in.
+    bool supportsGcsNativeConditionalRequests() const;
 
     /// For testing purposes only
     ClientCache * getRawCache() const { return cache.get(); }

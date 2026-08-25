@@ -120,6 +120,10 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
+    /// Marks the HEAD request eligible for the typed NativeConditional mode, so the CAS backend's
+    /// `nativeHead` can read a GCS generation token where the client's HTTP layer supports one.
+    std::optional<ObjectMetadata> tryGetObjectMetadataWithNativeToken(const std::string & path, bool with_tags) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -168,6 +172,8 @@ public:
 
     bool conditionalOpsUseGenerationTokens() const override;
 
+    void pinConditionalOpsGenerationDialect(bool expect_generation_tokens) override;
+
     std::optional<bool> isBucketVersioningEnabled() const override;
 
     bool supportsRetryProfile(ObjectStorageRetryProfile) const override { return true; }
@@ -189,6 +195,10 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+    /// Shared by tryGetObjectMetadata/tryGetObjectMetadataWithNativeToken: the only difference between
+    /// the two public overrides is which ObjectStorageRequestMode the HEAD wrapper carries.
+    std::optional<ObjectMetadata> tryGetObjectMetadataImpl(const std::string & path, bool with_tags, ObjectStorageRequestMode request_mode) const;
+
     const S3::URI uri;
 
     std::string disk_name;
@@ -203,6 +213,11 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    /// Set once by a caller that has derived persistent state from the conditional-ops dialect (see
+    /// `pinConditionalOpsGenerationDialect`). Once set, `applyNewSettings` refuses a reload whose
+    /// effective `http_client` would flip the dialect, and keeps the working client.
+    std::atomic<int8_t> pinned_generation_dialect{-1};   /// -1 unpinned, 0 pinned ETag, 1 pinned generation
 
     mutable std::mutex single_attempt_client_mutex;
     mutable std::shared_ptr<const S3::Client> single_attempt_client;

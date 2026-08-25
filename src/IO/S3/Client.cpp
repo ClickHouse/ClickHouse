@@ -984,6 +984,17 @@ bool Client::supportsMultiPartCopy() const
     return provider_type != ProviderType::GCS;
 }
 
+bool httpClientImpliesGcsGenerationDialect(const String & http_client)
+{
+    const auto lowered = Poco::toLower(http_client);
+    return lowered == "gcp_oauth" || lowered == "gcs_hmac";
+}
+
+bool Client::supportsGcsNativeConditionalRequests() const
+{
+    return httpClientImpliesGcsGenerationDialect(client_configuration.http_client);
+}
+
 void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
                       const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const
 {
@@ -995,6 +1006,15 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// all "x-amz-*" headers have to be either converted or deleted
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
+    }
+
+    /// Re-derived on every attempt: a retry or redirect discards the old HTTP request and builds a
+    /// fresh one (see AWSClient::AttemptExhaustively), so the bit cannot be left to survive on it.
+    if (auto * extended_http_request = dynamic_cast<ExtendedHttpRequest *>(httpRequest.get()))
+    {
+        const auto * wrapper = dynamic_cast<const RequestWithNativeConditionalMode *>(&request);
+        extended_http_request->setNativeConditional(
+            wrapper && wrapper->isNativeConditional() && supportsGcsNativeConditionalRequests());
     }
 }
 
@@ -1308,12 +1328,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 
     if (Poco::toLower(client_configuration.http_client) == "gcs_hmac")
-    {
-        client_configuration.gcs_conditional_dialect = true;
         client_configuration.gcs_hmac_credentials_provider = credentials_provider;
-    }
-    else if (Poco::toLower(client_configuration.http_client) == "gcp_oauth")
-        client_configuration.gcs_conditional_dialect = true;
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)

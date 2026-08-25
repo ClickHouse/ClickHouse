@@ -24,7 +24,8 @@ namespace
         const S3::Client & client,
         const String & bucket,
         const String & key,
-        const String & version_id)
+        const String & version_id,
+        ObjectStorageRequestMode request_mode = ObjectStorageRequestMode::Default)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (client.isClientForDisk())
@@ -37,6 +38,8 @@ namespace
 
         if (!version_id.empty())
             req.SetVersionId(version_id);
+
+        req.setNativeConditional(request_mode == ObjectStorageRequestMode::NativeConditional);
 
         return client.HeadObject(req);
     }
@@ -67,9 +70,10 @@ namespace
         const String & key,
         const String & version_id,
         bool with_metadata,
-        bool with_tags)
+        bool with_tags,
+        ObjectStorageRequestMode request_mode = ObjectStorageRequestMode::Default)
     {
-        auto outcome = headObject(client, bucket, key, version_id);
+        auto outcome = headObject(client, bucket, key, version_id, request_mode);
         if (!outcome.IsSuccess())
             return {std::nullopt, outcome.GetError()};
 
@@ -141,11 +145,12 @@ ObjectInfo getObjectInfoIfExists(
     const String & key,
     const String & version_id,
     bool with_metadata,
-    bool with_tags)
+    bool with_tags,
+    ObjectStorageRequestMode request_mode)
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags, request_mode);
     if (object_info)
         return *object_info;
 

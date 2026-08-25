@@ -20,6 +20,16 @@ enum class ObjectStorageRetryProfile : uint8_t
     SingleAttempt,
 };
 
+/// Per-request GCS conditional-dialect opt-in, carried alongside the write itself so it survives
+/// into the object storage request that ends up on the wire (see `RequestWithNativeConditionalMode`).
+/// NativeConditional: this write is content-addressed-storage-owned and may use GCS generation
+/// tokens instead of the AWS-style ETag plumbing, when the client's HTTP layer supports it.
+enum class ObjectStorageRequestMode : uint8_t
+{
+    Default,
+    NativeConditional,
+};
+
 /// Settings to be passed to IDisk::writeFile()
 struct WriteSettings
 {
@@ -74,6 +84,9 @@ struct WriteSettings
     /// Selects the retry profile the object storage should execute this write under; see
     /// ObjectStorageRetryProfile.
     ObjectStorageRetryProfile object_storage_retry_profile = ObjectStorageRetryProfile::Default;
+
+    /// Selects the object storage request mode this write should carry; see ObjectStorageRequestMode.
+    ObjectStorageRequestMode object_storage_request_mode = ObjectStorageRequestMode::Default;
 
     bool operator==(const WriteSettings & other) const = default;
 };

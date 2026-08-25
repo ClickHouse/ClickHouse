@@ -89,12 +89,12 @@ entirely before release. Treat this table as a snapshot of the current build, no
 | `gc_interval_sec` | `60` | Seconds between background GC rounds (≥ 1) |
 | `blob_hash` | `cityhash128` | Pool blob content-hash function (`cityhash128` \| `xxh3-128` \| `sha256`). Recorded in the pool at creation; a mismatching config is refused at mount |
 | `blob_hash_allow_new` | `false` | Explicit opt-in to admit a new hash algorithm into an existing pool. One-way: once admitted, the pool carries both algorithms permanently |
-| `skip_access_check` | `false` | Skip the boot-time capability probe (start now, fix later). Safer than the name suggests: only the preflight probe is skipped — the conditional-write correctness check still runs unconditionally on every writable mount |
+| `skip_access_check` | `false` | Skip the boot-time capability probe (start now, fix later). Only the preflight probe is skipped — the conditional-write correctness check still runs on every writable mount. **Not available on a writable generation-token (GCS) disk**, which refuses to mount with it: there, the probe battery is the only proof that a token-exact delete carries its generation precondition. Mount such a disk read-only if you need to defer the check |
 | `deduplication_cache_bytes` | 64 MiB | Byte budget of the blob presence cache (`0` disables) |
 | `deduplication_head_first_min_bytes` | 1 MiB | Minimum blob size to try a `HEAD` before uploading the body |
 | `gc_snapshot_generations_to_keep` | `3` | GC snapshot generations retained |
 | `gc_shards` | `1` | Blob-hash-prefix reducer shards (≥ 1). Recorded in the pool at creation; a mismatching config is refused at mount |
-| `gcs_max_conditional_put_bytes` | 1 GiB | Largest conditional write on a generation-token store (GCS forces those single-part); does not bound the unconditional resurrect |
+| `gcs_max_token_producing_put_bytes` | 1 GiB | Largest token-producing write on a generation-token store, conditional or not (GCS forces those single-part) |
 | `part_folder_cache_bytes` | 64 MiB | Part-folder view cache byte budget (`0` disables retention) |
 | `part_folder_cache_max_entries` | `10000` | Part-folder view cache entry cap |
 | `part_folder_cache_max_entry_bytes` | 16 MiB | Oversized part-folder views bypass retention above this size |

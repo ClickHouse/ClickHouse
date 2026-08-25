@@ -51,17 +51,34 @@ its token dialect from `IObjectStorage::conditionalOpsUseGenerationTokens()`:
 | `GCS` | `Generation` | The backend rewrites conditional headers before the request goes out: `If-None-Match: *` becomes `x-goog-if-generation-match: 0`, and `If-Match: <etag>` becomes `x-goog-if-generation-match: <generation>` (`applyGcsConditionalDialectToRequest`, `IO/S3/GCSConditionalDialect.cpp`) |
 
 The GCS dialect is opted into by client configuration (`http_client = gcs_hmac` or `gcp_oauth`), not
-auto-detected from the endpoint host. It also rejects one shape outright: a **conditional
-`CompleteMultipartUpload`** throws rather than silently dropping the precondition, because GCS
-ignores preconditions on that call — a measured, documented gap, not a hypothetical one. `CAS`'s
-conditional writes therefore always take the single-`PUT` path on a generation-dialect backend.
+auto-detected from the endpoint host. Within such a disk it applies only to `CAS`'s own requests;
+ordinary reads, writes, and copies through the same disk keep standard `ETag` semantics. It also
+rejects one shape outright: a **conditional `CompleteMultipartUpload`** throws rather than silently
+dropping the precondition, because GCS ignores preconditions on that call — a measured, documented
+gap, not a hypothetical one. `CAS`'s conditional writes therefore always take the single-`PUT` path
+on a generation-dialect backend.
 
-This bounds conditional writes only: the write-once create is therefore single-part and limited by
-`gcs_max_conditional_put_bytes` on a generation dialect, while the unconditional resurrect takes the
-ordinary multipart path and has no size limit on any backend.
+With `http_client = gcs_hmac`, requests are signed with Google's native `GOOG4-HMAC-SHA256` scheme,
+and the request is deliberately normalised to `x-goog-` prefixes before signing. Every `x-amz-*`
+header must therefore have a known GCS counterpart before signing, and one that does not is refused
+with an error naming it. Two configurations reach that refusal: server-side encryption, whether
+KMS-based or with a customer-supplied key, because GCS expresses encryption through a different
+contract than `x-amz-server-side-encryption*`; and any custom `x-amz-*` header set on the disk with
+`<header>`. Both fail with a clear error rather than being sent under a guessed `x-goog-` name GCS
+would not honour. Configure such a disk against an AWS-compatible endpoint instead.
 
-Every request carrying a rewritten header also has its AWS auth headers stripped and every
-remaining `x-amz-*` header renamed to `x-goog-*`, since GCS rejects a mixed header set.
+This bounds every write whose resulting token enters `CAS` protocol state, not only the ones carrying
+a precondition: on a generation dialect the write-once create *and* the unconditional resurrect are
+single-part and limited by `gcs_max_token_producing_put_bytes`. On an `ETag` dialect neither is
+forced single-part and neither is size-limited.
+
+The two authentication paths clean up differently, and neither renames headers wholesale. On
+`gcs_hmac` every request the client sends — marked or not — goes through
+`prepareGcsRequestForGoog4Authentication`, which drops the stale AWS signing artifacts and then
+resolves each remaining `x-amz-*` header against an explicit per-header rule table, raising an error
+naming any header for which there is no rule. On `gcp_oauth` only a marked request is touched at all,
+by `prepareGcsRequestForOAuthAuthentication`: it removes the AWS signing artifacts so the Bearer
+token is the sole credential and passes every other `x-amz-*` header through unchanged.
 
 Azure Blob Storage's REST API documents equivalent conditional headers (`If-None-Match`,
 `If-Match`), but no third dialect exists in this backend yet — `IObjectStorage`'s Azure
@@ -83,12 +100,25 @@ storage, and GC would silently stop reclaiming.
 `runCapabilityProbe` (`Backend/CasProbe.cpp`) runs a throwaway-key battery against every writable
 mount, described in full on the [bucket requirements](/antalya/cas/bucket-requirements) page. It is
 fail-closed: any check that does not pass throws `NOT_IMPLEMENTED` naming the specific failure, and
-the mount refuses to become writable. Two mount-time gates sit alongside it:
+the mount refuses to become writable. Two further gates run as the battery's opening steps, and one
+sits genuinely alongside it. The distinction matters: because the versioning check runs *inside* the
+battery, skipping the battery used to skip it too, which is exactly why the third gate exists.
 
-- `checkPoolPreconditions` — on the `GCS`-dialect combination only, verifies bucket versioning is
-  off (a confirmed `Enabled` throws; an inconclusive check proceeds under an assumption, logged at
-  `WARNING`, that versioning is off).
-- `checkConditionalWriteSingleAttemptSupport` — refuses to mount writable unless the underlying
+- `checkPoolPreconditions` — inside the battery. On the `GCS`-dialect combination only, requires bucket versioning to be
+  *verifiably* off. A confirmed `Enabled` and an inconclusive probe both throw: `CAS` cannot assume
+  the safe answer here, because what it would do on a versioned bucket is delete objects it believes
+  it reclaimed. A probe is inconclusive when the credential may not read the bucket's versioning
+  configuration, or when the backend cannot answer at all.
+- `checkSkipAccessCheckSupport` — alongside the battery, in the skip branch of `Pool::open`, since it
+  is the gate that decides whether the battery may be skipped at all. It asks whether the backend may serve a writable mount that skips the
+  battery at all. The `GCS`-dialect combination refuses, so `skip_access_check = true` cannot reach a
+  writable generation-token mount; every other backend still skips only its permitted access-check
+  I/O. This is what makes the exact-token delete check below unskippable on an *ordinary* writable
+  mount. Decommissioning a pool member is the deliberate exception — it opens writable with the
+  battery skipped, because the fail-closed tradeoff inverts there: refusing an ordinary mount costs
+  availability and protects data, whereas refusing a decommission strands a pool with a dead replica
+  in it and leaves the operator no way forward.
+- `checkConditionalWriteSingleAttemptSupport` — inside the battery. Refuses to mount writable unless the underlying
   object storage supports a single-HTTP-attempt retry profile for conditional writes. A hidden SDK
   retry can outlive the writer's mount lease and obscure whether a conditional operation actually
   committed, so retries on the conditional path must be explicit CAS state-machine transitions, not

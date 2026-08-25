@@ -9,6 +9,7 @@
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/GCSConditionalDialect.h>
 #include <IO/S3/GOOG4Signer.h>
+#include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/Requests.h>
 
 #include <algorithm>
@@ -231,7 +232,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , gcs_conditional_dialect(client_configuration.gcs_conditional_dialect)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
@@ -472,6 +472,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
+    /// Every request reaching this common HTTP boundary was built by `PocoHTTPClientFactory`, the
+    /// sole process-wide `Aws::Http::HttpClientFactory`, and so must be an `ExtendedHttpRequest`.
+    /// A foreign request would still read safely as `Default` via `isNativeConditionalRequest`, so
+    /// this is a construction-invariant check, not the read path itself.
+    chassert(dynamic_cast<const ExtendedHttpRequest *>(&request) != nullptr);
+
     LoggerPtr log = getLogger("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
@@ -635,8 +641,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// behaviour and this whole block, INCLUDING the body-size probe, is skipped. A positive value
             /// negotiates Expect for a conditional PUT whose body is at least that many bytes; only a CAS
             /// conditional-write client raises it (the single-attempt client built in `ObjectStorageBackend`),
-            /// so the scope is exactly CAS-owned conditional writes. `x-goog-if-generation-match` is the GCS
-            /// conditional dialect's rename of If-None-Match / If-Match (applied BEFORE this point).
+            /// so the scope is exactly CAS-owned conditional writes. `x-goog-if-generation-match` is what a
+            /// native-conditional GCS request carries instead: the GCS-mode clients translate If-None-Match /
+            /// If-Match before delegating here, so all three forms are visible at this point.
             bool conditional_write = false;
             if (expect_continue_min_bytes > 0
                 && method == Poco::Net::HTTPRequest::HTTP_PUT
@@ -748,15 +755,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            auto apply_gcs_generation_etag_override = [&]
+            auto apply_gcs_native_response_adaptation = [&]
             {
-                if (gcs_conditional_dialect)
-                {
-                    /// The generation IS the incarnation token on GCS: surface it as the ETag so the
-                    /// entire existing ETag/token plumbing works unchanged (see GCSConditionalDialect.h).
-                    if (auto etag_override = gcsGenerationETagOverride(poco_response))
-                        response->AddHeader("ETag", *etag_override);
-                }
+                if (isNativeConditionalRequest(request))
+                    applyGcsConditionalDialectToResponse(poco_response, *response);
             };
 
             if (enable_s3_requests_logging)
@@ -767,14 +769,14 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     response->AddHeader(header_name, header_value);
                     headers_ss << header_name << ": " << header_value << "; ";
                 }
-                apply_gcs_generation_etag_override();
+                apply_gcs_native_response_adaptation();
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
             }
             else
             {
                 for (const auto & [header_name, header_value] : poco_response)
                     response->AddHeader(header_name, header_value);
-                apply_gcs_generation_etag_override();
+                apply_gcs_native_response_adaptation();
             }
 
             /// Request is successful but for some special requests we can have actual error message in body
@@ -903,8 +905,14 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    if (gcs_conditional_dialect)
+    /// A `Default` request keeps pre-CAS upstream behaviour: the Bearer token replaces `Authorization`
+    /// and every other SDK header is left alone. Only a `NativeConditional` request acquires
+    /// generation semantics and has its stale AWS signing artifacts removed.
+    if (isNativeConditionalRequest(request))
+    {
         applyGcsConditionalDialectToRequest(request);
+        prepareGcsRequestForOAuthAuthentication(request);
+    }
 
     {
         std::lock_guard lock(mutex);
@@ -1008,7 +1016,11 @@ void PocoHTTPClientGCSHMAC::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    applyGcsConditionalDialectToRequest(request);
+    /// Generation semantics only for a marked request; GOOG4 authentication for every request,
+    /// because this client always signs with Google's native scheme.
+    if (isNativeConditionalRequest(request))
+        applyGcsConditionalDialectToRequest(request);
+    prepareGcsRequestForGoog4Authentication(request);
     signRequestGOOG4(request, credentials_provider->GetAWSCredentials(), std::chrono::system_clock::now());
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }

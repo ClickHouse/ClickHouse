@@ -78,11 +78,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     HTTPHeaderEntries extra_headers;
     String http_client;
-    /// GCS conditional dialect (spec 2026-07-03-cas-gcs-generation-binding-design): translate
-    /// AWS-style conditional headers and x-amz-* prefixes to the x-goog dialect at the wire
-    /// boundary, and surface x-goog-generation as the response ETag. Set for http_client values
-    /// `gcs_hmac` and `gcp_oauth`; never set for plain AWS-compatible endpoints.
-    bool gcs_conditional_dialect = false;
     /// Credentials for the GOOG4-HMAC signer (http_client = gcs_hmac only): the same provider
     /// chain the AWS path builds (inline keys, use_environment_credentials, ...).
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> gcs_hmac_credentials_provider;
@@ -247,7 +242,6 @@ protected:
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
-    bool gcs_conditional_dialect = false;
 
     HTTPRequestThrottler request_throttler;
 
@@ -289,8 +283,9 @@ private:
 
 /// GCS with HMAC credentials over the XML API, signed with Google's native GOOG4-HMAC-SHA256 —
 /// the ONLY way HMAC credentials get enforced conditional semantics on GCS (the S3-compatible
-/// sigv4 surface silently ignores If-None-Match / If-Match; measured 2026-07-03). Applies the GCS
-/// conditional dialect, then signs. Selected by `http_client = gcs_hmac`.
+/// sigv4 surface silently ignores If-None-Match / If-Match; measured 2026-07-03). Adapts a
+/// `NativeConditional` request, prepares every request for GOOG4 authentication, then signs.
+/// Selected by `http_client = gcs_hmac`.
 class PocoHTTPClientGCSHMAC : public PocoHTTPClient
 {
 public:

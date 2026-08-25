@@ -64,7 +64,7 @@ public:
     /// tests and local development. The generation-token store limit applies only to Native mode:
     /// generation stores must use a single PUT because their multipart completion path does not enforce
     /// the precondition.
-    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t conditional_single_put_cap_ = 1ULL << 30);
+    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t token_producing_single_put_cap_ = 1ULL << 30);
 
     /// Read an object or return `nullopt` if it is absent. Native mode HEADs first so the returned
     /// token identifies the incarnation whose bytes are read; a not-found race is also reported as
@@ -77,8 +77,8 @@ public:
     HeadResult head(const String & key) override;
     /// S3 ETags are content-derived and surfaced in list responses — TRUE for ETag-token Native
     /// and EmulatedSingleProcess modes. FALSE on a generation-token store (GCS): the XML LIST
-    /// surfaces MD5-style ETags in the response BODY, which the conditional dialect's header-level
-    /// rewrite cannot map to generations. A list-derived token would therefore be an invalid
+    /// surfaces MD5-style ETags in the response BODY, which the header-level response adaptation
+    /// cannot map to generations. A list-derived token would therefore be an invalid
     /// `If-Match` token; generation stores deliberately omit it and make GC re-read each shard.
     /// Consumers already treat absent list tokens as Read/fail-closed (GC discover re-reads every
     /// shard — a cost, not a correctness change).
@@ -109,16 +109,23 @@ public:
     /// conditional copy and is never selected for S3 staging, so it throws `NOT_IMPLEMENTED` there):
     /// WRITE-ONCE conditional copy via `IObjectStorage::copyObjectConditional`.
     /// `resurrect` (every mode): prepends `fresh_header` and UNCONDITIONALLY writes
-    /// `[fresh_header][payload]` to `blob_key` (fresh tag ⇒ distinct ETag from the condemned
-    /// incarnation, INV-NO-RETURN), then a fresh HEAD for the ETag. Native streams with plain
-    /// `WriteSettings` — no forced single part, no size ceiling on any dialect; EmulatedSingleProcess
-    /// materializes and SERIALIZES resurrections process-wide, bounding the peak to one body.
+    /// `[fresh_header][payload]` to `blob_key` (a fresh tag gives a token distinct from the condemned
+    /// incarnation, so its already-queued exact-token delete misses), then a fresh HEAD for the token.
+    /// The write carries no precondition but IS token-producing, so it goes through
+    /// `tokenProducingWriteSettings`: on a generation dialect that forces a single PUT and applies the
+    /// token-producing cap, exactly as a conditional write does; an ETag dialect is unconstrained.
+    /// EmulatedSingleProcess materializes and SERIALIZES resurrections process-wide, bounding the peak
+    /// to one body.
     PutResult promoteStaged(const String & staging_key, const String & blob_key) override;
     Token resurrect(ReadBuffer & payload, uint64_t payload_size, const String & blob_key, const String & fresh_header) override;
 
-    /// Pool-level precondition: on a Native, generation-dialect (GCS) backend, reject the pool if the
-    /// bucket has object versioning enabled — see Backend::checkPoolPreconditions.
+    /// Pool-level precondition: on a Native, generation-dialect (GCS) backend, reject the pool unless
+    /// object versioning is VERIFIABLY disabled — see Backend::checkPoolPreconditions.
     void checkPoolPreconditions() override;
+
+    /// Fail-closed precondition: a Native, generation-dialect (GCS) backend refuses a writable mount
+    /// that asked to skip the access check — see Backend::checkSkipAccessCheckSupport.
+    void checkSkipAccessCheckSupport() override;
 
     /// Fail-closed precondition for writable Native mode: require that the object storage supports the
     /// SingleAttempt retry profile (ObjectStorageRetryProfile), which disables transparent
@@ -135,17 +142,39 @@ public:
     SentinelProbeResult probeSentinelRaw(const String & key) override;
 
     /// The token kind this backend's object storage mints: TokenType::ETag for AWS-compatible
-    /// stores, TokenType::Generation when the storage runs the GCS conditional dialect (the
+    /// stores, TokenType::Generation when the storage mints GCS generations (the
     /// generation rides the ETag plumbing; the VALUE stays opaque either way).
     TokenType nativeTokenType() const { return native_token_type; }
     void setNativeTokenTypeForTest(TokenType t) { native_token_type = t; }
 
     /// ---- Token policy (single source of truth; see the .cpp) ----
+    /// A GCS generation reaches this layer through the AWS SDK's ETag field, which the HTTP boundary
+    /// fills with an ETag-shaped — that is, quoted — value. A generation is a number, and quotes are
+    /// transport syntax that must not enter CAS protocol state, where token values are compared for
+    /// equality and written into persisted manifests. Strip them here, where the meaning changes from
+    /// "an ETag field" to "an incarnation token".
+    ///
+    /// Generation-scoped on purpose: an ETag-dialect token IS the quoted ETag, and those quotes are
+    /// required syntax when the value goes back out as `If-Match`. Stripping unconditionally would
+    /// corrupt the AWS-compatible path.
+    String normalizeTokenValue(const String & etag) const
+    {
+        if (native_token_type != TokenType::Generation)
+            return etag;
+        if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+            return etag.substr(1, etag.size() - 2);
+        return etag;
+    }
+
     /// Mint the incarnation token for a key we just HEAD'd or wrote: the object ETag/generation
     /// string carried under this backend's native dialect (native_token_type).
+    ///
+    /// This is the ONLY site that mints a Generation token: `tokenForList` is the sole other
+    /// `native_token_type` mint, and `supportsListTokens` above returns false for Generation, so it
+    /// cannot produce one.
     Token tokenForHead(const String & etag) const
     {
-        return Token{etag, native_token_type};
+        return Token{normalizeTokenValue(etag), native_token_type};
     }
 
     /// The token to surface for a LISTED key: present iff this backend surfaces per-key list tokens
@@ -165,11 +194,29 @@ public:
         return observed == expected;
     }
 
-    /// Build settings shared by every Native conditional write. They skip the racy post-upload
-    /// existence/size check, force single-part uploads for generation-token stores, and select the
-    /// SingleAttempt object-storage retry profile.
+    /// Settings for EVERY write whose result token enters CAS protocol state ("Write-settings
+    /// decomposition"): always NativeConditional request mode, plus -- on a generation-token store
+    /// (GCS) only -- a forced single PUT capped at token_producing_single_put_cap (GCS enforces no
+    /// precondition on CompleteMultipartUpload, so any token-producing write, conditional or not,
+    /// would silently overwrite instead of failing if it took the multipart path). Use this directly
+    /// for an UNCONDITIONAL token-producing write (resurrection); conditionalWriteSettings layers a
+    /// precondition-specific retry policy on top of it for compare/create operations.
+    WriteSettings tokenProducingWriteSettings() const;
+    WriteSettings tokenProducingWriteSettingsForTest() const { return tokenProducingWriteSettings(); }
+    /// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): everything
+    /// tokenProducingWriteSettings sets, plus exactly one attempt at every retry layer (the
+    /// SingleAttempt object-storage retry profile and WriteBufferFromS3's own unexpected-error retry
+    /// loop) and skipping the racy post-upload existence/size check.
     WriteSettings conditionalWriteSettings() const;
     WriteSettings conditionalWriteSettingsForTest() const { return conditionalWriteSettings(); }
+    /// Convert a successful write/copy response's incarnation-identifying string into this backend's
+    /// token -- the ONE place that decides how strictly to trust it ("Exact successful-write token").
+    /// Generation dialect (GCS): the response MUST carry a non-empty, purely numeric generation; a
+    /// missing or non-numeric value is an exception -- there is no follow-up HEAD, so a broken or
+    /// lying response can never be silently patched over by a later, unrelated read. Every other
+    /// dialect (ETag, and any backend with no write-time token at all, e.g. local files) keeps the
+    /// pre-existing behavior: an absent value falls back to a fresh HEAD of `key`.
+    Token tokenFromWriteResult(const String & key, const std::optional<String> & etag);
     /// Override the emulated backend's wall clock for deterministic expiry tests.
     void setEmuNowNsForTest(uint64_t now_ns);
     /// Return the guarded per-key token-state size for expiry tests.
@@ -179,8 +226,9 @@ private:
     const ObjectStoragePtr object_storage;
     const Mode mode;
     TokenType native_token_type = TokenType::ETag;
-    /// GCS single-PUT budget for conditional writes (generation-token stores only); see ctor.
-    const uint64_t conditional_single_put_cap;
+    /// GCS single-PUT budget for every token-producing write (generation-token stores only --
+    /// unconditional writes, such as resurrection, included; see tokenProducingWriteSettings and ctor).
+    const uint64_t token_producing_single_put_cap;
 
     /// EmulatedSingleProcess state: per-key {etag, disambiguator} — see emuMintToken. A successfully
     /// deleted entry is retained only while its etag is recent enough that an immediate recreate could
@@ -203,8 +251,18 @@ private:
     /// masquerading as a real etag-derived identity either.
     uint64_t emu_seq = 0;
 
-    /// Look up Native metadata and convert the storage ETag or generation to this backend's token.
+    /// Look up Native metadata and convert the storage ETag or generation to this backend's token. On
+    /// a generation-token store, the minted token is validated exactly like a write result (see
+    /// isValidGenerationTokenValue) before this returns it: a missing/malformed x-goog-generation on an
+    /// otherwise-successful HEAD would otherwise mint an invalid token here with no check at all, one
+    /// layer before tokenFromWriteResult's own check on the write path.
     std::optional<HeadResult> nativeHead(const String & key);
+
+    /// True iff `value` is a well-formed generation: non-empty and every character an ASCII digit.
+    /// Shared by nativeHead and tokenFromWriteResult so the two places that mint a Generation token
+    /// from a remote response cannot drift apart on what "valid" means. Deliberately NOT folded into
+    /// tokenForHead, which stays a pure minter with no opinion on the value it is handed.
+    static bool isValidGenerationTokenValue(const String & value);
     /// Write a body with the condition already encoded in `ws`, finalize it, classify a lost
     /// precondition, and return the new token when the write succeeds.
     PutResult nativeConditionalPut(const String & key, const String & bytes, const WriteSettings & ws, const ObjectMeta & meta);

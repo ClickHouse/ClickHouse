@@ -328,6 +328,8 @@ TEST(CASPartPathParser, SplitCacheEvictionStaysCorrect)
 #include <Disks/tests/cas_test_helpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadPipeline.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/MapConfiguration.h>
 
 using DB::Cas::tests::idOf;
 using DB::Cas::tests::u128Of;
@@ -335,6 +337,7 @@ using DB::Cas::tests::u128Of;
 namespace DB::ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -434,7 +437,6 @@ TEST(CASWiringCapability, SupportsAtomicFileWrites)
         DB::Cas::tests::makeLocalObjectStorageForTest(), "", /*object_metadata_cache_size=*/0);
     EXPECT_FALSE(plain_storage->supportsAtomicFileWrites());
 }
-
 TEST(CASWiringRead, ResolvesPublishedPart)
 {
     auto storage = openWiringStorage();

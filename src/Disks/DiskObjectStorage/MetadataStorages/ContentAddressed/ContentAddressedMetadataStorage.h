@@ -234,6 +234,7 @@ public:
     bool isReadOnly() const override { return read_only; }
     bool isContentAddressed() const override { return true; }
 
+
     /// Fail-close gate shared by every mutating entry point (transactions, GC round, GC rebuild,
     /// pool-member decommission): an observe-only (`<readonly>`) disk must reject them all.
     void checkNotReadOnly(std::string_view what) const;
@@ -593,9 +594,10 @@ private:
     const uint64_t gc_round_prefix_wholesale_budget;
     const uint64_t gc_round_handoff_prefix_wholesale_budget;
     const uint64_t gc_round_outcome_entry_budget;
-    /// GCS single-PUT budget for conditional writes (generation-token stores only): threaded into
-    /// the ObjectStorageBackend construction site in startup(). Irrelevant on ETag stores (AWS et al).
-    const uint64_t gcs_max_conditional_put_bytes;
+    /// GCS single-PUT budget for every token-producing write, conditional or not (generation-token
+    /// stores only): threaded into the ObjectStorageBackend construction site in startup().
+    /// Irrelevant on ETag stores (AWS et al).
+    const uint64_t gcs_max_token_producing_put_bytes;
     /// Part-folder view cache settings. `cas_part_folder_cache_bytes == 0` disables retention.
     const uint64_t cas_part_folder_cache_bytes;
     const uint64_t cas_part_folder_cache_max_entries;
@@ -639,6 +641,11 @@ private:
     /// snapshot-safety reason as cas_store.
     std::shared_ptr<Cas::CachedPartFolderAccess> part_access TSA_GUARDED_BY(pointer_mutex);
     String pool_uuid;
+    /// The backend's incarnation-token dialect recorded at `startup` (see `openPoolView`'s `PoolView::
+    /// native_token_type`) -- immutable afterwards. `startup` also hands it to the object storage as a
+    /// pin, which is what refuses a reload that would flip the dialect under this live pool; the check
+    /// belongs there because only the object storage knows the effective `http_client`.
+    Cas::TokenType native_token_type = Cas::TokenType::ETag;
     /// shared_ptr so `runGarbageCollectionRoundNow`/`runOneGcRoundForTest` can take a snapshot under
     /// `pointer_mutex`, release it, and run the (long) round via the snapshot -- never holding
     /// `pointer_mutex` itself for the round's duration, so `gcHealth`/`store`/`partAccess` never
@@ -727,6 +734,12 @@ private:
         /// SAME resolved value to build its own probe key, so it is returned here rather than
         /// recomputed a second time.
         String pool_prefix;
+        /// The backend's native incarnation-token dialect (`Cas::ObjectStorageBackend::nativeTokenType`),
+        /// captured while the concrete backend is still in scope. `startup()`'s S3-staging capability
+        /// probe needs this same fact to decide whether the probe is meaningful at all, and reading it
+        /// back out through `pool` would mean unwrapping the instrumentation decorator `Pool::open`
+        /// wraps the backend in -- returned here instead so there is exactly one place that reads it.
+        Cas::TokenType native_token_type = Cas::TokenType::ETag;
     };
 
     /// Builds the backend + `Cas::PoolConfig` and opens a pool exactly as `startup()` does. A read-only

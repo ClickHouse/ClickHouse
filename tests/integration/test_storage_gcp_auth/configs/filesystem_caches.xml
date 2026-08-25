@@ -1,0 +1,8 @@
+<clickhouse>
+  <filesystem_caches>
+    <gcp_oauth_cache1>
+      <max_size>1Gi</max_size>
+      <path>/tmp/gcp_oauth_cache1</path>
+    </gcp_oauth_cache1>
+  </filesystem_caches>
+</clickhouse>

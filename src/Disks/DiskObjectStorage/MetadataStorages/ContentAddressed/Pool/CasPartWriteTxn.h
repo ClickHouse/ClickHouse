@@ -21,16 +21,17 @@ namespace DB::Cas
 /// upload can race with another writer or with GC, in which case the transaction retries from the writer's
 /// own source and each attempt must read from the beginning. `server_side_copy_from` is set only for an S3
 /// staging object; the ordinary create then promotes it by a server-side copy instead of streaming through
-/// ClickHouse, and `open` reads that same staging object when a resurrection has to stream it. The staging
-/// object must remain available through a condemned-object resurrection.
+/// ClickHouse, and `open` reads that same staging object when a resurrection has to re-upload it
+/// (`Backend::resurrect` streams from a `ReadBuffer`, it does not copy). The staging object must remain
+/// available through a condemned-object resurrection.
 struct BlobSource
 {
     uint64_t size = 0;
     std::function<std::unique_ptr<ReadBuffer>()> open;   /// yields exactly `size` bytes, from the start
     /// When set, the blob's bytes already live in an S3 staging object with this key, and `putBlob` promotes it by a
     /// WRITE-ONCE conditional SERVER-SIDE COPY (`Backend::promoteStaged`) instead of streaming
-    /// `open` — and resurrects a condemned incarnation by an unconditional server-side copy
-    /// from the SAME staging object (`Backend::resurrect`), never a read of the condemned blob
+    /// `open` — and resurrects a condemned incarnation by an unconditional re-upload streamed from
+    /// the SAME staging object via `open` (`Backend::resurrect`), never a read of the condemned blob
     /// (revival must always be a fresh write from the source). Unset (the default, `StagingBackend::Local`) ⇒ the local
     /// streaming path is byte-for-byte unchanged and `open` is the source.
     std::optional<String> server_side_copy_from;

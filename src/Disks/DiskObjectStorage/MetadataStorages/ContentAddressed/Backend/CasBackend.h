@@ -276,10 +276,16 @@ public:
 
     /// Pool-level preconditions beyond per-op conditional semantics — checked by the capability
     /// probe BEFORE the op battery. Default: nothing to check. The S3 backend fails closed here
-    /// when a generation-dialect (GCS) bucket has object versioning enabled: every token-exact
-    /// DELETE would archive a noncurrent generation instead of reclaiming storage, so GC
-    /// "reclaim" would silently stop reclaiming.
+    /// unless a generation-dialect (GCS) bucket is VERIFIABLY free of object versioning: a
+    /// token-exact DELETE against a versioned bucket archives a noncurrent generation instead of
+    /// reclaiming storage, so GC "reclaim" would silently stop reclaiming.
     virtual void checkPoolPreconditions() {}
+
+    /// Fail-closed precondition: may this backend serve a WRITABLE mount that skips the access-check
+    /// battery? `PoolConfig::skip_access_check` is a preflight convenience, so it is available only to
+    /// backends whose correctness does not depend on the battery having run. Default: available.
+    /// See ObjectStorageBackend's override for the one combination that refuses it.
+    virtual void checkSkipAccessCheckSupport() {}
 
     /// Fail-closed precondition: a Native-mode backend MUST have a
     /// working single-attempt conditional-write path before it coordinates a WRITABLE pool — silently
@@ -334,9 +340,12 @@ public:
     /// UNCONDITIONAL re-upload of the writer's OWN payload over `blob_key` under a FRESH-tagged
     /// envelope header — the sanctioned condemned-object resurrection overwrite. Writes
     /// `[fresh_header][payload]`, streaming `payload` from `reader`, and returns the fresh incarnation's
-    /// token. Blob bodies have no size cap, so a Native backend streams the payload and never
-    /// materializes it; the emulated backend materializes (its conditional ops are whole-`String` by
-    /// design) and serializes resurrections to bound the peak to one body at a time.
+    /// token. A Native backend streams the payload and never materializes it whole; on an ETag-dialect
+    /// store that means no size cap, while a generation-token store (GCS) enforces the same single-PUT
+    /// token-producing cap this write would face if it carried a precondition (GCS drops preconditions
+    /// on multipart completion regardless of whether one was set). The emulated backend materializes
+    /// (its conditional ops are whole-`String` by design) and serializes resurrections to bound the
+    /// peak to one body at a time.
     ///
     /// The reader is the caller's: it is ALWAYS the writer's own source (a staging object or a local
     /// staged file), NEVER a read of the condemned `blob_key`, and the caller has already skipped any

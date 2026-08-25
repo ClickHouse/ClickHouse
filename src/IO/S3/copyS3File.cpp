@@ -83,7 +83,8 @@ namespace
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_,
             const std::optional<String> & if_none_match_ = {},
-            String * out_dest_etag_ = nullptr)
+            String * out_dest_etag_ = nullptr,
+            ObjectStorageRequestMode request_mode_ = ObjectStorageRequestMode::Default)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -94,6 +95,7 @@ namespace
             , log(log_)
             , if_none_match(if_none_match_)
             , out_dest_etag(out_dest_etag_)
+            , request_mode(request_mode_)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -117,6 +119,9 @@ namespace
         const std::optional<String> if_none_match;
         /// If non-null, filled in with the destination object's ETag on a successful copy.
         String * out_dest_etag;
+        /// Eligibility for the typed NativeConditional HTTP mode (see WriteSettings), threaded onto
+        /// the destination-write requests below -- see copyS3File's doc comment for exactly which ones.
+        const ObjectStorageRequestMode request_mode;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -209,7 +214,16 @@ namespace
             request.SetMultipartUpload(multipart_upload);
 
             if (if_none_match.has_value())
+            {
                 request.SetIfNoneMatch(*if_none_match);
+                /// Defense in depth only: a conditional copy on a generation-token store never reaches
+                /// this request (the caller fails closed before multipart when it would exceed the
+                /// single-operation cap -- see S3ObjectStorage::copyObjectConditional). Marking it
+                /// anyway lets Task 4's native adapter reject a conditional CompleteMultipartUpload
+                /// outright if that invariant is ever violated. Upload-part and multipart-creation
+                /// requests are deliberately never marked -- no consumer needs their mode.
+                request.setNativeConditional(request_mode == ObjectStorageRequestMode::NativeConditional);
+            }
 
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -638,7 +652,8 @@ namespace
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
             const std::optional<String> & if_none_match_ = {},
-            String * out_dest_etag_ = nullptr)
+            String * out_dest_etag_ = nullptr,
+            ObjectStorageRequestMode request_mode_ = ObjectStorageRequestMode::Default)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -649,7 +664,8 @@ namespace
                 blob_storage_log_,
                 getLogger("copyS3File"),
                 if_none_match_,
-                out_dest_etag_)
+                out_dest_etag_,
+                request_mode_)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -714,6 +730,10 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             client_ptr->setKMSHeaders(request);
+
+            /// The actual single-operation copy that produces a CAS incarnation token: eligible for the
+            /// typed NativeConditional HTTP mode when the caller marked this copy as such.
+            request.setNativeConditional(request_mode == ObjectStorageRequestMode::NativeConditional);
         }
 
         void processCopyRequest(S3::CopyObjectRequest & request)
@@ -902,7 +922,8 @@ void copyS3File(
     const CreateReadBuffer& fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata,
     std::optional<String> if_none_match,
-    String * out_dest_etag)
+    String * out_dest_etag,
+    ObjectStorageRequestMode request_mode)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;
@@ -944,7 +965,8 @@ void copyS3File(
         blob_storage_log,
         std::move(fallback_method),
         if_none_match,
-        out_dest_etag};
+        out_dest_etag,
+        request_mode};
     helper.performCopy();
 }
 

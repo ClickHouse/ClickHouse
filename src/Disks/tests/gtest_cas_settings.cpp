@@ -11,6 +11,7 @@ namespace DB::ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_SETTING;
 }
 
 /// Per-TU extern declarations for the `ContentAddressedSetting` entries this file uses -- the
@@ -22,6 +23,7 @@ namespace DB::ContentAddressedSetting
     extern const ContentAddressedSettingsUInt64 gc_shards;
     extern const ContentAddressedSettingsUInt64 gc_interval_sec;
     extern const ContentAddressedSettingsUInt64 deduplication_cache_bytes;
+    extern const ContentAddressedSettingsUInt64 gcs_max_token_producing_put_bytes;
     extern const ContentAddressedSettingsString scratch_path;
 }
 
@@ -45,6 +47,42 @@ TEST(CASContentAddressedSettings, DefaultsAndOverridesLand)
     EXPECT_EQ(s[ContentAddressedSetting::deduplication_cache_bytes].value, 64ULL << 20); /// table default
     /// Absent key -> the verbatim default (never touches the anchor).
     EXPECT_EQ(s[ContentAddressedSetting::scratch_path].value, "/data/default_scratch");
+}
+
+/// The generation-store single-PUT cap bounds every write whose result token enters CAS protocol
+/// state, unconditional resurrect included — hence `token_producing`, not `conditional`.
+TEST(CASContentAddressedSettings, TokenProducingPutCapParsesAndDefaults)
+{
+    auto with_override = makeConfig(
+        "<server_root_id>srv1</server_root_id>"
+        "<gcs_max_token_producing_put_bytes>4096</gcs_max_token_producing_put_bytes>");
+    ContentAddressedSettings s;
+    s.loadFromConfig(*with_override, "disk", "/data", "/data/scratch", identity_macros);
+    EXPECT_EQ(s[ContentAddressedSetting::gcs_max_token_producing_put_bytes].value, 4096u);
+
+    auto without = makeConfig("<server_root_id>srv1</server_root_id>");
+    ContentAddressedSettings d;
+    d.loadFromConfig(*without, "disk", "/data", "/data/scratch", identity_macros);
+    EXPECT_EQ(d[ContentAddressedSetting::gcs_max_token_producing_put_bytes].value, 1ULL << 30);
+}
+
+/// The cap's pre-release name carries no alias: `CAS` ships no persisted data yet, so a config using
+/// the old key must fail loudly rather than be silently accepted under a compatibility shim.
+TEST(CASContentAddressedSettings, LegacyConditionalPutCapNameRejected)
+{
+    auto cfg = makeConfig(
+        "<server_root_id>srv1</server_root_id>"
+        "<gcs_max_conditional_put_bytes>4096</gcs_max_conditional_put_bytes>");
+    ContentAddressedSettings s;
+    try
+    {
+        s.loadFromConfig(*cfg, "disk", "/data", "/data/scratch", identity_macros);
+        FAIL() << "expected the legacy cap name to be rejected as unknown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_SETTING);
+    }
 }
 
 TEST(CASContentAddressedSettings, UnknownKeyRejected)
@@ -76,7 +114,21 @@ TEST(CASContentAddressedSettings, ObjectStorageKeysSkipped)
         /// `RegisterDiskObjectStorage.cpp` for every metadata type that needs a real transaction (not
         /// a CAS-specific check), must reach that check rather than being rejected here as unknown --
         /// `05015_cas_reject_fake_transaction` depends on it doing so.
-        "<use_fake_transaction>1</use_fake_transaction>");
+        "<use_fake_transaction>1</use_fake_transaction>"
+        /// Regression pin: `http_client = gcp_oauth` has TWO token sources and `requestBearerToken`
+        /// picks between them, so BOTH key sets must be accepted. The metadata-server triple was
+        /// missing (found by the CAS-over-GCS integration fixture, which had to point the OAuth client
+        /// at a fake metadata server); the ADC triple was missing too, and it is the only way to run
+        /// `gcp_oauth` off a GCE instance. Either omission threw `UNKNOWN_SETTING` at startup.
+        "<http_client>gcp_oauth</http_client>"
+        "<metadata_service>metadata.example.invalid</metadata_service>"
+        "<request_token_path>computeMetadata/v1/instance/service-accounts</request_token_path>"
+        "<service_account>cas@example.invalid</service_account>"
+        "<google_adc_client_id>cas-adc-client</google_adc_client_id>"
+        "<google_adc_client_secret>cas-adc-secret</google_adc_client_secret>"
+        "<google_adc_refresh_token>cas-adc-refresh</google_adc_refresh_token>"
+        /// Same class: a generic S3 request setting, not a CAS one.
+        "<max_single_part_upload_size>1073741824</max_single_part_upload_size>");
     ContentAddressedSettings s;
     EXPECT_NO_THROW(s.loadFromConfig(*cfg, "disk", "/scratch", "/scratch", identity_macros));
 }

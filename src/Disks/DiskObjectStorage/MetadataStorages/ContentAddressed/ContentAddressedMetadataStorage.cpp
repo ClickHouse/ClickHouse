@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasProbe.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
+#include <IO/S3/Client.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasSentinelProbe.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
@@ -24,6 +25,7 @@
 #include <Common/LoggingHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 #include <charconv>
@@ -70,7 +72,7 @@ namespace ContentAddressedSetting
     extern const ContentAddressedSettingsUInt64 gc_round_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_handoff_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_outcome_entry_budget;
-    extern const ContentAddressedSettingsUInt64 gcs_max_conditional_put_bytes;
+    extern const ContentAddressedSettingsUInt64 gcs_max_token_producing_put_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entries;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entry_bytes;
@@ -291,7 +293,7 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , gc_round_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_prefix_wholesale_budget].value)
     , gc_round_handoff_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_handoff_prefix_wholesale_budget].value)
     , gc_round_outcome_entry_budget(settings_[ContentAddressedSetting::gc_round_outcome_entry_budget].value)
-    , gcs_max_conditional_put_bytes(settings_[ContentAddressedSetting::gcs_max_conditional_put_bytes].value)
+    , gcs_max_token_producing_put_bytes(settings_[ContentAddressedSetting::gcs_max_token_producing_put_bytes].value)
     , cas_part_folder_cache_bytes(settings_[ContentAddressedSetting::part_folder_cache_bytes].value)
     , cas_part_folder_cache_max_entries(settings_[ContentAddressedSetting::part_folder_cache_max_entries].value)
     , cas_part_folder_cache_max_entry_bytes(settings_[ContentAddressedSetting::part_folder_cache_max_entry_bytes].value)
@@ -689,7 +691,8 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     const auto mode = object_storage->getType() == ObjectStorageType::Local
         ? Cas::ObjectStorageBackend::Mode::EmulatedSingleProcess
         : Cas::ObjectStorageBackend::Mode::Native;
-    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode, gcs_max_conditional_put_bytes);
+    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode, gcs_max_token_producing_put_bytes);
+    const Cas::TokenType backend_token_type = backend->nativeTokenType();
 
     /// EmulatedSingleProcess emulates the conditional-op / exact-token semantics in-process (local
     /// object storage has none). That emulation is per-process: two servers pointed at the SAME local
@@ -777,6 +780,7 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     PoolView view;
     view.physical_key_prefix = physical_key_prefix_local;
     view.pool_prefix = pool_prefix;
+    view.native_token_type = backend_token_type;
     view.pool = Cas::Pool::open(std::move(backend), std::move(pool_config));
     return view;
 }
@@ -816,16 +820,37 @@ void ContentAddressedMetadataStorage::startup()
     /// Fail-close, never fail-open: an unsupported or non-enforcing backend just falls back to local
     /// staging (`conditional_copy_supported` stays `false`) — this is NOT a mount failure, unlike the
     /// mandatory battery, because `local` staging remains fully functional.
+    ///
+    /// A generation-token backend (GCS) is unsupported for S3-native staging regardless of what the
+    /// probe would report, so it takes no probe at all: `probeConditionalCopy` issues its conditional
+    /// copies with a default `WriteSettings`, which never receives the GCS conditional-dialect header
+    /// mapping, so it would observe a raw `If-None-Match` that GCS ignores on `CopyObject` and report
+    /// enforcement where there is none. Even a corrected probe would not help — the generation that
+    /// `promoteStaged` needs comes back in a response HEADER, and the vendored `CopyObjectResult` the
+    /// copy call site reads only ever populates its `ETag` from the response BODY, so the token would
+    /// never reach the caller. Excluding generation stores here keeps that dead end unreachable instead
+    /// of surfacing it as a corrupted-token exception.
     bool copy_supported = false;
     if (staging_backend == Cas::StagingBackend::S3 && !read_only)
     {
-        const String probe_prefix = physicalKey(view.pool_prefix + "/staging/" + server_root_id + "/probe");
-        copy_supported = Cas::probeConditionalCopy(*object_storage, probe_prefix);
-        if (!copy_supported)
+        if (view.native_token_type == Cas::TokenType::Generation)
+        {
             LOG_INFO(
                 getLogger("ContentAddressedMetadataStorage"),
-                "staging_backend=s3 requested but the object storage does not enforce conditional "
-                "copy; falling back to local staging");
+                "staging_backend=s3 requested but this object storage mints generation incarnation "
+                "tokens, which S3-native staging cannot carry through a server-side copy; falling "
+                "back to local staging");
+        }
+        else
+        {
+            const String probe_prefix = physicalKey(view.pool_prefix + "/staging/" + server_root_id + "/probe");
+            copy_supported = Cas::probeConditionalCopy(*object_storage, probe_prefix);
+            if (!copy_supported)
+                LOG_INFO(
+                    getLogger("ContentAddressedMetadataStorage"),
+                    "staging_backend=s3 requested but the object storage does not enforce conditional "
+                    "copy; falling back to local staging");
+        }
 
         /// Reclaim this mount's own leaked `staging/<server_root_id>/` debris (a promote whose staging-delete never
         /// ran, or an aborted transaction's never-promoted staging object — see
@@ -882,6 +907,15 @@ void ContentAddressedMetadataStorage::startup()
     }
     pool_uuid = std::move(uuid);
     conditional_copy_supported = copy_supported;
+    native_token_type = view.native_token_type;
+
+    /// Freeze the object storage's conditional-ops dialect for the rest of its life. Everything above
+    /// has now derived persistent state from it -- token normalisation, whether a listing may supply a
+    /// token at all, and the preconditions a generation store had to satisfy to mount -- and a reload
+    /// that swapped the client under that state would leave persisted tokens uncomparable. The refusal
+    /// has to happen in the object storage: only there is the effective `http_client` known, merged from
+    /// the storage's current settings, any endpoint-level block and the disk's own section.
+    object_storage->pinConditionalOpsGenerationDialect(native_token_type == Cas::TokenType::Generation);
 }
 
 void ContentAddressedMetadataStorage::shutdown()

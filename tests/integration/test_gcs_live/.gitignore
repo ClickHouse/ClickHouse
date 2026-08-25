@@ -1,0 +1,3 @@
+# Generated per run from the GCS_LIVE_* environment variables. It embeds the live HMAC secret in
+# plain text, so it must never be committed.
+configs/live_gcs_generated.xml

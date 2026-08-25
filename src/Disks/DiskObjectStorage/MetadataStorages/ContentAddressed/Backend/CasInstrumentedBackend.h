@@ -90,6 +90,7 @@ public:
 
     /// Capability checks are deliberately uninstrumented: they do not represent storage operations.
     void checkPoolPreconditions() override { inner->checkPoolPreconditions(); }
+    void checkSkipAccessCheckSupport() override { inner->checkSkipAccessCheckSupport(); }
     void checkConditionalWriteSingleAttemptSupport() override { inner->checkConditionalWriteSingleAttemptSupport(); }
 
     /// The typed sentinel probe is a diagnostic/authoritative read, not a routine storage operation —

@@ -17,6 +17,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
@@ -79,6 +80,13 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
+}
+
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString http_client;
 }
 
 
@@ -503,6 +511,9 @@ ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(const Stored
     request.SetBucket(uri.bucket);
     request.SetKey(object.remote_path);
     request.SetIfMatch(etag);
+    /// This is a content-addressed exact-token DELETE: mark it eligible for the typed NativeConditional
+    /// mode, so a GCS-native client can send the generation token this etag actually encodes.
+    request.setNativeConditional();
 
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
 
@@ -541,7 +552,12 @@ ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(const Stored
 
 bool S3ObjectStorage::conditionalOpsUseGenerationTokens() const
 {
-    return client.get()->usesGcsConditionalDialect();
+    return client.get()->supportsGcsNativeConditionalRequests();
+}
+
+void S3ObjectStorage::pinConditionalOpsGenerationDialect(bool expect_generation_tokens)
+{
+    pinned_generation_dialect.store(expect_generation_tokens ? 1 : 0);
 }
 
 std::optional<bool> S3ObjectStorage::isBucketVersioningEnabled() const
@@ -629,8 +645,19 @@ void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::strin
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
+    return tryGetObjectMetadataImpl(path, with_tags, ObjectStorageRequestMode::Default);
+}
+
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeToken(const std::string & path, bool with_tags) const
+{
+    return tryGetObjectMetadataImpl(path, with_tags, ObjectStorageRequestMode::NativeConditional);
+}
+
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataImpl(const std::string & path, bool with_tags, ObjectStorageRequestMode request_mode) const
+{
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
+    auto object_info = S3::getObjectInfoIfExists(
+        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags, request_mode);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -780,11 +807,32 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to_attributes);
 }
 
+/// Consumes exactly two fields of `write_settings`: `object_storage_request_mode` and
+/// `s3_single_part_upload_max_bytes_override`. It deliberately IGNORES the rest of what a conditional
+/// write asks for, and a caller passing `ObjectStorageBackend::conditionalWriteSettings` gets less than
+/// that method's name promises:
+///   - `object_storage_retry_profile = SingleAttempt` is inert here. Only `writeObject` resolves the
+///     profile to `getSingleAttemptClient`; this path always uses `client.get()`, so the SDK may retry
+///     a CopyObject transparently.
+///   - `s3_max_unexpected_write_error_retries_override` and `s3_check_objects_after_upload_override`
+///     are applied inside `writeObject` only, and no copy passes through it.
+///
+/// Why that is safe rather than merely tolerated. The only caller supplying those settings is the
+/// content-addressed staging promote, and a retried CopyObject whose first attempt already landed
+/// answers `412` on the second, which becomes `created=false` — indistinguishable from losing the
+/// race. The caller's precondition-failed arm HEADs the key and either adopts a live incarnation or
+/// displaces a condemned one; the key is a content hash, so every incarnation under it carries a
+/// byte-identical payload and the created-versus-existed verdict is recoverable without the token from
+/// the response that was lost. Generation-token stores never reach here at all: S3-native staging is
+/// refused for them at mount.
+///
+/// Re-derive that argument before routing this copy through the single-attempt client. Doing so is a
+/// protocol-adjacent change, and correctness on this path does not need it.
 ConditionalCopyResult S3ObjectStorage::copyObjectConditional( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto current_client = client.get();
@@ -804,6 +852,31 @@ ConditionalCopyResult S3ObjectStorage::copyObjectConditional( // NOLINT
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
+    /// A token-producing conditional copy on a generation-token store (GCS) must stay a SINGLE
+    /// CopyObject operation, for the same reason a token-producing PUT must stay a single PUT (see
+    /// WriteBufferFromS3::createMultipartUpload): GCS enforces no precondition on
+    /// CompleteMultipartUpload, so a lost race on a multipart-completed conditional copy would
+    /// silently overwrite instead of failing. Fail BEFORE issuing any request rather than falling
+    /// back to multipart or an unconditional read-write copy -- `write_settings.s3_single_part_upload_max_bytes_override`
+    /// carries the same cap a conditional PUT uses (see ObjectStorageBackend::tokenProducingWriteSettings);
+    /// it is 0 (no override) for a non-generation dialect or an ordinary, non-token-producing copy.
+    S3::S3RequestSettings request_settings = settings_ptr->request_settings;
+    if (write_settings.object_storage_request_mode == ObjectStorageRequestMode::NativeConditional
+        && conditionalOpsUseGenerationTokens()
+        && write_settings.s3_single_part_upload_max_bytes_override)
+    {
+        const uint64_t cap = write_settings.s3_single_part_upload_max_bytes_override;
+        if (size > cap)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CAS on GCS: a token-producing conditional copy of {} bytes to {} exceeds the "
+                "single-operation cap of {} bytes -- refusing (a multipart-completed conditional copy "
+                "would silently overwrite instead of failing, since GCS enforces no precondition on "
+                "CompleteMultipartUpload)", size, object_to.remote_path, cap);
+        /// Raise the single-operation ceiling so a body up to the cap stays a single CopyObject
+        /// instead of taking the (forbidden, for this dialect) multipart-copy path.
+        request_settings[S3RequestSetting::max_single_operation_copy_size] = cap;
+    }
+
     String dest_etag;
     try
     {
@@ -816,14 +889,15 @@ ConditionalCopyResult S3ObjectStorage::copyObjectConditional( // NOLINT
             /*dest_s3_client=*/current_client,
             /*dest_bucket=*/uri.bucket,
             /*dest_key=*/object_to.remote_path,
-            settings_ptr->request_settings,
+            request_settings,
             read_settings_to_use,
             BlobStorageLogWriter::create(disk_name),
             scheduler,
             [&, this]{ return readObject(object_from, read_settings_to_use);},
             object_to_attributes,
             /*if_none_match=*/"*",
-            /*out_dest_etag=*/&dest_etag);
+            /*out_dest_etag=*/&dest_etag,
+            write_settings.object_storage_request_mode);
     }
     catch (S3Exception & exc)
     {
@@ -900,6 +974,31 @@ void S3ObjectStorage::applyNewSettings(
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
+
+    /// A caller that derived persistent state from the conditional-ops dialect pinned it (see
+    /// `IObjectStorage::pinConditionalOpsGenerationDialect`). Refuse before the client is replaced, so a
+    /// rejected reload leaves the working client and its dialect in place.
+    ///
+    /// This is the only point where the question can be answered: `modified_settings` above is the merge
+    /// of the current settings, any endpoint-level block and the disk's own section, and `http_client`
+    /// may be set by any of them. Checking a single config section instead would miss an endpoint-level
+    /// flip entirely, and would refuse a reload that changes nothing whenever the effective value comes
+    /// from somewhere other than that section.
+    if (const int8_t pinned = pinned_generation_dialect.load(); pinned >= 0)
+    {
+        const bool would_be_generation
+            = S3::httpClientImpliesGcsGenerationDialect(modified_settings->auth_settings[S3AuthSetting::http_client]);
+        if (would_be_generation != (pinned == 1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Object storage {} cannot change its conditional-operation dialect on reload: it is in "
+                "use by a mount that has already recorded {} incarnation tokens, and the new settings "
+                "resolve `http_client` to '{}', which would mint {} ones. Persisted tokens would no "
+                "longer be comparable. Keep the previous `http_client`, or recreate the mount.",
+                getName(),
+                pinned == 1 ? "generation" : "ETag",
+                modified_settings->auth_settings[S3AuthSetting::http_client].value,
+                would_be_generation ? "generation" : "ETag");
+    }
 
     auto current_settings = s3_settings.get();
     if (options.allow_client_change

@@ -223,15 +223,13 @@ TEST(CASPool, SkipAccessCheckOpenSkipsProbeButStaysWritable)
 
 namespace
 {
-/// A backend whose checkConditionalWriteSingleAttemptSupport ALWAYS throws — a stand-in for a
-/// Native-mode backend with no working single-attempt client (see
-/// ObjectStorageBackend::checkConditionalWriteSingleAttemptSupport). Pins that skip_access_check does
-/// NOT bypass this gate: the regression this guards is reverting Pool::open's skip_access_check
-/// branch back to the naive "wrap the whole probe" shape, which would silently skip this check too.
-class ThrowingSingleAttemptBackend final : public DB::Cas::Backend
+/// Delegates every storage operation to `inner` and leaves the mount-time capability gates at their
+/// permissive defaults, so a subclass can make exactly ONE gate throw and a test can attribute a
+/// refused mount to that gate alone.
+class ForwardingBackend : public DB::Cas::Backend
 {
 public:
-    explicit ThrowingSingleAttemptBackend(std::shared_ptr<DB::Cas::Backend> inner_) : inner(std::move(inner_)) {}
+    explicit ForwardingBackend(std::shared_ptr<DB::Cas::Backend> inner_) : inner(std::move(inner_)) {}
 
     std::optional<DB::Cas::GetResult> get(const String & k, DB::Cas::Range r) override { return inner->get(k, r); }
     std::optional<DB::Cas::GetStreamResult> getStream(const String & k, DB::Cas::Range r) override { return inner->getStream(k, r); }
@@ -243,29 +241,99 @@ public:
     DB::Cas::CasResult casPut(const String & k, const String & b, const std::optional<DB::Cas::Token> & e, const DB::Cas::ObjectMeta & m) override { return inner->casPut(k, b, e, m); }
     DB::Cas::DeleteOutcome deleteExact(const String & k, const DB::Cas::Token & t) override { return inner->deleteExact(k, t); }
     bool supportsListTokens() const override { return inner->supportsListTokens(); }
+
+private:
+    std::shared_ptr<DB::Cas::Backend> inner;
+};
+
+/// A backend whose checkConditionalWriteSingleAttemptSupport ALWAYS throws — a stand-in for a
+/// Native-mode backend with no working single-attempt client (see
+/// ObjectStorageBackend::checkConditionalWriteSingleAttemptSupport). Pins that skip_access_check does
+/// NOT bypass this gate: the regression this guards is reverting Pool::open's skip_access_check
+/// branch back to the naive "wrap the whole probe" shape, which would silently skip this check too.
+class ThrowingSingleAttemptBackend final : public ForwardingBackend
+{
+public:
+    using ForwardingBackend::ForwardingBackend;
+
     void checkConditionalWriteSingleAttemptSupport() override
     {
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "test: no single-attempt client");
     }
-private:
-    std::shared_ptr<DB::Cas::Backend> inner;
 };
+
+/// A backend that forbids skipping the access-check battery — a stand-in for the writable
+/// generation-dialect (GCS) backend (see ObjectStorageBackend::checkSkipAccessCheckSupport).
+class ThrowingSkipAccessCheckBackend final : public ForwardingBackend
+{
+public:
+    using ForwardingBackend::ForwardingBackend;
+
+    void checkSkipAccessCheckSupport() override
+    {
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "test: this backend forbids skip_access_check");
+    }
+};
+
+DB::Cas::PoolConfig writablePoolConfigForTest()
+{
+    DB::Cas::PoolConfig cfg;
+    cfg.pool_prefix = "pool";
+    cfg.server_id = DB::UInt128(1);
+    cfg.server_root_id = "test";
+    return cfg;
+}
 }
 
 TEST(CASPool, SkipAccessCheckStillEnforcesSingleAttemptGate)
 {
     auto backend = std::make_shared<ThrowingSingleAttemptBackend>(std::make_shared<DB::Cas::InMemoryBackend>());
 
-    DB::Cas::PoolConfig cfg;
-    cfg.pool_prefix = "pool";
-    cfg.server_id = DB::UInt128(1);
-    cfg.server_root_id = "test";
+    DB::Cas::PoolConfig cfg = writablePoolConfigForTest();
     cfg.skip_access_check = true;
 
     /// skip_access_check must NOT bypass checkConditionalWriteSingleAttemptSupport (RFC
     /// cas-s3-timeout-retry-control): a writable open still refuses to mount on a backend that cannot
     /// prove single-attempt conditional-write support, exactly as it does without skip_access_check.
     EXPECT_THROW(DB::Cas::Pool::open(backend, cfg), DB::Exception);
+}
+
+/// A backend that forbids skipping the battery refuses the writable mount outright. Asserting the
+/// gate's own message, not merely that open threw: Pool::open has many other refusals, and a mount
+/// that failed for one of those would satisfy a bare EXPECT_THROW.
+TEST(CASPool, SkipAccessCheckRefusedByBackendFailsTheWritableMount)
+{
+    auto backend = std::make_shared<ThrowingSkipAccessCheckBackend>(std::make_shared<DB::Cas::InMemoryBackend>());
+
+    DB::Cas::PoolConfig cfg = writablePoolConfigForTest();
+    cfg.skip_access_check = true;
+
+    try
+    {
+        DB::Cas::Pool::open(backend, cfg);
+        FAIL() << "expected the skip_access_check gate to refuse the mount";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+        EXPECT_NE(e.message().find("forbids skip_access_check"), std::string::npos) << "actual message: " << e.message();
+    }
+}
+
+/// The discriminator for the test above: the SAME backend opens fine without the flag, so that
+/// refusal came from the new gate rather than from anything else in the open path. It also pins the
+/// gate's scope — it is consulted only where skip_access_check is honoured, so a mount that runs the
+/// battery is unaffected.
+TEST(CASPool, BackendForbiddingSkipAccessCheckStillOpensWhenTheBatteryRuns)
+{
+    auto backend = std::make_shared<ThrowingSkipAccessCheckBackend>(std::make_shared<DB::Cas::InMemoryBackend>());
+
+    DB::Cas::PoolConfig cfg = writablePoolConfigForTest();
+    cfg.background_watermark = false;
+    ASSERT_FALSE(cfg.skip_access_check);
+
+    auto store = DB::Cas::Pool::open(backend, cfg);
+    ASSERT_NE(store, nullptr);
 }
 
 TEST(CASPool, MinActiveTracksInFlightBuilds)

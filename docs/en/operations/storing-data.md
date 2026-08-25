@@ -531,9 +531,11 @@ disk-level and server-level settings surface.
 - `deduplication_head_first_min_bytes` — `1` MiB by default. Minimum blob size at which a `HEAD` is sent
   before the body, so that an upload of already-present content can be skipped. `0` disables it.
 - `gc_snapshot_generations_to_keep` — `3` by default. Number of past GC snapshot generations retained.
-- `gcs_max_conditional_put_bytes` — `1` GiB by default. On generation-token backends (Google Cloud
-  Storage), the body of a conditional write is RAM-buffered up to this size; a larger conditional
-  write throws `NOT_IMPLEMENTED`. Irrelevant on `ETag`-based backends such as AWS S3.
+- `gcs_max_token_producing_put_bytes` — `1` GiB by default. On generation-token backends (Google Cloud
+  Storage), every write whose resulting token enters content-addressed protocol state — a conditional
+  write and an unconditional one alike — must be a single `PUT`, so its body is RAM-buffered up to
+  this size; a larger write throws `NOT_IMPLEMENTED`. Irrelevant on `ETag`-based backends such as
+  AWS S3.
 - `part_folder_cache_bytes` — `64` MiB by default. Size of the part-folder view cache. `0` disables
   retention; this is a supported permanent operational configuration, not only a debug aid.
 - `part_folder_cache_max_entries` — `10000` by default. Maximum number of entries in the part-folder
