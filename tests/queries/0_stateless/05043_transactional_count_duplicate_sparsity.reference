@@ -1,0 +1,10 @@
+the sparsity filter rewrite must engage, otherwise nothing below is meaningful
+1
+baseline outside a transaction, defaults of `s` out of 160000 rows
+152000
+baseline outside a transaction, non-defaults of `s`
+8000
+inside a transaction the defaults count must stay 152000, not be multiplied by the number of replicas
+152000
+inside a transaction the non-defaults count must stay 8000, not be multiplied by the number of replicas
+8000

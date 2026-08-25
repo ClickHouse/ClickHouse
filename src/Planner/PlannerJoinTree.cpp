@@ -700,7 +700,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (select_query_info.additional_filter_ast)
         return false;
 
-    if (query_context->getCurrentTransaction())
+    if (query_context->canUseParallelReplicasOnFollower())
         return false;
 
     if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
