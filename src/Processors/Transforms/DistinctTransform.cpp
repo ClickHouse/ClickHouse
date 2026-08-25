@@ -290,10 +290,12 @@ void DistinctTransform::buildTwoLevelParallelFilter(
     using KeyType = typename BucketData::key_type;
 
     /// Scale worker count to the chunk size so a chunk that barely clears the gate does not fan out to
-    /// the whole pool: each worker should own at least `parallel_build_min_rows` rows. The pool size is
+    /// the whole pool: each worker should own at least `parallel_build_min_rows` rows. This is a floor
+    /// division (`rows / grain`) so the per-worker slice stays at or above the grain; a chunk just over
+    /// the gate keeps a single worker rather than splitting into sub-grain slices. The pool size is
     /// already capped at construction (`MAX_TWO_LEVEL_BUILD_THREADS`).
     const size_t grain = std::max<size_t>(parallel_build_min_rows, 1);
-    const size_t work_workers = std::max<size_t>((rows + grain - 1) / grain, 1);
+    const size_t work_workers = std::max<size_t>(rows / grain, 1);
     const size_t num_workers = std::min({thread_pool.getMaxThreads(), NUM_BUCKETS, work_workers});
     if (num_workers == 0 || rows == 0)
         return;
@@ -614,7 +616,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (pool && SetVariants::isConvertibleToTwoLevel(data->type))
     {
         const bool cross_rows = two_level_threshold != 0
-            && data->getTotalRowCount() + num_rows > two_level_threshold;
+            && data->getTotalRowCount() + num_rows >= two_level_threshold;
 
         bool cross_bytes = false;
         if (two_level_threshold_bytes != 0)
@@ -622,7 +624,7 @@ void DistinctTransform::transform(Chunk & chunk)
             size_t projected_bytes = data->getTotalByteCount();
             for (const auto * col : column_ptrs)
                 projected_bytes += col->byteSize();
-            cross_bytes = projected_bytes > two_level_threshold_bytes;
+            cross_bytes = projected_bytes >= two_level_threshold_bytes;
         }
 
         if (cross_rows || cross_bytes)
