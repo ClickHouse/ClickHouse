@@ -22,7 +22,7 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 
-private:
+protected:
     const WatermarkSettingsPtr watermark;
     const ContextPtr context;
 };

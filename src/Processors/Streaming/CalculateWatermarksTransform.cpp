@@ -48,16 +48,24 @@ void CalculateWatermarksTransform::consume(Chunk chunk)
     columns.emplace_back(event_time_col);
     columns.emplace_back(watermark_col);
     chunk.setColumns(std::move(columns), num_rows);
-    pending_chunks.push(std::move(chunk));
 
     if (num_rows == 0)
+    {
+        pending_chunks.push(std::move(chunk));
         return;
+    }
 
     Field min_value;
     Field max_value;
     watermark_col->getExtremes(min_value, max_value, 0, num_rows);
 
+    transformChunk(chunk, max_value);
+    pending_chunks.push(std::move(chunk));
     pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
+}
+
+void CalculateWatermarksTransform::transformChunk(Chunk &, const Field &)
+{
 }
 
 bool CalculateWatermarksTransform::canGenerate()
