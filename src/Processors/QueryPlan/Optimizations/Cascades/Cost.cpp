@@ -272,8 +272,17 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// sends or receives them sequentially, so their transfer stays undivided and each row
     /// pays the funnel cost. Without it a gather of a large input looks as cheap as a
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+    /// A sorted gather under a limit funnels only the consumed rows: the receiver pulls
+    /// merged rows until the limit is satisfied and cancels the senders. The network term
+    /// above keeps the shipped rows - the senders push eagerly until the cancel arrives.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
+    {
+        Float64 funnel_rows = rows;
+        if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
+            sorted_gather && sorted_gather->getMaintainSortDescription())
+            funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnel_rows;
+    }
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())
     {
