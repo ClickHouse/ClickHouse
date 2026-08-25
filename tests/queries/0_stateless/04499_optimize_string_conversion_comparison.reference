@@ -80,6 +80,9 @@ QUERY id: 0
 0
 0
 0
+-- Tuples with DateTime/DateTime64 elements are not destructured either, because a scalar toString ignores date_time_output_format (and stay correct)
+1	1
+0
 -- Patterns that must not be destructured (0 = no OR chain in the query tree)
 0
 0
