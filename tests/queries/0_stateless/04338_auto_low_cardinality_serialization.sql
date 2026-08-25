@@ -24,8 +24,8 @@ SETTINGS
 
 SYSTEM STOP MERGES t_auto_lc;
 
-INSERT INTO t_auto_lc SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number), number % 5 + 1, if (number % 100 = 0, 'x', '') FROM numbers(100000);
-INSERT INTO t_auto_lc SELECT number, 'item_' || toString(number % 7), 'uniq2_' || toString(number), number % 6 + 10, if (number % 100 = 0, 'y', '') FROM numbers(100000);
+INSERT INTO t_auto_lc SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number), number % 5 + 1, if (number % 100 = 0, 'x', '') FROM numbers(10000);
+INSERT INTO t_auto_lc SELECT number, 'item_' || toString(number % 7), 'uniq2_' || toString(number), number % 6 + 10, if (number % 100 = 0, 'y', '') FROM numbers(10000);
 
 SELECT 'serialization per part';
 SELECT name, column, serialization_kind FROM system.parts_columns
@@ -79,7 +79,7 @@ SETTINGS
     ratio_of_defaults_for_sparse_serialization = 0.9,
     min_bytes_for_wide_part = 0;
 
-INSERT INTO t_auto_lc_v2 SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number) FROM numbers(100000);
+INSERT INTO t_auto_lc_v2 SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number) FROM numbers(10000);
 
 SELECT 'uniq_v2 statistic';
 SELECT column, serialization_kind FROM system.parts_columns

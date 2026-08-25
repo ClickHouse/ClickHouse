@@ -118,10 +118,15 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION
             && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
         {
-            return {
-                column.type->getDefaultSerialization(),
-                nullptr,
-                recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(result_column))};
+            /// The peer knows custom serializations, but not this kind, so the column is materialized.
+            /// The serialization info has to be recomputed from the materialized column rather than
+            /// dropped: the peer still expects the serialization-kind byte, and the serialization of
+            /// the declared type still depends on the negotiated revision (the `String` size stream).
+            result_column = recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(result_column));
+            info = column.type->getSerializationInfo(
+                *result_column,
+                SerializationInfoSettings::enableAllSupportedSerializations(
+                    client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
         }
         return {column.type->getSerialization(*info), info, result_column};
     }
