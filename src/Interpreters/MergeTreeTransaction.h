@@ -48,7 +48,12 @@ public:
 
     static void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn);
     static void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn);
-    static void addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn);
+    static void addNewPartAndRemoveCovered(
+            const StoragePtr & storage,
+            const DataPartPtr & new_part,
+            const DataPartsVector & covered_parts,
+            MergeTreeTransaction * txn,
+            size_t & num_covered_parts_processed);
 
     bool isReadOnly() const;
 

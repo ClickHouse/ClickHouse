@@ -24,11 +24,14 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SERIALIZATION_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_rollback_before_unlock_removal_tid_pause[];
+    extern const char add_new_part_and_remove_covered_non_tx_second_part[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -116,13 +119,20 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
     part_to_remove->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
 }
 
-void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
+void MergeTreeTransaction::addNewPartAndRemoveCovered(
+        const StoragePtr & storage,
+        const DataPartPtr & new_part,
+        const DataPartsVector & covered_parts,
+        MergeTreeTransaction * txn,
+        size_t & num_covered_parts_processed)
 {
     TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
     tryWriteEventToSystemLog(new_part->version->getLogger(), TransactionsInfoLogElement::ADD_PART, tid, transaction_context);
     transaction_context.covering_part = std::move(transaction_context.part_name);
     new_part->assertHasVersionMetadata(txn);
+
+    num_covered_parts_processed = 0;
 
     if (txn)
     {
@@ -131,14 +141,37 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             txn->removeOldPart(storage, covered, transaction_context);
+            ++num_covered_parts_processed;
         }
     }
     else
     {
         for (const auto & covered : covered_parts)
         {
+            if (num_covered_parts_processed > 0)
+            {
+                fiu_do_on(FailPoints::add_new_part_and_remove_covered_non_tx_second_part,
+                {
+                    /// We've already set and stored non-transactional removal TID for the first
+                    /// covered part, emulate failure after that.
+                    throw Exception(
+                        ErrorCodes::SERIALIZATION_ERROR,
+                        "Failed to store removal TID");
+                });
+            }
             transaction_context.part_name = covered->name;
+            /// An active part may be `isRemoved()` — e.g. `creation_csn == Tx::RolledBackCSN` while
+            /// `MergeTreeTransaction::rollback` is between writing the rolled-back CSN and calling
+            /// `removePartsFromWorkingSet`. Resetting is a genuine no-op for those, via the
+            /// `removal_csn == Tx::UnknownCSN` guard in `resetNonTransactionalRemovalTID`.
+            /// It must never already carry a *non-transactional* removal mark: any writer
+            /// willing to set that mark and move the part to `Outdated` should acquire
+            /// the same `DataPartsLock` held here. Otherwise reporting the number of processed
+            /// covered parts is not enough for the cleanup procedure not to reset marks set by
+            /// someone else and we should report the exact set of parts marked by this loop.
+            chassert(!covered->version->getInfo().removal_tid.isNonTransactional());
             covered->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+            ++num_covered_parts_processed;
         }
     }
 }
@@ -369,6 +402,11 @@ bool MergeTreeTransaction::rollback() noexcept
     for (const auto & part : parts_to_activate)
         if (part->version->getInfo().creation_tid != tid)
             const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+
+    /// Test-only pause point: lets a test freeze the rollback after the parts are active again
+    /// but before their removal TID is unlocked, so a concurrent non-transactional commit
+    /// deterministically fails to lock a covered part.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_before_unlock_removal_tid_pause);
 
     for (const auto & part : parts_to_activate)
     {
