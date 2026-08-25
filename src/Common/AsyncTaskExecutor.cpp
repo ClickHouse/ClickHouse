@@ -114,10 +114,12 @@ struct AsyncTaskExecutor::Routine
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
         OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
 
-        /// Assigns the caller's start time so the span covers the work done before the executor existed.
-        /// A synchronous query may send preceding asynchronous reading.
-        if (trace_context_holder.root_span.isTraceEnabled())
-            trace_context_holder.root_span.start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL);
+        /// Continue a span handed over by the caller adopting the current start_time or restart it(0)
+        if (UInt64 handed_over_start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL))
+        {
+            if (trace_context_holder.root_span.isTraceEnabled())
+                trace_context_holder.root_span.start_time_us = handed_over_start_time_us;
+        }
 
         /// Copy the buffered attributes onto the span right before it is finished
         SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });
