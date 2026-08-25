@@ -96,13 +96,15 @@ LogsLevel mysqlToleratedConnectionFailureLogLevel()
     {
         return LogsLevel::warning;
     }
+    catch (const Poco::Net::NetException &)
+    {
+        return LogsLevel::warning;  // Expected during network connectivity issues
+    }
     catch (const Exception & e)
     {
         return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
     }
-    /// Ok to not report anything here: the exception stays active and the caller logs it at the
-    /// level returned from here.
-    catch (...)
+    catch (...)  // Ok - Unexpected failures (logic bugs, disk errors, etc.) must stay loud
     {
         return LogsLevel::error;
     }
@@ -496,37 +498,6 @@ void DatabaseMySQL::drop(ContextPtr)
 
     auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
-}
-
-namespace
-{
-    /// Determine the appropriate log level for the current exception in MySQL background reconciliation.
-    /// Connection failures during MySQL outages are expected and should be logged at warning level
-    /// to avoid noisy logs. All other exceptions (logic bugs, permission errors, disk I/O failures)
-    /// are unexpected and must remain at error level for visibility.
-    LogsLevel mysqlToleratedConnectionFailureLogLevel()
-    {
-        try
-        {
-            throw;  // Re-throw current exception to inspect its type
-        }
-        catch (const mysqlxx::ConnectionFailed &)
-        {
-            return LogsLevel::warning;  // Expected during MySQL outages or network issues
-        }
-        catch (const mysqlxx::ConnectionLost &)
-        {
-            return LogsLevel::warning;  // Expected when MySQL server becomes unavailable
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            return LogsLevel::warning;  // Expected during network connectivity issues
-        }
-        catch (...)
-        {
-            return LogsLevel::error;  // Unexpected failures (logic bugs, disk errors, etc.) must stay loud
-        }
-    }
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
