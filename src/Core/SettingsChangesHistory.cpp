@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"filesystem_cache_query_limit_bytes", 137438953472, 0, "Renamed from `filesystem_cache_max_download_size`, which stays as an alias, and disabled by default. The per-query filesystem cache write limit is now opt-in: the previous default of 128Gi was never reached in practice, while `enable_filesystem_query_cache_limit` in the cache configuration alone was enough to make every query maintain per-query accounting."},
+            {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
