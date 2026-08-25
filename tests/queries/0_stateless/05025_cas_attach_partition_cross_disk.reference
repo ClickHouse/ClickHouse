@@ -1,0 +1,7 @@
+leg1	32	32	32
+leg1_roundtrip	32	32
+leg2	32	32	32
+leg2_reused_blobs	1
+leg3	32	32	32
+leg3_roundtrip	32	32
+dropped_ok

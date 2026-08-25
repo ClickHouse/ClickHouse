@@ -618,65 +618,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
-{
-    auto src_disk = volume->getDisk();
-    if (params.external_transaction)
-        params.external_transaction->createDirectories(to);
-    else
-        dst_disk->createDirectories(to);
-
-    /// freezeRemote() using copy instead of hardlinks for all files
-    /// In this case, files_to_copy_intead_of_hardlinks is set by empty
-    Backup(
-        src_disk,
-        dst_disk,
-        getRelativePath(),
-        fs::path(to) / dir_path,
-        read_settings,
-        write_settings,
-        params.make_source_readonly,
-        /* max_level= */ {},
-        true,
-        /* files_to_copy_intead_of_hardlinks= */ {},
-        params.external_transaction);
-
-    /// The save_metadata_callback function acts on the target dist.
-    if (save_metadata_callback)
-        save_metadata_callback(dst_disk);
-
-    if (params.external_transaction)
-    {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-    else
-    {
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
-        if (!params.keep_metadata_version)
-            dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-
-    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
-    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
-
-    /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
-}
-
 namespace
 {
 
@@ -689,8 +630,9 @@ namespace
 /// CA), and its non-transactional branch always autocommits per file via IDisk::copyFile /
 /// copyDirectoryContent. Sequential, not the parallel copyThroughBuffers thread pool: a
 /// content-addressed transaction batches every file into ONE eventual manifest, and its staging
-/// map is not mutex-guarded; MOVE is a background, latency-insensitive operation, so
-/// parallelizing this is a deferred optimization, not a correctness requirement.
+/// map is not mutex-guarded. Its callers are a background move and a user-issued cross-disk attach,
+/// so parallelizing this remains a deferred optimization whose cost is now visible to a waiting
+/// statement rather than only to a background operation.
 void copyDirectoryContentIntoTransaction(
     IDisk & src_disk,
     const String & source_path,
@@ -720,6 +662,109 @@ void copyDirectoryContentIntoTransaction(
     }
 }
 
+}
+
+MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const
+{
+    auto src_disk = volume->getDisk();
+
+    /// A content-addressed destination models a part as ONE atomic unit: N files become one manifest
+    /// and one ref. The generic path below fans the files onto a thread pool, and each becomes an
+    /// independent autocommit transaction against that same ref -- two of them resolve it as absent,
+    /// both publish a one-file manifest, and the loser is refused. So when the caller supplied no
+    /// transaction of its own, run the whole clone through ONE self-created transaction, the same
+    /// shape `freeze` uses. `Backup` cannot serve this path: its transactional branch calls
+    /// `copyFile` on the transaction, which is same-disk only and refuses a cross-disk
+    /// content-addressed copy.
+    DiskTransactionPtr owned_transaction;
+    if (!params.external_transaction && dst_disk->isContentAddressed())
+        owned_transaction = dst_disk->createTransaction();
+
+    if (owned_transaction)
+    {
+        try
+        {
+            copyDirectoryContentIntoTransaction(
+                *src_disk, getRelativePath(), *owned_transaction, fs::path(to) / dir_path,
+                read_settings, write_settings, /* cancellation_hook= */ {});
+        }
+        catch (...)
+        {
+            owned_transaction->undo();
+            throw;
+        }
+    }
+    else
+    {
+        if (params.external_transaction)
+            params.external_transaction->createDirectories(to);
+        else
+            dst_disk->createDirectories(to);
+
+        /// `freezeRemote` using copy instead of hardlinks for all files
+        /// In this case, files_to_copy_intead_of_hardlinks is set by empty
+        Backup(
+            src_disk,
+            dst_disk,
+            getRelativePath(),
+            fs::path(to) / dir_path,
+            read_settings,
+            write_settings,
+            params.make_source_readonly,
+            /* max_level= */ {},
+            true,
+            /* files_to_copy_intead_of_hardlinks= */ {},
+            params.external_transaction);
+    }
+
+    /// The save_metadata_callback function acts on the target dist.
+    if (save_metadata_callback)
+        save_metadata_callback(dst_disk);
+
+    /// These removals belong to the clone. On the content-addressed arm they MUST go through the same
+    /// transaction: sent straight to the disk they would autocommit, which is exactly the
+    /// one-publish-per-file behaviour the single transaction above exists to prevent.
+    if (const DiskTransactionPtr & clone_transaction = owned_transaction ? owned_transaction : params.external_transaction)
+    {
+        try
+        {
+            clone_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+            clone_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+            if (!params.keep_metadata_version)
+                clone_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+            if (owned_transaction)
+                owned_transaction->commit();
+        }
+        catch (...)
+        {
+            if (owned_transaction)
+                owned_transaction->undo();
+            throw;
+        }
+    }
+    else
+    {
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        if (!params.keep_metadata_version)
+            dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+    }
+
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
+
+    /// Do not initialize storage in case of DETACH because part may be broken.
+    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(

@@ -6826,12 +6826,14 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 }
                 case MetadataStorageType::CAS:
                 {
-                    /// On a CAS disk a part clone is cheap: identical content has the same
-                    /// `part_id`, so cloning is publishing a ref (no byte copy). The clone path is now
-                    /// transactional — `DataPartStorageOnDiskBase::freeze` runs the whole clone through ONE
-                    /// CA transaction, and `moveDirectory` re-keys the detached-staging → active rename into
-                    /// a complete active ref — so these are SUPPORTED and verified (read back identical data,
-                    /// survive restart): `ATTACH PARTITION`/`ATTACH PART` (re-clone of the table's own
+                    /// On a CAS disk whole-part publication is transactional. Same-disk clones use
+                    /// `DataPartStorageOnDiskBase::freeze`; cross-disk clones use
+                    /// `DataPartStorageOnDiskBase::freezeRemote`, which streams source bytes into ONE CA
+                    /// transaction. When both disks share a pool, the publish dedup-resolves existing blobs
+                    /// and becomes a ref repoint, although the sequential source read still happens.
+                    /// `moveDirectory` re-keys the detached-staging → active rename into a complete active
+                    /// ref — so these are SUPPORTED and verified (read back identical data, survive restart):
+                    /// `ATTACH PARTITION`/`ATTACH PART` (re-clone of the table's own
                     /// detached parts), `REPLACE PARTITION`/`ATTACH PARTITION ... FROM` (parses to
                     /// `REPLACE_PARTITION`), and `MOVE PARTITION ... TO TABLE`. The pointer-unlink commands
                     /// `DROP PARTITION` / `DETACH PARTITION` / `DROP DETACHED PARTITION` are also fine.

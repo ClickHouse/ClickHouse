@@ -761,10 +761,9 @@ bool DiskObjectStorage::supportsHardLinks() const
     /// which `createHardLink` carries unchanged columns forward BY REFERENCE (the new manifest entry
     /// points at the same blob hash — no re-upload) and changed columns are written as fresh blobs,
     /// committed atomically. No code branches on this flag to choose a per-file-autocommit path, so
-    /// advertising true does NOT open the per-file clone hazard: the corrupting whole-part clone
-    /// paths (partition clone, BACKUP hard-link, replication) are gated by their own independent
-    /// checks (`checkAlterPartitionIsPossible`, the BACKUP CA rejection, the `Replicated*MergeTree`
-    /// CA rejection), which remain in force.
+    /// advertising true does NOT open the per-file clone hazard: partition clones use one whole-part
+    /// transaction, replication uses whole-part transactions or the relink path, and the BACKUP
+    /// hard-link path remains independently rejected on CA.
     if (metadata_storage->isContentAddressed())
         return true;
 
