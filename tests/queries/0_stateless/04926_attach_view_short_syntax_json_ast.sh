@@ -26,6 +26,16 @@ echo "$json" | ${CLICKHOUSE_CLIENT} --dialect clickhouse_json --enable_json_ast_
     | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '$db' AND name = 'v'"
 
+# A columns node that declares nothing is short syntax too, and it formats back to a query without
+# it, so the initiator would otherwise queue text that reparses as a short ATTACH on the workers.
+json=$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('ATTACH VIEW $db.v ON CLUSTER test_shard_localhost')" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); d["columns_list"]={"type":"Columns definition"}; print(json.dumps(d))')
+
+echo "$json" | ${CLICKHOUSE_CLIENT} --dialect clickhouse_json --enable_json_ast_dialect 1 \
+    --distributed_ddl_task_timeout 10 2>&1 \
+    | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '$db' AND name = 'v'"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 ATTACH VIEW $db.v;
 SELECT * FROM $db.v;

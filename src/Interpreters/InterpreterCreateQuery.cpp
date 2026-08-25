@@ -202,10 +202,14 @@ namespace fs = std::filesystem;
 namespace
 {
 
-/// A stub ATTACH carries no definition of its own: the stored metadata owns it.
+/// A stub ATTACH carries no definition of its own: the stored metadata owns it. A columns node that
+/// holds nothing is no definition either, and one can be built directly through `clickhouse_json`.
 bool isShortAttach(const ASTCreateQuery & create)
 {
-    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+    const auto * columns_list = create.columns_list ? create.columns_list->as<ASTColumns>() : nullptr;
+    const bool has_columns = create.columns_list && (!columns_list || !columns_list->empty());
+
+    return create.attach && (!create.storage || !create.storage->engine) && !has_columns;
 }
 
 /// A short ATTACH is authorized only once the stored definition has been read, which happens on the
@@ -3503,8 +3507,9 @@ BlockIO InterpreterCreateQuery::execute()
     bool is_create_database = create.database && !create.table;
 
     /// Rejected here as well, so the error names the cluster the user wrote before
-    /// `maybeRemoveOnCluster` below can drop it.
-    if (!is_create_database && create.isView() && isShortAttach(create))
+    /// `maybeRemoveOnCluster` below can drop it. A temporary object belongs to no database, so it
+    /// keeps the rejection `createTable` already has for it.
+    if (!is_create_database && !create.isTemporary() && create.isView() && isShortAttach(create))
     {
         auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
             create.database ? create.getDatabase() : getContext()->getCurrentDatabase());

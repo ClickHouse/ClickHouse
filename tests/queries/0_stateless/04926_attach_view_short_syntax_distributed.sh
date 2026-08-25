@@ -29,6 +29,14 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}' AND name IN ('v', 'mv')"
 
+# A temporary object belongs to no database, so it must keep the rejection that names it rather than
+# the one about Replicated databases. `USE` switches the current database, because `CLICKHOUSE_CLIENT`
+# already carries `--database` and it cannot be given twice.
+${CLICKHOUSE_CLIENT} --multiquery --query "
+USE ${db};
+ATTACH TEMPORARY VIEW tv;
+" 2>&1 | grep -q "SYNTAX_ERROR" && echo "SYNTAX_ERROR" || echo "NO ERROR"
+
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --multiquery --query "
 ATTACH TABLE ${db}.v;
 ATTACH TABLE ${db}.mv;
