@@ -102,9 +102,10 @@ commit by ordinary part-lifetime rules, independent of the ref-log seal above.
 ## Detach, attach, drop {#detach-attach-drop}
 
 A detached part is **not** a separate namespace — it is a ref in the table's own namespace with a
-`detached/` prefix (the same is true of `moving/`). Only `FREEZE` uses a genuinely separate shadow
-namespace, which the ownership check deliberately refuses to claim, so a frozen part can never be
-relink-confirmed.
+`detached/` prefix (the same is true of `moving/`). Only `FREEZE` uses a separate shadow namespace,
+but it remains under the root that created it: `<server_root_id>/shadow/<backup>/…`. The ownership
+check therefore attributes it to exactly that server root, under the same strict prefix rule as live
+content, and that root can confirm its exact refs.
 
 `DETACH`, `ATTACH`, `delete_tmp_` cleanup, and merge-result renames all reduce to the same two
 moves: re-key any *staged* source into the destination, then `republishRef(src → dst)` for any

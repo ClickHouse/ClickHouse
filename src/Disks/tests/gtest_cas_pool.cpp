@@ -1215,20 +1215,20 @@ TEST(CASPool, ListNamespacesFromCatalog)
     /// The real publication path admits each namespace before writing its stream.
     DB::Cas::tests::publishCommittedTransition(*b, s->layout(), RootNamespace{"srv1/tbl"},
         "ref1", std::nullopt, DB::Cas::ManifestRef{.writer_epoch = 1, .build_sequence = 1, .manifest_ordinal = 1});
-    DB::Cas::tests::publishCommittedTransition(*b, s->layout(), RootNamespace{"shadow/bk1/tbl"},
+    DB::Cas::tests::publishCommittedTransition(*b, s->layout(), RootNamespace{"srv1/shadow/bk1/tbl"},
         "ref1", std::nullopt, DB::Cas::ManifestRef{.writer_epoch = 1, .build_sequence = 1, .manifest_ordinal = 1});
-    DB::Cas::tests::publishCommittedTransition(*b, s->layout(), RootNamespace{"shadow/bk2/tbl"},
+    DB::Cas::tests::publishCommittedTransition(*b, s->layout(), RootNamespace{"srv1/shadow/bk2/tbl"},
         "ref1", std::nullopt, DB::Cas::ManifestRef{.writer_epoch = 1, .build_sequence = 1, .manifest_ordinal = 1});
 
     const auto all = s->listNamespaces("").namespaces;
     EXPECT_EQ(all.size(), 3u);
-    const auto shadows = s->listNamespaces("shadow/").namespaces;
+    const auto shadows = s->listNamespaces("srv1/shadow/").namespaces;
     ASSERT_EQ(shadows.size(), 2u);
     /// listNamespaces returns results from an unordered_set; sort for deterministic comparison.
     auto sorted_shadows = shadows;
     std::sort(sorted_shadows.begin(), sorted_shadows.end());
-    EXPECT_EQ(sorted_shadows[0], "shadow/bk1/tbl");
-    EXPECT_EQ(sorted_shadows[1], "shadow/bk2/tbl");
+    EXPECT_EQ(sorted_shadows[0], "srv1/shadow/bk1/tbl");
+    EXPECT_EQ(sorted_shadows[1], "srv1/shadow/bk2/tbl");
     EXPECT_TRUE(s->listNamespaces("nope/").namespaces.empty());
 }
 
@@ -1290,9 +1290,9 @@ TEST(CASPool, ListMirroredChildren)
     auto b = std::make_shared<InMemoryBackend>();
     auto store = Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
     /// Seed two catalog-authoritative shadow archives; physical files alone carry no logical path.
-    DB::Cas::tests::fixture::admitLive(*b, store->layout(), RootNamespace{"shadow/bk1/store/3f2/3f2a-uuid@cas@"});
-    DB::Cas::tests::fixture::admitLive(*b, store->layout(), RootNamespace{"shadow/bk2/store/3f2/3f2a-uuid@cas@"});
-    auto children = store->listMirroredChildren("shadow/");
+    DB::Cas::tests::fixture::admitLive(*b, store->layout(), RootNamespace{"srv1/shadow/bk1/store/3f2/3f2a-uuid@cas@"});
+    DB::Cas::tests::fixture::admitLive(*b, store->layout(), RootNamespace{"srv1/shadow/bk2/store/3f2/3f2a-uuid@cas@"});
+    auto children = store->listMirroredChildren("srv1/shadow/");
     std::sort(children.begin(), children.end());
     ASSERT_EQ(children.size(), 2u);
     EXPECT_EQ(children[0], "bk1");

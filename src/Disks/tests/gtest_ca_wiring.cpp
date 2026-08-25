@@ -673,7 +673,9 @@ TEST(CASWiringRoute, MovingFoldsOntoAPrefixedStagingRef)
 TEST(CASWiringRead, ShadowFreezeTree)
 {
     auto storage = openWiringStorage();
-    publishWiredPart(*storage, DB::ContentAddressedMetadataStorage::shadowNamespace("shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111"), "all_1_1_0");
+    publishWiredPart(*storage, storage->shadowNamespace("shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111"), "all_1_1_0");
+    EXPECT_EQ(storage->shadowNamespace("shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111").string(),
+              storage->serverRootId() + "/shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111");
 
     /// Intermediate dirs derive from the registered shadow namespaces.
     EXPECT_TRUE(storage->existsDirectory("shadow/bk1"));
@@ -772,7 +774,7 @@ TEST(CASWiringRoute, DirShapeDispatchOrderIsStable)
 {
     auto storage = openWiringStorage();
     publishWiredPart(*storage, storage->liveNamespace("a11a11a1-1111-4111-8111-111111111111"), "all_1_1_0");
-    publishWiredPart(*storage, DB::ContentAddressedMetadataStorage::shadowNamespace("shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111"), "all_1_1_0");
+    publishWiredPart(*storage, storage->shadowNamespace("shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111"), "all_1_1_0");
 
     using DS = DB::ContentAddressedMetadataStorage::DirShape;
     EXPECT_EQ(storage->classifyDirectoryForTest("store/uui").shape,             DS::AtomicShard);
@@ -1337,8 +1339,8 @@ TEST(CASWiringOps, FreezeViaHardLinksIntoShadow)
     writeThroughTransaction(*tx, "a11/a11a11a1-1111-4111-8111-111111111111/all_1_1_0/metadata_version.txt", "7");
     tx->commit(DB::NoCommitOptions{});
 
-    /// FREEZE clones a committed part file-by-file into the shadow tree via hardlinks; the staged
-    /// shadow part publishes at commit (pool-global - any replica reads the backup).
+    /// `FREEZE` clones a committed part file-by-file into the shadow tree via hardlinks; the staged
+    /// shadow part publishes at commit under this server root.
     auto tx2 = storage->createTransaction();
     tx2->createHardLink("a11/a11a11a1-1111-4111-8111-111111111111/all_1_1_0/data.bin", "shadow/bk1/store/a11/a11a11a1-1111-4111-8111-111111111111/all_1_1_0/data.bin");
     tx2->createHardLink("a11/a11a11a1-1111-4111-8111-111111111111/all_1_1_0/metadata_version.txt",

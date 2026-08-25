@@ -1049,13 +1049,13 @@ void ContentAddressedTransaction::removeRecursive(const std::string & path, cons
     {
         if (auto p = Cas::parsePartFilePath(path); p && !p->backup_name.empty() && p->file.empty())
         {
-            const auto ns = ContentAddressedMetadataStorage::shadowNamespace(p->shadow_table_dir);
+            const auto ns = metadata_storage.shadowNamespace(p->shadow_table_dir);
             metadata_storage.partAccess()->dropRefIfPresent({ns, p->part_name});
             return;
         }
         if (Cas::endsWithTableUuidPair(path))
         {
-            metadata_storage.partAccess()->dropNamespace(ContentAddressedMetadataStorage::shadowNamespace(path));
+            metadata_storage.partAccess()->dropNamespace(metadata_storage.shadowNamespace(path));
             return;
         }
         /// Backup root / intermediate dir (SYSTEM UNFREEZE WITH NAME): drop every shadow
@@ -1073,7 +1073,8 @@ void ContentAddressedTransaction::removeRecursive(const std::string & path, cons
         /// Continuing drops every namespace the enumeration DID name; the offending key stays as
         /// reported debris. It cannot hide a namespace that has any well-formed key of its own, because
         /// attribution is per key.
-        const Cas::NamespaceListing listing = metadata_storage.store()->listNamespaces(prefix + "/");
+        const Cas::NamespaceListing listing
+            = metadata_storage.store()->listNamespaces(metadata_storage.shadowScope(prefix));
         for (const Cas::UnattributableNamespaceKey & bad : listing.skipped)
             LOG_ERROR(getLogger("ContentAddressedTransaction"),
                 "removeRecursive('{}'): key '{}' names no namespace life and was left in place ({}). "

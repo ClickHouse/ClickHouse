@@ -40,7 +40,7 @@ namespace DB::Cas
 /// representation remains explicit at the boundary that owns that representation.
 ///
 /// Opaque namespace under which root manifests live. The core never interprets its contents:
-/// the wiring composes strings like "srv1/<table_uuid>" or "shadow/<backup>/<table_uuid>".
+/// the wiring composes strings like "srv1/<table_uuid>" or "srv1/shadow/<backup>/<table_uuid>".
 /// Layout only validates its shape (non-empty, no leading/trailing or empty segments,
 /// no segment equal to the reserved "_files").
 /// Construction from `String` is explicit, preventing unrelated identifier types from being mixed;

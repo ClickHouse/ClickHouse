@@ -127,10 +127,10 @@ struct CasLifecycleSnapshot
 /// Namespace mapping:
 ///   live part      SERVER_ID/TABLE_UUID            ref = PART_DIR
 ///   detached part  SERVER_ID/TABLE_UUID            ref = detached/DETACHED_PART_DIR
-///   FREEZE shadow  the LITERAL shadow table dir     ref = PART_DIR
-///                  (shadow/BACKUP/store/U3/UUID or shadow/BACKUP/data/DB/TBL — bijective with
-///                  the disk path for both Atomic and non-Atomic layouts, so the shadow tree
-///                  enumerates from `Pool::listNamespaces("shadow/...")`)
+///   `FREEZE` shadow SERVER_ID/shadow/BACKUP/...      ref = PART_DIR
+///                   (the literal shadow table dir is shadow/BACKUP/store/U3/UUID or
+///                   shadow/BACKUP/data/DB/TBL — bijective with the disk path for both Atomic and
+///                   non-Atomic layouts; the pool namespace and its enumeration are server-root-scoped)
 ///   generic files  SERVER_ID/_disk                  verbatim namespace files (access probes)
 ///
 /// Small per-part files (`uuid.txt`, `metadata_version.txt`, `txn_version.txt`, `checksums.txt`, ...)
@@ -422,9 +422,25 @@ public:
     /// Maps a live table UUID to its pool namespace. Detached parts share that namespace and use
     /// `detached/`-prefixed references rather than a sibling namespace.
     Cas::RootNamespace liveNamespace(const std::string & table_uuid) const;
-    /// Canonicalizes a literal shadow-table directory into the pool namespace used by freeze and
-    /// unfreeze paths. A trailing slash is ignored.
-    static Cas::RootNamespace shadowNamespace(const std::string & shadow_table_dir);
+
+    /// Canonicalizes a literal shadow-table directory into the pool namespace used by `FREEZE` and
+    /// `UNFREEZE` paths, rooted at this server's own `server_root_id` exactly as `liveNamespace` is. A
+    /// trailing slash is ignored.
+    ///
+    /// A `FREEZE` belongs to the server root that made it. `UNFREEZE` is local and destructive, so a
+    /// pool-global namespace let one replica's unfreeze release another's backup, and the blobs went
+    /// with the next collection round. Cross-replica readability of a freeze goes away with it; shared
+    /// access to a backup belongs to the `BACKUP` machinery, not to `UNFREEZE`.
+    Cas::RootNamespace shadowNamespace(const std::string & shadow_table_dir) const;
+
+    /// The namespace-enumeration prefix for a shadow directory: the same server-root scoping
+    /// `shadowNamespace` applies, for callers that enumerate a subtree instead of naming one
+    /// namespace. Always ends in '/'. An empty `path` means the disk root's whole shadow subtree.
+    ///
+    /// One helper on purpose: three callers need this prefix, and a shadow namespace enumerated with a
+    /// differently-built prefix is invisible — which on the unfreeze path means it silently stops
+    /// releasing anything.
+    std::string shadowScope(const std::string & path) const;
 
     /// The LIFE under which `ns`'s table-level namespace files — `format_version.txt` and the other
     /// verbatim files — must be read, or `nullopt` when there are none to read.

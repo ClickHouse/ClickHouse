@@ -409,12 +409,12 @@ TEST(CASProtocol, DropReattachThroughDetachedNamespace)
 
 TEST(CASProtocol, FreezeIntoShadowNamespace)
 {
-    /// FREEZE survives the table's part lifecycle (design §4): a shadow ref is a reachability root that
-    /// outlives the dropped live ref.
+    /// `FREEZE` survives the table's part lifecycle (design §4): a shadow ref is a reachability root
+    /// that outlives the dropped live ref.
     auto b = std::make_shared<InMemoryBackend>();
     auto s = openPool(b);
     const RootNamespace ns{"srv1/tbl"};
-    const RootNamespace shadow{"shadow/backup1/tbl"};
+    const RootNamespace shadow{"srv1/shadow/backup1/tbl"};
 
     publishBlobPart(s, ns, "part_1", "data.bin", "payload-X");
 

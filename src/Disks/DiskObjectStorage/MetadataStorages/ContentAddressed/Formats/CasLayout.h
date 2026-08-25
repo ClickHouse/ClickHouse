@@ -92,7 +92,7 @@ struct ParsedBlobTargetRunKey
 ///   - pool metadata:    POOL/_pool_meta
 ///
 /// NAMESPACE is opaque to the core: the wiring composes strings like "srv1/<table_uuid>" or
-/// "shadow/<backup>/<table_uuid>". The reserved "_files" and "_manifests" segments cannot collide
+/// "srv1/shadow/<backup>/<table_uuid>". The reserved "_files" and "_manifests" segments cannot collide
 /// with root shard keys because shard names are numeric, and `checkNamespace` rejects both as
 /// namespace segments.
 ///

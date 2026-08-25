@@ -545,7 +545,7 @@ public:
     /// Scoped LIST of the mirrored subtree: the distinct next-path-segment names under
     /// `roots/<prefix>` (a loose LIST used by browse only; callers re-check `listRefs`/`getFileSize`
     /// before showing an entry). Not authoritative — logical discovery uses the ref catalog. `prefix`
-    /// is a server-relative or shadow-relative path ending in '/'.
+    /// is a server-relative path ending in '/'.
     std::vector<String> listMirroredChildren(const String & prefix);
 
     /// ---- ref lifecycle ----

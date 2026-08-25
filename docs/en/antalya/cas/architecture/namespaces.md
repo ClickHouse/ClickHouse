@@ -11,9 +11,9 @@ doc_type: 'reference'
 
 A namespace (`Cas::RootNamespace`) is the opaque, per-table, per-server-root string under which one
 table's part manifests and one ref table live — in practice something the wiring layer composes,
-such as `srv1/<table_uuid>` for an ordinary table or `shadow/<backup>/<table_uuid>` for a `FREEZE`
-shadow. `CAS` never interprets its contents beyond a shape check (non-empty, no empty or reserved
-path segment, at most 512 bytes). The [manifests-and-refs page](/antalya/cas/architecture/manifests-and-refs#ref-table)
+such as `srv1/<table_uuid>` for an ordinary table or `srv1/shadow/<backup>/<table_uuid>` for a
+`FREEZE` shadow. `CAS` never interprets its contents beyond a shape check (non-empty, no empty or
+reserved path segment, at most 512 bytes). The [manifests-and-refs page](/antalya/cas/architecture/manifests-and-refs#ref-table)
 covers the ref table one namespace owns; this page covers the namespace itself — its physical
 identity, the catalog that is the sole authority for whether it exists, and its full lifetime from
 first write to the catalog row's deletion.

@@ -923,9 +923,14 @@ TEST(CASConfirmExactRef, OwnsNamespaceSelectsTheMountByServerRootInEveryLifecycl
         EXPECT_FALSE(storage->ownsNamespace("srv1", "srv10/store/abc/abcdef@cas@")) << phase;
         EXPECT_FALSE(storage->ownsNamespace("srv10", "srv10/store/abc/abcdef@cas@")) << phase;
 
-        /// The server root itself is not a namespace, and a pool-global FREEZE tree belongs to no mount.
+        /// The server root itself is not a namespace, and an unprefixed shadow path belongs to no mount.
         EXPECT_FALSE(storage->ownsNamespace("srv1", "srv1")) << phase;
         EXPECT_FALSE(storage->ownsNamespace("srv1", "shadow/backup/store/abc/abcdef")) << phase;
+
+        /// A prefixed shadow namespace is ordinary owned content: the freeze belongs to the root
+        /// that made it, so relink routing treats it exactly like a live namespace.
+        EXPECT_TRUE(storage->ownsNamespace("srv1", "srv1/shadow/backup/store/abc/abcdef")) << phase;
+        EXPECT_FALSE(storage->ownsNamespace("srv10", "srv1/shadow/backup/store/abc/abcdef")) << phase;
 
         /// Empty fields are never a match -- an absent token field must not route anywhere.
         EXPECT_FALSE(storage->ownsNamespace("", "")) << phase;
