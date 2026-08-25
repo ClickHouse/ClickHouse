@@ -3,12 +3,8 @@
 -- We use apply_patches_on_merge = 0 so OPTIMIZE merges data parts but keeps patches intact.
 -- Pre-merge patches become PatchMode::Join, post-merge patches are PatchMode::Merge.
 --
--- Note: query_plan_optimize_lazy_materialization is disabled because lazy materializing
--- has a separate bug with patch parts (empty read_sample_block passed to readPatches).
-
 SET enable_lightweight_update = 1;
 SET mutations_sync = 2;
-SET query_plan_optimize_lazy_materialization = 0;
 
 DROP TABLE IF EXISTS t_lwu_merge_join_patch;
 
@@ -33,6 +29,10 @@ UPDATE t_lwu_merge_join_patch SET b = 2, c = ['a', 'b', 'c'] WHERE a % 3 = 0;
 
 -- Step 5: This SELECT triggers the bug when both Merge and Join patches exist.
 -- Without the fix, fails with "Min/max part offset must be set in RangeReader"
+SELECT * FROM t_lwu_merge_join_patch ORDER BY a LIMIT 10;
+
+-- Step 6: Test with lazy materialization enabled (previously caused empty read_sample_block issue)
+SET query_plan_optimize_lazy_materialization = 1;
 SELECT * FROM t_lwu_merge_join_patch ORDER BY a LIMIT 10;
 
 DROP TABLE IF EXISTS t_lwu_merge_join_patch;
