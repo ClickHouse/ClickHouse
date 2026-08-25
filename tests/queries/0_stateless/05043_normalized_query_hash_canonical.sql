@@ -32,6 +32,10 @@ SELECT normalizedQueryHashCanonical('SELECT a, b FROM t') = normalizedQueryHashC
 -- CUBE does not care about the key order
 SELECT normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY a, b WITH CUBE') = normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY b, a WITH CUBE');
 
+-- neither the sets nor the keys inside them are ordered
+SELECT normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY GROUPING SETS ((a, b), (c))') = normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY GROUPING SETS ((c), (b, a))');
+SELECT normalizeQueryCanonical('SELECT count() FROM t GROUP BY GROUPING SETS ((c), (b, a))');
+
 -- unparseable input
 SELECT normalizedQueryHashCanonical('SELECT * FROM'); -- { serverError SYNTAX_ERROR }
 SELECT normalizedQueryHashCanonicalOrNull('SELECT * FROM');

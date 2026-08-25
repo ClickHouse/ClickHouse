@@ -16,6 +16,8 @@ SELECT a, b FROM t WHERE (x = ?) AND (y = ?)
 0
 0
 1
+1
+SELECT count() FROM t GROUP BY GROUPING SETS ((a, b), (c))
 \N
 \N
 1

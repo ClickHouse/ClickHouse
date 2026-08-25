@@ -220,26 +220,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
-bool isUnorderedList(const IAST & parent, const IAST & list)
-{
-    if (const auto * select = parent.as<ASTSelectQuery>())
-    {
-        if (select->select().get() == &list)
-            return true;
-
-        /// ROLLUP cares about the key order, CUBE and GROUPING SETS do not
-        if (select->groupBy().get() == &list)
-            return !select->group_by_with_rollup;
-
-        return false;
-    }
-
-    if (const auto * function = parent.as<ASTFunction>())
-        return function->arguments.get() == &list && (function->name == "and" || function->name == "or");
-
-    return false;
-}
-
 String normalizedText(const IAST & ast)
 {
     String text = ast.formatWithSecretsOneLine();
@@ -249,6 +229,20 @@ String normalizedText(const IAST & ast)
     return String(normalized.begin(), normalized.end());
 }
 
+/// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
+void sortList(IAST & list)
+{
+    std::vector<std::pair<String, ASTPtr>> sorted;
+    sorted.reserve(list.children.size());
+    for (const auto & element : list.children)
+        sorted.emplace_back(normalizedText(*element), element);
+
+    std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    for (size_t i = 0; i < sorted.size(); ++i)
+        list.children[i] = sorted[i].second;
+}
+
 void sortCommutativeLists(IAST & ast)
 {
     checkStackSize();
@@ -256,21 +250,27 @@ void sortCommutativeLists(IAST & ast)
     for (const auto & child : ast.children)
         sortCommutativeLists(*child);
 
-    for (const auto & child : ast.children)
+    if (const auto * select = ast.as<ASTSelectQuery>())
     {
-        if (!isUnorderedList(ast, *child))
-            continue;
+        if (ASTPtr select_list = select->select())
+            sortList(*select_list);
 
-        /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
-        std::vector<std::pair<String, ASTPtr>> sorted;
-        sorted.reserve(child->children.size());
-        for (const auto & element : child->children)
-            sorted.emplace_back(normalizedText(*element), element);
+        /// ROLLUP cares about the key order, CUBE and GROUPING SETS do not
+        ASTPtr group_by = select->groupBy();
+        if (group_by && !select->group_by_with_rollup)
+        {
+            /// every grouping set is a list of its own, canonical before the sets themselves are sorted
+            if (select->group_by_with_grouping_sets)
+                for (const auto & grouping_set : group_by->children)
+                    sortList(*grouping_set);
 
-        std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-        for (size_t i = 0; i < sorted.size(); ++i)
-            child->children[i] = sorted[i].second;
+            sortList(*group_by);
+        }
+    }
+    else if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (function->arguments && (function->name == "and" || function->name == "or"))
+            sortList(*function->arguments);
     }
 }
 
