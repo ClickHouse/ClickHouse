@@ -10,6 +10,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
@@ -20,6 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/TransformEndianness.hpp>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <base/unaligned.h>
@@ -53,7 +55,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 2:
+/// On-disk entry layout, version 3:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -62,6 +64,7 @@ namespace
 ///         UInt64   total entry size in bytes, including the fixed header
 ///         UInt64   created_at, seconds since epoch
 ///         UInt64   expires_at, seconds since epoch
+///         UInt128  SipHash-128 of everything after the fixed header
 ///
 ///     Access metadata (uncompressed):
 ///         UInt8    is_shared
@@ -82,9 +85,11 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 2;
-constexpr size_t FIXED_HEADER_SIZE = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64);
+constexpr UInt32 ENTRY_FORMAT_VERSION = 3;
+constexpr size_t FIXED_HEADER_SIZE
+    = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
+constexpr size_t BODY_CHECKSUM_OFFSET_IN_FIXED_HEADER = FIXED_HEADER_SIZE - sizeof(UInt128);
 
 /// The key of a shared entry depends on the query only, so that every user can find it. The key of a non-shared entry additionally
 /// depends on the access context, so that the entry of one user (or of one role set of the same user) neither shadows nor can be
@@ -245,6 +250,7 @@ std::optional<QueryResultCacheOnDisk::FixedHeader> QueryResultCacheOnDisk::parse
     readBinaryLittleEndian(header.total_size, in);
     readBinaryLittleEndian(header.created_at, in);
     readBinaryLittleEndian(header.expires_at, in);
+    readBinaryLittleEndian(header.body_checksum, in);
 
     if (header.format_version != ENTRY_FORMAT_VERSION
         || header.protocol_revision > DBMS_TCP_PROTOCOL_VERSION
@@ -252,6 +258,21 @@ std::optional<QueryResultCacheOnDisk::FixedHeader> QueryResultCacheOnDisk::parse
         return std::nullopt;
 
     return header;
+}
+
+std::optional<String> QueryResultCacheOnDisk::readCheckedBody(const FileSegmentsHolder & holder, const FixedHeader & header)
+{
+    /// The caller has verified that all `total_size` bytes of the entry are downloaded.
+    String body;
+    body.resize(header.total_size - FIXED_HEADER_SIZE);
+    auto in = createReadBufferFromSegments(holder, DBMS_DEFAULT_BUFFER_SIZE);
+    in->ignore(FIXED_HEADER_SIZE);
+    in->readStrict(body.data(), body.size());
+
+    if (sipHash128(body.data(), body.size()) != header.body_checksum)
+        return std::nullopt;
+
+    return body;
 }
 
 QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(const FileCacheKey & cache_key) const
@@ -273,6 +294,12 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
         /// `tryCreateReader` would treat it as a miss once it requests all `total_size` bytes.
         holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, header->total_size, user_id);
         if (holder->empty())
+            return ProbeResult::StaleOrUnreadable;
+
+        /// The body must be validated here and not only on the read path: with `enable_reads_from_query_cache_on_disk = 0`, or
+        /// when the query hits the in-memory cache before the disk is consulted, nothing would ever notice that the body is
+        /// corrupt, and every write would keep skipping the broken entry until it expires or is evicted.
+        if (!readCheckedBody(*holder, *header))
             return ProbeResult::StaleOrUnreadable;
 
         return ProbeResult::Fresh;
@@ -319,6 +346,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         writeBinaryLittleEndian(static_cast<UInt64>(0), out); /// total size, patched below
         writeBinaryLittleEndian(static_cast<UInt64>(std::chrono::system_clock::to_time_t(key.created_at)), out);
         writeBinaryLittleEndian(static_cast<UInt64>(std::chrono::system_clock::to_time_t(key.expires_at)), out);
+        writeBinaryLittleEndian(UInt128(0), out); /// body checksum, patched below
 
         writeBinaryLittleEndian(static_cast<UInt8>(key.is_shared), out);
         writeBinaryLittleEndian(static_cast<UInt8>(key.user_id.has_value()), out);
@@ -350,6 +378,10 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         out.finalize();
         data = std::move(out.str());
         unalignedStoreLittleEndian<UInt64>(data.data() + TOTAL_SIZE_OFFSET_IN_FIXED_HEADER, data.size());
+
+        UInt128 body_checksum = sipHash128(data.data() + FIXED_HEADER_SIZE, data.size() - FIXED_HEADER_SIZE);
+        transformEndianness<std::endian::little>(body_checksum);
+        memcpy(data.data() + BODY_CHECKSUM_OFFSET_IN_FIXED_HEADER, &body_checksum, sizeof(body_checksum));
     }
     catch (...)
     {
@@ -466,8 +498,17 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             return std::nullopt;
         }
 
-        auto in = createReadBufferFromSegments(*holder, DBMS_DEFAULT_BUFFER_SIZE);
-        in->ignore(FIXED_HEADER_SIZE);
+        auto body = readCheckedBody(*holder, *fixed_header);
+        if (!body)
+        {
+            LOG_TRACE(logger, "Corrupt query result found on disk for query {}", doubleQuoteString(key.query_string));
+            /// The body is not what was written, so the entry is useless. Drop it, so that the next write stores a fresh one.
+            file_cache->removeKeyIfExists(cache_key, user_id);
+            return std::nullopt;
+        }
+
+        ReadBufferFromString body_in(*body);
+        ReadBuffer * in = &body_in;
 
         UInt8 is_shared = 0;
         readBinaryLittleEndian(is_shared, *in);

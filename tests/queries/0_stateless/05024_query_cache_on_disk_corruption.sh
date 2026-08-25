@@ -26,13 +26,13 @@ events_query="SELECT event FROM system.events WHERE event LIKE 'QueryCacheOnDisk
 echo "-- Compute the result and write it to disk"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${query}; ${events_query};"
 
-echo "-- Corrupt the access metadata of the entry: absurd counters must be handled as a cheap miss"
-# The bytes right after the 40-byte fixed header hold the access metadata. Overwriting them with 0xFF makes the
-# serialized role count decode to a huge number.
+echo "-- Corrupt the body of the entry: it must be handled as a cheap miss"
+# The bytes right after the 56-byte fixed header hold the access metadata. Overwriting them with 0xFF breaks the body
+# checksum in the fixed header (and would make the serialized role count decode to a huge number).
 find "${CACHE_DIR}" -type f -name '0_*' | while read -r file
 do
     printf '\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff' \
-        | dd of="${file}" bs=1 seek=40 conv=notrunc status=none
+        | dd of="${file}" bs=1 seek=56 conv=notrunc status=none
 done
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${query}; ${events_query};"
 

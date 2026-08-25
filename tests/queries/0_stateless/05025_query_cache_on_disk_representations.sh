@@ -9,7 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="use_query_cache = 1, query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_squash_partial_results = 0"
+# `max_block_size` is pinned: the size of a cached Const result is dominated by the per-chunk padding of the single-row
+# data columns, so a randomized (small) block size would multiply the number of chunks and blow up the entry size.
+settings="use_query_cache = 1, query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_squash_partial_results = 0, max_block_size = 65409"
 
 rnd=$(tr -dc 1-9 </dev/urandom | head -c 5) # disambiguates the queries in system.query_log below
 

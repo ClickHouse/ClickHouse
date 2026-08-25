@@ -7,6 +7,7 @@
 namespace DB
 {
 
+struct FileSegmentsHolder;
 class ReadBuffer;
 struct Settings;
 
@@ -56,6 +57,7 @@ private:
         UInt64 total_size = 0; /// entire entry size in bytes, including this header
         UInt64 created_at = 0; /// seconds since epoch
         UInt64 expires_at = 0; /// seconds since epoch
+        UInt128 body_checksum = 0; /// SipHash-128 of everything after the fixed header
 
         bool isStale() const;
     };
@@ -70,6 +72,10 @@ private:
     /// Parses and validates the fixed header. Returns std::nullopt if the data does not look like an entry of the on-disk query
     /// result cache (wrong magic), or the entry was written in an incompatible format or by a newer server.
     static std::optional<FixedHeader> parseFixedHeader(ReadBuffer & in);
+
+    /// Reads everything after the fixed header and verifies it against the checksum in the header. Returns std::nullopt if the
+    /// body is corrupt. The caller must have verified that all `header.total_size` bytes of the entry are downloaded.
+    static std::optional<String> readCheckedBody(const FileSegmentsHolder & holder, const FixedHeader & header);
 
     ProbeResult probeExistingEntry(const FileCacheKey & cache_key) const;
 
