@@ -550,9 +550,10 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
 
     /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
     /// merge of those parts, and its length must not follow the part name, which is not capped. What
-    /// is left is a fixed-size name, kept short so that a dry run never runs out of filename budget
-    /// before the corresponding real merge does. Keeps `prefix`, which the temporary directory
-    /// cleaner and the startup skip logic select by, and is never parsed back into a part name.
+    /// is left is a fixed-size name, kept as short as uniqueness allows so that a dry run runs out of
+    /// filename budget as late as possible - no earlier than the corresponding real merge for any
+    /// part whose name is 15 characters or longer. Keeps `prefix`, which the temporary directory cleaner and the
+    /// startup skip logic select by, and is never parsed back into a part name.
     return prefix + suffix;
 }
 

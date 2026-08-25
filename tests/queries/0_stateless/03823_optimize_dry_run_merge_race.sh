@@ -11,8 +11,7 @@
 # merge still fits. Both must keep the temporary directories distinct AND stay within the limit.
 #
 # The length of the temporary directory a dry run reserves is pinned as well, in both directions: it
-# must not grow with the part name, and it must not claim a larger fixed budget than a merge of
-# ordinary parts already takes.
+# must not grow with the part name, and it must stay close to the budget of the merge it simulates.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,8 +19,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FP="merge_task_pause_after_reserving_tmp_dir"
 
-# `IMergeTreeDataPart::remove` renames a temporary directory to `delete_tmp_<dir>` before deleting it.
-DELETE_TMP_PREFIX="delete_tmp_"
+# The prefix every temporary merge directory carries, dry run or not.
+TMP_MERGE_PREFIX="tmp_merge_"
 
 function cleanup()
 {
@@ -119,11 +118,13 @@ race_two_dry_runs t_dry_run_race all_1_1_0 all_2_2_0
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_dry_run_race"
 
-# The temporary directory of a dry run does not follow the part name, so its length is fixed. Pin it:
-# it must not claim more of the filename limit than a merge of ordinary parts already takes, or a
-# `DRY RUN` would be the first thing to hit `ENAMETOOLONG` on a filesystem with a small `NAME_MAX`,
-# where the corresponding real merge still fits. `IMergeTreeDataPart::remove` renames the directory
-# to `delete_tmp_<dir>` on removal, so that longer name is what actually has to fit.
+# The temporary directory of a dry run does not follow the part name, so its length is fixed. Compare
+# it against the budget of the merge it simulates: a dry run must not claim much more of the filename
+# limit than that merge already takes, or a `DRY RUN` would be the first thing to hit `ENAMETOOLONG`
+# on a filesystem with a small `NAME_MAX`, where the corresponding real merge still fits. It cannot
+# claim exactly the same budget: reusing the name of the real merge is what collides in the first
+# place. `IMergeTreeDataPart::remove` renames the directory to `delete_tmp_<dir>` on removal, so that
+# longer name is what actually has to fit.
 echo "-- temporary directory budget"
 
 $CLICKHOUSE_CLIENT --query "
@@ -140,12 +141,29 @@ $CLICKHOUSE_CLIENT --query "
 
 # `send_logs_level` as a query setting rather than a client option: the client refuses the option
 # twice, and `CLICKHOUSE_CLIENT` already carries it in some CI configurations.
-TMP_DIR=$($CLICKHOUSE_CLIENT \
+DRY_RUN_TMP_DIR=$($CLICKHOUSE_CLIENT \
     --query "OPTIMIZE TABLE t_dry_run_budget DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS send_logs_level='trace'" 2>&1 \
-    | grep -o 'tmp_merge_dry_run_[0-9a-f]*' | head -n 1)
+    | grep -o 'tmp_merge_dr_[0-9a-f]*' | head -n 1)
 
-echo "temporary directory length ${#TMP_DIR}"
-echo "length after the delete_tmp_ rename $(( ${#TMP_DIR} + ${#DELETE_TMP_PREFIX} ))"
+# The budget to compare against: the real merge of the same two parts reserves `tmp_merge_` followed
+# by the name of the part it produces, so merge that pair for real and measure that name. Taken from
+# `system.parts` rather than from the log, because the merge itself runs in the background pool and
+# its `trace` messages do not travel back to the client.
+MERGE_TMP_DIR_LENGTH=$($CLICKHOUSE_CLIENT --query "
+    SYSTEM START MERGES t_dry_run_budget;
+    OPTIMIZE TABLE t_dry_run_budget FINAL SETTINGS optimize_throw_if_noop = 1;
+    SELECT length('$TMP_MERGE_PREFIX') + length(name)
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_dry_run_budget' AND active
+    ORDER BY name LIMIT 1
+")
+
+echo "real merge directory length $MERGE_TMP_DIR_LENGTH"
+echo "dry run directory length ${#DRY_RUN_TMP_DIR}"
+echo "dry run costs $(( ${#DRY_RUN_TMP_DIR} - MERGE_TMP_DIR_LENGTH )) bytes more than the merge it simulates"
+# `IMergeTreeDataPart::remove` prepends `delete_tmp_` to both names alike, so the difference above is
+# the whole cost. From this part name length on, a dry run is no more expensive than the real merge.
+echo "break-even part name length $(( ${#DRY_RUN_TMP_DIR} - ${#TMP_MERGE_PREFIX} ))"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_dry_run_budget"
 
@@ -174,9 +192,9 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # Guard the fixture: the part name must leave less room than a unique token needs, or the race below
-# silently stops covering the length hazard. Appending `dry_run_<uuid>` to the name would need 44
-# bytes on top of `tmp_merge_` + name, and 11 more once `delete_tmp_` is prepended on removal, while
-# the reported room is what the 255-byte limit actually leaves.
+# silently stops covering the length hazard. Appending a unique token to the name would need more
+# bytes on top of `tmp_merge_` + name than the reported room, which is what the 255-byte limit
+# actually leaves once `delete_tmp_` is prepended on removal.
 $CLICKHOUSE_CLIENT --query "
     SELECT 'source part name length', length(name), 255 - (length(name) + length('delete_tmp_tmp_merge_')) AS room_left
     FROM system.parts
