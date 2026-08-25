@@ -87,6 +87,7 @@ namespace S3RequestSetting
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsUInt64 gcs_max_conditional_put_bytes;
 }
 
 
@@ -340,14 +341,13 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (write_settings.s3_check_objects_after_upload_override)
         request_settings[S3RequestSetting::check_objects_after_upload] = *write_settings.s3_check_objects_after_upload_override;
 
-    if (write_settings.s3_single_part_upload_max_bytes_override)
+    if (write_settings.s3_force_single_part_upload)
     {
-        /// Keep the whole body in ONE buffered part so the single-PUT path stays available up to
-        /// the cap (conditional writes on generation-token stores; see WriteSettings).
-        request_settings[S3RequestSetting::max_single_part_upload_size]
-            = write_settings.s3_single_part_upload_max_bytes_override;
-        request_settings[S3RequestSetting::min_upload_part_size]
-            = write_settings.s3_single_part_upload_max_bytes_override;
+        /// A conditional write on a generation-token store must stay in ONE buffered part, so the
+        /// single-PUT path remains available up to the configured ceiling.
+        const UInt64 cap = s3_settings.get()->auth_settings[S3AuthSetting::gcs_max_conditional_put_bytes];
+        request_settings[S3RequestSetting::max_single_part_upload_size] = cap;
+        request_settings[S3RequestSetting::min_upload_part_size] = cap;
     }
 
     if (write_settings.s3_max_unexpected_write_error_retries_override)

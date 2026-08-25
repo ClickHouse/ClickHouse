@@ -133,6 +133,6 @@ battery, skipping the battery used to skip it too, which is exactly why the thir
   transparent client behavior.
 
 A third staging check requires `supportsCopyMode(ObjectStorageCopyMode::NativeOnly)` when
-`staging_backend = s3`. Writable mount fails closed when native same-store copy is unavailable; it
+`cas_staging_backend = s3`. Writable mount fails closed when native same-store copy is unavailable; it
 does not silently fall back to local staging. Ordinary non-CAS `copyObject` fallback behavior is
 unchanged.

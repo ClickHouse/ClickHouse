@@ -50,6 +50,29 @@ def event_delta(before, after):
     return {event: after[event] - before[event] for event in CAS_PUBLICATION_EVENTS}
 
 
+def test_disk_accepts_backend_settings_that_used_to_be_rejected():
+    """The CAS disk block carries settings of its underlying object storage.
+
+    Before the `cas_` namespace, the CAS settings scanned the whole disk element and rejected every
+    key they did not recognise, so `http_keep_alive_timeout` -- the mitigation suggested in #2243 --
+    failed server startup. The server having started with the config this module installs is most of
+    the proof; this test states it, and checks the disk is actually usable rather than merely
+    present.
+    """
+    node = cluster.instances["node"]
+    assert node.query(
+        "SELECT count() FROM system.disks WHERE name = 'disk_cas_s3'"
+    ).strip() == "1"
+    node.query("DROP TABLE IF EXISTS t_foreign_settings SYNC")
+    node.query(
+        "CREATE TABLE t_foreign_settings (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS storage_policy = '{}'".format(STORAGE_POLICY)
+    )
+    node.query("INSERT INTO t_foreign_settings SELECT number FROM numbers(100)")
+    assert node.query("SELECT sum(a) FROM t_foreign_settings").strip() == "4950"
+    node.query("DROP TABLE t_foreign_settings SYNC")
+
+
 def test_cas_s3():
     node = cluster.instances["node"]
 

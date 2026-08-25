@@ -39,11 +39,11 @@ create_on_root() {
         type = object_storage,
         object_storage_type = local,
         metadata_type = cas,
-        server_root_id = '$2',
+        cas_server_root_id = '$2',
         name = '$3',
         path = '05024_cas_freeze_pool/',
-        gc_enabled = 1,
-        gc_interval_sec = 100000);"
+        cas_gc_enabled = 1,
+        cas_gc_interval_sec = 100000);"
 }
 
 drain_gc() {
@@ -72,11 +72,11 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05024_root_b',
+    cas_server_root_id = '05024_root_b',
     name = '${DISK_B}',
     path = '05024_cas_freeze_pool/',
-    gc_enabled = 1,
-    gc_interval_sec = 100000);"
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 100000);"
 
 # Root A freezes, then releases the UUID. Its freeze must outlive both the table and a collection round.
 create_on_root t_cas_freeze_a 05024_root_a 05024_cas_freeze_a

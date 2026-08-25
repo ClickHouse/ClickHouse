@@ -62,7 +62,7 @@ sequenceDiagram
 **Phase A — staging.** The transaction is an eager overlay, not a queue: `writeFile` immediately
 classifies the path and either spills bytes to a hashing buffer or holds them in memory as an
 inline candidate. Blob-class files stage to local scratch by default. Explicit
-`staging_backend = s3` requires native same-store copy at writable mount and stages a complete
+`cas_staging_backend = s3` requires native same-store copy at writable mount and stages a complete
 `[header][payload]` object. Its first publication after a destination miss may copy that object
 verbatim; a condemned or subsequent publication opens the staged payload, retags it, and streams.
 The `tmp_ → final` rename is a pure overlay re-key; durable publication happens only in `commit`.

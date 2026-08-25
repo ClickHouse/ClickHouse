@@ -36,11 +36,11 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '${DISK}',
+    cas_server_root_id = '${DISK}',
     name = '${DISK}',
     path = '${DISK}_pool/',
-    gc_enabled = 1,
-    gc_interval_sec = 1),
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 1),
     old_parts_lifetime = 1"
 
 # Two distinct inserts => distinct blobs (not deduplicated away); TRUNCATE drops every ref so the

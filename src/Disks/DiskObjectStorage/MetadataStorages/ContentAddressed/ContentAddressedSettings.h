@@ -51,10 +51,11 @@ struct ContentAddressedSettings
 
     CONTENT_ADDRESSED_SETTINGS_SUPPORTED_TYPES(ContentAddressedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    /// Loads every key under `config_prefix`, rejecting unknown non-object-storage keys (fail
-    /// closed, mirrors `FileCacheSettings::loadFromConfig`'s `non_cache_keys` skip-set). A missing
-    /// `scratch_path` defaults to `default_scratch_path`; a relative OVERRIDE is anchored to
-    /// `scratch_path_anchor_if_relative` instead (never the process CWD, and never
+    /// Consumes only `cas_`-prefixed keys under `config_prefix`. Every other key belongs to another
+    /// consumer of the shared disk block and is left untouched. The unprefixed spelling of a CAS
+    /// setting is temporarily accepted during the migration window. A missing `scratch_path` defaults
+    /// to `default_scratch_path`; a relative OVERRIDE is anchored to `scratch_path_anchor_if_relative`
+    /// instead (never the process CWD, and never
     /// `default_scratch_path` -- that default is a per-disk subdirectory, e.g.
     /// `<server-data-path>/disks/<name>/cas_scratch/`, and anchoring a relative override to it would
     /// silently nest the override two levels deeper than the server data path the operator meant;
@@ -77,6 +78,10 @@ struct ContentAddressedSettings
 
     /// Typed accessors for the enum-valued string settings, parsed and cached by `validate`.
     Cas::BlobHashAlgo blobHashAlgo() const;
+    /// Shared with the generic disk layer, which reads the same unprefixed key and ORs it with the
+    /// server-level flag before the generic access check. This one governs the CAS capability probe
+    /// only; the two scopes are deliberately distinct.
+    bool skipAccessCheck() const;
     Cas::StagingBackend stagingBackend() const;
     Cas::PartFolderValidate partFolderValidate() const;
 

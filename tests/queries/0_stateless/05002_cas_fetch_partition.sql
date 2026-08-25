@@ -20,7 +20,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05002',
+    cas_server_root_id = '05002',
     name = '05002_cas_fetch',
     path = '05002_cas_fetch_pool/');
 
@@ -31,7 +31,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05002',
+    cas_server_root_id = '05002',
     name = '05002_cas_fetch',
     path = '05002_cas_fetch_pool/');
 

@@ -36,8 +36,8 @@ decoding the whole body is cheaper than any partial-read machinery would be.
 
 | Cache | Keyed by | Setting | Default | What still hits the network |
 |---|---|---|---|---|
-| Manifest decode cache | `(ManifestId, Token)` | `manifest_decode_cache_bytes` | 128 MiB | A mandatory `HEAD` on **every** access, cache hit or miss |
-| Part-folder view cache (`Cas::CachedPartFolderAccess`, `Parts/PartFolderAccess.h`) | Part ref key | `part_folder_cache_bytes`, `part_folder_cache_max_entries`, `part_folder_cache_max_entry_bytes` | 64 MiB / 10 000 entries / 16 MiB | Its `ForceFresh` policy re-proves the manifest body via that same mandatory `HEAD`, paced by `part_folder_validate` (`always` \| `never` \| `age <seconds>`) |
+| Manifest decode cache | `(ManifestId, Token)` | `cas_manifest_decode_cache_bytes` | 128 MiB | A mandatory `HEAD` on **every** access, cache hit or miss |
+| Part-folder view cache (`Cas::CachedPartFolderAccess`, `Parts/PartFolderAccess.h`) | Part ref key | `cas_part_folder_cache_bytes`, `cas_part_folder_cache_max_entries`, `cas_part_folder_cache_max_entry_bytes` | 64 MiB / 10 000 entries / 16 MiB | Its `ForceFresh` policy re-proves the manifest body via that same mandatory `HEAD`, paced by `cas_part_folder_validate` (`always` \| `never` \| `age <seconds>`) |
 
 **The `HEAD` is mandatory even on a cache hit** — the page's most counter-intuitive fact, because it
 means a cache hit still costs one object-store round trip:

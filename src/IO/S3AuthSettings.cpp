@@ -29,6 +29,7 @@ namespace DB
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(UInt64, gcs_max_conditional_put_bytes, S3::DEFAULT_GCS_MAX_CONDITIONAL_PUT_BYTES, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \

@@ -40,10 +40,9 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
-ObjectStorageBackend::ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t conditional_single_put_cap_)
+ObjectStorageBackend::ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_)
     : object_storage(std::move(object_storage_))
     , mode(mode_)
-    , conditional_single_put_cap(conditional_single_put_cap_)
     , emu_root(object_storage->getCommonKeyPrefix())
 {
     if (mode == Mode::Native && object_storage->conditionalOpsUseGenerationTokens())
@@ -772,20 +771,17 @@ SentinelProbeResult ObjectStorageBackend::probeSentinelRaw(const String & key)
 }
 
 /// Settings for a genuine Native conditional write. Mark the request for the typed conditional
-/// dialect and, on a generation-token store, force a single PUT capped at
-/// `conditional_single_put_cap`: GCS does not enforce the condition on multipart completion. Blob
-/// publication never uses these settings; it remains an ordinary unconditional multipart-capable
-/// write. CAS-mutable keys (shard manifests, gc/state, the registry) also skip the racy post-upload
-/// existence/size check; a publish's manifest CAS was observed racing the GC fence there.
+/// dialect and, on a generation-token store, force a single PUT: GCS does not enforce the condition
+/// on multipart completion. Blob publication never uses these settings; it remains an ordinary
+/// unconditional multipart-capable write. CAS-mutable keys (shard manifests, gc/state, the registry)
+/// also skip the racy post-upload existence/size check; a publish's manifest CAS was observed racing
+/// the GC fence there.
 WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
 {
     WriteSettings ws;
     ws.object_storage_request_mode = ObjectStorageRequestMode::NativeConditional;
     if (native_token_type == TokenType::Generation)
-    {
         ws.s3_force_single_part_upload = true;
-        ws.s3_single_part_upload_max_bytes_override = conditional_single_put_cap;
-    }
     ws.s3_check_objects_after_upload_override = false;
     /// Exactly one attempt at the WriteBufferFromS3 layer too: makeSinglepartUpload/
     /// completeMultipartUpload run their OWN retry loop above the S3 client, reissuing the identical

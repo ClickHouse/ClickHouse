@@ -815,10 +815,13 @@ TEST(CASS3Staging, UnsupportedNativeOnlyCopyDoesNotFallBackToLocal)
     auto object_storage = makeFakeNativeCopyStorage(/*native_only_copy_supported=*/false);
     auto metadata_storage = makeS3StagingMetadataStorageForTest(object_storage, "mountUnsupported");
 
-    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NOT_IMPLEMENTED, [&]
-    {
-        metadata_storage->startup();
-    });
+    DB::Cas::tests::expectThrowsCodeWithMessage(
+        DB::ErrorCodes::NOT_IMPLEMENTED,
+        "cas_staging_backend=s3",
+        [&]
+        {
+            metadata_storage->startup();
+        });
 }
 
 /// (a) A successful commit removes the S3 staging object of a pending blob it staged. Uses the B189

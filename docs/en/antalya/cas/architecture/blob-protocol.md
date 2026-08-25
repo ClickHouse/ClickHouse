@@ -99,16 +99,16 @@ is allowed to stand in for that check. This follows the same rule everywhere in 
 is *proven* by hash equality, never *inferred* by a cheap signal, and re-hashing on read is the
 identity primitive wherever the correctness of a decision depends on it.
 
-The blob content hash is pluggable per pool, fixed at pool creation: `blob_hash` selects
+The blob content hash is pluggable per pool, fixed at pool creation: `cas_blob_hash` selects
 `cityhash128` (default), `xxh3-128`, or `sha256` (`parseBlobHashAlgo`,
 `Primitives/CasBlobDigest.h`). A blob is identified by the pair `BlobRef = (BlobHashAlgo, digest)`,
 never by a bare digest — a bare digest is ambiguous once more than one algorithm can appear in a
-pool. `blob_hash_allow_new` gates admitting a second algorithm into an already-populated pool's
+pool. `cas_blob_hash_allow_new` gates admitting a second algorithm into an already-populated pool's
 `algos_used` set; it defaults to off.
 
 `cityhash128` is not cryptographically collision-resistant. A pool shared across mutually
 untrusted writers should run `sha256` — CAS enforces no policy choice here; the operator picks
-the threat model via `blob_hash`. This is why the materialization gate is a `HEAD` (occupancy)
+the threat model via `cas_blob_hash`. This is why the materialization gate is a `HEAD` (occupancy)
 rather than a body compare: it tells the writer *something* already claims this key, and the
 digest is the only claim CAS trusts.
 
@@ -228,16 +228,15 @@ differ, which is exactly what `putDeterministicArtifact`'s divergence check woul
 
 ## Settings {#settings}
 
-All names below are unprefixed keys inside the disk's `cas` config block
-(`ContentAddressedSettings.cpp`, `LIST_OF_CONTENT_ADDRESSED_SETTINGS`); none carry a `cas_`/`ca_`
-prefix.
+The disk configuration element is shared by several consumers. The `CAS` settings below carry the
+`cas_` prefix; the deliberately bare `gcs_max_conditional_put_bytes` is an S3 client setting.
 
 | Setting | Controls | Default |
 |---|---|---|
-| `blob_hash` | Pool blob content-hash function (`cityhash128` \| `xxh3-128` \| `sha256`); fixed at pool creation | `cityhash128` |
-| `blob_hash_allow_new` | Explicit opt-in to admit a new hash algorithm into an existing pool's `algos_used` | `false` |
-| `staging_backend` | Blob staging backend (`local` \| `s3`); `s3` is opt-in | `local` |
-| `scratch_path` | Server-local scratch directory for the local-staging write-buffer spill; a relative value is anchored to the server data path | `""` |
+| `cas_blob_hash` | Pool blob content-hash function (`cityhash128` \| `xxh3-128` \| `sha256`); fixed at pool creation | `cityhash128` |
+| `cas_blob_hash_allow_new` | Explicit opt-in to admit a new hash algorithm into an existing pool's `algos_used` | `false` |
+| `cas_staging_backend` | Blob staging backend (`local` \| `s3`); `s3` is opt-in | `local` |
+| `cas_scratch_path` | Server-local scratch directory for the local-staging write-buffer spill; a relative value is anchored to the server data path | `<clickhouse-path>/disks/<disk_name>/cas_scratch/` |
 | `gcs_max_conditional_put_bytes` | Largest conditional non-blob `PUT` on a generation-token store, covering create-if-absent artifacts and conditional replacements; unconditional blob publication is not subject to this cap | 1 GiB |
 
 `GC`-round budgets that gate condemnation and reclaim of these same blobs (graduation, redelete,

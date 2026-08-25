@@ -411,7 +411,7 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
 TEST(CASRetirementSweep, AConfigStillAskingForTheMaterializationGraceIsRejected)
 {
     auto cfg = makeDiskConfig(
-        "<server_root_id>srv1</server_root_id><materialization_grace_ms>30000</materialization_grace_ms>");
+        "<cas_server_root_id>srv1</cas_server_root_id><cas_materialization_grace_ms>30000</cas_materialization_grace_ms>");
     DB::ContentAddressedSettings s;
     EXPECT_THROW(
         s.loadFromConfig(*cfg, "disk", "/scratch", "/scratch", [](const std::string & v) { return v; }),

@@ -74,12 +74,9 @@ struct WriteSettings
     std::string object_storage_write_if_match;     /// Supported only for S3-like object storages.
 
     /// A conditional write on a generation-token store (GCS) must never take the multipart path:
-    /// GCS enforces no preconditions on CompleteMultipartUpload (measured 2026-07-03). When set,
-    /// WriteBufferFromS3 throws instead of starting a multipart upload.
+    /// GCS enforces no preconditions on CompleteMultipartUpload (measured 2026-07-03). The size
+    /// ceiling for this write comes from the object storage's own `gcs_max_conditional_put_bytes`.
     bool s3_force_single_part_upload = false;
-    /// Companion cap: raises max_single_part_upload_size / min_upload_part_size in the request
-    /// settings so bodies up to this size stay in ONE part (RAM-buffered). 0 = no override.
-    size_t s3_single_part_upload_max_bytes_override = 0;
 
     /// Overrides S3RequestSetting::max_unexpected_write_error_retries (default 4) for this write.
     /// WriteBufferFromS3::makeSinglepartUpload/completeMultipartUpload run their OWN retry loop above

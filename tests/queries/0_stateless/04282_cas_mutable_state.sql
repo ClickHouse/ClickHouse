@@ -19,7 +19,7 @@ SETTINGS assign_part_uuids = 1, disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04282',
+    cas_server_root_id = '04282',
     name = '04282_cas',
     path = '04282_cas_pool/');
 

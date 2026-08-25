@@ -24,7 +24,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05026',
+    cas_server_root_id = '05026',
     name = '${DISK_NAME}',
     path = '${POOL_DIR}/');"
 

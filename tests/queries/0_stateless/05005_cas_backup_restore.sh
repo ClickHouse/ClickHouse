@@ -25,7 +25,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05005',
+    cas_server_root_id = '05005',
     name = '05005_cas_backup_restore',
     path = '05005_cas_backup_restore_pool/');"
 

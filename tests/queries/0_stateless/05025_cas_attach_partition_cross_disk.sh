@@ -43,7 +43,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05025_dst',
+    cas_server_root_id = '05025_dst',
     name = '05025_cas_dst',
     path = '05025_cas_dst_pool/');"
 
@@ -69,7 +69,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05025_shared_a',
+    cas_server_root_id = '05025_shared_a',
     name = '05025_cas_shared_a',
     path = '05025_cas_shared_pool/');"
 
@@ -80,7 +80,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05025_shared_b',
+    cas_server_root_id = '05025_shared_b',
     name = '05025_cas_shared_b',
     path = '05025_cas_shared_pool/');"
 
@@ -115,7 +115,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05025_dst_repl',
+    cas_server_root_id = '05025_dst_repl',
     name = '05025_cas_dst_repl',
     path = '05025_cas_dst_repl_pool/');"
 

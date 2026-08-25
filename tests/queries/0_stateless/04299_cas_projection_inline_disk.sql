@@ -13,7 +13,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04299',
+    cas_server_root_id = '04299',
     name = '04299_cas_projection',
     path = '04299_cas_projection_pool/');
 

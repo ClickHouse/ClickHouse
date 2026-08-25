@@ -21,6 +21,7 @@ inline static constexpr bool DEFAULT_USE_ADAPTIVE_TIMEOUTS = true;
 inline static constexpr uint64_t DEFAULT_MIN_UPLOAD_PART_SIZE = 16 * 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_MAX_UPLOAD_PART_SIZE = 5ull * 1024 * 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE = 32 * 1024 * 1024;
+inline static constexpr uint64_t DEFAULT_GCS_MAX_CONDITIONAL_PUT_BYTES = 1ULL << 30;
 inline static constexpr uint64_t DEFAULT_STRICT_UPLOAD_PART_SIZE = 0;
 inline static constexpr uint64_t DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR = 2;
 inline static constexpr uint64_t DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD = 500;

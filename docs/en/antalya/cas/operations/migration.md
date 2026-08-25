@@ -33,7 +33,7 @@ the [configuration](/antalya/cas/configuration#disk-config) page, the recommende
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
-                <server_root_id>{replica}</server_root_id>
+                <cas_server_root_id>{replica}</cas_server_root_id>
                 <endpoint>https://bucket.s3.amazonaws.com/cas/</endpoint>
                 <access_key_id>...</access_key_id>
                 <secret_access_key>...</secret_access_key>

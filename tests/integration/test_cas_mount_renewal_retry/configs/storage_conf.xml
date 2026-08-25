@@ -11,14 +11,14 @@
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
-                <server_root_id>itest-cas-renewal</server_root_id>
+                <cas_server_root_id>itest-cas-renewal</cas_server_root_id>
                 <!-- Keep signing/authentication on the normal RustFS path; the shared proxy only
                      changes the TCP destination and preserves the signed Host header. The compiled
                      30s lease TTL and 10s renewal period leave room for bounded physical retries. -->
                 <endpoint>http://s3proxy:11121/test/cas_mount_renewal/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <gc_enabled>false</gc_enabled>
+                <cas_gc_enabled>false</cas_gc_enabled>
             </disk_cas_renewal>
         </disks>
         <policies>

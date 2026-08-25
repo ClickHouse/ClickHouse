@@ -25,11 +25,11 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05010',
+    cas_server_root_id = '05010',
     name = '05010_cas_mounts_gc_health',
     path = '05010_cas_mounts_gc_health_pool/',
-    gc_enabled = 1,
-    gc_interval_sec = 1),
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 1),
     old_parts_lifetime = 1;
 
 INSERT INTO t_cas_mounts_gc_health SELECT number, toString(number) FROM numbers(100);

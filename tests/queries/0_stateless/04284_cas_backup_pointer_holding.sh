@@ -30,7 +30,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04284',
+    cas_server_root_id = '04284',
     name = '04284_cas_backup',
     path = '04284_cas_backup_pool/');
 

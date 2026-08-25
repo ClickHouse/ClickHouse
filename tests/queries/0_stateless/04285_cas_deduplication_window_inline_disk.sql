@@ -15,7 +15,7 @@ SETTINGS non_replicated_deduplication_window = 100, disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04285',
+    cas_server_root_id = '04285',
     name = '04285_cas_deduplication',
     path = '04285_cas_deduplication_pool/');
 

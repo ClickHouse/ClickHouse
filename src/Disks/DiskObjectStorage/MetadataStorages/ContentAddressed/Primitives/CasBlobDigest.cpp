@@ -40,7 +40,7 @@ BlobHashAlgo parseBlobHashAlgo(std::string_view config_value)
         return BlobHashAlgo::Sha256;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "parseBlobHashAlgo: unknown blob_hash config value '{}' (expected one of "
+        "parseBlobHashAlgo: unknown cas_blob_hash config value '{}' (expected one of "
         "cityhash128|xxh3-128|sha256)", config_value);
 }
 

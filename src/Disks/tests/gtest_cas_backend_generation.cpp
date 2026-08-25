@@ -42,6 +42,11 @@ namespace DB::S3RequestSetting
 extern const S3RequestSettingsUInt64 max_single_part_upload_size;
 extern const S3RequestSettingsUInt64 min_upload_part_size;
 }
+
+namespace DB::S3AuthSetting
+{
+extern const S3AuthSettingsUInt64 gcs_max_conditional_put_bytes;
+}
 #endif
 
 namespace
@@ -247,8 +252,8 @@ TEST(CASBackendGeneration, CheckSkipAccessCheckSupportAllowsEtagAndEmulatedBacke
 
 /// GCS enforces NO preconditions on CompleteMultipartUpload (measured 2026-07-03), so a conditional
 /// write on a generation-token store must never take the multipart path. conditionalWriteSettings
-/// must force the single-PUT path (and raise the single-part cap to conditional_single_put_cap) when
-/// the backend's native token kind is Generation, and stay a no-op otherwise (ETag dialect).
+/// must force the single-PUT path when the backend's native token kind is Generation, and stay a
+/// no-op otherwise (ETag dialect).
 TEST(CASBackendGeneration, ListTokensDisabledOnGenerationStores)
 {
     /// XML LIST bodies carry MD5-style ETags that the dialect cannot rewrite to generations; a
@@ -265,13 +270,11 @@ TEST(CASBackendGeneration, ListTokensDisabledOnGenerationStores)
 TEST(CASBackendGeneration, ConditionalWriteSettingsForceSinglePutOnGenerationStores)
 {
     auto b = std::make_shared<ObjectStorageBackend>(
-        DB::Cas::tests::makeLocalObjectStorageForTest(), ObjectStorageBackend::Mode::Native,
-        /*conditional_single_put_cap=*/123);
+        DB::Cas::tests::makeLocalObjectStorageForTest(), ObjectStorageBackend::Mode::Native);
     b->setNativeTokenTypeForTest(TokenType::Generation);
     const auto ws = b->conditionalWriteSettingsForTest();
     EXPECT_EQ(ws.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
     EXPECT_TRUE(ws.s3_force_single_part_upload);
-    EXPECT_EQ(ws.s3_single_part_upload_max_bytes_override, 123u);
     EXPECT_EQ(ws.object_storage_retry_profile, DB::ObjectStorageRetryProfile::SingleAttempt);
     EXPECT_EQ(ws.s3_max_unexpected_write_error_retries_override, 1u);
     ASSERT_TRUE(ws.s3_check_objects_after_upload_override.has_value());
@@ -281,7 +284,6 @@ TEST(CASBackendGeneration, ConditionalWriteSettingsForceSinglePutOnGenerationSto
     const auto ws2 = b->conditionalWriteSettingsForTest();
     EXPECT_EQ(ws2.object_storage_request_mode, DB::ObjectStorageRequestMode::NativeConditional);
     EXPECT_FALSE(ws2.s3_force_single_part_upload);
-    EXPECT_EQ(ws2.s3_single_part_upload_max_bytes_override, 0u);
     EXPECT_EQ(ws2.object_storage_retry_profile, DB::ObjectStorageRetryProfile::SingleAttempt);
     EXPECT_EQ(ws2.s3_max_unexpected_write_error_retries_override, 1u);
     ASSERT_TRUE(ws2.s3_check_objects_after_upload_override.has_value());
@@ -328,20 +330,31 @@ namespace
 /// support.
 class FakeGenerationS3Client : public DB::S3::Client
 {
+private:
+    struct State
+    {
+        std::string next_put_etag = "1000";
+        bool put_returns_no_etag = false;
+        std::string next_head_etag;
+
+        size_t put_object_calls = 0;
+        size_t head_object_calls = 0;
+        size_t create_multipart_calls = 0;
+        size_t upload_part_calls = 0;
+        size_t complete_multipart_calls = 0;
+        size_t abort_multipart_calls = 0;
+
+        std::map<std::string, std::string> objects;
+        std::map<int, std::string> multipart_parts;
+        std::mutex mutex;
+    };
+
+    const std::shared_ptr<State> state;
+
 public:
+
     FakeGenerationS3Client()
-        : DB::S3::Client(
-            100,
-            DB::S3::ServerSideEncryptionKMSConfig(),
-            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(),
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            DB::S3::ClientSettings{
-                .use_virtual_addressing = true,
-                .disable_checksum = false,
-                .gcs_issue_compose_request = false,
-                .is_s3express_bucket = false,
-            })
+        : FakeGenerationS3Client(std::make_shared<State>(), GetClientConfiguration())
     {
     }
 
@@ -363,15 +376,26 @@ public:
 
     /// The response ETag/generation the NEXT successful PutObject returns; empty means the response
     /// carries no ETag at all (SetETag never called) -- the "broken/lying remote" case Step 7 guards.
-    std::string next_put_etag = "1000";
-    bool put_returns_no_etag = false;
+    std::string & next_put_etag;
+    bool & put_returns_no_etag;
+    std::string & next_head_etag;
 
-    mutable size_t put_object_calls = 0;
-    mutable size_t head_object_calls = 0;
-    mutable size_t create_multipart_calls = 0;
-    mutable size_t upload_part_calls = 0;
-    mutable size_t complete_multipart_calls = 0;
-    mutable size_t abort_multipart_calls = 0;
+    size_t & put_object_calls;
+    size_t & head_object_calls;
+    size_t & create_multipart_calls;
+    size_t & upload_part_calls;
+    size_t & complete_multipart_calls;
+    size_t & abort_multipart_calls;
+
+    std::map<std::string, std::string> & objects;
+    std::map<int, std::string> & multipart_parts;
+    std::mutex & mutex;
+
+    std::unique_ptr<DB::S3::Client> cloneWithConfigurationOverride(
+        const DB::S3::PocoHTTPClientConfiguration & client_configuration_override) const override
+    {
+        return std::unique_ptr<DB::S3::Client>(new FakeGenerationS3Client(state, client_configuration_override));
+    }
 
     Aws::S3::Model::PutObjectOutcome PutObject(const Aws::S3::Model::PutObjectRequest & request) const override
     {
@@ -386,10 +410,6 @@ public:
             result.SetETag(next_put_etag);
         return result;
     }
-
-    /// The ETag field a HeadObject response carries; empty means SetETag is never called, which is
-    /// what every test written before the quoting seam was understood relied on.
-    std::string next_head_etag;
 
     Aws::S3::Model::HeadObjectOutcome HeadObject(const Aws::S3::Model::HeadObjectRequest & request) const override
     {
@@ -456,13 +476,44 @@ public:
         return Aws::S3::Model::AbortMultipartUploadResult{};
     }
 
-    mutable std::map<std::string, std::string> objects;
-    mutable std::map<int, std::string> multipart_parts;
-    mutable std::mutex mutex;
+private:
+    FakeGenerationS3Client(
+        std::shared_ptr<State> state_,
+        const DB::S3::PocoHTTPClientConfiguration & client_configuration)
+        : DB::S3::Client(
+            100,
+            DB::S3::ServerSideEncryptionKMSConfig(),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+            client_configuration,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = true,
+                .disable_checksum = false,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            })
+        , state(std::move(state_))
+        , next_put_etag(state->next_put_etag)
+        , put_returns_no_etag(state->put_returns_no_etag)
+        , next_head_etag(state->next_head_etag)
+        , put_object_calls(state->put_object_calls)
+        , head_object_calls(state->head_object_calls)
+        , create_multipart_calls(state->create_multipart_calls)
+        , upload_part_calls(state->upload_part_calls)
+        , complete_multipart_calls(state->complete_multipart_calls)
+        , abort_multipart_calls(state->abort_multipart_calls)
+        , objects(state->objects)
+        , multipart_parts(state->multipart_parts)
+        , mutex(state->mutex)
+    {
+    }
+
 };
 
 std::shared_ptr<DB::S3ObjectStorage> makeGenerationS3ObjectStorageForTest(
-    FakeGenerationS3Client *& out_client, bool force_multipart = false)
+    FakeGenerationS3Client *& out_client,
+    bool force_multipart = false,
+    std::optional<UInt64> conditional_put_cap = {})
 {
     auto owned_client = std::make_unique<FakeGenerationS3Client>();
     out_client = owned_client.get();
@@ -478,6 +529,9 @@ std::shared_ptr<DB::S3ObjectStorage> makeGenerationS3ObjectStorageForTest(
         settings->request_settings[DB::S3RequestSetting::max_single_part_upload_size] = 0;
         settings->request_settings[DB::S3RequestSetting::min_upload_part_size] = 64;
     }
+
+    if (conditional_put_cap)
+        settings->auth_settings[DB::S3AuthSetting::gcs_max_conditional_put_bytes] = *conditional_put_cap;
 
     return std::make_shared<DB::S3ObjectStorage>(
         std::move(owned_client), std::move(settings), std::move(uri), capabilities, key_generator, "cas-generation-disk");
@@ -500,12 +554,12 @@ protected:
         (void)getContext();   /// see S3ObjectStorageConditionalOpsTest::SetUp in gtest_writebuffer_s3.cpp
     }
 
-    /// A fresh backend with the given cap, native token type forced to Generation unless overridden
-    /// (the ETag dialect is needed to prove the generation-only quote handling does not touch it).
-    std::shared_ptr<ObjectStorageBackend> makeBackend(uint64_t cap, TokenType token_type = TokenType::Generation)
+    /// A fresh backend, native token type forced to Generation unless overridden (the ETag dialect
+    /// is needed to prove the generation-only quote handling does not touch it).
+    std::shared_ptr<ObjectStorageBackend> makeBackend(TokenType token_type = TokenType::Generation)
     {
         auto storage = makeGenerationS3ObjectStorageForTest(client);
-        auto b = std::make_shared<ObjectStorageBackend>(storage, ObjectStorageBackend::Mode::Native, cap);
+        auto b = std::make_shared<ObjectStorageBackend>(storage, ObjectStorageBackend::Mode::Native);
         b->setNativeTokenTypeForTest(token_type);
         return b;
     }
@@ -515,8 +569,9 @@ TEST(CASBackendGeneration, PublishBlobAboveFormerGenerationCapUsesOrdinaryMultip
 {
     (void)getContext();
     FakeGenerationS3Client * client = nullptr;
-    auto storage = makeGenerationS3ObjectStorageForTest(client, /*force_multipart=*/true);
-    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native, /*conditional_single_put_cap=*/16);
+    auto storage = makeGenerationS3ObjectStorageForTest(
+        client, /*force_multipart=*/true, /*conditional_put_cap=*/16);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native);
     backend.setNativeTokenTypeForTest(TokenType::Generation);
 
     const String payload(1024, 'x');
@@ -543,8 +598,9 @@ TEST(CASBackendGeneration, PublishBlobSucceedsWithoutResponseGeneration)
 {
     (void)getContext();
     FakeGenerationS3Client * client = nullptr;
-    auto storage = makeGenerationS3ObjectStorageForTest(client);
-    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native, /*conditional_single_put_cap=*/1);
+    auto storage = makeGenerationS3ObjectStorageForTest(
+        client, /*force_multipart=*/false, /*conditional_put_cap=*/1);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native);
     backend.setNativeTokenTypeForTest(TokenType::Generation);
     client->put_returns_no_etag = true;
 
@@ -564,6 +620,42 @@ TEST(CASBackendGeneration, PublishBlobSucceedsWithoutResponseGeneration)
     EXPECT_EQ(client->objects.at("p/gen/publish-no-generation"), "freshpayload");
 }
 
+/// The moved cap, end to end: a conditional write on a generation store stays in ONE PUT up to the
+/// cap the OBJECT STORAGE carries, and refuses rather than silently taking the multipart path above
+/// it -- GCS enforces no precondition on CompleteMultipartUpload.
+TEST(CASBackendGeneration, ConditionalWriteHonoursTheObjectStorageConditionalPutCap)
+{
+    (void)getContext();
+    FakeGenerationS3Client * client = nullptr;
+    auto storage = makeGenerationS3ObjectStorageForTest(
+        client, /*force_multipart=*/false, /*conditional_put_cap=*/64);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native);
+    backend.setNativeTokenTypeForTest(TokenType::Generation);
+
+    const String small(32, 'a');
+    EXPECT_NO_THROW(backend.casPut("p/gen/under-cap", small, std::nullopt, ObjectMeta{}));
+    EXPECT_EQ(client->put_object_calls, 1u);
+    EXPECT_EQ(client->create_multipart_calls, 0u);
+    const auto single_attempt_client = storage->getSingleAttemptClient();
+    EXPECT_NE(dynamic_cast<const FakeGenerationS3Client *>(single_attempt_client.get()), nullptr);
+    EXPECT_NE(
+        dynamic_cast<const DB::S3::SingleAttemptRetryStrategy *>(
+            single_attempt_client->getClientConfiguration().retryStrategy.get()),
+        nullptr);
+
+    const String large(4096, 'b');
+    try
+    {
+        backend.casPut("p/gen/over-cap", large, std::nullopt, ObjectMeta{});
+        FAIL() << "a conditional write above the cap must refuse, not go multipart";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+    }
+    EXPECT_EQ(client->create_multipart_calls, 0u);
+}
+
 /// ---- The transport-quoting seam ----
 ///
 /// A GCS generation reaches this layer through the SDK's ETag field, and the HTTP boundary fills that
@@ -575,7 +667,7 @@ TEST(CASBackendGeneration, PublishBlobSucceedsWithoutResponseGeneration)
 
 TEST_F(CASBackendGenerationS3, WriteEmptyGenerationThrows)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     DB::Cas::tests::expectThrowsCode(
         DB::ErrorCodes::CORRUPTED_DATA,
         [&] { backend->tokenFromWriteResult("p/gen/no-etag", String{}); });
@@ -583,7 +675,7 @@ TEST_F(CASBackendGenerationS3, WriteEmptyGenerationThrows)
 
 TEST_F(CASBackendGenerationS3, WriteNonNumericGenerationThrows)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     DB::Cas::tests::expectThrowsCode(
         DB::ErrorCodes::CORRUPTED_DATA,
         [&] { backend->tokenFromWriteResult("p/gen/bad-etag", "\"d41d8cd98f00b204e9800998ecf8427e\""); });
@@ -594,7 +686,7 @@ TEST_F(CASBackendGenerationS3, WriteNonNumericGenerationThrows)
 /// Before the fix this threw CORRUPTED_DATA, so every GCS CAS write failed and no pool could mount.
 TEST_F(CASBackendGenerationS3, WriteGenerationTokenStripsTransportQuoting)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     const Token tok = backend->tokenFromWriteResult("p/gen/quoted-write", "\"1783078552147137\"");
     EXPECT_EQ(tok, (Token{"1783078552147137", TokenType::Generation}));
 }
@@ -604,7 +696,7 @@ TEST_F(CASBackendGenerationS3, WriteGenerationTokenStripsTransportQuoting)
 /// the write that created it.
 TEST_F(CASBackendGenerationS3, HeadGenerationTokenStripsTransportQuoting)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     client->objects["p/gen/quoted-head"] = "body";
     client->next_head_etag = "\"1783078552147137\"";
 
@@ -618,7 +710,7 @@ TEST_F(CASBackendGenerationS3, HeadGenerationTokenStripsTransportQuoting)
 /// This is the test that fails if the quote handling is ever made unconditional.
 TEST_F(CASBackendGenerationS3, EtagDialectKeepsTransportQuotingVerbatim)
 {
-    backend = makeBackend(/*cap=*/1024, TokenType::ETag);
+    backend = makeBackend(TokenType::ETag);
     client->objects["p/etag/quoted-head"] = "body";
     client->next_head_etag = "\"d41d8cd98f00b204e9800998ecf8427e\"";
 
@@ -631,7 +723,7 @@ TEST_F(CASBackendGenerationS3, EtagDialectKeepsTransportQuotingVerbatim)
 /// from it -- there is no follow-up HEAD to patch this over, so nativeHead must refuse it directly.
 TEST_F(CASBackendGenerationS3, HeadMissingGenerationThrows)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     client->objects["p/gen/no-generation-head"] = "body";
     /// next_head_etag stays empty: SetETag is never called, so the response carries no ETag field.
 
@@ -643,7 +735,7 @@ TEST_F(CASBackendGenerationS3, HeadMissingGenerationThrows)
 /// x-goog-generation, a service regression) must not be minted as a generation token either.
 TEST_F(CASBackendGenerationS3, HeadNonNumericGenerationThrows)
 {
-    backend = makeBackend(/*cap=*/1024);
+    backend = makeBackend();
     client->objects["p/gen/bad-etag-head"] = "body";
     client->next_head_etag = "\"d41d8cd98f00b204e9800998ecf8427e\"";
 

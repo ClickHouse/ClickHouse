@@ -35,12 +35,11 @@ synthetic query result. No test that touches a real bucket or issues billable re
                                     bucket. Enables the ordinary and CAS OAuth scenarios on GCE.
   - `GCS_LIVE_OAUTH_ADC_CLIENT_ID` — Application Default Credentials, the alternative that enables
   - `GCS_LIVE_OAUTH_ADC_CLIENT_SECRET`  OAuth scenarios from anywhere, not just on GCE. A CAS disk accepts
-  - `GCS_LIVE_OAUTH_ADC_REFRESH_TOKEN`  these: `non_cas_keys` in `ContentAddressedSettings.cpp` lists
-                                    `metadata_service`, `request_token_path`, `service_account` and the
-                                    whole ADC triple, and its own comment says the triple "is the only
-                                    way to run `gcp_oauth` off a GCE instance". Either source is
-                                    enough; the ADC one exists because requiring a GCE host is what
-                                    would keep this gate from ever being run.
+  - `GCS_LIVE_OAUTH_ADC_REFRESH_TOKEN`  these because CAS consumes only its `cas_` namespace and leaves
+                                    `metadata_service`, `request_token_path`, `service_account`, and the
+                                    ADC triple to the underlying object storage. Either source is enough;
+                                    the ADC one exists because requiring a GCE host is what would keep
+                                    this gate from ever being run.
   - `GCS_LIVE_AMBIGUITY_PROXY_URI` — URI of the operator-controlled TLS fault proxy. Together with
   - `GCS_LIVE_AMBIGUITY_CONTROL_URL`  its control URL and public CA file, enables the fault arms.
   - `GCS_LIVE_AMBIGUITY_CA_FILE`      The terminating proxy's public CA bundle. ClickHouse retains
@@ -261,10 +260,10 @@ def _disk_xml(
     if cas:
         lines += [
             "                <metadata_type>cas</metadata_type>",
-            "                <server_root_id>{}</server_root_id>".format(name),
-            "                <gc_interval_sec>3600</gc_interval_sec>",
+            "                <cas_server_root_id>{}</cas_server_root_id>".format(name),
+            "                <cas_gc_interval_sec>3600</cas_gc_interval_sec>",
             "                <gcs_max_conditional_put_bytes>{}</gcs_max_conditional_put_bytes>".format(FORMER_CONDITIONAL_PUT_CAP),
-            "                <staging_backend>{}</staging_backend>".format(staging_backend),
+            "                <cas_staging_backend>{}</cas_staging_backend>".format(staging_backend),
         ]
     lines += [
         "                <endpoint>{}/{}/{}/{}/</endpoint>".format(GCS_ENDPOINT, _xml(bucket or BUCKET), _xml(PREFIX), _xml(subprefix)),
@@ -277,7 +276,8 @@ def _disk_xml(
         ]
     if client == "gcp_oauth" and ADC_AVAILABLE:
         # `requestBearerToken` picks between the GCE metadata server and these; a CAS disk accepts them
-        # (they are in `non_cas_keys`). Present only when supplied, so a GCE run keeps using metadata.
+        # because CAS consumes only its `cas_` namespace. Present only when supplied, so a GCE run keeps
+        # using metadata.
         lines += [
             "                <google_adc_client_id>{}</google_adc_client_id>".format(_xml(ADC_CLIENT_ID)),
             "                <google_adc_client_secret>{}</google_adc_client_secret>".format(_xml(ADC_CLIENT_SECRET)),

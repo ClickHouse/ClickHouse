@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t_pmb;
 CREATE TABLE t_pmb (a UInt64, b UInt64, PROJECTION p_by_b (SELECT b, sum(a) GROUP BY b))
 ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(type = object_storage, object_storage_type = local, metadata_type = cas,
-    name = '04300_pmb', server_root_id = '04300', path = '04300_pmb_pool/'),
+    name = '04300_pmb', cas_server_root_id = '04300', path = '04300_pmb_pool/'),
     -- The final check asserts the optimizer SELECTS the projection, which holds only while the
     -- projection reads fewer marks than the base table. Randomized granularity (tiny
     -- index_granularity_bytes with enable_block_offset_column widening base rows) can bring the two

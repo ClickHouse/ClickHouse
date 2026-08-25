@@ -7,7 +7,7 @@
                 <metadata_type>cas</metadata_type>
                 <!-- Phase 0 (mount safety): required, validated identity of the layout subtree this
                      server owns. Single-server stateless lane → a stable literal id. -->
-                <server_root_id>stateless-ca-s3</server_root_id>
+                <cas_server_root_id>stateless-ca-s3</cas_server_root_id>
                 <!-- RustFS (M-W D-W8): the CA pool needs ENFORCED conditional ops (exact-token
                      DELETE must 412 on mismatch) - MinIO OSS silently ignores If-Match on DELETE
                      and the fail-closed capability probe rejects it. RustFS runs on a dedicated
@@ -17,12 +17,12 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <!-- Real server-local scratch dir for the write-buffer spill. -->
-                <scratch_path>cas_s3_scratch/</scratch_path>
+                <cas_scratch_path>cas_s3_scratch/</cas_scratch_path>
                 <!-- Background GC pacing: the incarnation protocol's fence/recheck handshake
                      replaces the old grace window (M-W D-W5); a short interval so reclamation
                      happens during the run. -->
-                <gc_enabled>1</gc_enabled>
-                <gc_interval_sec>5</gc_interval_sec>
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>5</cas_gc_interval_sec>
             </cas_s3>
             <!-- Optional local filesystem cache in front of the cacheless CA-S3 disk (mirrors how plain-s3
                  backs its policy with `cached_s3`). Validated: once warm it serves reads from local disk

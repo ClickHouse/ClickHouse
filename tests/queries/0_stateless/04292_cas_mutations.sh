@@ -22,7 +22,7 @@ DISK_CA="disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04292',
+    cas_server_root_id = '04292',
     name = '04292_cas_mut',
     path = '04292_cas_mut_pool/')"
 

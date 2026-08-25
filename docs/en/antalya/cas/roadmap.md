@@ -33,10 +33,10 @@ ref pointing at blobs the pool already has, at zero bytes on the wire — with a
 protocol that closes the sender-crash and stale-cache races a naive relink would be exposed to.
 
 **Garbage collection.** An 18-phase round built on a causal ack-floor (no separate fence-and-recheck
-phase); sharded folding (`gc_shards`); condemn/spare bookkeeping; generation pruning with a
+phase); sharded folding (`cas_gc_shards`); condemn/spare bookkeeping; generation pruning with a
 configurable retention window; a dry-run mode and a rebuild path for recovery.
 
-**Mounts and identity.** Explicit `server_root_id` per disk; a renewable mount lease with
+**Mounts and identity.** Explicit `cas_server_root_id` per disk; a renewable mount lease with
 observation-based reclaim of an expired predecessor (never trusting a foreign body's wall-clock
 timestamp); clean decommission of a permanently departed pool member
 (`SYSTEM CAS DROP POOL MEMBER`).

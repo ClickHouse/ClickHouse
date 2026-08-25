@@ -6,10 +6,10 @@
     <storage_configuration>
         <disks>
             <disk_cas_dpm>
-                <server_root_id>node1</server_root_id>
+                <cas_server_root_id>node1</cas_server_root_id>
             </disk_cas_dpm>
             <disk_ca_ro>
-                <server_root_id>node1</server_root_id>
+                <cas_server_root_id>node1</cas_server_root_id>
             </disk_ca_ro>
         </disks>
     </storage_configuration>

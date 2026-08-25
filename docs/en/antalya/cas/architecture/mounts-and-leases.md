@@ -12,9 +12,9 @@ writers, and the server-scoped control-plane objects. No external coordinator is
 is no ZooKeeper/Keeper client anywhere in this protocol — `MountLeaseKeeper` is a local lease
 *renewer*, not a Keeper client.
 
-## `server_root_id` — the identity {#server-root-id}
+## `cas_server_root_id` — the identity {#server-root-id}
 
-Every content-addressed disk must be configured with an explicit `server_root_id`. It is
+Every content-addressed disk must be configured with an explicit `cas_server_root_id`. It is
 validated and immutable, and deliberately **not** derived from `ServerUUID` — two replicas can
 otherwise regenerate the same `ServerUUID` from a wiped local state directory, which must not
 silently steal an existing identity.
@@ -35,7 +35,7 @@ It roots four subtrees and owns catalog names at or below `<server_root_id>`:
 `blobs/` is **not** under the `server_root_id` — content is pool-global, which is what makes cross-server
 dedup work. Ref/namespace keys are also deliberately opaque and do not embed the `server_root_id`.
 
-Each replica sharing a backend endpoint must use a distinct `server_root_id`; omitting the setting
+Each replica sharing a backend endpoint must use a distinct `cas_server_root_id`; omitting the setting
 is a startup error.
 
 ## The owner claim {#owner-claim}

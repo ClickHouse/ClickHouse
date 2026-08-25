@@ -14,8 +14,8 @@
                 <endpoint>http://rustfs1:11121/test/other_pool/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <server_root_id>node2_other</server_root_id>
-                <gc_enabled>0</gc_enabled>
+                <cas_server_root_id>node2_other</cas_server_root_id>
+                <cas_gc_enabled>0</cas_gc_enabled>
             </disk_cas_other>
         </disks>
         <policies>

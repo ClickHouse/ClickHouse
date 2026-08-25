@@ -77,14 +77,12 @@ namespace ContentAddressedSetting
     extern const ContentAddressedSettingsUInt64 gc_round_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_handoff_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_outcome_entry_budget;
-    extern const ContentAddressedSettingsUInt64 gcs_max_conditional_put_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_bytes;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entries;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_max_entry_bytes;
     extern const ContentAddressedSettingsUInt64 manifest_decode_cache_bytes;
     extern const ContentAddressedSettingsUInt64 gc_meta_pool_size;
     extern const ContentAddressedSettingsBool blob_hash_allow_new;
-    extern const ContentAddressedSettingsBool skip_access_check;
 }
 
 namespace
@@ -296,7 +294,6 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , gc_round_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_prefix_wholesale_budget].value)
     , gc_round_handoff_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_handoff_prefix_wholesale_budget].value)
     , gc_round_outcome_entry_budget(settings_[ContentAddressedSetting::gc_round_outcome_entry_budget].value)
-    , gcs_max_conditional_put_bytes(settings_[ContentAddressedSetting::gcs_max_conditional_put_bytes].value)
     , cas_part_folder_cache_bytes(settings_[ContentAddressedSetting::part_folder_cache_bytes].value)
     , cas_part_folder_cache_max_entries(settings_[ContentAddressedSetting::part_folder_cache_max_entries].value)
     , cas_part_folder_cache_max_entry_bytes(settings_[ContentAddressedSetting::part_folder_cache_max_entry_bytes].value)
@@ -305,7 +302,7 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , staging_backend(settings_.stagingBackend())
     , blob_hash_algo(settings_.blobHashAlgo())
     , blob_hash_allow_new(settings_[ContentAddressedSetting::blob_hash_allow_new].value)
-    , skip_access_check(settings_[ContentAddressedSetting::skip_access_check].value)
+    , skip_access_check(settings_.skipAccessCheck())
     , part_folder_validate(settings_.partFolderValidate())
 {
 }
@@ -322,7 +319,7 @@ Cas::StagingBackend ContentAddressedMetadataStorage::parseStagingBackend(const s
     if (value == "s3")
         return Cas::StagingBackend::S3;
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Unknown staging_backend value '{}' (expected 'local' or 's3')", value);
+        "Unknown cas_staging_backend value '{}' (expected 'local' or 's3')", value);
 }
 
 Cas::StagingBackend ContentAddressedMetadataStorage::parseStagingBackend(
@@ -351,7 +348,7 @@ Cas::PartFolderValidate ContentAddressedMetadataStorage::parsePartFolderValidate
             return {PartFolderValidate::Mode::Age, age_seconds};
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Unknown part_folder_validate value '{}' (expected 'always', 'never', or 'age <non-negative integer seconds>')", value);
+        "Unknown cas_part_folder_validate value '{}' (expected 'always', 'never', or 'age <non-negative integer seconds>')", value);
 }
 
 Cas::PartFolderValidate ContentAddressedMetadataStorage::parsePartFolderValidate(
@@ -711,7 +708,7 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     const auto mode = object_storage->getType() == ObjectStorageType::Local
         ? Cas::ObjectStorageBackend::Mode::EmulatedSingleProcess
         : Cas::ObjectStorageBackend::Mode::Native;
-    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode, gcs_max_conditional_put_bytes);
+    auto backend = std::make_shared<Cas::ObjectStorageBackend>(object_storage, mode);
     const Cas::TokenType backend_token_type = backend->nativeTokenType();
 
     /// EmulatedSingleProcess emulates the conditional-op / exact-token semantics in-process (local
@@ -832,7 +829,7 @@ void ContentAddressedMetadataStorage::startup()
         && !object_storage->supportsCopyMode(ObjectStorageCopyMode::NativeOnly))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "staging_backend=s3 requires native-only same-store copy, but object storage {} does not support it",
+            "cas_staging_backend=s3 requires native-only same-store copy, but object storage {} does not support it",
             object_storage->getName());
 
     /// Everything below builds into LOCALS -- nothing is published to `cas_store`/`part_access`/

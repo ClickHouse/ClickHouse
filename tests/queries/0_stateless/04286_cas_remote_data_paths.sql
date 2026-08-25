@@ -21,7 +21,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04286',
+    cas_server_root_id = '04286',
     name = '04286_cas_rdp',
     path = '04286_cas_rdp_pool/');
 

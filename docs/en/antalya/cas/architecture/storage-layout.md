@@ -51,7 +51,7 @@ namespace's shape and never interprets its contents.
 
 `<algo>` is `ch128`, `xxh3`, or `sha256` — the hash algorithm is a path segment because one pool may
 legally hold blobs under several algorithms at once. `<hex[0:2]>` is a flat two-character S3 key
-shard for request-fan-out, unrelated to the separate `gc_shards` GC-internal reduction fan-out
+shard for request-fan-out, unrelated to the separate `cas_gc_shards` GC-internal reduction fan-out
 (which appears only inside `gc/gen/…` keys and routes by the digest's high 64 bits, read
 big-endian). Discovery LISTs use fixed prefixes: `cas/ns/stream/`, `cas/ns/`, `cas/manifests/`,
 `blobs/` (deliberately without the algorithm segment, so one recursive LIST covers every

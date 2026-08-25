@@ -28,7 +28,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '05004',
+    cas_server_root_id = '05004',
     name = '05004_cas_transactions',
     path = '05004_cas_transactions_pool/');"
 

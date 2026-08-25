@@ -477,28 +477,28 @@ Configuration:
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
 
-    <server_root_id>server-{replica}</server_root_id>
-    <scratch_path>disks/s3_cas/cas_scratch/</scratch_path>
-    <staging_backend>local</staging_backend>
-    <blob_hash>cityhash128</blob_hash>
-    <gc_enabled>true</gc_enabled>
-    <gc_interval_sec>60</gc_interval_sec>
-    <gc_shards>1</gc_shards>
-    <part_folder_cache_bytes>67108864</part_folder_cache_bytes>
-    <part_folder_validate>always</part_folder_validate>
+    <cas_server_root_id>server-{replica}</cas_server_root_id>
+    <cas_scratch_path>disks/s3_cas/cas_scratch/</cas_scratch_path>
+    <cas_staging_backend>local</cas_staging_backend>
+    <cas_blob_hash>cityhash128</cas_blob_hash>
+    <cas_gc_enabled>true</cas_gc_enabled>
+    <cas_gc_interval_sec>60</cas_gc_interval_sec>
+    <cas_gc_shards>1</cas_gc_shards>
+    <cas_part_folder_cache_bytes>67108864</cas_part_folder_cache_bytes>
+    <cas_part_folder_validate>always</cas_part_folder_validate>
 </s3_cas>
 ```
 
-The CAS-specific settings are written directly inside the disk element, alongside
-`<type>object_storage</type>` / `<object_storage_type>` and the connection settings, which are the
-same as for any other `object_storage` disk. Since the disk element already scopes every key to this
-disk, none of the keys below carry a redundant `cas_`/`ca_` prefix.
+The `CAS` settings are written directly inside the disk element, alongside
+`<type>object_storage</type>` / `<object_storage_type>` and the connection settings. Several
+components read this shared disk element, so `CAS` settings use the `cas_` prefix; every other key
+belongs to the object-storage or generic disk layer.
 
 #### Required parameters {#required-parameters-content-addressed}
 
-- `server_root_id` — the subtree of the shared pool that this server owns. When several replicas
+- `cas_server_root_id` — the subtree of the shared pool that this server owns. When several replicas
   mount the same pool (same `endpoint`), each one must own a distinct subtree, so this is normally
-  written with a macro, e.g. `<server_root_id>server-{replica}</server_root_id>`. Missing this key is
+  written with a macro, e.g. `<cas_server_root_id>server-{replica}</cas_server_root_id>`. Missing this key is
   a startup error.
 
 #### Optional parameters {#optional-parameters-content-addressed}
@@ -506,53 +506,54 @@ disk, none of the keys below carry a redundant `cas_`/`ca_` prefix.
 These are the commonly used settings; see [Configuration](/antalya/cas/configuration) for the full
 disk-level and server-level settings surface.
 
-- `scratch_path` — a real, server-local filesystem directory used to spill the write buffer before it
+- `cas_scratch_path` — a real, server-local filesystem directory used to spill the write buffer before it
   is committed to the pool (never the object-storage key prefix). Defaults to
   `<clickhouse-path>/disks/<disk_name>/cas_scratch/`. A relative override is anchored to the server
   data path, not the process's current working directory.
-- `staging_backend` — `local` (default) or `s3`. Selects where in-flight part data is staged before
+- `cas_staging_backend` — `local` (default) or `s3`. Selects where in-flight part data is staged before
   being committed into the pool; `local` is byte-for-byte the original write path, `s3` enables
   S3-native staging. A writable disk configured with `s3` must support native same-store copy and
   fails closed instead of falling back to client-side copy.
-- `blob_hash` — `cityhash128` (default), `xxh3-128`, or `sha256`. Selects the pool's blob
-  content-hash function. The choice is fixed at pool creation; a reopen whose `blob_hash` disagrees
+- `cas_blob_hash` — `cityhash128` (default), `xxh3-128`, or `sha256`. Selects the pool's blob
+  content-hash function. The choice is fixed at pool creation; a reopen whose `cas_blob_hash` disagrees
   with the pool's recorded algorithm fails closed. See
-  [choosing `blob_hash`](/antalya/cas/configuration#choosing-blob-hash) for the trade-offs between
+  [choosing `cas_blob_hash`](/antalya/cas/configuration#choosing-blob-hash) for the trade-offs between
   the three.
-- `blob_hash_allow_new` — `false` by default. Admits a new hash algorithm into an existing pool's set
-  of recorded algorithms; without it, a `blob_hash` that disagrees with what the pool already recorded
+- `cas_blob_hash_allow_new` — `false` by default. Admits a new hash algorithm into an existing pool's set
+  of recorded algorithms; without it, a `cas_blob_hash` that disagrees with what the pool already recorded
   fails closed instead of silently turning the pool mixed-algorithm.
-- `gc_enabled` — `true` by default. Enables the background garbage collector for this disk.
-- `gc_interval_sec` — `60` by default; must be `>= 1`. Interval between background GC rounds.
-- `gc_shards` — `1` by default; must be `>= 1`. Number of blob-hash-prefix shards the GC reducer
+- `cas_gc_enabled` — `true` by default. Enables the background garbage collector for this disk.
+- `cas_gc_interval_sec` — `60` by default; must be `>= 1`. Interval between background GC rounds.
+- `cas_gc_shards` — `1` by default; must be `>= 1`. Number of blob-hash-prefix shards the GC reducer
   splits work across. This is a creation-time-only setting: on reopen the pool's persisted GC state is
   authoritative.
 - Every physical blob materialization starts with `HEAD`. A present non-condemned blob is adopted;
   an absent or condemned blob is published unconditionally and its freshness metadata is reconciled
   to `Clean`. A genuine fresh miss issues no metadata GET before publication.
-- `gc_snapshot_generations_to_keep` — `3` by default. Number of past GC snapshot generations retained.
+- `cas_gc_snapshot_generations_to_keep` — `3` by default. Number of past GC snapshot generations retained.
 - `gcs_max_conditional_put_bytes` — `1` GiB by default. Bounds every conditional non-blob `PUT` on
   generation-token backends, where the precondition must survive one request. This includes
   create-if-absent metadata/control artifacts and conditional replacements. Blob bodies do not
   consume a write-response token: their unconditional publication can use ordinary multipart and
   is not subject to this cap. Irrelevant on `ETag`-based backends such as AWS S3.
-- `part_folder_cache_bytes` — `64` MiB by default. Size of the part-folder view cache. `0` disables
+- `cas_part_folder_cache_bytes` — `64` MiB by default. Size of the part-folder view cache. `0` disables
   retention; this is a supported permanent operational configuration, not only a debug aid.
-- `part_folder_cache_max_entries` — `10000` by default. Maximum number of entries in the part-folder
+- `cas_part_folder_cache_max_entries` — `10000` by default. Maximum number of entries in the part-folder
   view cache.
-- `part_folder_cache_max_entry_bytes` — `16` MiB by default. Maximum size of a single cached
+- `cas_part_folder_cache_max_entry_bytes` — `16` MiB by default. Maximum size of a single cached
   part-folder view entry.
-- `part_folder_validate` — `always` (default), `never`, or `age <seconds>`. Controls how often a
+- `cas_part_folder_validate` — `always` (default), `never`, or `age <seconds>`. Controls how often a
   `ForceFresh` read re-proves a cached manifest body via a `HEAD` request: `always` re-proves every
   time (the original, pre-optimization behavior), `never` trusts the cache without re-proving, and
   `age <seconds>` re-proves only once the cached entry is older than the given number of seconds.
-- `manifest_decode_cache_bytes` — `128` MiB by default. Byte bound for the decoded-manifest cache.
+- `cas_manifest_decode_cache_bytes` — `128` MiB by default. Byte bound for the decoded-manifest cache.
   `0` disables decode caching entirely (a diagnostic mode).
-- `gc_meta_pool_size` — `16` by default. Bounded thread-pool size for the GC's per-hash freshness-meta
+- `cas_gc_meta_pool_size` — `16` by default. Bounded thread-pool size for the GC's per-hash freshness-meta
   writes (condemn/spare/delete), so a mass `DROP` condemning millions of blobs does not run fully
   sequentially.
-- `skip_access_check` — `false` by default. Skips the disk's startup access check ("start now, fix
-  later"), unlike the generic disk-wide startup flag.
+- `skip_access_check` — `false` by default. Skips the disk's `CAS` capability probe ("start now,
+  fix later"). The server-level `skip_access_check` flag skips the generic disk access check;
+  this disk key governs the `CAS` capability probe.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 

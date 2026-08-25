@@ -447,7 +447,16 @@ TEST(CASServerRootClaim, OwnerStickyAndForeignFailsClosed)
     Layout l("p");
     EXPECT_NO_THROW(claimOwnerOrThrow(*b, l, "r", UInt128(1), emptyCatalogObservation()));     // fresh empty root → claim
     EXPECT_NO_THROW(claimOwnerOrThrow(*b, l, "r", UInt128(1), emptyCatalogObservation()));     // same uuid → ok
-    EXPECT_THROW(claimOwnerOrThrow(*b, l, "r", UInt128(2), emptyCatalogObservation()), DB::Exception);  // foreign → fail closed
+    try
+    {
+        claimOwnerOrThrow(*b, l, "r", UInt128(2), emptyCatalogObservation());
+        FAIL() << "expected a foreign owner to fail closed";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA);
+        EXPECT_NE(e.message().find("<cas_server_root_id>"), String::npos) << e.message();
+    }
 }
 
 TEST(CASServerRootClaim, TombstonedSameOwnerFailsClosed)
@@ -848,7 +857,7 @@ TEST(CASMountMessage, DoubleStartTextHasIdentityAndRemediation)
     const std::string msg = mountDoubleStartMessage("replica-a", m);
 
     /// Identity / existing-holder fields.
-    EXPECT_NE(msg.find("server_root_id"), std::string::npos);
+    EXPECT_NE(msg.find("<cas_server_root_id>"), std::string::npos);
     EXPECT_NE(msg.find("'replica-a'"), std::string::npos);
     EXPECT_NE(msg.find("hostname=host-9.example.com"), std::string::npos);
     EXPECT_NE(msg.find("pid=4242"), std::string::npos);

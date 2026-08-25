@@ -666,7 +666,7 @@ void claimOwnerOrThrow(
             "CAS server-root '{}' is owned by a different server (owner server_uuid={}, ours={}) — refusing to claim. "
             "This usually means THIS server's local uuid file was regenerated (e.g. /var/lib/clickhouse was wiped, "
             "or the container/pod was recreated without a persistent volume) while the pool kept the old identity. "
-            "Recover by restoring the old local uuid file; or configure a fresh <server_root_id> for this disk; "
+            "Recover by restoring the old local uuid file; or configure a fresh <cas_server_root_id> for this disk; "
             "or — only after verifying that NO server uses this root — manually delete the owner object '{}' and restart.",
             srid, u128ToHex(owner->server_uuid), u128ToHex(our_uuid), key);
     }
@@ -1012,7 +1012,7 @@ String mountDoubleStartMessage(const String & srid, const MountLease & existing)
         "  Existing mount: server_uuid={} hostname={} pid={} last_seq={} expires_at_ms={}\n"
         "This server already waited for the mount lease to lapse, but it kept being renewed — a second\n"
         "server is holding the same CAS namespace. This prevents two ClickHouse servers from writing it.\n"
-        " - If the other server is running intentionally, configure a unique <server_root_id> for this disk.\n"
+        " - If the other server is running intentionally, configure a unique <cas_server_root_id> for this disk.\n"
         " - If the other server is a stale/zombie process, stop it; this server will then reclaim the mount on restart.\n"
         " - CLOCK SKEW CAVEAT: liveness is judged by comparing the lease's wall-clock expires_at_ms against\n"
         "   THIS server's clock, so a large clock skew between the two servers can misjudge it (a healthy holder\n"

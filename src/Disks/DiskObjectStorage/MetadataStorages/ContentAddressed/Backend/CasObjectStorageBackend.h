@@ -60,10 +60,9 @@ public:
 
     /// Construct a backend over `object_storage`. Native mode uses the storage's conditional
     /// operations and native token dialect; `EmulatedSingleProcess` serializes operations locally for
-    /// tests and local development. The generation-token store limit applies only to Native mode:
-    /// generation stores must use a single PUT because their multipart completion path does not enforce
-    /// the precondition.
-    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_, uint64_t conditional_single_put_cap_ = 1ULL << 30);
+    /// tests and local development. A Native generation-token store must use a single PUT because
+    /// its multipart completion path does not enforce the precondition.
+    ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_);
 
     /// Read an object or return `nullopt` if it is absent. Native mode HEADs first so the returned
     /// token identifies the incarnation whose bytes are read; a not-found race is also reported as
@@ -181,8 +180,8 @@ public:
 
     /// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): mark the request
     /// conditional, make exactly one attempt at every retry layer, skip the racy post-upload
-    /// existence/size check, and force a single PUT up to `conditional_single_put_cap` on generation
-    /// stores because GCS does not enforce the condition on multipart completion.
+    /// existence/size check, and force a single PUT on generation stores because GCS does not
+    /// enforce the condition on multipart completion.
     WriteSettings conditionalWriteSettings() const;
     WriteSettings conditionalWriteSettingsForTest() const { return conditionalWriteSettings(); }
     /// Convert a successful write/copy response's incarnation-identifying string into this backend's
@@ -202,9 +201,6 @@ private:
     const ObjectStoragePtr object_storage;
     const Mode mode;
     TokenType native_token_type = TokenType::ETag;
-    /// GCS single-PUT budget for genuine conditional writes (generation-token stores only).
-    const uint64_t conditional_single_put_cap;
-
     /// EmulatedSingleProcess state: per-key {etag, disambiguator} — see emuMintToken. A successfully
     /// deleted entry is retained only while its etag is recent enough that an immediate recreate could
     /// land in the same mtime quantum. `deleteExact` erases already-old entries immediately and queues

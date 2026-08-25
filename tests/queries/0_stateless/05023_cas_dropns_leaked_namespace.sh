@@ -57,11 +57,11 @@ DISK_DEF="disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '${SERVER_ROOT_ID}',
+    cas_server_root_id = '${SERVER_ROOT_ID}',
     name = '${DISK_NAME}',
     path = '${POOL_DIR}/',
-    gc_enabled = 1,
-    gc_interval_sec = 100000)"
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 100000)"
 # ^ gc_enabled=1 so `SYSTEM CAS GC RUN` is available; the interval is long enough that no background
 #   round can fire during the test's own window, so the post-drop catalog state read directly below is
 #   stable -- only the manual `GC RUN` loop at the end may advance it.

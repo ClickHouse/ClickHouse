@@ -769,7 +769,7 @@ String readStorageObject(const DB::ObjectStoragePtr & storage, const String & ke
 TEST(CASObjectStorageBackend, PublishBlobStreamingUsesOrdinaryDefaultWriteTransport)
 {
     auto storage = makePublicationRecordingStorage();
-    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native, /*conditional_single_put_cap=*/1);
+    ObjectStorageBackend backend(storage, ObjectStorageBackend::Mode::Native);
     backend.setNativeTokenTypeForTest(TokenType::Generation);
     const String destination = DB::Cas::tests::nativeKeyUnder(storage, "publish/streaming");
 

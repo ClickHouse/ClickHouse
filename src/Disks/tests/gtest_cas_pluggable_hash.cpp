@@ -160,7 +160,7 @@ TEST(CASPluggableHash, CreateOrValidateDefaultsToCityHash128)
 
 /// Phase 3 T4 (spec §5, replaces the Phase 1/2 unconditional-fail-close test of the same shape):
 /// admission of a NEW algo is EXPLICIT OPT-IN -- the default reopen with a non-member algo still
-/// fails closed (BAD_ARGUMENTS), but the message now names `<blob_hash_allow_new>` and the pool
+/// fails closed (`BAD_ARGUMENTS`), but the message names `<cas_blob_hash_allow_new>` and the pool
 /// is truly extensible with the flag set. See `AdmissionIsFlagGated` below for the full flow.
 TEST(CASPluggableHash, CreateOrValidateFailsClosedOnAlgoMismatchWithoutFlag)
 {
@@ -169,10 +169,13 @@ TEST(CASPluggableHash, CreateOrValidateFailsClosedOnAlgoMismatchWithoutFlag)
 
     PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::CityHash128, /*allow_new*/ false, /*allow_mint*/ true);
 
-    expectThrowsCode(DB::ErrorCodes::BAD_ARGUMENTS, [&]
-    {
-        PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::XXH3_128, /*allow_new*/ false);
-    });
+    expectThrowsCodeWithMessage(
+        DB::ErrorCodes::BAD_ARGUMENTS,
+        "<cas_blob_hash_allow_new>1</cas_blob_hash_allow_new>",
+        [&]
+        {
+            PoolMeta::createOrValidate(*backend, layout, 256, BlobHashAlgo::XXH3_128, /*allow_new*/ false);
+        });
 
     /// The pool is untouched by the refused reopen: a subsequent open with the ORIGINAL algo still
     /// succeeds and returns the same pool_id.

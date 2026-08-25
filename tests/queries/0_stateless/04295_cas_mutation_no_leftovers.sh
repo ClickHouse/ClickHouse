@@ -35,11 +35,11 @@ DISK_DEF="disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04295',
+    cas_server_root_id = '04295',
     name = '${DISK_NAME}',
     path = '${POOL_DIR}/',
-    gc_enabled = 1,
-    gc_interval_sec = 1)"
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 1)"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_cas_mut_leftovers SYNC"
 

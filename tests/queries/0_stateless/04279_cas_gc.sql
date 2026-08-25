@@ -19,11 +19,11 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04279',
+    cas_server_root_id = '04279',
     name = '04279_cas_gc',
     path = '04279_cas_gc_pool/',
-    gc_enabled = 1,
-    gc_interval_sec = 1),
+    cas_gc_enabled = 1,
+    cas_gc_interval_sec = 1),
     old_parts_lifetime = 1;
 
 CREATE TABLE t_ref_gc (a UInt64, s String, d Date)

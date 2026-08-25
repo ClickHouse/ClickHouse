@@ -151,7 +151,7 @@ public:
 
     std::unique_ptr<Client> clone() const;
 
-    std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
+    virtual std::unique_ptr<Client> cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const;
 
     Client & operator=(const Client &) = delete;
 

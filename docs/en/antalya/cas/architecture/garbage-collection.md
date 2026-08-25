@@ -28,7 +28,7 @@ There is **no separate `GC` lease object**. The lease lives inside `gc/state` it
 stateDiagram-v2
     [*] --> Reading: GET gc/state
     Reading --> Creating: object absent, never observed before
-    Creating --> Leader: casPut create-if-absent, gc_shards fixed here, once
+    Creating --> Leader: casPut create-if-absent, cas_gc_shards fixed here, once
     Reading --> Renewing: lease owner is me
     Renewing --> Leader: casPut seq+1, guarded by the observed token
     Reading --> Evaluating: foreign owner
@@ -170,7 +170,7 @@ an entry is never un-pended.
 
 ## Sharding {#sharding}
 
-`gc_shards` is fixed at first lease acquire and immutable; decoders reject `0`. A blob routes by
+`cas_gc_shards` is fixed at first lease acquire and immutable; decoders reject `0`. A blob routes by
 the **high** 64 bits of its digest, read big-endian.
 
 The role split is worth internalizing: the **coordinator** — the lease holder — owns discovery,
@@ -189,7 +189,7 @@ a non-fresh pool is `CORRUPTED_DATA`, never silently treated as zero.
 - **Current-life ref logs and snapshots** (phase 17) — a log is deletable only when covered by
   both durable fold coverage and a durable live snapshot; snapshots strictly older than the newest
   observed one are deletable. There is no batch delete; it is `HEAD` plus `deleteExact` per key.
-- **Generations** (phase 13) — keep the last `gc_snapshot_generations_to_keep` (default 3; `0`
+- **Generations** (phase 13) — keep the last `cas_gc_snapshot_generations_to_keep` (default 3; `0`
   means keep everything, for forensics). Pruning is wholesale: `LIST` the generation prefix and
   delete everything under it, including deposed-leader debris and attempt-scoped outcome sets. A
   generation still referenced by the live seal is skipped, but the cursor still advances past it —
@@ -225,7 +225,7 @@ the user-facing configuration surface.
 
 | Setting | Default | Bounds |
 |---|---|---|
-| `gc_meta_pool_size` | 16 | bounded pool for condemn-marker writes |
+| `cas_gc_meta_pool_size` | 16 | bounded pool for condemn-marker writes |
 
 ## Observability {#observability}
 

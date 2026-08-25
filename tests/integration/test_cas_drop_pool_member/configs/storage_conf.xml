@@ -16,8 +16,8 @@
                      second mounter refuses to attach (see PoolMeta ownership check). -->
                 <!-- Background reachability GC enabled, short cadence so the decommissioned member's
                      unreferenced content drains within the test. -->
-                <gc_enabled>1</gc_enabled>
-                <gc_interval_sec>1</gc_interval_sec>
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
             </disk_cas_dpm>
             <!-- Read-only window over the SAME pool for the read-only consumer (fsck). fsck refuses a
                  writable pool; a read-only disk takes no mount lease, so it can inspect the pool the
@@ -30,7 +30,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <readonly>true</readonly>
-                <gc_enabled>0</gc_enabled>
+                <cas_gc_enabled>0</cas_gc_enabled>
             </disk_ca_ro>
         </disks>
         <policies>

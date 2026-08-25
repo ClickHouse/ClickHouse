@@ -145,12 +145,12 @@ and its `_s3_` sibling for the lane configs used in CI):
         <metadata_type>cas</metadata_type>
         <!-- Required, validated identity of the layout subtree this server owns.
              Must be unique per server sharing the pool. -->
-        <server_root_id>replica-1</server_root_id>
+        <cas_server_root_id>replica-1</cas_server_root_id>
         <path>cas_pool/</path>
         <!-- Real server-local scratch dir for the write-buffer spill. -->
-        <scratch_path>cas_scratch/</scratch_path>
-        <gc_enabled>1</gc_enabled>
-        <gc_interval_sec>60</gc_interval_sec>
+        <cas_scratch_path>cas_scratch/</cas_scratch_path>
+        <cas_gc_enabled>1</cas_gc_enabled>
+        <cas_gc_interval_sec>60</cas_gc_interval_sec>
     </cas>
 </disks>
 ```

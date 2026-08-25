@@ -5,7 +5,7 @@
     <storage_configuration>
         <disks>
             <disk_cas_gc_sharded>
-                <server_root_id>node1</server_root_id>
+                <cas_server_root_id>node1</cas_server_root_id>
             </disk_cas_gc_sharded>
         </disks>
     </storage_configuration>

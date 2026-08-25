@@ -19,10 +19,10 @@
                      pool is authoritative on reopen. With gc_shards=2 the coordinator splits the
                      BlobDelta stream into two disjoint buckets (even/odd high-64 hash mod 2) and
                      writes two blob_target shard keys per generation. -->
-                <gc_shards>2</gc_shards>
+                <cas_gc_shards>2</cas_gc_shards>
                 <!-- Fast GC for the integration soak: grace 3s, interval 1s. -->
-                <gc_enabled>1</gc_enabled>
-                <gc_interval_sec>1</gc_interval_sec>
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
             </disk_cas_gc_sharded>
         </disks>
         <policies>

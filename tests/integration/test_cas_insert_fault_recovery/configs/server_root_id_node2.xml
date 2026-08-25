@@ -3,7 +3,7 @@
     <storage_configuration>
         <disks>
             <disk_cas_shared>
-                <server_root_id>node2</server_root_id>
+                <cas_server_root_id>node2</cas_server_root_id>
             </disk_cas_shared>
         </disks>
     </storage_configuration>

@@ -14,7 +14,7 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = cas,
-    server_root_id = '04287',
+    cas_server_root_id = '04287',
     name = '04287_cas_detach',
     path = '04287_cas_detach_pool/');
 

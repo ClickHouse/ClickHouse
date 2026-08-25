@@ -57,7 +57,7 @@ String joinAlgoNames(const std::vector<uint8_t> & algos_used)
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "CAS pool blob_hash mismatch: pool has {{{}}}; config requests {}; set "
-        "<blob_hash_allow_new>1</blob_hash_allow_new> to admit a new algo into this pool",
+        "<cas_blob_hash_allow_new>1</cas_blob_hash_allow_new> to admit a new algo into this pool",
         joinAlgoNames(pool.algos_used), blobHashAlgoName(config_algo));
 }
 

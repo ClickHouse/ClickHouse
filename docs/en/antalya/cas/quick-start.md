@@ -12,7 +12,7 @@ doc_type: 'guide'
 ## The disk config {#disk-config}
 
 A `CAS` disk is an `object_storage` disk with `metadata_type` set to `cas` and an explicit,
-per-server `server_root_id`. This example uses the `local` object-storage backend so it needs
+per-server `cas_server_root_id`. This example uses the `local` object-storage backend so it needs
 nothing beyond a `ClickHouse` binary — no bucket, no credentials:
 
 ```xml
@@ -23,7 +23,7 @@ nothing beyond a `ClickHouse` binary — no bucket, no credentials:
                 <type>object_storage</type>
                 <object_storage_type>local</object_storage_type>
                 <metadata_type>cas</metadata_type>
-                <server_root_id>quickstart-demo</server_root_id>
+                <cas_server_root_id>quickstart-demo</cas_server_root_id>
                 <path>cas_pool/</path>
             </cas>
             <cas_cache>
@@ -50,9 +50,9 @@ The `cas_cache` disk layers a local filesystem cache over `cas`: it absorbs repe
 same blob while `cas` stays the source of truth, and the policy's volume points at the cached disk
 — see [configuration](/antalya/cas/configuration#disk-config) for the sizing note.
 
-`server_root_id` must be unique per server sharing a pool. On a single, non-replicated server a
+`cas_server_root_id` must be unique per server sharing a pool. On a single, non-replicated server a
 literal string, as above, is enough; on a replicated cluster where every replica shares one config,
-`<server_root_id>{replica}</server_root_id>` expands through the same macro substitution an `s3`
+`<cas_server_root_id>{replica}</cas_server_root_id>` expands through the same macro substitution an `s3`
 disk's `endpoint` already uses, giving each replica a distinct subtree from one template.
 
 **S3 endpoint variant.** Swap `object_storage_type` to `s3` and add the usual object-storage
@@ -63,7 +63,7 @@ connection keys; nothing else in this config changes:
     <type>object_storage</type>
     <object_storage_type>s3</object_storage_type>
     <metadata_type>cas</metadata_type>
-    <server_root_id>quickstart-demo</server_root_id>
+    <cas_server_root_id>quickstart-demo</cas_server_root_id>
     <endpoint>https://bucket.s3.amazonaws.com/cas/</endpoint>
     <access_key_id>...</access_key_id>
     <secret_access_key>...</secret_access_key>
@@ -142,4 +142,3 @@ This exact cache-layered configuration and SQL were run against a live server be
 errors, with the two-row `system.cas_mounts` output shown above captured from that run. The
 `INSERT`/`SELECT` output is unaffected by the cache — the one visible difference the cache layer
 adds anywhere on this page is that second `system.cas_mounts` row.
-
