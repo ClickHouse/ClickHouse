@@ -1,4 +1,6 @@
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
@@ -219,44 +221,69 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
-String normalizedText(const IAST & ast)
+/// such as the right hand side of IN
+bool isListOfLiterals(const IAST & ast)
 {
-    String text = ast.formatWithSecretsOneLine();
+    if (!ast.as<ASTExpressionList>() || ast.children.empty())
+        return false;
 
-    PaddedPODArray<UInt8> normalized;
-    normalizeQueryToPODArray(text.data(), text.data() + text.size(), normalized, /*keep_names=*/ false);
-    return String(normalized.begin(), normalized.end());
+    for (const auto & child : ast.children)
+        if (!child->as<ASTLiteral>())
+            return false;
+
+    return true;
 }
 
-void sortExpressionLists(IAST & ast)
+IASTHash hashUnordered(const IAST & ast)
 {
     checkStackSize();
 
+    SipHash hash;
+
+    /// erase the value, same as normalizedQueryHash
+    if (ast.as<ASTLiteral>())
+    {
+        hash.update("\x00", 1);
+        return getSipHash128AsPair(hash);
+    }
+
+    /// collapse it, so that IN (1, 2) and IN (1, 2, 3) match
+    if (isListOfLiterals(ast))
+    {
+        hash.update("\x00", 1);
+        if (ast.children.size() > 1)
+            hash.update("\x00", 1);
+        return getSipHash128AsPair(hash);
+    }
+
+    if (const auto * identifier = ast.as<ASTIdentifier>();
+        identifier && isComplexIdentifier(identifier->full_name.data(), identifier->full_name.data() + identifier->full_name.size()))
+    {
+        hash.update("\x01", 1);
+        return getSipHash128AsPair(hash);
+    }
+
+    ast.updateTreeHashImpl(hash, /*ignore_aliases=*/ true);
+
+    std::vector<IASTHash> child_hashes;
+    child_hashes.reserve(ast.children.size());
     for (const auto & child : ast.children)
-        sortExpressionLists(*child);
+        child_hashes.push_back(hashUnordered(*child));
 
-    if (!ast.as<ASTExpressionList>())
-        return;
+    if (ast.as<ASTExpressionList>())
+        std::sort(child_hashes.begin(), child_hashes.end());
 
-    /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
-    std::vector<std::pair<String, ASTPtr>> sorted;
-    sorted.reserve(ast.children.size());
-    for (const auto & element : ast.children)
-        sorted.emplace_back(normalizedText(*element), element);
+    for (const auto & child_hash : child_hashes)
+        hash.update(child_hash);
 
-    std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-    for (size_t i = 0; i < sorted.size(); ++i)
-        ast.children[i] = sorted[i].second;
+    return getSipHash128AsPair(hash);
 }
 
 }
 
 UInt64 unorderedQueryHash(const IAST & ast)
 {
-    ASTPtr sorted = ast.clone();
-    sortExpressionLists(*sorted);
-    return normalizedQueryHash(normalizedText(*sorted), /*keep_names=*/ false);
+    return CityHash_v1_0_2::Hash128to64(hashUnordered(ast));
 }
 
 }
