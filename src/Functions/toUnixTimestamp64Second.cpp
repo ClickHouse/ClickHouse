@@ -8,7 +8,7 @@ REGISTER_FUNCTION(ToUnixTimestamp64Second)
 {
     /// toUnixTimestamp64Second documentation
     FunctionDocumentation::Description description = R"(
-Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/data-types/int-uint) value with fixed second precision.
+Converts a [`DateTime64`](/reference/data-types/datetime64) to a [`Int64`](/reference/data-types/int-uint) value with fixed second precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note

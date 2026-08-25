@@ -27,29 +27,31 @@ doc_type: 'reference'
 
 يقارن الجدول أدناه بين أنواع بيانات ORC المدعومة وأنواع [البيانات](/ar/reference/data-types/index) المقابلة لها في ClickHouse ضمن استعلامات `INSERT` و`SELECT`.
 
-| نوع بيانات ORC (`INSERT`)             | نوع بيانات ClickHouse                                                               | نوع بيانات ORC (`SELECT`) |
-| ------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
-| `Boolean`                             | [Bool](/ar/reference/data-types/boolean)                                               | `Boolean`                 |
-| `Tinyint`                             | [Int8/UInt8](/ar/reference/data-types/int-uint)/[Enum8](/ar/reference/data-types/enum)    | `Tinyint`                 |
-| `Smallint`                            | [Int16/UInt16](/ar/reference/data-types/int-uint)/[Enum16](/ar/reference/data-types/enum) | `Smallint`                |
-| `Int`                                 | [Int32/UInt32](/ar/reference/data-types/int-uint)                                      | `Int`                     |
-| `Bigint`                              | [Int64/UInt64](/ar/reference/data-types/int-uint)                                      | `Bigint`                  |
-| `Float`                               | [Float32](/ar/reference/data-types/float)                                              | `Float`                   |
-| `Double`                              | [Float64](/ar/reference/data-types/float)                                              | `Double`                  |
-| `Decimal`                             | [Decimal](/ar/reference/data-types/decimal)                                            | `Decimal`                 |
-| `Date`                                | [Date32](/ar/reference/data-types/date32)                                              | `Date`                    |
-| `Timestamp`                           | [DateTime64](/ar/reference/data-types/datetime64)                                      | `Timestamp`               |
-| `String`, `Varchar`, `Binary`          | [String](/ar/reference/data-types/string)                                              | `String`                   |
-| `Char`                                 | [FixedString](/ar/reference/data-types/fixedstring)                                    | `String`                   |
-| `List`                                | [Array](/ar/reference/data-types/array)                                                | `List`                    |
-| `Struct`                              | [Tuple](/ar/reference/data-types/tuple)                                                | `Struct`                  |
-| `Map`                                 | [Map](/ar/reference/data-types/map)                                                    | `Map`                     |
-| `Int`                                 | [IPv4](/ar/reference/data-types/int-uint)                                              | `Int`                     |
-| `Binary`                              | [IPv6](/ar/reference/data-types/ipv6)                                                  | `Binary`                  |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/ar/reference/data-types/int-uint)                     | `Binary`                  |
-| `Binary`                              | [Decimal256](/ar/reference/data-types/decimal)                                         | `Binary`                  |
+| نوع بيانات ORC (`INSERT`)     | نوع بيانات ClickHouse                                                               | نوع بيانات ORC (`SELECT`) |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
+| `Boolean`                     | [Bool](/ar/reference/data-types/boolean)                                               | `Boolean`                 |
+| `Tinyint`                     | [Int8/UInt8](/ar/reference/data-types/int-uint)/[Enum8](/ar/reference/data-types/enum)    | `Tinyint`                 |
+| `Smallint`                    | [Int16/UInt16](/ar/reference/data-types/int-uint)/[Enum16](/ar/reference/data-types/enum) | `Smallint`                |
+| `Int`                         | [Int32/UInt32](/ar/reference/data-types/int-uint)                                      | `Int`                     |
+| `Bigint`                      | [Int64/UInt64](/ar/reference/data-types/int-uint)                                      | `Bigint`                  |
+| `Float`                       | [Float32](/ar/reference/data-types/float)                                              | `Float`                   |
+| `Double`                      | [Float64](/ar/reference/data-types/float)                                              | `Double`                  |
+| `Decimal`                     | [Decimal](/ar/reference/data-types/decimal)                                            | `Decimal`                 |
+| `Date`                        | [Date32](/ar/reference/data-types/date32)                                              | `Date`                    |
+| `Timestamp`                   | [DateTime64](/ar/reference/data-types/datetime64)                                      | `Timestamp`               |
+| `String`, `Varchar`, `Binary` | [String](/ar/reference/data-types/string)                                              | `String`                  |
+| `Char`                        | [FixedString](/ar/reference/data-types/fixedstring)                                    | `String`                  |
+| `List`                        | [Array](/ar/reference/data-types/array)                                                | `List`                    |
+| `Struct`                      | [Tuple](/ar/reference/data-types/tuple)                                                | `Struct`                  |
+| `Map`                         | [Map](/ar/reference/data-types/map)                                                    | `Map`                     |
+| `Int`                         | [IPv4](/ar/reference/data-types/int-uint)                                              | `Int`                     |
+| `Binary`                      | [IPv6](/ar/reference/data-types/ipv6)                                                  | `Binary`                  |
+| `Binary`                      | [Int128/UInt128/Int256/UInt256](/ar/reference/data-types/int-uint)                     | `Binary`                  |
+| `Binary`                      | [Decimal256](/ar/reference/data-types/decimal)                                         | `Binary`                  |
+| `Union`                       | [Variant](/ar/reference/data-types/variant)                                            | `Union`                   |
 
 * الأنواع الأخرى غير مدعومة.
+* يُقرأ عمود `Union` في ORC باعتباره [Variant](/ar/reference/data-types/variant) لأنواع فروع union، ويُكتب عمود `Variant` باعتباره `Union` في ORC لأنواع فروعه. لاحظ أن `Variant` يرتب أنواع فروعه، لذا قد يختلف ترتيب الفروع عن ملف ORC. لا تُدعم أنواع union ذات أنواع الفروع المكررة (مثل `uniontype<int,int>`).
 * يمكن أن تكون أنواع `Array` متداخلة، ويمكن أن تأخذ قيمة من النوع `Nullable` كوسيطة. كما يمكن أيضًا أن تكون الأنواع `Tuple` و`Map` متداخلة.
 * لا يشترط أن تتطابق أنواع بيانات أعمدة جدول ClickHouse مع حقول بيانات ORC المقابلة. عند إدراج البيانات، يفسّر ClickHouse أنواع البيانات وفقًا للجدول أعلاه، ثم [يحوّلها](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) إلى نوع البيانات المحدد لعمود جدول ClickHouse.
 
@@ -112,13 +114,13 @@ FORMAT ORC
   ## إعدادات التنسيق
 </div>
 
-| الإعداد                                                                                                                                                                                | الوصف                                                                            | القيمة الافتراضية |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------- |
-| [`output_format_orc_string_as_string`](/ar/reference/settings/formats#output_format_orc_string_as_string)                                                                                  | استخدام النوع String في ORC بدلًا من Binary لأعمدة String.                       | `true`             |
-| [`output_format_orc_compression_method`](/ar/reference/settings/formats#output_format_orc_compression_method)                                                                             | طريقة الضغط المستخدمة في تنسيق ORC للإخراج. القيمة الافتراضية                    | `zstd`            |
-| [`input_format_orc_case_insensitive_column_matching`](/ar/reference/settings/formats#input_format_orc_case_insensitive_column_matching)                                                    | تجاهل حالة الأحرف عند مطابقة أعمدة ORC مع أعمدة ClickHouse.                      | `false`            |
-| [`input_format_orc_allow_missing_columns`](/ar/reference/settings/formats#input_format_orc_allow_missing_columns)                                                                          | السماح بالأعمدة المفقودة أثناء قراءة بيانات ORC.                                 | `true`             |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ar/reference/settings/formats#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)      | السماح بتخطي الأعمدة ذات الأنواع غير المدعومة أثناء استنتاج المخطط لتنسيق ORC.   | `false`            |
+| الإعداد                                                                                                                                                                                         | الوصف                                                                          | القيمة الافتراضية |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------- |
+| [`output_format_orc_string_as_string`](/ar/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                            | استخدام النوع String في ORC بدلًا من Binary لأعمدة String.                     | `true`            |
+| [`output_format_orc_compression_method`](/ar/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                        | طريقة الضغط المستخدمة في تنسيق ORC للإخراج. القيمة الافتراضية                  | `zstd`            |
+| [`input_format_orc_case_insensitive_column_matching`](/ar/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                               | تجاهل حالة الأحرف عند مطابقة أعمدة ORC مع أعمدة ClickHouse.                    | `false`           |
+| [`input_format_orc_allow_missing_columns`](/ar/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                     | السماح بالأعمدة المفقودة أثناء قراءة بيانات ORC.                               | `true`            |
+| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ar/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference) | السماح بتخطي الأعمدة ذات الأنواع غير المدعومة أثناء استنتاج المخطط لتنسيق ORC. | `false`           |
 
 لتبادل البيانات مع Hadoop، يمكنك استخدام [محرك جدول HDFS](/ar/reference/engines/table-engines/integrations/hdfs).
 

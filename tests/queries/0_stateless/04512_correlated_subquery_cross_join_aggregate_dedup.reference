@@ -1,0 +1,58 @@
+-- substitute=0, no cross join --
+0	1
+1	\N
+2	\N
+-- substitute=0, cross join (count must match above) --
+0	0	1
+0	1	1
+0	2	1
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- substitute=0, cross join, sum --
+0	0	100
+0	1	100
+0	2	100
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- substitute=1, cross join (count must match) --
+0	0	1
+0	1	1
+0	2	1
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- exists must not be affected by duplicates --
+0	0	1
+0	1	1
+1	0	0
+1	1	0
+2	0	0
+2	1	0
+-- internal distinct must ignore user distinct limits --
+0	1
+1	1
+2	1
+-- duplicate correlated values in the outer table, no join, subquery GROUP BY --
+10	1
+10	1
+-- same shape without GROUP BY: a plain scalar SUM inflates too --
+10	4000
+10	4000
+-- WHERE EXISTS with an aggregate body (SEMI join-back) --
+1	10
+2	10
+-- WHERE NOT EXISTS with an aggregate body (ANTI join-back) --
+-- duplicate-insensitive aggregates are unchanged --
+10	1000	3000	2
+10	1000	3000	2
