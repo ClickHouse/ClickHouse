@@ -219,7 +219,7 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
-    /// Serialized and preserved by `clone()`, unlike the runtime info below: a receiver handed an
+    /// Serialized and preserved by `clone`, unlike the runtime info below: a receiver handed an
     /// already-expanded plan fragment cannot re-derive it, because no view read runs there.
     bool join_reorder_boundary = false;
 

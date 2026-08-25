@@ -1,11 +1,13 @@
 -- Regression test for a LOGICAL_ERROR ("Left and right columns have same names")
--- in the join order optimizer (chooseJoinOrder -> JoinExpressionActions). A comma join
--- over a multi-table view is flattened by the optimizer, and with
--- query_plan_merge_expression_into_join = 1 the non-passthrough expression step above the
--- view's inner join is merged into it, exposing one more relation than the pre-reorder
--- overlap guard used to account for. That extra relation duplicates a qualified column name
--- (__table3.c1), so reconstructing the reordered join hit a LOGICAL_ERROR. The guard must
--- flatten the same way the optimizer does and skip reordering when names overlap.
+-- in the join order optimizer (`chooseJoinOrder` -> `JoinExpressionActions`). The optimizer
+-- used to flatten a comma join over a multi-table view into the enclosing join graph, and with
+-- `query_plan_merge_expression_into_join = 1` the non-passthrough expression step above the
+-- view's inner join was merged into it, exposing one more relation than the pre-reorder
+-- overlap guard accounted for. That extra relation duplicated a qualified column name
+-- (`__table3.c1`), so reconstructing the reordered join hit a LOGICAL_ERROR. A view is now kept
+-- whole, so that shape cannot arise from a view at all. The overlap guard still mirrors the
+-- builder's flattening and skips reordering when names overlap, which is what covers the
+-- non-view relations that can also collide.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=3d31d8f59df88ee56b9b739f2eedb1b7a6acc6a4&name_0=NightlySQLancer&name_1=SQLancerPP
 
 DROP TABLE IF EXISTS t0_04516;

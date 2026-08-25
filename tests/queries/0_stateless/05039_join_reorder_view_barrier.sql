@@ -149,10 +149,11 @@ SELECT count() FROM (
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
 -- Making the view opaque must not stop the enclosing join from being reordered: the relations beside the
--- view are still costed. Require all three of them in ONE join label, because the traversal continues
--- into children and a label produced by an independently reordered descendant would otherwise satisfy
--- an arm that only asked for one of them. Paired with a reordering-off control, so it cannot pass on a
--- query the optimizer skipped entirely.
+-- view are still costed, so `b` and `c` carry a bracketed cost annotation while the view appears as its
+-- bare alias, being opaque and therefore uncosted. Require both costed relations and that alias in ONE
+-- join label, because the traversal continues into children and a label produced by an independently
+-- reordered descendant would otherwise satisfy an arm that only asked for one of them. Paired with a
+-- reordering-off control, so it cannot pass on a query the optimizer skipped entirely.
 SELECT '-- relations beside an opaque view are still reordered';
 SELECT count() > 0 FROM (
     EXPLAIN SELECT count()
@@ -216,7 +217,8 @@ SELECT count() FROM (
 -- shard takes the local-plan path instead. Measured by instrumenting both functions and running this
 -- shape, `remote()` over this server's own port, a `remote()` that ships the whole view join, and two
 -- joined remote legs: zero calls in every one, while a probe at `clone` in the same build fired. An
--- arm here would pass whatever the `flags` byte did, so none is shipped.
+-- arm here would pass whatever the `flags` byte did, so none is shipped; the round trip is asserted
+-- in `gtest_join_step_logical_reorder_boundary_roundtrip.cpp` instead.
 DROP VIEW v_shadow_05039;
 DROP VIEW v_inline_05039;
 DROP VIEW v_merge_05039;
