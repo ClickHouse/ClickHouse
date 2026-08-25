@@ -19,6 +19,8 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Common/typeid_cast.h>
 
+#include <utility>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -250,6 +252,16 @@ DistributedQueryPlan wireSymmetric(size_t num_build_tasks, size_t num_receive_ta
 /// computes the output header by executing the DAG on an empty block, so every consumer-fragment
 /// construction and `wireRuntimeFilterExchangeTopology` call must run with the test thread attached
 /// to a query context. Production always has one.
+/// Frees the `current_thread` slot for the duration of a fixture: another suite in the binary can
+/// leave it set for the process lifetime (e.g. via `MainThreadStatus`), and constructing a
+/// `ThreadStatus` over an occupied slot asserts. Declared before `thread_status`, so the slot is
+/// cleared before it is constructed and the previous value is restored after it is destroyed.
+struct CurrentThreadSlot
+{
+    ThreadStatus * previous = std::exchange(current_thread, nullptr);
+    ~CurrentThreadSlot() { current_thread = previous; }
+};
+
 class RuntimeFilterExchangeWiring : public ::testing::Test
 {
 protected:
@@ -261,6 +273,7 @@ protected:
         query_scope = QueryScope::create(query_context);
     }
 
+    CurrentThreadSlot current_thread_slot;
     ThreadStatus thread_status;
     ContextMutablePtr query_context;
     QueryScope query_scope;

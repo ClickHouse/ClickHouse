@@ -19,6 +19,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <utility>
+
 #include <gtest/gtest.h>
 
 #include <condition_variable>
@@ -654,7 +656,13 @@ TEST(MergeRuntimeFiltersTransform, PayloadRetentionIndependentOfInputCount)
     /// serialized payloads: with equally sized bloom states, the peak allocation of the merge
     /// must not grow with the input count. Retaining (or copying) the payloads would add
     /// (num_inputs x payload) to the peak; the margin below is a few payloads.
-    MainThreadStatus::getInstance();
+    ///
+    /// The measurement reads the current thread's memory tracker. Take the `current_thread` slot
+    /// for this test only; the process-lifetime `MainThreadStatus` would leave it set forever, and
+    /// any later fixture constructing its own `ThreadStatus` would assert on the occupied slot.
+    ThreadStatus * previous_thread_status = std::exchange(current_thread, nullptr);
+    SCOPE_EXIT({ current_thread = previous_thread_status; });
+    ThreadStatus scoped_thread_status;
 
     RuntimeFilterGeometry geometry = testGeometry();
     geometry.bloom_filter_bytes = 2 * 1024 * 1024;
