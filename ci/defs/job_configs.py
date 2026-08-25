@@ -1801,6 +1801,10 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
                 "./tests/fuzz/update_dict.sh",
+                # `update_dict.sh` shells out to the source-derived extractor for
+                # the source-vs-binary coverage check, so a change confined to the
+                # extractor has to re-run this job rather than take a cache hit.
+                "./tests/fuzz/generate_source_dict.sh",
                 "./tests/fuzz/dictionaries/old.dict",
             ],
         ),

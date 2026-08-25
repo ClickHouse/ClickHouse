@@ -213,13 +213,16 @@ class TestConsumerRequiresTheReleaseBinary:
         assert required <= provided, sorted(required - provided)
 
     def test_dictionary_inputs_are_in_the_consumer_digest(self):
-        # The job runs update_dict.sh against the curated dictionary, so a
-        # change to either has to re-run it rather than take a cache hit.
+        # The job runs update_dict.sh against the curated dictionary, and
+        # update_dict.sh in turn runs generate_source_dict.sh for the
+        # source-vs-binary coverage check, so a change to any of the three has
+        # to re-run it rather than take a cache hit.
         include_paths = JobConfigs.libfuzzer_job.digest_config.include_paths
         missing = [
             path
             for path in (
                 "./tests/fuzz/update_dict.sh",
+                "./tests/fuzz/generate_source_dict.sh",
                 "./tests/fuzz/dictionaries/old.dict",
             )
             if path not in include_paths
