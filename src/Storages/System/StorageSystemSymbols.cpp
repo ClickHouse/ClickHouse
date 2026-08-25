@@ -157,8 +157,6 @@ Pipe StorageSystemSymbols::read(
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSymbols) }
 
-#endif
-
 namespace DB
 {
 
@@ -217,3 +215,5 @@ address_end:      219235708 -- 219.24 million
 )DOCS_MD")
 
 }
+
+#endif
