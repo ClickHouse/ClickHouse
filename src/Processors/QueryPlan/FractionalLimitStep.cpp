@@ -85,7 +85,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
@@ -104,7 +104,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 
     SortDescription description;
     if (with_ties)
-        deserializeSortDescription(description, ctx.in);
+        deserializeSortDescription(description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<FractionalLimitStep>(
         ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));

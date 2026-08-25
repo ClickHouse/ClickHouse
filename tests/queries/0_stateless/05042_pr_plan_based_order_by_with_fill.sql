@@ -4,10 +4,9 @@
 --
 -- The sort is shipped with the fragment, and its description used to be rejected by
 -- `serializeSortDescription`, so every `WITH FILL` query failed with
--- "WITH FILL is not supported in serialized sort description". The description travels now, carrying the
--- `WITH FILL` flag but not its bounds: `FillingStep` is not serializable and is added only on the
--- finalizing node, so a replica just returns its rows in order and the initiator fills the gaps above
--- the merge.
+-- "WITH FILL is not supported in serialized sort description". The description travels in full now,
+-- bounds included. The fill itself still runs on the initiator: `FillingStep` is added only on the
+-- finalizing node, above the merge, so a replica just returns its rows in order.
 -- See https://github.com/ClickHouse/ClickHouse/issues/115527
 
 DROP TABLE IF EXISTS t_pr_with_fill;
@@ -68,7 +67,8 @@ SELECT a, b FROM t_pr_with_fill ORDER BY a WITH FILL STEP 2 INTERPOLATE (b AS b)
 
 -- `ORDER BY count() WITH FILL LIMIT n` over a `GROUP BY` is the shape `tryPushBucketTopKIntoAggregation`
 -- refuses when the sort description carries `with_fill`, so the flag has to survive the wire for the
--- fragment's own re-optimization to see it.
+-- fragment's own re-optimization to see it (the fragment's aggregation is not final, so the optimization
+-- would not fire either way - this pins the result, not the plan).
 -- The four groups have distinct sizes (10, 20, 30, 40), so the order of the top-N is not tie-dependent.
 SELECT '--- GROUP BY, ORDER BY count() WITH FILL, local ---';
 SELECT k, c FROM (
@@ -79,6 +79,23 @@ SELECT '--- GROUP BY, ORDER BY count() WITH FILL, plan_based = 1 ---';
 SELECT k, c FROM (
     SELECT multiIf(a < 40, 0, a < 120, 1, a < 240, 2, 3) AS k, count() AS c
     FROM t_pr_with_fill GROUP BY k ORDER BY c WITH FILL LIMIT 8);
+
+-- The build side of a broadcast join is executed in full by every replica, so a `WITH FILL` subquery
+-- there travels inside the fragment (and has to be clonable and serializable). Each replica fills the
+-- same complete build side, so the join result must not change.
+DROP TABLE IF EXISTS t_pr_with_fill_probe;
+CREATE TABLE t_pr_with_fill_probe (a UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_pr_with_fill_probe SELECT number FROM numbers(400);
+
+SELECT '--- join over a filled build side, local ---';
+SELECT count(), sum(p.a) FROM t_pr_with_fill_probe AS p
+ALL INNER JOIN (SELECT a FROM t_pr_with_fill ORDER BY a WITH FILL STEP 2) AS f ON p.a = f.a
+SETTINGS enable_parallel_replicas = 0;
+SELECT '--- join over a filled build side, plan_based = 1 ---';
+SELECT count(), sum(p.a) FROM t_pr_with_fill_probe AS p
+ALL INNER JOIN (SELECT a FROM t_pr_with_fill ORDER BY a WITH FILL STEP 2) AS f ON p.a = f.a;
+
+DROP TABLE t_pr_with_fill_probe;
 
 -- The sort really is shipped now - the query is not silently kept local.
 SELECT '--- explain: has_remote_read, sort_shipped ---';

@@ -9,6 +9,10 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/IntervalKind.h>
+#include <Core/Field.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -25,6 +29,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
 {
@@ -280,7 +289,75 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
     return json_array;
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out)
+namespace
+{
+
+/// The `WITH FILL` bounds of one column. `step_func`/`staleness_step_func` are not written: they are
+/// rebuilt from the bounds and the column type by `FillingTransform`, which is where they are set.
+void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuffer & out)
+{
+    UInt8 flags = 0;
+    if (fill.fill_from_type)
+        flags |= 1;
+    if (fill.fill_to_type)
+        flags |= 2;
+    if (fill.step_kind)
+        flags |= 4;
+    if (fill.staleness_kind)
+        flags |= 8;
+
+    writeIntBinary(flags, out);
+
+    writeFieldBinary(fill.fill_from, out);
+    if (fill.fill_from_type)
+        encodeDataType(fill.fill_from_type, out);
+
+    writeFieldBinary(fill.fill_to, out);
+    if (fill.fill_to_type)
+        encodeDataType(fill.fill_to_type, out);
+
+    writeFieldBinary(fill.fill_step, out);
+    if (fill.step_kind)
+        writeIntBinary(static_cast<UInt8>(fill.step_kind->kind), out);
+
+    writeFieldBinary(fill.fill_staleness, out);
+    if (fill.staleness_kind)
+        writeIntBinary(static_cast<UInt8>(fill.staleness_kind->kind), out);
+}
+
+void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer & in, size_t max_type_complexity)
+{
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+
+    fill.fill_from = readFieldBinary(in);
+    if (flags & 1)
+        fill.fill_from_type = decodeDataType(in, max_type_complexity);
+
+    fill.fill_to = readFieldBinary(in);
+    if (flags & 2)
+        fill.fill_to_type = decodeDataType(in, max_type_complexity);
+
+    fill.fill_step = readFieldBinary(in);
+    if (flags & 4)
+    {
+        UInt8 kind = 0;
+        readIntBinary(kind, in);
+        fill.step_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind));
+    }
+
+    fill.fill_staleness = readFieldBinary(in);
+    if (flags & 8)
+    {
+        UInt8 kind = 0;
+        readIntBinary(kind, in);
+        fill.staleness_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind));
+    }
+}
+
+}
+
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
@@ -294,11 +371,6 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
             flags |= 2;
         if (desc.collator)
             flags |= 4;
-        /// Only the flag travels, not the fill bounds: `WITH FILL` is applied by `FillingStep`, which is not
-        /// serializable and is added only on the finalizing node, so a fragment executed by a remote node never
-        /// fills - it only has to return the rows in the right order, and `with_fill` does not affect ordering.
-        /// The flag still has to survive, because the remote node re-optimizes the deserialized plan and
-        /// `tryPushBucketTopKIntoAggregation` refuses a description with `with_fill`.
         if (desc.with_fill)
             flags |= 8;
 
@@ -306,10 +378,23 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
 
         if (desc.collator)
             writeStringBinary(desc.collator->getLocale(), out);
+
+        if (desc.with_fill)
+        {
+            if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Serialization of a WITH FILL sort description requires query plan serialization version >= {}; "
+                    "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
+
+            /// The alias is how `FillingTransform` finds the column of an aliased `ORDER BY` element.
+            writeStringBinary(desc.alias, out);
+            serializeFillColumnDescription(desc.fill_description, out);
+        }
     }
 }
 
-void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in)
+void deserializeSortDescription(
+    SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity)
 {
     size_t size = 0;
     readVarUInt(size, in);
@@ -331,9 +416,17 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
                 desc.collator = std::make_shared<Collator>(collator_locale);
         }
 
-        /// `fill_description` stays empty - the writer sends no bounds, and nothing in a deserialized fragment
-        /// builds a `FillingTransform` from them. The flag is here for the plan optimizations that consult it.
         desc.with_fill = (flags & 8);
+        if (desc.with_fill)
+        {
+            if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Deserialization of a WITH FILL sort description requires query plan serialization version >= {}; "
+                    "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
+
+            readStringBinary(desc.alias, in);
+            deserializeFillColumnDescription(desc.fill_description, in, max_type_complexity);
+        }
     }
 }
 

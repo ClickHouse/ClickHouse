@@ -20,6 +20,13 @@ struct InterpolateDescription
 {
     explicit InterpolateDescription(ActionsDAG actions, const Aliases & aliases);
 
+    /// Rebuilds a description whose derived members are already known (deserialization): the aliases
+    /// that mapped a result column to its own name are gone by then, so they cannot be reapplied.
+    InterpolateDescription(
+        ActionsDAG actions,
+        UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map_,
+        VectorWithMemoryTracking<std::string> result_columns_order_);
+
     ActionsDAG actions;
 
     UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}

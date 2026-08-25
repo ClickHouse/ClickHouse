@@ -26,6 +26,12 @@ public:
 
     const SortDescription & getSortDescription() const override { return sort_description; }
 
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    QueryPlanStepPtr clone() const override;
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
 private:
     void updateOutputHeader() override;
 

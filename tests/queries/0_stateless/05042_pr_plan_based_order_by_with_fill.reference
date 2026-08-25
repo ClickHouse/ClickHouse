@@ -102,5 +102,9 @@
 0	15
 0	16
 0	17
+--- join over a filled build side, local ---
+199	39402
+--- join over a filled build side, plan_based = 1 ---
+199	39402
 --- explain: has_remote_read, sort_shipped ---
 1	1
