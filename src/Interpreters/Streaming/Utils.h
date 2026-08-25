@@ -16,8 +16,8 @@ class NamesAndTypesList;
 
 /// Whether a partition stayed inactive longer than the watermark idle timeout (never expires when the timeout is unset).
 bool isIdleExpired(
-    const std::chrono::system_clock::time_point & now,
-    const std::chrono::system_clock::time_point & last_active,
+    const std::chrono::steady_clock::time_point & now,
+    const std::chrono::steady_clock::time_point & last_active,
     const WatermarkSettingsPtr & watermark);
 
 /// Resolves the watermark expression against the header columns and builds an executable DAG for it.
