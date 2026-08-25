@@ -51,6 +51,7 @@
 #include <Common/DateLUT.h>
 #include <Common/Jemalloc.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -3905,6 +3906,8 @@ bool MutateTask::prepare()
             && !ctx->metadata_snapshot->hasAnyGroupByTTL();
 
         std::optional<time_t> delta;
+        time_t shifted_min = 0;
+        time_t shifted_max = 0;
         String new_ttl_expression;
         String new_ttl_timezone;
         if (part_has_only_rows_ttl && !part_lags_conversions && table_has_only_rows_ttl)
@@ -3941,6 +3944,18 @@ bool MutateTask::prepare()
                 delta.reset();
             }
 
+            /// The shifted bounds are used below both for the expiry decisions and as the part's new
+            /// stored bounds, so a shift whose result does not fit in `time_t` cannot be applied at
+            /// all - a new TTL with an absurdly large interval makes the addition overflow (which is
+            /// undefined behavior for signed integers, so it must be checked, not detected after the
+            /// fact). Fall back to the regular rewrite, which evaluates the new expression as is.
+            if (delta
+                && (common::addOverflow(source_ttl_infos.table_ttl.min, *delta, shifted_min)
+                    || common::addOverflow(source_ttl_infos.table_ttl.max, *delta, shifted_max)))
+            {
+                delta.reset();
+            }
+
             /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery:
             /// `ITTLAlgorithm::isTTLExpired` never expires it and `MergeTreeDataPartTTLInfo::update`
             /// excludes it from `min`. A part whose rows computed to it never records a fingerprint
@@ -3948,9 +3963,7 @@ bool MutateTask::prepare()
             /// row timestamp is non-zero and lies in `[min, max]`. It remains to reject a shift that
             /// could move some row's timestamp ONTO zero - silently flipping it from "expired long ago"
             /// to "never expires" - which is possible only when the shifted range covers zero.
-            if (delta
-                && source_ttl_infos.table_ttl.min + *delta <= 0
-                && source_ttl_infos.table_ttl.max + *delta >= 0)
+            if (delta && shifted_min <= 0 && shifted_max >= 0)
             {
                 delta.reset();
             }
@@ -3964,7 +3977,7 @@ bool MutateTask::prepare()
         const bool recalculate_only = (*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 
         /// The whole part is expired under the new TTL: replace it with an empty part.
-        if (delta && !recalculate_only && source_ttl_infos.table_ttl.max + *delta <= ctx->time_of_mutation)
+        if (delta && !recalculate_only && shifted_max <= ctx->time_of_mutation)
         {
             LOG_TRACE(ctx->log, "Part {} is fully expired after MATERIALIZE TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -3992,7 +4005,7 @@ bool MutateTask::prepare()
         /// modified after it is written, so it takes the regular rewrite below as well.
         if (delta
             && (recalculate_only
-                || (source_ttl_infos.table_ttl.min + *delta > ctx->time_of_mutation
+                || (shifted_min > ctx->time_of_mutation
                     && source_ttl_infos.table_ttl.max > ctx->time_of_mutation))
             && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
@@ -4001,8 +4014,8 @@ bool MutateTask::prepare()
 
             auto [part, lock] = clone_part();
 
-            part->ttl_infos.table_ttl.min += *delta;
-            part->ttl_infos.table_ttl.max += *delta;
+            part->ttl_infos.table_ttl.min = shifted_min;
+            part->ttl_infos.table_ttl.max = shifted_max;
             /// The rows TTL is the only TTL info of this part (checked above), so the aggregate bounds
             /// are exactly the shifted rows-TTL bounds; recompute them instead of shifting blindly.
             part->ttl_infos.part_min_ttl = part->ttl_infos.table_ttl.min;
