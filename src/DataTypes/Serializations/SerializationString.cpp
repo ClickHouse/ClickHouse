@@ -657,29 +657,70 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+/// The sizes come from a separate stream, so they are not implicitly bounded by the amount
+/// of data that follows them, and their sum can overflow the accumulated offset.
+void accumulateCheckedStringSize(UInt64 & accumulated, UInt64 size)
+{
+    if (unlikely(size > SerializationString::MAX_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}.",
+            size,
+            SerializationString::MAX_STRING_SIZE);
+
+    if (unlikely(common::addOverflow(accumulated, size, accumulated)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserialization of string sizes leads to an overflow of offsets");
+}
+
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-    IColumn::Offset prev_offset = offsets.empty() ? 0 : offsets.back();
+    const size_t old_offsets_size = offsets.size();
+    const IColumn::Offset initial_offset = offsets.empty() ? 0 : offsets.back();
+    IColumn::Offset prev_offset = initial_offset;
 
     offsets.reserve(offsets.size() + rows);
 
-    for (size_t i = 0; i < rows; ++i)
+    /// The sizes come from a separate stream, so they are not implicitly bounded by the amount of data
+    /// that follows them, and their sum can overflow the offsets. Checking every size individually was
+    /// measured to slow reading of short strings down by tens of percent, so the accumulation loop instead
+    /// OR-folds the sizes into one value that bounds each of them from above (the OR contains every bit of
+    /// every size, so it is not less than any of them). One chunk of at most `2^63 / MAX_STRING_SIZE` sizes
+    /// that pass that bound cannot wrap `UInt64` when it is added to an offset below `2^63`, so checking
+    /// once per chunk is enough to keep the offsets exact.
+    constexpr size_t chunk_rows = (1ULL << 63) / SerializationString::MAX_STRING_SIZE;
+    static_assert(chunk_rows * SerializationString::MAX_STRING_SIZE == (1ULL << 63));
+
+    bool suspicious = prev_offset >= (1ULL << 63);
+    for (size_t chunk_begin = 0; !suspicious && chunk_begin < rows; chunk_begin += chunk_rows)
     {
-        /// The sizes come from a separate stream, so they are not implicitly bounded by the amount
-        /// of data that follows them, and their sum can overflow the offsets.
-        const UInt64 size = sizes[start + i];
-        if (unlikely(size > SerializationString::MAX_STRING_SIZE))
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Too large string size: {}. The maximum is: {}.",
-                size,
-                SerializationString::MAX_STRING_SIZE);
+        const size_t chunk_end = std::min(rows, chunk_begin + chunk_rows);
 
-        if (unlikely(common::addOverflow(prev_offset, static_cast<IColumn::Offset>(size), prev_offset)))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserialization of string sizes leads to an overflow of offsets");
+        UInt64 or_of_sizes = 0;
+        for (size_t i = chunk_begin; i < chunk_end; ++i)
+        {
+            const UInt64 size = sizes[start + i];
+            or_of_sizes |= size;
+            prev_offset += size;
+            offsets.push_back(prev_offset);
+        }
 
-        offsets.push_back(prev_offset);
+        /// The OR is above `MAX_STRING_SIZE` if any size is above it, but it can also combine the bits of
+        /// legitimate sizes into a value above the limit, so it does not report an error by itself and only
+        /// routes to the exact validation below.
+        suspicious = or_of_sizes > SerializationString::MAX_STRING_SIZE || prev_offset >= (1ULL << 63);
+    }
+
+    if (unlikely(suspicious))
+    {
+        /// Roll the unchecked accumulation back and redo it with the exact per-size validation.
+        offsets.resize(old_offsets_size);
+        prev_offset = initial_offset;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            accumulateCheckedStringSize(prev_offset, sizes[start + i]);
+            offsets.push_back(prev_offset);
+        }
     }
 }
 
@@ -872,9 +913,11 @@ std::pair<size_t, size_t> SerializationString::deserializeStringOffsetsAndGetDat
 
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     const size_t sizes_begin = sizes_data.size() - num_read_rows;
-    size_t bytes_to_skip = 0;
+    /// The skipped prefix has to be validated too: an unchecked sum can wrap around and skip
+    /// a wrong number of bytes instead of rejecting the corrupted sizes stream.
+    UInt64 bytes_to_skip = 0;
     for (size_t i = sizes_begin; i != sizes_begin + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
+        accumulateCheckedStringSize(bytes_to_skip, sizes_data[i]);
 
     appendStringSizesToColumnStringOffsets(column, sizes_data.data(), sizes_begin + rows_offset, num_read_rows - rows_offset);
     return std::make_pair(bytes_to_skip, offsets.back() - prev_last_offset);

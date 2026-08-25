@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 
@@ -17,6 +18,7 @@ namespace DB
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
         extern const int CANNOT_READ_ALL_DATA;
+        extern const int TOO_LARGE_STRING_SIZE;
     }
 }
 
@@ -284,4 +286,62 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
     }
+}
+
+namespace
+{
+
+/// A deserialization attempt over a hand-crafted (corrupted) sizes stream. The values in the sizes stream
+/// come straight from the data, so nothing bounds them implicitly; the deserialization has to reject the
+/// ones that would overflow the offsets or the skip distance instead of wrapping around.
+void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t rows_offset, size_t limit)
+{
+    WriteBufferFromOwnString sizes_out;
+    for (UInt64 size : sizes_values)
+        writeBinaryLittleEndian(size, sizes_out);
+
+    /// The corrupted size must be rejected before any data is read, so the content of the data stream is irrelevant.
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ReadBufferFromString data_in(std::string(64, 'x'));
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = true;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, limit, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupted sizes stream (rows_offset=" << rows_offset << ")";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+}
+
+}
+
+/// A size above MAX_STRING_SIZE in the sizes stream would overflow the offsets when accumulated
+/// (e.g. sizes close to 2^64 wrap the offset around and the spans computed from the offsets then point
+/// outside the data). It has to be rejected on the rows appended to the column...
+TEST(StringSerialization, WithSizeStreamHugeSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+    expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 0, 3);
+    expectSizesStreamRejected({SerializationString::MAX_STRING_SIZE + 1}, 0, 1);
+}
+
+/// ...and also on the skipped prefix of a seeked read (rows_offset > 0), where an unchecked sum such as
+/// UINT64_MAX + 10 would wrap `bytes_to_skip` to 9 and make the read start from a wrong byte boundary
+/// in the data stream instead of rejecting the corrupted part.
+TEST(StringSerialization, WithSizeStreamHugeSkippedSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), 10, 5}, 2, 1);
+    expectSizesStreamRejected({SerializationString::MAX_STRING_SIZE + 1, 10, 5}, 2, 1);
 }
