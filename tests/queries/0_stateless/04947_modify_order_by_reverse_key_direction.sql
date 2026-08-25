@@ -1,0 +1,54 @@
+-- ALTER MODIFY ORDER BY must not drop the DESC direction of an existing sorting key column:
+-- the parts on disk stay physically sorted the old way, so primary key index analysis would
+-- prune the wrong marks and the table would return wrong results.
+
+DROP TABLE IF EXISTS t_desc_key;
+DROP TABLE IF EXISTS t_asc_key;
+DROP TABLE IF EXISTS t_desc_trailing;
+DROP TABLE IF EXISTS t_attach_src;
+
+-- A descending key column cannot lose its direction while parts exist.
+CREATE TABLE t_desc_key (a UInt64, v String) ENGINE = MergeTree PRIMARY KEY a ORDER BY a DESC
+SETTINGS index_granularity = 128;
+INSERT INTO t_desc_key SELECT number, 'foo' FROM numbers(1000);
+
+ALTER TABLE t_desc_key ADD COLUMN b UInt64, MODIFY ORDER BY (a, b); -- { serverError BAD_ARGUMENTS }
+
+-- The refusal keeps the table readable and the index correct.
+SELECT sum(a) FROM t_desc_key WHERE a >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT sum(a) FROM t_desc_key WHERE a >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_desc_key WHERE 500 <=> a SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_desc_key WHERE 9223372036854775807 <=> a SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+-- A descending column that is not first is equally unsafe.
+CREATE TABLE t_desc_trailing (a UInt64, b UInt64, v String) ENGINE = MergeTree
+PRIMARY KEY (a, b) ORDER BY (a, b DESC) SETTINGS index_granularity = 128;
+INSERT INTO t_desc_trailing SELECT 1, number, 'foo' FROM numbers(1000);
+
+ALTER TABLE t_desc_trailing ADD COLUMN c UInt64, MODIFY ORDER BY (a, b, c); -- { serverError BAD_ARGUMENTS }
+
+SELECT sum(b) FROM t_desc_trailing WHERE b >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+-- An all-ascending key is untouched: extending it stays allowed and keeps reading correctly.
+CREATE TABLE t_asc_key (a UInt64, v String) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 128;
+INSERT INTO t_asc_key SELECT number, 'foo' FROM numbers(1000);
+
+ALTER TABLE t_asc_key ADD COLUMN b UInt64, MODIFY ORDER BY (a, b);
+
+SELECT sum(a) FROM t_asc_key WHERE a >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+-- Validations that run after this check are still reached.
+ALTER TABLE t_desc_key MODIFY COLUMN a String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+-- A direction mismatch between two tables is already refused by ATTACH PARTITION.
+CREATE TABLE t_attach_src (a UInt64, v String) ENGINE = MergeTree PRIMARY KEY a ORDER BY a
+SETTINGS index_granularity = 128;
+INSERT INTO t_attach_src SELECT number, 'foo' FROM numbers(128);
+
+ALTER TABLE t_desc_key ATTACH PARTITION tuple() FROM t_attach_src; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE t_desc_key;
+DROP TABLE t_asc_key;
+DROP TABLE t_desc_trailing;
+DROP TABLE t_attach_src;
