@@ -66,6 +66,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -1146,6 +1147,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     {
         settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]
+            = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
@@ -1350,7 +1353,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
