@@ -15,6 +15,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -32,6 +33,8 @@
 #include <Common/quoteString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
@@ -54,12 +57,17 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
-    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
 namespace ErrorCodes
@@ -247,6 +255,41 @@ void StorageTimeSeries::updateRecentSamplesHorizon(Int64 timestamp)
 }
 
 
+void StorageTimeSeries::replaceRecentSamplesHorizon(std::optional<Int64> timestamp)
+{
+    std::lock_guard lock(recent_samples_horizon_mutex);
+    recent_samples_horizon = timestamp;
+}
+
+
+void StorageTimeSeries::stripLegacyRecentSamplesTableTTL(ContextPtr local_context)
+{
+    auto recent_samples = getTargetTable(ViewTarget::RecentSamples, local_context);
+    auto metadata = recent_samples->getInMemoryMetadataPtr(local_context, false);
+    if (!metadata->hasAnyTableTTL())
+        return;
+
+    AlterCommands commands;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::REMOVE_TTL;
+    AlterCommand command;
+    command.ast = ast;
+    command.type = AlterCommand::REMOVE_TTL;
+    commands.push_back(std::move(command));
+
+    auto alter_lock = recent_samples->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    commands.validate(recent_samples, local_context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(recent_samples.get()))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    commands.prepare(*metadata, share_nested);
+    recent_samples->checkAlterIsPossible(commands, local_context);
+    recent_samples->alter(commands, local_context, alter_lock);
+}
+
+
 void StorageTimeSeries::scheduleRecentSamplesMaintenance()
 {
     if (recent_samples_maintenance_task)
@@ -256,11 +299,23 @@ void StorageTimeSeries::scheduleRecentSamplesMaintenance()
 
 void StorageTimeSeries::startup()
 {
-    if (recent_samples_maintenance_task)
+    if (!recent_samples_maintenance_task)
+        return;
+
+    if (isInnerTable(ViewTarget::RecentSamples))
     {
-        recent_samples_maintenance_task->activate();
-        recent_samples_maintenance_task->schedule();
+        auto context = Context::createCopy(getContext());
+        context->makeQueryContext();
+        context->setCurrentQueryId("");
+        context->setQueryKindReplicatedDatabaseInternal();
+        QueryScope query_scope;
+        if (!CurrentThread::getGroup())
+            query_scope = QueryScope::create(context);
+        stripLegacyRecentSamplesTableTTL(context);
     }
+
+    recent_samples_maintenance_task->activate();
+    recent_samples_maintenance_task->schedule();
 }
 
 
@@ -310,27 +365,14 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
             return result;
         };
 
-        std::optional<Int64> stored_horizon;
-        if ((*getStorageSettings())[TimeSeriesSetting::store_min_time_and_max_time])
-            stored_horizon = select_max(ViewTarget::Tags, TimeSeriesColumnNames::MaxTime);
-        if (!stored_horizon)
-            stored_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
-
-        if (stored_horizon)
-            updateRecentSamplesHorizon(*stored_horizon);
+        std::optional<Int64> stored_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
+        replaceRecentSamplesHorizon(stored_horizon);
 
         if (!isInnerTable(ViewTarget::RecentSamples))
             return;
 
+        stripLegacyRecentSamplesTableTTL(context);
         auto metadata = recent_samples->getInMemoryMetadataPtr(context, false);
-        if (metadata->hasAnyTableTTL())
-        {
-            executeInternalQuery(
-                fmt::format("ALTER TABLE {} REMOVE TTL", recent_samples_name),
-                make_maintenance_context(),
-                [](const Block &) {});
-            metadata = recent_samples->getInMemoryMetadataPtr(context, false);
-        }
 
         if (auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(recent_samples.get()))
         {

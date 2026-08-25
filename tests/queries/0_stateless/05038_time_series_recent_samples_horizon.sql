@@ -1,26 +1,25 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database, no-parallel-replicas
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+SET send_logs_level = 'fatal';
 SET allow_deprecated_database_ordinary = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 3600, recent_samples_partition_by = 'toStartOfHour(timestamp)',
-    store_min_time_and_max_time = 0, aggregate_min_time_and_max_time = 0, filter_by_min_time_and_max_time = 0;
+SETTINGS recent_samples_ttl_seconds = 3600, recent_samples_partition_by = 'toStartOfHour(timestamp)';
 
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon (metric_name, tags, time_series) VALUES
-    ('historical_metric', map(), [(toDateTime64('2000-01-01 00:00:00', 3), 1.)]),
-    ('historical_metric', map(), [(toDateTime64('2000-01-01 09:30:00', 3), 2.)]),
-    ('historical_metric', map(), [(toDateTime64('2000-01-01 10:00:00', 3), 3.)]);
+    ('historical_metric', map(), [(toDateTime64('2000-01-01 00:00:00', 3), 1.)]);
 
 SELECT engine_full NOT LIKE '% TTL %'
 FROM system.tables
 WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
 
 DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon;
+SYSTEM STOP TTL MERGES {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`
     MODIFY TTL toDateTime(timestamp) + toIntervalSecond(1)
     SETTINGS materialize_ttl_after_modify = 0;
@@ -33,6 +32,13 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.samples_backup ENGINE = Memory A
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts_recent_horizon`;
 TRUNCATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts_recent_horizon`;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon;
+
+SELECT engine_full NOT LIKE '% TTL %'
+FROM system.tables
+WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
+
+SELECT countIf(timestamp = toDateTime64('2000-01-01 00:00:00', 3))
+FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`;
 
 SELECT plan LIKE '%.inner.recentsamples.%'
 FROM
@@ -53,11 +59,23 @@ FROM
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts_recent_horizon`
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.samples_backup;
 
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon (metric_name, tags, time_series) VALUES
+    ('historical_metric', map(), [(toDateTime64('2000-01-01 09:30:00', 3), 2.)]),
+    ('historical_metric', map(), [(toDateTime64('2000-01-01 10:00:00', 3), 3.)]);
+
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts_recent_horizon` (id, metric_name, tags, min_time, max_time)
+SELECT id, metric_name, tags, min_time, toDateTime64('2000-01-01 12:00:00', 3)
+FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts_recent_horizon`;
+
 OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts_recent_horizon FINAL;
 
 SELECT engine_full NOT LIKE '% TTL %'
 FROM system.tables
 WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, currentDatabase()) AND name = '.inner.recentsamples.ts_recent_horizon';
+
+SELECT
+    (SELECT max(max_time) FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts_recent_horizon`)
+    > (SELECT max(timestamp) FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts_recent_horizon`);
 
 SELECT countIf(timestamp = toDateTime64('2000-01-01 00:00:00', 3))
 FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.recentsamples.ts_recent_horizon`;

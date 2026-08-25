@@ -31,6 +31,7 @@ CREATE TABLE samples_table
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE prometheus ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES samples_table TAGS tags_table;
 
 -- 4 series of the metric `m`: hosts h1, h2 in dc=a and hosts h3, h4 in dc=b,

@@ -52,6 +52,7 @@ SELECT '-- the table survives DETACH/ATTACH: the preference and the write path k
 
 DETACH TABLE ts_recent;
 ATTACH TABLE ts_recent;
+OPTIMIZE TABLE ts_recent FINAL;
 
 SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent, 'test_metric', now())));
