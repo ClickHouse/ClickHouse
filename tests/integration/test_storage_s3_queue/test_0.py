@@ -1040,6 +1040,76 @@ def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
     assert move_collisions() >= collisions_before + 1
 
 
+def test_move_after_processing_retry_recognizes_its_own_copy(started_cluster):
+    """A guarded copy can commit and still fail before the move finishes. The retry then meets a
+    destination that already exists, and it must recognize its own provenance instead of reporting a
+    collision and stranding the processed source.
+
+    Note this cannot be reproduced by failing the source delete: `copied` deliberately keeps the
+    retry from re-running the copy in that case, so the failure has to land between the commit and
+    that flag - which is what the failpoint below injects, once.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_retry_own_copy_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = f"{token}_retry_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, table_name, dst_table_name)
+        for _ in range(1000):
+            if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+                break
+            time.sleep(0.1)
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+        # The retry finished the move rather than refusing it.
+        for _ in range(100):
+            if (
+                count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+                and count_minio_objects(started_cluster, bucket, files_path) == 0
+            ):
+                break
+            time.sleep(0.1)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
+    # Its own committed copy is not a collision.
+    assert move_collisions() == collisions_before
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])

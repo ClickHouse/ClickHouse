@@ -36,6 +36,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_delete[];
+    extern const char object_storage_queue_fail_after_move_copy[];
 }
 
 #if USE_AWS_S3
@@ -387,6 +388,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                                 else
                                     throw;
                             }
+                            /// The destination is committed but the move is not finished: this is the
+                            /// window a retry has to recognize as its own copy rather than a collision.
+                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
+                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
+                            });
                             copied = true;
                         }
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
@@ -587,6 +593,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 else
                                     throw;
                             }
+                            /// The destination is committed but the move is not finished: this is the
+                            /// window a retry has to recognize as its own copy rather than a collision.
+                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
+                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
+                            });
                             copied = true;
                         }
 
@@ -764,6 +775,11 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 else
                                     throw;
                             }
+                            /// The destination is committed but the move is not finished: this is the
+                            /// window a retry has to recognize as its own copy rather than a collision.
+                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
+                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
+                            });
                             copied = true;
                         }
 
