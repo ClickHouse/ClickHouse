@@ -15,6 +15,13 @@ OLD_CLIENT_REVISION = 54452
 # than the test timeout, so time-based interactive updates cannot add sends.
 INTERACTIVE_DELAY_ONE_HOUR = 3_600_000_000
 
+# An empty `Native` block (`BlockInfo` terminator, zero columns, zero rows) in a
+# ClickHouse compressed frame using the `LZ4` codec. The checksum covers the
+# frame header and payload after the first 16 bytes.
+COMPRESSED_EMPTY_BLOCK = bytes.fromhex(
+    "a8cc738db073ad6baee9b44ce365092c" "820d0000000300000030000000"
+)
+
 
 def encode_varuint(value):
     result = bytearray()
@@ -54,7 +61,10 @@ def skip_string(sock):
 
 
 def send_old_revision_query(
-    query, settings=None, receive_end_of_stream_before_data=False
+    query,
+    settings=None,
+    receive_end_of_stream_before_data=False,
+    compression=False,
 ):
     sock = socket.create_connection((node.ip_address, 9000), timeout=10)
     try:
@@ -110,7 +120,7 @@ def send_old_revision_query(
         packet += encode_string("")  # settings terminator
         packet += encode_string("")  # interserver secret hash
         packet += encode_varuint(2)  # `QueryProcessingStage::Complete`
-        packet += encode_varuint(0)  # uncompressed
+        packet += encode_varuint(int(compression))
         packet += encode_string(query)
         sock.sendall(packet)
 
@@ -123,9 +133,12 @@ def send_old_revision_query(
         empty_block = bytearray()
         empty_block += encode_varuint(2)  # `Client::Data`
         empty_block += encode_string("")  # temporary table name
-        empty_block += encode_varuint(0)  # BlockInfo end marker
-        empty_block += encode_varuint(0)  # columns
-        empty_block += encode_varuint(0)  # rows
+        if compression:
+            empty_block += COMPRESSED_EMPTY_BLOCK
+        else:
+            empty_block += encode_varuint(0)  # BlockInfo end marker
+            empty_block += encode_varuint(0)  # columns
+            empty_block += encode_varuint(0)  # rows
         sock.sendall(empty_block)
         sock.shutdown(socket.SHUT_WR)
 
@@ -188,6 +201,21 @@ def test_old_revision_groups_uncompressed_terminal_packets():
     # query response. Revision 54452 predates compressed Log/ProfileEvents columns,
     # so both writers use raw `out` even when `maybe_compressed_out` has not been
     # initialized yet.
+    assert native_send_count() - sends_before == 3
+
+
+def test_old_revision_groups_compressed_terminal_packets():
+    node.http_query("DROP TABLE IF EXISTS old_revision_compressed_probe")
+    sends_before = native_send_count()
+    send_old_revision_query(
+        "CREATE TABLE old_revision_compressed_probe (x UInt8) ENGINE = Memory",
+        compression=True,
+    )
+
+    assert node.http_query("EXISTS TABLE old_revision_compressed_probe") == "1\n"
+    # Regular `Data` uses the compressed wrapper, but revision 54452 still writes
+    # `Log` and `ProfileEvents` blocks to raw `out`. They must remain in the grouped
+    # terminal write instead of flushing raw `out` separately.
     assert native_send_count() - sends_before == 3
 
 
