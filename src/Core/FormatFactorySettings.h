@@ -201,10 +201,10 @@ Schedule prefetches more aggressively if memory usage is below than threshold. P
     DECLARE(UInt64, input_format_parquet_memory_high_watermark, 4ul << 30, R"(
 Approximate memory limit for the Parquet reader. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
 )", 0) \
-    DECLARE(Float, input_format_parquet_prefetch_memory_fraction, 0.6, R"(
+    DECLARE(Float, input_format_parquet_prefetch_memory_fraction, 0.6f, R"(
 Advanced tuning knob for the Parquet reader scheduler. Of the memory budget reserved for column data, the fraction given to compressed read-ahead (the `ColumnDataPrefetch` stage) versus decoded output (the `ColumnData` stage); the rest goes to decode. A higher value keeps more compressed pages in flight to hide read latency (useful on high-latency storage such as S3); a lower value caps read-ahead and leaves more budget for decoded columns. Must be in [0, 1]. The index and bloom-filter stages keep a fixed share of the memory budget regardless of this setting.
 )", 0) \
-    DECLARE(Float, input_format_parquet_decode_thread_fraction, 0.375, R"(
+    DECLARE(Float, input_format_parquet_decode_thread_fraction, 0.375f, R"(
 Advanced tuning knob for the Parquet reader scheduler. The fraction of the Parquet parsing thread pool dedicated to column decoding (the `ColumnData` stage); the remaining stages, which only issue asynchronous reads, share the rest. Raise it to give decoding (the only CPU-bound stage) more parallelism on fast/local storage; the default suits latency-bound remote reads where memory, not threads, limits concurrency. Must be in [0, 1].
 )", 0) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
