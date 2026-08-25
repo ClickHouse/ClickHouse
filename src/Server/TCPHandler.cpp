@@ -1355,7 +1355,7 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     {
         sendLogs(state);
         sendInsertProfileEvents(state);
-        out->sync();
+        // out->sync(); TODO(kavi): remove after experiment
     }
 }
 
@@ -1417,7 +1417,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
             std::lock_guard lock(*callback_mutex);
             sendLogs(state);
             sendInsertProfileEvents(state);
-            out->sync();
+            // out->sync(); TODO(kavi): remove after an experiment
         }
 
         if (result_chunk)
@@ -1469,7 +1469,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 sendLogs(state);
                 sendInsertProfileEvents(state);
-                out->sync();
+                // out->sync(); TODO(kavi): an experiment
             }
 
             executor.finish();
