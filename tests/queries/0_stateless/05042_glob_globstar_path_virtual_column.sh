@@ -63,9 +63,11 @@ rm -rf "${OUTSIDE_DIR}"
 mkdir -p "${OUTSIDE_DIR}/inner"
 printf '999\n' > "${OUTSIDE_DIR}/secret.csv"
 ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/esc"
+# Printed as the path the query resolved to, so an unrelated failure cannot pass as a denial: the
+# `..` has to be gone and `esc/` with it.
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('${DATA_DIR}/esc/{..,missing}/secret.csv', 'CSV', 'id UInt64') WHERE id = 999;
-" 2>/dev/null || echo 0
+" 2>&1 | sed -n "s|.*File ${DATA_DIR}/\([^ ]*\) doesn't exist.*|resolved to \1|p"
 
 # The post-read rename must move the file that was read, not a namesake elsewhere.
 RENAME_DIR="${DATA_DIR}/rename"
@@ -96,12 +98,13 @@ SETTINGS rename_files_after_processing = 'processed_%f%e';
 [ -f "${WREN_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
 [ -f "${WREN_DIR}/x.csv" ] && echo "the lexical sibling was left alone"
 
-# The rename must not reach outside user_files either. A wildcard keeps the `..`, so the file
-# read here lives under the symlink's target; the access check resolves the directory before
-# approving it, so the outside file has to keep its name.
+# The rename must not reach outside user_files either. A wildcard keeps the `..`, so the file read
+# here lives under the symlink's target; the access check resolves the directory before approving
+# it. The row count shows the read happened, which is what selects the rename path, so the outside
+# file keeping its name is not just a query that never ran.
 ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/escw"
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt64')
 SETTINGS rename_files_after_processing = 'processed_%f%e';
-" > /dev/null 2>&1
+"
 [ -f "${OUTSIDE_DIR}/secret.csv" ] && echo "the file outside user_files kept its name"

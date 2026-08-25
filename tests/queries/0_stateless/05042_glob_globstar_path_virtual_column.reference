@@ -3,11 +3,12 @@
 1
 111
 222
-0
+resolved to secret.csv
 222
 renamed the file that was read
 the symlinked namesake was left alone
 111
 renamed beside the file that was read
 the lexical sibling was left alone
+1
 the file outside user_files kept its name
