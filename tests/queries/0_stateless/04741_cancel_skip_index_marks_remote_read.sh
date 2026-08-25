@@ -190,6 +190,10 @@ $CLICKHOUSE_CLIENT --query "
     -- deterministic and the fixture assertion below no longer knows the merged part's name.
     SET insert_keeper_fault_injection_probability = 0;
 
+    -- Each insert schedules merge selection, so without this the first parts can merge before
+    -- the patch is written and the final merge then produces a different merge level.
+    SYSTEM STOP MERGES t_patch_cancel;
+
     INSERT INTO t_patch_cancel SELECT number, 0 FROM numbers(2000);
     INSERT INTO t_patch_cancel SELECT number + 2000, 0 FROM numbers(2000);
     INSERT INTO t_patch_cancel SELECT number + 4000, 0 FROM numbers(2000);
@@ -221,7 +225,13 @@ patch_parts=$($CLICKHOUSE_CLIENT --query "
     WHERE database = currentDatabase() AND table = 't_patch_cancel' AND active
       AND startsWith(name, 'patch')
 ")
-if [ "$merged_part" != "all_0_2_1" ] || [ "$patch_parts" != "1" ]; then
+# The merge level depends on how many merges ran, so match the block range the part has to cover
+# rather than a particular level.
+case "$merged_part" in
+    all_0_2_*) ;;
+    *) echo "FAIL: patch fixture not as expected (part='$merged_part', patches=$patch_parts)" ;;
+esac
+if [ "$patch_parts" != "1" ]; then
     echo "FAIL: patch fixture not as expected (part='$merged_part', patches=$patch_parts)"
 fi
 
