@@ -29,7 +29,7 @@ public:
     using LastProcessedFileInfo = ObjectStorageQueueIFileMetadata::LastProcessedFileInfo;
 
     explicit ObjectStorageQueueOrderedFileMetadata(
-        const std::filesystem::path & zk_path_,
+        const std::string & zk_path_,
         const std::string & path_,
         FileStatusPtr file_status_,
         BucketInfoPtr bucket_info_,
@@ -52,7 +52,7 @@ public:
     PathState getPathState(std::string & failure_message) const override;
 
     static BucketHolderPtr tryAcquireBucket(
-        const std::filesystem::path & zk_path,
+        const std::string & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
@@ -69,7 +69,7 @@ public:
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
     static std::vector<std::string> getLastProcessedPaths(
-        const std::filesystem::path & zk_path,
+        const std::string & zk_path,
         size_t buckets_num,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const std::string & zookeeper_name,
@@ -99,7 +99,7 @@ public:
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
-        const std::filesystem::path & zk_path_,
+        const std::string & zk_path_,
         size_t buckets_num,
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode,

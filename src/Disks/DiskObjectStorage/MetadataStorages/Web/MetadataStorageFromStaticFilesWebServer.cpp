@@ -133,7 +133,7 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
 
 DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(const std::string & path) const
 {
-    std::vector<fs::path> dir_file_paths;
+    std::vector<String> dir_file_paths;
 
     if (!existsDirectory(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
@@ -143,10 +143,10 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }
 
-std::pair<MetadataStorageFromStaticFilesWebServer::FileDataPtr, std::vector<fs::path>>
+std::pair<MetadataStorageFromStaticFilesWebServer::FileDataPtr, std::vector<String>>
 MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
 {
-    std::vector<fs::path> loaded_files;
+    std::vector<String> loaded_files;
     auto full_url = fs::path(object_storage.getBaseURL()) / path;
 
     LOG_TRACE(log, "Adding directory: {} ({})", path, full_url);
@@ -190,8 +190,9 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
                 ? FileData::createDirectoryInfo(false)
                 : FileData::createFileInfo(size);
 
-            auto file_path = fs::path(path) / file_name;
-            const bool inserted = files.add(pathToGenericString(file_path), file_data).second;
+            /// A logical path on the web server, `/`-separated by definition.
+            const String file_path = path.empty() || path.ends_with('/') ? path + file_name : path + "/" + file_name;
+            const bool inserted = files.add(file_path, file_data).second;
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
@@ -282,7 +283,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
     return loadFiles(path, unique_lock).first;
 }
 
-std::vector<std::filesystem::path> MetadataStorageFromStaticFilesWebServer::listDirectoryInternal(const String & path) const
+std::vector<String> MetadataStorageFromStaticFilesWebServer::listDirectoryInternal(const String & path) const
 {
     auto file_info = tryGetFileInfo(path);
     if (!file_info)
@@ -291,7 +292,7 @@ std::vector<std::filesystem::path> MetadataStorageFromStaticFilesWebServer::list
     if (file_info->type != FileType::Directory)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not a directory", path);
 
-    std::vector<std::filesystem::path> result;
+    std::vector<String> result;
     if (!file_info->loaded_children)
     {
         std::unique_lock unique_lock(metadata_mutex);

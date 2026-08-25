@@ -332,8 +332,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainRewritableObjectStorage::iterateDir
 
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
     std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = pathToGenericString(fs::path(path) / child); });
-    std::vector<fs::path> fs_paths(paths.begin(), paths.end());
-    return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
+    return std::make_unique<StaticDirectoryIterator>(std::move(paths));
 }
 
 StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects(const std::string & path) const

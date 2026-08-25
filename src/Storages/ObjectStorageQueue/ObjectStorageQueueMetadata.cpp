@@ -106,7 +106,7 @@ namespace
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     ObjectStorageType storage_type_,
     const std::string & zookeeper_name_,
-    const fs::path & zookeeper_path_,
+    const std::string & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
@@ -134,7 +134,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
         zookeeper_name_ == zkutil::DEFAULT_ZOOKEEPER_NAME ? "" : zookeeper_name_ + ":",
-        zookeeper_path_.string())))
+        zookeeper_path_)))
     , local_file_statuses(
         CurrentMetrics::ObjectStorageQueueMetadataCacheSizeBytes,
         CurrentMetrics::ObjectStorageQueueMetadataCacheSizeElements,
@@ -342,7 +342,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     bool is_initial_query = !context->isDDLOrOnClusterInternal() ||
                             (context->getZooKeeperMetadataTransaction() && context->getZooKeeperMetadataTransaction()->isInitialQuery());
 
-    const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
+    const auto alter_settings_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "alter_settings_lock");
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
     auto zookeeper = getZooKeeper();
 
@@ -353,7 +353,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         const size_t num_tries = 100;
         for (size_t i = 0; i < num_tries; ++i)
         {
-            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(pathToGenericString(alter_settings_lock_path), *zookeeper->getKeeper(), toString(getCurrentTime()));
+            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
 
             if (alter_settings_lock)
                 break;
@@ -366,7 +366,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     }
 
     Coordination::Stat stat;
-    auto metadata_str = zookeeper->get(pathToGenericString(fs::path(zookeeper_path) / "metadata"), &stat);
+    auto metadata_str = zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, "metadata"), &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
     auto new_table_metadata{table_metadata};
 
@@ -488,12 +488,12 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     const auto new_metadata_str = new_table_metadata.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
-    const fs::path table_metadata_path = zookeeper_path / "metadata";
+    const auto table_metadata_path = zkutil::joinZooKeeperPath(zookeeper_path, "metadata");
     /// Here we intentionally do not add zk retries,
     /// because we modify metadata under ephemeral metadata lock,
     /// so we do not want to retry if it expires.
     if (is_initial_query)
-        zookeeper->set(pathToGenericString(table_metadata_path), new_metadata_str, stat.version);
+        zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
 }
@@ -504,7 +504,7 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
-        pathToGenericString(zookeeper_path),
+        zookeeper_path,
         value,
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
@@ -514,7 +514,7 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const String & zookeeper_name,
-    const fs::path & zookeeper_path,
+    const std::string & zookeeper_path,
     const ObjectStorageQueueSettings & settings,
     const ColumnsDescription & columns,
     const std::string & format,
@@ -544,10 +544,10 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     }
 
     auto zk_retries = getKeeperRetriesControl(log);
-    const auto table_metadata_path = zookeeper_path / "metadata";
+    const auto table_metadata_path = zkutil::joinZooKeeperPath(zookeeper_path, "metadata");
     bool warned = false;
 
-    zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(pathToGenericString(zookeeper_path)); });
+    zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
 
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -559,9 +559,9 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         {
             auto zk_client = getZooKeeper(log, zookeeper_name);
             std::optional<ObjectStorageQueueTableMetadata> metadata_from_zk;
-            if (zk_client->exists(pathToGenericString(table_metadata_path)))
+            if (zk_client->exists(table_metadata_path))
             {
-                const auto metadata_str = zk_client->get(pathToGenericString(table_metadata_path));
+                const auto metadata_str = zk_client->get(table_metadata_path);
                 LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
                 metadata_from_zk.emplace(ObjectStorageQueueTableMetadata::parse(metadata_str));
             }
@@ -592,14 +592,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 }
             }
 
-            requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zookeeper_path), "", zkutil::CreateMode::Persistent));
+            requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
             requests.emplace_back(zkutil::makeCreateRequest(
-                                    pathToGenericString(table_metadata_path), table_metadata.toString(), zkutil::CreateMode::Persistent));
+                                    table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
 
             for (const auto & path : metadata_paths)
             {
-                const auto zk_path = zookeeper_path / path;
-                requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zk_path), "", zkutil::CreateMode::Persistent));
+                const auto zk_path = zkutil::joinZooKeeperPath(zookeeper_path, path);
+                requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
             }
 
             if (!table_metadata.last_processed_path.empty())
@@ -643,7 +643,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 LOG_INFO(log, "Got code `{}` for path: {}. "
                         "It looks like the table {} was created by another server at the same moment, "
                         "will retry",
-                        *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                        *code, exception.getPathForFirstFailedOp(), zookeeper_path);
                 continue;
             }
             if (*code != Coordination::Error::ZOK)
@@ -749,14 +749,14 @@ void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);
-    const auto table_path = zookeeper_path / "registry" / id;
+    const auto table_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry", id);
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = {};
     getKeeperRetriesControl(log).retryLoop([&]
     {
         code = getZooKeeper()->tryCreate(
-            pathToGenericString(table_path),
+            table_path,
             self.serialize(),
             zkutil::CreateMode::Ephemeral);
     });
@@ -770,9 +770,9 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 
 void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id, bool & created_new_metadata)
 {
-    const auto registry_path = zookeeper_path / "registry";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
     const auto self = Info::create(storage_id);
-    const auto drop_lock_path = zookeeper_path / "drop";
+    const auto drop_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "drop");
 
     auto zk_retries = getKeeperRetriesControl(log);
 
@@ -790,7 +790,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper();
-            bool registry_exists = zk_client->tryGet(pathToGenericString(registry_path), registry_str, &stat);
+            bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
                 std::vector<std::string_view> registered;
@@ -821,19 +821,19 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                 }
 
                 auto new_registry_str = registry_str + "," + self.serialize();
-                requests.push_back(zkutil::makeSetRequest(pathToGenericString(registry_path), new_registry_str, stat.version));
+                requests.push_back(zkutil::makeSetRequest(registry_path, new_registry_str, stat.version));
             }
             else
             {
                 created_new_metadata = true;
 
                 requests.push_back(zkutil::makeCreateRequest(
-                    pathToGenericString(registry_path),
+                    registry_path,
                     self.serialize(),
                     zkutil::CreateMode::Persistent));
 
                 if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-                    zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), pathToGenericString(drop_lock_path));
+                    zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
             }
 
             code = zk_client->tryMulti(requests, responses);
@@ -859,20 +859,20 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
 Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 {
-    const auto registry_path = zookeeper_path / "registry";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
     auto zk_retries = getKeeperRetriesControl(log);
     Strings registered;
     if (active)
     {
         Coordination::Error code = {};
-        zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(pathToGenericString(registry_path), registered); });
+        zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(registry_path, registered); });
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(code);
     }
     else
     {
         std::string registry_str;
-        zk_retries.retryLoop([&] { getZooKeeper()->tryGet(pathToGenericString(registry_path), registry_str); });
+        zk_retries.retryLoop([&] { getZooKeeper()->tryGet(registry_path, registry_str); });
         if (!registry_str.empty())
             splitInto<','>(registered, registry_str);
     }
@@ -881,11 +881,11 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 
 void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
-    const auto registry_path = zookeeper_path / "registry";
-    const auto table_path = registry_path / getProcessorID(storage_id);
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
+    const auto table_path = zkutil::joinZooKeeperPath(registry_path, getProcessorID(storage_id));
 
     Coordination::Error code = {};
-    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(pathToGenericString(table_path)); });
+    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -908,8 +908,8 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 
 void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
-    const auto registry_path = zookeeper_path / "registry";
-    const auto drop_lock_path = zookeeper_path / "drop";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
+    const auto drop_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "drop");
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = Coordination::Error::ZOK;
@@ -934,7 +934,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
             Coordination::Stat stat;
             std::string registry_str;
-            bool node_exists = zk_client->tryGet(pathToGenericString(registry_path), registry_str, &stat);
+            bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (!node_exists)
             {
                 if (is_retry)
@@ -985,22 +985,22 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
             if (remove_metadata_if_no_registered && count == 0)
             {
-                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path.string());
+                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path);
                 if (supports_remove_recursive)
                 {
-                    requests.push_back(zkutil::makeCheckRequest(pathToGenericString(registry_path), stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, pathToGenericString(zookeeper_path), /*remove_nodes_limit=*/10000));
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, /*remove_nodes_limit=*/10000));
                 }
                 else
                 {
-                    requests.push_back(zkutil::makeCheckRequest(pathToGenericString(registry_path), stat.version));
-                    requests.push_back(zkutil::makeCreateRequest(pathToGenericString(drop_lock_path), "", zkutil::CreateMode::Ephemeral));
+                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
                 }
                 code = zk_client->tryMulti(requests, responses);
             }
             else
             {
-                code = zk_client->trySet(pathToGenericString(registry_path), new_registry_str, stat.version);
+                code = zk_client->trySet(registry_path, new_registry_str, stat.version);
             }
         }
         catch (const zkutil::KeeperMultiException & e)
@@ -1033,10 +1033,10 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 /// Take a drop lock and do recursive remove as a separate request.
                 /// In case of unsupported "remove_recursive" feature, it will
                 /// do getChildren and remove them one by one.
-                auto drop_lock = zkutil::EphemeralNodeHolder::existing(pathToGenericString(drop_lock_path), *zk_client->getKeeper());
+                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client->getKeeper());
                 try
                 {
-                    zk_client->removeRecursive(pathToGenericString(zookeeper_path));
+                    zk_client->removeRecursive(zookeeper_path);
                 }
                 catch (const zkutil::KeeperMultiException & e)
                 {
@@ -1261,13 +1261,13 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds);
 
-    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+    const auto zookeeper_cleanup_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "cleanup_lock");
     const auto zk_client = getZooKeeper();
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        pathToGenericString(zookeeper_cleanup_lock_path), *zk_client->getKeeper(), toString(getCurrentTime()));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
 
     if (!ephemeral_node)
     {
@@ -1283,10 +1283,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (table_metadata.hasTrackedFilesLimit())
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(pathToGenericString(zookeeper_path / "processed"), "processed");
+            cleanupTrackedNodes(zkutil::joinZooKeeperPath(zookeeper_path, "processed"), "processed");
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(pathToGenericString(zookeeper_path / "failed"), "failed");
+            cleanupTrackedNodes(zkutil::joinZooKeeperPath(zookeeper_path, "failed"), "failed");
     }
 
     LOG_TRACE(log, "Node limits check finished");
@@ -1375,10 +1375,9 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         paths.clear();
     };
 
-    std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
-        paths.push_back(pathToGenericString(nodes_fs_path / node));
+        paths.push_back(zkutil::joinZooKeeperPath(nodes_path, node));
         if (paths.size() == keeper_multiread_batch_size)
             get_paths();
     }
@@ -1523,20 +1522,20 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 {
     auto zk_retries = getKeeperRetriesControl(log);
-    const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
+    const auto zookeeper_persistent_processing_path = zkutil::joinZooKeeperPath(zookeeper_path, "processing");
 
     Strings persistent_processing_nodes;
 
     Coordination::Error code = {};
     zk_retries.retryLoop([&]
     {
-        code = getZooKeeper()->tryGetChildren(pathToGenericString(zookeeper_persistent_processing_path), persistent_processing_nodes);
+        code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
     });
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
         {
-            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path.string());
+            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path);
             return;
         }
         else
@@ -1546,10 +1545,10 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     Strings bucket_lock_paths;
     if (useBucketsForProcessing())
     {
-        const auto buckets_path = zookeeper_path / "buckets";
+        const auto buckets_path = zkutil::joinZooKeeperPath(zookeeper_path, "buckets");
         for (size_t i = 0; i < getBucketsNum(); ++i)
         {
-            bucket_lock_paths.push_back(pathToGenericString(buckets_path / toString(i) / "lock"));
+            bucket_lock_paths.push_back(zkutil::joinZooKeeperPath(buckets_path, toString(i), "lock"));
         }
     }
 
@@ -1585,7 +1584,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     for (const auto & node : persistent_processing_nodes)
     {
-        get_batch.push_back(pathToGenericString(zookeeper_persistent_processing_path / node));
+        get_batch.push_back(zkutil::joinZooKeeperPath(zookeeper_persistent_processing_path, node));
         if (get_batch.size() == keeper_multiread_batch_size)
             get_paths();
     }

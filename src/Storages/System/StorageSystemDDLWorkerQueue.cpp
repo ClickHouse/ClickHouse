@@ -308,7 +308,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             std::vector<std::string> finished_status_paths;
             finished_status_paths.reserve(finished_hosts.names.size());
             for (const auto & host_id_str : finished_hosts.names)
-                finished_status_paths.push_back(pathToGenericString(fs::path(task.entry_path) / "finished" / host_id_str));
+                finished_status_paths.push_back(zkutil::joinZooKeeperPath(task.entry_path, "finished", host_id_str));
 
             auto finished_statuses = zookeeper->tryGet(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
@@ -331,7 +331,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
         else
         {
-            throw Coordination::Exception::fromPath(finished_hosts.error, pathToGenericString(fs::path(task.entry_path) / "finished"));
+            throw Coordination::Exception::fromPath(finished_hosts.error, zkutil::joinZooKeeperPath(task.entry_path, "finished"));
         }
 
         /// Process active nodes
@@ -358,12 +358,12 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             /// then recursively remove everything except "query-xxx/finished"
             /// and then remove "query-xxx" and "query-xxx/finished".
             is_removing_task = is_removing_task ||
-                (zookeeper->exists(pathToGenericString(fs::path(task.entry_path) / "finished")) && !zookeeper->exists(pathToGenericString(fs::path(task.entry_path) / "active"))) ||
+                (zookeeper->exists(zkutil::joinZooKeeperPath(task.entry_path, "finished")) && !zookeeper->exists(zkutil::joinZooKeeperPath(task.entry_path, "active"))) ||
                 !zookeeper->exists(task.entry_path);
         }
         else
         {
-            throw Coordination::Exception::fromPath(active_hosts.error, pathToGenericString(fs::path(task.entry_path) / "active"));
+            throw Coordination::Exception::fromPath(active_hosts.error, zkutil::joinZooKeeperPath(task.entry_path, "active"));
         }
 
         /// Process the rest hosts

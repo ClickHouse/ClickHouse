@@ -66,11 +66,11 @@ private:
     mutable Files files;
     mutable SharedMutex metadata_mutex;
 
-    std::pair<FileDataPtr, std::vector<std::filesystem::path>>
+    std::pair<FileDataPtr, std::vector<String>>
     loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
 
     FileDataPtr tryGetFileInfo(const String & path) const;
-    std::vector<std::filesystem::path> listDirectoryInternal(const String & path) const;
+    std::vector<String> listDirectoryInternal(const String & path) const;
     FileDataPtr getFileInfo(const String & path) const;
 
     void assertExists(const std::string & path) const;
