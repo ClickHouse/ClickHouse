@@ -32,7 +32,9 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     PARTITION BY id % 2
     ORDER BY id
     SAMPLE BY id
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    -- The test asserts the exact count of the table's skip indices in system.data_skipping_indices,
+    -- which an implicit min-max index on the numeric column `id` would inflate.
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     ALTER TABLE test_table_access MODIFY COMMENT 'target table comment';
     INSERT INTO test_table_access SELECT number + 1, randomString(4096) FROM numbers(2);
 
