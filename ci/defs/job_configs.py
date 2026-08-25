@@ -1639,17 +1639,36 @@ class JobConfigs:
         requires=["Build (amd_release)", "Build (arm_release)"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
+    # Both fuzzers run against two builds. The release build is the wrong-result
+    # hunt: a sanitizer binary executes SQL 2-3x slower, so most of a 5h budget
+    # would buy sanitizer coverage instead of SQL coverage (measured: 47-80
+    # queries/s at 10 threads on arm_asan_ubsan). The arm_asan_ubsan build is kept
+    # as its own job for what only it can find - memory errors and UB reached
+    # through generated SQL.
+    # `-e SLACK_WEBHOOK_CORE_QA`: the job alerts on new findings (see
+    # ci/jobs/scripts/sqlancer_notify.py); without the secret it is a no-op.
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
         runs_on=[],  # from parametrize()
         command="./ci/jobs/sqlancer_job.sh",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/sqlancer_job.sh", "./ci/docker/sqlancer-test"],
+            include_paths=[
+                "./ci/jobs/sqlancer_job.sh",
+                "./ci/jobs/scripts/sqlancer_failures.py",
+                "./ci/jobs/scripts/sqlancer_notify.py",
+                "./ci/jobs/scripts/sqlancer_server_errors.sh",
+                "./ci/docker/sqlancer-test",
+            ],
         ),
-        run_in_docker="clickhouse/sqlancer-test",
+        run_in_docker="clickhouse/sqlancer-test+-e SLACK_WEBHOOK_CORE_QA",
         # 5h sqlancer run (set in sqlancer_job.sh) plus server start/teardown.
         timeout=3600 * 5 + 1800,
     ).parametrize(
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1663,12 +1682,18 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/jobs/scripts/sqlancer_server_errors.sh",
                 "./ci/docker/sqlancer-test",
             ],
         ),
         run_in_docker="clickhouse/sqlancer-test",
         timeout=3600,
     ).parametrize(
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,

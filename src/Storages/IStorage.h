@@ -449,6 +449,10 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
+    /// Returns an upper bound on the number of sources created for a read request.
+    /// The default is conservative: a storage may create one source per requested stream.
+    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
+
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.

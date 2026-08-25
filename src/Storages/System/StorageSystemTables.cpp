@@ -33,6 +33,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -557,6 +558,9 @@ protected:
 
                     for (auto & table : external_tables)
                     {
+                        const auto * alias = table.second->as<StorageAlias>();
+                        const bool can_expose_metadata
+                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -609,7 +613,9 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
+                            ASTPtr ast = can_expose_metadata && temp_db
+                                ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
+                                : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
                         }
 
@@ -623,12 +629,13 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(res_columns, table.second, res_index);
+                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                const auto metadata_snapshot
+                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
@@ -726,12 +733,16 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
+                const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                const bool can_expose_metadata
+                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                 /// and it's not protected internally by other mutexes
                 static const size_t DATA_PATHS_INDEX = 5;
-                if (table && columns_mask[DATA_PATHS_INDEX])
+                if (can_expose_metadata && columns_mask[DATA_PATHS_INDEX])
                 {
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                     if (!lock)
@@ -768,7 +779,7 @@ protected:
                 {
                     Array table_paths_array;
                     /// `lock` is only acquired above when `table` is non-null.
-                    if (table)
+                    if (can_expose_metadata)
                     {
                         chassert(lock != nullptr);
                         if (auto paths = table->tryGetDataPaths())
@@ -790,7 +801,7 @@ protected:
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 StorageMetadataHandle metadata_snapshot;
-                if (table)
+                if (can_expose_metadata)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
                 if (columns_mask[src_index++])
@@ -828,15 +839,16 @@ protected:
                 {
                     /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
                     /// table, or one dropped concurrently with the scan): it re-enters
-                    /// DatabaseDataLake::getCreateTableQueryImpl, which can throw again and abort
-                    /// the whole scan. Such a row renders as empty strings.
+                    /// `DatabaseDataLake::getCreateTableQueryImpl`, which can throw again and abort
+                    /// the whole scan. An inaccessible or null storage renders as empty strings.
                     const RenderedCreateQueryFields fields{
                         .create_table_query = columns_mask[src_index] != 0,
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = table ? database->getRenderedCreateTableQuery(table_name, context, fields)
-                                          : renderCreateQuery(nullptr, RenderOptions{}, fields);
+                    auto rendered = can_expose_metadata
+                        ? database->getRenderedCreateTableQuery(table_name, context, fields)
+                        : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(rendered->create_table_query);
@@ -852,7 +864,7 @@ protected:
 
                 // parameterized view parameters
                 if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, table, res_index);
+                    fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -900,7 +912,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
+                    auto policy = can_expose_metadata ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -954,7 +966,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
+                        auto total_bytes_uncompressed = can_expose_metadata ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -1027,7 +1039,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_rows = can_expose_metadata ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -1036,7 +1048,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_bytes = can_expose_metadata ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
