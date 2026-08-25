@@ -137,11 +137,6 @@ void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const ICo
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(n);
-}
-
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);

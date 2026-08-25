@@ -377,13 +377,6 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     offsets.push_back(new_size);
 }
 
-void ColumnString::skipSerializedInArena(ReadBuffer & in) const
-{
-    size_t string_size = 0;
-    readBinaryLittleEndian<size_t>(string_size, in);
-    in.ignore(string_size);
-}
-
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
