@@ -23,7 +23,7 @@ struct SplitByNonAlphaTokenizerTestCase
     const std::vector<std::string> tokens;
 };
 
-static std::ostream & operator<<(std::ostream & ostr, const SplitByNonAlphaTokenizerTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const SplitByNonAlphaTokenizerTestCase & test_case)
 {
     return ostr << test_case.description;
 }

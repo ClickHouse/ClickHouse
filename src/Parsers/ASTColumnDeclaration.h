@@ -3,8 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Storages/ColumnDefault.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -81,8 +79,6 @@ private:
         }
     }
 
-    void resetChild(IndexSlot slot);
-
 public:
     bool hasChildren() const { return !children.empty(); }
     ASTPtr getType() const { return getChildOrNull(TYPE); }
@@ -96,7 +92,6 @@ public:
 
     void setType(ASTPtr && node) { setChild(TYPE, std::move(node)); }
     void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
-    void resetDefaultExpression() { resetChild(DEFAULT_EXPR); }
     void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
     void setCodec(ASTPtr && node) { setChild(CODEC, std::move(node)); }
     void setStatisticsDesc(ASTPtr && node) { setChild(STATS, std::move(node)); }
@@ -107,8 +102,6 @@ public:
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 
 protected:

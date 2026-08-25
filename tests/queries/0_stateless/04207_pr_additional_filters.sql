@@ -1,12 +1,8 @@
 -- Tags: no-parallel
 -- ^ failpoint
 
-SET explain_query_plan_default = 'legacy';
-
 DROP TABLE IF EXISTS atf_p;
--- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
--- random index_granularity splits the 10 rows into >1 granule and breaks the reference.
-CREATE TABLE atf_p (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+CREATE TABLE atf_p (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO atf_p SELECT number FROM numbers(10);
 
 -- The failpoint disables cancellation of unused replicas after all ranges
@@ -78,8 +74,7 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_for_non_replicated_merge_tree = 1,
     query_plan_remove_unused_columns = 1,
     parallel_replicas_local_plan = 1,
-    serialize_query_plan = 1,
-    distributed_aggregation_memory_efficient = 1; -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
+    serialize_query_plan = 1;
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE atf_p;

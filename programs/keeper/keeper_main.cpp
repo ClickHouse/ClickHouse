@@ -65,7 +65,7 @@ int printHelp(int, char **)
 }
 
 
-static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
@@ -99,11 +99,6 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 #if !defined(USE_MUSL)
 extern "C"
 {
-    void * dlopen(const char *, int);
-    void * dlmopen(long, const char *, int); // NOLINT
-    int dlclose(void *);
-    const char * dlerror();
-
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -131,12 +126,12 @@ extern "C"
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
 extern "C" void (*je_malloc_message)(void *, const char *s);
-static __attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
 extern "C" void (*je_malloc_message)(void *, const char * s);
-static __attribute__((constructor(0))) void init_je_malloc_message()
+__attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
@@ -160,7 +155,7 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-static __attribute__((constructor(202))) void init_ssl()
+__attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -170,7 +165,7 @@ static __attribute__((constructor(202))) void init_ssl()
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-bool inside_main = false;
+static bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {
@@ -201,7 +196,7 @@ int main(int argc_, char ** argv_)
     /// Print a basic help if nothing was matched
     MainFunc main_func = mainEntryClickHouseKeeper;
 
-    if (isClickHouseApp("help", argv))
+    if (isClickhouseApp("help", argv))
     {
         main_func = printHelp;
     }
@@ -209,7 +204,7 @@ int main(int argc_, char ** argv_)
     {
         for (auto & application : clickhouse_applications)
         {
-            if (isClickHouseApp(application.first, argv))
+            if (isClickhouseApp(application.first, argv))
             {
                 main_func = application.second;
                 break;

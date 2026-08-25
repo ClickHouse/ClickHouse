@@ -22,17 +22,10 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-/// WebAssembly cannot walk its own call stack from user code, and there is no libunwind for it.
-#if !defined(OS_WASM)
 #include <libunwind.h>
-#endif
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
-
-#if defined(THREAD_SANITIZER)
-#include <absl/debugging/stacktrace.h>
-#endif
 
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
@@ -40,9 +33,6 @@
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
 #include <execinfo.h>
 #endif
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace
 {
@@ -291,7 +281,7 @@ std::string getSignalCodeDescription(int sig, int si_code)
     }
 }
 
-static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
+static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -342,7 +332,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -417,7 +407,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
 
@@ -480,105 +470,33 @@ void StackTrace::forEachFrame(
 
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
+    tryCapture();
+
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
     __msan_unpoison(&signal_context, sizeof(signal_context));
 
-    /// Capture via libunwind directly, NOT via `tryCapture()`. Under TSan
-    /// `tryCapture()` would route through abseil's frame-pointer walker,
-    /// and the rbp chain inside a crash signal handler cannot cross glibc's
-    /// `__restore_rt` signal trampoline. As observed under TSan:
-    ///
-    ///   Stack trace: 0x... 0x... 0x... 0x... 0x...   <-- abseil, 5 frames total
-    ///   0. src/Common/StackTrace.cpp: StackTrace::StackTrace(ucontext_t const&)
-    ///   1. src/Common/SignalHandlers.cpp: signalHandler(int, siginfo_t*, void*)
-    ///   2. __tsan::CallUserSignalHandler(...)
-    ///   3. sighandler(int, __sanitizer::__sanitizer_siginfo*, void*)
-    ///   4. ? @ 0x42520                                <-- __restore_rt, FP walk dies here
-    ///
-    /// Address `0x42520` in glibc 2.35 (Ubuntu) disassembles to exactly two
-    /// instructions:
-    ///   mov $0xf, %rax        ; syscall 15 = rt_sigreturn
-    ///   syscall
-    /// — i.e. `__restore_rt`, the signal trampoline the kernel installs as
-    /// the handler's "return address". It is a hand-written asm stub with no
-    /// frame-pointer prologue, so abseil's `[rbp]`/`[rbp+8]` walk reaches it
-    /// (the kernel preserves `rbp` across signal delivery, and TSan's
-    /// `sighandler`/`CallUserSignalHandler` were compiled with frame
-    /// pointers) but cannot continue past it. `executeQuery` and everything
-    /// below it are missing entirely — exactly the part of the stack the
-    /// `arrayExists(x -> x LIKE '%executeQuery%', trace_full)` predicate in
-    /// `test_crash_log_extra_fields` is asserting against.
-    ///
-    /// Libunwind walks `.eh_frame` CFI rather than the rbp chain, and glibc
-    /// ships a CFI entry for `__restore_rt` that says "the previous frame's
-    /// register state lives in the saved `ucontext_t` on the stack at this
-    /// known offset". With that, libunwind crosses the trampoline and
-    /// continues unwinding from the interrupted PC back through the user
-    /// frames (`raise` → `abort` → `terminate_handler` → throw site →
-    /// `DB::executeQueryImpl` → ... → TCPHandler), giving the full trace
-    /// the crash log is supposed to capture.
-    ///
-    /// Why this doesn't matter for SIGUSR1/SIGUSR2 in `tryCapture()`: the profiler
-    /// timer interrupts user code (ClickHouse, built with
-    /// `-fno-omit-frame-pointer`), so the saved `rbp` at signal time points
-    /// into a frame whose chain abseil can follow without ever needing to
-    /// cross the trampoline. SIGABRT delivered from `abort()` interrupts
-    /// libc's `tgkill` syscall stub — built without frame pointers — so the
-    /// FP chain on the interrupted-code side is already broken by the time
-    /// the handler runs.
-    ///
-    /// And the async-unwinder safety concern that motivated using abseil in
-    /// `tryCapture()` (a SIGUSR1/SIGUSR2 storm fighting TSan over libunwind's
-    /// internal `dl_iterate_phdr` lock) does not apply here: crash signals
-    /// fire synchronously, exactly once, on the thread that crashed.
-    /// Recover from a fault while unwinding an *interrupted* thread's stack instead of crashing the
-    /// server: the frame chain can be malformed (a torn-down or corrupt stack can fault the walker; on
-    /// macOS backtrace() walks frame pointers, and fibers are made safe by the make_fcontext terminator
-    /// fix, issue #111579). The fault raises SIGSEGV/SIGBUS and SignalHandlers.cpp siglongjmps back here
-    /// (guarded by `asynchronous_stack_unwinding`).
-    /// Centralized here so every ucontext capture (query profiler, system.stack_trace, and the crash
-    /// handler) is protected without each caller setting this up by hand.
-    asynchronous_stack_unwinding = true;
-    if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+    void * caller_address = getCallerAddress(signal_context);
+
+    if (size == 0 && caller_address)
     {
-#if defined(OS_WASM)
-        size = 0;
-#elif defined(OS_DARWIN)
-        size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#else
-        size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#endif
-        __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
-
-        void * caller_address = getCallerAddress(signal_context);
-
-        if (size == 0 && caller_address)
-        {
-            frame_pointers[0] = caller_address;
-            size = 1;
-        }
-        else
-        {
-            /// Skip excessive stack frames that we have created while finding stack trace.
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (frame_pointers[i] == caller_address ||
-                    /// This compensates for a hack in libunwind, see the "+ 1" in
-                    /// UnwindCursor<A, R>::stepThroughSigReturn.
-                    frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
-                {
-                    offset = i;
-                    break;
-                }
-            }
-        }
+        frame_pointers[0] = caller_address;
+        size = 1;
     }
     else
     {
-        /// Faulted mid-unwind; drop the capture.
-        size = 0;
+        /// Skip excessive stack frames that we have created while finding stack trace.
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
+            {
+                offset = i;
+                break;
+            }
+        }
     }
-    asynchronous_stack_unwinding = false;
 }
 
 StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
@@ -589,21 +507,8 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_WASM)
-    /// No way to walk the stack; every trace is empty.
-    size = 0;
-#elif defined(OS_DARWIN)
-    /// backtrace()/__thread_stack_pcs walks the frame-pointer chain. Safe across boost::context fibers
-    /// thanks to the make_fcontext null frame-pointer terminator (issue #111579); malloc-free, so it is
-    /// also usable from allocator hooks (e.g. jemalloc sample tracking) that run under DENY_ALLOCATIONS.
+#if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#elif defined(THREAD_SANITIZER)
-    /// Under TSan, use abseil's frame-pointer-based unwinding instead of libunwind.
-    /// libunwind's async stack unwinding races with TSan's own concurrent
-    /// frame-pointer walking. ASan/MSan/UBSan don't have this problem and use
-    /// libunwind like a non-sanitizer build.
-    int captured = absl::GetStackTrace(frame_pointers.data(), static_cast<int>(FRAMEPOINTER_CAPACITY), /* skip_count= */ 0);
-    size = captured > 0 ? static_cast<size_t>(captured) : 0;
 #else
     size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
@@ -912,5 +817,3 @@ void StackTrace::dropCache()
 
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
-
-#pragma clang diagnostic pop

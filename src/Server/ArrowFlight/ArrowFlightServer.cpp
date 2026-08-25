@@ -12,10 +12,8 @@
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
-#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -1391,7 +1389,6 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else
