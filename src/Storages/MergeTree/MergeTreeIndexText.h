@@ -146,6 +146,12 @@ public:
 
     PostingListBuilder() = default;
 
+    /// Tag to construct a filtered entry: a placeholder for a token dropped by the postprocessor
+    /// filter. Such an entry holds no postings, is skipped at build and may be replaced (via
+    /// placement new) by a real builder when a pre-seeded keep-set token first occurs.
+    struct FilteredTag {};
+    explicit PostingListBuilder(FilteredTag) { std::get<Inline>(state).size = filtered_flag; }
+
     /// The builder is constructed with the first value of a token (in place in the map).
     explicit PostingListBuilder(UInt32 first_value);
 
@@ -165,6 +171,12 @@ public:
     bool hasLarge() const { return std::holds_alternative<Large>(state); }
     bool hasInline() const { return std::holds_alternative<Inline>(state); }
 
+    bool isFiltered() const
+    {
+        const auto * inline_state = std::get_if<Inline>(&state);
+        return inline_state && inline_state->size == filtered_flag;
+    }
+
     Large & getLarge() { return std::get<Large>(state); }
     Inline & getInline() { return std::get<Inline>(state); }
 
@@ -179,6 +191,7 @@ public:
     size_t memoryUsageBytes() const;
 
 private:
+    static constexpr UInt8 filtered_flag = 0xFF;
     std::variant<Inline, Large> state;
 };
 
@@ -517,6 +530,8 @@ struct MergeTreeIndexTextGranuleBuilder
     bool empty() const { return is_empty; }
     void reset();
 
+    void seedDropFilter();
+
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -531,8 +546,8 @@ struct MergeTreeIndexTextGranuleBuilder
     TokenToPostingsBuilderMap tokens_map;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
-    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
-    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
+    /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
