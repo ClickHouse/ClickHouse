@@ -253,7 +253,7 @@ NameSet injectRequiredColumns(
             /// everything the part holds: then each requested column is legitimately absent. A part
             /// column that is neither in the structure nor being dropped is unexplained data — a part
             /// attached after the schema moved on, say — and reporting defaults for it would hide rows
-            /// that do exist on disk, so such a part must not be read (see issue #79110).
+            /// that do exist on disk, so this read is refused (see issue #79110).
             for (const auto & column : data_part_info_for_reader.getColumns())
             {
                 if (storage_snapshot->tryGetColumn(options, column.name))
@@ -277,16 +277,9 @@ NameSet injectRequiredColumns(
                     data_part_info_for_reader.getPartName(), data_part_info_for_reader.getTableName(), column.name);
             }
 
-            /// With adaptive granularity the number of rows comes from the marks, so no column has to be
-            /// read (see getReadTaskColumns, which requires one only for non-adaptive granularity).
-            if (!data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive)
-            {
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "Part {} has no column in common with the structure of table {}, and its index "
-                    "granularity is not adaptive, so the number of rows cannot be determined without "
-                    "reading a column",
-                    data_part_info_for_reader.getPartName(), data_part_info_for_reader.getTableName());
-            }
+            /// Nothing is injected: the row count comes from the index granularity, which
+            /// `MergeTreeIndexGranularityConstant::fixFromRowsCount` makes exact for non-adaptive
+            /// parts as well, so no column has to be read for it.
         }
         else
         {

@@ -4,6 +4,10 @@ all columns dropped
 2
 42
 42
+all columns dropped, non-adaptive granularity
+42	2
+dropped and readded columns, non-adaptive granularity
+10000	42	42
 stale part re-attached
 NO_SUCH_COLUMN_IN_TABLE
 renamed columns, non-adaptive granularity

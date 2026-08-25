@@ -21,6 +21,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cleanup() {
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped_non_adaptive" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dropped_readded" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_stale_attach" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_non_adaptive_rename" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_rename_then_drop" 2>/dev/null
@@ -58,6 +60,70 @@ SELECT c FROM t_all_dropped ORDER BY c;
 
 SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
 "
+
+echo 'all columns dropped, non-adaptive granularity'
+
+# The same part with `index_granularity_bytes = 0`, so the granularity is not adaptive. The row count
+# still does not need a column: `MergeTreeIndexGranularityConstant::fixFromRowsCount` makes the last
+# granule exact for non-adaptive parts too, so this reads as rows of defaults just like the adaptive
+# case above.
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE IF EXISTS t_all_dropped_non_adaptive;
+
+CREATE TABLE t_all_dropped_non_adaptive (a UInt8, b UInt8)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity_bytes = 0;
+
+INSERT INTO t_all_dropped_non_adaptive VALUES (1, 10);
+INSERT INTO t_all_dropped_non_adaptive VALUES (2, 20);
+
+ALTER TABLE t_all_dropped_non_adaptive ADD COLUMN c UInt64 DEFAULT 42;
+
+SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+SET alter_sync = 0;
+ALTER TABLE t_all_dropped_non_adaptive DROP COLUMN a;
+ALTER TABLE t_all_dropped_non_adaptive DROP COLUMN b;
+
+SELECT c, count() FROM t_all_dropped_non_adaptive GROUP BY c;
+"
+
+# Drop the table before releasing the failpoint, so the pending mutations never run.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_all_dropped_non_adaptive"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+
+echo 'dropped and readded columns, non-adaptive granularity'
+
+# Every column the part holds is dropped and immediately added back under the same name, so each one
+# resolves against the metadata while its data in the part is stale. Nothing can be injected, and the
+# part is not suspicious either -- refusing this read would be a regression: the rows are legitimately
+# rows of defaults.
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE IF EXISTS t_dropped_readded;
+
+CREATE TABLE t_dropped_readded (a UInt64, h UInt8 DEFAULT 0)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity_bytes = 0;
+
+INSERT INTO t_dropped_readded SELECT number, 0 FROM numbers(10000);
+
+ALTER TABLE t_dropped_readded ADD COLUMN value UInt64 DEFAULT 42;
+
+SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+
+SET alter_sync = 0;
+ALTER TABLE t_dropped_readded DROP COLUMN a;
+ALTER TABLE t_dropped_readded ADD COLUMN a UInt64 DEFAULT 7;
+ALTER TABLE t_dropped_readded DROP COLUMN h;
+ALTER TABLE t_dropped_readded ADD COLUMN h UInt8 DEFAULT 9;
+
+SELECT count(), min(value), max(value) FROM t_dropped_readded;
+"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dropped_readded"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 
 echo 'stale part re-attached'
 
