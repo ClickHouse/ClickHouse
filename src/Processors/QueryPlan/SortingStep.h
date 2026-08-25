@@ -175,6 +175,9 @@ public:
     /// fold the partial stage back into its source group and create a self-cycle.
     /// `threshold_tracker` is excluded: it has no stable value to encode, and a starved tracker only
     /// means less top-N pruning, never wrong rows.
+    /// `use_buffering` is on the wire exactly where it is read: `serialize` writes it for
+    /// `FinishSorting`, and its only reader is `mergingSorted`, which the `Full` branch never calls
+    /// (`enableBuffering` can set it on a `Full` sort, where it is inert).
     ///
     /// `serializeSettings` can throw where `isSerializable()` does not cover it: the
     /// `Settings(size_t)` constructor leaves `temporary_files_buffer_size` at 0, the plan setting of

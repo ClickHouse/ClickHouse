@@ -524,6 +524,9 @@ nothing, while a wrong one on a read returns wrong rows.
   `serialize` / `serializeSettings`, hence already in the encoding), *execution-constraining
   non-wire* (appended through `CascadesIdentityExtras` in `appendCascadesIdentityExtras`), or
   *derived or display-only* (excluded, with the reason).
+- `input_headers` is excluded for every step: `GroupExpression::globallyEqualTo` compares the
+  ordered child groups separately, and a step holding an `ActionsDAG` carries its inputs' names
+  and types on the wire inside the serialized DAG anyway.
 - Wire-absence is never on its own a reason to exclude a field — check what the step's
   pipeline-building and analysis paths, and the optimizer passes that inspect the step, actually
   read. A field deliberately kept off the wire because a remote node re-derives it, or because

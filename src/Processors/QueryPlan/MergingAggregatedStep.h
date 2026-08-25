@@ -52,6 +52,7 @@ public:
     /// `only_merge` - the `bucket_top_k` family, the group-by limits, `params.max_block_size` - so
     /// their absence from the wire is not an exclusion argument here; that argument was overturned
     /// once already. See the tag enum in the .cpp for which fields and why.
+    /// `params.only_merge` needs no tag: every construction site forces it to `true`.
     /// Re-audit this step when the eager-aggregation feature branch merges: it adds
     /// `MergingAggregatedStep` state.
     bool supportsCascadesIdentity() const override { return isSerializable(); }
