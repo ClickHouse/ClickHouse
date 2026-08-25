@@ -47,5 +47,7 @@ text_index_positions_fast_path_in	1
 text_index_positions_fast_path_not_in	1
 [1,2,4]
 [1,2,4]
+[5]
+[5]
 [1,2,3]
 [1,2,3]

@@ -10,7 +10,6 @@
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
-SET log_queries = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -216,6 +215,8 @@ DROP TABLE tab;
 
 SELECT '8. IN and NOT IN filter postprocessors with phrase positions.';
 
+SET log_queries = 1;
+
 CREATE TABLE tab
 (
     id UInt32,
@@ -229,11 +230,16 @@ INSERT INTO tab VALUES
     (1, 'see the cat'),
     (2, 'see very cat'),
     (3, 'see a cat'),
-    (4, 'see cat')
+    (4, 'see cat'),
+    (5, 'foo the the foo'),
+    (6, 'foo the x the foo')
 SETTINGS log_comment = 'text_index_positions_fast_path_in';
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 0;
+-- Repeated surviving tokens still use dense positions after multiple dropped tokens.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'foo foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'foo foo') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 

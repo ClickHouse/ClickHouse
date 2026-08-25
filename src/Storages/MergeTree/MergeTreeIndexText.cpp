@@ -1593,6 +1593,29 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 {
 }
 
+size_t MergeTreeIndexTextGranuleBuilder::memoryUsageBytes() const
+{
+    size_t posting_lists_size = 0;
+    for (const auto & plist : posting_lists)
+        posting_lists_size += plist.getSizeInBytes();
+
+    size_t position_map_size = 0;
+    if (position_map)
+    {
+        position_map_size = position_map->getBufferSizeInBytes();
+        position_map->forEachValue([&](const auto &, const auto & positions_builder)
+        {
+            position_map_size += positions_builder.allocatedBytes();
+        });
+    }
+
+    return sizeof(*this)
+        + tokens_map.getBufferSizeInBytes()
+        + posting_lists_size
+        + position_map_size
+        + arena->allocatedBytes();
+}
+
 PostingListBuilder::PostingListBuilder(PostingList * posting_list)
     : large{posting_list, roaring::BulkContext()}
     , small_size(max_small_size)

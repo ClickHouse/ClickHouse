@@ -139,6 +139,8 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     {
         auto aggregator = indexes[i]->createIndexAggregator();
         aggregators.push_back(std::move(aggregator));
+        auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators.back());
+        estimated_allocated_bytes[i] = aggregator_text.memoryUsageBytes();
         index_position_by_name.emplace(indexes[i]->index.name, i);
     }
 }
@@ -214,7 +216,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
     auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
     auto granule = aggregator_text.getGranuleAndReset();
-    estimated_allocated_bytes[i] = 0;
+    estimated_allocated_bytes[i] = aggregator_text.memoryUsageBytes();
     aggregator_text.setCurrentRow(num_processed_rows);
 
     auto [streams, streams_holders] = makeOutputStreams(

@@ -494,7 +494,8 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
-    // Adds a document to the granule. The document is inserted directly as a single token.
+    /// Adds a token directly to the granule.
+    /// Returns true if the token survives postprocessor filtering and advances the dense token position.
     bool addToken(std::string_view token, UInt32 token_position);
 
     void incrementCurrentRow();
@@ -502,10 +503,12 @@ struct MergeTreeIndexTextGranuleBuilder
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
+    size_t memoryUsageBytes() const;
     void reset();
 
     void seedDropFilter();
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -550,6 +553,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
+    size_t memoryUsageBytes() const { return granule_builder.memoryUsageBytes(); }
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.

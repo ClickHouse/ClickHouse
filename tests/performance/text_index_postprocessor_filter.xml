@@ -1,7 +1,7 @@
 <test>
-  <!-- Build a text index with phrase positions whose postprocessor is a filter-only stop-word filter,
+  <!-- Build a text index whose postprocessor is a filter-only stop-word filter,
        both the drop-set form if(token IN (...), '', token) at several drop rates
-       and the keep-set form if(token NOT IN (...), '', token). -->
+       and the keep-set form if(token NOT IN (...), '', token), with and without phrase positions. -->
 
   <substitutions>
     <substitution>
@@ -12,24 +12,31 @@
         <value>85</value>
       </values>
     </substitution>
+    <substitution>
+      <name>support_phrase_search</name>
+      <values>
+        <value>0</value>
+        <value>1</value>
+      </values>
+    </substitution>
   </substitutions>
 
   <create_query>
-    CREATE TABLE tab_filter_{drop_pct} (
+    CREATE TABLE tab_filter_{drop_pct}_{support_phrase_search} (
       id UInt64,
       text String,
-      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text IN ('a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'), '', text), support_phrase_search = 1)
+      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text IN ('a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'), '', text), support_phrase_search = {support_phrase_search})
     )
     ENGINE = MergeTree
     ORDER BY id
     SETTINGS allow_experimental_text_index_phrase_search = 1
   </create_query>
   <create_query>
-    CREATE TABLE tab_src_{drop_pct} (id UInt64, text String) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE tab_src_{drop_pct}_{support_phrase_search} (id UInt64, text String) ENGINE = MergeTree ORDER BY id;
   </create_query>
 
   <fill_query>
-    INSERT INTO tab_src_{drop_pct}
+    INSERT INTO tab_src_{drop_pct}_{support_phrase_search}
     SELECT
       number,
       arrayStringConcat(arrayMap(x -> if(cityHash64(number, x) % 100 &lt; {drop_pct},
@@ -39,20 +46,20 @@
   </fill_query>
 
   <create_query>
-    CREATE TABLE tab_filter_not_in (
+    CREATE TABLE tab_filter_not_in_{support_phrase_search} (
       id UInt64,
       text String,
-      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text NOT IN ('fox', 'cat', 'dog', 'bird', 'tree', 'river', 'stone'), '', text), support_phrase_search = 1)
+      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text NOT IN ('fox', 'cat', 'dog', 'bird', 'tree', 'river', 'stone'), '', text), support_phrase_search = {support_phrase_search})
     )
     ENGINE = MergeTree
     ORDER BY id
     SETTINGS allow_experimental_text_index_phrase_search = 1
   </create_query>
 
-  <query>INSERT INTO tab_filter_{drop_pct} SELECT * FROM tab_src_{drop_pct}</query>
-  <query>INSERT INTO tab_filter_not_in SELECT * FROM tab_src_35</query>
+  <query>INSERT INTO tab_filter_{drop_pct}_{support_phrase_search} SELECT * FROM tab_src_{drop_pct}_{support_phrase_search}</query>
+  <query>INSERT INTO tab_filter_not_in_{support_phrase_search} SELECT * FROM tab_src_35_{support_phrase_search}</query>
 
-  <drop_query>DROP TABLE IF EXISTS tab_filter_{drop_pct}</drop_query>
-  <drop_query>DROP TABLE IF EXISTS tab_filter_not_in</drop_query>
-  <drop_query>DROP TABLE IF EXISTS tab_src_{drop_pct}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_filter_{drop_pct}_{support_phrase_search}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_filter_not_in_{support_phrase_search}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_src_{drop_pct}_{support_phrase_search}</drop_query>
 </test>
