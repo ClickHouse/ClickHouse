@@ -125,6 +125,19 @@ ENGINE = MergeTree
 UNIQUE KEY (`c.null`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
+-- A `Dynamic` subcolumn resolves through a separate fallback in
+-- `ColumnsDescription::hasSubcolumn`, not the static subcolumn index above.
+CREATE TABLE uk_t (id UInt64, c Dynamic)
+ENGINE = MergeTree
+UNIQUE KEY (`c.String`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- The tuple-list spelling reaches the check from the other AST branch.
+CREATE TABLE uk_t (id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (id, `c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
 -- 7h-1. A stored column may be named after another column's subcolumn: `c.null`
 -- below is a column of its own, not the Nullable column's null map, so it stays
 -- accepted and writable.
@@ -152,6 +165,13 @@ ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE uk_t (id UInt64, p UInt64)
 ENGINE = MergeTree
 UNIQUE KEY (`_partition_value.1`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- The tuple element can itself have a subcolumn, so every dot position is tried.
+CREATE TABLE uk_t (id UInt64, p String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1.size`)
 PARTITION BY p
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
