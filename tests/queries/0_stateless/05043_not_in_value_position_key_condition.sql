@@ -48,6 +48,17 @@ SELECT count() FROM t_not_part WHERE (NOT (NOT c0)) <= 1.5;
 SELECT count() FROM t_not_part WHERE NOT ((NOT (NOT c0)) >= 2);
 SELECT count() FROM t_not_part WHERE (NOT (NOT c0)) >= 1;
 
+SELECT 'skip index';
+-- One row per granule, so a `minmax` skip index can prune down to individual rows.
+DROP TABLE IF EXISTS t_not_idx;
+CREATE TABLE t_not_idx (c0 Int64, INDEX idx_c0 c0 TYPE minmax GRANULARITY 1) ENGINE = MergeTree
+    ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_not_idx VALUES (-2), (-1), (0), (1), (2);
+SELECT count() FROM t_not_idx WHERE (NOT (NOT c0)) > -0.5;
+SELECT count() FROM t_not_idx WHERE (NOT (NOT c0)) <= 1.5;
+SELECT count() FROM t_not_idx WHERE NOT ((NOT (NOT c0)) >= 2);
+SELECT count() FROM t_not_idx WHERE (NOT (NOT c0)) >= 1;
+
 SELECT 'unsigned';
 -- The same shape on an unsigned key: `c0 <= 1.5` would exclude every stored value.
 DROP TABLE IF EXISTS t_not_unsigned;
@@ -60,4 +71,5 @@ DROP VIEW v_not_stats;
 DROP TABLE t_not_stats;
 DROP TABLE t_not_pk;
 DROP TABLE t_not_part;
+DROP TABLE t_not_idx;
 DROP TABLE t_not_unsigned;
