@@ -241,8 +241,12 @@ void injectRequiredColumns(
                 continue;
 
             auto name_in_part = column.name;
-            if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+            if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part)
+                && alter_conversions->needApplyRename(name_in_part,
+                    [&](const auto & name) { return data_part_info_for_reader.getColumns().contains(name); }))
+            {
                 name_in_part = alter_conversions->getColumnOldName(name_in_part);
+            }
 
             /// Data of a column dropped by a pending mutation is stale, so it is treated as missing.
             if (alter_conversions && alter_conversions->isColumnDropped(name_in_part, share_nested))
