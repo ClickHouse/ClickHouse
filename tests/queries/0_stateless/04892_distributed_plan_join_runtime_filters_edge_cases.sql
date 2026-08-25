@@ -60,7 +60,10 @@ SELECT count() > 0 AND (
           AND query_id IN (
               SELECT query_id FROM system.query_log
               WHERE type = 'QueryFinish' AND event_date >= yesterday()
-                AND log_comment = '04892_nullable'
+                AND initial_query_id IN (
+                    SELECT query_id FROM system.query_log
+                    WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                      AND current_database = currentDatabase() AND log_comment = '04892_nullable')
                 AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
         GROUP BY filter_key
         HAVING count() >= 2
@@ -68,7 +71,10 @@ SELECT count() > 0 AND (
 ) = 0
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday()
-  AND log_comment = '04892_nullable'
+  AND initial_query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04892_nullable')
   AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%');
 
 SELECT '-- two joins, each with a transported filter';
@@ -84,7 +90,10 @@ FROM
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE type = 'QueryFinish' AND event_date >= yesterday()
-            AND log_comment = '04892_two_joins'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                  AND current_database = currentDatabase() AND log_comment = '04892_two_joins')
             AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
     GROUP BY filter_name, filter_key
     HAVING count() >= 2

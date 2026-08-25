@@ -52,7 +52,10 @@ FROM
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE type = 'QueryFinish' AND event_date >= yesterday()
-            AND log_comment = '04891_transport_on'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                  AND current_database = currentDatabase() AND log_comment = '04891_transport_on')
             AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
     GROUP BY filter_key
     HAVING count() >= 2
@@ -69,7 +72,10 @@ FROM
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE type = 'QueryFinish' AND event_date >= yesterday()
-            AND log_comment = '04891_broadcast'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                  AND current_database = currentDatabase() AND log_comment = '04891_broadcast')
             AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
     GROUP BY filter_key
     HAVING count() >= 2
@@ -88,7 +94,10 @@ FROM
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE type = 'QueryFinish' AND event_date >= yesterday()
-            AND log_comment = '04891_multi_key'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                  AND current_database = currentDatabase() AND log_comment = '04891_multi_key')
             AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
     GROUP BY filter_name, filter_key
     HAVING count() >= 2
@@ -106,7 +115,10 @@ SELECT count() > 0 AND (
           AND query_id IN (
               SELECT query_id FROM system.query_log
               WHERE type = 'QueryFinish' AND event_date >= yesterday()
-                AND log_comment = '04891_anti_join'
+                AND initial_query_id IN (
+                    SELECT query_id FROM system.query_log
+                    WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                      AND current_database = currentDatabase() AND log_comment = '04891_anti_join')
                 AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'))
         GROUP BY filter_key
         HAVING count() >= 2
@@ -114,5 +126,8 @@ SELECT count() > 0 AND (
 ) = 0
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday()
-  AND log_comment = '04891_anti_join'
+  AND initial_query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04891_anti_join')
   AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%');
