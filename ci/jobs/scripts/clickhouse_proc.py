@@ -165,7 +165,7 @@ class ClickHouseProc:
         print("Failed to start minio")
         return False
 
-    RUSTFS_VERSION = "1.0.0-beta.12"
+    RUSTFS_VERSION = "1.0.0-rc.3"
 
     def download_rustfs(self, rustfs_bin):
         machine = platform.machine()
