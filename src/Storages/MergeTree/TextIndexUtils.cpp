@@ -452,7 +452,6 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         initCursor(cursor, source);
     }
 
-    /// Most tokens live in a single source and need no merging at all.
     if (num_cursors == 1)
     {
         auto & cursor = postings_merge_cursors.front();
@@ -470,10 +469,6 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
     for (size_t i = 0; i < num_cursors; ++i)
         postings_queue.push(postings_merge_cursors[i].impl);
 
-    /// Row ids are globally unique across sources, so the merged stream must be strictly increasing.
-    UInt32 last_row_id = 0;
-    bool has_last_row_id = false;
-
     while (postings_queue.isValid())
     {
         auto [current_ptr, batch_size] = postings_queue.current();
@@ -481,13 +476,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         auto & cursor = postings_merge_cursors[current->order];
 
         const UInt32 * begin = cursor.rowIds().data() + current->getPos();
-
-        if (has_last_row_id && *begin <= last_row_id)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate row id {} in source posting lists on merge of text indexes", *begin);
-
         sink(std::span<const UInt32>(begin, batch_size));
-        last_row_id = begin[batch_size - 1];
-        has_last_row_id = true;
 
         if (!current->isLast(batch_size))
         {
@@ -507,7 +496,6 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream)
 {
     using enum PostingsSerialization::Flags;
-    output_postings_buffer.clear();
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
@@ -541,7 +529,6 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     auto encoder = codec->createEncoder();
     constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 16;
 
-    output_postings_buffer.clear();
     mergePostings([&](std::span<const UInt32> row_ids)
     {
         /// A granularity-aligned chunk arriving on an empty buffer (typically a whole
@@ -612,6 +599,9 @@ void MergeTextIndexesTask::flushPostingList()
     size_t total_cardinality = 0;
     for (const auto & source : output_sources)
         total_cardinality += source.info.cardinality;
+
+    output_postings_buffer.clear();
+    output_postings_buffer.reserve(total_cardinality);
 
     if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
         token_info = flushRawPostings(*postings_stream);
