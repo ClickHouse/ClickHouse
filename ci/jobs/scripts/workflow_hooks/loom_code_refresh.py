@@ -27,11 +27,15 @@ def refresh():
 
     try:
         # get_secret returns a Secret.Config handle; join_with batches both
-        # SSM parameters into one get-parameters call, values in request order.
+        # SSM parameters into one get-parameters call, values in request
+        # order. The timeout bounds the AWS CLI subprocess itself (killed on
+        # expiry), so a stalled SSM/credential path can neither block the
+        # workflow nor leak a hung process on the runner; SIGALRM below
+        # remains the whole-script backstop.
         loom_url, token = (
             info.get_secret("loom-url")
             .join_with(info.get_secret("loom-ci-token"))
-            .get_value()
+            .get_value(timeout=15)
         )
         loom_url = loom_url.rstrip("/")
     except Exception:
