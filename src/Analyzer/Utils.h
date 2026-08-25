@@ -237,12 +237,15 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
-/** Remove conjuncts that are unsafe to copy into another query tree (non-deterministic in this
-  * query, stateful, or server-constant). Nested `and` is flattened the same way as
-  * `removeExpressionsThatDoNotDependOnTableIdentifiers`. Window and aggregate functions are also
-  * dropped. JOIN filter pushdown refuses stateful predicates via `ActionsDAG::hasStatefulFunctions`.
-  * Server constants such as `hostName` must stay on the initiator: the wrap `WHERE` is sent to
-  * remote cluster nodes, where those functions can return a different value.
+/** Remove conjuncts that are unsafe to copy into another query tree (not deterministic, not
+  * deterministic in this query, stateful, or server-constant). Nested `and` is flattened the same
+  * way as `removeExpressionsThatDoNotDependOnTableIdentifiers`. Window and aggregate functions are
+  * also dropped. JOIN filter pushdown refuses stateful predicates via
+  * `ActionsDAG::hasStatefulFunctions`.
+  *
+  * The wrap `WHERE` is sent to remote cluster nodes. Node-local functions such as `hostName`,
+  * `dictGet`, `joinGet`, `FQDN`, and `queryID` must stay on the initiator: remotes can miss the
+  * dictionary, see different data, or return a different server-local value.
   */
 void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
