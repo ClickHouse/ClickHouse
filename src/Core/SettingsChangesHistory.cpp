@@ -44,7 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
-            {"exclude_data_from_backup", false, false, "New MergeTree setting: when enabled, BACKUP includes this table's DDL but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables whose data can be regenerated from a source table."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -1421,9 +1420,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        {
+            {"exclude_data_from_backup", false, false, "New setting: when enabled, BACKUP includes this table's DDL but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables whose data can be regenerated from a source table."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
-            {"exclude_data_from_backup", false, false, "New setting to exclude a table's data (but keep its DDL) from BACKUP"},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
