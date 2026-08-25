@@ -262,7 +262,7 @@ TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
 
 TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
 {
-    const auto json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64","default":"type_default"}],"version":1})";
+    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64","default":"type_default"}],"version":1})";
     EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
 }
 

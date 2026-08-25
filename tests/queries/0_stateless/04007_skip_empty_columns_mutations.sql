@@ -367,11 +367,14 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 
 INSERT INTO t_skip_empty_case41 (key, a) VALUES (1, 100);
 
--- Step 2: ADD COLUMN b with a DEFAULT, then enable skip and insert b=0.
-ALTER TABLE t_skip_empty_case41 ADD COLUMN b UInt64 DEFAULT 999;
+-- Step 2: ADD b without a DEFAULT so b=0 is eligible for skipping.
+ALTER TABLE t_skip_empty_case41 ADD COLUMN b UInt64;
 ALTER TABLE t_skip_empty_case41 MODIFY SETTING skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
 
 INSERT INTO t_skip_empty_case41 (key, a, b) VALUES (2, 200, 0);
+
+-- Freeze the current DEFAULT only after the marker-bearing part exists.
+ALTER TABLE t_skip_empty_case41 MODIFY COLUMN b UInt64 DEFAULT 999;
 
 -- Pre-merge: row 1 should read b=999 (no marker, current DEFAULT),
 -- row 2 should read b=0 (marker, frozen type-default).
