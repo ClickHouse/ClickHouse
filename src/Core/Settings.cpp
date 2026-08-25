@@ -7513,10 +7513,10 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
     \
     /* CLOUD ONLY */ \
     DECLARE(BoolAuto, force_read_through_distributed_cache, Field("auto"), R"(
-Only has an effect in ClickHouse Cloud. Overrides the server setting `read_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
+Only has an effect in ClickHouse Cloud. Overrides the server setting `enable_read_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
     DECLARE(BoolAuto, force_write_through_distributed_cache, Field("auto"), R"(
-Only has an effect in ClickHouse Cloud. Overrides the server setting `write_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
+Only has an effect in ClickHouse Cloud. Overrides the server setting `enable_write_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
     DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
 Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
