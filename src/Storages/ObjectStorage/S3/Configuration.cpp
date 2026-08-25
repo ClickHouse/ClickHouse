@@ -178,7 +178,7 @@ namespace
                          /*uri_style*/ settings[Setting::s3_uri_style])
                          .uri;
         }
-        catch (...)
+        catch (...) /// Ok: only whether the parse succeeded matters; the exception itself carries nothing this decision uses.
         {
             try
             {
