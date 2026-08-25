@@ -1,8 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: a `Replicated` database re-parses the column type from the formatted
--- `CREATE`, and version 0 is not printed in the type name, so the version 0 pin this test relies on
--- does not survive the round trip through the DDL log.
-
 -- Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes, which fixes
 -- the overflow of the estimate at cardinalities above ten billion (issue #6078). The estimate below
 -- about two billion still comes from the same 32-bit sample as before, so the values here
