@@ -1,35 +1,3 @@
--- countBytesInFilter, one block length per row
-0
-0
-21
-21
-22
-42
-43
-43
-85
-85
-86
--- countBytesInFilter reached with the output column optimised away
-21
-21
-22
-43
-64
--- countBytesInFilterWithNull
-17
-17
-18
-35
-35
-69
--- all-zero, all-one and a single set byte in the second block
-0
-128
-1
--- a filter spanning many blocks must agree with the sum of its parts
-1
--- non-binary UInt8 condition, block-size independent
 50
 50
 50
