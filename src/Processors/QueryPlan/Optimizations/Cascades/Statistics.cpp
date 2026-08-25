@@ -258,7 +258,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const Re
 namespace QueryPlanOptimizations
 {
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
 }
 
