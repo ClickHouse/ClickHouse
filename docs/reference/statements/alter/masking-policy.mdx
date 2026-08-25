@@ -25,16 +25,6 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
 
 All clauses are optional. Only the specified clauses will be updated.
 
-**Syntax**
-
-```sql
-ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
-    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
-    [WHERE condition]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-    [PRIORITY priority_number]
-```
-
 **Part of:** `ALTER`
 
 **Related:** `CREATE MASKING POLICY`, `ALTER`, `SHOW`

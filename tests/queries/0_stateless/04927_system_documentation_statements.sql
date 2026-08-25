@@ -21,6 +21,16 @@ WHERE NOT startsWith(documentation.description, statements.description);
 SELECT description LIKE '%**Syntax**%' AND description LIKE '%CREATE DATABASE ...%'
 FROM system.documentation WHERE type = 'Statement' AND name = 'CREATE';
 
+-- Structured syntax is not appended when the source description already contains it.
+SELECT count() = 0
+FROM system.statements AS statements
+INNER JOIN system.documentation AS documentation
+    ON documentation.type = 'Statement' AND documentation.name = statements.name
+WHERE notEmpty(statements.syntax)
+    AND position(statements.description, statements.syntax) > 0
+    AND countSubstrings(documentation.description, statements.syntax)
+        > countSubstrings(statements.description, statements.syntax);
+
 -- Complete pages are exposed verbatim, without synthetic enclosing-statement sections.
 SELECT description NOT LIKE '%**Part of:**%'
 FROM system.documentation WHERE type = 'Statement' AND name = 'WHERE';
