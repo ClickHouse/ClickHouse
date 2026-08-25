@@ -315,7 +315,7 @@ void transpose64x8(UInt64 * src_dst)
 #if T64_CODEC_SIMD_TRANSPOSE
     /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across
     /// lanes; applying the two passes in the opposite order inverts it, which is what
-    /// reverseTranspose64x8 below does. The byte pass is shared with the matrix transposes.
+    /// `reverseTranspose64x8` below does. The byte pass is shared with the matrix transposes.
     for (UInt32 lane = 0; lane < 8; ++lane)
         src_dst[lane] = transposeBitsInLane(src_dst[lane]);
     transposeByteLanes(src_dst);
@@ -449,7 +449,7 @@ void clear(T * buf)
         buf[i] = 0;
 }
 
-/// matrix8[64 * byte + col] = byte-th byte of src[col], for a full matrix of 8-byte values. One
+/// `matrix8[64 * byte + col]` = byte-th byte of `src[col]`, for a full matrix of 8-byte values. One
 /// iteration transposes the 8 columns whose bytes occupy one 64-byte group, then spreads the
 /// resulting rows across the eight matrix lines they belong to.
 template <typename T>
