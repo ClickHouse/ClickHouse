@@ -526,8 +526,19 @@ def generate_raw_entries(version, from_ref, to_sha):
     return f"Generated {entries} raw entries for {from_short}..{to_short}"
 
 
-def _edit_prompt(version):
+def _edit_prompt(version, previous_error=None):
     anchor = _anchor_id(version)
+    strict = "\n".join(f"   - {c}" for c in sorted(STRICT_RETENTION_CATEGORIES))
+    retry = ""
+    if previous_error:
+        retry = f"""
+A previous attempt at this task was rejected by the verification of this job:
+
+    {previous_error}
+
+The working tree has been reset to the raw blocks, so start over - but produce
+an edit that does not repeat that rejection.
+"""
     return f"""\
 You are updating {CHANGELOG_FILE} for the upcoming ClickHouse release {version} as part of an automated daily CI job.
 
@@ -539,11 +550,15 @@ Task:
    - If that section does not exist yet, create it directly above the first released section, with exactly this header: `### <a id="{anchor}"></a> ClickHouse release {version}, FIXME (in progress)`, and add this line at the top of the "Table of Contents" list: `**[ClickHouse release v{version}, FIXME](#{anchor})**<br/>`.
    - Place entries under the proper `#### <Category>` headers in the preferred category order from the skill; create missing category headers as needed; keep exactly one blank line before each `####` header.
    - Entries already present in the in-progress section were edited on previous days: do not rewrite or reorder them, except where the skill requires it — a revert arriving in a raw block may delete or amend a previously added entry (skill section 2), and a follow-up PR may be merged into an existing bullet (skill section 7).
-3. Delete the marker blocks, including the marker lines themselves, after integrating them.
-4. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
+3. Never delete an entry that the generator put under one of these categories:
+{strict}
+   Such an entry may be rewritten, merged into another bullet, or moved to a different category, but its `[#N](...)` pull request link has to be present in {CHANGELOG_FILE} when you are done. The entries you may delete are the ones under `NOT FOR CHANGELOG / INSIGNIFICANT` and `NO CL ENTRY` that carry no user-visible change (skill section 3), the `Build/Testing/Packaging Improvement` entries that are pure CI plumbing (skill section 4), and an entry that a revert in these raw blocks cancels out (skill section 2). Deleting anything else fails this job, and the entry is then lost for good: the generation point has already moved past it, so the next run will not offer it again.
+4. A revert of a revert re-applies the change (skill section 2.5): keep the original entry, append the link of the pull request that re-applied it, and delete only the intervening revert. Check for this case before concluding that a change landed and was reverted — all three pull requests can sit in the same range.
+5. Delete the marker blocks, including the marker lines themselves, after integrating them.
+6. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
 
 The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the skill requires consulting a pull request (reverts, unclear entries).
-"""
+{retry}"""
 
 
 def verify_edit(version, base_sha, pre_untracked=frozenset()):
@@ -615,7 +630,6 @@ def verify_edit(version, base_sha, pre_untracked=frozenset()):
 def edit_raw_entries(version):
     """Run the editing agent on the committed raw blocks and commit the result.
     Retries a few times; on failure resets to the generate commit and raises."""
-    prompt = _edit_prompt(version)
     openai_key = Secret.Config(
         name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
@@ -626,6 +640,10 @@ def edit_raw_entries(version):
     pre_untracked = _untracked_files()
     last_error = None
     for attempt in range(1, MAX_EDIT_ATTEMPTS + 1):
+        # `last_error` still holds the rejection of the previous attempt here:
+        # tell the agent about it, otherwise a retry just reproduces the same
+        # edit and the same rejection.
+        prompt = _edit_prompt(version, last_error)
         # Full reset to the generate commit: a failed attempt may have left
         # changes beyond CHANGELOG.md, new files, or even commits (all are
         # verify_edit failure modes), and they must not leak into the next

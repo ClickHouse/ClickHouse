@@ -49,6 +49,24 @@ Each edit type below was observed at least twice across the surveyed
 releases. For real before/after examples, consult the diffs listed at the
 bottom under "How to use the surveyed past releases".
 
+**Retention rule — read this before deleting anything.** An entry that the
+autogenerator put under one of the real categories (`Backward Incompatible
+Change`, `New Feature`, `Experimental Feature`, `Performance Improvement`,
+`Improvement`, `Bug Fix`) is never deleted. Rewrite it (§5), merge it into
+another bullet (§7), move it to another category (§6) — but its
+`[#NNNNN](...)` link stays in the file. Deletion is confined to three
+places: the `NOT FOR CHANGELOG / INSIGNIFICANT` and `NO CL ENTRY` bullets
+that carry no user-visible change (§3), the `Build/Testing/Packaging
+Improvement` entries that are pure CI plumbing (§4), and an entry that a
+revert in the same range cancels out (§2). "This looks unimportant" is not a
+reason to drop a real entry — an entry lost here is lost for good, because
+the changelog is generated once per range.
+
+The `NightlyChangelog` CI job enforces exactly this: a run whose edit drops
+such a link fails with `Entries disappeared in the edit without a matching
+revert`, and the raw entries stay unedited until someone fixes it. That was
+the state of the 26.8 changelog for twelve days in August 2026.
+
 ### 1. Release header
 
 The autogenerator emits:
@@ -79,21 +97,35 @@ section. For each:
 
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
-   form `Revert "<original PR title>"` or `Revert #NNNNN`.
+   form `Revert "<original PR title>"` or `Revert #NNNNN`, and GitHub puts a
+   `Reverts owner/repo#NNNNN` line into the body.
 2. Search the rest of the in-progress changelog for the matching entry by
    PR number, title, or topic.
-3. **If the original PR is in the same release range** and is being
-   reverted: delete that entry from its category. Do **not** keep the
-   revert PR as a separate bullet — the user should see no trace of either.
-4. **If the original PR shipped in an earlier release** and the revert is
+3. **Check whether this revert is itself reverted** before you conclude
+   anything — by a `Revert "Revert "..."""` title elsewhere in the section,
+   or by a body containing `Reverts owner/repo#<this PR>`. If it is, the
+   change ships in this release: go to step 6 and leave the original entry
+   in place. A three-PR chain (change, revert, revert of the revert) sits
+   entirely inside one range often enough to matter.
+4. **If the original PR is in the same release range** and stays reverted:
+   delete that entry from its category. Do **not** keep the revert PR as a
+   separate bullet — the user should see no trace of either.
+5. **If the original PR shipped in an earlier release** and the revert is
    meant to be visible to users: rewrite the revert into a normal entry
    under the appropriate category (often Bug Fix or Backward Incompatible
    Change), describing the user-visible effect of the revert.
-5. **If the revert PR is itself a revert-of-revert** (i.e. it re-applies a
+6. **If the revert PR is itself a revert-of-revert** (i.e. it re-applies a
    change that was previously reverted): keep the original entry, append
    the second revert's PR/author link to it so both PR numbers are
    recorded, and delete the intervening revert from the section.
-6. After processing, delete any leftover bullets and the section header
+
+   Real example from 26.8: `#109946` fixed the propagation of settings in
+   `accurateCastOrDefault`, `#114911` reverted it, `#114912` reverted that
+   revert. All three are in the range. The result is one `Bug Fix` bullet —
+   `#109946`'s entry with `#114912`'s link appended — and no trace of
+   `#114911`. Deleting `#109946` "because it was reverted" drops a fix that
+   ships in the release.
+7. After processing, delete any leftover bullets and the section header
    itself.
 
 The goal is that the final changelog reflects the *net* effect on the
@@ -112,7 +144,9 @@ Walk every bullet in this section. For each:
   entry instead of promoting an empty one.
 - Otherwise — delete it.
 
-Then delete the section header itself.
+Then delete the section header itself. This section, `NO CL ENTRY` and the
+CI plumbing of §4 are the only places where entries are deleted; see the
+retention rule above.
 
 #### `This closes` / `Closes #N` / `Fixes #N` entries
 
