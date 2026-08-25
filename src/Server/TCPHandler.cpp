@@ -1607,9 +1607,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
                         sendData(state, block);
+                        out->sync();
+                    }
 
-                    out->sync();
                 }
             }
         }
