@@ -104,6 +104,12 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    /// See `HashJoin::dropRightBlocksKeptForAnotherAlgorithm`.
+    void dropRightBlocksKeptForAnotherAlgorithm()
+    {
+        std::ranges::for_each(hash_joins, [](auto & hash_join) { hash_join->data->dropRightBlocksKeptForAnotherAlgorithm(); });
+    }
+
     void setEnableLazyColumnsIndexing(bool value) override
     {
         std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });

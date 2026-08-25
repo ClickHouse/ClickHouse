@@ -570,6 +570,33 @@ bool HashJoin::mustKeepRightBlocks() const
     return isUsedByAnotherAlgorithm();
 }
 
+/// The blocks a set map keeps only for another algorithm are needed while that algorithm can still
+/// take them - which is until the build phase ends: `JoinSwitcher` and `SpillingHashJoin` both take
+/// them out of `addBlockToJoin`, and `GraceHashJoin` while it rebuckets one. Once the wrapper has
+/// settled on this join, they are dead weight for the whole probe phase, so it says so and they go.
+void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
+{
+    if (!data || getMapsKind() != JoinMapsKind::Set)
+        return;
+
+    /// A nullmap holds a raw pointer into a stored block, and the non-joined stream reads the block
+    /// through it. Both nullmaps are only stored for a RIGHT or FULL join, which never gets a set
+    /// map, so this holds today - it is here so that the drop stays honest if that ever changes.
+    if (!data->nullmaps.empty())
+        return;
+
+    doDebugAsserts();
+    for (auto & stored_columns : data->columns)
+    {
+        data->allocated_size -= stored_columns.allocatedBytes();
+        /// No cell refers to the block, but null the index entry anyway, so that a stale reference
+        /// trips the chassert in `StoredColumnsIndex::at` rather than reading freed memory.
+        data->stored_columns_index->clearEntry(stored_columns.block_no);
+    }
+    data->columns.clear();
+    doDebugAsserts();
+}
+
 JoinMapsKind HashJoin::getMapsKind() const
 {
     if (preferUseMapsAll())

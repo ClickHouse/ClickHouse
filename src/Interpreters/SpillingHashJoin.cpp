@@ -298,6 +298,17 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+
+    /// The switch to `GraceHashJoin` can only happen while collecting, and that is over: whatever
+    /// right blocks were kept in case it did are now dead weight for the whole probe phase, so a
+    /// join that stores only the keys can drop them.
+    if (state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN)
+    {
+        if (concurrent_join)
+            concurrent_join->dropRightBlocksKeptForAnotherAlgorithm();
+        else
+            hash_join->dropRightBlocksKeptForAnotherAlgorithm();
+    }
 }
 
 bool SpillingHashJoin::hasPostBuildPhase() const

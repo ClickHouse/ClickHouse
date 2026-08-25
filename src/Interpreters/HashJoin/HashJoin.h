@@ -687,6 +687,10 @@ private:
 public:
     bool mustKeepRightBlocks() const;
 
+    /// Called once no other algorithm can take the right blocks back out of this join. A join that
+    /// stores only the keys reads nothing from them, so they can go.
+    void dropRightBlocksKeptForAnotherAlgorithm();
+
 private:
 
     /// The maps flavour this join runs on. All the dispatch entry points take it.
