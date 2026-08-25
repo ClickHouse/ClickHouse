@@ -19,8 +19,9 @@ namespace DB
 /// A credential the collection itself supplied may only be sent to an origin (scheme/host/port) the collection
 /// itself declares. Throws `BAD_ARGUMENTS` when a query moved the origin with such a credential still attached,
 /// which would send it - and, for SigV4, a signature over an attacker-chosen request - to a user-chosen host.
-/// A collection that declares no origin at all - no `url`, or a relative one whose origin comes from `s3_base` -
-/// authorises none.
+/// A collection that stores no `url` authorises no destination at all. One whose stored `url` is relative, or is
+/// a value no URL parser accepts, declares no origin to compare against and stays unbound: a relative url's origin
+/// comes from `s3_base`, which is query-level, so both sides of the comparison would read one user-supplied value.
 ///
 /// Call once per seam, after the seam has finished resolving credentials and the destination URL, with the
 /// collection still in hand so that per-key override provenance is available. `effective_url` is the URL the
