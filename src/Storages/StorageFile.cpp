@@ -1593,6 +1593,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline->disableProfileEventUpdate();
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     return true;
 }
@@ -1714,6 +1715,7 @@ Chunk StorageFileSource::generate()
                 if (storage->format_name == "Distributed")
                 {
                     pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
                 }
@@ -1923,6 +1925,8 @@ Chunk StorageFileSource::generate()
             });
 
             pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+            /// Is accounted by the outer source in progress() below.
+            pipeline->disableProfileEventUpdate();
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
             ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -2543,6 +2547,7 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
                 ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);

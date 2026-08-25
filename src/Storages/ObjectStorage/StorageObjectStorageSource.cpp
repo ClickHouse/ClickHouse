@@ -1391,6 +1391,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    /// Is accounted by the source that owns this reader.
+    pipeline->disableProfileEventUpdate();
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
