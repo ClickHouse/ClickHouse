@@ -380,7 +380,8 @@ static struct InitFiu
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
-    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    ONCE(database_atomic_commit_create_table_failure)
 
 namespace FailPoints
 {
