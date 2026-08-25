@@ -95,6 +95,14 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
+/// Everything a `PostingListBuilder` needs to add row ids and flush full blocks into the encoder.
+struct PostingListBuildContext
+{
+    const IPostingListCodec & codec;
+    size_t segment_size;
+    bool enable_positions;
+};
+
 /// Builds one token's posting list during the index build.
 /// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
 /// Frequent tokens spill to `Large`, whose raw values flush to an encoder every `append_granularity` row ids.
@@ -130,9 +138,8 @@ public:
         /// Starts a token on the heap from its first occurrence, with position tracking enabled.
         Large(UInt32 first_value, UInt32 first_position);
 
-        /// The last added row id. Used to skip duplicates.
-        UInt32 last_value = 0;
-        /// Raw row ids of the current (possibly incomplete) segment.
+        /// Raw row ids of the current (possibly incomplete) segment. Never empty between adds
+        /// (`add` flushes before appending), so `values.back()` is the last added row id.
         PODArray<UInt32, 64> values;
         /// Full segments encoded into the codec's in-memory form. Created lazily on the first
         /// flush: tokens whose posting lists end up raw or embedded never need an encoder.
@@ -140,52 +147,32 @@ public:
         /// Positions of the token for phrase search. Null unless positions are enabled.
         std::unique_ptr<PositionListBuilder> positions;
 
-        /// Flushes buffered row ids into the encoder once there are at least `min_flush_size` of them.
-        void flush(const IPostingListCodec & codec, size_t segment_size, size_t min_flush_size);
+        /// Flushes all buffered row ids into the encoder and clears the buffer.
+        /// The caller controls the flush size (see `IPostingListEncoder::append_granularity`).
+        void flush(const PostingListBuildContext & context);
     };
 
     PostingListBuilder() = default;
 
-    /// Tag to construct a filtered entry: a placeholder for a token dropped by the postprocessor
-    /// filter. Such an entry holds no postings, is skipped at build and may be replaced (via
-    /// placement new) by a real builder when a pre-seeded keep-set token first occurs.
     struct FilteredTag {};
     explicit PostingListBuilder(FilteredTag) { std::get<Inline>(state).size = filtered_flag; }
 
-    /// The builder is constructed with the first value of a token (in place in the map).
-    explicit PostingListBuilder(UInt32 first_value);
+    /// The builder is constructed with the first value of a token.
+    /// With positions enabled it starts in the `Large` state right away.
+    PostingListBuilder(UInt32 first_value, UInt32 first_position, const PostingListBuildContext & context);
 
-    /// The same, but for an index with enabled positions. Such a builder starts in the `Large`
-    /// state right away, because positions of every occurrence need heap storage anyway.
-    PostingListBuilder(UInt32 first_value, UInt32 first_position);
-
-    /// Adds a value to the inline array or to the large (heap) buffer, flushing full blocks to the
-    /// encoder as the buffer fills.
-    void add(UInt32 value, const IPostingListCodec & codec, size_t segment_size);
-
-    /// The same, but also records the position of the token within the row (for an index with
-    /// enabled positions). Positions are recorded for every occurrence, including in-row repeats
-    /// (which add nothing to the posting list itself).
-    void add(UInt32 value, UInt32 position, const IPostingListCodec & codec, size_t segment_size);
+    /// Adds a value to the inline array or to the large (heap) buffer.
+    /// Flushes full blocks to the encoder as the buffer fills.
+    /// When positions are enabled, records the position of the token within the row.
+    void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
 
     bool hasLarge() const { return std::holds_alternative<Large>(state); }
     bool hasInline() const { return std::holds_alternative<Inline>(state); }
-
-    bool isFiltered() const
-    {
-        const auto * inline_state = std::get_if<Inline>(&state);
-        return inline_state && inline_state->size == filtered_flag;
-    }
+    bool isFiltered() const;
 
     Large & getLarge() { return std::get<Large>(state); }
     Inline & getInline() { return std::get<Inline>(state); }
-
-    /// Returns the token's position list (phrase search) or nullptr when positions are disabled.
-    PositionListBuilder * getPositions()
-    {
-        auto * large = std::get_if<Large>(&state);
-        return large ? large->positions.get() : nullptr;
-    }
+    PositionListBuilder * getPositions();
 
     /// Heap memory held by the builder (the builder itself is accounted in the map buffer).
     size_t memoryUsageBytes() const;
@@ -366,12 +353,11 @@ struct TextIndexSerialization
     /// `positions_stream` is set) along with the token info into the dictionary stream.
     static void serializePostingsAndTokenInfo(
         PostingListBuilder && postings,
+        const PostingListBuildContext & context,
         MergeTreeIndexWriterStream & dictionary_stream,
         MergeTreeIndexWriterStream & postings_stream,
-        const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization,
-        PositionListBuilder * positions,
-        MergeTreeIndexWriterStream * positions_stream);
+        MergeTreeIndexWriterStream * positions_stream,
+        PositionListBuilder * positions);
 
     /// Serializes the posting list of a single token and returns its metadata.
     /// The row ids must be sorted in ascending order and unique (used on merges).
@@ -386,7 +372,7 @@ struct TextIndexSerialization
     static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
-    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(const TextIndexHeader & header, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -518,10 +504,12 @@ struct MergeTreeIndexTextGranuleBuilder
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_);
 
+    /// The context for `addDocument`/`addToken`; created once per batch of added documents.
+    PostingListBuildContext buildContext() const;
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(std::string_view document);
+    void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
@@ -535,8 +523,6 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
-    /// Effective segment size of the posting lists (see IPostingListCodec::getSegmentSize).
-    size_t segment_size = 0;
 
     bool is_empty = true;
     UInt64 current_row = 0;
@@ -578,7 +564,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
     template <bool tokenize>
-    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;
