@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"json_use_optimized_type_conversion", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -113,7 +114,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format", "", "", "New setting to override the input format of the query."},
             {"output_format", "", "", "New setting to override the output format of the query."},
             {"compression", "", "", "New setting to apply generic compression to the response body."},
-            {"json_use_optimized_type_conversion", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."},
             {"http_allow_database_as_path", false, false, "New setting to recognize a database name in the URL path of HTTP requests."},
             {"http_allow_table_as_file", false, false, "New setting to recognize a table name in the URL path of HTTP requests, with optional format/compression extensions."},
             {"http_allow_filters_as_path", false, false, "New setting to recognize hive-style `name=value` filters in the URL path of HTTP requests."},
