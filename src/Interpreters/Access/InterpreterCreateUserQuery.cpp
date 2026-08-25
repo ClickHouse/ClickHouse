@@ -320,7 +320,29 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     if (granted_by_query && !query.attach)
     {
-        auto elements = getSettingsOfRolesRecursively(granted_by_query->getMatchingIDs(), access_control);
+        /// A statement that can leave an existing user in place grants nothing by naming a role that user
+        /// already has, so only the roles that are new to every target are a change.
+        std::vector<std::shared_ptr<const User>> existing_users;
+        if (query.or_replace || query.if_not_exists)
+        {
+            for (const auto & name : query.names->toStrings())
+            {
+                if (auto user = access_control.tryRead<User>(name))
+                    existing_users.push_back(user);
+            }
+        }
+
+        std::vector<UUID> newly_granted;
+        for (const auto & role_id : granted_by_query->getMatchingIDs())
+        {
+            bool granted_to_every_target = !existing_users.empty();
+            for (const auto & user : existing_users)
+                granted_to_every_target &= user->granted_roles.isGranted(role_id);
+            if (!granted_to_every_target)
+                newly_granted.push_back(role_id);
+        }
+
+        auto elements = getSettingsOfRolesRecursively(newly_granted, access_control);
         if (!elements.empty())
             getContext()->checkSettingsConstraints({}, AlterSettingsProfileElements{elements}, SettingSource::ROLE);
     }

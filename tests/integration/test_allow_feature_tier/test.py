@@ -1556,3 +1556,43 @@ def test_setting_allowed_only_in_a_profile_can_be_inherited(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_profile_only_setting")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_profile_only_setting")
+
+
+def test_replacing_a_user_with_the_roles_it_already_has(start_cluster):
+    # A replacement that names the roles the user already holds grants nothing, so it changes no setting
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_replaced_with_same_role")
+    instance.query("DROP ROLE IF EXISTS role_kept_by_replacement")
+    instance.query(
+        f"CREATE ROLE role_kept_by_replacement SETTINGS {EXPERIMENTAL_SETTING} = 1"
+    )
+    instance.query(
+        "CREATE USER user_replaced_with_same_role IDENTIFIED WITH no_password "
+        "ROLE role_kept_by_replacement DEFAULT ROLE role_kept_by_replacement"
+    )
+    assert "1" == instance.query(
+        f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'",
+        user="user_replaced_with_same_role",
+    ).strip()
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER OR REPLACE user_replaced_with_same_role IDENTIFIED WITH no_password "
+        "ROLE role_kept_by_replacement DEFAULT ROLE role_kept_by_replacement"
+    )
+    assert output == ""
+    assert error == ""
+
+    assert "1" == instance.query(
+        f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'",
+        user="user_replaced_with_same_role",
+    ).strip()
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_replaced_with_same_role")
+    instance.query("DROP ROLE IF EXISTS role_kept_by_replacement")
