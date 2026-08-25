@@ -141,7 +141,7 @@ ExpressionTransform
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 2 → 1
-        VirtualRowReadAhead 2 → 2
+        BufferChunks × 2
           LimitBySortedStreamTransform × 2
             (Expression)
             ExpressionTransform × 2
@@ -161,7 +161,7 @@ ExpressionTransform
       FinishSortingTransform
         PartialSortingTransform
           MergingSortedTransform 2 → 1
-            VirtualRowReadAhead 2 → 2
+            BufferChunks × 2
               (Expression)
               ExpressionTransform × 2
                 (ReadFromMergeTree)
@@ -356,7 +356,7 @@ ExpressionTransform
                     MergeJoinTransform 2 → 1
                       (Sorting)
                       MergingSortedTransform 2 → 1
-                        VirtualRowReadAhead 2 → 2
+                        BufferChunks × 2
                           (Expression)
                           ExpressionTransform × 2
                             (Expression)
@@ -365,7 +365,7 @@ ExpressionTransform
                               MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
                       (Sorting)
                       MergingSortedTransform 2 → 1
-                        VirtualRowReadAhead 2 → 2
+                        BufferChunks × 2
                           (Expression)
                           ExpressionTransform × 2
                             (Expression)
