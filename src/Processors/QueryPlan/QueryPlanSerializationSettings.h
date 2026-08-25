@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/Types.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -54,10 +55,13 @@ struct QueryPlanSerializationSettings
     QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings);
     ~QueryPlanSerializationSettings();
 
-    /// Serialize only settings that differ from defaults.
-    void writeChangedBinary(WriteBuffer & out) const;
-    /// Read settings updating only those present in the stream; missing ones keep defaults.
-    void readBinary(ReadBuffer & in);
+    /// Serialize only settings that differ from defaults, in the form `version` prescribes: from
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKIPPABLE_SETTINGS` on, one a reader can step over
+    /// name by name; below it, one where every name has to be known.
+    void writeChangedBinary(WriteBuffer & out, UInt64 version) const;
+    /// Read settings updating only those present in the stream; missing ones keep defaults. A name this
+    /// version does not know is skipped unless it is declared `IMPORTANT`, which is rejected.
+    void readBinary(ReadBuffer & in, UInt64 version);
 
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)

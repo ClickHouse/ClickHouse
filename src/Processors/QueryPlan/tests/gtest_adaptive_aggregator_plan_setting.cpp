@@ -77,7 +77,7 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.writeChangedBinary(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     return out.str().contains(name);
 }
 
