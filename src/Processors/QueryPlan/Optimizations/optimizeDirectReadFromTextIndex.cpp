@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -163,6 +164,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
 void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
+
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
         return;
@@ -351,6 +354,7 @@ public:
         NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
+        std::vector<std::pair<String, VirtualColumnDescription>> candidate_virtual_columns;
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
@@ -376,7 +380,7 @@ public:
                 replacements[node] = replaced.node;
 
             for (auto & [index_name, virtual_column] : replaced.added_virtual_columns)
-                result.added_columns[index_name].add(std::move(virtual_column));
+                candidate_virtual_columns.emplace_back(index_name, std::move(virtual_column));
         }
 
         if (replacements.empty())
@@ -401,6 +405,14 @@ public:
         {
             if (!replaced_columns_set.contains(column))
                 result.removed_columns.push_back(column);
+        }
+
+        /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
+        /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
+        for (auto & [index_name, virtual_column] : candidate_virtual_columns)
+        {
+            if (replaced_columns_set.contains(virtual_column.name))
+                result.added_columns[index_name].add(std::move(virtual_column));
         }
 
         return result;
@@ -772,7 +784,7 @@ private:
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
-                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
+                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader, /*deterministic_=*/ true);
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = std::move(default_expression);
 
@@ -833,6 +845,31 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// so the caller can update the filter column name to match the modified DAG.
     if (result.added_columns.empty())
         return result.filter_node;
+
+    /// Keep columns the PREWHERE or row-level filter still read, so this filter DAG's removal does not drop them from the shared read set.
+    {
+        NameSet required_columns_by_readers;
+        if (auto prewhere = read_from_merge_tree_step.getPrewhereInfo())
+            for (const auto & name : prewhere->prewhere_actions.getRequiredColumnsNames())
+                required_columns_by_readers.insert(name);
+
+        if (auto row_level_filter = read_from_merge_tree_step.getRowLevelFilter())
+            for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
+                required_columns_by_readers.insert(name);
+
+        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
+        std::erase_if(result.removed_columns, [&](const String & column)
+        {
+            if (!required_columns_by_readers.contains(column))
+                return false;
+
+            /// ActionsDAG::updateHeader appends a header column that is not an input of the DAG,
+            /// which would widen this step's output header.
+            if (read_header.has(column))
+                filter_dag.addInput(read_header.getByName(column));
+            return true;
+        });
+    }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));

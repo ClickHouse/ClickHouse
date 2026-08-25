@@ -6,6 +6,20 @@ keywords: ['HAR 文件', 'HTTP Archive']
 description: 'HAR（HTTP Archive）文件会记录浏览器中的网络活动，帮助我们的支持团队诊断页面加载缓慢、请求失败或其他网络问题。'
 ---
 
+<Warning>
+  HAR 文件可能包含会话 Cookie 或其他敏感数据。
+  仅与已获授权的支持人员共享这些文件。
+</Warning>
+
+<Note title="捕获登录尝试及其他多步骤流程">
+  某些问题会跨越多次页面加载，例如登录时重定向到你的身份提供商后再返回。默认情况下，浏览器会在每次导航时清除网络日志，因此生成的 HAR 文件可能几乎是空的。重现此类问题时，请在开始之前先启用浏览器中跨页面加载保留日志的选项：
+
+  * Chrome / Edge / Safari：启用 &quot;Preserve log&quot;
+  * Firefox：启用 &quot;Persist Logs&quot;
+
+  如果需要，在生成 HAR 文件后，可以再次安全地取消选中此选项。
+</Note>
+
 <div id="from-google-chrome">
   ## 在 Google Chrome 中
 </div>
@@ -52,8 +66,3 @@ description: 'HAR（HTTP Archive）文件会记录浏览器中的网络活动，
 1. 将文件重命名为简短且便于识别的名称 (例如：login-issue.har) 。
 2. 压缩文件 (可选，但建议这样做) 。
 3. 将其附加到支持工单中，或通过电子邮件发送给分配给您的支持联系人。
-
-<Note>
-  HAR 文件可能包含会话 Cookie 或其他敏感数据。
-  仅与已获授权的支持人员共享这些文件。
-</Note>

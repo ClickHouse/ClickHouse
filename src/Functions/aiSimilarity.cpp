@@ -45,10 +45,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -159,11 +155,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
@@ -209,7 +202,7 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
@@ -278,10 +271,13 @@ REGISTER_FUNCTION(AiSimilarity)
         .description = R"(
 Computes the semantic similarity of two texts using the configured embedding provider.
 
-Calculates the embedding of both texts and returns the cosine similarity of the two vectors
-in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
-and negative values mean opposite. This is the complement of `cosineDistance` over the
-same embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calculates the vector embeddings of both texts and returns their
+[cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity). A score of `-1` is given to
+opposite embedding vectors, semantically this means texts with scores approaching `-1` are opposite in
+meaning. A score of `0` means the vectors are orthogonal: semantically unrelated. Finally, a score of `1`
+means the embedding vectors are pointing in the same direction, texts with scores approaching `1` are
+similar in meaning. This is the complement of `cosineDistance` over the same embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
 `ai_function_embedding_default_credentials` default-credentials setting.
@@ -294,7 +290,7 @@ named collection or the parameter map.
         = {{"text1", "First text.", {"String"}},
            {"text2", "Second text.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The cosine similarity in `[-1, 1]`, or NULL if either text is NULL or empty, an embedding request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Nullable(Float32)"}},
         .examples
         = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},

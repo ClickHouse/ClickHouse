@@ -196,12 +196,27 @@ function makeElement(tag) {
         applyColumnColors() {},
         applyPinnedColumns() {},
         refreshColumnColor() {},
+        refreshSortIndicators() {},
+        refreshFilterIndicators() {},
+        refreshCellControls() {},
+        renderPagination() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
+        finalizeFailedTable() {},
         start() {},
         finish() {},
         updateProgress() {},
         updateText() {},
+        resetViewToggles() {},
+        setViewState() {},
+        showView() {},
+        enableViews() {},
+        finalizeMetrics() {},
+        feedProfileEvents() {},
+        adoptResourceState() {},
+        renderResourcesFrom() {},
+        appendLog() {},
+        updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },
     };
     return el;
@@ -266,7 +281,8 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
     const stores = new Map();
     stores.set('tabs', { keyPath: 'id', data: new Map((seedTabs || []).map(r => [r.id, structuredClone(r)])) });
     stores.set('meta', { keyPath: 'key', data: new Map(seedMeta ? [['state', structuredClone(seedMeta)]] : []) });
-    const stats = { persistCount: 0 };
+    /// `openFired` records that the load window has closed: the open callback below has run.
+    const stats = { persistCount: 0, openFired: false };
 
     function makeStoreHandle(name) {
         const s = stores.get(name);
@@ -293,6 +309,7 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
             /// `openDelayMs` lets a scenario make `IndexedDB.open` slower than any auto-run that
             /// races startup reconciliation (see the stale-reload-run-race scenario).
             setTimeout(() => {
+                stats.openFired = true;
                 req.result = {
                     objectStoreNames: { contains: (n) => stores.has(n) },
                     createObjectStore(n, opts) {
@@ -469,8 +486,16 @@ async function runScenario(js, config) {
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
     if (config.duringLoad) {
-        await sleep(config.duringLoadDelayMs || 5);
+        /// The bootstrap is synchronous and `IndexedDB.open` can only resolve through a
+        /// `setTimeout`, so yielding to microtasks alone keeps the interaction before the open.
+        await Promise.resolve();
+        if (stats.openFired)
+            throw new Error('duringLoad ran after the IndexedDB open completed: the load window closed early');
+        if (vm.runInContext('bootstrap_settled', sandbox))
+            throw new Error('duringLoad ran after reconciliation settled: the load window closed early');
         config.duringLoad(sandbox);
+        if (!vm.runInContext('bootstrap_dirty', sandbox))
+            throw new Error('duringLoad did not mark the bootstrap workspace dirty');
     }
     /// Startup is asynchronous: `reconcileStartup` awaits IndexedDB and ends with the debounced
     /// `scheduleSave` (400 ms), whose `persist` writes the reconciled workspace back. Wait for
@@ -864,7 +889,9 @@ async function main() {
         const r = await runScenario(js, {
             href: base + '?tab=Scratch#' + stale_hash,
             historyState: { tabId: 't7', tabName: 'Scratch' },
-            openDelayMs: 30,
+            /// A zero-delay open leaves no wall-clock margin, so the load-window interaction below
+            /// holds only if it is ordered structurally rather than by timing.
+            openDelayMs: 0,
             duringLoad: (sandbox) => {
                 vm.runInContext(
                     "query_area.value = 'SELECT 999';" +
@@ -1206,6 +1233,51 @@ async function main() {
         await sleep(50);
         check('run-marker-plain-load', 'a run under a plain load writes a plain URL',
             new URL(r.sandbox.location.href).searchParams.get('run') === null,
+            r.sandbox.location.href);
+    }
+
+    /// Contract (a result shape reaches the URL and the history entry only through the run that
+    /// applies it): `commitResultShape` launches the re-run WITHOUT stamping the chosen shape, because
+    /// the launch is what decides whether the shape still belongs to the statement (and the context)
+    /// being run. Stamping it first would leave a `sort_columns` / `filters` / `page` in the entry and
+    /// the URL that a `Stop` or a reload before the run's own history write turns into a shape rebound
+    /// to an unrelated draft on the next load.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: 'SELECT a FROM t', params: {}, result: null,
+                  lastSavedQuery: 'SELECT a FROM t' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+        /// Stand in for the launch: the shape must be committed by a click in the result view exactly
+        /// as the header arrows do it, but nothing must actually run here - the point is what the page
+        /// looks like BETWEEN the click and the run.
+        vm.runInContext(
+            "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
+            " const t = getActiveTab(); t.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerTab: t, _queryText: t.query }); })()",
+            r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the shape change launched the re-run',
+            vm.runInContext('globalThis.__launched', r.sandbox) === 1,
+            vm.runInContext('globalThis.__launched', r.sandbox));
+        check('shape-not-stamped-before-run', 'the URL carries no shape until the run applies it',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns') === null,
+            r.sandbox.location.href);
+        check('shape-not-stamped-before-run', 'the history entry carries none either',
+            !(r.sandbox.history.state && r.sandbox.history.state.sort_columns
+                && r.sandbox.history.state.sort_columns.length),
+            r.sandbox.history.state);
+        /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
+        /// this is the call `postSingle` makes right after `resolveShapeForRun`.
+        vm.runInContext('persistResultShape(getActiveTab())', r.sandbox);
+        await sleep(50);
+        check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
+            new URL(r.sandbox.location.href).searchParams.get('sort_columns')
+                === JSON.stringify([{ name: 'a', desc: true }]),
             r.sandbox.location.href);
     }
 

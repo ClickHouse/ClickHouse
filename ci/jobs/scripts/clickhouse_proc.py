@@ -54,6 +54,9 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
+    # for the same reason.
+    JEMALLOC_SYMBOLIZATION_BUDGET = 1200
 
     def __init__(
         self,
@@ -104,8 +107,8 @@ class ClickHouseProc:
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --distributed_query.streaming_exchange_port 19223 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --distributed_query.streaming_exchange_port 29223 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
@@ -695,11 +698,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def run_test(self, cmd, timeout=7200):
         """Run a `clickhouse-test` command and return its integer exit code.
 
-        Returns 0 on success, non-zero on failure. In particular, exit code
-        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
-        the run via `StopTesting` (server died, hung check failed, etc.) and
-        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
-        can populate the synthetic "Server died" leaf.
+        Returns 0 on success, non-zero on failure. The code is forwarded
+        verbatim to `FTResultsProcessor.run` as `runner_exit_code`, which
+        distinguishes the abort causes `clickhouse-test` raises `StopTesting`
+        with and names the synthetic leaf accordingly.
         """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
@@ -945,16 +947,42 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+        # hour, timing the whole job out here, long after every test had finished (the sibling
+        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+        # artifact of the job, not its result, so give them up rather than the job.
+        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+
         chbinary = Shell.get_output("readlink -f $(which clickhouse)")
         for pid, profile in latest_profiles.items():
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
+                continue
+
+            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
                 verbose=True,
-            )
-            Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
+                Path(text_report).unlink(missing_ok=True)
+
+            budget = int(deadline - time.time())
+            if budget <= 0:
+                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
+                continue
+
+            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+            # The whole pipeline is under the timeout: killing jeprof alone would leave
+            # flamegraph.pl to write a truncated graph out of what it had received.
+            if not Shell.check(
+                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
                 verbose=True,
-            )
+            ):
+                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
+                Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1018,6 +1046,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
             f'grep -a -v "For details see https://github.com/google/sanitizers" | '
+            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
@@ -1227,9 +1256,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # Caches created via the disk() function live one level deeper, under
+        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        )
+        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"

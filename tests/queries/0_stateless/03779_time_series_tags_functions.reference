@@ -33,3 +33,35 @@ timeSeriesReplaceTag (2):
 
 timeSeriesThrowDuplicateSeriesIf:
 0
+
+timeSeriesThrowDuplicateSeriesIf vectorized all-zero:
+0
+0
+0
+0
+
+timeSeriesThrowDuplicateSeriesIf negative zero:
+0
+0
+
+timeSeriesThrowDuplicateSeriesIf vectorized nonzero:
+
+timeSeriesRemoveTag vectorized dense groups:
+[('instance','0')]
+[('instance','1')]
+[('instance','2')]
+[('instance','3')]
+[('instance','4')]
+[('instance','5')]
+
+timeSeriesRemoveTag vectorized sparse groups:
+[('instance','0')]
+[('instance','8')]
+[('instance','16')]
+[('instance','24')]
+
+timeSeriesRemoveAllTagsExcept vectorized repeated dense groups:
+6	1	[[('shared','value')]]
+
+timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:
+5	1	[[('shared','value')]]
