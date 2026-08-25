@@ -16,7 +16,7 @@ ReadState::ReadState(const StreamSettings & stream_settings)
 
 void ReadState::startReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, Int64> & safe_block_numbers)
 {
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::system_clock::now();
 
     round_in_progress = true;
     reading_up_to_block_numbers.clear();
@@ -50,13 +50,13 @@ bool ReadState::readRoundInProgress() const
 
 void ReadState::updatePartitionCursor(const std::string & partition, PartitionCursor cursor)
 {
-    partition_last_read_time[partition] = std::chrono::steady_clock::now();
+    partition_last_read_time[partition] = std::chrono::system_clock::now();
     partition_cursors[partition] = cursor;
 }
 
 void ReadState::updatePartitionWatermark(const std::string & partition, Field watermark)
 {
-    partition_last_read_time[partition] = std::chrono::steady_clock::now();
+    partition_last_read_time[partition] = std::chrono::system_clock::now();
 
     auto & current = partition_watermarks[partition];
     if (watermark > current)
@@ -81,7 +81,7 @@ void ReadState::updatePartitionSet(const ClassifiedPartitions & partitions)
     std::erase_if(partition_watermarks, [&](const auto & entry) { return !table_partitions.contains(entry.first); });
     std::erase_if(reported_idle_partitions, [&](const auto & partition_id) { return !table_partitions.contains(partition_id); });
 
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::system_clock::now();
     for (const auto & partition_id : table_partitions)
     {
         const bool added_cursor = partition_cursors.try_emplace(partition_id, PartitionCursor{}).second;
@@ -114,12 +114,12 @@ bool ReadState::hasWork(const ClassifiedPartitions & partitions) const
 Int64 ReadState::calculateTimeToNextIdle(const StreamSettings & stream_settings) const
 {
     const auto & watermark = stream_settings.watermark;
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::system_clock::now();
 
     if (!watermark || watermark->idle_timeout.count() == 0 || partition_last_read_time.empty())
         return -1;
 
-    std::chrono::time_point<std::chrono::steady_clock> next_idle_time;
+    std::chrono::time_point<std::chrono::system_clock> next_idle_time;
     for (const auto & [_, last_read_time] : partition_last_read_time)
     {
         const auto deadline = last_read_time + watermark->idle_timeout;
@@ -153,9 +153,14 @@ Field ReadState::getPartitionWatermark(const std::string & partition) const
     return it == partition_watermarks.end() ? Field{} : it->second;
 }
 
+Field ReadState::getLastEmittedWatermark() const
+{
+    return last_emitted_watermark;
+}
+
 bool ReadState::isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const
 {
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = std::chrono::system_clock::now();
 
     if (!stream_settings.watermark)
         return false;

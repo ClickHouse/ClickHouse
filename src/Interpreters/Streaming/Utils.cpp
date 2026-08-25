@@ -22,8 +22,8 @@ namespace DB
 {
 
 bool isIdleExpired(
-    const std::chrono::steady_clock::time_point & now,
-    const std::chrono::steady_clock::time_point & last_active,
+    const std::chrono::system_clock::time_point & now,
+    const std::chrono::system_clock::time_point & last_active,
     const WatermarkSettingsPtr & watermark)
 {
     if (watermark->idle_timeout.count() <= 0)
