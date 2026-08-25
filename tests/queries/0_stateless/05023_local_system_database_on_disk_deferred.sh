@@ -72,3 +72,46 @@ ${CLICKHOUSE_LOCAL} --path "${shadow_dir}" --query "SHOW TABLES FROM system" 2>&
 ${CLICKHOUSE_LOCAL} --path "${shadow_dir}" --query "SELECT 1"
 
 rm -rf "${shadow_dir}"
+
+# The same coverage for an `Atomic` persistent `system` database - the layout a running server actually leaves
+# behind (the `Ordinary` layout above only remains from installations that predate the automatic conversion).
+# `RENAME` and `DETACH` go through `DatabaseAtomic` here rather than `DatabaseOnDisk`. The database is staged
+# under a different name and renamed on disk: the database metadata file stores a placeholder, not the name.
+atomic_dir="${CLICKHOUSE_TMP}/05023_atomic_${CLICKHOUSE_DATABASE}"
+
+rm -rf "${atomic_dir}"
+${CLICKHOUSE_LOCAL} --path "${atomic_dir}" --query "CREATE DATABASE sysstage ENGINE = Atomic; CREATE TABLE sysstage.persisted (x UInt8) ENGINE = MergeTree ORDER BY x; INSERT INTO sysstage.persisted VALUES (42)"
+mv "${atomic_dir}/metadata/sysstage.sql" "${atomic_dir}/metadata/system.sql"
+mv "${atomic_dir}/metadata/sysstage" "${atomic_dir}/metadata/system"
+
+atomic_query()
+{
+    ${CLICKHOUSE_LOCAL} --path "${atomic_dir}" --query "$1"
+}
+
+# The loaded database is `Atomic`, and the persisted table survives next to the deferred system tables.
+atomic_query "SELECT name, engine FROM system.databases WHERE name = 'system'"
+atomic_query "SELECT x FROM system.persisted"
+atomic_query "SELECT count() FROM system.persisted, system.one"
+
+# The reserved names hold for `CREATE` and `RENAME` through `DatabaseAtomic` as well, and the rejected source
+# table survives.
+atomic_query "CREATE TABLE system.numbers (x UInt8) ENGINE = Memory" 2>&1 | grep -c "already exists"
+atomic_query "CREATE TABLE system.renamed (x UInt8) ENGINE = MergeTree ORDER BY x; RENAME TABLE system.renamed TO system.numbers" 2>&1 | grep -c "already exists"
+atomic_query "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'renamed'"
+
+rm -rf "${atomic_dir}"
+
+# A stored table cannot shadow a deferred system table in an `Atomic` persistent `system` database either.
+atomic_shadow_dir="${CLICKHOUSE_TMP}/05023_atomic_shadow_${CLICKHOUSE_DATABASE}"
+
+rm -rf "${atomic_shadow_dir}"
+${CLICKHOUSE_LOCAL} --path "${atomic_shadow_dir}" --query "CREATE DATABASE sysstage ENGINE = Atomic; CREATE TABLE sysstage.settings (x UInt8) ENGINE = MergeTree ORDER BY x"
+mv "${atomic_shadow_dir}/metadata/sysstage.sql" "${atomic_shadow_dir}/metadata/system.sql"
+mv "${atomic_shadow_dir}/metadata/sysstage" "${atomic_shadow_dir}/metadata/system"
+
+${CLICKHOUSE_LOCAL} --path "${atomic_shadow_dir}" --query "SELECT * FROM system.settings" 2>&1 | grep -c "already exists"
+${CLICKHOUSE_LOCAL} --path "${atomic_shadow_dir}" --query "SHOW TABLES FROM system" 2>&1 | grep -c "already exists"
+${CLICKHOUSE_LOCAL} --path "${atomic_shadow_dir}" --query "SELECT 1"
+
+rm -rf "${atomic_shadow_dir}"
