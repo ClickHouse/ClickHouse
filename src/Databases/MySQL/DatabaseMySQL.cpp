@@ -4,6 +4,7 @@
 #if USE_MYSQL
 #    include <filesystem>
 #    include <string>
+#    include <Poco/Net/NetException.h>
 #    include <Columns/IColumn.h>
 #    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
@@ -497,6 +498,37 @@ void DatabaseMySQL::drop(ContextPtr)
     db_disk->removeRecursive(getMetadataPath());
 }
 
+namespace
+{
+    /// Determine the appropriate log level for the current exception in MySQL background reconciliation.
+    /// Connection failures during MySQL outages are expected and should be logged at warning level
+    /// to avoid noisy logs. All other exceptions (logic bugs, permission errors, disk I/O failures)
+    /// are unexpected and must remain at error level for visibility.
+    LogsLevel mysqlToleratedConnectionFailureLogLevel()
+    {
+        try
+        {
+            throw;  // Re-throw current exception to inspect its type
+        }
+        catch (const mysqlxx::ConnectionFailed &)
+        {
+            return LogsLevel::warning;  // Expected during MySQL outages or network issues
+        }
+        catch (const mysqlxx::ConnectionLost &)
+        {
+            return LogsLevel::warning;  // Expected when MySQL server becomes unavailable
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            return LogsLevel::warning;  // Expected during network connectivity issues
+        }
+        catch (...)
+        {
+            return LogsLevel::error;  // Unexpected failures (logic bugs, disk errors, etc.) must stay loud
+        }
+    }
+}
+
 void DatabaseMySQL::cleanOutdatedTables()
 {
     DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
@@ -590,11 +622,12 @@ void DatabaseMySQL::cleanOutdatedTables()
             }
             catch (...)
             {
-                /// Remote connection failures are expected during MySQL outages; log them at warning
-                /// level rather than error to avoid noisy logs when a database legitimately sits with
-                /// only permanent detach markers and the remote is unreachable.
+                /// Determine appropriate log level: connection failures during MySQL outages are expected
+                /// and logged at warning level, while logic bugs or unexpected errors remain at error level
+                /// for visibility.
+                auto log_level = mysqlToleratedConnectionFailureLogLevel();
                 tryLogCurrentException("DatabaseMySQL", "Background reconciliation failed to fetch remote schema",
-                                       LogsLevel::warning);
+                                       log_level);
                 /// Ensure we re-acquire the lock before wait_for
                 if (!lock.owns_lock())
                     lock.lock();

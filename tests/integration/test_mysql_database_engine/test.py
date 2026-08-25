@@ -1298,16 +1298,23 @@ def test_mysql_detached_table_reconciliation_permanent(started_cluster):
 
 def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
     """
-    Regression test for permanent detach marker preservation.
+    Regression test for permanent detach marker preservation and ordinary detach pruning.
 
     When a table is permanently detached (via DETACH TABLE PERMANENTLY or DROP TABLE),
     and the remote MySQL table is subsequently dropped, the .remove_flag marker should
     be PRESERVED (not deleted by reconciliation). If a same-name table is later recreated
     remotely, it should stay hidden in ClickHouse until explicit ATTACH TABLE.
 
+    Conversely, ordinary DETACH TABLE entries (without PERMANENTLY) should be PRUNED when
+    the remote table disappears, as there is nothing left to ATTACH.
+
     This test verifies that both on-demand reconciliation (via SHOW TABLES or similar)
-    and background reconciliation (cleanOutdatedTables thread) correctly preserve the
-    permanent detach marker.
+    and background reconciliation (cleanOutdatedTables thread) correctly:
+    1. Preserve permanent detach markers (.remove_flag files)
+    2. Prune ordinary detach entries (no marker)
+
+    The test creates BOTH a permanent and an ordinary detach to ensure has_non_permanent_detach
+    evaluates to true, which gates the background reconciliation block in DatabaseMySQL.cpp.
     """
     with contextlib.closing(
         MySQLNodeInstance(
@@ -1319,7 +1326,11 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_perm_marker")
         mysql_node.query("CREATE DATABASE test_perm_marker DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
-            "CREATE TABLE test_perm_marker.my_table "
+            "CREATE TABLE test_perm_marker.permanent_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
+        )
+        mysql_node.query(
+            "CREATE TABLE test_perm_marker.ordinary_table "
             "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
         )
 
@@ -1328,67 +1339,97 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
             f"CREATE DATABASE test_perm_marker ENGINE = MySQL('mysql80:3306', 'test_perm_marker', 'root', '{mysql_pass}')"
         )
 
-        # Verify table is visible initially
-        assert "my_table" in clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+        # Verify both tables are visible initially
+        tables = clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+        assert "permanent_table" in tables
+        assert "ordinary_table" in tables
 
-        # Permanently detach the table (simulates DROP TABLE, which calls detachTablePermanently internally)
-        clickhouse_node.query("DETACH TABLE test_perm_marker.my_table PERMANENTLY")
+        # Permanently detach one table (creates .remove_flag marker)
+        clickhouse_node.query("DETACH TABLE test_perm_marker.permanent_table PERMANENTLY")
 
-        # Verify it shows in system.detached_tables with is_permanently=1
-        detached_result = clickhouse_node.query(
+        # Ordinary detach the other table (no marker)
+        clickhouse_node.query("DETACH TABLE test_perm_marker.ordinary_table")
+
+        # Verify both show in system.detached_tables with correct is_permanently values
+        detached_permanent = clickhouse_node.query(
             "SELECT table, is_permanently FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' AND table = 'my_table' "
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table' "
             "FORMAT TabSeparated"
         ).strip()
-        assert detached_result == "my_table\t1", (
-            f"Expected 'my_table\\t1', got '{detached_result}'"
+        assert detached_permanent == "permanent_table\t1", (
+            f"Expected 'permanent_table\\t1', got '{detached_permanent}'"
         )
 
-        # Drop the remote MySQL table
-        mysql_node.query("DROP TABLE test_perm_marker.my_table")
+        detached_ordinary = clickhouse_node.query(
+            "SELECT table, is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_perm_marker' AND table = 'ordinary_table' "
+            "FORMAT TabSeparated"
+        ).strip()
+        assert detached_ordinary == "ordinary_table\t0", (
+            f"Expected 'ordinary_table\\t0', got '{detached_ordinary}'"
+        )
+
+        # Drop BOTH remote MySQL tables
+        mysql_node.query("DROP TABLE test_perm_marker.permanent_table")
+        mysql_node.query("DROP TABLE test_perm_marker.ordinary_table")
 
         # Trigger on-demand reconciliation (destroyLocalCacheExtraTables via fetchTablesIntoLocalCache)
         clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
 
-        # The permanent detach marker should be PRESERVED even though the remote table is gone
+        # After on-demand reconciliation:
+        # - Permanent marker should be PRESERVED
+        # - Ordinary detach should be PRUNED
         detached_after_drop = clickhouse_node.query(
             "SELECT table, is_permanently FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' AND table = 'my_table' "
-            "FORMAT TabSeparated"
+            "WHERE database = 'test_perm_marker' "
+            "ORDER BY table FORMAT TabSeparated"
         ).strip()
-        assert detached_after_drop == "my_table\t1", (
-            f"REGRESSION: Permanent detach marker was deleted after remote drop. "
-            f"Expected 'my_table\\t1', got '{detached_after_drop}'"
+        assert detached_after_drop == "permanent_table\t1", (
+            f"REGRESSION: On-demand reconciliation did not preserve permanent marker or prune ordinary entry. "
+            f"Expected 'permanent_table\\t1', got '{detached_after_drop}'"
         )
 
         # Wait for background reconciliation thread to run (cleanOutdatedTables sleeps 30s between runs)
-        # We'll trigger it indirectly by waiting and then checking again
-        time.sleep(35)
+        # Use polling pattern like PostgreSQL test (commit e2c7af2524a) to ensure reconciliation actually runs
+        max_wait = 65
+        start_time = time.time()
+        bg_reconciliation_verified = False
 
-        # Re-check after background reconciliation has had a chance to run
-        detached_after_bg = clickhouse_node.query(
-            "SELECT table, is_permanently FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' AND table = 'my_table' "
-            "FORMAT TabSeparated"
-        ).strip()
-        assert detached_after_bg == "my_table\t1", (
-            f"REGRESSION: Background reconciliation deleted the permanent detach marker. "
-            f"Expected 'my_table\\t1', got '{detached_after_bg}'"
+        while time.time() - start_time < max_wait:
+            detached_tables = clickhouse_node.query(
+                "SELECT table, is_permanently FROM system.detached_tables "
+                "WHERE database = 'test_perm_marker' "
+                "ORDER BY table FORMAT TabSeparated"
+            ).strip()
+
+            # Expected state after background reconciliation:
+            # - permanent_table still present with is_permanently=1 (marker preserved)
+            # - ordinary_table removed (entry pruned)
+            if detached_tables == "permanent_table\t1":
+                bg_reconciliation_verified = True
+                break
+
+            time.sleep(5)  # Check every 5 seconds
+
+        assert bg_reconciliation_verified, (
+            f"REGRESSION: Background reconciliation did not complete correctly within {max_wait}s. "
+            f"Expected only 'permanent_table\\t1', final state: '{detached_tables}'"
         )
 
-        # Now recreate the remote table with the same name
+        # Now recreate the remote permanent_table with the same name to verify marker preservation
+        # prevents it from reappearing
         mysql_node.query(
-            "CREATE TABLE test_perm_marker.my_table "
+            "CREATE TABLE test_perm_marker.permanent_table "
             "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
         )
-        mysql_node.query("INSERT INTO test_perm_marker.my_table VALUES (1, 'should not appear')")
+        mysql_node.query("INSERT INTO test_perm_marker.permanent_table VALUES (1, 'should not appear')")
 
         # Trigger schema refresh
         clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
 
         # The table should still NOT appear in ClickHouse (preserved permanent detach)
         visible_tables = clickhouse_node.query("SHOW TABLES FROM test_perm_marker").strip()
-        assert "my_table" not in visible_tables, (
+        assert "permanent_table" not in visible_tables, (
             f"REGRESSION: Permanently detached table reappeared after remote table was recreated. "
             f"Tables: {visible_tables}"
         )
@@ -1396,30 +1437,30 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
         # Verify it's still in detached_tables
         still_detached = clickhouse_node.query(
             "SELECT table, is_permanently FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' AND table = 'my_table' "
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table' "
             "FORMAT TabSeparated"
         ).strip()
-        assert still_detached == "my_table\t1", (
-            f"Expected 'my_table\\t1' after remote recreation, got '{still_detached}'"
+        assert still_detached == "permanent_table\t1", (
+            f"Expected 'permanent_table\\t1' after remote recreation, got '{still_detached}'"
         )
 
         # The table should only become visible again after explicit ATTACH TABLE
-        clickhouse_node.query("ATTACH TABLE test_perm_marker.my_table")
+        clickhouse_node.query("ATTACH TABLE test_perm_marker.permanent_table")
 
         # Now it should be visible
-        assert "my_table" in clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+        assert "permanent_table" in clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
 
         # And no longer in detached_tables
         final_detached_count = clickhouse_node.query(
             "SELECT count() FROM system.detached_tables "
-            "WHERE database = 'test_perm_marker' AND table = 'my_table'"
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table'"
         ).strip()
         assert final_detached_count == "0", (
             f"Expected count=0 after ATTACH, got {final_detached_count}"
         )
 
         # Verify we can query the data
-        result = clickhouse_node.query("SELECT value FROM test_perm_marker.my_table WHERE id = 1").strip()
+        result = clickhouse_node.query("SELECT value FROM test_perm_marker.permanent_table WHERE id = 1").strip()
         assert result == "should not appear"
 
         # Cleanup
