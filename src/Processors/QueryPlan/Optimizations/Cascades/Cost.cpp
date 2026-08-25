@@ -274,15 +274,25 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
         cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
-    /// A sorted gather's sender merges its streams into one before shipping
-    /// (`GatherSendStep`), so a source with several streams per node pays the same per-row
-    /// merge a full sort's final phase pays; a single-stream source ships as is. The senders
-    /// merge concurrently, so each one sees its node's share of the rows.
-    if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step))
-        if (gather->getMaintainSortDescription() && inputs.first_input_properties
+    if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
+        gather && gather->getMaintainSortDescription())
+    {
+        /// The receiver of a sorted gather merges the sorted bucket streams into one
+        /// (`GatherReceiveStep`): a serial per-row merge on one node, like a full sort's
+        /// final phase; without this charge a sorted gather would cost the same as an
+        /// unordered one. The merge advances only while the consumer pulls, so a limit
+        /// above stops it at the trimmed output rows - the group statistics, not the
+        /// shipped `rows`.
+        if (gather->getSourceBucketCount() > 1)
+            cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count;
+        /// The sender also merges when its node has several streams (`GatherSendStep`);
+        /// a single-stream source ships as is. The senders merge concurrently, so each
+        /// one sees its node's share of the rows.
+        if (inputs.first_input_properties
             && inputs.first_input_properties->stream_layout != StreamLayout::Single)
             cost.sequential += inputs.config.merge_sequential_cost_per_row * rows
                 / std::max(1.0, Float64(inputs.first_input_properties->distribution.node_count));
+    }
     return cost;
 }
 
