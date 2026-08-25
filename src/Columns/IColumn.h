@@ -403,6 +403,7 @@ public:
     /// the same in-memory representation. It does NOT guarantee the same hash for logically
     /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
     /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// ColumnSparse needs no override: insert deduplication removes sparse representation before hashing.
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 

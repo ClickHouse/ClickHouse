@@ -12,6 +12,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <IO/WriteHelpers.h>
@@ -418,8 +419,14 @@ UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Bloc
     SipHash hash;
     size_t begin = getTokenBegin(offset);
     size_t end = getTokenEnd(offset);
+    /// ColumnSparse hashes row-wise while the same data materialized hashes column-wise, so a merge flipping
+    /// the source part to sparse serialization would move the block id of an otherwise unchanged query.
+    /// A replicated column hashes row-wise whatever it wraps, so its nested representation cannot move the stream.
     for (const auto & col : cols)
-        col->updateHashWithValueRange(begin, end, hash);
+    {
+        auto full = (!col->isReplicated() && recursiveHasSparse(col)) ? recursiveRemoveSparse(col) : col;
+        full->updateHashWithValueRange(begin, end, hash);
+    }
 
     tokens[offset].data_hash_batch = hash.get128();
     return tokens[offset].data_hash_batch.value();
