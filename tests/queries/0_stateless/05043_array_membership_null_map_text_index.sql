@@ -3,6 +3,10 @@
 -- ordinary array path on an array whose NULL element hides a value equal to the needle.
 
 SET enable_full_text_index = 1;
+-- The query condition cache is keyed on the bare condition hash as well as on one salted with
+-- the skip-index profile, so the index-off arms below would prime entries the indexed arms then
+-- reuse, letting an index that declines still report a pruned mark count.
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_null_map_text;
 
