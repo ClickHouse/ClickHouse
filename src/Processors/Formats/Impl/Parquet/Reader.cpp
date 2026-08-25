@@ -917,7 +917,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(getFileMetadata(), column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
@@ -1729,7 +1729,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
 
     /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
-    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(getFileMetadata(), column_info);
     std::optional<std::vector<uint64_t>> hashes;
     if (column.dictionary.mode == Dictionary::Mode::Column)
     {
