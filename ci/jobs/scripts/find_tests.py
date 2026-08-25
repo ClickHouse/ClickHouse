@@ -57,6 +57,7 @@ class Targeting:
 
     def __init__(self, info: Info, branch: str = ""):
         self.info = info
+        self.branch = branch or resolve_workflow_branch(info)
         self._cidb = None
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
@@ -178,7 +179,7 @@ class Targeting:
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
         )
-        query_result = cidb.query(query,  db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+        query_result = cidb.query(query, log_level="") or ""
         # Parse test names from the query result
         for line in query_result.strip().split("\n"):
             if line.strip():
@@ -196,10 +197,10 @@ class Targeting:
         return s.replace("\\", "\\\\").replace("'", "\\'")
 
     def _coverage_cutoff(self, table: str) -> str:
+        cidb = self._ci_db()
         result = (cidb.query(
             f"SELECT max(check_start_time) - interval 3 day FROM {table}"
             f" WHERE branch = '{self._escape_sql_string(self.branch)}' AND check_name LIKE '{self._escape_sql_string(self.job_type)}%'",
-            db_name=Settings.CI_DB_DB_NAME, timeout=5,
         ) or "").strip()
         return result or "now() - interval 3 day"
 
@@ -436,7 +437,7 @@ class Targeting:
 
         cidb = self._ci_db()
         t_query = time.monotonic()
-        raw = cidb.query(query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+        raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
 
         # Parse TSV: file \t line_start \t line_end \t [tests] \t [depths] \t region_test_count
@@ -542,7 +543,7 @@ class Targeting:
         if run_broad_tier2:
             t_broad = time.monotonic()
             try:
-                broad_raw = cidb.query(broad_query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+                broad_raw = cidb.query(broad_query, log_level="") or ""
                 broad_elapsed = time.monotonic() - t_broad
                 print(f"[find_tests] broad-tier2 query: {broad_elapsed:.2f}s, response={len(broad_raw)} bytes")
             except Exception as e:
@@ -708,7 +709,7 @@ class Targeting:
             """
             t_ultra = time.monotonic()
             try:
-                ultra_raw = cidb.query(ultra_query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+                ultra_raw = cidb.query(ultra_query, log_level="") or ""
                 print(f"[find_tests] ultra-broad query: {time.monotonic()-t_ultra:.2f}s, "
                       f"response={len(ultra_raw)} bytes")
             except Exception as e:
@@ -831,7 +832,7 @@ class Targeting:
             t_sparse = time.monotonic()
             sparse_elapsed = 0.0
             try:
-                sparse_raw = cidb.query(sparse_query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+                sparse_raw = cidb.query(sparse_query, log_level="") or ""
                 sparse_elapsed = time.monotonic() - t_sparse
             except Exception as e:
                 print(f"[find_tests] sparse-file query failed (non-fatal): {e}")
@@ -1073,7 +1074,7 @@ class Targeting:
             HAVING rc <= {FILE_SEED_RC}
             """
             try:
-                seed_raw = _cidb.query(seed_query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+                seed_raw = _cidb.query(seed_query, log_level="") or ""
                 extra_seeds = 0
                 for row in seed_raw.strip().splitlines():
                     parts = row.split("\t", 4)
@@ -1205,7 +1206,7 @@ class Targeting:
         try:
             cidb = self._ci_db()
             t0 = time.monotonic()
-            raw = cidb.query(query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+            raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
         except Exception as e:
             print(f"[find_tests] indirect-call query failed (non-fatal): {e}")
@@ -1402,7 +1403,7 @@ class Targeting:
         try:
             cidb = self._ci_db()
             t0 = time.monotonic()
-            raw = cidb.query(query, db_name=Settings.CI_DB_DB_NAME, log_level="") or ""
+            raw = cidb.query(query, log_level="") or ""
             print(
                 f"[find_tests] sibling-dir query: {time.monotonic()-t0:.2f}s, "
                 f"response={len(raw)} bytes"
