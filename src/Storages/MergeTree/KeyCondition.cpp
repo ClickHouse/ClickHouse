@@ -2701,6 +2701,14 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
         return isNativeInteger(set_is_enum ? key_type : set_type);
     }
 
+    /// `has` compares the original array element with the key value byte-for-byte, while the set
+    /// index casts the element to the key type. For `FixedString` the cast pads the value with zero
+    /// bytes, so `has(['V0'], fixed_string_key)` is false at runtime for the row `'V0\0'` while the
+    /// padded set element matches it. Decline any pair involving `FixedString` unless the types are
+    /// identical.
+    if ((isFixedString(set_type) || isFixedString(key_type)) && !set_type->equals(*key_type))
+        return false;
+
     const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get());
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
     if (set_tuple_type && key_tuple_type)
