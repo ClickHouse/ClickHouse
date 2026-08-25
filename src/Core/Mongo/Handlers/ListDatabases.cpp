@@ -14,8 +14,29 @@ extern const int LIMIT_EXCEEDED;
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> ListDatabasesHandler::handle(
+    const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
+    bool name_only = false;
+    std::optional<String> filter_name;
+    {
+        auto json = documents[0].documents[0].getRapidJSONRepresentation();
+
+        /** A field that changes what the command answers must be honoured or refused rather than
+          * dropped. `nameOnly` is honoured: it asks for the name of each database alone. A
+          * `filter` is honoured as an equality on `name` and refused beyond that.
+          * `authorizedDatabases` only relaxes which databases the client may list when it lacks
+          * the privilege to list them all, and `SHOW DATABASES` already lists exactly the
+          * databases the authenticated user is allowed to see, so both of its values are that
+          * same listing here.
+          */
+        static const std::unordered_set<String> supported_fields{"filter", "nameOnly", "authorizedDatabases"};
+        rejectUnsupportedCommandFields(json, supported_fields, "listDatabases");
+        filter_name = getNameEqualityFilter(json, "listDatabases");
+        getBoolOption(json, "authorizedDatabases", "listDatabases");
+        name_only = getBoolOption(json, "nameOnly", "listDatabases").value_or(false);
+    }
+
     auto out = executor->execute("SHOW DATABASES");
     auto names = splitByNewline(out);
 
@@ -29,13 +50,15 @@ std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSe
         size_t index = 0;
         for (const auto & name : names)
         {
-            if (name.empty())
+            if (name.empty() || (filter_name && name != *filter_name))
                 continue;
 
             bson_t database_doc;
             bson_init(&database_doc);
             BSON_APPEND_UTF8(&database_doc, "name", name.c_str());
-            BSON_APPEND_BOOL(&database_doc, "empty", false);
+            /// With `nameOnly` the reply carries the name of each database and nothing else.
+            if (!name_only)
+                BSON_APPEND_BOOL(&database_doc, "empty", false);
 
             auto key_str = std::to_string(index);
             ++index;

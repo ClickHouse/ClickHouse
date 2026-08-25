@@ -2318,3 +2318,115 @@ def test_a_read_command_option_that_is_not_implemented_is_an_error(started_clust
     ) == ["a", "b"]
 
     collection.drop()
+
+
+def test_a_write_command_option_that_is_not_implemented_is_an_error(started_cluster):
+    """`maxTimeMS` bounds how long a command may run and `commitQuorum` asks for acknowledgements
+    the endpoint cannot give. A write command that asks for either is refused before anything is
+    written, rather than acknowledged as a plain local write that ignored the contract."""
+    database = make_client()["db"]
+    collection = database["write_options"]
+    collection.drop()
+    database.create_collection("write_options")
+
+    for command in [
+        {"insert": "write_options", "documents": [{"id": 1}], "maxTimeMS": 1},
+        {
+            "update": "write_options",
+            "updates": [{"q": {"id": 1}, "u": {"$set": {"id": 2}}}],
+            "maxTimeMS": 1,
+        },
+        {
+            "delete": "write_options",
+            "deletes": [{"q": {"id": 1}, "limit": 0}],
+            "maxTimeMS": 1,
+        },
+        {
+            "createIndexes": "write_options",
+            "indexes": [{"key": {"id": 1}, "name": "id_1"}],
+            "commitQuorum": "majority",
+        },
+        {"drop": "write_options", "maxTimeMS": 1},
+        {"create": "write_options_created", "maxTimeMS": 1},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command(command)
+    with pytest.raises(pymongo.errors.OperationFailure):
+        make_client()["db_of_a_timed_drop"].command({"dropDatabase": 1, "maxTimeMS": 1})
+
+    # The refused commands changed nothing.
+    assert list(collection.find({})) == []
+    assert "write_options" in database.list_collection_names()
+    assert "write_options_created" not in database.list_collection_names()
+
+    # `maxTimeMS: 0` is what a driver sends when no timeout is configured, and asks for nothing.
+    database.command(
+        {"insert": "write_options", "documents": [{"id": 1}], "maxTimeMS": 0}
+    )
+    assert [document["id"] for document in collection.find({})] == [1]
+
+    collection.drop()
+
+
+def test_list_command_options_are_honoured_or_refused(started_cluster):
+    """`listCollections` and `listDatabases` must honour or refuse an option that changes their
+    answer rather than drop it: `nameOnly` and an equality-on-`name` filter are honoured, any
+    other `filter` is refused, and `authorizedCollections` / `authorizedDatabases` ask for the
+    listing the authenticated user gets here anyway."""
+    client = make_client()
+    database = client["db"]
+    collection = database["list_options"]
+    collection.drop()
+    database.create_collection("list_options")
+
+    # pymongo's `list_collection_names` sends `nameOnly: true, authorizedCollections: true`.
+    assert "list_options" in database.list_collection_names()
+
+    # Without `nameOnly` a collection carries its options, id index and info; with it, the name
+    # and the type alone.
+    verbose = database.command({"listCollections": 1})["cursor"]["firstBatch"]
+    entry = next(e for e in verbose if e["name"] == "list_options")
+    assert entry["type"] == "collection"
+    assert "options" in entry and "idIndex" in entry and "info" in entry
+
+    names_only = database.command({"listCollections": 1, "nameOnly": True})["cursor"][
+        "firstBatch"
+    ]
+    entry = next(e for e in names_only if e["name"] == "list_options")
+    assert set(entry) == {"name", "type"}
+
+    # A `filter` is honoured as an equality on `name` - which is how a driver itself probes for
+    # one collection - and refused beyond that; `cursor` options are refused because everything
+    # is answered in the first batch.
+    assert (
+        database.command({"listCollections": 1, "filter": {}, "cursor": {}})["ok"]
+        == 1.0
+    )
+    filtered = database.command(
+        {"listCollections": 1, "filter": {"name": "list_options"}}
+    )["cursor"]["firstBatch"]
+    assert [e["name"] for e in filtered] == ["list_options"]
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command({"listCollections": 1, "filter": {"type": "view"}})
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command({"listCollections": 1, "cursor": {"batchSize": 1}})
+
+    # The same contract for `listDatabases`; pymongo's `list_database_names` sends
+    # `nameOnly: true`.
+    assert "db" in client.list_database_names()
+    verbose = client["admin"].command({"listDatabases": 1})["databases"]
+    assert set(next(d for d in verbose if d["name"] == "db")) == {"name", "empty"}
+    names_only = client["admin"].command({"listDatabases": 1, "nameOnly": True})[
+        "databases"
+    ]
+    assert set(next(d for d in names_only if d["name"] == "db")) == {"name"}
+    filtered = client["admin"].command({"listDatabases": 1, "filter": {"name": "db"}})[
+        "databases"
+    ]
+    assert [d["name"] for d in filtered] == ["db"]
+    with pytest.raises(pymongo.errors.OperationFailure):
+        client["admin"].command(
+            {"listDatabases": 1, "filter": {"sizeOnDisk": {"$gt": 0}}}
+        )
+
+    collection.drop()

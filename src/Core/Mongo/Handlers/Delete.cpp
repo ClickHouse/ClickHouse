@@ -48,12 +48,21 @@ void appendCount(bson_t * document, const char * name, Int64 count)
 
 std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
-    if (documents.size() < 2 || documents[1].documents.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain any filter");
-
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
+
+    /// A field of the command that would change what the write does or promises - a `maxTimeMS`
+    /// bound, a `let` of variables the statements would read - must be refused rather than
+    /// acknowledged and ignored, the same way the read commands refuse theirs. It is checked
+    /// before the statements are, so a command that both asks for an option that is not
+    /// implemented and carries no statements is refused for the stronger reason.
+    static const std::unordered_set<String> supported_command_fields{"deletes", "ordered"};
+    rejectUnsupportedCommandFields(documents[0].documents[0].getRapidJSONRepresentation(), supported_command_fields, "delete");
+
     validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "delete");
     const bool ordered = isOrderedDelete(documents[0].documents[0]);
+
+    if (documents.size() < 2 || documents[1].documents.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain any filter");
 
     /** A `collation` changes which documents a filter matches, so a statement that asks for one is
       * refused rather than deleting by a different comparison. A `hint` only names an index to read

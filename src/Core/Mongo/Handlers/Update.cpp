@@ -65,12 +65,21 @@ void appendCount(bson_t * document, const char * name, Int64 count)
 
 std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
-    if (sections.size() < 2 || sections[1].documents.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not contain any update statement");
-
     auto collection = getCollectionRef(sections[0].documents[0], "update");
+
+    /// A field of the command that would change what the write does or promises - a `maxTimeMS`
+    /// bound, a `let` of variables the statements would read - must be refused rather than
+    /// acknowledged and ignored, the same way the read commands refuse theirs. It is checked
+    /// before the statements are, so a command that both asks for an option that is not
+    /// implemented and carries no statements is refused for the stronger reason.
+    static const std::unordered_set<String> supported_command_fields{"updates", "ordered"};
+    rejectUnsupportedCommandFields(sections[0].documents[0].getRapidJSONRepresentation(), supported_command_fields, "update");
+
     validateWriteConcern(sections[0].documents[0].getRapidJSONRepresentation(), "update");
     const bool ordered = isOrderedUpdate(sections[0].documents[0]);
+
+    if (sections.size() < 2 || sections[1].documents.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not contain any update statement");
 
     /** An update of a collection of documents changes the paths of the document column rather than
       * the columns of a row, so it is a rewrite of the document rather than an assignment per field.

@@ -299,6 +299,13 @@ void InsertHandler::createCollection(const CollectionRef & collection, std::shar
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(documents[0].documents[0], "insert");
+
+    /// A field of the command that would change what the write does or promises - a `maxTimeMS`
+    /// bound, a `commitQuorum` - must be refused rather than acknowledged and ignored, the same
+    /// way the read commands refuse theirs.
+    static const std::unordered_set<String> supported_fields{"documents", "ordered"};
+    rejectUnsupportedCommandFields(documents[0].documents[0].getRapidJSONRepresentation(), supported_fields, "insert");
+
     validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "insert");
     const bool ordered = isOrderedInsert(documents[0].documents[0]);
 

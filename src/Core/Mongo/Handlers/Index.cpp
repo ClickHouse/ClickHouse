@@ -38,6 +38,13 @@ std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> &
     auto collection = getCollectionRef(sections[0].documents[0], "createIndexes");
 
     auto doc = sections[0].documents[0].getRapidJSONRepresentation();
+
+    /// A field of the command that would change what the write does or promises - a `maxTimeMS`
+    /// bound, a `commitQuorum` - must be refused rather than acknowledged and ignored, the same
+    /// way the read commands refuse theirs.
+    static const std::unordered_set<String> supported_fields{"indexes"};
+    rejectUnsupportedCommandFields(doc, supported_fields, "createIndexes");
+
     validateWriteConcern(doc, "createIndexes");
     auto indexes_it = doc.FindMember("indexes");
     if (indexes_it == doc.MemberEnd() || !indexes_it->value.IsArray())
