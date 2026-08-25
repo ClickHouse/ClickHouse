@@ -29,12 +29,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/IAST.h>
 #include <Parsers/StatementFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/System/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -826,28 +828,201 @@ void addSettingAliases(
     }
 }
 
-/// The documentation of a system table is its table comment, followed by the list of its columns: the name, type
-/// and description (the column comment) of each, rendered as a Markdown list.
-String renderSystemTableDoc(const String & comment, const ColumnsDescription & columns)
+String formatSystemTableType(const String & type)
 {
-    String result = boost::algorithm::trim_copy(comment);
+    static const std::unordered_map<std::string_view, std::string_view> links = {
+        {"Array", "/reference/data-types/array"},
+        {"Bool", "/reference/data-types/boolean"},
+        {"Date", "/reference/data-types/date"},
+        {"Date32", "/reference/data-types/date32"},
+        {"DateTime", "/reference/data-types/datetime"},
+        {"DateTime64", "/reference/data-types/datetime64"},
+        {"Decimal", "/reference/data-types/decimal"},
+        {"Decimal32", "/reference/data-types/decimal"},
+        {"Decimal64", "/reference/data-types/decimal"},
+        {"Decimal128", "/reference/data-types/decimal"},
+        {"Decimal256", "/reference/data-types/decimal"},
+        {"Enum8", "/reference/data-types/enum"},
+        {"Enum16", "/reference/data-types/enum"},
+        {"FixedString", "/reference/data-types/fixedstring"},
+        {"Float32", "/reference/data-types/float"},
+        {"Float64", "/reference/data-types/float"},
+        {"IPv4", "/reference/data-types/ipv4"},
+        {"IPv6", "/reference/data-types/ipv6"},
+        {"Int8", "/reference/data-types/int-uint"},
+        {"Int16", "/reference/data-types/int-uint"},
+        {"Int32", "/reference/data-types/int-uint"},
+        {"Int64", "/reference/data-types/int-uint"},
+        {"Int128", "/reference/data-types/int-uint"},
+        {"Int256", "/reference/data-types/int-uint"},
+        {"LowCardinality", "/reference/data-types/lowcardinality"},
+        {"Map", "/reference/data-types/map"},
+        {"Nullable", "/reference/data-types/nullable"},
+        {"String", "/reference/data-types/string"},
+        {"Tuple", "/reference/data-types/tuple"},
+        {"UInt8", "/reference/data-types/int-uint"},
+        {"UInt16", "/reference/data-types/int-uint"},
+        {"UInt32", "/reference/data-types/int-uint"},
+        {"UInt64", "/reference/data-types/int-uint"},
+        {"UInt128", "/reference/data-types/int-uint"},
+        {"UInt256", "/reference/data-types/int-uint"},
+        {"UUID", "/reference/data-types/uuid"},
+    };
 
-    String columns_list;
+    const size_t arguments = type.find('(');
+    const std::string_view base(type.data(), arguments == String::npos ? type.size() : arguments);
+    if (const auto it = links.find(base); it != links.end())
+        return "[" + type + "](" + String(it->second) + ")";
+    return "`" + type + "`";
+}
+
+String indentMarkdownContinuation(const String & text)
+{
+    String result;
+    size_t offset = 0;
+    while (offset < text.size())
+    {
+        const size_t end = text.find('\n', offset);
+        const std::string_view line(
+            text.data() + offset,
+            end == String::npos ? text.size() - offset : end - offset);
+        if (offset != 0 && !line.empty())
+            result += "  ";
+        result += line;
+        if (end == String::npos)
+            break;
+        result += '\n';
+        offset = end + 1;
+    }
+    return result;
+}
+
+String renderSystemTableColumns(const String & table_name, const ColumnsDescription & columns)
+{
+    String regular_columns;
+    String aliases;
+
     for (const auto & column : columns)
     {
-        columns_list += "- `" + column.name + "` (`" + column.type->getName() + "`)";
+        if (column.default_desc.expression && column.default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            String description;
+            if (table_name == "trace_log" && column.name == "build_id")
+                description = "Alias for the build ID of the running ClickHouse server binary.";
+            else
+                description = "Alias for `" + column.default_desc.expression->formatForLogging() + "`.";
+            aliases += "- `" + column.name + "` — " + description + "\n";
+            continue;
+        }
+
+        regular_columns += "- `" + column.name + "` (" + formatSystemTableType(column.type->getName()) + ")";
         const String column_comment = boost::algorithm::trim_copy(column.comment);
         if (!column_comment.empty())
-            columns_list += " — " + column_comment;
-        columns_list += "\n";
+            regular_columns += " — " + indentMarkdownContinuation(column_comment);
+        regular_columns += "\n";
     }
 
-    if (!columns_list.empty())
+    String result = boost::algorithm::trim_copy(regular_columns);
+    if (!aliases.empty())
     {
         if (!result.empty())
             result += "\n\n";
-        result += "**Columns**\n\n";
-        result += boost::algorithm::trim_copy(columns_list);
+        result += "**Aliases:**\n\n" + boost::algorithm::trim_copy(aliases);
+    }
+    return result;
+}
+
+String documentationAnchor(const String & name)
+{
+    String result;
+    result.reserve(name.size());
+    for (const char character : name)
+    {
+        if (isAlphaNumericASCII(character))
+            result += toLowerIfAlphaASCII(character);
+        else if (result.empty() || result.back() != '-')
+            result += '-';
+    }
+    while (!result.empty() && result.back() == '-')
+        result.pop_back();
+    return result;
+}
+
+String renderDescriptionCatalog(std::vector<std::pair<String, String>> entries)
+{
+    std::ranges::sort(entries, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    String result;
+    for (const auto & [name, description] : entries)
+    {
+        const String trimmed_description = boost::algorithm::trim_copy(description);
+        if (trimmed_description.empty())
+            continue;
+        if (!result.empty())
+            result += "\n\n";
+        result += "### " + name + " {#" + documentationAnchor(name) + "}\n\n" + trimmed_description;
+    }
+    return result;
+}
+
+void replaceDocumentationPlaceholder(String & document, std::string_view placeholder, std::string_view value)
+{
+    if (const size_t offset = document.find(placeholder); offset != String::npos)
+        document.replace(offset, placeholder.size(), value);
+}
+
+/// Render the complete reference page when it has been embedded. Tables which are supplied by optional/private
+/// components and do not yet have an embedded page retain the concise table-comment-and-columns representation.
+String renderSystemTableDoc(
+    const String & table_name,
+    const String & comment,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    const auto * documentation = getSystemTableDocumentation(table_name);
+    if (!documentation)
+    {
+        String result = boost::algorithm::trim_copy(comment);
+        const String columns_list = renderSystemTableColumns(table_name, columns);
+        if (!columns_list.empty())
+        {
+            if (!result.empty())
+                result += "\n\n";
+            result += "**Columns**\n\n" + columns_list;
+        }
+        return result;
+    }
+
+    String result = boost::algorithm::trim_copy(String(documentation->page_template));
+    replaceDocumentationPlaceholder(result, "{{SYSTEM_TABLE_COLUMNS}}", renderSystemTableColumns(table_name, columns));
+
+    if (result.contains("{{PROFILE_EVENTS}}"))
+    {
+        std::vector<std::pair<String, String>> profile_events;
+        for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+            profile_events.emplace_back(ProfileEvents::getName(event), ProfileEvents::getDocumentation(event));
+        replaceDocumentationPlaceholder(result, "{{PROFILE_EVENTS}}", renderDescriptionCatalog(std::move(profile_events)));
+    }
+
+    if (result.contains("{{CURRENT_METRICS}}"))
+    {
+        std::vector<std::pair<String, String>> current_metrics;
+        for (CurrentMetrics::Metric metric = CurrentMetrics::Metric(0); metric < CurrentMetrics::end(); ++metric)
+            current_metrics.emplace_back(CurrentMetrics::getName(metric), CurrentMetrics::getDocumentation(metric));
+        replaceDocumentationPlaceholder(result, "{{CURRENT_METRICS}}", renderDescriptionCatalog(std::move(current_metrics)));
+    }
+
+    if (result.contains("{{ASYNCHRONOUS_METRICS}}"))
+    {
+        std::vector<std::pair<String, String>> asynchronous_metrics;
+        if (const auto * values = context->getAsynchronousMetrics())
+        {
+            const auto metric_values = values->getValues();
+            asynchronous_metrics.reserve(metric_values.size());
+            for (const auto & [name, value] : metric_values)
+                asynchronous_metrics.emplace_back(name, value.documentation ? value.documentation : "");
+        }
+        replaceDocumentationPlaceholder(result, "{{ASYNCHRONOUS_METRICS}}", renderDescriptionCatalog(std::move(asynchronous_metrics)));
     }
 
     return result;
@@ -959,7 +1134,8 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
     addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
-    /// System tables document themselves with their table comment, authored at the attachment site.
+    /// System tables expose their embedded full reference page, with the live column schema and metric/event catalogs
+    /// rendered into its placeholders. Optional/private tables without an embedded page use their table comment.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -972,9 +1148,13 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                     /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with
                     /// side effects (the smart pointer dereference) as the operand of a polymorphic `typeid`.
                     const IStorage & storage = *table;
+                    const auto * documentation = getSystemTableDocumentation(iterator->name());
+                    const String source = documentation
+                        ? String(documentation->source)
+                        : makeRepoRelative(getSystemTableSource(typeid(storage)));
                     addRow(res_columns, EntityType::SystemTable, iterator->name(),
-                        renderSystemTableDoc(metadata_snapshot->comment, metadata_snapshot->getColumns()),
-                        makeRepoRelative(getSystemTableSource(typeid(storage))));
+                        renderSystemTableDoc(iterator->name(), metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
+                        source);
                 }
             }
         }
