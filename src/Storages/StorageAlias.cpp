@@ -550,12 +550,10 @@ void registerStorageAlias(StorageFactory & factory)
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
             local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
 
-        /// The restrictions below read the catalog, so their answer depends on what exists right now
-        /// and they may only judge freshly supplied input. A definition that was already accepted
-        /// (startup, short `ATTACH`, `SECONDARY_CREATE`) must stay loadable: a rejection while
-        /// loading metadata fails the whole load, not the one table.
-        /// They run after the access check above so that a caller without access to the target
-        /// cannot learn from the error message whether it exists and what engine it has.
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table. They run after the access check
+        /// so that a caller without access to the target cannot learn its engine from the message.
         bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         if (fresh_user_definition)
