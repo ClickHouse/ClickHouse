@@ -3549,12 +3549,21 @@ BlockIO InterpreterCreateQuery::execute()
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
             {
-                if (!create.as_table.empty())
+                /// The source definition of `AS` is materialized on the worker, so the initiator cannot
+                /// rewrite it here. Starting with `SETTINGS_IN_ZK_VERSION` the entry carries the query
+                /// settings, hence the worker sees `use_legacy_to_time` and materializes exactly what a
+                /// local `CREATE` would; only `OLDEST_VERSION` drops the setting. `CLONE AS` stays rejected
+                /// for every version of this branch, because the worker-side rewrite skips clones on
+                /// purpose (a re-spelled key would make the partition copy see a different structure), so
+                /// carrying the setting does not make the stored spelling unambiguous.
+                if (!create.as_table.empty()
+                    && (create.is_clone_as || on_cluster_version == DDLLogEntry::OLDEST_VERSION))
                 {
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
-                        "CREATE TABLE ... AS or CLONE AS ON CLUSTER with distributed_ddl_entry_format_version = {} "
+                        "CREATE TABLE ... {} ON CLUSTER with distributed_ddl_entry_format_version = {} "
                         "and use_legacy_to_time = 1 is not supported",
+                        create.is_clone_as ? "CLONE AS" : "AS",
                         on_cluster_version);
                 }
 
