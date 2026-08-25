@@ -17,11 +17,11 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the SQL statement."},
-        {"title", std::make_shared<DataTypeString>(), "The title of the statement's reference page."},
         {"syntax", std::make_shared<DataTypeString>(), "The syntax of the statement."},
         {"description", std::make_shared<DataTypeString>(), "A description of what the statement does, with usage examples."},
         {"parent_name", std::make_shared<DataTypeString>(), "The name of the enclosing statement, e.g. SELECT for the WHERE clause. Empty for a top-level statement."},
         {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related statements."},
+        {"title", std::make_shared<DataTypeString>(), "The title of the statement's reference page."},
     };
 }
 
@@ -35,7 +35,6 @@ void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr,
 
         size_t i = 0;
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(documentation.title);
         res_columns[i++]->insert(documentation.syntaxAsString());
         res_columns[i++]->insert(boost::algorithm::trim_copy(documentation.description));
         res_columns[i++]->insert(documentation.parent);
@@ -44,6 +43,7 @@ void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr,
         for (const auto & related_name : documentation.related)
             related.push_back(related_name);
         res_columns[i++]->insert(related);
+        res_columns[i++]->insert(documentation.title);
     }
 }
 

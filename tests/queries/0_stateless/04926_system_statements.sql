@@ -1,5 +1,11 @@
 -- SQL statements expose their embedded documentation via system.statements.
 
+-- New columns are appended so the positional schema remains backward compatible.
+SELECT name
+FROM system.columns
+WHERE database = 'system' AND table = 'statements'
+ORDER BY position;
+
 -- Representative statements must be registered, with a non-empty title, description and syntax.
 SELECT name, length(title) > 0 AS has_title, length(description) > 0 AS has_description, length(syntax) > 0 AS has_syntax
 FROM system.statements

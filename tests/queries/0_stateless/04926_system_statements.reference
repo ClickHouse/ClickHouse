@@ -1,3 +1,9 @@
+name
+syntax
+description
+parent_name
+related
+title
 ALTER	1	1	1
 CREATE TABLE	1	1	1
 DROP	1	1	1
