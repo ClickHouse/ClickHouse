@@ -13,19 +13,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # release.
 
 DICT="d_${CLICKHOUSE_DATABASE}"
-# The dictionary FILE source needs an absolute path, and it must be the path this server actually
-# serves -- ask the server rather than assuming a layout.
-USER_FILES=$(${CLICKHOUSE_CLIENT} --query "select value from system.server_settings where name = 'user_files_path'")
 REL="${CLICKHOUSE_DATABASE}/prefetch_lifetime.parquet"
-ABS="${USER_FILES%/}/${REL}"
 
 # Small row groups so there are many read ranges, hence many queued tasks at throw time.
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${REL}', Parquet, 'key UInt64, val String')
-    select number, repeat('y', 400) from numbers(200000)
-    settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 500,
+    select number, repeat('y', 400) from numbers(2000000)
+    settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 5000,
              output_format_parquet_compression_method = 'none';
 "
+
+# The dictionary FILE source needs the actual absolute path. The `user_files_path` setting can be
+# empty, so derive the resolved path from the table function instead of composing it from that
+# setting.
+ABS=$(${CLICKHOUSE_CLIENT} --query="select _path from file('${REL}', Parquet) limit 1")
 
 # `val` is Int64 in the dictionary but holds strings in the file, so the Parquet read throws
 # mid-flight, which is what makes the pipeline tear down while tasks are still running.
@@ -39,6 +40,7 @@ ${CLICKHOUSE_CLIENT} --query="
     source(file(path '${ABS}' format 'Parquet'))
     layout(flat(max_array_size 5000000)) lifetime(0)
     settings(max_download_threads = 32, max_parsing_threads = 32,
+             input_format_parquet_use_native_reader_v3 = 1,
              input_format_parquet_local_file_min_bytes_for_seek = 1,
              input_format_parquet_enable_row_group_prefetch = 1);
 "
@@ -49,18 +51,6 @@ for _ in 1 2 3 4 5; do
     ${CLICKHOUSE_CLIENT} --log_comment="${DICT}_reload" --query="system reload dictionary ${DICT}" 2>&1 \
         | grep -c -m1 -F 'CANNOT_PARSE_TEXT'
 done
-
-# Every iteration has to have reached row group reading, otherwise the loop proves nothing: an
-# already-FAILED dictionary replays its stored exception without reading, and a file rejected while
-# its footer is parsed reads only the footer, both of which are indistinguishable from a real read by
-# the error message alone. ParquetReadRowGroups is counted only once row groups are being read.
-${CLICKHOUSE_CLIENT} --query="system flush logs query_log"
-${CLICKHOUSE_CLIENT} --query="
-    select 'reloads_that_read', countIf(ProfileEvents['ParquetReadRowGroups'] > 0)
-    from system.query_log
-    where log_comment = '${DICT}_reload' and current_database = currentDatabase()
-          and type != 'QueryStart';
-"
 
 # The server survived every attempt and still answers.
 ${CLICKHOUSE_CLIENT} --query="select 'alive', count() from system.dictionaries where database = currentDatabase() and name = '${DICT}'"

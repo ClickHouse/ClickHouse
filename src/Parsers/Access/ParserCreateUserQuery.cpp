@@ -10,8 +10,6 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -21,6 +19,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <base/range.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 
 #include "config.h"
@@ -52,71 +51,23 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-            {
-                is_interval = false;
-                ParserStringAndSubstitution until_p;
-                return until_p.parse(pos, valid_until, expected);
-            }
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
 
-            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
-            /// at query execution time and stored in the VALID UNTIL form.
-            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
-            {
-                is_interval = true;
-                ParserExpression interval_p;
-                if (!interval_p.parse(pos, valid_until, expected))
-                    return false;
+            ParserStringAndSubstitution until_p;
 
-                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
-                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
-                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
-                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
-                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
-                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
-                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
-                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
-                /// at execution time.
-                if (const auto * maybe_in = valid_until->as<ASTFunction>();
-                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
-                {
-                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
-                    /// `IN memory` and `IN 'memory'` have to be given back.
-                    const auto & storage_ast = maybe_in->arguments->children[1];
-                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
-                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
-                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
-                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
-
-                    if (is_storage_name)
-                    {
-                        /// A short identifier, a string literal and the `IN` keyword are one token each.
-                        /// Verify the rewound position really points at `IN` before acting on it.
-                        IParserBase::Pos in_pos = pos;
-                        --in_pos;
-                        --in_pos;
-                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
-                        {
-                            valid_until = maybe_in->arguments->children[0];
-                            pos = in_pos;
-                        }
-                    }
-                }
-                return true;
-            }
-
-            return false;
+            return until_p.parse(pos, valid_until, expected);
         });
     }
 
     bool parseAuthenticationData(
         IParserBase::Pos & pos,
         Expected & expected,
-        boost::intrusive_ptr<ASTAuthenticationData> & auth_data,
+        std::shared_ptr<ASTAuthenticationData> & auth_data,
         bool is_type_specifier_mandatory,
         bool is_type_specifier_allowed,
         bool should_parse_no_password)
@@ -279,7 +230,7 @@ namespace
                 }
             }
 
-            auth_data = make_intrusive<ASTAuthenticationData>();
+            auth_data = std::make_shared<ASTAuthenticationData>();
 
             auth_data->type = type;
             auth_data->contains_password = expect_password;
@@ -303,9 +254,7 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            ASTPtr method_valid_until;
-            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
-                auth_data->setValidUntil(std::move(method_valid_until));
+            parseValidUntil(pos, expected, auth_data->valid_until);
 
             return true;
         });
@@ -315,7 +264,7 @@ namespace
     bool parseIdentifiedWith(
         IParserBase::Pos & pos,
         Expected & expected,
-        std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods,
+        std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods,
         bool should_parse_no_password)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -327,7 +276,7 @@ namespace
             {
                 bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
 
-                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
+                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
 
                 if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory, is_type_specifier_mandatory, should_parse_no_password))
                 {
@@ -343,7 +292,7 @@ namespace
             IParserBase::Pos aux_pos = pos;
             while (ParserToken{TokenType::Comma}.ignore(aux_pos, expected))
             {
-                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
+                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
 
                 if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true, should_parse_no_password))
                 {
@@ -358,18 +307,16 @@ namespace
         });
     }
 
-    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods)
+    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
             {
-                authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
+                authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
-                ASTPtr method_valid_until;
-                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
-                    authentication_methods.back()->setValidUntil(std::move(method_valid_until));
+                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
 
                 return true;
             }
@@ -478,30 +425,27 @@ namespace
     }
 
 
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, bool default_roles, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{default_roles ? Keyword::DEFAULT_ROLE : Keyword::ROLE}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::DEFAULT_ROLE}.ignore(pos, expected))
                 return false;
-
-            ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode);
-            if (default_roles)
-                roles_p.allowAll();
 
             ASTPtr ast;
-            if (!roles_p.parse(pos, ast, expected))
+            ParserRolesOrUsersSet default_roles_p;
+            default_roles_p.allowAll().allowRoles().useIDMode(id_mode);
+            if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
-            roles->allow_users = false;
+            default_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            default_roles->allow_users = false;
             return true;
         });
     }
 
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -511,12 +455,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
+            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
             return true;
         });
     }
 
-    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -525,12 +469,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
+            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
             return true;
         });
     }
 
-    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & grantees)
+    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -543,7 +487,7 @@ namespace
             if (!grantees_p.parse(pos, ast, expected))
                 return false;
 
-            grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             return true;
         });
     }
@@ -556,7 +500,7 @@ namespace
         });
     }
 
-    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTDatabaseOrNone> & default_database)
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTDatabaseOrNone> & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -568,12 +512,12 @@ namespace
             if (!database_p.parse(pos, ast, expected))
                 return false;
 
-            default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(ast);
+            default_database = typeid_cast<std::shared_ptr<ASTDatabaseOrNone>>(ast);
             return true;
         });
     }
 
-    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & auth_data)
+    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -631,7 +575,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr names_ast;
     if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
         return false;
-    auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
+    auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
 
     auto pos_after_parsing_names = pos;
 
@@ -639,15 +583,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::vector<boost::intrusive_ptr<ASTAuthenticationData>> auth_data;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
-    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
-    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
-    boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
+    std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
+    std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    std::shared_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
-    bool global_valid_until_is_interval = false;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -695,31 +637,28 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
             if (parseAlterSettings(pos, expected, new_alter_settings))
             {
                 if (!alter_settings)
-                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
+                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
                 alter_settings->add(std::move(*new_alter_settings));
                 continue;
             }
         }
         else
         {
-            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
+            std::shared_ptr<ASTSettingsProfileElements> new_settings;
             if (parseSettings(pos, expected, attach_mode, new_settings))
             {
                 if (!settings)
-                    settings = make_intrusive<ASTSettingsProfileElements>();
+                    settings = std::make_shared<ASTSettingsProfileElements>();
                 settings->add(std::move(*new_settings));
                 continue;
             }
         }
 
-        if (!roles && !alter && !attach_mode && parseRoles(pos, expected, /* default_roles = */ false, attach_mode, roles))
-            continue;
-
-        if (!default_roles && parseRoles(pos, expected, /* default_roles = */ true, attach_mode, default_roles))
+        if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
@@ -758,7 +697,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (auth_data.empty() && !global_valid_until)
         {
-            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
+            if (parseValidUntil(pos, expected, global_valid_until))
             {
                 continue;
             }
@@ -781,23 +720,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
 
-    /// `VALID FOR <interval>` is resolved to an absolute deadline at query execution time and stored
-    /// (and shown) in the `VALID UNTIL` form. It therefore never appears in the on-disk (`ATTACH`)
-    /// representation, and it cannot be evaluated during attach anyway: there is no query context, and
-    /// re-resolving `now` on every startup would let the deadline drift forever. Reject it here with a
-    /// clear message instead of failing later, deep inside `deserializeAccessEntity`, while loading a
-    /// hand-written access definition.
-    if (attach_mode)
-    {
-        bool has_valid_for = global_valid_until_is_interval;
-        for (const auto & authentication_method : auth_data)
-            has_valid_for = has_valid_for || authentication_method->valid_until_is_interval;
-
-        if (has_valid_for)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR is not allowed in ATTACH USER queries; the deadline must be stored as an absolute VALID UNTIL value");
-    }
-
-    auto query = make_intrusive<ASTCreateUserQuery>();
+    auto query = std::make_shared<ASTCreateUserQuery>();
     node = query;
 
     query->alter = alter;
@@ -812,14 +735,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
-    query->roles = std::move(roles);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
     query->alter_settings = std::move(alter_settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);
-    query->global_valid_until_is_interval = global_valid_until_is_interval;
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;

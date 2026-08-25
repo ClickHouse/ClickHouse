@@ -1,14 +1,12 @@
 #pragma once
 
-#include <atomic>
 #include <chrono>
-#include <mutex>
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -19,7 +17,7 @@ struct AsyncReadCounters;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 class ReadBufferFromRemoteFSGather;
 
-class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase
 {
 public:
     using Impl = ReadBufferFromFileBase;
@@ -28,11 +26,9 @@ public:
     explicit AsynchronousBoundedReadBuffer(
         ImplPtr impl_,
         IAsynchronousReader & reader_,
+        const ReadSettings & settings_,
         size_t buffer_size_,
         size_t min_bytes_for_seek_,
-        Priority priority_,
-        size_t page_cache_block_size_,
-        bool enable_prefetches_log_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
@@ -54,28 +50,10 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
-    /// Used only for unit test.
-    const ImplPtr & getImpl() { return impl; }
-
-    /// NOTE: readBigAt does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
-    /// (when supported). An in-flight prefetch is consumed first (readBigAt must not run against impl
-    /// concurrently with it) and its data is retained: readBigAt calls serve from it when covered.
-    bool supportsReadAt() override { return impl->supportsReadAt(); }
-
-    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
-    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
-    bool supportsExternalBufferMode() const override { return false; }
-
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
-
-    std::optional<Field> getMetadata(const String & name) const override;
-
 private:
     const ImplPtr impl;
-    const Priority base_priority;
-    const size_t page_cache_block_size;
-    const bool enable_prefetches_log;
-    size_t buffer_size;
+    const ReadSettings read_settings;
+    const size_t buffer_size;
     const size_t min_bytes_for_seek;
     const String file_name;
     IAsynchronousReader & reader;
@@ -87,21 +65,7 @@ private:
     size_t bytes_to_ignore = 0;
 
     Memory<> prefetch_buffer;
-    /// mutable: a pending prefetch may be consumed from the const readBigAt().
-    mutable std::future<IAsynchronousReader::Result> prefetch_future;
-    /// Guards consumption of prefetch_future from readBigAt, which may be called concurrently.
-    /// The sequential interface must not be called in parallel with readBigAt, so it takes no locks.
-    mutable std::mutex prefetch_future_mutex;
-    /// Lock-free check for readBigAt whether a prefetch is in flight.
-    mutable std::atomic<bool> prefetch_pending{false};
-    /// A prefetch consumed by readBigAt, retained so that any readBigAt call can serve data from it.
-    /// Immutable once published (by the store to prefetch_pending); reset by the sequential prefetch.
-    mutable std::optional<IAsynchronousReader::Result> prefetch_result;
-
-    /// When using userspace page cache, we directly use memory owned by the cache instead of
-    /// allocating our own buffers.
-    bool use_page_cache = false;
-    PageCacheCellPtr page_cache_cell;
+    std::future<IAsynchronousReader::Result> prefetch_future;
 
     const std::string query_id;
     const std::string current_reader_id;
@@ -116,7 +80,7 @@ private:
         std::chrono::system_clock::time_point submit_time;
         Priority priority;
     };
-    mutable LastPrefetchInfo last_prefetch_info;
+    LastPrefetchInfo last_prefetch_info;
 
     bool nextImpl() override;
 

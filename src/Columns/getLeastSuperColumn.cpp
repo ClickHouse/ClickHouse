@@ -1,7 +1,5 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -12,32 +10,15 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-}
-
-static bool containsAggregateStateColumn(const IColumn & column)
-{
-    if (typeid_cast<const ColumnAggregateFunction *>(&column))
-        return true;
-
-    bool found = false;
-    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
-    return found;
+    extern const int LOGICAL_ERROR;
 }
 
 static bool sameConstants(const IColumn & a, const IColumn & b)
 {
-    /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
-    /// aggregate function type names differ, and they may legitimately differ between `UNION`
-    /// branches when the functions have the same state representation (e.g. `quantileState`
-    /// and `quantilesState(0.9)`). Don't save constness for them.
-    if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(a).getDataColumn()))
-        return false;
-
     return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
 }
 
-ColumnWithTypeAndName getLeastSuperColumn(const VectorWithMemoryTracking<const ColumnWithTypeAndName *> & columns, bool use_variant_as_common_type)
+ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No src columns for supercolumn");
@@ -55,7 +36,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const VectorWithMemoryTracking<const C
             ++num_const;
     }
 
-    result.type = use_variant_as_common_type ? getLeastSupertypeOrVariant(types) : getLeastSupertype(types);
+    result.type = getLeastSupertype(types);
 
     /// Create supertype column saving constness if possible.
 

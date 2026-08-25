@@ -17,7 +17,7 @@ namespace
         ostr << " RENAME TO " << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         // safe because this method is only called if authentication_methods.size > 1
         // if the first type is present, include the `WITH` keyword
@@ -36,9 +36,9 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
+        ostr << " VALID UNTIL ";
         valid_until.format(ostr, settings);
     }
 
@@ -138,12 +138,6 @@ namespace
     }
 
 
-    void formatRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
-    {
-        ostr << " ROLE ";
-        roles.format(ostr, settings);
-    }
-
     void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         ostr << " DEFAULT ROLE ";
@@ -184,50 +178,36 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateUserQuery>(*this);
+    auto res = std::make_shared<ASTCreateUserQuery>(*this);
     res->children.clear();
     res->authentication_methods.clear();
 
     if (names)
-        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
-
-    if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
 
     if (default_roles)
-        res->default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
+        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
 
     if (default_database)
-        res->default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
 
     if (grantees)
-        res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
 
     if (settings)
-        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
     if (alter_settings)
-        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     for (const auto & authentication_method : authentication_methods)
     {
-        auto ast_clone = boost::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
         res->authentication_methods.push_back(ast_clone);
         res->children.push_back(ast_clone);
     }
 
-    if (global_valid_until)
-    {
-        res->global_valid_until = global_valid_until->clone();
-        res->children.push_back(res->global_valid_until);
-    }
-
     return res;
-}
-
-void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
-{
-    f(nullptr, &global_valid_until);
 }
 
 
@@ -256,15 +236,13 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (new_name)
         formatRenameTo(*new_name, ostr, format);
 
-    /// The global (user-level) VALID UNTIL/VALID FOR clause must be printed before the IDENTIFIED list:
-    /// the parser treats VALID UNTIL/VALID FOR as global only while no authentication method has been
-    /// parsed yet, and after an IDENTIFIED list the clause would bind to the last authentication method.
-    /// Formatting it first keeps the round-trip exact, which matters when the query text is re-parsed,
-    /// e.g. by the replicas of an ON CLUSTER DDL query.
-    if (global_valid_until)
-        formatValidUntil(*global_valid_until, global_valid_until_is_interval, ostr, format);
-
-    if (!authentication_methods.empty())
+    if (authentication_methods.empty())
+    {
+        // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
+        if (!alter)
+            ostr << " IDENTIFIED WITH no_password";
+    }
+    else
     {
         if (add_identified_with)
             ostr << " ADD";
@@ -272,6 +250,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
+
+    if (global_valid_until)
+        formatValidUntil(*global_valid_until, ostr, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);
@@ -282,9 +263,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (default_database)
         formatDefaultDatabase(*default_database, ostr, format);
-
-    if (roles)
-        formatRoles(*roles, ostr, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, ostr, format);

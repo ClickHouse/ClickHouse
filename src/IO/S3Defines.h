@@ -8,9 +8,6 @@ namespace DB::S3
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-/// A credential-acquisition round trip is bounded by this, independently of the data-transfer
-/// request timeout, which callers such as backups legitimately raise to an hour.
-inline static constexpr uint64_t DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS = 10000;
 inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 1024;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_TIMEOUT = 5;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;
@@ -36,10 +33,7 @@ inline static constexpr uint64_t DEFAULT_LIST_OBJECT_KEYS_SIZE = 1000;
 inline static constexpr uint64_t DEFAULT_MAX_SINGLE_READ_TRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_REDIRECTS = 10;
-inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 500;
-inline static constexpr uint64_t DEFAULT_RETRY_INITIAL_DELAY_MS = 25;
-inline static constexpr uint64_t DEFAULT_RETRY_MAX_DELAY_MS = 5000;
-inline static constexpr uint64_t DEFAULT_RETRY_JITTER_FACTOR = 0;
+inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 100;
 inline static constexpr uint64_t DEFAULT_MIN_BYTES_FOR_SEEK = 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE = 1000;
 

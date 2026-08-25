@@ -1,81 +1,20 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
 #include <Core/ServerSettings.h>
-#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace ServerSetting
 {
-    extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
 }
-
-namespace
-{
-    ViewTarget::Kind parseViewTargetKindFromString(std::string_view str)
-    {
-        if (auto kind = magic_enum::enum_cast<ViewTarget::Kind>(str))
-        {
-            return *kind;
-        }
-        else if (str == "to")
-        {
-            return ViewTarget::To;
-        }
-        else if (str == "inner")
-        {
-            return ViewTarget::Inner;
-        }
-        else if (str == "data")
-        {
-            return ViewTarget::Samples;
-        }
-        else if (str == "tags")
-        {
-            return ViewTarget::Tags;
-        }
-        else if (str == "metrics")
-        {
-            return ViewTarget::Metrics;
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
-    }
-
-    /// Whether SETTINGS carries a non-zero `recent_samples_ttl_seconds`; the normalization pins the default there before UUIDs are made.
-    bool hasTimeSeriesRecentSamplesTable(const ASTCreateQuery & query)
-    {
-        if (!query.storage || !query.storage->settings)
-            return false;
-        const auto * value = query.storage->settings->changes.tryGet("recent_samples_ttl_seconds");
-        if (!value)
-            return false;
-        switch (value->getType())
-        {
-            case Field::Types::UInt64:
-                return value->safeGet<UInt64>() != 0;
-            case Field::Types::Int64:
-                return value->safeGet<Int64>() != 0;
-            default:
-                /// Non-numeric values are rejected later when the setting is actually parsed.
-                return false;
-        }
-    }
-}
-
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
@@ -127,11 +66,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Samples);
+                generate_target_uuid(ViewTarget::Data);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
-                if (hasTimeSeriesRecentSamplesTable(query))
-                    generate_target_uuid(ViewTarget::RecentSamples);
             }
         }
     }
@@ -165,7 +102,7 @@ String CreateQueryUUIDs::toString() const
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
         if (inner_uuid != UUIDHelpers::Nil)
-            add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
+            add_name_and_uuid_to_string(::DB::toString(kind), inner_uuid);
     }
     out << "}";
     return out.str();
@@ -178,7 +115,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     skipWhitespaceIfAny(in);
     in >> "{";
     skipWhitespaceIfAny(in);
-    char c = 0;
+    char c;
     while (in.peek(c) && c != '}')
     {
         String name;
@@ -195,7 +132,8 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind = parseViewTargetKindFromString(name);
+            ViewTarget::Kind kind;
+            parseFromString(kind, name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
         if (in.peek(c) && c == ',')
@@ -242,7 +180,7 @@ void CreateQueryUUIDs::copyToQuery(ASTCreateQuery & query) const
     if (!targets_inner_uuids.empty())
     {
         if (!query.targets)
-            query.set(query.targets, make_intrusive<ASTViewTargets>());
+            query.set(query.targets, std::make_shared<ASTViewTargets>());
 
         for (const auto & [kind, inner_uuid] : targets_inner_uuids)
         {
