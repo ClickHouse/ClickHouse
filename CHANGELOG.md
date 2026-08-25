@@ -21,6 +21,66 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 20743c1ad6e66a06721db9130f8414abfa7469ff (20743c1ad6e) FIXME as compared to v26.9.1.1-new (94a1553123b)
+
+#### Experimental Feature
+* Distributed query plans (`make_distributed_plan`) now stop idle upstream stages promptly after a satisfied `LIMIT`: an idle exchange sink reads `NoMoreDataNeeded` as soon as it arrives, and an idle exchange source notices its closed output and forwards the stop upstream. Previously such stages kept reading and computing data that nobody consumes. [#115690](https://github.com/ClickHouse/ClickHouse/pull/115690) ([Alexander Gololobov](https://github.com/davenger)).
+* Automatic parallel replicas can now collect runtime statistics and enable parallel replicas for supported queries when `parallel_replicas_plan_based` is enabled. [#115788](https://github.com/ClickHouse/ClickHouse/pull/115788) ([Igor Nikonov](https://github.com/devcrafter)).
+
+#### Performance Improvement
+* A `WHERE` equality is now merged into the `JOIN` condition when its operands have different types but a common supertype, such as `Int32` and `Nullable(Int32)`. This allows a CROSS join to be converted to an INNER Join. [#112630](https://github.com/ClickHouse/ClickHouse/pull/112630) ([Hechem Selmi](https://github.com/m-selmi)).
+* Improved performance of merges of text indexes. [#114525](https://github.com/ClickHouse/ClickHouse/pull/114525) ([Anton Popov](https://github.com/CurtizJ)).
+* Reduced memory usage and query-plan optimization time for keyed aggregations over large constant-folded literals. The aggregation hash-table-statistics cache key is now hashed as it is serialized instead of being accumulated in memory first, so a plan carrying a large literal no longer holds a copy of it during optimization. For an 80 MB literal, peak memory drops by about 250 MB and optimization time by about 2.5x. The computed key is unchanged. [#115847](https://github.com/ClickHouse/ClickHouse/pull/115847) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* The documentation of all SQL statements (e.g. name, syntax, description, examples) can now be retrieved from system table `system.statements`. [#115341](https://github.com/ClickHouse/ClickHouse/pull/115341) ([Robert Schulze](https://github.com/rschu1ze)).
+* Add some dimensional metrics for S3Queue. [#115422](https://github.com/ClickHouse/ClickHouse/pull/115422) ([Bharat Nallan](https://github.com/bharatnc)).
+* Adds setting `query_plan_aggregation_bucket_top_k` (enabled by default) to toggle the plan optimization that materializes only each two-level bucket's best `n` groups when a final aggregation feeds `ORDER BY` over its outputs with `LIMIT n`. The optimization is now also visible in `EXPLAIN` output. [#116124](https://github.com/ClickHouse/ClickHouse/pull/116124) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* Web UI: do not show the sort and filter controls in the column headers of a result that has no more than a single row on its first page, where they could only re-run the query for the same rows. A result that is already sorted or filtered, or that is cut off at the display limit, keeps them. [#116181](https://github.com/ClickHouse/ClickHouse/pull/116181) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Do not replicate `ALTER TABLE ATTACH PARTITION FROM` for replicated db. [#94835](https://github.com/ClickHouse/ClickHouse/pull/94835) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* Invalid Azure upload-size settings (for example `azure_min_upload_part_size = 0` or `azure_max_blocks_in_multipart_upload = 0`) are now rejected early with a clear error instead of triggering an internal exception (`second_size > 0`) deep in the write path. This applies to both query settings and Azure disk configuration. [#103394](https://github.com/ClickHouse/ClickHouse/pull/103394) ([Statxc](https://github.com/statxc)).
+* Fixed wrong results for a comma or `CROSS` join whose `WHERE` compares columns of two tables through a non-deterministic expression such as `rand`. Such a query could return rows that contradict its own `WHERE` clause, because rewriting the join into an `INNER` join moved the expression into the join key, where it is evaluated again per row of each side. [#112938](https://github.com/ClickHouse/ClickHouse/pull/112938) ([Groene AI](https://github.com/groeneai)).
+* Fix an arithmetic exception in debug and sanitizer builds when reading from a `Merge` table with a very large `max_streams_to_max_threads_ratio`: the number of streams was truncated to 32 bits, so multiples of `2^32` became zero. Also throw `PARAMETER_OUT_OF_BOUND` instead of invoking undefined behavior when multiplying stream counts for a `Merge` table exceeds `size_t`, avoid an overflow when limiting `MergeTree` streams to the amount of data, and reject a `Merge` table read whose aggregate source count would exceed 65536. [#113382](https://github.com/ClickHouse/ClickHouse/pull/113382) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fixed `Logical error: 'Files metadata is empty'` when reading from, altering, or flushing an `S3Queue`/`AzureQueue` table whose metadata handle is gone: concurrently with a `DROP`/`DETACH`, after a failed `startup`, or after a failed `DROP`. Such a table now reports `TABLE_IS_DROPPED` instead. `SYSTEM FLUSH OBJECT STORAGE QUEUE` on such a table no longer crashes the server. [#113695](https://github.com/ClickHouse/ClickHouse/pull/113695) ([Groene AI](https://github.com/groeneai)).
+* Fix `LOGICAL_ERROR` when filtering an Iceberg column that `ALTER TABLE ... MODIFY COLUMN` made `Nullable`. Closes [#85029](https://github.com/ClickHouse/ClickHouse/issues/85029). [#114521](https://github.com/ClickHouse/ClickHouse/pull/114521) ([Groene AI](https://github.com/groeneai)).
+* **Support quoted label names in PromQL grouping modifiers.**. [#114545](https://github.com/ClickHouse/ClickHouse/pull/114545) ([Minh Vu](https://github.com/fallintoplace)).
+* Fixed reading a table while a mutation is in progress: a `MATERIALIZED` column could return a stale value, and selecting one together with an updated column could fail with an error. [#114561](https://github.com/ClickHouse/ClickHouse/pull/114561) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fixed an RBAC bypass in the `Alias` table engine that allowed users without privileges on the target table to reveal its schema, row count, size, and existence. [#114596](https://github.com/ClickHouse/ClickHouse/pull/114596) ([Kai Zhu](https://github.com/nauu)).
+* Fixed a column that was renamed, dropped and added again in one `ALTER` returning the dropped column's values instead of its own default while the mutation was still pending. [#114601](https://github.com/ClickHouse/ClickHouse/pull/114601) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fix `ANY RIGHT JOIN` and `SEMI RIGHT JOIN` with several `OR`-ed conditions in the `ON` section returning some rows of the right table twice and losing the matches of others. A written `ANY LEFT JOIN` was affected too, because the planner may swap the tables and execute it as `ANY RIGHT JOIN`. [#114676](https://github.com/ClickHouse/ClickHouse/pull/114676) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Fix invalid backslash escape characters in text, tokenbf_v1 and ngrambf_v1 indexes. [#115634](https://github.com/ClickHouse/ClickHouse/pull/115634) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* Fix crashes of the Parquet, ORC and Iceberg readers on malformed input: a `DELTA_BYTE_ARRAY` page with an empty length stream, a `DELTA_BYTE_ARRAY` page of a `Decimal` column read under a filter, an out-of-range enum in an Iceberg manifest file and an oversized allocation in the ORC library. [#115703](https://github.com/ClickHouse/ClickHouse/pull/115703) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Reject invalid names of projections and indexes. [#115824](https://github.com/ClickHouse/ClickHouse/pull/115824) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Fixed `LOGICAL_ERROR: Index with name auto_minmax_index_<column> already exists` when a single `ALTER TABLE` statement combined `RENAME COLUMN` with another command, such as `MODIFY SETTING`, on a table with implicit minmax indices (`add_minmax_index_for_numeric_columns` and friends). Renaming a plain column also no longer leaves a following `DROP COLUMN` failing with `UNKNOWN_IDENTIFIER`, nor a following `ADD COLUMN` without its implicit index. [#116063](https://github.com/ClickHouse/ClickHouse/pull/116063) ([Groene AI](https://github.com/groeneai)).
+* Fix stateless workers crash with object storage. [#116067](https://github.com/ClickHouse/ClickHouse/pull/116067) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Fix a server abort (`Too large size passed to allocator`) in debug builds when writing a non-adaptive MergeTree part (`index_granularity_bytes = 0`) created with an extremely large `index_granularity`. [#108650](https://github.com/ClickHouse/ClickHouse/pull/108650) ([Groene AI](https://github.com/groeneai)).
+* Prepare changelog for 26.8. [#111720](https://github.com/ClickHouse/ClickHouse/pull/111720) ([clickhouse-gh[bot]](https://github.com/apps/clickhouse-gh)).
+* Add tests for the HTTP status code of an unknown role and for a conflicting quota key. [#114234](https://github.com/ClickHouse/ClickHouse/pull/114234) ([Groene AI](https://github.com/groeneai)).
+* Add coverage tests for six untested function branches. [#114260](https://github.com/ClickHouse/ClickHouse/pull/114260) ([Groene AI](https://github.com/groeneai)).
+* Testing if this is going to uncover new issues. Renamed RandomKillerThread to RandomDisruptor. [#114502](https://github.com/ClickHouse/ClickHouse/pull/114502) ([Pedro Ferreira](https://github.com/PedroTadim)).
+* SQLancer: track sqlancer main, deduplicate findings, fail the job on them. [#114861](https://github.com/ClickHouse/ClickHouse/pull/114861) ([Nikita Fomichev](https://github.com/fm4v)).
+* CI: do not authenticate an unused robot token in the Codex code review. [#115232](https://github.com/ClickHouse/ClickHouse/pull/115232) ([Groene AI](https://github.com/groeneai)).
+* Refactor the skip index reader code path around `IMergeTreeDataPartInfoForReader`. [#115317](https://github.com/ClickHouse/ClickHouse/pull/115317) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Write host, pipeline, storage and compute metrics into CIDB attributes column. [#115425](https://github.com/ClickHouse/ClickHouse/pull/115425) ([Max Kainov](https://github.com/maxknv)).
+* Not applicable — test-only change. [#115532](https://github.com/ClickHouse/ClickHouse/pull/115532) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Implement SELECT query from TimeSeries. [#115622](https://github.com/ClickHouse/ClickHouse/pull/115622) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Extend test 04307_add_to_enum with MergeTree and ReplicatedMergeTree coverage. [#115654](https://github.com/ClickHouse/ClickHouse/pull/115654) ([Alexey Bakharew](https://github.com/alexbakharew)).
+* Do not assert scan-progress values decided by an async race in test_early_return_limit. [#115693](https://github.com/ClickHouse/ClickHouse/pull/115693) ([Groene AI](https://github.com/groeneai)).
+* <!-- CI automatic block start :ci_links: -->. [#115743](https://github.com/ClickHouse/ClickHouse/pull/115743) ([clickhouse-gh[bot]](https://github.com/apps/clickhouse-gh)).
+* Fix flaky `04628_and_compare_chain_index_hint` under randomized adaptive granularity. [#115767](https://github.com/ClickHouse/ClickHouse/pull/115767) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Do not let an unparsable KeeperMap metadata node stop the server from starting. [#115941](https://github.com/ClickHouse/ClickHouse/pull/115941) ([Groene AI](https://github.com/groeneai)).
+* Use `sipHash128` instead of `MD5` to derive attach UUIDs in the stateless test `04401_url_engine_s3_dispatch_engine_grant`. [#116023](https://github.com/ClickHouse/ClickHouse/pull/116023) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix version-pinned settings-history gate self-test. [#116107](https://github.com/ClickHouse/ClickHouse/pull/116107) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test_default_session_user config-reload tests racing with the background config reloader. [#116109](https://github.com/ClickHouse/ClickHouse/pull/116109) ([Groene AI](https://github.com/groeneai)).
+* Fix the NightlyChangelog job running out of its GitHub token. [#116138](https://github.com/ClickHouse/ClickHouse/pull/116138) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="268"></a> ClickHouse release 26.8, FIXME (in progress)
 
 #### Backward Incompatible Change
