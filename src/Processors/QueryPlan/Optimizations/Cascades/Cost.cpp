@@ -312,6 +312,15 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
         cost.network += std::max(0.0, funnelled_rows - rows) * inputs.output_stats.estimated_bytes_per_row;
         cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnelled_rows;
     }
+    /// A sorted gather's sender merges its streams into one before shipping
+    /// (`GatherSendStep`), so a source with several streams per node pays the same per-row
+    /// merge a full sort's final phase pays; a single-stream source ships as is. The senders
+    /// merge concurrently, so each one sees its node's share of the rows.
+    if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step))
+        if (gather->getMaintainSortDescription() && inputs.first_input_properties
+            && inputs.first_input_properties->stream_layout != StreamLayout::Single)
+            cost.sequential += inputs.config.merge_sequential_cost_per_row * rows
+                / std::max(1.0, Float64(inputs.first_input_properties->distribution.node_count));
     return cost;
 }
 
@@ -470,6 +479,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         .node_count = distribution_node_count,
         .input_physical_rows = input_physical_rows,
         .unknown_exchange_rows = memo.getLargestKnownLeafRows().value_or(CascadesDefaults::DEFAULT_UNKNOWN_READ_ROWS),
+        .first_input_properties = selected_inputs.empty() || !selected_inputs[0].expression
+            ? nullptr
+            : &selected_inputs[0].expression->properties,
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());

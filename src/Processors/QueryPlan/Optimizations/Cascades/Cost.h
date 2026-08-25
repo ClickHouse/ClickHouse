@@ -127,6 +127,8 @@ using GroupId = size_t;
 class IQueryPlanStep;
 struct IImplementationStrategy;
 
+struct ExpressionProperties;
+
 /// Everything the local (single-operator) cost functions may read. Deliberately holds no memo
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
@@ -149,6 +151,10 @@ struct CostInputs
     /// below it: the largest known leaf of the query. Without it funnelling such a result through
     /// one node looks free, its search value being a product of stand-in selectivities.
     Float64 unknown_exchange_rows = 1.0;
+    /// Properties of the first input's selected implementation, null when none is resolved.
+    /// A sorted gather reads the stream layout from it: a sender with several streams per
+    /// node merges them before shipping, which costs like a sort's final merge.
+    const ExpressionProperties * first_input_properties = nullptr;
     const CostConfig & config;
 };
 

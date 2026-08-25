@@ -190,3 +190,51 @@ TEST(CascadesTopNSort, PartitionedBoundedSortIsNotTopN)
         header, makeSortDescription(), /*partition_by_description_=*/makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65000));
     EXPECT_FALSE(isTopNSort(partitioned_bounded));
 }
+
+/// A sorted gather's sender merges its streams into one before shipping, so a source with
+/// several streams per node (disjoint layout) pays the per-row merge, while a single-stream
+/// source ships as is.
+TEST(CascadesSortedGatherCost, SendSideMergePricedByInputStreamLayout)
+{
+    constexpr Float64 rows = 10000;
+    constexpr size_t node_count = 4;
+
+    Memo memo(getLogger("gtest_cascades_partial_topn_cost"));
+    CostEstimator estimator(memo);
+    auto header = makeHeader();
+
+    auto make_source = [&](StreamLayout layout)
+    {
+        auto source = std::make_shared<GroupExpression>(QueryPlanStepPtr{});
+        source->properties.distribution.node_count = node_count;
+        source->properties.sorting = makeSortDescription();
+        if (layout == StreamLayout::Disjoint)
+            source->properties.setDisjointStreams({NameSet{"x"}});
+        else
+            source->properties.stream_layout = layout;
+        source->cost = ExpressionCost{};
+        auto group_id = memo.addGroup(source);
+        memo.getGroup(group_id)->statistics = makeStats(rows, 10);
+        memo.getGroup(group_id)->updateBestImplementation(source, memo.getContext().cost_config);
+        return std::pair{group_id, source};
+    };
+
+    auto gather_cost_over = [&](StreamLayout layout)
+    {
+        auto [group_id, source] = make_source(layout);
+        auto gather = std::make_shared<GroupExpression>(
+            std::make_unique<GatherExchangeStep>(header, node_count, makeSortDescription()));
+        gather->properties.distribution.node_count = 1;
+        gather->properties.sorting = makeSortDescription();
+        gather->inputs.push_back({group_id, source->properties});
+        auto gather_group_id = memo.addGroup(gather);
+        memo.getGroup(gather_group_id)->statistics = makeStats(rows, 10);
+        return estimator.estimateCost(gather).cost.sequential;
+    };
+
+    const Float64 over_single = gather_cost_over(StreamLayout::Single);
+    const Float64 over_disjoint = gather_cost_over(StreamLayout::Disjoint);
+
+    const auto & config = memo.getContext().cost_config;
+    EXPECT_DOUBLE_EQ(over_disjoint - over_single, config.merge_sequential_cost_per_row * rows / node_count);
+}
