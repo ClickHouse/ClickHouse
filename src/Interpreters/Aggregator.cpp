@@ -130,18 +130,12 @@ void initDataVariantsWithSizeHint(
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
-        /// An engaged run starts single-level at the default size, ignoring the hint. Two-level
-        /// is ruled out because a two-level table cannot freeze: the generic initialization
-        /// below goes two-level once the sizes reach `group_by_two_level_threshold`, and sizes
-        /// recorded by a run that ended large would make the next run unfreezable. The hint's
-        /// size is ignored because the freeze bounds make it worthless or harmful: an engaged
-        /// table stays small enough that the rehash chain from the default size is trivial,
-        /// while a pre-allocation at or above the byte bound would count as the table's
-        /// footprint and freeze it at its first between-blocks check, after one block of keys.
-        /// Ignoring the size keeps a warm run's freeze point identical to a cold run's.
-        if (params.enable_adaptive_aggregator)
+        /// A table predicted to reach the freeze threshold stays single-level (a two-level table
+        /// cannot freeze), pre-sized to at most what it can hold before freezing. A table
+        /// predicted to stay below the threshold will give up on freezing instead.
+        if (params.enable_adaptive_aggregator && hint->median_size >= params.adaptive_aggregator_freeze_threshold)
         {
-            result.init(method_chosen);
+            result.init(method_chosen, std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold));
         }
         else
         {
@@ -399,8 +393,7 @@ Aggregator::Params::Params(
     bool enable_parallel_single_level_merge_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
-    UInt64 adaptive_aggregator_freeze_threshold_,
-    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
+    UInt64 adaptive_aggregator_freeze_threshold_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -425,7 +418,6 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
-    , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -2163,43 +2155,33 @@ void Aggregator::prepareAggregateInstructions(
                 has_sparse_arguments = true;
         }
 
-        buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
+        aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+        aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
+        aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+
+        const auto * that = aggregate_functions[i];
+        /// Unnest consecutive trailing -State combinators
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+            that = func->getNestedFunction().get();
+        aggregate_functions_instructions[i].that = that;
+
+        if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
+        {
+            /// Unnest consecutive -State combinators before -Array
+            that = func->getNestedFunction().get();
+            while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
+                that = nested_func->getNestedFunction().get();
+            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+            nested_columns_holder.push_back(std::move(nested_columns));
+            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+            aggregate_functions_instructions[i].offsets = offsets;
+        }
+        else
+            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+        aggregate_functions_instructions[i].batch_that = that;
     }
-}
-
-void Aggregator::buildAggregateFunctionInstruction(
-    size_t i,
-    bool has_sparse_arguments,
-    AggregateColumns & aggregate_columns,
-    AggregateFunctionInstructions & aggregate_functions_instructions,
-    NestedColumnsHolder & nested_columns_holder) const
-{
-    aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
-    aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
-    aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
-    aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-
-    const auto * that = aggregate_functions[i];
-    /// Unnest consecutive trailing -State combinators
-    while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
-        that = func->getNestedFunction().get();
-    aggregate_functions_instructions[i].that = that;
-
-    if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
-    {
-        /// Unnest consecutive -State combinators before -Array
-        that = func->getNestedFunction().get();
-        while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
-            that = nested_func->getNestedFunction().get();
-        auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
-        nested_columns_holder.push_back(std::move(nested_columns));
-        aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
-        aggregate_functions_instructions[i].offsets = offsets;
-    }
-    else
-        aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
-
-    aggregate_functions_instructions[i].batch_that = that;
 }
 
 bool Aggregator::executeOnBlock(Columns columns,
@@ -2378,21 +2360,9 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// The freeze replaces the local two-level conversion: from now on the local table
             /// only updates the keys it already holds, so it stays single-level and bounded by
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (adaptive->isLearning())
-            {
-                /// The byte twin of the key-count freeze bound. The measure is the local
-                /// table's own footprint, its hash-table buffer plus its arenas, checked
-                /// between blocks like the baseline's conversion thresholds; the mid-block
-                /// freeze crossing checks only the key count, so a byte-triggered freeze
-                /// lands on a block boundary. The query-wide tracked memory is deliberately
-                /// not used: it sums every thread's allocations, so it would freeze all the
-                /// tables off each other's growth.
-                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-                if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
-                    && result.isConvertibleToTwoLevel())
-                    freezeAdaptive(result, *adaptive);
-            }
+            if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
+                && result.isConvertibleToTwoLevel())
+                freezeAdaptive(result, *adaptive);
 
             if (adaptive->isFrozen())
             {
