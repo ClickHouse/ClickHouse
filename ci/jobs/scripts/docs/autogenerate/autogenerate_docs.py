@@ -2022,6 +2022,10 @@ def _statement_page_candidates(docs_dir):
             continue
         content = page.read_text(encoding="utf-8")
         title = frontmatter_title(content)
+        if (START_RE.search(content) or END_RE.search(content)) and not title:
+            raise ValueError(
+                f"marked statement page has no frontmatter title: {page}"
+            )
         if title:
             pages.append((title, page, content))
     return pages
