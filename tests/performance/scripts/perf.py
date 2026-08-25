@@ -293,6 +293,14 @@ parser.add_argument(
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
 )
+parser.add_argument(
+    "--pr-number",
+    type=int,
+    default=0,
+    help="Number of the pull request under test. A setup query marked "
+    'do_not_check_in_pr="<this number>" is allowed to fail on the reference '
+    "server. With the default 0 no failure is tolerated.",
+)
 args = parser.parse_args()
 
 if args.min_runs is not None:
@@ -551,15 +559,48 @@ if not args.long:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-if any(q["kind"] == "shell" for q in test_queries) and (
-    args.user != "default" or args.password != "" or args.secure
-):
+has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
         "--user / --password / --secure connection options yet: the shell "
         "environment always connects without authentication over plaintext HTTP. "
         "Remove these options, or run this test without shell-script queries."
     )
+
+# Setup queries, in document order. The do_not_check_in_pr attribute is honoured only on these elements.
+setup_query_elements = [e for e in root.findall("./*") if e.tag in ("create_query", "fill_query")]
+
+for e in root.iter():
+    if "do_not_check_in_pr" in e.attrib and e not in setup_query_elements:
+        raise Exception(
+            "do_not_check_in_pr is only allowed on top-level <create_query> "
+            f"and <fill_query> elements, but was found on <{e.tag}>"
+        )
+
+if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_query_elements):
+    raise Exception(
+        "do_not_check_in_pr is not compatible with shell queries: a shell "
+        "performance test must run on every server to be comparable"
+    )
+
+# Setup queries paired with a flag. Tolerate query's failure on the reference server
+# only when do_not_check_in_pr matches --pr-number.
+create_query_templates = []
+for e in setup_query_elements:
+    attr = e.get("do_not_check_in_pr")
+    if attr is not None and not re.fullmatch("[1-9][0-9]*", attr):
+        raise Exception(
+            f'Invalid do_not_check_in_pr="{attr}" on <{e.tag}> in the test '
+            "file: must be the number of the pull request that introduces "
+            "the test (a positive integer)"
+        )
+    create_query_templates.append(
+        (e.text, attr is not None and int(attr) == args.pr_number)
+    )
+
+# <query file=...> have no element to carry the attribute. We can add support for it later if needed.
+create_query_templates += [(template, False) for template in extra_create_queries]
 
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
@@ -712,26 +753,23 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
+# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
+setup_error_on_connection = [None] * len(all_connections)
+
 if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both
-    # servers, to save time. The weird XML search + filter is because we want to
-    # keep the relative order of elements, and etree doesn't support the
-    # appropriate xpath query.
-    create_query_templates = [
-        q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
-    ]
-    create_query_templates += extra_create_queries
-    create_queries = substitute_parameters(create_query_templates)
+    # Run create and fill queries. We will run them simultaneously for both servers, to save time.
+    create_queries = []
+    for template, tolerate_on_reference in create_query_templates:
+        create_queries += [
+            (q, tolerate_on_reference) for q in substitute_parameters([template])
+        ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
     # after some errors.
-    for q in create_queries:
+    for q, _ in create_queries:
         if re.search("create temporary table", q, flags=re.IGNORECASE):
-            print(
-                f"Temporary tables are not allowed in performance tests: '{q}'",
-                file=sys.stderr,
-            )
+            print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
             sys.exit(1)
 
     # Settings allowed to be silently stripped from a CREATE TABLE on an
@@ -757,62 +795,76 @@ if not args.use_existing_tables:
     }
 
     def do_create(connection, index, queries):
-        for q in queries:
-            current_query = q
-            while True:
-                try:
-                    connection.execute(current_query)
-                    print(
-                        f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(current_query)}"
-                    )
-                    break
-                except clickhouse_driver.errors.ServerException as e:
-                    # If a CREATE TABLE uses a MergeTree setting that the
-                    # server does not know (e.g. a newly added setting
-                    # present only in the PR build) AND that setting is on
-                    # the explicit allowlist, strip the setting and retry.
-                    # The server falls back to its own default, which
-                    # matches the intent on the old side of an A/B perf
-                    # comparison.
-                    #
-                    # Scope this to `CREATE TABLE` of a `MergeTree`-family
-                    # engine only, and to the allowlist, so that misspelled
-                    # settings, unknown settings on `fill_query` / other
-                    # statements, and a `MergeTree` setting pinned on a
-                    # non-`MergeTree` fixture (e.g. `ENGINE = Memory
-                    # SETTINGS optimize_row_order_if_no_order_by = 0`, which
-                    # the setting cannot affect at all) still surface as
-                    # failures instead of silently producing different
-                    # datasets on the two sides.
-                    if (
-                        e.code == 115  # UNKNOWN_SETTING
-                        and first_keyword(current_query) == "CREATE"
-                        and is_mergetree_create_query(current_query)
-                    ):
-                        m = re.search(r"Unknown setting '([^']+)'", e.message)
-                        if m:
-                            unknown_setting = m.group(1)
-                            if unknown_setting in strippable_unknown_settings:
-                                allowed_values = strippable_unknown_settings[unknown_setting]
-                                if (
-                                    unknown_setting == "optimize_row_order_if_no_order_by"
-                                    and not is_ordinary_mergetree_create_query(current_query)
-                                ):
-                                    allowed_values = allowed_values | {"1", "true"}
-                                new_query = strip_setting_from_query(
-                                    current_query,
-                                    unknown_setting,
-                                    allowed_values,
-                                )
-                                if new_query != current_query:
-                                    print(
-                                        f"warning\t{index}\tstripped unknown setting "
-                                        f"'{unknown_setting}' from create query",
-                                        file=sys.stderr,
+        for q, tolerate_on_reference in queries:
+            try:
+                current_query = q
+                while True:
+                    try:
+                        connection.execute(current_query)
+                        print(
+                            f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(current_query)}"
+                        )
+                        break
+                    except clickhouse_driver.errors.ServerException as e:
+                        # If a CREATE TABLE uses a MergeTree setting that the
+                        # server does not know (e.g. a newly added setting
+                        # present only in the PR build) AND that setting is on
+                        # the explicit allowlist, strip the setting and retry.
+                        # The server falls back to its own default, which
+                        # matches the intent on the old side of an A/B perf
+                        # comparison.
+                        #
+                        # Scope this to `CREATE TABLE` of a `MergeTree`-family
+                        # engine only, and to the allowlist, so that misspelled
+                        # settings, unknown settings on `fill_query` / other
+                        # statements, and a `MergeTree` setting pinned on a
+                        # non-`MergeTree` fixture (e.g. `ENGINE = Memory
+                        # SETTINGS optimize_row_order_if_no_order_by = 0`, which
+                        # the setting cannot affect at all) still surface as
+                        # failures instead of silently producing different
+                        # datasets on the two sides.
+                        if (
+                            e.code == 115  # UNKNOWN_SETTING
+                            and first_keyword(current_query) == "CREATE"
+                            and is_mergetree_create_query(current_query)
+                        ):
+                            m = re.search(r"Unknown setting '([^']+)'", e.message)
+                            if m:
+                                unknown_setting = m.group(1)
+                                if unknown_setting in strippable_unknown_settings:
+                                    allowed_values = strippable_unknown_settings[unknown_setting]
+                                    if (
+                                        unknown_setting == "optimize_row_order_if_no_order_by"
+                                        and not is_ordinary_mergetree_create_query(current_query)
+                                    ):
+                                        allowed_values = allowed_values | {"1", "true"}
+                                    new_query = strip_setting_from_query(
+                                        current_query,
+                                        unknown_setting,
+                                        allowed_values,
                                     )
-                                    current_query = new_query
-                                    continue
+                                    if new_query != current_query:
+                                        print(
+                                            f"warning\t{index}\tstripped unknown setting "
+                                            f"'{unknown_setting}' from create query",
+                                            file=sys.stderr,
+                                        )
+                                        current_query = new_query
+                                        continue
+                        raise
+            except Exception:
+                # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
+                if index != 0 or not tolerate_on_reference:
                     raise
+
+                message = (
+                    "setup query failed on the reference server and is tolerated "
+                    f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
+                    f"running the test on the new server only: {tsv_escape(q)[:200]}"
+                )
+                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                setup_error_on_connection[index] = message
+                break
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
@@ -888,8 +940,13 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    query_error_on_connection = [None] * len(all_connections)
+    # A connection whose tolerated (do_not_check_in_pr) setup query failed
+    # starts out already failed for every query, so the partial
+    # ("backward-incompatible") machinery excludes it from the comparison.
+    query_error_on_connection = list(setup_error_on_connection)
     for conn_index, c in enumerate(all_connections):
+        if query_error_on_connection[conn_index]:
+            continue
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -1180,8 +1237,15 @@ reportStageEnd("run")
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
+        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
+        setup_failed = setup_error_on_connection[conn_index] is not None
         for q in drop_queries:
-            c.execute(q)
+            try:
+                c.execute(q)
+            except Exception:
+                if setup_failed:
+                    continue
+                raise
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")
