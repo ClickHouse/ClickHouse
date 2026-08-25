@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"exclude_data_from_backup", false, false, "New MergeTree setting: when enabled, BACKUP includes this table's DDL but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables whose data can be regenerated from a source table."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
