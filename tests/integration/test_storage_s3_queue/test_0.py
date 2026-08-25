@@ -795,6 +795,66 @@ def test_move_after_processing_preserve_tags_disabled(started_cluster):
     assert not moved_tags
 
 
+def test_move_after_processing_preserve_tags_alterable(started_cluster):
+    """A table whose credentials lose GetObjectTagging must be able to turn the opt-out on in
+    place, so the setting has to reach after_processing_settings through ALTER, not only CREATE."""
+    from minio.commonconfig import Tags
+
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_tags_alter_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = "sink-alter-tags"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+    source_tags = Tags.new_object_tags()
+    source_tags["classification"] = "sensitive"
+    started_cluster.minio_client.set_object_tags(
+        started_cluster.minio_bucket, f"{files_path}/{file_name}", source_tags
+    )
+
+    # Created with the default (preserve tags), then switched off before any MV starts processing.
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    node.query(
+        f"ALTER TABLE {table_name} MODIFY SETTING after_processing_move_preserve_tags = 0"
+    )
+    assert (
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}'"
+            " AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "0"
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    # The altered value took effect: the move carried no tags over.
+    moved_tags = started_cluster.minio_client.get_object_tags(
+        started_cluster.minio_bucket, f"{processed_prefix}/{file_name}"
+    )
+    assert not moved_tags
+
+
 def test_move_after_processing_preserve_tags_is_s3_only(started_cluster):
     """Only the S3 move path reads and restates tags, so an AzureQueue must refuse the setting
     instead of accepting a value that changes nothing."""

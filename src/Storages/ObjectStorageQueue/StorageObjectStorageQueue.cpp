@@ -1328,6 +1328,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1362,6 +1363,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1478,6 +1480,15 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     setting.name, magic_enum::enum_name(mode), getName());
+            }
+
+            /// Same contract as at CREATE: only the S3 move path reads and restates tags.
+            if (setting.name == "after_processing_move_preserve_tags" && type != ObjectStorageType::S3)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                    type);
             }
 
             /// Some settings affect the work of background processing thread,
@@ -1601,6 +1612,15 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
+            /// Same contract as at CREATE: only the S3 move path reads and restates tags.
+            if (setting.name == "after_processing_move_preserve_tags" && type != ObjectStorageType::S3)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                    type);
+            }
+
             if (requiresDetachedMV(setting.name))
             {
                 if (dependencies_count)
@@ -1681,6 +1701,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_preserve_path")
                 after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
+            else if (change.name == "after_processing_move_preserve_tags")
+                after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
