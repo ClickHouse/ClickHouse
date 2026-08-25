@@ -37,7 +37,8 @@ namespace ErrorCodes
 
 struct RandImpl
 {
-    /// Fill memory with random data. The memory region must be 15-bytes padded.
+    /// Fill memory with random data. Up to PADDING_FOR_SIMD - 1 bytes past size may be overwritten,
+    /// so the memory region must be padded by at least that much.
     static void execute(char * output, size_t size);
 };
 
