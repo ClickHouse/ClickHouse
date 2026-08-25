@@ -1,7 +1,4 @@
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
@@ -243,68 +240,52 @@ bool isUnorderedList(const IAST & parent, const IAST & list)
     return false;
 }
 
-bool isListOfLiterals(const IAST & ast)
+String normalizedText(const IAST & ast)
 {
-    if (!ast.as<ASTExpressionList>() || ast.children.empty())
-        return false;
+    String text = ast.formatWithSecretsOneLine();
 
-    for (const auto & child : ast.children)
-        if (!child->as<ASTLiteral>())
-            return false;
-
-    return true;
+    PaddedPODArray<UInt8> normalized;
+    normalizeQueryToPODArray(text.data(), text.data() + text.size(), normalized, /*keep_names=*/ false);
+    return String(normalized.begin(), normalized.end());
 }
 
-IASTHash hashCanonical(const IAST & ast, bool sort_children)
+void sortCommutativeLists(IAST & ast)
 {
     checkStackSize();
 
-    SipHash hash;
-
-    /// erase the value, same as normalizedQueryHash
-    if (ast.as<ASTLiteral>())
-    {
-        hash.update("\x00", 1);
-        return getSipHash128AsPair(hash);
-    }
-
-    /// collapse it, so that IN (1, 2) and IN (1, 2, 3) match
-    if (isListOfLiterals(ast))
-    {
-        hash.update("\x00", 1);
-        if (ast.children.size() > 1)
-            hash.update("\x00", 1);
-        return getSipHash128AsPair(hash);
-    }
-
-    if (const auto * identifier = ast.as<ASTIdentifier>();
-        identifier && isComplexIdentifier(identifier->full_name.data(), identifier->full_name.data() + identifier->full_name.size()))
-    {
-        hash.update("\x01", 1);
-        return getSipHash128AsPair(hash);
-    }
-
-    ast.updateTreeHashImpl(hash, /*ignore_aliases=*/ true);
-
-    std::vector<IASTHash> child_hashes;
-    child_hashes.reserve(ast.children.size());
     for (const auto & child : ast.children)
-        child_hashes.push_back(hashCanonical(*child, isUnorderedList(ast, *child)));
+        sortCommutativeLists(*child);
 
-    if (sort_children)
-        std::sort(child_hashes.begin(), child_hashes.end());
+    for (const auto & child : ast.children)
+    {
+        if (!isUnorderedList(ast, *child))
+            continue;
 
-    for (const auto & child_hash : child_hashes)
-        hash.update(child_hash);
+        /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
+        std::vector<std::pair<String, ASTPtr>> sorted;
+        sorted.reserve(child->children.size());
+        for (const auto & element : child->children)
+            sorted.emplace_back(normalizedText(*element), element);
 
-    return getSipHash128AsPair(hash);
+        std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+        for (size_t i = 0; i < sorted.size(); ++i)
+            child->children[i] = sorted[i].second;
+    }
 }
 
+}
+
+String normalizeQueryCanonical(const IAST & ast)
+{
+    ASTPtr canonical = ast.clone();
+    sortCommutativeLists(*canonical);
+    return normalizedText(*canonical);
 }
 
 UInt64 canonicalQueryHash(const IAST & ast)
 {
-    return CityHash_v1_0_2::Hash128to64(hashCanonical(ast, /*sort_children=*/ false));
+    return normalizedQueryHash(normalizeQueryCanonical(ast), /*keep_names=*/ false);
 }
 
 }

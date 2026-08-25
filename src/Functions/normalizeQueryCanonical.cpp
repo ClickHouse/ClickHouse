@@ -1,8 +1,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -12,7 +14,7 @@
 #include <Parsers/queryNormalization.h>
 
 
-/// normalizedQueryHash that ignores the order of a SELECT list, see canonicalQueryHash
+/// normalizeQuery and normalizedQueryHash that do not care about the order of a SELECT list.
 
 namespace DB
 {
@@ -38,10 +40,11 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-class FunctionNormalizedQueryHashCanonical final : public IFunction
+/// Parses every row and lets the derived function turn the AST into one result value.
+class FunctionOverParsedQuery : public IFunction
 {
 public:
-    FunctionNormalizedQueryHashCanonical(ContextPtr context, String name_, ErrorHandling error_handling_)
+    FunctionOverParsedQuery(ContextPtr context, String name_, ErrorHandling error_handling_)
         : name(std::move(name_)), error_handling(error_handling_)
     {
         const Settings & settings = context->getSettingsRef();
@@ -63,10 +66,9 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
 
-        DataTypePtr result_type = std::make_shared<DataTypeUInt64>();
         if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(result_type);
-        return result_type;
+            return std::make_shared<DataTypeNullable>(getResultType());
+        return getResultType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -80,8 +82,8 @@ public:
         if (error_handling == ErrorHandling::Null)
             col_null_map = ColumnUInt8::create(input_rows_count, false);
 
-        auto col_res = ColumnUInt64::create(input_rows_count, 0);
-        auto & res_data = col_res->getData();
+        MutableColumnPtr col_res = getResultType()->createColumn();
+        col_res->reserve(input_rows_count);
 
         const ColumnString::Chars & data = col_query_string->getChars();
         const ColumnString::Offsets & offsets = col_query_string->getOffsets();
@@ -105,16 +107,21 @@ public:
                     throw;
 
                 col_null_map->getData()[i] = 1;
+                col_res->insertDefault();
                 continue;
             }
 
-            res_data[i] = canonicalQueryHash(*ast);
+            insertResult(*ast, *col_res);
         }
 
         if (error_handling == ErrorHandling::Null)
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
         return col_res;
     }
+
+protected:
+    virtual DataTypePtr getResultType() const = 0;
+    virtual void insertResult(const IAST & ast, IColumn & result) const = 0;
 
 private:
     String name;
@@ -126,17 +133,118 @@ private:
     bool implicit_select;
 };
 
+class FunctionNormalizeQueryCanonical final : public FunctionOverParsedQuery
+{
+public:
+    using FunctionOverParsedQuery::FunctionOverParsedQuery;
+
+protected:
+    DataTypePtr getResultType() const override { return std::make_shared<DataTypeString>(); }
+
+    void insertResult(const IAST & ast, IColumn & result) const override
+    {
+        result.insert(normalizeQueryCanonical(ast));
+    }
+};
+
+class FunctionNormalizedQueryHashCanonical final : public FunctionOverParsedQuery
+{
+public:
+    using FunctionOverParsedQuery::FunctionOverParsedQuery;
+
+protected:
+    DataTypePtr getResultType() const override { return std::make_shared<DataTypeUInt64>(); }
+
+    void insertResult(const IAST & ast, IColumn & result) const override
+    {
+        assert_cast<ColumnUInt64 &>(result).getData().push_back(canonicalQueryHash(ast));
+    }
+};
+
+}
+
+REGISTER_FUNCTION(normalizeQueryCanonical)
+{
+    FunctionDocumentation::Description description = R"(
+Like [`normalizeQuery`](#normalizeQuery), but the query is parsed first and the lists whose order does not change what the query does are sorted:
+the `SELECT` expression list, `GROUP BY` keys and the operands of `and` and `or`.
+
+`SELECT b, a FROM t` and `SELECT a, b FROM t` therefore give the same text, even though the two queries return their columns in a different order.
+Use this to group a workload by shape; do not use it to decide that two queries may be substituted for each other.
+
+Throws in case of a parsing error.
+    )";
+    FunctionDocumentation::Syntax syntax = "normalizeQueryCanonical(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A sequence of characters.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a sequence of characters.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT normalizeQueryCanonical('SELECT b, a FROM t WHERE x = 1') AS res;
+        )",
+        R"(
+┌─res──────────────────────────────┐
+│ SELECT a, b FROM t WHERE x = ?   │
+└──────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(
+        "normalizeQueryCanonical",
+        [](ContextPtr context)
+        { return std::make_shared<FunctionNormalizeQueryCanonical>(context, "normalizeQueryCanonical", ErrorHandling::Exception); },
+        documentation);
+}
+
+REGISTER_FUNCTION(normalizeQueryCanonicalOrNull)
+{
+    FunctionDocumentation::Description description = R"(
+Like [`normalizeQueryCanonical`](#normalizeQueryCanonical), but returns `NULL` instead of throwing in case of a parsing error.
+
+This is the variant to use over `system.query_log`, which also stores queries that failed to parse and queries truncated by
+the [`log_queries_cut_to_length`](/operations/settings/settings#log_queries_cut_to_length) setting.
+    )";
+    FunctionDocumentation::Syntax syntax = "normalizeQueryCanonicalOrNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A sequence of characters.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a sequence of characters, or `NULL` if the query cannot be parsed.", {"Nullable(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT normalizeQueryCanonicalOrNull('SELECT * FROM') AS res;
+        )",
+        R"(
+┌──res─┐
+│ ᴺᵁᴸᴸ │
+└──────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(
+        "normalizeQueryCanonicalOrNull",
+        [](ContextPtr context)
+        { return std::make_shared<FunctionNormalizeQueryCanonical>(context, "normalizeQueryCanonicalOrNull", ErrorHandling::Null); },
+        documentation);
 }
 
 REGISTER_FUNCTION(normalizedQueryHashCanonical)
 {
     FunctionDocumentation::Description description = R"(
-Like [`normalizedQueryHash`](#normalizedQueryHash), it returns identical 64 bit hash values for similar queries without the values of literals,
-but it is computed over the parsed query, so it also ignores the order of elements in lists where the order does not change what the query does:
-the `SELECT` expression list, `GROUP BY` keys and the operands of `and` and `or`.
-
-`SELECT a, b FROM t` and `SELECT b, a FROM t` therefore get the same hash, even though the two queries return their columns in a different order.
-Use this to group a workload by shape; do not use it to decide that two queries may be substituted for each other.
+[`normalizedQueryHash`](#normalizedQueryHash) of [`normalizeQueryCanonical`](#normalizeQueryCanonical): identical 64 bit hash values for similar
+queries without the values of literals, and also without the order of the `SELECT` expression list, of `GROUP BY` keys and of the operands of `and` and `or`.
 
 Throws in case of a parsing error.
     )";
@@ -186,7 +294,7 @@ the [`log_queries_cut_to_length`](/operations/settings/settings#log_queries_cut_
     {
         "Usage example",
         R"(
-SELECT normalizedQueryHashCanonicalOrNull('this is not a query') AS res;
+SELECT normalizedQueryHashCanonicalOrNull('SELECT * FROM') AS res;
         )",
         R"(
 ┌──res─┐

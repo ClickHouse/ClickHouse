@@ -4,6 +4,10 @@ SELECT normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY a, b') = nor
 SELECT normalizedQueryHashCanonical('SELECT a FROM t WHERE x = 1 AND y = 2') = normalizedQueryHashCanonical('SELECT a FROM t WHERE y = 3 AND x = 4');
 SELECT normalizedQueryHashCanonical('SELECT a FROM t WHERE x = 1 OR y = 2') = normalizedQueryHashCanonical('SELECT a FROM t WHERE y = 2 OR x = 1');
 
+-- the canonical text, and the hash is just normalizedQueryHash of it
+SELECT normalizeQueryCanonical('SELECT b, a FROM t WHERE y = 2 AND x = 1');
+SELECT normalizedQueryHashCanonical('SELECT b, a FROM t WHERE y = 2 AND x = 1') = normalizedQueryHash(normalizeQueryCanonical('SELECT b, a FROM t WHERE y = 2 AND x = 1'));
+
 -- the old hash still cares about the order
 SELECT normalizedQueryHash('SELECT a, b FROM t') = normalizedQueryHash('SELECT b, a FROM t');
 
@@ -31,6 +35,7 @@ SELECT normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY a, b WITH CU
 -- unparseable input
 SELECT normalizedQueryHashCanonical('SELECT * FROM'); -- { serverError SYNTAX_ERROR }
 SELECT normalizedQueryHashCanonicalOrNull('SELECT * FROM');
+SELECT normalizeQueryCanonicalOrNull('SELECT * FROM');
 SELECT normalizedQueryHashCanonicalOrNull('SELECT a, b FROM t') = normalizedQueryHashCanonicalOrNull('SELECT b, a FROM t');
 
 -- over a column, not just constants

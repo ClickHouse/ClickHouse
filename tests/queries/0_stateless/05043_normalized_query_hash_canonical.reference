@@ -2,6 +2,8 @@
 1
 1
 1
+SELECT a, b FROM t WHERE (x = ?) AND (y = ?)
+1
 0
 1
 1
@@ -14,6 +16,7 @@
 0
 0
 1
+\N
 \N
 1
 2
