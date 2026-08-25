@@ -71,7 +71,6 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
-    /// No-op: for data lake catalogs, table creation and catalog registration happen earlier, during storage construction.
     void createTable(
         ContextPtr /*context*/,
         const String & /*name*/,
