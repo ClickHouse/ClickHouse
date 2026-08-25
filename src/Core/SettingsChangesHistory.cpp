@@ -1428,6 +1428,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        {
+            {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
