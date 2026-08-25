@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -91,7 +92,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
             {"allow_metadata_only_named_tuple_alter", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
-            {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
             {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
             {"ai_function_text_default_credentials", "", "", "New setting"},
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
