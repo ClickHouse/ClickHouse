@@ -1,3 +1,7 @@
+-- Tags: no-old-analyzer
+-- The `PREWHERE` fold needs the `ReadFromMergeTree` step to carry the `PREWHERE` expression as a
+-- query plan `ActionsDAG` whose outputs get pruned; the old analyzer builds `PREWHERE` before the
+-- plan and never reaches that pruning, so the constant is not folded there.
 -- The `PREWHERE` fold happens while `ReadFromMergeTree` prunes the outputs of the `PREWHERE`
 -- expression, which is part of the `removeUnusedColumns` query plan optimization, so pin it
 -- (the test runner randomizes it).
