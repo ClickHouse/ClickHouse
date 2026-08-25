@@ -519,7 +519,7 @@ The exact size of part to upload during multipart upload to S3 (some implementat
     DECLARE(UInt64, azure_strict_upload_part_size, 0, R"(
 The exact size of part to upload during multipart upload to Azure blob storage.
 )", 0) \
-    DECLARE(UInt64, azure_max_blocks_in_multipart_upload, 50000, R"(
+    DECLARE(NonZeroUInt64, azure_max_blocks_in_multipart_upload, 50000, R"(
 Maximum number of blocks in multipart upload for Azure.
 )", 0) \
     DECLARE(UInt64, s3_min_upload_part_size, S3::DEFAULT_MIN_UPLOAD_PART_SIZE, R"(
@@ -1893,7 +1893,7 @@ Possible values:
     DECLARE(Bool, use_skip_indexes_if_final, true, R"(
 Controls whether skipping indexes are used when executing a query with the FINAL modifier.
 
-Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the FINAL modifier. When this setting is enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates. This setting should be enabled in sync with the setting use_skip_indexes_if_final_exact_mode (default is enabled).
+Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the `FINAL` modifier. When this setting is enabled, skipping indexes are applied even with the `FINAL` modifier, potentially improving performance. Correct results still depend on setting `use_skip_indexes_if_final_exact_mode`, which is enabled by default and scans the additional parts that overlap the ranges returned by the skip index. The risk of missing recent updates applies only if that setting is disabled.
 
 Possible values:
 
@@ -1959,6 +1959,27 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, enable_group_by_top_k_optimization, true, R"(
+Enable TopK filtering optimization during aggregation in `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` queries, and in `GROUP BY keys LIMIT K` queries without `ORDER BY` (any `K` groups are a valid result there, so a sort over all keys is synthesized).
+
+When enabled, the aggregator maintains a bounded heap of the top `K` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`, and when the heap ranks the full `GROUP BY` key it also prunes evicted groups out of the intermediate hash table, bounding its size by the `LIMIT` instead of the number of distinct keys. When the `ORDER BY` covers only a proper prefix of the `GROUP BY` keys, the ranking cannot identify a full group, so only row skipping applies: the hash table keeps every admitted group and can still grow with the cardinality of the remaining key columns.
+
+The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
+
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
+
+The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
+
+This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 
@@ -1972,6 +1993,8 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
+
+This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index).
@@ -2259,9 +2282,9 @@ Possible values:
 )", IMPORTANT) \
     \
     DECLARE(UInt64, max_concurrent_queries_for_all_users, 0, R"(
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+Throw exception if the current number of simultaneously processed queries reaches or exceeds this setting's value.
 
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for themselves to run queries for investigation even when the server is overloaded.
 
 Modifying the setting for one query or user does not affect other queries.
 
@@ -4353,12 +4376,15 @@ Possible values:
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
 The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold the backlogs are drained early into the shared table, and if that is not enough to get back under it, the shared table spills to disk through the ordinary external aggregation.
 )", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 16384, R"(
 The number of keys at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). Smaller values keep the frozen tables cache-resident, larger values let them absorb more of the frequent keys. 0 freezes the tables at the first opportunity, which makes the algorithm behave similarly to the sharded aggregator (`enable_sharding_aggregator`): every key is routed by its hash and aggregated by a single owner, just deferred to the merge phase instead of exchanged between threads during the scan.
+)", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 4_MiB, R"(
+The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own allocated bytes (its hash-table buffer plus its arenas), checked between blocks. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold alone decides.
 )", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
@@ -6306,11 +6332,20 @@ Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_
     DECLARE(Bool, force_distinct_partitions_independently, false, R"(
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0) \
+    DECLARE(Bool, allow_window_partitions_independently, true, R"(
+Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
+)", 0) \
+    DECLARE(Bool, force_window_partitions_independently, false, R"(
+Force independent evaluation of window functions per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_window_partitions_independently](#allow_window_partitions_independently); the remaining conditions still apply.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply independent aggregation per partition. Part of the cost heuristic of [allow_aggregate_partitions_independently](#allow_aggregate_partitions_independently).
 )", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_distinct, 128, R"(
 Maximal number of partitions in table to apply independent `DISTINCT` per partition. Part of the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently).
+)", 0) \
+    DECLARE(UInt64, max_number_of_partitions_for_independent_window, 128, R"(
+Maximal number of partitions in table to apply independent evaluation of window functions per partition. Part of the cost heuristic of [allow_window_partitions_independently](#allow_window_partitions_independently).
 )", 0) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
@@ -6583,6 +6618,15 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_top_k_through_join, true, R"(
 Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
+Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, materializes only each two-level bucket's best n groups in that order during the aggregation's final conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
@@ -7099,10 +7143,10 @@ If disabled and the INSERT query contains inline data, the server will not send 
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
-If true wait for processing of asynchronous insertion
+If true wait for processing of asynchronous insertion.
 )", 0) \
     DECLARE(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
-Timeout for waiting for processing asynchronous insertion
+Timeout for waiting for processing asynchronous insertion.
 )", 0) \
     DECLARE(UInt64, async_insert_max_data_size, 10485760, R"(
 Maximum size in bytes of unparsed data collected per query before being inserted
