@@ -57,12 +57,6 @@ struct Optimization
         bool read_in_order{};
         bool read_in_order_through_join{};
 
-        /// Mirrors `QueryPlanOptimizationSettings::read_in_order_through_spilling_join`.
-        /// `topKThroughJoin` consults it for the same reason as `read_in_order_through_join`:
-        /// a join that may spill only becomes a valid target for the second-pass read-in-order
-        /// when this setting lets it pin itself in memory, so the deferral must follow it.
-        bool read_in_order_through_spilling_join{};
-
         /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
         /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
         /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
