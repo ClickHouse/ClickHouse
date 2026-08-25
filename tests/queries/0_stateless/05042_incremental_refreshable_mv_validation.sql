@@ -54,7 +54,9 @@ CREATE MATERIALIZED VIEW val_mv_mem
     AS SELECT k, v FROM val_mem; -- { serverError NOT_IMPLEMENTED }
 
 -- A source that does not persist _block_number/_block_offset is rejected: the cursor would drift across merges.
-CREATE TABLE val_src_noblock (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+-- Set the settings explicitly to 0 so the test is deterministic under randomized MergeTree settings.
+CREATE TABLE val_src_noblock (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE MATERIALIZED VIEW val_mv_noblock
     REFRESH EVERY 10 YEAR APPEND INCREMENTAL
     TO val_tgt EMPTY
