@@ -30,7 +30,9 @@ order by n
 settings enable_analyzer = 1;
 
 -- The query exactly as filed: Doc.Value is the leaf Dynamic of a sub-object path, so it is NULL on both
--- rows. It must return NULL rather than throw.
+-- rows. It must return NULL rather than throw. `enable_analyzer` is pinned for the same reason as above:
+-- the old analyzer looks up a column literally named `Doc.Value` in the block instead of extracting the
+-- path from the JSON column, so any subcolumn of a subquery column fails there regardless of this change.
 select Doc.Value::Nullable(JSON).Id as x
 from
 (
@@ -38,7 +40,8 @@ from
     union all
     select 2 as n, '{"Value": {"Id": "dorki"}}'::JSON as Doc
 )
-order by n;
+order by n
+settings enable_analyzer = 1;
 
 -- A typed `Array(...)` / `Map(...)` path can neither be wrapped in `Nullable` nor carry NULL itself, so
 -- outer-NULL rows must read as the path default ([] / {}) -- matching a stored subcolumn and the
