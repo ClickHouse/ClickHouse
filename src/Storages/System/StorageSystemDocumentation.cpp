@@ -189,6 +189,68 @@ bool isFullPageDescription(std::string_view description)
     return false;
 }
 
+std::string_view trimMarkdownLine(std::string_view line)
+{
+    while (!line.empty() && isWhitespaceASCII(line.front()))
+        line.remove_prefix(1);
+    while (!line.empty() && isWhitespaceASCII(line.back()))
+        line.remove_suffix(1);
+    return line;
+}
+
+bool isSyntaxSectionLabel(std::string_view line)
+{
+    line = trimMarkdownLine(line);
+
+    const size_t hashes = line.find_first_not_of('#');
+    if (hashes != 0 && hashes != std::string_view::npos)
+        line = trimMarkdownLine(line.substr(hashes));
+
+    const size_t anchor = line.find(" {#");
+    if (anchor != std::string_view::npos && line.ends_with('}'))
+        line = trimMarkdownLine(line.substr(0, anchor));
+
+    if (line.size() >= 4 && line.starts_with("**") && line.ends_with("**"))
+        line = trimMarkdownLine(line.substr(2, line.size() - 4));
+
+    if (line.ends_with(':'))
+        line = trimMarkdownLine(line.substr(0, line.size() - 1));
+
+    return equalsCaseInsensitive(line, "syntax");
+}
+
+/// Detects syntax which is already documented by a Markdown section or by prose immediately introducing an SQL block.
+bool descriptionDocumentsSyntax(std::string_view description)
+{
+    bool in_code_block = false;
+    bool syntax_block_follows = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+        {
+            const bool is_sql_fence = equalsCaseInsensitive(line, "```sql");
+            if (!in_code_block && syntax_block_follows && is_sql_fence)
+                return true;
+            in_code_block = !in_code_block;
+            syntax_block_follows = false;
+        }
+        else if (!in_code_block && !line.empty())
+        {
+            if (isSyntaxSectionLabel(line))
+                return true;
+            syntax_block_follows = toLowerCopyASCII(line).ends_with("syntax:");
+        }
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
 /// Assembles the individual structured parts of an entity's embedded documentation into a single Markdown document,
 /// in the same shape as it appears on the website. Empty parts are omitted.
 String composeMarkdown(
@@ -221,9 +283,9 @@ String composeMarkdown(
     };
 
     const String trimmed_syntax = boost::algorithm::trim_copy(syntax);
-    /// Some complete page descriptions embed their syntax without a Markdown section header. Do not append the
-    /// same syntax a second time, while still composing it for short descriptions which do not contain it.
-    if (!trimmed_syntax.empty() && !result.contains(trimmed_syntax))
+    /// Do not append structured syntax when the description already documents it, whether verbatim or as a
+    /// dedicated Markdown section whose formatting or punctuation differs from the structured representation.
+    if (!trimmed_syntax.empty() && !descriptionDocumentsSyntax(result) && !result.contains(trimmed_syntax))
         add_block("Syntax", trimmed_syntax, /*as_code=*/ true);
     add_block("Arguments", arguments, /*as_code=*/ false);
     add_block("Parameters", parameters, /*as_code=*/ false);

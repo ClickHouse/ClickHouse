@@ -31,6 +31,14 @@ WHERE notEmpty(statements.syntax)
     AND countSubstrings(documentation.description, statements.syntax)
         > countSubstrings(statements.description, statements.syntax);
 
+-- A source description with an explicit syntax section or an SQL block introduced as syntax is not followed by
+-- another synthetic syntax section, even when its formatting or punctuation differs from the structured syntax.
+SELECT name, countSubstrings(description, '**Syntax**')
+FROM system.documentation
+WHERE type = 'Statement'
+    AND name IN ('ALTER NAMED COLLECTION', 'ALTER QUOTA', 'ALTER TABLE ... CONSTRAINT')
+ORDER BY name;
+
 -- Complete pages are exposed verbatim, without synthetic enclosing-statement sections.
 SELECT description NOT LIKE '%**Part of:**%'
 FROM system.documentation WHERE type = 'Statement' AND name = 'WHERE';

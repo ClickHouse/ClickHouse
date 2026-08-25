@@ -29,14 +29,6 @@ Constraint check **will not be executed** on existing data if it was added or mo
 
 All changes on replicated tables are broadcast to ZooKeeper and will be applied on other replicas as well.
 
-**Syntax**
-
-```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression
-ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression
-ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name
-```
-
 **Part of:** `ALTER`
 
 **Related:** `ALTER`, `CREATE TABLE`
