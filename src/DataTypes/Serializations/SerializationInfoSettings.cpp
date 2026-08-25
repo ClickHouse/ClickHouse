@@ -46,7 +46,9 @@ void SerializationInfoSettings::tryDowngradeToBasic()
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM
-        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC && map_serialization_version == MergeTreeMapSerializationVersion::BASIC;
+        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC
+        && map_serialization_version == MergeTreeMapSerializationVersion::BASIC
+        && !propagate_types_serialization_versions_to_nested_types;
 
     if (no_specialization)
         version = MergeTreeSerializationInfoVersion::BASIC;

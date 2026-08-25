@@ -273,6 +273,12 @@ TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
     with_types.tryDowngradeToBasic();
     EXPECT_EQ(with_types.version, MergeTreeSerializationInfoVersion::BASIC);
 
+    SerializationInfoSettings with_nested_propagation;
+    with_nested_propagation.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_nested_propagation.propagate_types_serialization_versions_to_nested_types = true;
+    with_nested_propagation.tryDowngradeToBasic();
+    EXPECT_EQ(with_nested_propagation.version, MergeTreeSerializationInfoVersion::WITH_TYPES);
+
     SerializationInfoSettings with_missing;
     with_missing.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
     with_missing.tryDowngradeToBasic();
