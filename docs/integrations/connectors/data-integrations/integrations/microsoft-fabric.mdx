@@ -44,7 +44,7 @@ To create a ClickHouse item:
   ![Setting up ClickHouse: creating the Cloud organization and provisioning the service](/images/integrations/tools/data-integration/microsoft-fabric/fabric-02-provisioning-canvas.webp)
 </Frame>
 
-The first time a ClickHouse item is created in a workspace, a Fabric administrator with billing rights installs the workload and accepts the terms of service. Workspace members then have access.
+The first time a ClickHouse item is created in a workspace, a Fabric administrator with billing rights installs the workload and accepts the [terms of service](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf). Workspace members then have access.
 
 Services are provisioned in the ClickHouse Cloud Azure region nearest to your Fabric capacity region. See [supported regions](/products/cloud/reference/supported-regions). For details on where data is stored and processed, see the [data residency section of the attestation](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
 
@@ -55,8 +55,8 @@ Creating your first ClickHouse item starts a trial automatically. The trial orga
 The trial includes:
 
 * Trial credits valid for 30 days
-* A dedicated service on the ClickHouse **Scale** tier
-* Service idling enabled by default, so an inactive trial service does not consume credits
+* A dedicated service on the [ClickHouse Scale tier](https://clickhouse.com/docs/products/cloud/features/cloud-tiers)
+* Service idling enabled by default, so an inactive trial service does not consume compute credits while paused
 
 When the trial ends or the credits run out, convert to a paid organization through the [ClickHouse Cloud offer on Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
@@ -94,7 +94,7 @@ Each synced table is powered by a [ClickPipe](/integrations/clickpipes/home), th
 
 ### Cost {#cost}
 
-Copying data from OneLake to ClickHouse is free during the Microsoft Fabric public preview. Billing starts when the Fabric workload reaches general availability, according to the [listed pricing dimensions](/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage).
+Copying data from OneLake to ClickHouse is free during the Microsoft Fabric public preview. Billing starts when the Fabric workload reaches general availability. Pricing details will be published when the workload reaches GA.
 
 ## SQL console and saved queries {#sql-console-and-saved-queries}
 
