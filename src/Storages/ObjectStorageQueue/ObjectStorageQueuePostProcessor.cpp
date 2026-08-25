@@ -496,8 +496,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             size_t moved_objects = 0;
             /// Without the path preserved, several source keys can flatten onto one destination, so the
             /// copy itself must refuse to overwrite; a separate objectExists() check would still let two
-            /// concurrent movers both pass it.
-            const String move_if_none_match = settings.after_processing_move_preserve_path ? "" : "*";
+            /// concurrent movers both pass it. With no prefix nothing is flattened - the destination key
+            /// is the source key - so guarding there would only demand tag-read rights the plain move
+            /// never needed.
+            const String move_if_none_match
+                = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
             const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
             for (size_t i = 0; i < objects.size(); ++i)
             {
@@ -665,8 +668,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
 
             size_t moved_objects = 0;
             /// See moveS3Objects(): flattened destinations can collide across batches and movers, so the
-            /// copy itself must refuse to overwrite rather than be preceded by a separate check.
-            const String move_if_none_match = settings.after_processing_move_preserve_path ? "" : "*";
+            /// copy itself must refuse to overwrite rather than be preceded by a separate check, and a
+            /// prefixless move flattens nothing and stays unguarded.
+            const String move_if_none_match
+                = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
             const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
             for (size_t i = 0; i < objects.size(); ++i)
             {
