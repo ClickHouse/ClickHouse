@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
--- ^ EXPLAIN indexes = 1 prints the local primary-key analysis; a parallel-replicas plan changes the output.
 
 -- Tests that the primary key is still used when the predicate uses
 -- `LIKE pattern ESCAPE 'c'` or `NOT LIKE pattern ESCAPE 'c'`. The
@@ -12,7 +11,6 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
--- The five rows must land in a single granule for the primary-key ranges below to read 1/1.
 CREATE TABLE tab (s String) ENGINE = MergeTree ORDER BY s
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 

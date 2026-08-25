@@ -6,7 +6,6 @@
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
--- The cache would answer a repeated query without reporting granule counts.
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;

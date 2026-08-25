@@ -5,7 +5,6 @@
 -- because these index types do not support case-insensitive LIKE at all.
 
 SET enable_analyzer = 1;
--- The cache would answer a repeated query without reporting granule counts.
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
@@ -37,9 +36,7 @@ SELECT count() FROM tab WHERE message NOT LIKE '%World%' ESCAPE '|';
 
 SELECT 'ESCAPE used to match a literal LIKE wildcard';
 
--- '50#%off' with ESCAPE '#' matches the literal substring '50%off'.
 SELECT count() FROM tab WHERE message LIKE '%50#%off%' ESCAPE '#';
--- No row contains a literal 'fast%', so this is empty.
 SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
 
 SELECT 'force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms, just like the plain 2-argument LIKE';
