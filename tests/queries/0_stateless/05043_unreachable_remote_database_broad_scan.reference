@@ -1,0 +1,10 @@
+tables 1
+columns 1
+completions 1
+tables_by_engine 1
+unknown_table 1
+named_database_fails 1
+show_tables_fails 1
+named_database_columns_fails 1
+scan_no_error	1
+scan_warning_seen	1

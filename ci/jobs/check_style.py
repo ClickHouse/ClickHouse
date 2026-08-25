@@ -829,6 +829,7 @@ def check_catch_all(files) -> str:
         re.compile(r"\bhandle_exception\b"),
         re.compile(r"\bhandleException\b"),
         re.compile(r"\bfinishWithException\b"),
+        re.compile(r"\bhandleCannotListTables\b"),
     ]
 
     for file_path in files:

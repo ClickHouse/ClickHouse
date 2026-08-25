@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/LogsLevel.h>
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IDisk.h>
@@ -371,6 +372,12 @@ public:
         return result;
     }
 
+    /// The level at which to log the active exception when a caller skips this database because it
+    /// cannot list its tables. `nullopt` means the failure is not a mere unreachable remote and so
+    /// must not be tolerated. Only a remote engine overrides this; see `DatabaseMySQL`.
+    /// Must be called from within a catch block: an override classifies the active exception.
+    virtual std::optional<LogsLevel> toleratedListTablesFailureLogLevel() const { return {}; }
+
     /// Is the database empty.
     virtual bool empty() const = 0;
 
@@ -552,5 +559,22 @@ protected:
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
 using Databases = std::map<String, DatabasePtr, std::less<>>;
+
+/// Whether a caller that cannot list one database's tables may carry on without it.
+enum class UnavailableDatabasePolicy : uint8_t
+{
+    /// Skip the database only when its remote server is merely unreachable. Anything else is a real
+    /// failure and is rethrown rather than turned into a silently incomplete result.
+    SkipIfUnreachable,
+    /// Skip it whatever the failure. Only for a name hint, which must never turn a listing failure
+    /// into the error the user sees - a typo has to answer `UNKNOWN_TABLE`.
+    AlwaysSkip,
+};
+
+/// A remote engine (`MySQL`, `PostgreSQL`) lists its tables by connecting to the remote server, so
+/// an unreachable server makes listing throw. Callers that enumerate every database use this to
+/// skip such a database instead of failing whole-server introspection because of one of them.
+/// Rethrows when `policy` does not allow skipping. Must be called from within a catch block.
+void handleCannotListTables(const IDatabase & database, UnavailableDatabasePolicy policy);
 
 }
