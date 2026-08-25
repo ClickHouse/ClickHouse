@@ -37,4 +37,14 @@ struct PocoRestProxyConfigProviderOption
     using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
 };
 
+/// Called by the transport right before every HTTP request it sends, with the request method and
+/// its path-and-query. It lets ClickHouse count the REST calls the storage library makes on its own
+/// (the library pages `objects.list` lazily behind a `ListObjectsReader`, so the call site cannot
+/// see how many requests a listing really costs). The observer runs on the thread issuing the
+/// request and must not throw.
+struct PocoRestRequestObserverOption
+{
+    using Type = std::function<void(const std::string & method, const std::string & path_and_query)>;
+};
+
 }

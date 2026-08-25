@@ -11,12 +11,14 @@
 #include <poco_rest_options.h>
 
 #include <algorithm>
+#include <string_view>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/Exception.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/Macros.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
@@ -30,8 +32,31 @@
 namespace gcs = ::google::cloud::storage;
 namespace gc = ::google::cloud;
 
+namespace ProfileEvents
+{
+    extern const Event GCSListObjects;
+    extern const Event DiskGCSListObjects;
+}
+
 namespace DB
 {
+
+namespace
+{
+
+/// The JSON API addresses a listing as `GET /storage/v1/b/<bucket>/o` (`objects.list`), with the
+/// prefix, page size and page token in the query string. Every other object request carries the
+/// object name after `/o/`, and a bucket request has no `/o` at all, so matching the resource path
+/// exactly identifies a listing page, including the ones the library fetches on its own.
+bool isGCSListObjectsRequest(const std::string & method, const std::string & path_and_query)
+{
+    if (method != "GET")
+        return false;
+    const std::string_view path = std::string_view(path_and_query).substr(0, path_and_query.find('?'));
+    return path.ends_with("/o");
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -409,6 +434,20 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         proxy_resolver = ProxyConfigurationResolverProvider::get(
             gcsProxyProtocol(settings.endpoint_override), context->getConfigRef());
     options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(proxy_resolver));
+
+    /// A listing is paged lazily inside `ListObjectsReader`, so the call site sees one call while the
+    /// library issues one `objects.list` request per page. Count them where they are actually sent,
+    /// so the counter means the same thing as the S3 and Azure per-request listing counters.
+    options.set<::ClickHouse::PocoRestRequestObserverOption>(
+        [for_disk = settings.for_disk](const std::string & method, const std::string & path_and_query)
+        {
+            if (isGCSListObjectsRequest(method, path_and_query))
+            {
+                ProfileEvents::increment(ProfileEvents::GCSListObjects);
+                if (for_disk)
+                    ProfileEvents::increment(ProfileEvents::DiskGCSListObjects);
+            }
+        });
 
     return std::make_unique<gcs::Client>(std::move(options));
 }
