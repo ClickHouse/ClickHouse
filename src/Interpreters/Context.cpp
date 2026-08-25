@@ -8059,6 +8059,11 @@ void Context::increaseDistributedDepth()
     ++client_info.distributed_depth;
 }
 
+void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
+{
+    client_info.client_trace_context = trace_context;
+}
+
 
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
