@@ -96,6 +96,20 @@ SELECT
     toString((materialize('a\nb'), 1)) LIKE '%nb%',
     toString((materialize('a\nb'), 1)) LIKE '%hello%';
 
+SELECT '-- Invalid LIKE/NOT LIKE patterns keep raising their exception instead of being pruned to a constant';
+SELECT toString(number) LIKE '%\\' FROM numbers(1); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT toString(number) NOT LIKE '%\\' FROM numbers(1); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+SELECT '-- Dynamic/Variant elements with embedded newline are not destructured either (and stay correct)';
+SELECT
+    toString((materialize(CAST('a\nb', 'Dynamic')), 1)) LIKE '%nb%',
+    toString((materialize(CAST('a\nb', 'Variant(String, UInt8)')), 1)) LIKE '%nb%';
+
+SELECT '-- Tuples with Dynamic/Variant/JSON elements are never destructured (0 = no OR chain in the query tree)';
+SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(CAST('x', 'Dynamic')) AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%needle%');
+SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(CAST('x', 'Variant(String, UInt8)')) AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%needle%');
+SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(CAST('{"a": 1}', 'JSON')) AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%needle%');
+
 SELECT '-- Patterns that must not be destructured (0 = no OR chain in the query tree)';
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize('x') AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%search%phrase%');
 SELECT countIf(explain LIKE '%function_name: or%') FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize('x') AS s, materialize(1) AS n) WHERE toString((s, n)) LIKE '%a_b%');
