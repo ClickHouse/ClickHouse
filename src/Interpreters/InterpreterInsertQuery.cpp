@@ -125,6 +125,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -1139,16 +1140,20 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
 
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
     if (select_query && (select_query->prewhere() || select_query->where()))
     {
+        /// The metadata and the snapshot are acquired outside of the `try` block below:
+        /// a failure here is a real storage-side problem rather than an expected miss of
+        /// the best-effort condition analysis, so it has to propagate.
+        const auto snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
+        const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+
         try
         {
-            const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-            const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
-            const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
-
             /// `PREWHERE` and `WHERE` can reference aliases introduced in the `WITH` clause or in the `SELECT` list,
             /// as in `WITH splitByChar(' ', line) AS values SELECT ... WHERE length(values) >= 3`.
             /// The condition is analyzed here in isolation from the rest of the query, so the aliases have to be
@@ -1187,20 +1192,21 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         }
         catch (...)
         {
-            /// Filter extraction is best-effort: if DAG construction fails for any reason
-            /// (e.g. the predicate references columns or functions not available in this
-            /// isolated analysis pass), fall back to no pruning so the query still executes
-            /// correctly. This is an expected outcome for some queries rather than an error,
-            /// hence the low log level.
+            /// Filter extraction is best-effort: the condition is analyzed here in isolation
+            /// from the rest of the query, so the analysis can legitimately fail (e.g. the
+            /// predicate references columns qualified with a table alias, which is not
+            /// resolvable in this isolated pass). Fall back to no pruning so the query still
+            /// executes correctly. This is an expected outcome for some queries rather than
+            /// an error, hence the low log level. A logical error, however, indicates a bug
+            /// rather than an expected miss, so it is logged prominently.
             tryLogCurrentException(
                 logger,
                 "Cannot build the filter expression for pruning in INSERT ... SELECT; continuing without pruning",
-                LogsLevel::debug);
+                getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR ? LogsLevel::error : LogsLevel::debug);
             filter_dag.reset();
             predicate = nullptr;
         }
     }
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster->getTaskIteratorExtension(
         predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
 
