@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemStatements.h>
+#include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
@@ -47,3 +48,15 @@ void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr,
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStatements) }
+
+namespace DB
+{
+
+REGISTER_SYSTEM_TABLE_DOCUMENTATION(
+    "statements",
+    .description = R"DOCS_MD(
+Contains a list of all SQL statements of ClickHouse.
+)DOCS_MD",
+    .get_columns = StorageSystemStatements::getColumnsDescription)
+
+}

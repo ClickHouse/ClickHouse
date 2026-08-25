@@ -485,7 +485,8 @@ def update_doc_file(filepath, generated_block):
     return False
 
 
-def main():
+def generate_markdown():
+    """Extract all documented asynchronous metrics and render their catalog."""
     metrics = []
     duplicates = {}
     for relpath in SOURCE_FILES:
@@ -504,8 +505,13 @@ def main():
             duplicates[name] = desc
         metrics.extend(extracted)
 
-    print(f"Extracted {len(set(n for n, _, _ in metrics))} unique metrics", file=sys.stderr)
-    block = render_markdown(metrics)
+    return render_markdown(metrics), len(set(name for name, _, _ in metrics))
+
+
+def main():
+    block, metric_count = generate_markdown()
+
+    print(f"Extracted {metric_count} unique metrics", file=sys.stderr)
 
     doc_path = os.path.join(REPO_ROOT, DOC_FILE)
     if update_doc_file(doc_path, block):
