@@ -11,3 +11,5 @@ result match	0
 left unmatched keys	(15,10,4999985)	1
 computed key	1
 computed key correctness	0
+computed target key	1
+computed target key correctness	0

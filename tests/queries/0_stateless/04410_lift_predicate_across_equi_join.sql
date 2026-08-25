@@ -149,6 +149,24 @@ SELECT 'computed key correctness',
         INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey + 1
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
+-- Target subquery computes the join key under the primary key's name: `orderkey` there is not
+-- the table's `orderkey`, so the copy could not prune anything
+SELECT 'computed target key',
+       countIf(explain LIKE '%ilter column:%orderkey = 42%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+    INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
+);
+
+SELECT 'computed target key correctness',
+       (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+        INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey)
+     - (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+        INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 0);
+
 DROP TABLE lift_orders;
 DROP TABLE lift_lineitem;
 DROP TABLE lift_mem;

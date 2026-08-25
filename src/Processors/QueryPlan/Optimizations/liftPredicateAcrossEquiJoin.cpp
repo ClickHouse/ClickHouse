@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <optional>
 #include <string>
 
 namespace DB::QueryPlanOptimizations
@@ -37,7 +38,7 @@ const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && pred
     return nullptr;
 }
 
-std::string resolveToFilterInput(const QueryPlan::Node * node, std::string name);
+std::optional<std::string> resolveToFilterInput(const QueryPlan::Node * node, std::string name);
 
 const FilterStep * findFilterBelow(const QueryPlan::Node * node)
 {
@@ -74,8 +75,10 @@ bool atomCanUseTargetPrimaryKey(
         if (child->type != ActionsDAG::ActionType::INPUT)
             continue;
         const auto it = substitution.find(child->result_name);
-        if (it == substitution.end()
-            || !primary_key_columns.contains(resolveToFilterInput(target_root, it->second.name)))
+        if (it == substitution.end())
+            return false;
+        const auto target_column = resolveToFilterInput(target_root, it->second.name);
+        if (!target_column || !primary_key_columns.contains(*target_column))
             return false;
     }
     return true;
@@ -130,21 +133,23 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
     return true;
 }
 
-/// Follow ALIAS chain from a DAG output to its first INPUT, returning INPUT's name
-std::string resolveInsideDAG(const ActionsDAG & dag, const std::string & name)
+/// Follow the ALIAS chain from a DAG output to its first INPUT. A name the step computes instead
+/// of passing through (`sipHash64(k) AS k`) resolves to nothing: it no longer means the raw column
+std::optional<std::string> resolveInsideDAG(const ActionsDAG & dag, const std::string & name)
 {
     const auto * node = dag.tryFindInOutputs(name);
+    /// Not an output of this step, so this step does not rename it either
     if (!node)
         return name;
     while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
         node = node->children.front();
     if (node->type != ActionsDAG::ActionType::INPUT)
-        return name;
+        return {};
     return node->result_name;
 }
 
 /// Undo ExpressionStep renames, JOIN-level `__tableX.orderkey` -> filter-level `orderkey`
-std::string resolveToFilterInput(const QueryPlan::Node * node, std::string name)
+std::optional<std::string> resolveToFilterInput(const QueryPlan::Node * node, std::string name)
 {
     while (node)
     {
@@ -153,7 +158,10 @@ std::string resolveToFilterInput(const QueryPlan::Node * node, std::string name)
         const auto * expr = typeid_cast<const ExpressionStep *>(node->step.get());
         if (!expr || node->children.size() != 1)
             return name;
-        name = resolveInsideDAG(expr->getExpression(), name);
+        auto resolved = resolveInsideDAG(expr->getExpression(), name);
+        if (!resolved)
+            return {};
+        name = std::move(*resolved);
         node = node->children.front();
     }
     return name;
@@ -177,7 +185,10 @@ size_t tryLiftSide(
 
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
-        filter_level_sub[resolveToFilterInput(source_root, join_name)] = target_col;
+    {
+        if (auto filter_name = resolveToFilterInput(source_root, join_name))
+            filter_level_sub[*filter_name] = target_col;
+    }
 
     const auto & src_dag = source_filter->getExpression();
     const auto * filter_root = src_dag.tryFindInOutputs(source_filter->getFilterColumnName());
