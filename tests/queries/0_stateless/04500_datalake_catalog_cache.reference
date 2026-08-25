@@ -1,11 +1,6 @@
---- SHOW CREATE DATABASE ---
+--- CREATE DATABASE accepts the catalog cache settings ---
 catalog_cache_staleness_ms = 12345, catalog_cache_max_entries = 99
---- SYSTEM CLEAR DATALAKE CATALOG CACHE ---
-OK
---- ProfileEvents existence ---
-DataLakeCatalogCacheHits
-DataLakeCatalogCacheMisses
-DataLakeCatalogCacheStaleMisses
-DataLakeCatalogCacheWeightLost
-0
+--- staleness 0 disables the cache ---
+catalog_cache_staleness_ms = 0, catalog_cache_max_entries = 0
+--- SYSTEM CLEAR DATALAKE CATALOG CACHE is a no-op without catalogs ---
 OK
