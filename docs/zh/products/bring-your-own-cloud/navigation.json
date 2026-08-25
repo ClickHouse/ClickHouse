@@ -1,15 +1,15 @@
 {
-  "group": "Bring Your Own Cloud",
+  "group": "自备 Cloud",
   "pages": [
     {
-      "group": "Overview",
+      "group": "概览",
       "pages": [
         "zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "zh/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuration",
+      "group": "配置",
       "pages": [
         "zh/products/bring-your-own-cloud/configuration/configurations",
         "zh/products/bring-your-own-cloud/configuration/connect",
@@ -17,11 +17,11 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "上手引导",
       "pages": [
         "zh/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "自定义",
           "pages": [
             "zh/products/bring-your-own-cloud/onboarding/customization-aws",
             "zh/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "参考文档",
       "pages": [
         "zh/products/bring-your-own-cloud/reference/network-security",
         "zh/products/bring-your-own-cloud/reference/privilege",
