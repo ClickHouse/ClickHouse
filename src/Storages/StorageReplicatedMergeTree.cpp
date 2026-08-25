@@ -6188,45 +6188,6 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 }
 
 
-void StorageReplicatedMergeTree::setReplicatedPartsCommittedCallback(std::function<void(const Strings &)> callback)
-{
-    std::lock_guard lock(replicated_parts_committed_callback_mutex);
-    replicated_parts_committed_callback = std::move(callback);
-}
-
-
-void StorageReplicatedMergeTree::notifyReplicatedPartsCommitted(const LogEntry & entry)
-{
-    Strings part_names;
-    switch (entry.type)
-    {
-        case LogEntry::GET_PART:
-        case LogEntry::ATTACH_PART:
-            part_names.push_back(entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name);
-            break;
-        case LogEntry::MERGE_PARTS:
-        case LogEntry::MUTATE_PART:
-            part_names.push_back(entry.new_part_name);
-            break;
-        case LogEntry::REPLACE_RANGE:
-            part_names = entry.replace_range_entry->new_part_names;
-            part_names.insert(
-                part_names.end(), entry.replace_range_actual_new_part_names.begin(), entry.replace_range_actual_new_part_names.end());
-            break;
-        default:
-            return;
-    }
-
-    std::function<void(const Strings &)> callback;
-    {
-        std::lock_guard lock(replicated_parts_committed_callback_mutex);
-        callback = replicated_parts_committed_callback;
-    }
-    if (callback && !part_names.empty())
-        callback(part_names);
-}
-
-
 PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getMaxAddedBlocks");

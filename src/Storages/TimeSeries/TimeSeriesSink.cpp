@@ -581,9 +581,9 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
-    /// The recent samples table (if any) receives a copy of every samples block.
+    /// The recent samples table (if any) receives a copy of every samples block after samples finish.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
+        recent_samples_header = samples_header;
 }
 
 
@@ -741,7 +741,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             *id_column, ts_timestamps, ts_values, ts_offsets,
             *samples_id_column, *timestamp_column, *value_column);
 
-        if (recent_samples_pipeline)
+        if (recent_samples_header.columns())
         {
             for (size_t row = 0; row != timestamp_column->size(); ++row)
             {
@@ -757,11 +757,9 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
 
-        /// The copy is cheap: a Block copy only copies column pointers.
-        if (recent_samples_pipeline)
-            recent_samples_pipeline->push(samples_block);
-
-        samples_pipeline->push(std::move(samples_block));
+        samples_pipeline->push(samples_block);
+        if (recent_samples_header.columns())
+            pending_recent_samples_blocks.push_back(std::move(samples_block));
     }
 }
 
@@ -848,8 +846,14 @@ void TimeSeriesSink::onFinish()
         tags_pipeline->executor->finish();
     if (samples_pipeline)
         samples_pipeline->executor->finish();
-    if (recent_samples_pipeline)
+    if (!pending_recent_samples_blocks.empty())
+    {
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, recent_samples_header);
+        for (auto & block : pending_recent_samples_blocks)
+            recent_samples_pipeline->push(std::move(block));
+        pending_recent_samples_blocks.clear();
         recent_samples_pipeline->executor->finish();
+    }
     if (metrics_pipeline)
         metrics_pipeline->executor->finish();
     if (recent_samples_horizon)

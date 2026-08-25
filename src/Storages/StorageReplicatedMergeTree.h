@@ -173,8 +173,6 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     MutationCounters getMutationCounters() const override;
 
-    void setReplicatedPartsCommittedCallback(std::function<void(const Strings &)> callback);
-
 protected:
     DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
 public:
@@ -466,10 +464,6 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
-
-    void notifyReplicatedPartsCommitted(const LogEntry & entry);
-    std::mutex replicated_parts_committed_callback_mutex;
-    std::function<void(const Strings &)> replicated_parts_committed_callback;
 
     mutable std::mutex last_queue_update_exception_lock;
     String last_queue_update_exception;

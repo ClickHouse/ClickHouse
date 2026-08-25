@@ -107,6 +107,8 @@ private:
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
     std::optional<Int64> recent_samples_horizon;
+    Block recent_samples_header;
+    std::vector<Block> pending_recent_samples_blocks;
 };
 
 }

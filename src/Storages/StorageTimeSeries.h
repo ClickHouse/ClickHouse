@@ -129,7 +129,6 @@ private:
     friend class TimeSeriesSink;
 
     void updateRecentSamplesHorizon(Int64 timestamp);
-    void scheduleRecentSamplesHorizonUpdateForParts(const Strings & part_names);
     void stripLegacyRecentSamplesTableTTL(ContextPtr local_context) const;
     void scheduleRecentSamplesMaintenance();
 
@@ -167,7 +166,7 @@ private:
     std::optional<Int64> recent_samples_horizon;
     bool recent_samples_horizon_invalidated = true;
     UInt64 recent_samples_horizon_invalidation_version = 0;
-    std::unordered_set<String> recent_samples_horizon_pending_parts;
+    std::unordered_set<String> recent_samples_horizon_seen_parts;
     std::mutex recent_samples_maintenance_mutex;
     BackgroundSchedulePoolTaskHolder recent_samples_maintenance_task;
 };

@@ -802,7 +802,6 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
     notifySubscribers(queue_size, &(entry->znode_name));
-    storage.notifyReplicatedPartsCommitted(*entry);
 
     if (!need_remove_from_zk)
         return;
