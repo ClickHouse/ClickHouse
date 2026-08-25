@@ -1841,6 +1841,17 @@ Chunk StorageFileSource::generate()
                                 "(version {} did not hold after the file was opened)",
                                 current_path, *current_file_cache_version);
 
+                        /// Lazy materialization registers the file under the version token when the
+                        /// first chunk is produced, and its deferred pass rereads the file relying on
+                        /// that token to pin the generation. With the token unable to describe the
+                        /// opened bytes there is nothing valid to register, so fail close the same
+                        /// way the registration path does for a rewrite it detects itself.
+                        if (lazy_row_index_registry)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "Lazy materialization: file {} was modified while being opened. "
+                                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
+                                current_path);
+
                         /// For a plain read, fail close on the caches instead: drop the token so neither
                         /// the format metadata cache (`object_with_metadata` below) nor the Query
                         /// Condition Cache keys this read's data under a version it may not describe.
@@ -1930,6 +1941,16 @@ Chunk StorageFileSource::generate()
                             read_buf.reset();
                             continue;
                         }
+
+                        /// Same as the post-open bracket above: lazy materialization needs the
+                        /// version token to register the file, so a rewrite it cannot pin fails
+                        /// close instead of continuing without a token.
+                        if (lazy_row_index_registry)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "Lazy materialization: file {} was modified while being opened. "
+                                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
+                                current_path);
+
                         current_file_cache_version.reset();
                         current_file_version_settled = false;
                         current_file_size.reset();
