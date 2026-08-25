@@ -267,7 +267,9 @@ StorageMaterializedView::StorageMaterializedView(
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
-    if (query.refresh_strategy && query.refresh_strategy->incremental && mode < LoadingStrictnessLevel::SECONDARY_CREATE)
+    const bool is_fresh_definition = mode == LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
+    if (query.refresh_strategy && query.refresh_strategy->incremental && is_fresh_definition)
         validateIncrementalDefinition(select.select_query, mv_db_context);
 
     storage_metadata.setSelectQuery(select);
@@ -762,6 +764,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
 
     if (incremental)
     {
+        validateIncrementalDefinition(select_query, refresh_context);
+
         injectIncrementalStreamModifier(select_query, stream_cursor);
 
         /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
