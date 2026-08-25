@@ -14,8 +14,12 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -631,6 +635,13 @@ public:
     {
         buffered_serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
         wire_size_expansion_factor = wireSizeExpansionFactor(buffered_serialization_format);
+        // Only the text formats render an Enum by name; the binary wires write the numeric
+        // value the estimators already model exactly, so leave their factor at 1.
+        if (wire_size_expansion_factor > 1)
+        {
+            for (const auto & declared_argument : user_defined_function->getArguments())
+                wire_size_expansion_factor = std::max(wire_size_expansion_factor, enumTextWireExpansion(declared_argument));
+        }
         // Only the native-wire formats keep LowCardinality dictionary-encoded
         // (dictionary + compact indexes); RowBinary, MsgPack and the text formats
         // materialize the resolved value on every row.
@@ -670,12 +681,10 @@ public:
     /// field delimiters and the row terminator for CSV/TSV, and per-row object keys for
     /// JSONEachRow, which repeats every column name on every row — an auto-generated
     /// argument name from a complex expression is a real per-row cost no value-based
-    /// estimate can see. Also charges top-level Enum arguments' worst-case name
-    /// rendering: text formats print the enum's string name, whose length is unrelated
-    /// to the enum's 1/2-byte in-memory width. (Enum nested inside Array/Tuple keeps
-    /// only the generic 8x bound — if a pathological nested enum name still leads to an
-    /// underestimate, the guest allocator's own size check in executeOnBlock fails the
-    /// call cleanly with WASM_ERROR, exactly as for any oversized single row.)
+    /// estimate can see. Enum name rendering is not charged here: it scales with the
+    /// number of enum values in the row (one per `Array(Enum8)` element), which is a
+    /// property of the data rather than a fixed per-row constant, so it is handled
+    /// multiplicatively by enumTextWireExpansion below.
     size_t perRowWireOverhead(const ColumnsWithTypeAndName & arguments) const
     {
         const String & format = buffered_serialization_format;
@@ -684,31 +693,83 @@ public:
         if (!is_text)
             return 0;
         size_t overhead = is_json ? 4 : arguments.size() + 2;
-        const auto & declared_arguments = user_defined_function->getArguments();
+        if (!is_json)
+            return overhead;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (is_json)
-            {
-                /// Same name-selection rule as getArgumentsBlock; 6x covers worst-case
-                /// JSON escaping of the key, +8 covers quotes, colon and comma.
-                const String & name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
-                overhead += 6 * name.size() + 8;
-            }
-            if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(declared_arguments[i].get()))
-                overhead += 6 * maxEnumNameSize(*enum8) + 3;
-            else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(declared_arguments[i].get()))
-                overhead += 6 * maxEnumNameSize(*enum16) + 3;
+            /// Same name-selection rule as getArgumentsBlock; 6x covers worst-case
+            /// JSON escaping of the key, +8 covers quotes, colon and comma.
+            const String & name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
+            overhead += 6 * name.size() + 8;
         }
         return overhead;
     }
 
+    /// Worst-case text-wire byte cost of a single value of `type`, an `Enum8` / `Enum16`:
+    /// the longest label it can render, escaped. Only characters that any of the text
+    /// formats can expand are charged the full 6 bytes (JSON's `\uXXXX`, which also bounds
+    /// CSV/TSV quote doubling and backslash escapes); ordinary label characters — what enum
+    /// labels are made of in practice — cost one byte each, so this stays tight instead of
+    /// blanket-multiplying every label by 6. The +3 covers the surrounding quotes and the
+    /// field separator.
     template <typename EnumType>
-    static size_t maxEnumNameSize(const EnumType & type)
+    static size_t maxEnumTextWireBytes(const EnumType & type)
     {
         size_t max_size = 0;
         for (const auto & value : type.getValues())
-            max_size = std::max(max_size, value.first.size());
-        return max_size;
+        {
+            size_t escaped = 0;
+            for (char c : value.first)
+                escaped += (c == '"' || c == '\\' || static_cast<unsigned char>(c) < 0x20) ? 6 : 1;
+            max_size = std::max(max_size, escaped);
+        }
+        return max_size + 3;
+    }
+
+    /// Text formats serialize an `Enum` by its *name*, but every estimator below prices an
+    /// enum value by its numeric storage width (1 byte for `Enum8`, 2 for `Enum16`) — the
+    /// columns carry no type information, so a value-based estimate cannot see the label.
+    /// A bare top-level `Enum` could be special-cased on the declared type, but wrapped and
+    /// nested shapes cannot: `Nullable(Enum8)` goes through the fixed-width path,
+    /// `LowCardinality(Enum8)` is priced over the underlying `Int8` dictionary values, and
+    /// `Array(Enum8)` / `Tuple(..., Enum8)` fall through to estimateComplexRowBytes's
+    /// valuesHaveFixedSize branch. A label longer than that width is then under-budgeted, so
+    /// the splitter can skip a split it needed and the call fails late in guest allocation
+    /// instead of succeeding on smaller batches.
+    ///
+    /// Correcting this additively would need the number of enum values in each row, which
+    /// for `Array(Enum8)` is a property of the data, not of the type. Instead return the
+    /// worst-case name-to-width ratio of any enum reachable in `type`, and scale the whole
+    /// estimate by it: every enum byte the estimators counted is then covered, and the
+    /// non-enum bytes are merely over-estimated, which only splits into smaller batches.
+    /// Returns 1 (identity) for types containing no enum, so this is inert for every UDF
+    /// that does not declare one.
+    static size_t enumTextWireExpansion(const DataTypePtr & type)
+    {
+        if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type.get()))
+            return (maxEnumTextWireBytes(*enum8) + sizeof(Int8) - 1) / sizeof(Int8);
+        if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type.get()))
+            return (maxEnumTextWireBytes(*enum16) + sizeof(Int16) - 1) / sizeof(Int16);
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            return enumTextWireExpansion(nullable->getNestedType());
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            return enumTextWireExpansion(low_cardinality->getDictionaryType());
+        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            return enumTextWireExpansion(array->getNestedType());
+        if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+            return std::max(enumTextWireExpansion(map->getKeyType()), enumTextWireExpansion(map->getValueType()));
+        size_t max_expansion = 1;
+        if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            for (const auto & element : tuple->getElements())
+                max_expansion = std::max(max_expansion, enumTextWireExpansion(element));
+        }
+        else if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+        {
+            for (const auto & alternative : variant->getVariants())
+                max_expansion = std::max(max_expansion, enumTextWireExpansion(alternative));
+        }
+        return max_expansion;
     }
 
     String getName() const override { return function_name; }
@@ -827,8 +888,9 @@ private:
     /// binary wires (COLUMNAR_V1, ColumnBinary, Buffers, RowBinary) directly. For the
     /// text-like formats the callers in execute() scale the result by
     /// wire_size_expansion_factor (worst-case wire expansion of fixed-width values,
-    /// quoting/escaping — see wireSizeExpansionFactor above) and add perRowWireOverhead
-    /// (delimiters, JSONEachRow keys, Enum names), making the scaled figure an upper
+    /// quoting/escaping and Enum name rendering — see wireSizeExpansionFactor and
+    /// enumTextWireExpansion above) and add perRowWireOverhead
+    /// (delimiters, JSONEachRow keys), making the scaled figure an upper
     /// bound for every supported serialization_format. It remains an estimate, not the
     /// enforcement point: the actual allocation later in executeOnBlock
     /// (allocateInWasmMemory) asks the WASM guest's own allocator for the real
@@ -1319,10 +1381,10 @@ private:
         if (input_budget > 0)
         {
             // Worst-case wire expansion of the in-memory estimates for this
-            // serialization format, plus the per-row structural bytes (delimiters,
-            // JSONEachRow keys, Enum names) the value-based estimates cannot see; both
-            // are identity for the binary formats. See wireSizeExpansionFactor /
-            // perRowWireOverhead above.
+            // serialization format (including the enum name-to-width ratio folded in by
+            // enumTextWireExpansion), plus the per-row structural bytes (delimiters,
+            // JSONEachRow keys) the value-based estimates cannot see; both are identity
+            // for the binary formats. See wireSizeExpansionFactor / perRowWireOverhead above.
             const size_t expansion = wire_size_expansion_factor;
             const size_t per_row_overhead = perRowWireOverhead(arguments);
 
