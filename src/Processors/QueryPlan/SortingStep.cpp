@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool read_in_order_use_buffering;
+    extern const SettingsInt64 read_in_order_virtual_row_prefetch_window;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsString temporary_files_codec;
@@ -162,6 +163,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row] && settings[Setting::read_in_order_use_virtual_row_per_block];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    virtual_row_prefetch_window = settings[Setting::read_in_order_virtual_row_prefetch_window];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
 }
@@ -446,7 +448,9 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /// Allow this many sources deferred behind virtual rows to read ahead in
             /// parallel, so that the merge does not serialize reads that previously
             /// ran concurrently. Bounds the number of concurrently open readers.
-            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads());
+            /*virtual_row_prefetch_window=*/ sort_settings.virtual_row_prefetch_window < 0
+                ? pipeline.getNumThreads()
+                : static_cast<size_t>(sort_settings.virtual_row_prefetch_window));
 
         pipeline.addTransform(std::move(transform));
     }
