@@ -4,19 +4,26 @@
 
 #include <source_location>
 #include <string_view>
+#include <unordered_map>
 
 
 namespace DB
 {
 
+class ColumnsDescription;
+
+using SystemTableColumnsProvider = ColumnsDescription (*)();
+
 /** Structured documentation used to generate a system-table reference page.
-  * Column definitions are intentionally absent: they are rendered from the
-  * live `ColumnsDescription` of the table. `columns_notes` can add narrative
-  * or caveats after that generated list.
+  * Columns normally come from the live table metadata. Tables which are not
+  * attached in every environment provide `get_columns` so their complete page
+  * can still be rendered directly from this registry. `columns_notes` can add
+  * narrative or caveats after the generated list.
   */
 struct SystemTableDocumentation
 {
     String description;
+    SystemTableColumnsProvider get_columns = nullptr;
     String columns_notes;
     String examples;
     String additional_sections;
@@ -27,7 +34,13 @@ struct SystemTableDocumentation
     const char * source = std::source_location::current().file_name();
 };
 
+using SystemTableDocumentationRegistry = std::unordered_map<String, SystemTableDocumentation>;
+
 void registerSystemTableDocumentation(std::string_view table_name, SystemTableDocumentation documentation);
+
+/// Returns every registered system-table document, including tables which are
+/// not attached in the current server or `clickhouse-local` environment.
+const SystemTableDocumentationRegistry & getSystemTableDocumentationRegistry();
 
 /// Returns the documentation registered for `table_name`, or `nullptr` when
 /// an optional/private table has not provided structured documentation.
@@ -53,7 +66,7 @@ const SystemTableDocumentation * getSystemTableDocumentation(std::string_view ta
     SYSTEM_TABLE_DOCUMENTATION_DIAGNOSTIC_PUSH \
     namespace \
     { \
-        [[maybe_unused]] const bool \
+        [[maybe_unused, gnu::used, gnu::retain]] const bool \
             REGISTER_SYSTEM_TABLE_DOCUMENTATION_CONCAT(registered_system_table_documentation_, __LINE__) \
             = (::DB::registerSystemTableDocumentation( \
                    TABLE_NAME, ::DB::SystemTableDocumentation{__VA_ARGS__}), \

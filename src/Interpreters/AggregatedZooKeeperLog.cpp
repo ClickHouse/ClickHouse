@@ -164,6 +164,7 @@ Unlike [system.zookeeper_log](/reference/system-tables/zookeeper_log) which logs
 
 Operations that are part of a `Multi` or `MultiRead` batch are tracked separately via the `is_subrequest` column. Subrequests have zero latency because the total latency is attributed to the enclosing `Multi`/`MultiRead` operation.
 )DOCS_MD",
+    .get_columns = AggregatedZooKeeperLogElement::getColumnsDescription,
     .see_also = R"DOCS_MD(
 - [system.zookeeper_log](/reference/system-tables/zookeeper_log) — Detailed per-request ZooKeeper log.
 - [ZooKeeper](/guides/oss/best-practices/tips#zookeeper)

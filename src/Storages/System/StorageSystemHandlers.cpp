@@ -111,6 +111,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "handlers",
     .description = R"DOCS_MD(
 Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = StorageSystemHandlers::getColumnsDescription)
 
 }

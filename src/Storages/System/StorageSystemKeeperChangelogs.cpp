@@ -111,6 +111,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft changelog file (`changelog_<from>_<to>.bin[.zstd]`) tracked by the in-process Keeper log store, including the active file currently being appended to.
 )DOCS_MD",
+    .get_columns = StorageSystemKeeperChangelogs::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT from_log_index, to_log_index, entries, path, active FROM system.keeper_changelogs ORDER BY from_log_index;

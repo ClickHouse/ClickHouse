@@ -126,6 +126,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains information about all transactions executed on a current server.
 
 It is safe to truncate or drop this table at any time.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = TransactionsInfoLogElement::getColumnsDescription)
 
 }

@@ -1,33 +1,22 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-
-#if USE_RDKAFKA
-
-#include <Access/ContextAccess.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Storages/Kafka/StorageKafka.h>
-#include <Storages/Kafka/StorageKafka2.h>
-#include <Storages/StorageMaterializedView.h>
+#include <Storages/ColumnsDescription.h>
 #include <base/Decimal_fwd.h>
-#include <base/types.h>
 
 namespace DB
 {
 
-ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
+namespace
+{
+
+ColumnsDescription getKafkaConsumersColumnsDescription()
 {
     // clang-format off
     return ColumnsDescription{
@@ -54,6 +43,34 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"missing_dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())), "Missing transitive database dependencies."},
     };
     // clang-format on
+}
+
+}
+
+}
+
+#if USE_RDKAFKA
+
+#include <Access/ContextAccess.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/checkStackSize.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/Kafka/StorageKafka.h>
+#include <Storages/Kafka/StorageKafka2.h>
+#include <Storages/StorageMaterializedView.h>
+#include <base/types.h>
+
+namespace DB
+{
+
+ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
+{
+    return getKafkaConsumersColumnsDescription();
 }
 
 void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
@@ -302,6 +319,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains information about Kafka consumers.
 Applicable for [Kafka table engine](/reference/engines/table-engines/integrations/kafka) (native ClickHouse integration)
 )DOCS_MD",
+    .get_columns = getKafkaConsumersColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT *

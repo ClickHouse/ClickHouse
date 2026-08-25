@@ -1,6 +1,5 @@
 #include <Common/SystemTableDocumentation.h>
 
-#include <unordered_map>
 #include <utility>
 
 
@@ -10,11 +9,9 @@ namespace DB
 namespace
 {
 
-using DocumentationRegistry = std::unordered_map<String, SystemTableDocumentation>;
-
-DocumentationRegistry & documentationRegistry()
+SystemTableDocumentationRegistry & documentationRegistry()
 {
-    static DocumentationRegistry registry;
+    static SystemTableDocumentationRegistry registry;
     return registry;
 }
 
@@ -23,6 +20,11 @@ DocumentationRegistry & documentationRegistry()
 void registerSystemTableDocumentation(std::string_view table_name, SystemTableDocumentation documentation)
 {
     documentationRegistry().insert_or_assign(String(table_name), std::move(documentation));
+}
+
+const SystemTableDocumentationRegistry & getSystemTableDocumentationRegistry()
+{
+    return documentationRegistry();
 }
 
 const SystemTableDocumentation * getSystemTableDocumentation(std::string_view table_name)

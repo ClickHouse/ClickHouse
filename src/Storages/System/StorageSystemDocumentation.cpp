@@ -6,6 +6,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Documentation.h>
+#include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
@@ -52,6 +53,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -981,9 +987,7 @@ void appendSystemTableSection(String & result, std::string_view title, std::stri
     result += "## " + String(title) + " {#" + String(anchor) + "}\n\n" + trimmed_body;
 }
 
-/// Render every system table with the same page-level structure. Optional or
-/// private tables which have not registered structured documentation use their
-/// metadata comment as the description and omit the optional sections.
+/// Render every registered system table with the same page-level structure.
 String renderSystemTableDoc(
     const String & table_name,
     const String & comment,
@@ -1152,31 +1156,45 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
     addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
-    /// System tables expose their structured embedded documentation, with the live column schema and metric/event
-    /// catalogs rendered into the complete reference page. Optional/private tables without registered documentation
-    /// use their table comment as the description and still get the same page-level structure.
-    if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
+    /// The documentation registry is the source of truth so gated tables and system logs are exposed even when the
+    /// current environment does not attach them. Prefer a registered column provider for such tables; other tables
+    /// use their live metadata because some schemas depend on constructor arguments or runtime configuration.
+    const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    for (const auto & [table_name, documentation] : getSystemTableDocumentationRegistry())
     {
-        for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
+        if (documentation.get_columns)
         {
-            if (const auto & table = iterator->table())
+            addRow(
+                res_columns,
+                EntityType::SystemTable,
+                table_name,
+                renderSystemTableDoc(table_name, {}, documentation.get_columns(), context),
+                makeRepoRelative(documentation.source));
+            continue;
+        }
+
+        if (system_database)
+        {
+            if (const auto table = system_database->tryGetTable(table_name, context))
             {
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
                 {
-                    /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with
-                    /// side effects (the smart pointer dereference) as the operand of a polymorphic `typeid`.
-                    const IStorage & storage = *table;
-                    const auto * documentation = getSystemTableDocumentation(iterator->name());
-                    const String source = documentation
-                        ? makeRepoRelative(documentation->source)
-                        : makeRepoRelative(getSystemTableSource(typeid(storage)));
-                    addRow(res_columns, EntityType::SystemTable, iterator->name(),
-                        renderSystemTableDoc(iterator->name(), metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
-                        source);
+                    addRow(
+                        res_columns,
+                        EntityType::SystemTable,
+                        table_name,
+                        renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
+                        makeRepoRelative(documentation.source));
+                    continue;
                 }
             }
         }
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "System table documentation for '{}' has neither an attached table nor a registered column provider",
+            table_name);
     }
 }
 
@@ -1223,7 +1241,7 @@ The following kinds of entities are collected (the value of the `type` column is
 
 For settings (of any kind), the documentation is the setting's description, together with its type and default value; obsolete settings are not exposed. It also carries the history of the changes of the setting's default value across ClickHouse versions: the version in which the setting was introduced and every later change of its default, with the previous value, the new value and the reason for the change. This is the same data that backs the `compatibility` setting and [`system.settings_changes`](/reference/system-tables/settings_changes), so it covers the changes recorded since that mechanism was introduced: an older setting whose default never changed has no history, and neither do server settings, which `compatibility` does not cover. A change recorded under an alias of a setting belongs to the history of that setting, the same way `compatibility` applies it, so the history of a setting that was renamed is not cut at the rename; the exception is a record written under an alias for the sole purpose of registering that alias, which is the history of the alias alone. An alias carries the history of its own name: every record written under it, plus the record that registered it as an alias, which the history file sometimes writes under another name of the same setting.
 
-For system tables, the description, examples, and related material are embedded as structured fields in the source which defines the table. The complete page is assembled from those fields and the live column schema. Event and metric catalogs are rendered from their registries, so generated details stay synchronized with the running binary.
+For system tables, the description, examples, and related material are embedded as structured fields in the source which defines the table. The complete page is assembled from those fields and the table's registered or live column schema. Event and metric catalogs are rendered from their registries, so generated details stay synchronized with the running binary.
 
 For SQL statements, the documentation is the same as the one exposed by `system.statements`: it also names the enclosing statement, if any, e.g. the `WHERE` clause is a part of `SELECT`.
 

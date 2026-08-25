@@ -183,6 +183,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains history of error values from table `system.errors`, periodically flushed to disk.
 )DOCS_MD",
+    .get_columns = ErrorLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.error_log LIMIT 1 FORMAT Vertical;

@@ -87,6 +87,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft snapshot file tracked by the in-process Keeper state machine, including snapshots currently being received from the leader.
 )DOCS_MD",
+    .get_columns = StorageSystemKeeperSnapshots::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.keeper_snapshots ORDER BY last_log_index;

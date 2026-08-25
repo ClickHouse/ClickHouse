@@ -64,6 +64,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "transactions",
     .description = R"DOCS_MD(
 Contains a list of transactions and their state.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = StorageSystemTransactions::getColumnsDescription)
 
 }

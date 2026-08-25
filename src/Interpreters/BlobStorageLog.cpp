@@ -123,6 +123,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains logging entries with information about various blob storage operations such as uploads and deletes.
 )DOCS_MD",
+    .get_columns = BlobStorageLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 Suppose a blob storage operation uploads a file, and an event is logged:
 

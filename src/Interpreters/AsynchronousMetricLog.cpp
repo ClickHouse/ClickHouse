@@ -122,6 +122,7 @@ Contains the historical values for `system.asynchronous_metrics`, which are save
 
 Key-value metrics of `system.asynchronous_metrics` (those broken down per CPU core, block device, network interface, or disk) are logged as one row per key, with the key in the `key` column. For scalar metrics the `key` column is empty.
 )DOCS_MD",
+    .get_columns = AsynchronousMetricLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.asynchronous_metric_log LIMIT 3 \G

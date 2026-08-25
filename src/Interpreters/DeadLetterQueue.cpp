@@ -151,6 +151,7 @@ The flushing period of data is set in `flush_interval_milliseconds` parameter of
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
 )DOCS_MD",
+    .get_columns = DeadLetterQueueElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.dead_letter_queue LIMIT 1 \G;

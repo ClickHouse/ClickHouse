@@ -1,5 +1,8 @@
 documentation	src/Storages/System/StorageSystemDocumentation.cpp	1	1	1
 parts	src/Storages/System/StorageSystemParts.cpp	1	1	1
+asynchronous_metrics	src/Storages/System/StorageSystemAsynchronousMetrics.cpp	1
+trace_log	src/Interpreters/TraceLog.cpp	1
+transactions	src/Storages/System/StorageSystemTransactions.cpp	1
 1	1
 events	1
 metrics	1

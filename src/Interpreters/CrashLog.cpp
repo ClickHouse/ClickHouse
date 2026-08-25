@@ -167,6 +167,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.
 )DOCS_MD",
+    .get_columns = CrashLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.crash_log ORDER BY event_time DESC LIMIT 1;

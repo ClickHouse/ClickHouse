@@ -455,6 +455,7 @@ Conditions on the partition and key columns of the query log (`event_date`, `eve
 If a table named `system.user_query_log` was created before upgrading to a ClickHouse version that provides this table, the server will not start until the existing table is renamed or dropped, or `query_log.enable_user_query_log` is set to `0`.
 </Warning>
 )DOCS_MD",
+    .get_columns = StorageSystemUserQueryLog::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT

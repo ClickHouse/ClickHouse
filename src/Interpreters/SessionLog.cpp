@@ -345,6 +345,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains information about all successful and failed login and logout events.
 )DOCS_MD",
+    .get_columns = SessionLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;

@@ -131,6 +131,7 @@ SELECT *
 FROM system.delta_lake_metadata_log
 WHERE query_id = '{previous_query_id}';
 ```
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = DeltaMetadataLogElement::getColumnsDescription)
 
 }

@@ -451,6 +451,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "zookeeper_info",
     .description = R"DOCS_MD(
 This table outputs combined introspection about zookeeper and the nodes are taken from config.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = StorageSystemZooKeeperInfo::getColumnsDescription)
 
 }

@@ -1,15 +1,17 @@
 #include <Storages/System/StorageSystemInstrumentation.h>
 #include <Common/SystemTableDocumentation.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-
-#if USE_XRAY
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/InstrumentationManager.h>
+
+#if USE_XRAY
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -19,12 +21,16 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InstrumentationManager.h>
+
+#endif
 
 namespace DB
 {
 
-ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
+namespace
+{
+
+ColumnsDescription getInstrumentationColumnsDescription()
 {
     auto entry_type_enum = std::make_shared<DataTypeEnum8> (
         DataTypeEnum8::Values
@@ -46,6 +52,14 @@ ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
     };
 }
 
+}
+
+#if USE_XRAY
+
+ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
+{
+    return getInstrumentationColumnsDescription();
+}
 
 void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
@@ -86,7 +100,11 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     }
 }
 
+#endif
+
 }
+
+#if USE_XRAY
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemInstrumentation) }
@@ -101,6 +119,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains the instrumentation points using LLVM's XRay feature.
 )DOCS_MD",
+    .get_columns = getInstrumentationColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.instrumentation FORMAT Vertical;

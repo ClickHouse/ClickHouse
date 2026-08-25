@@ -876,6 +876,7 @@ It can be used to do a batch of Keeper path queries.
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse' AND zookeeperName = 'auxiliary_cluster'` outputs data in `auxiliary_cluster` ZooKeeper cluster.
 If the specified 'auxiliary_cluster' does not exists, an exception will be thrown.
 )DOCS_MD",
+    .get_columns = StorageSystemZooKeeper::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT *

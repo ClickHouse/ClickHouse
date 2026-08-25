@@ -158,6 +158,7 @@ The 'system.zookeeper_connection_log' table shows the history of ZooKeeper conne
 The table doesn't contain events for disconnections caused by server shutdown.
 </Note>
 )DOCS_MD",
+    .get_columns = ZooKeeperConnectionLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.zookeeper_connection_log;

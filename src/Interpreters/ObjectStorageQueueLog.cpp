@@ -88,7 +88,8 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains log entries with information about files processed by the AzureQueue engine.
 
 It is safe to truncate or drop this table at any time.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = ObjectStorageQueueLogElement::getColumnsDescription)
 
 REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "s3queue_log",
@@ -96,6 +97,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains log entries with information about files processed by the S3Queue engine.
 
 It is safe to truncate or drop this table at any time.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = ObjectStorageQueueLogElement::getColumnsDescription)
 
 }

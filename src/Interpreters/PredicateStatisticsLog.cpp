@@ -225,6 +225,7 @@ Contains sampled selectivity statistics collected while reading from `MergeTree`
 
 Use this table to inspect how selective user predicates are in real workloads and how many granules remain after primary-key or skip-index filtering. The data is intended as input for workload-driven index and projection recommendations.
 )DOCS_MD",
+    .get_columns = PredicateStatisticsLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SET predicate_statistics_sample_rate = 1;

@@ -178,6 +178,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 History of `system.histogram_metrics`. Snapshot taken every `collect_interval_milliseconds`, flushed to disk.
 )DOCS_MD",
+    .get_columns = BucketedMetricLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT event_time, metric, labels, histogram

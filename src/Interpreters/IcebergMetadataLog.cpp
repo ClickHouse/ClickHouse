@@ -175,6 +175,7 @@ See more information in the description of the [`iceberg_metadata_log_level`](/r
 - Similarly, if you use a `content_type` more verbose than `ManifestFileMetadata`, the Iceberg metadata cache is disabled for manifest files.
 - If the SELECT query was cancelled or failed, the log table may still contain entries for metadata processed before the failure but will not contain information about metadata entities that were not processed.
 )DOCS_MD",
+    .get_columns = IcebergMetadataLogElement::getColumnsDescription,
     .columns_notes = R"DOCS_MD(
 ### `content_type` values {#content-type-values}
 

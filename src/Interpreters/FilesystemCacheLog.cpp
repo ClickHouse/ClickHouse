@@ -81,6 +81,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.
 
 It is safe to truncate or drop this table at any time.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = FilesystemCacheLogElement::getColumnsDescription)
 
 }

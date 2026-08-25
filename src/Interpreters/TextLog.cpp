@@ -126,6 +126,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 )DOCS_MD",
+    .get_columns = TextLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.text_log LIMIT 1 \G

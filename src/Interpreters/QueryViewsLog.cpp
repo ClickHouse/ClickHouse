@@ -137,6 +137,7 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability)) setting to reduce the number of queries, registered in the `query_views_log` table.
 )DOCS_MD",
+    .get_columns = QueryViewsLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.query_views_log LIMIT 1 \G;

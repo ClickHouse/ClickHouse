@@ -117,6 +117,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
 )DOCS_MD",
+    .get_columns = OpenTelemetrySpanLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;

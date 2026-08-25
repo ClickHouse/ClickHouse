@@ -112,6 +112,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Shows currently active [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) registered by this ClickHouse server on ZooKeeper nodes (including auxiliary ZooKeepers). Each row represents one watch.
 )DOCS_MD",
+    .get_columns = StorageSystemZooKeeperWatches::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.zookeeper_watches FORMAT Vertical;

@@ -350,6 +350,7 @@ This table contains information about events that occurred with [data parts](/re
 
 The `system.part_log` table contains the following columns:
 )DOCS_MD",
+    .get_columns = PartLogElement::getColumnsDescription,
     .columns_notes = R"DOCS_MD(
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 )DOCS_MD",

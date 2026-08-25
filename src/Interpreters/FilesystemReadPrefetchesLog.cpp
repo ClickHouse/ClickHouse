@@ -76,6 +76,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
 Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem.
 
 It is safe to truncate or drop this table at any time.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = FilesystemReadPrefetchesLogElement::getColumnsDescription)
 
 }

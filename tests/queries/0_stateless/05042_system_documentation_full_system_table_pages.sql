@@ -10,6 +10,17 @@ FROM system.documentation
 WHERE type = 'System Table' AND name IN ('documentation', 'parts')
 ORDER BY name;
 
+-- The registration set, rather than the tables attached in the current
+-- environment, determines which system-table pages are exposed. In particular,
+-- `transactions` is normally gated by a disabled server setting.
+SELECT
+    name,
+    source,
+    description LIKE '%## Columns {#columns}%' AS has_columns
+FROM system.documentation
+WHERE type = 'System Table' AND name IN ('asynchronous_metrics', 'trace_log', 'transactions')
+ORDER BY name;
+
 -- Narrative associated with generated columns stays inside the Columns
 -- section, ahead of the consistently named Examples section.
 SELECT

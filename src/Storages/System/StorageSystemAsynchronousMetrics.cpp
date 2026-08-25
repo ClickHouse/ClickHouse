@@ -68,6 +68,7 @@ Contains metrics that are calculated periodically in the background. For example
 
 A metric is either scalar (a single number in the `value` column) or key-value: broken down per entity, such as per CPU core, block device, network interface, or disk. Key-value metrics are represented as a single row with a [Map](/reference/data-types/map) in the `key_values` column (for example, `CPUFrequencyMHz` maps every CPU core number to its frequency), and their `value` column is `NaN`.
 )DOCS_MD",
+    .get_columns = StorageSystemAsynchronousMetrics::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT metric, value, key_values

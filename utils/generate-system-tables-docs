@@ -4,7 +4,8 @@
 Queries system.documentation and system.tables via clickhouse-local, then
 generates/updates Markdown documentation files. The C++ registration provides
 the description, examples and related material; system.documentation combines
-those parts with the live column schema into a consistently structured page.
+those parts with either registered or live column metadata into a consistently
+structured page.
 
 Usage:
     python3 utils/generate-system-tables-docs --binary ./build/programs/clickhouse --docs-dir docs/reference/system-tables/
@@ -31,10 +32,6 @@ DOC_FILENAMES = {
     "delta_lake_metadata_log": "delta_metadata_log.mdx",
     "warnings": "system_warnings.mdx",
 }
-
-# Tables to skip in documentation generation (internal/helper tables).
-SKIP_TABLES = {"transposed_metric_log"}
-
 
 def unescape_tsv(value):
     """Unescape TSV escape sequences (\\n, \\t, \\', \\\\).
@@ -66,6 +63,24 @@ def unescape_tsv(value):
         result.append(value[i])
         i += 1
     return "".join(result)
+
+
+def extract_page_summary(documentation_md):
+    """Extract the first paragraph of the generated Description section."""
+    marker = "## Description {#description}"
+    marker_position = documentation_md.find(marker)
+    if marker_position == -1:
+        raise ValueError("Generated system-table documentation has no Description section")
+
+    description = documentation_md[marker_position + len(marker):].lstrip("\n")
+    section_end = description.find("\n## ")
+    if section_end != -1:
+        description = description[:section_end]
+    first_paragraph = description.split("\n\n", 1)[0]
+    summary = " ".join(line.strip() for line in first_paragraph.splitlines()).strip()
+    if not summary:
+        raise ValueError("Generated system-table documentation has an empty Description section")
+    return summary
 
 
 def run_query(binary, config, query, use_client=False, extra_args=None):
@@ -204,6 +219,43 @@ doc_type: 'reference'
         f.write(content)
 
 
+def generate_pages(docs_dir, full_documentation, table_comments):
+    """Generate every registered page, even if its table is not attached."""
+    updated = 0
+    created = 0
+    skipped = 0
+
+    # The structured registration is the source of truth. It includes gated
+    # tables and system logs which are not attached by the default
+    # clickhouse-local environment, so iterating system.tables here would omit
+    # their pages.
+    for table_name in sorted(full_documentation):
+        documentation_md = full_documentation[table_name]
+        comment = table_comments.get(table_name) or extract_page_summary(documentation_md)
+
+        doc_filename = DOC_FILENAMES.get(table_name, f"{table_name}.mdx")
+        doc_filepath = os.path.join(docs_dir, doc_filename)
+
+        if os.path.isfile(doc_filepath):
+            changed = update_full_doc_file(doc_filepath, documentation_md)
+            if changed:
+                updated += 1
+                print(f"  Updated: {doc_filename}")
+            else:
+                skipped += 1
+        else:
+            create_doc_file(
+                doc_filepath,
+                table_name,
+                comment,
+                documentation_md,
+            )
+            created += 1
+            print(f"  Created: {doc_filename}")
+
+    return updated, created, skipped
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate system tables documentation from a ClickHouse binary."
@@ -283,50 +335,9 @@ def main():
     full_documentation = {row["name"]: row["description"] for row in documentation}
     table_comments = {t["name"]: t["comment"] for t in tables}
 
-    missing_documentation = sorted(
-        set(table_comments) - set(full_documentation) - SKIP_TABLES
+    updated, created, skipped = generate_pages(
+        docs_dir, full_documentation, table_comments
     )
-    if missing_documentation:
-        print(
-            "Error: system.documentation has no entry for: "
-            + ", ".join(missing_documentation),
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    updated = 0
-    created = 0
-    skipped = 0
-
-    for table_name in sorted(table_comments):
-        if table_name in SKIP_TABLES:
-            continue
-
-        comment = table_comments[table_name]
-        documentation_md = full_documentation[table_name]
-
-        doc_filename = DOC_FILENAMES.get(table_name, f"{table_name}.mdx")
-        doc_filepath = os.path.join(docs_dir, doc_filename)
-
-        if os.path.isfile(doc_filepath):
-            changed = update_full_doc_file(doc_filepath, documentation_md)
-            if changed:
-                updated += 1
-                print(f"  Updated: {doc_filename}")
-            else:
-                skipped += 1
-        else:
-            if comment:
-                create_doc_file(
-                    doc_filepath,
-                    table_name,
-                    comment,
-                    documentation_md,
-                )
-                created += 1
-                print(f"  Created: {doc_filename}")
-            else:
-                print(f"  Skipped (no comment): {table_name}", file=sys.stderr)
 
     print(f"\nDone: {updated} updated, {created} created, {skipped} unchanged.")
 

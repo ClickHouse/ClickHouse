@@ -1,24 +1,39 @@
 #include "config.h"
 #include <Common/SystemTableDocumentation.h>
+#include <DataTypes/DataTypeString.h>
+#include <Storages/ColumnsDescription.h>
+
+namespace DB
+{
+
+namespace
+{
+
+ColumnsDescription getStemmersColumnsDescription()
+{
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Identifier of the Snowball stemmer (language/algorithm)"}
+    };
+}
+
+}
+
+}
 
 #if USE_LIBSTEMMER
 
 #include <Storages/System/StorageSystemStemmers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
 #include <libstemmer.h>
-
 
 namespace DB
 {
 
 ColumnsDescription StorageSystemStemmers::getColumnsDescription()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Identifier of the Snowball stemmer (language/algorithm)"}
-    };
+    return getStemmersColumnsDescription();
 }
 
 StorageSystemStemmers::StorageSystemStemmers(const StorageID & table_id)
@@ -55,6 +70,7 @@ SELECT value FROM system.build_options WHERE name = 'USE_LIBSTEMMER';
 ```
 </Info>
 )DOCS_MD",
+    .get_columns = getStemmersColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.stemmers;

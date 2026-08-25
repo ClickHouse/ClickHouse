@@ -175,6 +175,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 This table contains profiling on processors level (that you can find in [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)).
 )DOCS_MD",
+    .get_columns = ProcessorProfileLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 EXPLAIN PIPELINE

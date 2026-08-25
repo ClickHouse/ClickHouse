@@ -77,6 +77,7 @@ The `system.background_schedule_pool_log` table is created only if the [backgrou
 
 This table contains the history of background schedule pool task executions. Background schedule pools are used for executing periodic tasks such as distributed sends, buffer flushes, and message broker operations.
 )DOCS_MD",
+    .get_columns = BackgroundSchedulePoolLogElement::getColumnsDescription,
     .columns_notes = R"DOCS_MD(
 The `system.background_schedule_pool_log` table is created after the first background task execution.
 )DOCS_MD",

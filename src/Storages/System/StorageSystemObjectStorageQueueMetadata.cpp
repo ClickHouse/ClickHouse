@@ -406,12 +406,14 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "azure_queue_metadata",
     .description = R"DOCS_MD(
 Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object and, on demand, their contents. Unlike system.azure_queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>::getColumnsDescription)
 
 REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "s3_queue_metadata",
     .description = R"DOCS_MD(
 Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object and, on demand, their contents. Unlike system.s3queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.
-)DOCS_MD")
+)DOCS_MD",
+    .get_columns = StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>::getColumnsDescription)
 
 }

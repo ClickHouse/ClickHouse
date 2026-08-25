@@ -183,6 +183,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 )DOCS_MD",
+    .get_columns = MetricLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;

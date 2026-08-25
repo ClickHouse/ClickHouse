@@ -473,6 +473,7 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 
 You can use the [log_formatted_queries](/reference/settings/session-settings/log#log_formatted_queries) setting to log formatted queries to the `formatted_query` column.
 )DOCS_MD",
+    .get_columns = QueryLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 **Basic example**
 

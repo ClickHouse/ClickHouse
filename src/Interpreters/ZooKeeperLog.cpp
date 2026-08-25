@@ -184,6 +184,7 @@ This table contains information about the parameters of the request to the ZooKe
 
 For requests, only columns with request parameters are filled in, and the remaining columns are filled with default values (`0` or `NULL`). When the response arrives, the data from the response is added to the other columns.
 )DOCS_MD",
+    .get_columns = ZooKeeperLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql title="Query"
 SELECT * FROM system.zookeeper_log WHERE (session_id = '106662742089334927') AND (xid = '10858') FORMAT Vertical;

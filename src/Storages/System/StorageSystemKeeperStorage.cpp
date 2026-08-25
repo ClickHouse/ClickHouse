@@ -184,6 +184,7 @@ The table only exists for ClickHouse Keeper deployments that use the `clickhouse
 
 Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster. It reads the committed state of the local Keeper directly from a consistent lock-free view, without affecting request processing. Reading the table does not require a path condition and returns the whole tree, so it is suitable for queries that scan all nodes, such as finding the nodes with the most children or the largest data.
 )DOCS_MD",
+    .get_columns = StorageSystemKeeperStorage::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT path, num_children, data_length

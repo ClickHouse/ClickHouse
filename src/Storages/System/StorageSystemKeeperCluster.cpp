@@ -86,6 +86,7 @@ This table does not exist if this node is not configured to run an in-process Cl
 
 Every node fills exactly one `last_log_index` value — the row matching its own `server_id`. Peer log positions are not surfaced here because they are tracked only on the leader and that view is not symmetric across the cluster.
 )DOCS_MD",
+    .get_columns = StorageSystemKeeperCluster::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 SELECT * FROM system.keeper_cluster ORDER BY server_id;

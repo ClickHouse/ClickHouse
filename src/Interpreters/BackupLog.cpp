@@ -111,6 +111,7 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     .description = R"DOCS_MD(
 Contains logging entries with information about `BACKUP` and `RESTORE` operations.
 )DOCS_MD",
+    .get_columns = BackupLogElement::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
 BACKUP TABLE test_db.my_table TO Disk('backups_disk', '1.zip')
