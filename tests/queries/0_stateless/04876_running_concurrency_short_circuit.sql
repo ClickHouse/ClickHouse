@@ -23,9 +23,11 @@ SELECT 'if', groupArray(m) FROM
     (SELECT if(i % 2 = 0, runningConcurrency(s, e), 0) AS m FROM (SELECT * FROM events_04876 ORDER BY s))
 SETTINGS short_circuit_function_evaluation = 'enable';
 
+-- `optimize_multiif_to_if` is pinned off because it is on by default: a three-argument
+-- `multiIf` is rewritten to `if`, so without the pin this arm re-tests the arm above.
 SELECT 'multiIf', groupArray(m) FROM
     (SELECT multiIf(i % 2 = 0, runningConcurrency(s, e), 0) AS m FROM (SELECT * FROM events_04876 ORDER BY s))
-SETTINGS short_circuit_function_evaluation = 'enable';
+SETTINGS short_circuit_function_evaluation = 'enable', optimize_multiif_to_if = 0;
 
 SELECT 'and', groupArray(m) FROM
     (SELECT (i % 2 = 0) AND (runningConcurrency(s, e) > 2) AS m FROM (SELECT * FROM events_04876 ORDER BY s))
@@ -41,6 +43,16 @@ SETTINGS short_circuit_function_evaluation = 'disable';
 -- which is the precedent this fix follows.
 SELECT 'sibling', groupArray(m) FROM
     (SELECT if(i % 2 = 0, rowNumberInAllBlocks(), 999) AS m FROM (SELECT * FROM events_04876 ORDER BY s))
+SETTINGS short_circuit_function_evaluation = 'enable';
+
+-- Opting out only keeps a function off the lazy path when it is reached through its own
+-- suitability. A lazy-suitable argument still makes its parent lazy, so a computed argument
+-- reintroduces the filtering, and `force_enable` bypasses the predicate outright. Both remain
+-- wrong here, and identically wrong for the four siblings above, so they are recorded as
+-- observed rather than asserted as fixed.
+SELECT 'computed argument, still filtered', groupArray(m) FROM
+    (SELECT if(i % 2 = 0, runningConcurrency(toDateTime(toString(s)), toDateTime(toString(e))), 0) AS m
+     FROM (SELECT * FROM events_04876 ORDER BY s))
 SETTINGS short_circuit_function_evaluation = 'enable';
 
 DROP TABLE running_04876;
