@@ -493,9 +493,11 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
     }
 }
 
-TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream)
+TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     using enum PostingsSerialization::Flags;
+    output_postings_buffer.clear();
+    output_postings_buffer.reserve(total_cardinality);
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
@@ -528,6 +530,9 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
     auto encoder = codec->createEncoder();
     constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 16;
+
+    output_postings_buffer.clear();
+    output_postings_buffer.reserve(max_buffered_size);
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
@@ -600,11 +605,8 @@ void MergeTextIndexesTask::flushPostingList()
     for (const auto & source : output_sources)
         total_cardinality += source.info.cardinality;
 
-    output_postings_buffer.clear();
-    output_postings_buffer.reserve(total_cardinality);
-
     if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-        token_info = flushRawPostings(*postings_stream);
+        token_info = flushRawPostings(*postings_stream, total_cardinality);
     else
         token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 

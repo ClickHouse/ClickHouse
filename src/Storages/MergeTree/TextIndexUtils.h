@@ -161,7 +161,7 @@ private:
     void mergePostings(Sink && sink);
 
     /// Serializes a merged posting list of up to MAX_CARDINALITY_FOR_RAW_POSTINGS row ids as raw or embedded postings.
-    TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream);
+    TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
 
     /// Reads the positions of one source and appends them to output_positions.
