@@ -85,9 +85,7 @@ private:
     bool boundaryLess(const Lane & lhs, const Lane & rhs) const;
     Columns extractBoundary(const Chunk & chunk) const;
 
-    SharedHeader header;
     const SortDescription description;
-    std::vector<size_t> sort_column_positions;
     const bool apply_virtual_row_conversions;
     const UInt64 limit;
     const size_t max_rows_to_buffer;

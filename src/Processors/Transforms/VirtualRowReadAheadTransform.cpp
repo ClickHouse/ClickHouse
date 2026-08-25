@@ -1,6 +1,7 @@
 #include <Processors/Transforms/VirtualRowReadAheadTransform.h>
 
 #include <Columns/IColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
 
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     SharedHeader header_,
@@ -19,7 +25,6 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     size_t max_bytes_to_buffer_,
     size_t read_ahead_window_)
     : IProcessor(InputPorts(num_lanes, header_), OutputPorts(num_lanes, header_))
-    , header(std::move(header_))
     , description(std::move(description_))
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , limit(limit_)
@@ -27,13 +32,9 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     , max_bytes_to_buffer(max_bytes_to_buffer_)
     , read_ahead_window(read_ahead_window_)
 {
-    sort_column_positions.reserve(description.size());
     for (const auto & desc : description)
-    {
-        sort_column_positions.push_back(header->getPositionByName(desc.column_name));
         if (desc.collator)
             has_collation = true;
-    }
 
     lanes.resize(num_lanes);
     size_t i = 0;
@@ -46,16 +47,26 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
 
 Columns VirtualRowReadAheadTransform::extractBoundary(const Chunk & chunk) const
 {
-    /// setVirtualRow extracts the chunk info and applies the conversions in place,
-    /// so materialize the sort key on a deep clone and leave the forwarded chunk intact.
-    Chunk materialized = chunk.clone();
-    setVirtualRow(materialized, *header, apply_virtual_row_conversions);
+    /// The chunk itself is left untouched (the merge downstream materializes it): the sort
+    /// key is computed from a copy of the small pk block carried by the chunk info, without
+    /// cloning the chunk or rebuilding the full header layout.
+    const auto read_info = chunk.getChunkInfos().get<MergeTreeReadInfo>();
+    chassert(read_info);
 
-    const auto & columns = materialized.getColumns();
+    Block pk_block = read_info->pk_block;
+    if (apply_virtual_row_conversions)
+        read_info->virtual_row_conversions->execute(pk_block);
+
     Columns boundary;
-    boundary.reserve(sort_column_positions.size());
-    for (size_t pos : sort_column_positions)
-        boundary.push_back(columns[pos]);
+    boundary.reserve(description.size());
+    for (const auto & desc : description)
+    {
+        const auto * pk_col = pk_block.findByName(desc.column_name);
+        if (!pk_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Virtual row does not cover sort column {} (pk block: {})", desc.column_name, pk_block.dumpStructure());
+        boundary.push_back(pk_col->column);
+    }
     return boundary;
 }
 
