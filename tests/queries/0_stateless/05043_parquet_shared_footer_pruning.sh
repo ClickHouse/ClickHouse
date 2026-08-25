@@ -26,9 +26,9 @@ BF_SETTINGS="use_parquet_metadata_cache=1, input_format_parquet_bloom_filter_pus
 BF_QUERY="SELECT string, flba FROM file('$BF_FILE', Parquet) WHERE string='PFJH' ORDER BY uint16_logical FORMAT TSV"
 
 $CLICKHOUSE_CLIENT -q "$BF_QUERY SETTINGS $BF_SETTINGS" --query_id="${QID_PREFIX}bf1" > "$WORKING_DIR/bf1.tsv"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "$BF_QUERY SETTINGS $BF_SETTINGS" --query_id="${QID_PREFIX}bf2" > "$WORKING_DIR/bf2.tsv"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 diff "$WORKING_DIR/bf1.tsv" "$WORKING_DIR/bf2.tsv"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}bf2' AND type='QueryFinish' AND current_database = currentDatabase()"
@@ -41,9 +41,9 @@ DICT_SETTINGS="use_parquet_metadata_cache=1, input_format_parquet_dictionary_fil
 DICT_QUERY="SELECT sum(v) FROM file('$DICT_FILE', Parquet) WHERE s = repeat(toString(7), 8) SETTINGS $DICT_SETTINGS"
 
 $CLICKHOUSE_CLIENT -q "$DICT_QUERY" --query_id="${QID_PREFIX}dict1" > "$WORKING_DIR/dict1.tsv"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "$DICT_QUERY" --query_id="${QID_PREFIX}dict2" > "$WORKING_DIR/dict2.tsv"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 diff "$WORKING_DIR/dict1.tsv" "$WORKING_DIR/dict2.tsv"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}dict2' AND type='QueryFinish' AND current_database = currentDatabase()"
