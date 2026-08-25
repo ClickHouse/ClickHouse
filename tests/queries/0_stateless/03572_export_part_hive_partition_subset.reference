@@ -1,0 +1,9 @@
+---- Export each source part into the coarser destination
+---- Destination should hold all rows
+1	2020	US
+2	2020	FR
+3	2021	US
+---- Round-trip back into a MergeTree table (should match the source)
+1	2020	US
+2	2020	FR
+3	2021	US
