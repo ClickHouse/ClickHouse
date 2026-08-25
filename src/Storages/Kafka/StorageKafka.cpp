@@ -107,17 +107,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
     extern const int ABORTED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 namespace
 {
-
-bool isMemoryLimitError(int code)
-{
-    return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY;
-}
 
 /// Never returns 0: a batch of zero messages would stall consumption completely.
 size_t halveTimes(size_t value, size_t times)
@@ -818,7 +811,7 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
             /// committed and are not rewound here, so the messages that did not make it into the views
             /// are lost rather than retried and a smaller batch would not help.
             const bool can_reduce = block_size > 1 || poll_batch_size > 1;
-            if (!isMemoryLimitError(e.code()) || intermediate_commit || !can_reduce)
+            if (!StorageKafkaUtils::isMemoryLimitError(e.code()) || intermediate_commit || !can_reduce)
                 throw;
 
             /// A concurrent cycle (`kafka_thread_per_consumer`) may have already halved the size this

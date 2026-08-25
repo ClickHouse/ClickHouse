@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
@@ -100,7 +101,7 @@ Chunk KafkaSource::generateImpl()
         if (!consumer)
             return {};
 
-        /// Before subscribing: `subscribe()` itself polls, and that poll must honour the cap too.
+        /// Before subscribing: `subscribe` itself polls, and that poll must honour the cap too.
         consumer->setPollBatchSizeOverride(poll_batch_size);
 
         consumer->subscribe();
@@ -134,6 +135,11 @@ Chunk KafkaSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
+        /// A memory limit is a state of the server, not a property of the message. Reporting it as a
+        /// bad message would drop a well-formed one and commit its offset.
+        if (StorageKafkaUtils::isMemoryLimitError(e.code()))
+            throw std::move(e);
+
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
         switch (handle_error_mode)

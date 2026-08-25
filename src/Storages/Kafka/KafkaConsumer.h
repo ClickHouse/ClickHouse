@@ -65,7 +65,7 @@ public:
     auto pollTimeout() const { return poll_timeout; }
 
     /// Caps the number of messages a single poll may return. `0` restores the configured
-    /// `kafka_poll_max_batch_size`. Must be set before `subscribe()`, because subscribing polls too.
+    /// `kafka_poll_max_batch_size`. Must be set before `subscribe`, because subscribing polls too.
     void setPollBatchSizeOverride(size_t size) { poll_batch_size_override = size; }
 
     bool hasMorePolledMessages() const

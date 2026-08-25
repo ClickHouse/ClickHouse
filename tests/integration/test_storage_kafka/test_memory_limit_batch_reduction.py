@@ -87,9 +87,14 @@ def pin_memory_to_headroom():
     instance.query(f"SYSTEM ALLOCATE MEMORY {ballast}")
 
 
-def create_kafka_pipeline(topic_name, extra_settings=""):
+def create_kafka_pipeline(
+    topic_name,
+    extra_settings="",
+    dst_columns="key UInt64, value String",
+    mv_select="key, value",
+):
     instance.query(f"""
-        CREATE TABLE test.dst (key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+        CREATE TABLE test.dst ({dst_columns}) ENGINE = MergeTree ORDER BY key;
 
         CREATE TABLE test.kafka (key UInt64, value String)
             ENGINE = Kafka
@@ -102,7 +107,7 @@ def create_kafka_pipeline(topic_name, extra_settings=""):
                      kafka_flush_interval_ms = 60000,
                      kafka_consumer_reschedule_ms = 200{extra_settings};
 
-        CREATE MATERIALIZED VIEW test.mv TO test.dst AS SELECT key, value FROM test.kafka;
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS SELECT {mv_select} FROM test.kafka;
         """)
 
 
@@ -129,8 +134,14 @@ def polled_batch_sizes(after=None):
 
 
 def memory_errors_count():
+    """Only memory errors reported by a Kafka storage, so an unrelated allocation failing under the
+    pinned tracker cannot stand in for the one the arm is waiting for."""
     out = instance.exec_in_container(
-        ["bash", "-c", f"grep -c 'MEMORY_LIMIT_EXCEEDED' {SERVER_LOG} || true"]
+        [
+            "bash",
+            "-c",
+            f"grep -cE 'StorageKafka \\(test\\..*MEMORY_LIMIT_EXCEEDED' {SERVER_LOG} || true",
+        ]
     )
     return int(out.strip() or 0)
 
@@ -153,6 +164,18 @@ def wait_for_memory_errors(expected, timeout=180):
         time.sleep(1)
         observed = memory_errors_count()
     return observed
+
+
+def messages_failed_event():
+    """The `KafkaMessagesFailed` profile event. `KafkaSource`'s `on_error` callback is its only
+    increment site for this engine, so it counts exactly the errors that were treated as a property
+    of a message. Only usable once the pinned memory is released."""
+    return int(
+        instance.query(
+            "SELECT value FROM system.events WHERE event = 'KafkaMessagesFailed'"
+        ).strip()
+        or 0
+    )
 
 
 def reductions_event():
@@ -290,6 +313,41 @@ def test_commit_every_batch_is_excluded(kafka_cluster):
         assert reduced_block_sizes() == []
         instance.query("SYSTEM FREE MEMORY")
         assert reductions_event() == events_before
+
+
+def test_memory_error_is_not_a_bad_message_in_stream_handle_error_mode(kafka_cluster):
+    """`kafka_handle_error_mode = 'stream'` reports a bad message through the `_error` virtual column
+    and keeps consuming, so it does not rethrow. A memory limit reaches the same callback but is a
+    state of the server, not a property of the message: reported that way it would replace a
+    well-formed message with an error row, commit its offset and never let the size adapt.
+    """
+    instance.rotate_logs()
+    topic_name = f"kafka_mem_stream_{k.random_string(6)}"
+    reductions_before = reductions_event()
+    failed_before = messages_failed_event()
+
+    with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        produce_wide_messages(kafka_cluster, topic_name)
+        pin_memory_to_headroom()
+        create_kafka_pipeline(
+            topic_name,
+            extra_settings=",\n                     kafka_handle_error_mode = 'stream'",
+            dst_columns="key UInt64, value String, error String",
+            mv_select="key, value, _error AS error",
+        )
+
+        assert wait_for_reductions(1) >= 1
+        sizes = reduced_block_sizes()
+        assert sizes[0] == BLOCK_SIZE // 2, sizes
+
+        drain_topic(MESSAGES)
+
+        # Not a row count: a message accounted for here has been consumed as malformed, whether or
+        # not its error row survived to `test.dst`. `on_error` is the only increment site, and no
+        # message in this arm is malformed, so any increment is a memory error taken for one.
+        assert messages_failed_event() == failed_before, messages_failed_event() - failed_before
+        assert int(instance.query("SELECT count() FROM test.dst WHERE error != ''").strip()) == 0
+        assert reductions_event() - reductions_before >= 1
 
 
 def test_concurrent_failures_reduce_one_step_at_a_time(kafka_cluster):
