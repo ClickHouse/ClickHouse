@@ -388,6 +388,9 @@ private:
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
+    /// The body of finish(): cancels the query and drains the remaining packets.
+    void finishUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
     void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
@@ -401,6 +404,9 @@ private:
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
 
+    /// The synchronous receive/process loop of read(): reads packets until they produce a result.
+    ReadResult readLoop();
+
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
     /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
@@ -408,6 +414,9 @@ private:
     /// Write the synchronous-path fragment span to the span log. At most one call takes
     /// effect; all callers except the destructor must hold `was_cancelled_mutex`.
     void finishSyncFragmentSpan(OpenTelemetry::SpanStatus status, const String & status_message = {}) noexcept;
+
+    /// Record the in-flight exception as this fragment's failure. Must be called from a catch block.
+    void finishSyncFragmentSpanWithCurrentException() noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

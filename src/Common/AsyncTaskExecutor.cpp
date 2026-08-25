@@ -29,11 +29,10 @@ void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
 
 void AsyncTaskExecutor::flushSpanAttributes(OpenTelemetry::Span & span) noexcept
 {
-    /// noexcept: called from a scope guard that can run during the forced unwind
-    /// of a cancelled fiber. Span::addAttribute never throws, attributes are best-effort.
+    /// noexcept: called from a scope guard that can run during the forced unwind of a cancelled fiber.
     if (!span.isTraceEnabled())
         return;
-
+    /// Span::addAttribute never throws, attributes are best-effort.
     std::lock_guard guard(span_attributes_mutex);
     for (const auto & attribute : span_attributes)
         span.addAttribute(attribute);
@@ -115,18 +114,12 @@ struct AsyncTaskExecutor::Routine
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
         OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
 
-        /// Continue a span handed over by the caller: adopt its start time so the span covers
-        /// the work done before the executor existed (e.g. a synchronous query send preceding
-        /// asynchronous reading). Consumed once - a task rerun after restart() gets a fresh span.
-        if (UInt64 handed_over_start_time_us = std::exchange(executor.initial_span_start_time_us, 0))
-        {
-            if (trace_context_holder.root_span.isTraceEnabled())
-                trace_context_holder.root_span.start_time_us = handed_over_start_time_us;
-        }
+        /// Assigns the caller's start time so the span covers the work done before the executor existed.
+        /// A synchronous query may send preceding asynchronous reading.
+        if (trace_context_holder.root_span.isTraceEnabled())
+            trace_context_holder.root_span.start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL);
 
-        /// Copy the buffered attributes onto the span right before it is finished. Declared after the
-        /// holder so it runs first on every exit from the routine, including the forced unwind that
-        /// destroys a cancelled fiber.
+        /// Copy the buffered attributes onto the span right before it is finished
         SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
