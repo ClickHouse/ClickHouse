@@ -202,11 +202,11 @@ struct HiddenExpressionArguments
 };
 
 /// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
-bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope)
+bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope, bool allow_to_check_aliases)
 {
     IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
 
-    return IdentifierResolver::tryBindIdentifierToAliases(lookup, scope)
+    return (allow_to_check_aliases && IdentifierResolver::tryBindIdentifierToAliases(lookup, scope))
         || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
         || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
         || IdentifierResolver::tryBindIdentifierToJoinUsingColumn(lookup, scope);
@@ -224,6 +224,7 @@ bool hasToHideLambdaArgument(
     IdentifierResolveScope & referencing_scope,
     const std::unordered_set<IdentifierResolveScope *> & lambda_scopes_to_hide)
 {
+    bool allow_to_check_aliases = true;
     for (auto * current_scope = &referencing_scope; current_scope != nullptr; current_scope = current_scope->parent_scope)
     {
         /** An argument of a lambda that stays visible - the one owning the alias, or one above it. Hiding the
@@ -233,8 +234,14 @@ bool hasToHideLambdaArgument(
         if (current_scope->expression_argument_name_to_node.contains(name) && !lambda_scopes_to_hide.contains(current_scope))
             return false;
 
-        if (canBindNameInScope(name, *current_scope))
+        if (canBindNameInScope(name, *current_scope, allow_to_check_aliases))
             return true;
+
+        /// `tryResolveIdentifierInParentScopes` does not look at aliases above a query boundary
+        /// when `enable_global_with_statement` is disabled, so a binding there must not count either.
+        if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
+            && !current_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
+            allow_to_check_aliases = false;
     }
 
     return false;

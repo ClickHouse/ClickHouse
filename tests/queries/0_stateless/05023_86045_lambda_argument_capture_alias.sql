@@ -61,3 +61,13 @@ SETTINGS allow_experimental_correlated_subqueries = 1;
 
 SELECT number + 1 AS n, (SELECT arrayMap(number -> number + n, [1, 2])) FROM numbers(2)
 SETTINGS allow_experimental_correlated_subqueries = 1;
+
+-- With `enable_global_with_statement = 0` an alias of an outer query is not visible in the
+-- subquery, so it must not hide a lambda argument of the same name either: `x` in `d` is the
+-- argument of the lambda, the only thing it can resolve to.
+WITH 5 AS x SELECT (WITH x + 1 AS d SELECT arrayMap(x -> x + d, [1, 2]))
+SETTINGS enable_global_with_statement = 0;
+
+-- With the setting enabled, the outer alias is visible, and the argument is hidden.
+WITH 5 AS x SELECT (WITH x + 1 AS d SELECT arrayMap(x -> x + d, [1, 2]))
+SETTINGS enable_global_with_statement = 1;
