@@ -25,8 +25,9 @@ SET enable_parallel_replicas = 0;
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_optimize_join_order_limit = 10;
--- Pinned off because merging a cross-type equality into a join condition makes the fallback
--- compare floats bitwise, changing the guarded cases' documented `equals` semantics (cases 12, 24).
+-- Pinned off to isolate the guarded float cases (12, 24) from issue #116358: under the default,
+-- merging the fallback's cross-type equality into a join condition compares floats bitwise and
+-- loses the `-0.0` matches that `equals` semantics keep.
 SET query_plan_merge_filter_into_join_condition = 0;
 
 SELECT '-- Case 1: the reproducer from the issue; the nullability mismatch must not force a CROSS JOIN';
@@ -185,7 +186,7 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x) ORDER BY x;
 
-SELECT '-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so through the fallback -0.0 must match inner 0 (the -0 row appears) while 1.5 and 100.25 must not match';
+SELECT '-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so with the equality kept as a filter (see issue #116358) the fallback matches -0.0 to inner 0 (the -0 row appears) while 1.5 and 100.25 must not match';
 CREATE TABLE t_outer_12 (x Float64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_12 (x Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_outer_12 VALUES (1.5), (3), (100.25), (-0.0);
@@ -345,7 +346,7 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o);
 SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o ORDER BY x;
 
-SELECT '-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2) while a substituted plan would group bitwise (count 1); inner NULL never counts';
+SELECT '-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2 with the equality kept as a filter (see issue #116358)) while a substituted plan would group bitwise (count 1); inner NULL never counts';
 CREATE TABLE t_outer_24 (x Float64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_24 (x Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_outer_24 VALUES (-0.), (0.), (7.);

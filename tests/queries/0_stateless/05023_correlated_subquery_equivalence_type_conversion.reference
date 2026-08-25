@@ -37,7 +37,7 @@ plan: cross_joins=0 substituted=1 null_prefiltered=1
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 0
 3
--- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so through the fallback -0.0 must match inner 0 (the -0 row appears) while 1.5 and 100.25 must not match
+-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so with the equality kept as a filter (see issue #116358) the fallback matches -0.0 to inner 0 (the -0 row appears) while 1.5 and 100.25 must not match
 plan: substituted=0
 -0
 3
@@ -86,7 +86,7 @@ plan: cross_joins=0 substituted=1 null_prefiltered=1
 0	1
 1	\N
 3	1
--- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2) while a substituted plan would group bitwise (count 1); inner NULL never counts
+-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2 with the equality kept as a filter (see issue #116358)) while a substituted plan would group bitwise (count 1); inner NULL never counts
 plan: substituted=0
 -0	2
 0	2
