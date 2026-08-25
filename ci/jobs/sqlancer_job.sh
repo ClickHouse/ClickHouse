@@ -325,9 +325,8 @@ XML
 # Several oracles read through a cluster named `default` (`cluster('default', ...)`
 # and `ENGINE = Distributed('default', ...)`), which the embedded config does not
 # define -- it carries no `remote_servers` at all, so those reads fail with
-# `CLUSTER_DOESNT_EXIST`. The port must stay in step with `<tcp_port>` in
-# `programs/server/embedded.xml`; that config sets no `listen_host`, so the server
-# binds the loopback and a single replica on 127.0.0.1 needs no `listen.xml`.
+# `CLUSTER_DOESNT_EXIST`. 127.0.0.1 is treated as local, unlike 127.0.0.{2..255},
+# which is what lets the parallel-replica reads find a local shard.
 cat > "$SERVER_DIR/config.d/zz_ci_default_cluster.xml" <<'XML'
 <clickhouse>
     <remote_servers>
