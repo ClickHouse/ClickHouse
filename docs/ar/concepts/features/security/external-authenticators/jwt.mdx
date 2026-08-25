@@ -7,6 +7,9 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -251,6 +254,29 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 يحتوي المُصادِق المضمّن على حدٍّ للصلاحيات مضبوط على الدور `default_role` والمستخدم `default`. وهذا يعني أن الصلاحيات الفعلية لأي مستخدم JWT تُقاطع مع الصلاحيات الممنوحة لهذين الكيانين، لذا لا يمكن لأي رمز JWT مطلقًا رفع الامتيازات إلى ما يتجاوز المسموح به لكل من `default_role` و`default`.
 
 لا تحتاج إلى تهيئة أي شيء لاستخدام هذا المُصادِق. إذ يُوفَّر تلقائيًا عند إنشاء الخدمة.
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## تمكين مصادقة JWT لخدمتك
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="مصادقة JWT باستخدام موفّر هوية مخصّص" support="true" />
+
+بالإضافة إلى المُصادِق المضمّن، يمكنك تهيئة خدمة ClickHouse Cloud لقبول رموز JWT الصادرة عن موفّر الهوية الخاص بك، مثل Microsoft Entra أو Okta. هذه ميزة Beta متاحة ضمن خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse ‏26.4 أو أحدث. لتمكينها، افتح [تذكرة دعم](https://clickhouse.com/support/program) وقدّم تفاصيل الإعداد التالية:
+
+| المَعلمة          | الوصف                                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| معرّف الخدمة      | معرّف UUID لخدمة ClickHouse Cloud التي تريد تمكين مصادقة JWT عليها. يمكنك العثور عليه في عنوان URL لـ وحدة تحكم Cloud عند فتح الخدمة.                                                                                                                                                                                                     |
+| المُصدِر          | قيمة مطالبة `iss` في الرموز الصادرة عن موفّر الهوية الخاص بك، وتكون عادةً عنوان URL الخاص بالموفّر، مثل `https://your-tenant.okta.com`. يرفض ClickHouse الرموز التي لا يتطابق مُصدِرها مع هذه القيمة.                                                                                                                                   |
+| الجمهور           | قيمة مطالبة `aud` التي يضيفها موفّر الهوية الخاص بك إلى الرموز المخصصة لهذه الخدمة. يرفض ClickHouse الرموز الصادرة لجمهور مختلف.                                                                                                                                                                                                        |
+| URL لـ JWKS       | نقطة نهاية HTTPS التي ينشر فيها موفّر الهوية الخاص بك مجموعة مفاتيح الويب JSON الخاصة به، مثل `https://idp.example.com/.well-known/jwks.json`. يجلب ClickHouse المفاتيح العامة من نقطة النهاية هذه للتحقق من توقيعات الرموز. لا يعمل التحقق من JWKS إلا مع مفاتيح RSA (`RS256`)، كما هو موضح في [المطالبات المطلوبة](#required-claims). |
+| مطالبة الأدوار    | اسم مطالبة الرمز التي تتضمن أدوار ClickHouse للمستخدم المؤقت (القيمة الافتراضية هي `clickhouse:roles`). يجب أن تحتوي المطالبة على مصفوفة JSON من أسماء الأدوار، مثل `["analyst", "reader"]`.                                                                                                                                            |
+| مطالبة الامتيازات | اسم مطالبة الرمز التي تتضمن مقاطع `GRANT` في SQL للمستخدم المؤقت (القيمة الافتراضية هي `clickhouse:grants`). يجب أن تحتوي المطالبة على مصفوفة JSON من مقاطع الامتيازات، مثل `["SELECT ON analytics.*", "INSERT ON analytics.events"]`.                                                                                                  |
+
+يجب أن تكون الأدوار المذكورة في مطالبة الأدوار موجودة مسبقًا في الخدمة (أنشئها باستخدام `CREATE ROLE`). ويضع حدّ الصلاحيات سقفًا لصلاحيات الوصول الفعلية المستمدة من مطالبتي الأدوار والامتيازات، كما هو موضح في [صلاحية الوصول](#access-rights).
 
 <div id="interserver-communication">
   ## الاتصال بين الخوادم

@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.mdx";
 
 本分步指南介绍如何配置 Amazon Aurora MySQL，以便通过 [MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index) 将数据复制到 ClickHouse Cloud。有关 MySQL CDC (变更数据捕获)  的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
 
@@ -136,13 +137,7 @@ Amazon Aurora MySQL v2 (MySQL 5.7) 和 v3 (MySQL 8.0) 以及 Aurora Serverless v
   ### 使用 IAM 身份验证 (可选)
 </div>
 
-您可以不使用密码，改为通过 AWS IAM 的基于角色的访问控制对 ClickPipes 用户进行身份验证。按如下方式创建该用户，然后为其授予与上文所示相同的 schema 和复制特权：
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-有关设置 ClickPipes 通过这种方式进行身份验证所需的 IAM 角色和策略的完整步骤，请参阅 [AWS IAM DB 身份验证 (RDS/Aurora)](/zh/integrations/clickpipes/postgres/auth)。
+<IAMAuthentication engine="mysql" service="aurora" />
 
 <div id="configure-network-access">
   ## 配置网络访问
@@ -152,7 +147,7 @@ CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RD
   ### 基于 IP 的访问控制
 </div>
 
-要限制发往 Aurora MySQL 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 Aurora **安全组 (Security Group) **的**入站规则**中。
+要限制发往 Aurora MySQL 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到 Aurora **安全组 (Security Group) **的**入站规则**中。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="在哪里可以找到 Aurora MySQL 的安全组（Security Group）？" size="lg" border />
 
