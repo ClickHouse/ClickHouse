@@ -44,7 +44,7 @@ Pour les paramètres (de tout type), la documentation correspond à la descripti
 
 Pour les tables système, la documentation correspond au commentaire de la table ainsi qu&#39;à la liste de ses colonnes (le nom, le type et la description de chacune).
 
-Pour les instructions SQL, la documentation est la même que celle exposée par `system.statements` : elle indique également l&#39;instruction englobante, le cas échéant, par ex. la clause `WHERE` fait partie de `SELECT`.
+Pour les instructions SQL, la documentation est générée à partir des champs structurés exposés par `system.statements`, y compris la syntaxe et les instructions associées lorsque ces sections ne font pas déjà partie de la description détenue par la source.
 
 La colonne `source` contient le chemin du fichier source dans lequel la documentation de l&#39;entité est définie, relatif à la racine du dépôt. Pour la plupart des entités, il est capturé automatiquement à l&#39;endroit où l&#39;objet de documentation est construit (le point d&#39;enregistrement du composant) ; pour les types documentés chacun dans un fichier source unique (comme les paramètres, les événements de profil et les métriques actuelles), il s&#39;agit de ce fichier.
 

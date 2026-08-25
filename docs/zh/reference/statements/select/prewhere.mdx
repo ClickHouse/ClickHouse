@@ -2,7 +2,7 @@
 description: 'PREWHERE 子句文档'
 sidebarTitle: 'PREWHERE'
 slug: /sql-reference/statements/select/prewhere
-title: 'PREWHERE 子句'
+title: 'PREWHERE'
 doc_type: 'reference'
 ---
 
@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `PREWHERE` 可通过减少读取的数据量提高筛选效率。默认情况下，即使查询未显式指定 `PREWHERE`，ClickHouse 也会将符合条件的条件从 [`WHERE`](/zh/reference/statements/select/where) 移至 `PREWHERE`，从而应用此优化。您可以显式指定 `PREWHERE`，以控制在此阶段应用哪些条件。
 
-使用 `PREWHERE` 时，ClickHouse 首先仅读取评估条件所需的列。随后，仅对包含至少一行匹配数据的块读取查询所需的其他列。当条件使用的列少于查询其余部分所需的列，且能筛除大量块时，可减少读取的数据量。
+使用 `PREWHERE` 时，ClickHouse 首先仅读取评估条件所需的列。随后，仅对包含至少一行匹配数据的块读取查询所需的其他列。当条件使用的列少于查询其余部分所需的列，且能过滤掉大量块时，可减少读取的数据量。
 
 <div id="controlling-prewhere-manually">
   ## 手动控制 `PREWHERE`

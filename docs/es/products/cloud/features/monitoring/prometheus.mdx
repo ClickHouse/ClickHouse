@@ -24,11 +24,15 @@ Si busca el endpoint equivalente para los servicios de [ClickHouse Managed Postg
   ### Referencia de la API
 </div>
 
-| Método | Ruta                                                                                                                            | Descripción                                                                                                                                                                                        |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Devuelve las métricas de un servicio específico                                                                                                                                                    |
-| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Devuelve las métricas de todos los servicios de una organización                                                                                                                                   |
+| Método | Ruta                                                                                                                            | Descripción                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Devuelve las métricas de un servicio específico                                                                                                                                                   |
+| GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **Obsoleto.** Devuelve las métricas de todos los servicios de una organización                                                                                                                    |
 | GET    | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | Devuelve los destinos de scrape de Prometheus para todos los servicios de una organización, en el formato de [detección de servicios HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  El endpoint de métricas de toda la organización (`GET /v1/organizations/{organizationId}/prometheus`) está obsoleto en favor de la [detección automática de servicios](#automatic-service-discovery). Las organizaciones existentes pueden seguir usándolo; las organizaciones recién creadas usan el endpoint de detección en su lugar. Contacte con el soporte de ClickHouse si necesita acceso a este endpoint.
+</Note>
 
 **Parámetros de la solicitud**
 

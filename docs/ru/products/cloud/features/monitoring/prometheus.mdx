@@ -27,8 +27,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 | Метод | Путь                                                                                                                            | Описание                                                                                                                                                              |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Возвращает метрики для конкретного сервиса                                                                                                                            |
-| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Возвращает метрики для всех сервисов организации                                                                                                                      |
+| GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **Устарело.** Возвращает метрики для всех сервисов организации                                                                                                        |
 | GET   | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | Возвращает цели сбора метрик Prometheus для всех сервисов организации в формате [обнаружения сервисов по HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  Конечная точка метрик для всей организации (`GET /v1/organizations/{organizationId}/prometheus`) устарела в пользу [автоматического обнаружения сервисов](#automatic-service-discovery). Существующие организации могут продолжать её использовать; вновь созданные организации вместо неё используют конечную точку обнаружения. Если вам нужен доступ к этой конечной точке, обратитесь в службу поддержки ClickHouse.
+</Note>
 
 **Параметры запроса**
 

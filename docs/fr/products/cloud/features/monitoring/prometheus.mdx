@@ -27,8 +27,12 @@ Si vous recherchez l’endpoint équivalent pour les services [ClickHouse Manage
 | Méthode | Chemin                                                                                                                          | Description                                                                                                                                                                            |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Renvoie les métriques d’un service spécifique                                                                                                                                          |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Renvoie les métriques de tous les services d’une organisation                                                                                                                          |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **Obsolète.** Renvoie les métriques de tous les services d’une organisation                                                                                                            |
 | GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | Renvoie les cibles de scraping Prometheus pour tous les services d’une organisation, au format de [découverte de services HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  L’endpoint de métriques à l’échelle de l’organisation (`GET /v1/organizations/{organizationId}/prometheus`) est obsolète au profit de la [découverte automatique des services](#automatic-service-discovery). Les organisations existantes peuvent continuer à l’utiliser ; les organisations nouvellement créées utilisent à la place l’endpoint de découverte. Contactez le support ClickHouse si vous avez besoin d’accéder à cet endpoint.
+</Note>
 
 **Paramètres de la requête**
 

@@ -101,6 +101,7 @@ ClickHouseClusterSpec 定义了 ClickHouseCluster 的期望状态。
 | `labels`                         | object (keys:string, values:string)                                                                                                 | 添加到资源上的附加标记。                                                                                                                                                         | false |                |
 | `annotations`                    | object (keys:string, values:string)                                                                                                 | 添加到资源上的附加注解。                                                                                                                                                         | false |                |
 | `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget 用于配置为每个分片创建的 PDB。<br />未设置时，Operator 对单副本<br />分片默认使用 maxUnavailable=1，对多副本分片默认使用 minAvailable=1。                                                | false |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | NetworkPolicy 用于配置为集群管理的 NetworkPolicy。                                                                                                                              | false |                |
 | `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse 服务器的配置参数。                                                                                                                                                 | false | &#123;  &#125; |
 | `clusterDomain`                  | string                                                                                                                              | 集群域名后缀是 Kubernetes 集群中用于 DNS 解析的集群域名后缀。                                                                                                                              | false | cluster.local  |
 | `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel 指定用于主版本升级检查的发布渠道。<br />为空时，仅会建议次版本更新。允许的值包括：stable、lts 或特定的 major.minor 版本 (例如 25.8) 。                                                                | false |                |
@@ -133,6 +134,25 @@ ClickHouseClusterStatus 定义了 ClickHouseCluster 的已观测状态。
 出现位置：
 
 * [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
+
+ClickHouseNetworkPolicySpec 用于配置由 ClickHouse 集群管理的 NetworkPolicy。
+受管理的策略涵盖集群内部流量：
+
+* 副本间连通性
+* operator 对集群的访问
+  其他所有入口流量 (包括客户端连接和指标抓取) 都需要由用户定义 NetworkPolicy。
+
+| 字段       | 类型                                          | 描述                                                                                   | 必需    | 默认值      |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------ | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | 此策略控制 operator 是否管理用于限制进入集群 Pod (容器组) 的入口流量的 NetworkPolicy。<br />未设置时，默认为“Disabled”。 | false | Disabled |
+
+出现于：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 <div id="clickhousesettings">
   ## ClickHouseSettings
@@ -359,8 +379,9 @@ KeeperClusterSpec 定义了 KeeperCluster 的期望状态。
 | `labels`               | object (keys:string, values:string)                                                                                                 | 添加到资源的附加标记。                                                                                                                                       | false    |               |
 | `annotations`          | object (keys:string, values:string)                                                                                                 | 添加到资源的附加注解。                                                                                                                                       | false    |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget 用于配置为 Keeper 集群创建的 PDB。<br />未设置时，operator 默认使用 maxUnavailable=replicas/2<br />(为 2F+1 集群保留 quorum)；单副本集群使用 maxUnavailable=1。 | false    |               |
-| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper server 的配置参数。                                                                                                                   | false    |               |
-| `clusterDomain`        | string                                                                                                                              | 集群域名后缀是 Kubernetes 集群用于 DNS 解析的域名后缀。                                                                                                      | false    | cluster.local |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | NetworkPolicy 用于配置为 Keeper 集群管理的 NetworkPolicy。                                                                                                   | false    |               |
+| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper 服务器 的配置参数。                                                                                                                   | false    |               |
+| `clusterDomain`        | string                                                                                                                              | 集群域名后缀是 Kubernetes 集群用于 DNS 解析的域名后缀。                                                                                                              | false    | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | UpgradeChannel 指定用于主版本升级检查的发布渠道。<br />为空时，只会建议次版本更新。允许的值包括：stable、lts 或特定的 major.minor 版本 (例如 25.8) 。                                             | false    |               |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | VersionProbeTemplate 用于覆盖版本检测 Job 的配置。<br />已弃用：Keeper 版本探测作业已不再使用；保留此字段是为了保持向后兼容。                                                                | false    |               |
 
@@ -389,6 +410,26 @@ KeeperClusterStatus 定义了 KeeperCluster 的已观测状态。
 出现于：
 
 * [KeeperCluster](#keepercluster)
+
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
+
+KeeperNetworkPolicySpec 配置由 Keeper 集群管理的 NetworkPolicy。
+托管策略涵盖集群内部流量：
+
+* 副本间连通性
+* operator 对集群的访问
+* 引用此 Keeper 集群的 ClickHouse 集群的访问
+  其他所有入口流量 (包括指标抓取) 均需由用户定义 NetworkPolicy。
+
+| 字段       | 类型                                          | 描述                                                                                           | 必填    | 默认值      |
+| -------- | ------------------------------------------- | -------------------------------------------------------------------------------------------- | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | 策略 控制 operator 是否管理用于限制对 Keeper Pod (容器组) 入口访问的 NetworkPolicy。<br />未设置时，默认值为“Disabled”。 | false | Disabled |
+
+出现于：
+
+* [KeeperClusterSpec](#keeperclusterspec)
 
 <div id="keepersettings">
   ## KeeperSettings
@@ -440,6 +481,22 @@ NamedTemplateMeta 定义了需要名称的模板对象支持的元数据设置�
 出现于：
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
+
+NetworkPolicyPolicy 控制 operator 是否为 集群 管理 NetworkPolicy。
+
+| 字段         | 描述                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------- |
+| `Enabled`  | NetworkPolicyEnabled 使 operator 管理一个 NetworkPolicy，以限制进入 集群 Pod (容器组) 的流量。<br /> |
+| `Disabled` | NetworkPolicyDisabled 会禁用由 operator 管理的 NetworkPolicy；如果该策略存在，operator 会将其删除。<br />   |
+
+出现于：
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 <div id="pdbpolicy">
   ## PDBPolicy

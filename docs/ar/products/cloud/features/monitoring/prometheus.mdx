@@ -27,16 +27,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | الطريقة | المسار                                                                                                                          | الوصف                                                                                                                                           |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | يعيد المقاييس لخدمة محددة                                                                                                                       |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | يعيد المقاييس لجميع الخدمات ضمن مؤسسة                                                                                                           |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | يعيد أهداف scrape في Prometheus لجميع الخدمات ضمن مؤسسة، بتنسيق [اكتشاف الخدمة عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **مهمل.** يعيد المقاييس لجميع الخدمات ضمن مؤسسة                                                                                                 |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | يعيد أهداف scrape في Prometheus لجميع الخدمات ضمن مؤسسة، بتنسيق [اكتشاف الخدمات عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  نقطة نهاية المقاييس على مستوى المؤسسة (`GET /v1/organizations/{organizationId}/prometheus`) مهملة لصالح [الاكتشاف التلقائي للخدمات](#automatic-service-discovery). يمكن للمؤسسات الحالية الاستمرار في استخدامها، بينما تستخدم المؤسسات المنشأة حديثًا نقطة نهاية الاكتشاف بدلًا منها. تواصل مع دعم ClickHouse إذا كنت بحاجة إلى الوصول إلى نقطة النهاية هذه.
+</Note>
 
 **معلمات الطلب**
 
-| الاسم                | الموقع         | النوع             |
-| -------------------- | -------------- | ----------------- |
-| Organization ID      | عنوان نقطة نهاية | uuid              |
-| Service ID           | عنوان نقطة نهاية | uuid (اختياري)    |
-| filtered&#95;metrics | معلمة query    | boolean (اختياري) |
+| الاسم                | الموقع           | النوع             |
+| -------------------- | ---------------- | ----------------- |
+| معرّف المؤسسة      | عنوان نقطة نهاية | uuid              |
+| معرّف الخدمة           | عنوان نقطة نهاية | uuid (اختياري)    |
+| filtered&#95;metrics | معلمة query      | boolean (اختياري) |
 
 تتوفر مخططات الطلب والاستجابة الكاملة لهذه الـنقاط النهاية في [مرجع Cloud واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/prometheus).
 

@@ -2,7 +2,7 @@
 description: 'Documentação para índices hipotéticos (what-if)'
 sidebarTitle: 'HYPOTHETICAL INDEX'
 slug: /sql-reference/statements/hypothetical-index
-title: 'Índices hipotéticos'
+title: 'HYPOTHETICAL INDEX'
 doc_type: 'reference'
 ---
 
@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Índices hipotéticos são skip indexes virtuais, com escopo de sessão, que você pode anexar a uma tabela da família `MergeTree` sem de fato criá-los nem armazená-los. Eles existem apenas na sessão atual e são usados por [`EXPLAIN WHATIF`](/pt-BR/reference/statements/explain#explain-whatif) para estimar como um skip index real afetaria uma consulta — normalmente, a taxa de descarte (fração de marcas que poderiam ser ignoradas) e um custo aproximado em marcas e bytes.
 
-Use índices hipotéticos para avaliar possíveis índices antes de arcar com o custo de materializá-los em disco.
+Use índices hipotéticos para avaliar índices candidatos antes de arcar com o custo de materializá-los em disco.
 
 <div id="create-hypothetical-index">
   ## CREATE HYPOTHETICAL INDEX

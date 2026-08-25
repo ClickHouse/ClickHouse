@@ -27,15 +27,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 | メソッド | パス                                                                                                                              | 説明                                                                                                                            |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 特定のサービスのメトリクスを返します                                                                                                            |
-| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 組織内の全サービスのメトリクスを返します                                                                                                          |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **非推奨。** 組織内の全サービスのメトリクスを返します                                                                                                 |
 | GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | 組織内のすべてのサービスのPrometheusスクレイプターゲットを、[HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/)フォーマットで返します |
+
+<Note>
+  組織全体のメトリクスエンドポイント (`GET /v1/organizations/{organizationId}/prometheus`) は、[サービスの自動検出](#automatic-service-discovery)の導入に伴い非推奨となりました。既存の組織では引き続き使用できますが、新しく作成された組織では代わりにディスカバリーエンドポイントが使用されます。このエンドポイントへのアクセスが必要な場合は、ClickHouse Supportにお問い合わせください。
+</Note>
 
 **リクエストパラメータ**
 
 | 名前                   | 場所          | 型            |
 | -------------------- | ----------- | ------------ |
-| 組織 ID      | エンドポイントアドレス | uuid         |
-| サービス ID       | エンドポイントアドレス | uuid (任意)    |
+| 組織 ID                | エンドポイントアドレス | uuid         |
+| サービス ID              | エンドポイントアドレス | uuid (任意)    |
 | filtered&#95;metrics | クエリパラメータ    | boolean (任意) |
 
 これらのエンドポイントの完全なリクエストおよびレスポンススキーマは、[Cloud API リファレンス](/ja/products/cloud/api-reference/prometheus)で確認できます。

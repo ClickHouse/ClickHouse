@@ -10,7 +10,7 @@ doc_type: 'referencia'
   ## Descripción
 </div>
 
-Recopila en una sola tabla la documentación integrada de los componentes uniformes del sistema. Cada fila corresponde a una entidad (una función, un motor de tabla, un tipo de dato, etc.) y contiene la documentación de referencia de esa entidad en formato Markdown: el mismo contenido que se publica en el sitio web y que exponen las tablas `system.*` específicas de cada tipo.
+Recopila en una sola tabla la documentación integrada de los componentes homogéneos del sistema. Cada fila corresponde a una entidad (una función, un motor de tabla, un tipo de dato, etc.) y contiene la documentación de referencia de esa entidad en formato Markdown: el mismo contenido que se publica en el sitio web y que exponen las tablas `system.*` específicas de cada tipo.
 
 La `description` se compone a partir de las partes estructuradas de la documentación integrada (`description`, `syntax`, argumentos, ejemplos, etc.), de modo que una sola columna contiene la documentación completa de una entidad. Cuando la documentación integrada contiene en su `description` toda la página de referencia (como ocurre con los componentes cuyas páginas web se generan automáticamente a partir de ella: motores de tabla, motores de base de datos, tipos de datos, formatos y funciones de tabla), la página se publica tal cual, sin añadir secciones compuestas a partir de los campos de metadatos estructurados, ya que el cuerpo de la página ya cubre ese material. Los alias se muestran como una referencia breve a la entidad canónica; por ejemplo, ``Alias of `trunc`.``
 
@@ -44,7 +44,7 @@ En el caso de los SETTINGS (de cualquier tipo), la documentación es la descripc
 
 En el caso de las tablas del sistema, la documentación es el comentario de la tabla junto con la lista de sus columnas (el nombre, el tipo y la descripción de cada una).
 
-Para las sentencias SQL, la documentación es la misma que expone `system.statements`: también nombra la sentencia contenedora, si la hay; por ejemplo, la cláusula `WHERE` forma parte de `SELECT`.
+Para las sentencias SQL, la documentación se genera a partir de los campos estructurados expuestos por `system.statements`, incluida la sintaxis y las sentencias relacionadas cuando esas secciones no forman ya parte de la descripción controlada por el archivo fuente.
 
 La columna `source` contiene la ruta del archivo fuente donde se define la documentación de la entidad, relativa a la raíz del repositorio. Para la mayoría de las entidades, se captura automáticamente en el lugar donde se construye el objeto de documentación (el punto de registro del componente); para los tipos que se documentan cada uno en un único archivo fuente (como los SETTINGS, los eventos de perfil y las métricas actuales), ese archivo es el que se usa.
 

@@ -27,8 +27,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 | 方法  | 路径                                                                                                                              | 描述                                                                                               |
 | --- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 返回特定服务的指标                                                                                        |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 返回组织内所有服务的指标                                                                                     |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **已弃用。** 返回组织内所有服务的指标                                                                            |
 | GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | 以 [HTTP 服务发现](https://prometheus.io/docs/prometheus/latest/http_sd/)格式返回组织内所有服务的 Prometheus 抓取目标 |
+
+<Note>
+  组织范围的指标端点 (`GET /v1/organizations/{organizationId}/prometheus`) 已弃用，建议改用[自动服务发现](#automatic-service-discovery)。现有组织可以继续使用它；新创建的组织则改用发现端点。如果您需要访问此端点，请联系 ClickHouse 支持团队。
+</Note>
 
 **请求参数**
 

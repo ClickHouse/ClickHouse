@@ -2,7 +2,7 @@
 description: 'Documentação sobre operadores de pipe'
 sidebarTitle: 'Operadores de pipe'
 slug: /sql-reference/statements/select/pipe-operators
-title: 'Operadores de pipe'
+title: 'OPERADORES DE PIPE'
 doc_type: 'reference'
 ---
 
@@ -18,9 +18,9 @@ FROM orders
 |> LIMIT 3
 ```
 
-Qualquer consulta `SELECT` pode ser seguida por uma cadeia de operadores pipe. Cada operador começa com o token `|>`, recebe como entrada o resultado da consulta que o precede e aplica mais uma transformação a ele. Em cada operador, é usada a sintaxe padrão do ClickHouse.
+Qualquer consulta `SELECT` pode ser seguida por uma cadeia de operadores de pipe. Cada operador começa com o token `|>`, recebe como entrada o resultado da consulta que o precede e aplica mais uma transformação a ele. Em cada operador, é usada a sintaxe padrão do ClickHouse.
 
-Os operadores pipe são uma extensão de sintaxe: cada operador encapsula a consulta que o precede em uma subconsulta. Portanto, a AST resultante é igual à AST da consulta equivalente escrita com subconsultas aninhadas, e a consulta acima equivale a:
+Os operadores de pipe são uma extensão de sintaxe: cada operador encapsula a consulta que o precede em uma subconsulta. Portanto, a AST resultante é igual à AST da consulta equivalente escrita com subconsultas aninhadas, e a consulta acima equivale a:
 
 ```sql
 SELECT * FROM

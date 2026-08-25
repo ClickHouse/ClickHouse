@@ -27,8 +27,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 | 메서드 | 경로                                                                                                                              | 설명                                                                                                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 특정 서비스의 메트릭을 반환합니다                                                                                                   |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 조직 내 모든 서비스의 메트릭을 반환합니다                                                                                              |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **더 이상 사용되지 않습니다.** 조직 내 모든 서비스의 메트릭을 반환합니다                                                                          |
 | GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | [HTTP 서비스 디스커버리](https://prometheus.io/docs/prometheus/latest/http_sd/) 포맷으로 조직 내 모든 서비스의 Prometheus 스크레이프 대상을 반환합니다 |
+
+<Note>
+  조직 전체 메트릭 엔드포인트(`GET /v1/organizations/{organizationId}/prometheus`)는 [자동 서비스 디스커버리](#automatic-service-discovery) 대신 더 이상 사용되지 않습니다. 기존 조직에서는 계속 사용할 수 있지만, 새로 생성된 조직에서는 대신 디스커버리 엔드포인트를 사용합니다. 이 엔드포인트에 대한 액세스가 필요하면 ClickHouse 지원팀에 문의하십시오.
+</Note>
 
 **요청 매개변수**
 

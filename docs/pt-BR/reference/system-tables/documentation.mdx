@@ -29,7 +29,7 @@ Os seguintes tipos de entidades são reunidos (o valor da coluna `type` é mostr
 * Layouts de dicionário (`Dictionary Layout`)
 * Fontes de dicionário (`Dictionary Source`)
 * Combinadores de funções de agregação (`Aggregate Function Combinator`)
-* Tipos de índice data skipping (`Data Skipping Index`)
+* Tipos de data skipping indexes (`Data Skipping Index`)
 * Tipos de disco (`Disk Type`)
 * Configurações (`Setting`)
 * Configurações do MergeTree (`MergeTree Setting`)
@@ -46,7 +46,7 @@ No caso das configurações (de qualquer tipo), a documentação corresponde à 
 
 No caso das tabelas de sistema, a documentação é o comentário da tabela junto com a lista de suas colunas (o nome, o tipo e a descrição de cada uma).
 
-No caso das instruções SQL, a documentação é a mesma exposta por `system.statements`: ela também nomeia a instrução que a contém, se houver; por exemplo, a cláusula `WHERE` faz parte de `SELECT`.
+No caso das instruções SQL, a documentação é renderizada a partir dos campos estruturados expostos por `system.statements`, incluindo a sintaxe e instruções relacionadas quando essas seções ainda não fazem parte da descrição controlada pela fonte.
 
 A coluna `source` contém o caminho do arquivo-fonte em que a documentação da entidade é definida, relativo à raiz do repositório. Para a maioria das entidades, ela é capturada automaticamente no local em que o objeto de documentação é construído (o local de registro do componente); para os tipos documentados, cada um, em um único arquivo-fonte (como configurações, eventos de perfil e métricas atuais), é esse arquivo.
 
