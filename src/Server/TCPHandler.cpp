@@ -1353,9 +1353,10 @@ void TCPHandler::readTemporaryTables(QueryState & state)
 
     while (receivePacketsExpectData(state))
     {
+        /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
         sendLogs(state);
         sendInsertProfileEvents(state);
-        // out->sync(); TODO(kavi): remove after experiment
+        out->sync();
     }
 }
 
@@ -1415,9 +1416,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
 
         {
             std::lock_guard lock(*callback_mutex);
+            /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
             sendLogs(state);
             sendInsertProfileEvents(state);
-            // out->sync(); TODO(kavi): remove after an experiment
+            out->sync();
         }
 
         if (result_chunk)
@@ -1467,9 +1469,10 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 executor.push(std::move(state.block_for_insert));
 
                 std::lock_guard lock(*callback_mutex);
+                /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
                 sendLogs(state);
                 sendInsertProfileEvents(state);
-                // out->sync(); TODO(kavi): an experiment
+                out->sync();
             }
 
             executor.finish();
@@ -1607,11 +1610,9 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
-                    {
                         sendData(state, block);
-                        out->sync();
-                    }
 
+                    out->sync();
                 }
             }
         }
