@@ -21,6 +21,11 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
+    ~ObjectStorageQueueExclusiveFileMetadata() override;
+
+    /// Release the in-flight guard acquired by `setProcessingImpl`. Idempotent.
+    void releaseProcessingGuard();
+
     static std::vector<std::string> getMetadataPaths() { return {}; }
 
     /// Return vector of indexes of filtered paths.
@@ -46,6 +51,7 @@ private:
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable) override;
 
     ObjectStorageQueueMetadata & metadata;
+    bool holds_processing_guard = false;
 };
 
 }

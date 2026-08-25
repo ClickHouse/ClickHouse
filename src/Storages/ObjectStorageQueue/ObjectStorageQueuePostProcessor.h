@@ -37,7 +37,9 @@ public:
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
-    void process(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    void process(
+        const StoredObjects & objects,
+        UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
     String getName() const { return engine_name; }

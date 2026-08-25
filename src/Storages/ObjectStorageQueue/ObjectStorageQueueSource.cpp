@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
+    extern const int S3_OBJECTS_WERE_NOT_POST_PROCESSED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -1712,7 +1713,8 @@ void ObjectStorageQueueSource::finalizeCommit(
     UInt64 commit_id,
     time_t commit_time,
     time_t transaction_start_time_,
-    const std::string & exception_message)
+    const std::string & exception_message,
+    const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths)
 {
     if (processed_files.empty())
         return;
@@ -1728,10 +1730,19 @@ void ObjectStorageQueueSource::finalizeCommit(
                 {
                     if (insert_succeeded)
                     {
-                        file_metadata->finalizeProcessed();
+                        if (post_processing_failed_paths.contains(file_metadata->getPath()))
+                        {
+                            /// The rows were inserted, but the after_processing action failed for
+                            /// this object, so do not record it as processed.
+                            file_metadata->finalizeFailed("The after_processing action did not complete");
+                        }
+                        else
+                        {
+                            file_metadata->finalizeProcessed();
 
-                        if (last_modified)
-                            files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
+                            if (last_modified)
+                                files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
+                        }
                     }
                     else if (file_metadata->wasProcessingResetWithoutFailure())
                     {
@@ -1816,70 +1827,6 @@ void ObjectStorageQueueSource::finalizeCommit(
         std::rethrow_exception(finalize_exception);
 }
 
-void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
-    const std::vector<String> & failed_paths,
-    UInt64 commit_id,
-    time_t commit_time,
-    time_t transaction_start_time_,
-    const std::string & exception_message)
-{
-    if (processed_files.empty())
-        return;
-
-    UnorderedSetWithMemoryTracking<std::string_view> failed_paths_set;
-
-    for (const String & path : failed_paths)
-        failed_paths_set.insert(path);
-
-    std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified] : processed_files)
-    {
-        try
-        {
-            bool processed = false;
-            switch (file_state)
-            {
-                case FileState::Processed:
-                {
-                    processed = true;
-                    if (failed_paths_set.contains(file_metadata->getPath()))
-                        file_metadata->finalizeFailed(exception_message);
-                    else
-                        file_metadata->finalizeProcessed();
-                    break;
-                }
-                case FileState::Cancelled: [[fallthrough]];
-                case FileState::Processing:
-                {
-                    if (file_metadata->wasProcessingResetWithoutFailure())
-                        file_metadata->finalizeResetProcessing();
-                    else if (failed_paths_set.contains(file_metadata->getPath()))
-                        file_metadata->finalizeFailed(exception_message);
-                    else
-                        file_metadata->finalizeProcessed();
-                    break;
-                }
-                case FileState::ErrorOnRead:
-                {
-                    chassert(!exception_during_read.empty());
-                    file_metadata->finalizeFailed(exception_during_read);
-                    break;
-                }
-            }
-
-            appendLogElement(file_metadata, processed, commit_id, commit_time, transaction_start_time_);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            if (!finalize_exception)
-                finalize_exception = std::current_exception();
-        }
-    }
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
-}
-
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.
@@ -1906,7 +1853,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     if (table_mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
 
-    StoredObjects processed_objects;
+    UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty())
     {
@@ -1919,40 +1866,24 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 getName(),
                 files_metadata->getTableMetadata(),
                 after_processing_settings);
-            postProcessor.process(successful_objects, processed_objects);
+            postProcessor.process(successful_objects, post_processing_failed_paths);
 
-            if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
+            if (table_mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
             {
-                std::vector<String> failed_to_delete_paths =
-                    StorageObjectStorageQueue::getFailedPaths(successful_objects, processed_objects);
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
 
-                if (!failed_to_delete_paths.empty())
-                {
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, failed_to_delete_paths.size());
-                    const auto commit_id = StorageObjectStorageQueue::generateCommitID();
-                    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                    finalizeExclusiveCommitAfterDelete(
-                        failed_to_delete_paths,
-                        commit_id,
-                        commit_time,
-                        transaction_start_time,
-                        "Some objects still exist after delete");
+                const auto commit_id = StorageObjectStorageQueue::generateCommitID();
+                const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-                    for (const auto & object : successful_objects)
-                        if (std::ranges::find(failed_to_delete_paths, object.remote_path) == failed_to_delete_paths.end())
-                            files_metadata->releaseExclusiveProcessing(object.remote_path);
+                finalizeCommit(
+                    insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message, post_processing_failed_paths);
 
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Some objects still exist after delete: {}",
-                        failed_to_delete_paths);
-                }
+                throw Exception(
+                    ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
+                    "The after_processing action did not complete for {} object(s): {}",
+                    post_processing_failed_paths.size(), post_processing_failed_paths);
             }
         }
-
-        if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
-            for (const auto & object : successful_objects)
-                files_metadata->releaseExclusiveProcessing(object.remote_path);
     }
 
     if (table_mode != ObjectStorageQueueMode::EXCLUSIVE)

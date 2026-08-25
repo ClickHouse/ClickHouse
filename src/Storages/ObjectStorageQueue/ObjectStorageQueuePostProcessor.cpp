@@ -14,6 +14,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
+#include <base/scope_guard.h>
 
 #include <chrono>
 #include <thread>
@@ -78,8 +79,23 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
-void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::process(
+    const StoredObjects & objects,
+    UnorderedSetWithMemoryTracking<String> & failed_object_paths) const
 {
+    StoredObjects successful_objects;
+
+    SCOPE_EXIT({
+        if (objects.size() != successful_objects.size())
+        {
+            for (const auto & object : objects)
+                failed_object_paths.insert(object.remote_path);
+
+            for (const auto & object : successful_objects)
+                failed_object_paths.erase(object.remote_path);
+        }
+    });
+
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {

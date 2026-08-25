@@ -169,6 +169,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_IS_DROPPED;
+    extern const int S3_OBJECTS_WERE_NOT_POST_PROCESSED;
 }
 
 namespace
@@ -244,6 +245,14 @@ namespace
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
             }
+        }
+
+        if (!is_attach &&
+            queue_settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE &&
+            queue_settings[ObjectStorageQueueSetting::commit_on_select].changed)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `commit_on_select` makes no sense with mode='exclusive'.\n"
+                "Exclusive mode relies on `metadata_cache_size_elements` and `metadata_cache_size_bytes` for tracking file state.");
         }
     }
 
@@ -441,10 +450,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
     {
-        if (commit_on_select)
-            LOG_WARNING(log, "The setting `commit_on_select` makes no sense with mode='exclusive'.\n"
-              "Exclusive mode relies on `metadata_cache_size_elements` and `metadata_cache_size_bytes` for tracking file state.");
-
         // Always track file state in metadata cache.
         commit_on_select = true;
     }
@@ -1188,7 +1193,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
-    StoredObjects & processed_objects,
+    UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
     const ObjectStorageQueueMetadata & metadata) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
@@ -1207,7 +1212,7 @@ void StorageObjectStorageQueue::postProcess(
 
     if (post_processor)
     {
-        post_processor->process(successful_objects, processed_objects);
+        post_processor->process(successful_objects, post_processing_failed_paths);
     }
 }
 
@@ -1224,7 +1229,6 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    StoredObjects processed_objects;
 
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
@@ -1252,16 +1256,20 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
+
     if (!successful_objects.empty()
         && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects, processed_objects, metadata);
+        postProcess(successful_objects, post_processing_failed_paths, metadata);
     }
 
-    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+    /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
+    /// failed for a subset of the objects: those files must be finalized as failed, not processed.
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
     {
-        // Nothing is changed in zookeeper.
-        commitExclusive(metadata, successful_objects, processed_objects, sources, transaction_start_time);
+        ProfileEvents::increment(
+            ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
     }
     else
     {
@@ -1366,7 +1374,8 @@ void StorageObjectStorageQueue::commit(
         try
         {
             source->finalizeCommit(
-                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message,
+                post_processing_failed_paths);
         }
         catch (...)
         {
@@ -1376,81 +1385,20 @@ void StorageObjectStorageQueue::commit(
         }
     }
 
-    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
-    {
-        for (const auto & object : successful_objects)
-            metadata.releaseExclusiveProcessing(object.remote_path);
-    }
-
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
+
+    if (!post_processing_failed_paths.empty())
+        throw Exception(
+            ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
+            "The after_processing action did not complete for {} object(s): {}",
+            post_processing_failed_paths.size(), post_processing_failed_paths);
 
     LOG_DEBUG(
         log, "Successfully committed {} files with {} requests for {} sources with commit id {} "
         "(inserted rows: {}, files: {})",
         successful_objects.size(), requests.size(), sources.size(), commit_id, inserted_rows,
         collectRemotePaths(successful_objects));
-}
-
-std::vector<String> StorageObjectStorageQueue::getFailedPaths(
-    const StoredObjects& successful_objects,
-    const StoredObjects& processed_objects)
-{
-    std::vector<String> failed_paths;
-
-    UnorderedSetWithMemoryTracking<std::string_view> processed_keys_set;
-
-    for (const auto & object : processed_objects)
-        processed_keys_set.insert(object.remote_path);
-
-    for (const auto & object : successful_objects)
-        if (!processed_keys_set.contains(object.remote_path))
-        {
-            failed_paths.push_back(object.remote_path);
-        }
-
-    return failed_paths;
-}
-
-void StorageObjectStorageQueue::commitExclusive(
-    ObjectStorageQueueMetadata & metadata,
-    const StoredObjects& successful_objects,
-    const StoredObjects& processed_objects,
-    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    time_t transaction_start_time) const
-{
-    if (metadata.getTableMetadata().after_processing == ObjectStorageQueueAction::KEEP)
-    {
-        return;
-    }
-
-    std::vector<String> failed_to_delete_paths = getFailedPaths(successful_objects, processed_objects);
-
-    if (!failed_to_delete_paths.empty())
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, failed_to_delete_paths.size());
-        const auto commit_id = generateCommitID();
-        const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        for (auto & source : sources)
-            source->finalizeExclusiveCommitAfterDelete(
-                failed_to_delete_paths,
-                commit_id,
-                commit_time,
-                transaction_start_time,
-                "Some objects still exist after delete");
-
-        for (const auto & object : successful_objects)
-        {
-            if (std::ranges::find(failed_to_delete_paths, object.remote_path) == failed_to_delete_paths.end())
-                metadata.releaseExclusiveProcessing(object.remote_path);
-        }
-
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Some objects still exist after delete: {}",
-            failed_to_delete_paths);
-    }
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()

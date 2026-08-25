@@ -133,6 +133,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
+    /// processed files only in its own memory. If two servers read the same path, both will read
+    /// every file and every row will be inserted twice. So each server needs its own path.
+    /// But `ON CLUSTER` queries and `Replicated` databases send the same `CREATE` text to all
+    /// servers. The `{replica}` macro solves this: one query text, a different path per server.
+    /// The other modes need the opposite (the same path on all servers, because files in Keeper are
+    /// named by file path), so this code runs only for `exclusive` mode.
     if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
     {
         Macros::MacroExpansionInfo info;

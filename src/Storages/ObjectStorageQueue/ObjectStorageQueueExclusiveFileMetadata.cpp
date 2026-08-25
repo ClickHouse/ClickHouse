@@ -27,6 +27,19 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
     LOG_TRACE(log, "Exclusive mode {}", path);
 }
 
+ObjectStorageQueueExclusiveFileMetadata::~ObjectStorageQueueExclusiveFileMetadata()
+{
+    releaseProcessingGuard();
+}
+
+void ObjectStorageQueueExclusiveFileMetadata::releaseProcessingGuard()
+{
+    if (!holds_processing_guard)
+        return;
+    holds_processing_guard = false;
+    metadata.releaseExclusiveProcessing(path);
+}
+
 ObjectStorageQueueExclusiveFileMetadata::SetProcessingResponseIndexes
 ObjectStorageQueueExclusiveFileMetadata::prepareProcessingRequestsImpl(
     Coordination::Requests & requests, const std::string & /*processing_id*/)
@@ -49,7 +62,7 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 
         if (tries + 1 < max_loading_retries)
         {
-            metadata.releaseExclusiveProcessing(path);
+            releaseProcessingGuard();
             return;
         }
     }
@@ -61,6 +74,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 {
     if (!metadata.tryAcquireExclusiveProcessing(path))
         return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Processing};
+    holds_processing_guard = true;
 
     processor_info = getProcessorInfo(generateProcessingID());
 
@@ -71,7 +85,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
 void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
 {
-    metadata.releaseExclusiveProcessing(path);
+    releaseProcessingGuard();
 
     // Nothing is changed in zookeeper.
     LOG_TRACE(log, "Prepare {} reset processed request", path);
@@ -105,7 +119,8 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
         case FileStatus::State::Failed:
             failure_message = file_status->getException();
             return PathState::Failed;
-        default:                           return PathState::Unknown;
+        default:
+            return PathState::Unknown;
     }
 }
 

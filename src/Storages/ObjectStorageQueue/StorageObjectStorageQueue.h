@@ -111,10 +111,6 @@ public:
     /// Used for system.s3(azure/etc)_queue_log.
     static UInt64 generateCommitID();
 
-    static std::vector<String> getFailedPaths(
-        const StoredObjects& successful_objects,
-        const StoredObjects& processed_objects);
-
     static String chooseZooKeeperPath(
         const ContextPtr & context_,
         const StorageID & table_id,
@@ -220,7 +216,7 @@ private:
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,
-        StoredObjects & processed_objects,
+        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
         const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
@@ -231,13 +227,6 @@ private:
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
-    /// Commit processed files for EXCLUSIVE mode
-    void commitExclusive(
-        ObjectStorageQueueMetadata & metadata,
-        const StoredObjects& successful_objects,
-        const StoredObjects& processed_objects,
-        std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        time_t transaction_start_time) const;
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
