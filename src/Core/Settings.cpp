@@ -8692,7 +8692,7 @@ Control the minimum number of payload columns from the left side required for en
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
 Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
-    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 2.0, R"(
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
     \
