@@ -1,5 +1,4 @@
--- A constant `IN` set on the source side must be lifted onto the target side, where it prunes
--- the primary key just like a comparison does.
+-- A constant `IN` set is lifted onto the target, where it prunes the primary key like a comparison
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -18,8 +17,8 @@ SELECT count()
 FROM (SELECT * FROM lift_in_src WHERE k IN (10, 500)) AS s
 INNER JOIN lift_in_dst AS d ON s.k = d.k;
 
--- The lifted set prunes the target read: two granules instead of the whole table.
-SELECT countIf(explain LIKE '%Granules: 2/125%') > 0
+-- Both reads prune to two granules: the source by its own set, the target by the lifted one
+SELECT countIf(explain LIKE '%Granules: 2/125%') = 2
 FROM
 (
     EXPLAIN PLAN indexes = 1

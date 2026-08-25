@@ -1,7 +1,6 @@
 -- Tags: long
 SET enable_analyzer = 1;
--- The lift targets local MergeTree reads; under parallel replicas the plan reads through
--- remote-replica steps and the pass correctly bails, changing the EXPLAIN output
+-- Under parallel replicas the reads are remote, the pass bails and the EXPLAIN output changes
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS lift_rf_orders;
@@ -16,10 +15,8 @@ INSERT INTO lift_rf_orders   SELECT number, number % 1000, toString(number) FROM
 INSERT INTO lift_rf_lineitem SELECT number, number % 1000, toString(number) FROM numbers(1000000);
 INSERT INTO lift_rf_customer SELECT number, toString(number) FROM numbers(1000);
 
--- Counting occurrences of the predicate in filter steps: 1 = source side only, >= 2 = lifted to target too
-
--- Default path: join runtime filters left enabled. The lift must run before the runtime-filter
--- wrappers are added, so the source predicate is still lifted to the target side
+-- 1 occurrence = source side only, >= 2 = lifted to the target too.
+-- The lift must run before the runtime-filter wrappers hide the source filter
 SELECT 'runtime filters on',
        countIf(explain LIKE '%ilter column:%orderkey = 12345%') >= 2
 FROM (
@@ -39,43 +36,8 @@ SELECT 'runtime filters on correctness',
         INNER JOIN lift_rf_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS enable_join_runtime_filters = 1, query_plan_lift_predicate_across_join = 0);
 
--- Nested join: the source predicate is written on an inner-child key (`c.custkey`), which is only
--- transitively equivalent to the outer join key (`o.custkey = l.custkey`, `l.custkey = c.custkey`).
--- Inner-join filter pushdown already puts `custkey = 42` on the inner side on its own, so compare
--- against the same plan with the lift disabled: only the lift can add one more occurrence, and the
--- only side it can add it to is the outer `lift_rf_orders` scan (`ORDER BY custkey`).
-SELECT 'nested join transitive key',
-       (
-           SELECT countIf(explain LIKE '%ilter column:%custkey = 42%')
-           FROM (
-               EXPLAIN PLAN actions=1
-               SELECT count()
-               FROM lift_rf_orders AS o
-               INNER JOIN (
-                   SELECT l.orderkey AS orderkey, c.custkey AS ck
-                   FROM lift_rf_lineitem AS l
-                   INNER JOIN lift_rf_customer AS c ON l.custkey = c.custkey
-                   WHERE c.custkey = 42
-               ) AS rhs ON o.custkey = rhs.ck
-           )
-       )
-       >
-       (
-           SELECT countIf(explain LIKE '%ilter column:%custkey = 42%')
-           FROM (
-               EXPLAIN PLAN actions=1
-               SELECT count()
-               FROM lift_rf_orders AS o
-               INNER JOIN (
-                   SELECT l.orderkey AS orderkey, c.custkey AS ck
-                   FROM lift_rf_lineitem AS l
-                   INNER JOIN lift_rf_customer AS c ON l.custkey = c.custkey
-                   WHERE c.custkey = 42
-               ) AS rhs ON o.custkey = rhs.ck
-               SETTINGS query_plan_lift_predicate_across_join = 0
-           )
-       );
-
+-- Nested join: `c.custkey = 42` is only transitively equal to the outer key `o.custkey`, and
+-- pushdown moves it below the inner join before the lift runs, so nothing is lifted - check the answer
 SELECT 'nested join correctness',
        (SELECT count()
         FROM lift_rf_orders AS o

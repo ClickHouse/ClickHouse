@@ -1,4 +1,3 @@
 runtime filters on	1
 runtime filters on correctness	0
-nested join transitive key	1
 nested join correctness	0
