@@ -170,8 +170,10 @@ StorageObjectStorage::StorageObjectStorage(
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
-
+    const bool catalog_manages_created_location
+        = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
+    const bool do_lazy_init
+        = (lazy_init || catalog_manages_created_location) && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
         "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
@@ -389,6 +391,18 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+}
+
+size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
+    /// storage is listed, which is too expensive at planning time, so report the request as is.
+    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
+        || configuration->getPathForRead().hasGlobs())
+        return num_streams;
+
+    /// A static list of keys: the read creates at most one source per key.
+    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
