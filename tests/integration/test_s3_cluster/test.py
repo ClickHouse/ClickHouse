@@ -163,7 +163,8 @@ def started_cluster():
             "c2.s0_0_1",
             main_configs=["configs/cluster.xml", "configs/named_collections.xml", "configs/hidden_clusters.xml"],
             user_configs=["configs/users.xml"],
-            macros={"replica": "replica2", "shard": "shard1"},
+            # Must be unique per instance: the database disk prefix is .../test-{shard}|{replica}
+            macros={"replica": "replica2_c2", "shard": "shard1"},
             with_zookeeper=True,
             stay_alive=True,
         )
