@@ -10,14 +10,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is separate from the Memory one - a post-collecting task writing binary strings from Keeper
 # instead of a native block stream - so it needs its own arm.
 #
-# Expansion is a per-frame property, so a small table shows it. Row count also sets the number
-# of single-key Keeper writes, which dominate this test's runtime.
+# Expansion is a per-frame property, so a small table shows it. Every phase here costs one
+# Keeper round trip per row - insert, backup, restore, drop - so the row count alone sets the
+# runtime, and the ratio the oracle reads is the same at any of them.
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test SYNC;
 CREATE TABLE test (key UInt64, value String)
 ENGINE = KeeperMap('/' || currentDatabase() || '/test04802') PRIMARY KEY(key);
-INSERT INTO test SELECT number, 'Hello, world' FROM numbers(2000);
+INSERT INTO test SELECT number, 'Hello, world' FROM numbers(200);
 "
 
 function check_backup()
