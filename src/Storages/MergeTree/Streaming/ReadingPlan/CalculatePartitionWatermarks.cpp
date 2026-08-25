@@ -22,9 +22,10 @@ public:
         SharedHeader output_header_,
         std::string event_time_column_,
         ActionsDAG watermark_expression_,
+        Field initial_watermark_,
         ContextPtr context_,
         String partition_id_)
-        : CalculateWatermarksTransform(std::move(input_header_), std::move(output_header_), std::move(event_time_column_), std::move(watermark_expression_), std::move(context_))
+        : CalculateWatermarksTransform(std::move(input_header_), std::move(output_header_), std::move(event_time_column_), std::move(watermark_expression_), std::move(initial_watermark_), std::move(context_))
         , partition_id(std::move(partition_id_))
     {
     }
@@ -47,8 +48,8 @@ private:
 }
 
 CalculatePartitionWatermarksStep::CalculatePartitionWatermarksStep(
-    SharedHeader input_header_, WatermarkSettingsPtr watermark_, ContextPtr context_, String partition_id_)
-    : CalculateWatermarksStep(std::move(input_header_), std::move(watermark_), std::move(context_))
+    SharedHeader input_header_, WatermarkSettingsPtr watermark_settings_, Field initial_watermark_, ContextPtr context_, String partition_id_)
+    : CalculateWatermarksStep(std::move(input_header_), std::move(watermark_settings_), std::move(initial_watermark_), std::move(context_))
     , partition_id(std::move(partition_id_))
 {
 }
@@ -57,14 +58,14 @@ void CalculatePartitionWatermarksStep::transformPipeline(QueryPipelineBuilder & 
 {
     pipeline.addSimpleTransform([&] (const SharedHeader & header)
     {
-        auto watermark_expression = buildWatermarkActionsDAG(watermark->expression, *input_headers.front(), context);
-        return std::make_shared<CalculatePartitionWatermarksTransform>(header, getOutputHeader(), watermark->column, std::move(watermark_expression), context, partition_id);
+        auto watermark_expression = buildWatermarkActionsDAG(watermark_settings->expression, *input_headers.front(), context);
+        return std::make_shared<CalculatePartitionWatermarksTransform>(header, getOutputHeader(), watermark_settings->column, std::move(watermark_expression), initial_watermark, context, partition_id);
     });
 }
 
 QueryPlanStepPtr CalculatePartitionWatermarksStep::clone() const
 {
-    return std::make_unique<CalculatePartitionWatermarksStep>(input_headers.front(), watermark, context, partition_id);
+    return std::make_unique<CalculatePartitionWatermarksStep>(input_headers.front(), watermark_settings, initial_watermark, context, partition_id);
 }
 
 }

@@ -14,6 +14,8 @@
 
 #include <base/defines.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -28,10 +30,12 @@ CalculateWatermarksTransform::CalculateWatermarksTransform(
     SharedHeader output_header_,
     std::string event_time_column_,
     ActionsDAG watermark_expression_,
+    Field initial_watermark_,
     ContextPtr context_)
     : IInflatingTransform(std::move(input_header_), std::move(output_header_))
     , event_time_column(std::move(event_time_column_))
     , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
+    , watermark(std::move(initial_watermark_))
 {
 }
 
@@ -59,13 +63,23 @@ void CalculateWatermarksTransform::consume(Chunk chunk)
     Field max_value;
     watermark_col->getExtremes(min_value, max_value, 0, num_rows);
 
-    transformChunk(chunk, max_value);
+    watermark = std::max(watermark, max_value);
+
+    transformChunk(chunk, watermark);
     pending_chunks.push(std::move(chunk));
-    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
+    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), watermark));
 }
 
 void CalculateWatermarksTransform::transformChunk(Chunk &, const Field &)
 {
+}
+
+Chunk CalculateWatermarksTransform::getRemaining()
+{
+    if (watermark.isNull())
+        return {};
+
+    return WatermarkMarker::create(getOutputPort().getHeader(), watermark);
 }
 
 bool CalculateWatermarksTransform::canGenerate()

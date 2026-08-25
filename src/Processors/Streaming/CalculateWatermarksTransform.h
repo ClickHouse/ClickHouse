@@ -22,6 +22,7 @@ public:
         SharedHeader output_header_,
         std::string event_time_column_,
         ActionsDAG watermark_expression_,
+        Field initial_watermark_,
         ContextPtr context_);
 
     String getName() const override { return "CalculateWatermarks"; }
@@ -29,6 +30,7 @@ public:
     void consume(Chunk chunk) override;
     bool canGenerate() override;
     Chunk generate() override;
+    Chunk getRemaining() override;
 
 protected:
     virtual void transformChunk(Chunk & chunk, const Field & watermark);
@@ -37,6 +39,7 @@ private:
     const std::string event_time_column;
     const ExpressionActionsPtr watermark_expression;
 
+    Field watermark;
     std::queue<Chunk> pending_chunks;
 };
 

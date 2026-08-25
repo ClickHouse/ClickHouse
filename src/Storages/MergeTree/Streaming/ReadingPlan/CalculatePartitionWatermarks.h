@@ -19,7 +19,7 @@ struct PartitionWatermarkInfo : public ChunkInfoCloneable<PartitionWatermarkInfo
 class CalculatePartitionWatermarksStep : public CalculateWatermarksStep
 {
 public:
-    CalculatePartitionWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_, ContextPtr context_, String partition_id_);
+    CalculatePartitionWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_settings_, Field initial_watermark_, ContextPtr context_, String partition_id_);
 
     String getName() const override { return "CalculatePartitionWatermarks"; }
 

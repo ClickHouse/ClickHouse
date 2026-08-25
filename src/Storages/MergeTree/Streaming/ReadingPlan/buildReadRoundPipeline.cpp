@@ -19,7 +19,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
 
-#include <Processors/QueryPlan/Streaming/RaiseWatermarksStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -139,10 +138,7 @@ Pipe buildPartitionReadingPipeline(
 
     /// Add watermark calculation step.
     if (stream_settings.watermark)
-    {
-        plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context, partition_id));
-        plan->addStep(std::make_unique<RaiseWatermarksStep>(plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
-    }
+        plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context, partition_id));
 
     /// Add row policy filter built from the outer query analysis.
     if (row_level_filter)
