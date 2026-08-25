@@ -819,7 +819,11 @@ public:
             }
         }
 
-        if (rhs.wide)
+        /// An incomplete state must not carry a wide set at all (see `markWideIncomplete`), so the
+        /// elements of `rhs.wide` are not merged - otherwise an empty wide set would be allocated
+        /// here (`wideInsert` refuses to fill it) and the state would serialize with both flag bits
+        /// set, which the format forbids.
+        if (rhs.wide && !wide_incomplete)
         {
             if (rhs.wide->skip_degree > wideSkipDegree())
             {
@@ -904,8 +908,10 @@ public:
         {
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
-            if (flags & ~3)
-                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
+            if ((flags & ~3) || (flags & 3) == 3)
+                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                    "Cannot read UniquesHashSet: invalid flags {}: the defined bits are mutually exclusive and no other bit is allowed",
+                    static_cast<size_t>(flags));
             has_wide = flags & 1;
             wide_incomplete = flags & 2;
         }
@@ -1010,8 +1016,10 @@ public:
         {
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
-            if (flags & ~3)
-                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
+            if ((flags & ~3) || (flags & 3) == 3)
+                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                    "Cannot read UniquesHashSet: invalid flags {}: the defined bits are mutually exclusive and no other bit is allowed",
+                    static_cast<size_t>(flags));
             has_wide = flags & 1;
         }
 

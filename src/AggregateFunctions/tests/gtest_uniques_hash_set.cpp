@@ -274,6 +274,16 @@ TEST(UniquesHashSet, MergingLegacyStateDropsTheWideSet)
     clean.merge(deserialize(craftState(0, {}, true), true));
     EXPECT_FALSE(clean.isWideIncomplete());
     EXPECT_EQ(clean.wideSetSize(), wide_values.size());
+
+    /// Nor does a later merge with a clean wide state resurrect the sample: an incomplete state
+    /// stays without a wide set even when the other side's thinning is coarser than the initial
+    /// one (this used to allocate an empty wide set that nothing could fill, making the state
+    /// serialize with both flag bits - which the format defines as mutually exclusive).
+    with_wide.merge(clean);
+    EXPECT_TRUE(with_wide.isWideIncomplete());
+    EXPECT_EQ(with_wide.wideSetSize(), 0u);
+    serialized = serialize(with_wide, /*use_legacy_format=*/ false);
+    EXPECT_EQ(serialized[0], 2);
 }
 
 TEST(UniquesHashSet, MergingLegacyStateDoesNotLoseItsElements)
@@ -340,6 +350,16 @@ TEST(UniquesHashSet, RejectsCorruptedStates)
         /// Unknown flags.
         WriteBufferFromOwnString out;
         writeBinaryLittleEndian(static_cast<UInt8>(4), out);
+        std::string data = out.str();
+        ReadBufferFromString in(data);
+        TestSet set;
+        EXPECT_THROW(set.read(in, /*use_legacy_format=*/ false), Poco::Exception);
+    }
+    {
+        /// The two defined flag bits are mutually exclusive: a state either carries a wide set
+        /// or says that its wide sample is incomplete, never both.
+        WriteBufferFromOwnString out;
+        writeBinaryLittleEndian(static_cast<UInt8>(3), out);
         std::string data = out.str();
         ReadBufferFromString in(data);
         TestSet set;
