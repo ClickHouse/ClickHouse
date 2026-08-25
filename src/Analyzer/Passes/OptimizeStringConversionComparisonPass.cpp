@@ -52,6 +52,21 @@ bool isQuotedInsideCompositeTypes(const DataTypePtr & type)
     return which.isDateOrDate32() || which.isDateTimeOrDateTime64() || which.isTimeOrTime64() || which.isUUID();
 }
 
+/// Whether the type's quoted-and-escaped rendering inside a composite type (Array, Tuple, Map) cannot be reasoned
+/// about: `Dynamic`, `Variant` and `JSON` (`Object`) can hold an arbitrary underlying value at runtime (including
+/// a String), which goes through the same quoting and escaping as a top-level String element (see
+/// `SerializationDynamic`/`SerializationVariant`), but unlike a statically-typed String element we have no way to
+/// tell in advance whether a given needle could only match the escaped rendering and not the raw value.
+bool hasUnknownQuotingSemantics(const DataTypePtr & type)
+{
+    DataTypePtr unwrapped = removeLowCardinality(type);
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped.get()))
+        unwrapped = nullable->getNestedType();
+
+    WhichDataType which(unwrapped);
+    return which.isDynamic() || which.isVariant() || which.isObject();
+}
+
 /** Compute the set of characters that may appear in the text representation (`toString` / `CAST(..., 'String')`)
   * of values of the given type. Returns std::nullopt if the type permits arbitrary characters (e.g. String, Enum)
   * or its representation is not analyzed (e.g. Bool, whose representation is configurable by settings).
@@ -204,8 +219,11 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
 
 /** Extract the characters of the string that a LIKE pattern requires to be literally present in a matching string.
   * Wildcards `%` and `_` are skipped, backslash-escaped characters are taken literally.
+  *
+  * Returns std::nullopt if the pattern is invalid, i.e. it ends with an unescaped trailing backslash: such a pattern
+  * makes `likePatternToRegexp` raise `CANNOT_PARSE_ESCAPE_SEQUENCE` at execution time, so it must not be folded here.
   */
-String extractLikeRequiredChars(std::string_view pattern)
+std::optional<String> extractLikeRequiredChars(std::string_view pattern)
 {
     String result;
     for (size_t i = 0; i < pattern.size(); ++i)
@@ -213,10 +231,9 @@ String extractLikeRequiredChars(std::string_view pattern)
         char c = pattern[i];
         if (c == '\\')
         {
-            if (i + 1 < pattern.size())
-                result += pattern[++i];
-            else
-                result += c;
+            if (i + 1 >= pattern.size())
+                return std::nullopt;
+            result += pattern[++i];
         }
         else if (c != '%' && c != '_')
         {
@@ -382,7 +399,13 @@ public:
         {
             String required_chars;
             if (op == Op::Like || op == Op::ILike)
-                required_chars = extractLikeRequiredChars(constant_string);
+            {
+                auto required_chars_opt = extractLikeRequiredChars(constant_string);
+                /// An invalid pattern (trailing unescaped backslash) must keep raising its runtime exception.
+                if (!required_chars_opt)
+                    return;
+                required_chars = std::move(*required_chars_opt);
+            }
             else
                 required_chars = constant_string;
 
@@ -494,15 +517,21 @@ private:
             return;
 
         /// NULL elements would change the result of the whole disjunction from false to NULL.
+        /// Dynamic/Variant/JSON elements are excluded because we cannot tell in advance whether a needle can only
+        /// match their quoted-and-escaped rendering inside the tuple and not their runtime value (see
+        /// `hasUnknownQuotingSemantics`).
         for (const auto & element_type : tuple_type->getElements())
-            if (removeLowCardinality(element_type)->isNullable())
+            if (removeLowCardinality(element_type)->isNullable() || hasUnknownQuotingSemantics(element_type))
                 return;
 
         auto needle = tryExtractEnclosedNeedle(pattern);
         if (!needle)
             return;
 
-        const String unescaped_needle = extractLikeRequiredChars(*needle);
+        auto unescaped_needle_opt = extractLikeRequiredChars(*needle);
+        if (!unescaped_needle_opt)
+            return;
+        const String & unescaped_needle = *unescaped_needle_opt;
         for (char c : unescaped_needle)
         {
             if (c == '(' || c == ')' || c == ',' || c == '\'' || c == '\\' || static_cast<UInt8>(c) < 0x20)
