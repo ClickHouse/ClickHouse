@@ -21,6 +21,8 @@ To restrict access to your ClickHouse Cloud services exclusively through AWS Pri
 
 ClickHouse Cloud supports [cross-region PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region) for services hosted in the following AWS regions:
 
+The table covers service-hosting regions only. Consumer interface VPC endpoint regions use a separate allowlist; for example, `mx-central-1` is an allowed consumer region even though services hosted there can't enable cross-region access.
+
 | Region code | Region name |
 |-------------|-------------|
 | `af-south-1` | Africa (Cape Town) |
