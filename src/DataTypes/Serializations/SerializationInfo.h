@@ -164,9 +164,7 @@ public:
     const MissingColumns & getMissingColumns() const { return missing_columns; }
     void setMissingColumns(MissingColumns columns);
 
-    /// Convenience: check whether a column name is recorded as missing.
     bool isMissingColumn(const String & name) const;
-    /// Get the MissingColumnInfo for a column (nullptr if not found).
     const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);

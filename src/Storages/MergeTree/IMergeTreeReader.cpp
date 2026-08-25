@@ -188,14 +188,7 @@ void IMergeTreeReader::fillMissingColumns(
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
-            /// The missing-columns marker is recorded under the physical column
-            /// names that existed when the part was written. A later on-the-fly
-            /// ALTER RENAME COLUMN remaps reads back to the old physical name
-            /// (see getStorageAndSubcolumnNameInPart), so translate the marker
-            /// through the same rename mapping before fillMissingColumns consults
-            /// it by the current requested name. Otherwise a renamed missing
-            /// column with a DEFAULT expression would read the expression instead
-            /// of the frozen default.
+            /// Markers use part-time physical names; reads expose current names.
             const auto & part_missing_columns = data_part_info_for_read->getSerializationInfos().getMissingColumns();
             NameSet missing_column_names;
             if (!part_missing_columns.empty())
@@ -207,17 +200,7 @@ void IMergeTreeReader::fillMissingColumns(
                     if (alter_conversions->isColumnRenamed(name_in_part))
                         name_in_part = alter_conversions->getColumnOldName(name_in_part);
 
-                    /// A pending DROP COLUMN (including CLEAR COLUMN, which is a
-                    /// DROP_COLUMN with `clear`) makes the old physical data stale.
-                    /// The missing marker describes that stale data, so it must not
-                    /// be trusted: e.g. after DROP COLUMN `b` then ADD COLUMN `b`
-                    /// ... DEFAULT 999, the newly added `b` must read 999, not the
-                    /// frozen default. Fall through to normal missing-column handling
-                    /// (which evaluates the DEFAULT expression) in that case.
-                    /// AlterConversions records the drop under the name that was
-                    /// current at the time of the drop (for RENAME b TO c, DROP c
-                    /// that is the renamed name), so check both the physical name
-                    /// and the currently requested name.
+                    /// DROP/CLEAR invalidates both the physical and current name.
                     if (alter_conversions->isColumnDropped(name_in_part)
                         || alter_conversions->isColumnDropped(column.getNameInStorage()))
                     {

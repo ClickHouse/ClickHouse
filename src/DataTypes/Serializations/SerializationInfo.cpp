@@ -737,11 +737,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             auto default_str = elem_object->getValue<String>(KEY_MISSING_COL_DEFAULT);
             if (default_str == VALUE_EXPRESSION)
             {
-                /// Expression markers are reserved for Phase 2 (issue #92475:
-                /// ALTER MODIFY COLUMN ... DEFAULT freezes old expression).
-                /// Until the read path implements expression evaluation, reject
-                /// parts that carry them so we fail closed rather than silently
-                /// returning wrong data.
+                /// Expression markers are not supported yet; reject them explicitly.
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "missing_columns entry for '{}' has default='expression' which is not yet supported",
                     mc.name);

@@ -437,20 +437,12 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// A column that exists only as a missing-columns marker has no
-                /// data files, but DROP COLUMN must still forget the marker;
-                /// otherwise a column re-added under the same name would read the
-                /// stale frozen default. The drop is recorded under the current
-                /// name, while the marker keeps the original physical name, so
-                /// resolve through the rename mapping before checking the marker.
+                /// Marker-only DROP/CLEAR must still update metadata and dependencies.
                 String marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     if (command.clear)
                     {
-                        /// CLEAR must reach the interpreter even without physical files so
-                        /// dependent projections and indices are rebuilt from the cleared
-                        /// value (the current DEFAULT), not from the stale frozen marker.
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
                     }
@@ -487,9 +479,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (part->getSerializationInfos().isMissingColumn(rename_from))
             {
-                /// A missing column has no physical data but its marker must track
-                /// the rename. Record the RENAME_COLUMN so getColumnsForNewDataPart
-                /// carries the marker under the new name.
+                /// Keep marker metadata aligned with the rename.
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
@@ -499,18 +489,7 @@ static void splitAndModifyMutationCommands(
             }
         }
 
-        /// When the source part is non-wide-or-non-full (Compact or packed), `MutateFromLogEntryTask::prepare`
-        /// force-recalculates ALL pre-existing skip indices on the part (see `need_recalculate` in `prepare`).
-        /// The mutation pipeline must read every column required by those indices, even when the current
-        /// mutation does not explicitly materialize them. Otherwise force-recalculation produces a block
-        /// that is missing the column and we throw `NOT_FOUND_COLUMN_IN_BLOCK`. This is the regression
-        /// reported in issue #104872 for tables that contain a skip index over a column that is in the
-        /// table metadata but absent from the part on disk (for example, a part created in 25.8 where
-        /// `MATERIALIZE INDEX` did not yet write the index's columns to the part).
-        ///
-        /// The original `MATERIALIZE INDEX` branch above only adds columns for the explicitly-materialized
-        /// index, so a pre-existing index over a different absent column is missed. Walk all indices that
-        /// the source part has (and that are not being dropped) and add their absent columns here.
+        /// Packed parts rebuild stored indices/projections and must read absent dependencies.
         NameSet indices_being_dropped;
         for (const auto & command : commands)
             if (command.type == MutationCommand::Type::DROP_INDEX)
@@ -531,8 +510,6 @@ static void splitAndModifyMutationCommands(
             }
         }
 
-        /// Same logic for projections: a non-full-storage (packed) source part also force-recalculates
-        /// every pre-existing projection in `prepare`. Their required columns must be in the read set.
         NameSet projections_being_dropped;
         for (const auto & command : commands)
             if (command.type == MutationCommand::Type::DROP_PROJECTION)
@@ -710,8 +687,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// A marker-only column has no files, but DROP and CLEAR still
-                /// remove its stored logical value from the resulting part.
+                /// Marker-only DROP/CLEAR has the same logical effect as physical data.
                 String marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
@@ -837,9 +813,7 @@ getColumnsForNewDataPart(
                 }
                 else if (serialization_infos.isMissingColumn(command.column_name))
                 {
-                    /// A column marked as missing on INSERT has no data files and is
-                    /// absent from part_columns, but its missing-columns marker must
-                    /// follow the rename so the read path keeps filling it correctly.
+                    /// Marker metadata follows physical renames.
                     renamed_columns_to_from.emplace(command.rename_to, command.column_name);
                     renamed_columns_from_to.emplace(command.column_name, command.rename_to);
                 }
@@ -857,13 +831,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    /// DROP COLUMN of a column that exists only as a missing-columns marker was
-    /// skipped by the loop above (the column is absent from part_columns), but the
-    /// marker must still be forgotten; otherwise a column re-added under the same
-    /// name in a newer metadata version would read the stale frozen default. The
-    /// drop is recorded under the current name while the marker keeps the original
-    /// physical name, so resolve it in a second pass, after the whole rename chain
-    /// is known, regardless of the relative order of the commands in the lists.
+    /// Resolve marker-only drops after the complete rename chain is known.
     for (const auto & command : all_commands)
     {
         if (command.type != MutationCommand::DROP_COLUMN || part_columns.has(command.column_name))
@@ -1000,14 +968,7 @@ getColumnsForNewDataPart(
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
-    /// Carry over the missing-columns markers for columns that stay absent from
-    /// the new part. A missing column has no data files in the source part; if
-    /// this mutation does not materialize it (it is not present in updated_header),
-    /// it remains missing and the read path must keep filling it with the frozen
-    /// default. Without this, a column that was marked missing on INSERT and later
-    /// gained a DEFAULT expression via ALTER MODIFY COLUMN would read the new
-    /// default expression instead of the frozen value after an unrelated mutation
-    /// silently dropped the marker.
+    /// Preserve markers for columns that remain absent after this mutation.
     {
         SerializationInfoByName::MissingColumns new_missing;
         for (const auto & mc : serialization_infos.getMissingColumns())
@@ -1015,11 +976,8 @@ getColumnsForNewDataPart(
             auto it = renamed_columns_from_to.find(mc.name);
             auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
-            /// Column was dropped or is no longer part of the schema.
             if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
                 continue;
-            /// Column is materialized by this mutation (present in updated_header),
-            /// so it is written in full and is no longer missing.
             if (updated_header.has(new_name))
                 continue;
 

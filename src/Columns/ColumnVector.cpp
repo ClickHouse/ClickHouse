@@ -1455,10 +1455,7 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
 template <typename T>
 bool ColumnVector<T>::hasOnlyTypeDefaults() const
 {
-    /// For floating-point types, -0.0 has non-zero bit representation but
-    /// compares equal to 0.0 via isDefaultAt. memoryIsZero is therefore
-    /// conservative: it may return false when -0.0 is present, which is
-    /// safe (we simply won't skip the column).
+    /// A conservative bit check intentionally keeps -0.0 columns physical.
     return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
