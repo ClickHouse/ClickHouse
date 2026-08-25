@@ -203,8 +203,10 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     same contract CreateRelease's `PackageDownloader` produces), so this gate
     cannot drift from what CreateRelease actually downloads."""
     version = _release_version_for_commit(commit_sha)
+    with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
+    print(f"   signed macOS artifacts expected: {with_signed_macos}")
     return release_packages.release_build_artifacts_ready(
-        S3Helper(), release_branch, commit_sha, version
+        S3Helper(), release_branch, commit_sha, version, with_signed_macos
     )
 
 
