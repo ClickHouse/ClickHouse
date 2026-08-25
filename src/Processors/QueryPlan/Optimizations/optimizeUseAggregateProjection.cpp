@@ -661,6 +661,11 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
 
         if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
         {
+            /// Only a bare `count()`: `count(expr)` must still evaluate the argument
+            /// (it can throw), even when the result would be the same row count.
+            if (!aggregate.argument_names.empty())
+                return {};
+
             result.push_back({.kind = StatisticsMinMaxAggregate::Kind::Count, .aggregate = &aggregate});
             continue;
         }
@@ -1447,6 +1452,8 @@ std::optional<String> optimizeUseAggregateProjections(
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
         if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
     }
     else if (best_candidate == nullptr)
     {
