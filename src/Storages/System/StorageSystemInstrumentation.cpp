@@ -118,6 +118,16 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "instrumentation",
     .description = R"DOCS_MD(
 Contains the instrumentation points using LLVM's XRay feature.
+
+<Info>
+**Availability**
+
+`system.instrumentation` is present only in ClickHouse builds compiled with LLVM XRay support (`USE_XRAY`). On builds without it, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. You can check whether your build has it enabled with:
+
+```sql
+SELECT value FROM system.build_options WHERE name = 'USE_XRAY';
+```
+</Info>
 )DOCS_MD",
     .get_columns = getInstrumentationColumnsDescription,
     .examples = R"DOCS_MD(
