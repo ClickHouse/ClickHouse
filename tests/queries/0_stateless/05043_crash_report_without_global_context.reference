@@ -1,4 +1,8 @@
-crash handler ran
-crash report attempted
-crash report completed
-no null dereference
+keeper: crash handler ran
+keeper: crash report attempted
+keeper: crash report completed
+keeper: no null dereference
+server: crash handler ran
+server: crash report attempted
+server: crash report completed
+server: no null dereference
