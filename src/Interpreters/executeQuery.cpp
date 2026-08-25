@@ -2268,14 +2268,12 @@ static BlockIO executeQueryImpl(
     const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     if (internal || is_secondary_query)
         max_query_size = 0;
-    /// The text of a secondary query is not user input: the initiator parsed and validated the query, and what
-    /// arrives here is that AST formatted back to SQL. Applying the caller's parser limits to it would only
-    /// reject on the shard what the initiator already accepted - which is how a server-owned query lifted above
-    /// the caller's limits (a `CREATE HANDLER` / `<predefined_query_handler>` query) used to break as soon as it
-    /// fanned out over `Distributed` / `cluster()`. Nothing is weakened by this: the limits a shard would apply
-    /// are the ones the initiator sent, so they never protect the shard from its initiator; runaway recursion is
-    /// still stopped by `checkStackSize`.
-    const bool parse_without_limits = parse_server_owned_query_without_limits || is_secondary_query;
+    /// `max_parser_depth` / `max_parser_backtracks` are NOT lifted for a secondary query here: `query_kind`
+    /// arrives over the wire and can be spoofed by any native client, so keying the parser limits off it would
+    /// turn a handler-specific lift into a generic bypass. Instead, the initiator of a server-owned query
+    /// propagates the lifted limits to the shards through the ordinary settings channel (see below, after the
+    /// query-construction settings are applied), which the receiving node clamps to its own constraints.
+    const bool parse_without_limits = parse_server_owned_query_without_limits;
     size_t max_query_size_for_query_text = parse_without_limits ? 0 : max_query_size;
     size_t max_parser_depth_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_depth];
     size_t max_parser_backtracks_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_backtracks];
@@ -2756,6 +2754,21 @@ static BlockIO executeQueryImpl(
             {
                 ReplaceQueryParameterVisitor visitor(query_parameters);
                 visitor.visit(out_ast);
+            }
+
+            /// A server-owned query lifted above the caller's parser limits must survive being formatted
+            /// back to SQL and re-parsed on another node: a `Distributed` / `remote()` fan-out sends the
+            /// AST as text, and the shard parses it with the settings this query context sends along.
+            /// Propagate the lifted limits through those settings — the trusted, initiator-authenticated
+            /// channel that the receiving node clamps to its own constraints (`TCPHandler` applies
+            /// `clampToSettingsConstraints` to a secondary query's passed settings), so a node that pins
+            /// the parser limits keeps them pinned. This must happen only after the query-construction
+            /// snippets above are parsed: they come with the *request* (`filter` / `select` / `order` /
+            /// `page`), not with the stored handler query, so they stay under the caller's limits.
+            if (parse_server_owned_query_without_limits)
+            {
+                context->setSetting("max_parser_depth", UInt64(0));
+                context->setSetting("max_parser_backtracks", UInt64(0));
             }
 
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
