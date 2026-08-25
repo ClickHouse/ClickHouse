@@ -21,7 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <base/unaligned.h>

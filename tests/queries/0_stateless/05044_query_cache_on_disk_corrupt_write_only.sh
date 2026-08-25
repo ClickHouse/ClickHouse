@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CACHE_DIR="${CLICKHOUSE_TMP}/05037_cache_${CLICKHOUSE_DATABASE}"
-CONFIG_FILE="${CLICKHOUSE_TMP}/05037_config_${CLICKHOUSE_DATABASE}.yaml"
+CACHE_DIR="${CLICKHOUSE_TMP}/05044_cache_${CLICKHOUSE_DATABASE}"
+CONFIG_FILE="${CLICKHOUSE_TMP}/05044_config_${CLICKHOUSE_DATABASE}.yaml"
 rm -rf "${CACHE_DIR}"
 
 cat > "${CONFIG_FILE}" <<EOF
