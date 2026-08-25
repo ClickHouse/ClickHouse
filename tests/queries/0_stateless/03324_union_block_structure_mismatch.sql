@@ -1,5 +1,11 @@
 SET optimize_use_projections = 1;
 
+-- Reading over parallel replicas both makes normal projections unsupported (unless
+-- `parallel_replicas_local_plan` is on and aggregation in order is off, and the runner randomizes
+-- both) and wraps the plan in a second `Union` over `ReadFromRemoteParallelReplicas`, which the
+-- `Union` count at the end would see. Keep the read local.
+SET enable_parallel_replicas = 0;
+
 -- Test for "Block structure mismatch in UnionStep" bug
 -- When projection optimization creates a Union between projection and non-projection reads,
 -- the branches may have different headers (e.g., due to different query DAGs being applied).

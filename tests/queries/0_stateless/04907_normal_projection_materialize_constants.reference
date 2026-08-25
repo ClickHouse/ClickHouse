@@ -1,5 +1,9 @@
 -- { echo ON }
 SET optimize_use_projections = 1;
+-- Normal projections are unsupported when reading over parallel replicas unless
+-- `parallel_replicas_local_plan` is on and aggregation in order is off, and the runner randomizes
+-- both. The assertions below require the projection to be selected, so keep the read local.
+SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS normal_projection_materialize_constants;
 -- The `PREWHERE` condition selects the all-parts normal-projection rewrite. The rewrite must
 -- compare the projection output with the regular read's header and keep this compatible
