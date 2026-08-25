@@ -187,11 +187,11 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr);
+        readDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        readDateTimeAsNumber(x, istr);
+        readDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -208,12 +208,12 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr))
+        if (!tryReadDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
 
@@ -240,11 +240,11 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr);
+        readDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
     else
     {
-        readDateTimeAsNumber(x, istr);
+        readDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -260,12 +260,12 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr))
+        if (!tryReadDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
     else
     {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
             return false;
     }
 

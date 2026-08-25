@@ -21,3 +21,7 @@ throw, a digit-only timestamp is text too
 throw, Date32 rejects what it cannot represent instead of substituting a default
 \N	2299-12-31	1900-01-01
 2000-13-01
+throw, an unquoted numeric token is checked too
+2023-11-14 22:13:20
+2106-02-07 06:28:15
+2023-12-23 20:37:33

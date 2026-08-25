@@ -1482,10 +1482,10 @@ inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, c
 /// `toDateTime64` and the `Values` format. Parsing stops at the first character that is not part of the
 /// number (e.g. the `,` or `}` following the value in JSON). The `AsRawValue` variants implement the legacy
 /// behavior, where the number is the raw underlying value.
-void readDateTimeAsNumber(time_t & x, ReadBuffer & buf);
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf);
-void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
-bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
+void readDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
+void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
+bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow = true);
 
 void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
 bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);

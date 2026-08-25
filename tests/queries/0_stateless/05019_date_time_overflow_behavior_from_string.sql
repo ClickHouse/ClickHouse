@@ -64,3 +64,11 @@ SELECT * FROM format(TSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PAR
 SELECT * FROM format(JSONEachRow, 'v Date32', '{"v":"2000-13-01"}'); -- { serverError CANNOT_PARSE_DATE }
 SELECT toDate32OrNull('2000-13-01'), toDate32('2299-12-31'), toDate32('1900-01-01');
 SELECT v FROM format(CSV, 'v Variant(Date32, String)', '2000-13-01') SETTINGS allow_experimental_variant_type = 1;
+
+SELECT 'throw, an unquoted numeric token is checked too';
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":4294967296}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":-1}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(Values, 'v DateTime', '(4294967296)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1700000000}');
+SELECT * FROM format(Values, 'v DateTime', '(4294967295)');
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":1703363853.5}');
