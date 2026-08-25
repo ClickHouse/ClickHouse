@@ -23,7 +23,7 @@
 #include <vector>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
-#include <Processors/QueryPlan/Optimizations/eelConflictDetector.h>
+#include <Processors/QueryPlan/Optimizations/cdaConflictDetector.h>
 
 
 namespace ProfileEvents
@@ -307,11 +307,11 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_, bool use_eel_conflict_detector_ = false)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_, bool use_cd_a_conflict_detector_ = false)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
-        , use_eel_conflict_detector(use_eel_conflict_detector_)
+        , use_cd_a_conflict_detector(use_cd_a_conflict_detector_)
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (context)
@@ -353,12 +353,12 @@ private:
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// EEL variant: decide validity and the resulting (kind, strictness) using the per-operator
-    /// TES descriptors in `dpsub_data.eel_operators`, which
-    /// supports semi/anti reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const;
+    /// CD-A variant: decide validity and the resulting (kind, strictness) using the per-operator
+    /// TES descriptors in `dpsub_data.cda_operators`, which supports outer and semi/anti
+    /// reordering. Returns nullopt to reject the split.
+    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// Dispatch used by the DPsub acceptor: routes to the EEL per-operator check when the EEL
+    /// Dispatch used by the DPsub acceptor: routes to the CD-A per-operator check when the CD-A
     /// conflict detector is enabled, otherwise to the per-relation `isValidJoinOrderMask` (with
     /// strictness fixed to All, its only supported case).
     std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
@@ -436,11 +436,11 @@ private:
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
 
-        /// Per-operator EEL descriptors, populated in `initDPsubScratch` only when the EEL
-        /// conflict detector is enabled. When non-empty, `isValidJoinOrderMaskEEL` uses these
-        /// (per-operator TES/einbaubar) instead of the per-relation `restriction_by_rel`, which
-        /// lets non-commutative semi/anti joins be reordered.
-        std::vector<EelOperator> eel_operators;
+        /// Per-operator CD-A descriptors, populated in `initDPsubScratch` only when the CD-A
+        /// conflict detector is enabled. When non-empty, `isValidJoinOrderMaskCDA` uses these
+        /// (per-operator TES / applicable_A) instead of the per-relation `restriction_by_rel`,
+        /// which lets non-commutative outer and semi/anti joins be reordered.
+        std::vector<CdaOperator> cda_operators;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -472,10 +472,10 @@ private:
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
 
-    /// When true, `initDPsubScratch` builds the DPsub outer-join restrictions from the EEL
-    /// conflict detector (see eelConflictDetector.h) instead of `query_graph.join_kinds`.
+    /// When true, `initDPsubScratch` builds the DPsub reordering constraints from the CD-A
+    /// conflict detector (see cdaConflictDetector.h) instead of `query_graph.join_kinds`.
     /// Affects only DPsub.
-    const bool use_eel_conflict_detector = false;
+    const bool use_cd_a_conflict_detector = false;
 
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
@@ -800,19 +800,19 @@ void JoinOrderOptimizer::initDPsubScratch()
     /// Outer-join reordering constraints. Two mutually exclusive representations:
     ///  - default: per-relation ON-clause restrictions from `query_graph.join_kinds`, consumed by
     ///    `isValidJoinOrderMask`. Handles inner + outer joins only.
-    ///  - EEL enabled: per-operator TES descriptors from the EEL conflict detector, consumed by
-    ///    `isValidJoinOrderMaskEEL`. Handles inner/outer *and* semi/anti joins, with orientation.
+    ///  - CD-A enabled: per-operator TES descriptors from the CD-A conflict detector, consumed by
+    ///    `isValidJoinOrderMaskCDA`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
-    dpsub_data.eel_operators.clear();
-    if (use_eel_conflict_detector)
+    dpsub_data.cda_operators.clear();
+    if (use_cd_a_conflict_detector)
     {
-        std::vector<EelJoinOpMask> ops;
-        ops.reserve(query_graph.eel_ops.size());
-        for (const auto & op : query_graph.eel_ops)
-            ops.push_back(EelJoinOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), op.kind, op.strictness});
+        std::vector<CdaJoinOpMask> ops;
+        ops.reserve(query_graph.cda_ops.size());
+        for (const auto & op : query_graph.cda_ops)
+            ops.push_back(CdaJoinOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), op.kind, op.strictness});
 
-        dpsub_data.eel_operators = computeEelOperators(ops, num_relations, log);
-        LOG_TRACE(log, "DPsub: using EEL conflict detector over {} captured join operators", dpsub_data.eel_operators.size());
+        dpsub_data.cda_operators = computeCdaOperators(ops, log);
+        LOG_TRACE(log, "DPsub: using CD-A conflict detector over {} captured join operators", dpsub_data.cda_operators.size());
     }
     else
     {
@@ -893,79 +893,68 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
-JoinOrderOptimizer::isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const
+JoinOrderOptimizer::isValidJoinOrderMaskCDA(UInt32 left_mask, UInt32 right_mask) const
 {
-    /// Per-operator EEL validity. The enumerator only proposes connected, non-overlapping
-    /// (left_mask, right_mask) pairs. We find the single non-freely-reorderable operator
-    /// (outer/semi/anti/full) that sits at this boundary and check it is `einbaubar`.
-    /// Freely-reorderable inner joins impose no constraint here; connectivity and predicate
-    /// placement are handled by the enumerator and `collectJoinEdgesMask`.
+    /// CD-A `applicable_A` (SIGMOD'13, Section 5.2). The enumerator proposes each connected,
+    /// non-overlapping (left_mask, right_mask) split once. We look at every operator whose ON
+    /// predicate is applied across this split and require it to be `applicable`:
+    ///   L-TES(op) subseteq S1  AND  R-TES(op) subseteq S2   (forward), or the mirrored variant.
+    /// Every crossing operator -- inner joins included -- must pass, because CD-A records the
+    /// conflict between a nested operator and its parent in the *parent's* TES, and that parent
+    /// may itself be an inner join. The single non-inner operator that crosses (if any) fixes the
+    /// resulting join kind/strictness; two of them cannot share one binary node, so the split is
+    /// rejected. If none crosses, the step is a plain inner join.
     const UInt32 combined = left_mask | right_mask;
+    auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
 
-    const EelOperator * boundary = nullptr;
-    for (const auto & op : dpsub_data.eel_operators)
+    JoinKind kind = JoinKind::Inner;
+    JoinStrictness strictness = JoinStrictness::All;
+    bool have_non_inner = false;
+
+    for (const auto & op : dpsub_data.cda_operators)
     {
-        if (op.freely_reorderable)
-            continue;
-
-        /// An operator is "at this boundary" when its ON predicate (NEL) spans the split -- that
-        /// is the operator whose predicate is applied here. Using the operator's *relation set*
-        /// to detect straddling is wrong: every ancestor operator's relation set is a superset,
-        /// so it would spuriously "straddle" lower splits. We also treat an operator as involved
-        /// if its relation set straddles *and* is fully contained in this subset, to cover
-        /// predicate-less / lopsided-ON operators without flagging ancestors.
-        const bool within = (op.relations & ~combined) == 0;
+        /// The operator is applied at this boundary when its ON predicate (NEL) spans the split.
+        /// Using the operator's *relation set* to detect straddling is wrong: an ancestor's
+        /// relation set is a superset of this subset, and an operator already applied inside a
+        /// child no longer has a crossing predicate. The relation-set straddle is a fallback only
+        /// for degenerate predicate-less operators (empty NEL, e.g. an ON-TRUE join).
+        const bool within = subset_of(op.relations, combined);
         const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
         const bool rel_straddles = (op.relations & left_mask) && (op.relations & right_mask);
-        /// An operator sits at this boundary only when its ON predicate (NEL) spans the split.
-        /// Using the relation set instead would re-flag an operator that was already applied in a
-        /// sub-plan (e.g. a semi join pushed into the left child, when we later join the remaining
-        /// relation): its relations still straddle, but its predicate no longer crosses. The
-        /// relation-set straddle is a fallback only for degenerate predicate-less operators
-        /// (empty NEL, e.g. an ON-TRUE outer/semi join), which have no crossing predicate.
         const bool involved = nel_crosses || (op.nel == 0 && rel_straddles && within);
         if (!involved)
             continue;
 
-        /// The operator is applied across this boundary but not all of its relations are present
-        /// yet. In general that is illegal (its subtree is not assembled). The exception is a
-        /// `pushdown_safe` semi/anti join, which is a filter over inner joins and may be applied
-        /// early on just the relations its predicate references (CD-B l-asscom); the einbaubar TES
-        /// check below still requires those referenced relations to be present.
-        if (!within && !op.pushdown_safe)
+        /// applicable_A. `forward` keeps the operator's (left, right) inputs aligned with
+        /// (left_mask, right_mask); `mirrored` swaps them -- a valid equivalence for any of our
+        /// operators via `reverseJoinKind` (Left<->Right, Full/Inner unchanged; for semi/anti it
+        /// flips the preserved side). L-TES and R-TES are disjoint and, for a non-degenerate
+        /// predicate, both non-empty, so at most one orientation can hold.
+        const bool forward = subset_of(op.tes_left, left_mask) && subset_of(op.tes_right, right_mask);
+        const bool mirrored = subset_of(op.tes_left, right_mask) && subset_of(op.tes_right, left_mask);
+        if (!forward && !mirrored)
             return std::nullopt;
 
-        /// Two non-reorderable operators cannot both sit at one binary node -> impossible order.
-        if (boundary)
+        /// Inner joins impose no join kind and are commutative; only their TES gate matters.
+        if (op.freely_reorderable)
+            continue;
+
+        /// A non-inner operator fixes the kind. Two of them at one node -> impossible order.
+        if (have_non_inner)
             return std::nullopt;
-        boundary = &op;
+        have_non_inner = true;
+        kind = forward ? op.kind : reverseJoinKind(op.kind);
+        strictness = op.strictness;
     }
 
-    /// No outer/semi/anti operator sits here -> a plain inner join (connectivity already checked).
-    if (!boundary)
-        return std::make_pair(JoinKind::Inner, JoinStrictness::All);
-
-    auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
-
-    /// forward orientation keeps the operator's left/right inputs as (left_mask,
-    /// right_mask); the mirrored orientation swaps them (only satisfiable for a commutative
-    /// operator, or when the required sides genuinely fit the other way). `reverseJoinKind`
-    /// flips Left<->Right (and Full/Inner unchanged), which for semi/anti flips the preserved
-    /// side accordingly while `buildPhysicalPlan` keeps the child order.
-    if (subset_of(boundary->tes_left, left_mask) && subset_of(boundary->tes_right, right_mask))
-        return std::make_pair(boundary->kind, boundary->strictness);
-    if (subset_of(boundary->tes_left, right_mask) && subset_of(boundary->tes_right, left_mask))
-        return std::make_pair(reverseJoinKind(boundary->kind), boundary->strictness);
-
-    /// The operator straddles the split but neither orientation satisfies its TES -> invalid.
-    return std::nullopt;
+    return std::make_pair(kind, strictness);
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
 JoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const
 {
-    if (use_eel_conflict_detector)
-        return isValidJoinOrderMaskEEL(left_mask, right_mask);
+    if (use_cd_a_conflict_detector)
+        return isValidJoinOrderMaskCDA(left_mask, right_mask);
 
     if (auto kind = isValidJoinOrderMask(left_mask, right_mask))
         return std::make_pair(*kind, JoinStrictness::All);
@@ -1195,7 +1184,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     if (!entry.left && !entry.right)
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
 
-    /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the EEL
+    /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the CD-A
     /// conflict detector, which must keep their strictness in the reordered tree.
     JoinOperator join_operator(entry.kind, entry.strictness, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
@@ -1955,7 +1944,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         std::move(query_graph),
         optimization_settings.query_plan_optimize_join_order_algorithm,
         optimization_settings.query_plan_optimize_join_order_max_searched_plans,
-        optimization_settings.query_plan_optimize_join_order_use_eel_conflict_detector);
+        optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");

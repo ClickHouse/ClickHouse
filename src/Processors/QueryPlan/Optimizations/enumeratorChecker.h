@@ -91,7 +91,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
     const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
 
-    /// Resolve validity + the resulting (kind, strictness). With the EEL conflict detector this
+    /// Resolve validity + the resulting (kind, strictness). With the CD-A conflict detector this
     /// uses the per-operator TES check (which can admit semi/anti joins), otherwise the
     /// per-relation outer-join check with strictness fixed to All.
     auto resolved = optimizer.resolveJoinMask(left_mask, right_mask);
