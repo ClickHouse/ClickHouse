@@ -61,9 +61,14 @@ private:
         /// at all (plain source); such lanes are read on demand without deferral bookkeeping.
         Columns boundary;
 
-        /// Granted read-ahead groups (0 or 1); a group is consumed by the next virtual row.
-        /// A lane that never produces virtual rows keeps its credit and streams like a plain
-        /// bounded buffer.
+        /// Granted read-ahead groups; a group is consumed by the next virtual row. Kept at
+        /// most 1 deliberately: one group is the per-lane speculation depth, so when a limit
+        /// finishes the merge early, the waste is bounded by one group per lane in the window
+        /// (the window bounds how many lanes read at once, the credit bounds how deep each
+        /// goes). A demand-paced lane re-earns its credit at every delivery, so a busy lane
+        /// is not throttled by this. Deeper credit is a possible follow-up for the per-block
+        /// mode, where a scan pays a wake-up per group. A lane that never produces virtual
+        /// rows keeps its credit and streams like a plain bounded buffer.
         size_t credit = 0;
     };
 
@@ -88,6 +93,12 @@ private:
     const size_t max_rows_to_buffer;
     const size_t max_bytes_to_buffer;
     const size_t read_ahead_window;
+    /// With a collated sort description the boundary comparison in `boundaryLess` would need
+    /// collator-aware comparison, so speculation is disabled and lanes are read strictly on
+    /// demand — same as the read-ahead window the merge used to have (it was also guarded by
+    /// `!has_collation`). In practice this path is not reachable: virtual rows come from
+    /// reading in the binary order of the primary key, which a collated ORDER BY does not
+    /// follow, so read-in-order does not apply there; the guard is defensive.
     bool has_collation = false;
 
     std::vector<Lane> lanes;

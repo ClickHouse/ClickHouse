@@ -414,19 +414,23 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        if (apply_virtual_row_conversions)
+        size_t read_ahead_window = sort_settings.virtual_row_prefetch_window < 0
+            ? pipeline.getNumThreads()
+            : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
+
+        /// Deferral needs only a one-chunk buffer per lane; deeper buffering is the
+        /// same optimization `BufferChunksTransform` provides and follows its setting.
+        bool deep_buffering = use_buffering && sort_settings.read_in_order_use_buffering;
+
+        /// With the read-ahead disabled and no buffering the transform would be a plain
+        /// pass-through: the merge alone already consumes the streams strictly on demand
+        /// (a port is left NotNeeded after a virtual row), which is exactly what a zero
+        /// window means. Skip the extra hop then.
+        if (apply_virtual_row_conversions && (read_ahead_window > 0 || deep_buffering))
         {
             /// The streams announce their positions with virtual rows; this transform owns the
             /// buffering and the read-ahead policy for the sources deferred behind them, so the
             /// merge itself can consume the streams strictly on demand.
-            size_t read_ahead_window = sort_settings.virtual_row_prefetch_window < 0
-                ? pipeline.getNumThreads()
-                : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
-
-            /// Deferral needs only a one-chunk buffer per lane; deeper buffering is the
-            /// same optimization `BufferChunksTransform` provides and follows its setting.
-            bool deep_buffering = use_buffering && sort_settings.read_in_order_use_buffering;
-
             pipeline.addTransform(std::make_shared<VirtualRowReadAheadTransform>(
                 pipeline.getSharedHeader(),
                 pipeline.getNumStreams(),
@@ -437,7 +441,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
                 deep_buffering ? sort_settings.max_block_bytes : 1,
                 read_ahead_window));
         }
-        else if (use_buffering && sort_settings.read_in_order_use_buffering)
+        else if (!apply_virtual_row_conversions && use_buffering && sort_settings.read_in_order_use_buffering)
         {
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
