@@ -1884,7 +1884,8 @@ std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
@@ -1903,6 +1904,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
         url_prefix.pop_back();
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
     {
@@ -1925,7 +1927,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     if (!config.has(config_prefix + ".handler.query"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
@@ -1945,6 +1948,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     NameSet analyze_receive_params = analyzeReceiveQueryParams(query_ast);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
 
     /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
     /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.
