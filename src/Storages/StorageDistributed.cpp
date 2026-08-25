@@ -222,6 +222,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
+    extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
 namespace ActionLocks
@@ -2811,8 +2812,15 @@ void addNamedCollectionDependenciesForTableFunctionTarget(const ASTPtr & ast, co
 }
 
 /// A table-function target with explicit columns may refer to an object that exists only on the remote
-/// shard. Its absence is therefore deferred to the shard, but syntactically invalid arguments must still
-/// reject the persistent table definition at `CREATE` time.
+/// shard. Its state in the initiator's catalog is therefore not authoritative, and every failure that
+/// depends on it is deferred to the shard: the target's absence (`UNKNOWN_DATABASE`, `UNKNOWN_TABLE`),
+/// and a same-named local object of the wrong kind (`UNEXPECTED_TABLE_ENGINE` - the `timeSeries*` /
+/// `prometheusQuery*` family resolves its source table while parsing the arguments, so a local shadow
+/// with the wrong engine must not reject a definition whose real target lives on the shards). Only
+/// syntactically invalid arguments reject the persistent table definition at `CREATE` time. The paths
+/// that do require the target to resolve on the initiator - schema inference for an omitted column
+/// list, and the access probe for a cluster with a local shard - re-resolve it afterwards under their
+/// own fatality rules, so nothing is lost by deferring these codes here.
 void validateTableFunctionTargetArguments(const ASTPtr & ast, const ContextPtr & context)
 {
     try
@@ -2823,7 +2831,8 @@ void validateTableFunctionTargetArguments(const ASTPtr & ast, const ContextPtr &
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE)
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE
+            && e.code() != ErrorCodes::UNEXPECTED_TABLE_ENGINE)
             throw;
     }
 }
