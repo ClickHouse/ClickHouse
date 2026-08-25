@@ -53,3 +53,18 @@ SELECT id FROM file('${DATA_DIR}/link/{..,missing}/*.csv', 'CSV', 'id UInt64');
 $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${DATA_DIR}/link/{..,missing}/x.csv', 'CSV', 'id UInt64');
 "
+
+# The post-read rename must move the file that was read, so it lands next to it rather than in
+# the lexical parent's directory. Printed as the new name plus the id read from it.
+RENAME_DIR="${DATA_DIR}/rename"
+mkdir -p "${RENAME_DIR}/deep/target"
+printf '111\n' > "${RENAME_DIR}/deep/x.csv"
+printf '222\n' > "${RENAME_DIR}/x.csv"
+ln -s "${RENAME_DIR}/deep/target" "${RENAME_DIR}/link"
+
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${RENAME_DIR}/link/{..,missing}/x.csv', 'CSV', 'id UInt64')
+SETTINGS rename_files_after_processing = 'processed_%f%e';
+"
+[ -f "${RENAME_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
+[ -f "${RENAME_DIR}/x.csv" ] && echo "the lexical sibling was left alone"

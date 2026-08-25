@@ -1554,9 +1554,6 @@ void StorageFileSource::beforeDestroy()
                 String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
                 file_path.replace_filename(new_filename);
 
-                // Normalize new path
-                file_path = file_path.lexically_normal();
-
                 // Checking access rights
                 checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
 
