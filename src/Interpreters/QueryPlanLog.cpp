@@ -41,7 +41,7 @@ ColumnsDescription QueryPlanLogElement::getColumnsDescription()
         {"query_duration_ms", std::make_shared<DataTypeUInt64>(), "Query duration in ms."},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
-        {"ascii_plan", std::make_shared<DataTypeString>(), "ASCII version of the query plan."},
+        {"ascii_plan", std::make_shared<DataTypeString>(), "The executed query plan rendered as text, with per-step runtime statistics: rows and bytes in and out, time, and parallelism."},
         {"status", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
     };
 }

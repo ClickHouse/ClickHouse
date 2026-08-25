@@ -2239,9 +2239,15 @@ See also:
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )", 0) \
     DECLARE(Bool, log_query_plans, false, R"(
-Write the query plan that was actually executed to the `system.query_plan_log` table.
+Write the query plan that was actually executed, together with per-step runtime statistics, to the `system.query_plan_log` table.
 
-Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured.
+Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured. The plan is rendered in the same form as [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze): the plan tree, the expressions behind
+each step, and per-step rows, bytes, time and parallelism.
+
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/operations/settings/settings#log_processors_profiles) uses, so it is not free. Queries that are not captured
+are unaffected.
+
+It also causes step descriptions produced by plan optimizations (for example merged expressions) to be retained rather than discarded, which makes them visible in `system.processors_profile_log.plan_step_description` as well.
 
 See also:
 
