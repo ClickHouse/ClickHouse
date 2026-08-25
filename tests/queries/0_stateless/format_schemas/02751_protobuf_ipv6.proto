@@ -1,6 +1,0 @@
-syntax = "proto3";
-
-message Message
-{
-    bytes ipv6_bytes = 3;
-}

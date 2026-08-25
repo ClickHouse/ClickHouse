@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-message AA {
-    message nested_array {
-	    repeated double c = 2;
-    }
-    string a = 1;
-    repeated nested_array b = 2;
-}

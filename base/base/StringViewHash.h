@@ -9,6 +9,7 @@
 #include <base/simd.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/RapidStringHash.h>   // 调我们的哈希
 
 #include <city.h>
 
@@ -329,21 +330,25 @@ struct CRC32Hash
     }
 };
 
-struct StringViewHash : CRC32Hash {};
-
 #else
-
+/*
 struct CRC32Hash
 {
-    unsigned operator() (std::string_view /* x */) const
+    unsigned operator() (std::string_view) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }
-};
-
-struct StringViewHash : StringViewHash64 {};
+}; */
 
 #endif
+
+struct StringViewHash
+{
+    size_t operator() (std::string_view x) const
+    {
+        return rapidStringHash(x);    // 调rapidhash
+    }
+};
 
 namespace ZeroTraits
 {
