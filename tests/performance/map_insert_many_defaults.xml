@@ -1,0 +1,27 @@
+<test>
+    <!--
+        Feed JSONColumns blocks that omit the Map column. The input format
+        calls insertManyDefaults for the missing column, and the wide value
+        type makes the old generic implementation allocate nested storage
+        even though every Map is empty.
+    -->
+    <query type="shell"><![CDATA[
+        $CLICKHOUSE_LOCAL --max_block_size=65536 --query "
+            SELECT number AS id
+            FROM numbers(1048576)
+            FORMAT JSONColumns
+        " |
+        $CLICKHOUSE_LOCAL --max_block_size=65536 \
+            --allow_experimental_map_type=1 \
+            --input_format_defaults_for_omitted_fields=1 \
+            --query "
+                CREATE TABLE map_default_perf
+                (
+                    id UInt64,
+                    m Map(UInt64, FixedString(256))
+                )
+                ENGINE = Null;
+                INSERT INTO map_default_perf FORMAT JSONColumns
+            " > /dev/null
+    ]]></query>
+</test>
