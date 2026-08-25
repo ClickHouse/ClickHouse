@@ -54,6 +54,42 @@ WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'ta
 ORDER BY a.record_id
 SETTINGS query_plan_direct_read_from_text_index = 0;
 
+-- The tokenizer must not depend on what reached the table. Nothing of this predicate does, and with
+-- `use_join_disjunctions_push_down = 0` nothing of the one above does either.
+SELECT 'nothing pushed below the JOIN';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) OR b.category = 'nonexistent'
+ORDER BY a.record_id;
+
+SELECT 'use_join_disjunctions_push_down = 0';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'target')
+   OR (hasAnyTokens(a.plain_text, ['fallback']) OR hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']))
+ORDER BY a.record_id
+SETTINGS use_join_disjunctions_push_down = 0;
+
+SELECT 'use_skip_indexes = 0';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE (hasAnyTokens(a.shingle_tokens, ['alpha beta gamma']) AND b.category = 'target')
+   OR (hasAnyTokens(a.plain_text, ['fallback']) OR hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']))
+ORDER BY a.record_id
+SETTINGS use_skip_indexes = 0;
+
+-- Only one of the two indexes is constrained by what reaches the table; the other must still be applied.
+SELECT 'one index constrained below the JOIN, the other above';
+
+SELECT a.record_id
+FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.plain_text, ['fallback'])
+  AND (hasAnyTokens(a.shingle_tokens, ['delta epsilon zeta']) OR b.category = 'target')
+ORDER BY a.record_id;
+
 SELECT 'OR with a column of the scanned table';
 
 SELECT a.record_id

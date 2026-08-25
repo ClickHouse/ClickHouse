@@ -4,6 +4,17 @@ default settings
 query_plan_direct_read_from_text_index = 0
 1
 2
+nothing pushed below the JOIN
+1
+3
+use_join_disjunctions_push_down = 0
+1
+2
+use_skip_indexes = 0
+1
+2
+one index constrained below the JOIN, the other above
+2
 OR with a column of the scanned table
 1
 3
