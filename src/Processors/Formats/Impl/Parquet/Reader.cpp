@@ -1361,7 +1361,7 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     return res;
 }
 
-void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
+void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
     /// Allocate columns for values, null map, and array offsets.
 
@@ -1535,6 +1535,19 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
+
+    /// The scheduleTask charge was an estimate; reconcile up to the actual decoded footprint here,
+    /// before formOutputColumn (below) moves `subchunk.column`, so the scheduler stops decoding ahead
+    /// before real RAM exceeds the cap. Grow-only (fail-closed).
+    size_t actual_bytes = subchunk.column->allocatedBytes();
+    for (const auto & offsets : subchunk.arrays_offsets)
+        if (offsets)
+            actual_bytes += offsets->allocatedBytes();
+    if (subchunk.group_null_map)
+        actual_bytes += subchunk.group_null_map->allocatedBytes();
+    size_t already_charged = subchunk.column_and_offsets_memory.charged();
+    if (actual_bytes > already_charged)
+        subchunk.column_and_offsets_memory.add(actual_bytes - already_charged, &diff);
 
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
