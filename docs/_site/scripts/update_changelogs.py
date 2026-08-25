@@ -5,6 +5,11 @@ Run from the docs directory:
 
     python3 _site/scripts/update_changelogs.py
 
+To update only one independent changelog source:
+
+    python3 _site/scripts/update_changelogs.py --scope cloud
+    python3 _site/scripts/update_changelogs.py --scope oss
+
 Cloud release-note frontmatter is the source of truth for the Cloud cards and
 navigation. The repository-level CHANGELOG.md is the source of truth for the
 current Open source changelog page.
@@ -12,6 +17,7 @@ current Open source changelog page.
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -53,6 +59,7 @@ OSS_RELEASE = re.compile(
     r'^### <a id="(\d+)"></a> ClickHouse release v?(\d+\.\d+)(.*)$'
 )
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.+?)(?:\s+\{#[^}]+\})?$")
+SCOPES = ("cloud", "oss")
 
 
 @dataclass(frozen=True)
@@ -543,42 +550,69 @@ def update_oss_changelog(docs_root: Path) -> tuple[int, int]:
     return year, len(releases)
 
 
-def main() -> int:
+def update_cloud_changelogs(
+    docs_root: Path,
+) -> tuple[
+    dict[int, list[Release]], AnnualChangelog, list[AnnualChangelog]
+]:
+    grouped = group_releases(load_releases(docs_root))
+    current, archive = load_cloud_changelogs(docs_root)
+    update_index(docs_root, grouped)
+    update_cloud_landing(docs_root, current, archive)
+    return grouped, current, archive
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("docs_root", nargs="?")
+    parser.add_argument("--scope", action="append", choices=SCOPES, dest="scopes")
+    args = parser.parse_args(argv)
+
     docs_root = (
-        Path(sys.argv[1]).resolve()
-        if len(sys.argv) > 1
+        Path(args.docs_root).resolve()
+        if args.docs_root
         else Path(__file__).resolve().parents[2]
     )
     if not (docs_root / "docs.json").is_file():
         print(f"Error: no docs.json in {docs_root}", file=sys.stderr)
         return 2
 
+    scopes = set(args.scopes or SCOPES)
     try:
-        grouped = group_releases(load_releases(docs_root))
-        current_cloud_changelog, cloud_archive = load_cloud_changelogs(
-            docs_root
-        )
-        update_index(docs_root, grouped)
-        update_cloud_landing(
-            docs_root, current_cloud_changelog, cloud_archive
-        )
-        oss_year, oss_release_count = update_oss_changelog(docs_root)
-        update_navigation(
-            docs_root,
-            grouped,
-            current_cloud_changelog,
-            cloud_archive,
-            oss_year,
-        )
+        if scopes == {"cloud"}:
+            grouped, _, _ = update_cloud_changelogs(docs_root)
+            count = sum(len(releases) for releases in grouped.values())
+            print(
+                f"Updated {count} Cloud release notes across "
+                f"{len(grouped)} year groups"
+            )
+        elif scopes == {"oss"}:
+            oss_year, oss_release_count = update_oss_changelog(docs_root)
+            print(
+                f"Updated {oss_release_count} Open source {oss_year} releases"
+            )
+        else:
+            grouped, current_cloud_changelog, cloud_archive = (
+                update_cloud_changelogs(docs_root)
+            )
+            oss_year, oss_release_count = update_oss_changelog(docs_root)
+            update_navigation(
+                docs_root,
+                grouped,
+                current_cloud_changelog,
+                cloud_archive,
+                oss_year,
+            )
+            count = sum(len(releases) for releases in grouped.values())
+            print(
+                f"Updated {count} Cloud release notes across "
+                f"{len(grouped)} year groups and {oss_release_count} "
+                f"Open source {oss_year} releases"
+            )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
-    count = sum(len(releases) for releases in grouped.values())
-    print(
-        f"Updated {count} Cloud release notes across {len(grouped)} year groups "
-        f"and {oss_release_count} Open source {oss_year} releases"
-    )
     return 0
 
 

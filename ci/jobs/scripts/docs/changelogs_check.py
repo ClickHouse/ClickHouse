@@ -48,7 +48,6 @@ def generated_paths(docs_root: Path, scopes: set[str]) -> list[Path]:
 def check_freshness(docs_root: Path, scopes: set[str]) -> list[str]:
     try:
         paths = generated_paths(docs_root, scopes)
-        all_paths = generated_paths(docs_root, set(SCOPES))
     except (OSError, ValueError) as error:
         return [f"cannot determine generated changelog files: {error}"]
 
@@ -59,10 +58,16 @@ def check_freshness(docs_root: Path, scopes: set[str]) -> list[str]:
             + ", ".join(str(path.relative_to(docs_root)) for path in missing)
         ]
 
-    before = {path: path.read_bytes() for path in all_paths if path.is_file()}
+    before = {path: path.read_bytes() for path in paths}
     generator = docs_root / "_site/scripts/update_changelogs.py"
+    scope_args = [
+        argument
+        for scope in SCOPES
+        if scope in scopes
+        for argument in ("--scope", scope)
+    ]
     process = subprocess.run(
-        [sys.executable, str(generator)],
+        [sys.executable, str(generator), *scope_args],
         cwd=docs_root,
         capture_output=True,
         text=True,
@@ -82,9 +87,10 @@ def check_freshness(docs_root: Path, scopes: set[str]) -> list[str]:
         listing = "\n".join(
             f"  {path.relative_to(docs_root)}" for path in stale
         )
+        command = " ".join((GENERATOR_COMMAND, *scope_args))
         return [
             "Changelog cards, content, or navigation are out of date. Run:\n"
-            f"    {GENERATOR_COMMAND}\n"
+            f"    {command}\n"
             "from the docs/ directory and commit the changes. "
             "Out-of-date files:\n"
             + listing
