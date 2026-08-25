@@ -72,8 +72,9 @@ def _env(monkeypatch):
     clock = FakeClock()
     state = {
         "alive": True,
-        # (alive, pid) as reported for the server behind the probed port.
-        "process": (True, 588),
+        # (alive, pid, socket inodes) as reported for the server behind the
+        # probed port.
+        "process": (True, 588, frozenset({"4242"})),
         "probe_cost": 0.0,
         "probes": [],
     }
@@ -113,7 +114,7 @@ def test_healthy_server_is_never_hung_and_keeps_the_full_probe_budget(env):
 def test_dead_process_aborts_on_the_first_failed_probe(env):
     """No live process - the pre-existing latency, no grace."""
     env["alive"] = False
-    env["process"] = (False, None)
+    env["process"] = (False, None, None)
     env["probe_cost"] = 165.0  # the full retry budget of a real failing probe
     assert env["monitor"].is_hung() is True
     assert env["probes"] == [10]
@@ -122,7 +123,7 @@ def test_dead_process_aborts_on_the_first_failed_probe(env):
 def test_unknown_liveness_reads_as_dead(env):
     """No `/proc`, or a server on another host, must not buy a grace."""
     env["alive"] = False
-    env["process"] = (None, None)
+    env["process"] = (None, None, None)
     assert env["monitor"].is_hung() is True
 
 
@@ -135,7 +136,7 @@ def test_a_surviving_replica_does_not_buy_a_grace_for_the_probed_server(env):
     an error.
     """
     env["alive"] = False
-    env["process"] = (False, None)
+    env["process"] = (False, None, None)
     assert env["monitor"].is_hung() is True
 
 
@@ -150,14 +151,16 @@ def test_probed_server_process_follows_the_listening_socket():
         listener.listen(1)
         port = listener.getsockname()[1]
         args = Namespace(tcp_host="localhost", http_port=port)
-        assert _ct.probed_server_process(args) == (True, os.getpid())
+        alive, pid, inodes = _ct.probed_server_process(args)
+        assert (alive, pid) == (True, os.getpid())
+        assert inodes, "a held port must come with the sockets holding it"
         # A server on another host cannot be judged from here.
         assert _ct.probed_server_process(
             Namespace(tcp_host="some-other-host", http_port=port)
-        ) == (None, None)
+        ) == (None, None, None)
     finally:
         listener.close()
-    assert _ct.probed_server_process(args) == (False, None)
+    assert _ct.probed_server_process(args) == (False, None, None)
 
 
 def test_live_process_stalled_then_recovering_does_not_abort(env):
@@ -187,6 +190,59 @@ def test_live_process_stalled_then_recovering_does_not_abort(env):
     env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
     assert env["monitor"].is_hung() is False
     assert env["probes"][-1] == 10
+
+
+def test_a_server_replaced_on_the_same_port_mid_grace_still_fails_fast(env):
+    """Stall, grace, watchdog restart re-binding the same port: the fresh
+    listener holds the port, but it is not the server the grace was granted
+    for, so the run must abort at the next probe instead of sitting out the
+    rest of the grace on a server that lost all its state."""
+    env["alive"] = False
+    env["probe_cost"] = 165.0
+    assert env["monitor"].is_hung() is False  # grace granted, pinned to "4242"
+
+    env["probe_cost"] = 10.0
+    env["process"] = (True, 999, frozenset({"7777"}))  # the replacement
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
+    assert env["monitor"].is_hung() is True
+
+
+def test_a_replacement_server_answering_does_not_resume_the_run(env):
+    """The same swap, but the replacement is already up and answers the probe.
+
+    Clearing the stall here would silently continue the run on a new server,
+    hiding both the original's death and everything the restart lost - the
+    recovery path must verify it is the *same* server that recovered."""
+    env["alive"] = False
+    env["probe_cost"] = 165.0
+    assert env["monitor"].is_hung() is False  # grace granted, pinned to "4242"
+
+    env["probe_cost"] = 0.0
+    env["alive"] = True
+    env["process"] = (True, 999, frozenset({"7777"}))  # the replacement
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
+    assert env["monitor"].is_hung() is True
+
+
+def test_the_same_server_recovering_clears_the_pinned_identity(env):
+    """After a genuine recovery the next stall pins afresh: the identity from a
+    past grace must not leak into the next one."""
+    env["alive"] = False
+    assert env["monitor"].is_hung() is False
+    assert env["monitor"].grace_holder_inodes == frozenset({"4242"})
+
+    env["alive"] = True
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
+    assert env["monitor"].is_hung() is False
+    assert env["monitor"].grace_holder_inodes is None
+
+    # A restart between two silent stretches is a new server legitimately
+    # starting a new grace, not a replacement caught mid-grace.
+    env["alive"] = False
+    env["process"] = (True, 999, frozenset({"7777"}))
+    env["clock"].advance(_ct.HungCheckMonitor.RETRY_INTERVAL)
+    assert env["monitor"].is_hung() is False
+    assert env["monitor"].grace_holder_inodes == frozenset({"7777"})
 
 
 def test_live_process_silent_past_the_grace_is_a_hang(env):

@@ -5109,14 +5109,18 @@ def _probed_host_is_local(args) -> bool:
     return host in (socket.gethostname(), socket.getfqdn())
 
 
-def probed_server_process(args) -> Tuple[Optional[bool], Optional[int]]:
+def probed_server_process(
+    args,
+) -> Tuple[Optional[bool], Optional[int], Optional[Set[str]]]:
     """Is the server the liveness probe talks to still running?
 
-    Returns `(alive, pid)`, where `alive` is True when a process on this host
-    still holds the listening socket on the probed port, False when nothing
-    listens there any more, and None when it cannot be told (a server on
-    another host, or no `/proc`).  `pid` is best-effort and only used in
-    messages.
+    Returns `(alive, pid, inodes)`, where `alive` is True when a process on
+    this host still holds the listening socket on the probed port, False when
+    nothing listens there any more, and None when it cannot be told (a server
+    on another host, or no `/proc`).  `pid` is best-effort and only used in
+    messages.  `inodes` is the set of listening-socket inodes behind `alive` -
+    the identity of the listener, which is what tells the original server
+    apart from a replacement that re-bound the same port.
 
     The socket, not `pgrep`: `get_all_server_pids` sees every
     `clickhouse-server` of this user, and the multi-replica functional harness
@@ -5127,13 +5131,13 @@ def probed_server_process(args) -> Tuple[Optional[bool], Optional[int]]:
     exists for - keeps it.
     """
     if not _probed_host_is_local(args):
-        return None, None
+        return None, None, None
     inodes = _listening_socket_inodes(args.http_port)
     if inodes is None:
-        return None, None
+        return None, None, None
     if not inodes:
-        return False, None
-    return True, _pid_owning_sockets(inodes)
+        return False, None, None
+    return True, _pid_owning_sockets(inodes), inodes
 
 
 class HungCheckMonitor:
@@ -5161,6 +5165,14 @@ class HungCheckMonitor:
     `/proc`, or a server on another host) reads as gone - without positive
     evidence of a live server we keep the previous behaviour instead of sitting
     out the grace.
+
+    "Still there" also means the *same* server: the grace is pinned to the
+    socket inodes it was granted for.  A watchdog can replace a dead server
+    with a fresh process on the same port mid-grace; "someone listens on the
+    port" would keep reading alive across that swap and a probe answered by
+    the replacement would silently resume the run on a server that lost all
+    its state.  When the original listener's sockets are gone the original
+    server is gone, and the run aborts - whether or not the port is held again.
     """
 
     # Long enough to cover the multi-minute whole-process stalls observed on
@@ -5177,6 +5189,19 @@ class HungCheckMonitor:
         # Start of the current silent stretch; None while the server answers.
         self.unresponsive_since = None
         self.last_probe_at = 0.0
+        # Socket inodes of the listener the current grace was granted for;
+        # None while the server answers.
+        self.grace_holder_inodes = None
+
+    def _grace_holder_replaced(self, inodes: Optional[Set[str]]) -> bool:
+        """True when the probed port is now held by sockets disjoint from the
+        ones the grace was granted for: the original server is gone and
+        something else (e.g. a watchdog restart) took the port."""
+        return (
+            self.grace_holder_inodes is not None
+            and inodes is not None
+            and not (inodes & self.grace_holder_inodes)
+        )
 
     def is_hung(self) -> bool:
         """Probe the server once; True when the silence should abort the run.
@@ -5201,12 +5226,26 @@ class HungCheckMonitor:
             self.args, max_retries=1 if self.unresponsive_since else 10
         ):
             if self.unresponsive_since is not None:
+                # The answer must come from the server the grace was granted
+                # for, not from a replacement that re-bound the port while the
+                # original was silent - resuming on a fresh server would hide
+                # both its death and everything the restart lost.
+                _, _, inodes = probed_server_process(self.args)
+                if self._grace_holder_replaced(inodes):
+                    print(
+                        "Server answered the liveness check, but the listening "
+                        f"socket on port {self.args.http_port} changed hands "
+                        "during the silence - the original server is gone and "
+                        "was replaced; reporting it dead."
+                    )
+                    return True
                 print(
                     "Server answered the liveness check again after "
                     f"{time() - self.unresponsive_since:.0f}s - it was stalled, "
                     "not dead; continuing the run."
                 )
                 self.unresponsive_since = None
+                self.grace_holder_inodes = None
             return False
 
         if self.unresponsive_since is None:
@@ -5215,8 +5254,14 @@ class HungCheckMonitor:
             self.unresponsive_since = now
         unresponsive_for = time() - self.unresponsive_since
 
-        alive, server_pid = probed_server_process(self.args)
-        if not alive or unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
+        alive, server_pid, inodes = probed_server_process(self.args)
+        if not alive or self._grace_holder_replaced(inodes):
+            return True
+        if self.grace_holder_inodes is None:
+            # First failed probe of this silent stretch: pin the grace to the
+            # listener it is being granted for.
+            self.grace_holder_inodes = inodes
+        if unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
             return True
         where = f"process {server_pid}" if server_pid is not None else "its process"
         print(
