@@ -769,7 +769,6 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
         refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
         refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
-        refresh_context->setSetting("max_threads", Field(UInt64{1}));
     }
 
     if (!append)

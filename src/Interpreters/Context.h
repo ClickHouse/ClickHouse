@@ -737,9 +737,11 @@ protected:
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
-    /// Final streaming cursor produced by a `STREAM [BOUNDED]` read. The shared_ptr stays shared across
-    /// `Context::createCopy` (the reading source runs on a copied context) so the source fills this one tree.
+    /// Final streaming cursor produced by a `STREAM [BOUNDED]` read; merged into by every reading source.
+    /// The mutex is a shared_ptr so it stays shared across `Context::createCopy` (each source runs on a
+    /// copied context) and can serialize concurrent merges from parallel streams into the one tree.
     CursorTreeNodePtr streaming_cursor;
+    std::shared_ptr<std::mutex> streaming_cursor_mutex;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1282,9 +1284,10 @@ public:
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
-    /// Enable collection of the final `STREAM [BOUNDED]` cursor; the reading source fills it, the outer
-    /// query reads it back.
+    /// Enable collection of the final `STREAM [BOUNDED]` cursor; reading sources merge into it, the outer
+    /// query reads it back. `mergeStreamingCursor` is thread-safe so parallel streams can merge concurrently.
     void enableStreamingCursor();
+    void mergeStreamingCursor(const CursorTreeNodePtr & from) const;
     CursorTreeNodePtr getStreamingCursor() const;
 
     /// I/O formats.
