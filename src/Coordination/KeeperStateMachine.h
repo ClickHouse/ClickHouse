@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <limits>
 #include <optional>
 
 namespace DB
@@ -43,7 +44,6 @@ struct KeeperSnapshotStatus
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    //TODO(keeper-batch) Keep calling per request (from commit's loop over the batch) at first; making it batch-level requires solving the intermediate_reads timing problem in KeeperRequestDispatcher::onCommit (unresolved).
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     KeeperStateMachine(
@@ -60,14 +60,17 @@ public:
     void setLogStore(KeeperLogStore * log_store_);
     KeeperLogStore * getLogStore() { return log_store; }
 
-    //TODO(keeper-batch) Add a batch entry format (marker + explicit version byte + dispatcher_server_id + request count + per-request records + trailing first_zxid/digest); the EOF-sniffed versions below remain only for parsing legacy single-request entries.
     enum ZooKeeperLogSerializationVersion
     {
+        /// Versions of the legacy single-request format, sniffed from the buffer length by
+        /// parseRequest. New entries are only written in the REQUEST_BATCH format.
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
         WITH_OPTIONAL_TRACING_CONTEXT = 4,
+        /// Format where one log entry contains a batch of keeper requests.
+        REQUEST_BATCH = 5,
     };
 
     /// lifetime of a parsed request is:
@@ -85,6 +88,28 @@ public:
         size_t * request_end_position = nullptr);
 
     static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
+
+    /// Batch log entry format. Distinguished from legacy single-request entries by the first
+    /// int64: legacy entries start with a session id, which is never INT64_MIN.
+    static constexpr int64_t BATCH_ENTRY_MARKER = std::numeric_limits<int64_t>::min();
+    static constexpr uint8_t BATCH_ENTRY_FORMAT_VERSION = 1;
+    static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint8_t) + sizeof(uint32_t);
+
+    static nuraft::ptr<nuraft::buffer> serializeRequestBatch(const KeeperRequestBatch & batch);
+
+    /// Overwrite the patchable header fields of a batch log entry produced by serializeRequestBatch.
+    static void patchSerializedRequestBatch(nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch);
+
+    /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).
+    /// See parseRequest for the meaning of `final`.
+    /// For batch entries `patched_fields_offset` is BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for
+    /// legacy entries it is the request end position, where the patchable fields live (which of
+    /// them are present follows from `serialization_version`).
+    std::shared_ptr<KeeperRequestBatch> parseRequestBatch(
+        nuraft::buffer & data,
+        bool final,
+        ZooKeeperLogSerializationVersion * serialization_version = nullptr,
+        size_t * patched_fields_offset = nullptr);
 
     std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex);
 
@@ -240,7 +265,13 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
+    //TODO(keeper-batch) Remove this single-request cache once all call sites use parseRequestBatch (only legacy single-request entries would lose caching, and those stop being written after the upgrade).
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestForSession>>> parsed_request_cache;
+    /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
+    /// Same lifecycle and mutex as parsed_request_cache.
+    //TODO(keeper-batch) Erase entries of closed sessions on Close commit, like parsed_request_cache.
+    //TODO(keeper-batch) Replace both caches by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestBatch>>> parsed_batch_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself
     /// requests can be modified from anywhere without lock because a single request

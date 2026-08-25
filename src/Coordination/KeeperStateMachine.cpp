@@ -86,6 +86,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
@@ -282,6 +283,15 @@ union XidHelper
     int64_t xid;
 };
 
+/// Requests with these xids don't go through the parsed request cache.
+constexpr std::array non_cacheable_xids{
+    Coordination::WATCH_XID,
+    Coordination::PING_XID,
+    Coordination::AUTH_XID,
+    Coordination::CLOSE_XID,
+    Coordination::CLOSE_XID_64,
+};
+
 }
 
 //TODO(keeper-batch) Preprocess all requests of the batch in order; on leader, detect "already preprocessed in PreAppendLogLeader" with one batch-level check here instead of KeeperStorage's per-request back()-based dedup (which breaks for batches, see preprocessRequest); `zxid = log_idx` fallback is legacy-only.
@@ -356,7 +366,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
 }
 
 // Serialize the request for the log entry
-//TODO(keeper-batch) Serialize a whole KeeperRequestBatch into one buffer: marker + format version + dispatcher_server_id + request count + per-request records, with first_zxid/digest placeholders at a fixed offset from the end so PreAppendLogLeader can rewrite them in place without version-dependent offset math.
+//TODO(keeper-batch) Switch call sites to serializeRequestBatch.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
@@ -395,7 +405,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const Keepe
     return write_buf.getBuffer();
 }
 
-//TODO(keeper-batch) Become a batch parser returning KeeperRequestBatch: detect the legacy single-request format (no batch marker) and wrap it as a 1-request batch; keep parsed_request_cache lookups per request within the batch; parse in a single pass without extra buffer copies.
+//TODO(keeper-batch) Switch call sites to parseRequestBatch (which delegates here for legacy entries), then make this private, rename to parseRequestInOldFormat, and rename `request_end_position` to `patched_fields_offset` to match parseRequestBatch.
 std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
@@ -475,14 +485,6 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
 
     buffer.seek(buffer_position, SEEK_SET);
 
-    static constexpr std::array non_cacheable_xids{
-        Coordination::WATCH_XID,
-        Coordination::PING_XID,
-        Coordination::AUTH_XID,
-        Coordination::CLOSE_XID,
-        Coordination::CLOSE_XID_64,
-    };
-
     const bool should_cache
         = min_request_size_to_cache != 0 && request_for_session->session_id != -1
         && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
@@ -526,6 +528,245 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     }
 
     return request_for_session;
+}
+
+//TODO(keeper-batch) Use old format if settings asked for it; have all callers pass a bool into here, I guess.
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestBatch(const KeeperRequestBatch & batch)
+{
+    chassert(!batch.requests.empty());
+
+    DB::WriteBufferFromNuraftBuffer write_buf;
+
+    writeIntBinary(BATCH_ENTRY_MARKER, write_buf);
+    writeIntBinary(BATCH_ENTRY_FORMAT_VERSION, write_buf);
+    constexpr uint32_t header_size = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET
+        + sizeof(int64_t) /*committed_log_idx*/ + sizeof(int64_t) /*first_zxid*/ + sizeof(uint8_t)
+        + sizeof(uint64_t) /*digest*/ + sizeof(int32_t) /*dispatcher_server_id*/
+        + sizeof(uint32_t) /*request count*/;
+    writeIntBinary(header_size, write_buf);
+
+    /// Patchable fields. On the dispatcher side these are placeholders (zxids are not assigned
+    /// yet); the leader overwrites them in place in the PreAppendLogLeader callback
+    /// (writeRequestBatchPatchableFields).
+    chassert(write_buf.offset() == BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET);
+    const auto digest = batch.getDigest();
+    writeIntBinary(batch.requests.front().zxid, write_buf);
+    writeIntBinary(static_cast<uint8_t>(digest ? digest->version : KeeperDigestVersion::NO_DIGEST), write_buf);
+    writeIntBinary(digest ? digest->value : static_cast<uint64_t>(0), write_buf);
+    writeIntBinary(batch.committed_log_idx, write_buf);
+
+    writeIntBinary(batch.dispatcher_server_id, write_buf);
+    writeIntBinary(static_cast<uint32_t>(batch.requests.size()), write_buf);
+
+    for (const auto & request_for_session : batch.requests)
+    {
+        const auto & request = request_for_session.request;
+
+        writeIntBinary(request_for_session.session_id, write_buf);
+        writeIntBinary(request->xid, write_buf);
+        writeIntBinary(request_for_session.time, write_buf);
+
+        writeIntBinary(static_cast<uint8_t>(request->tracing_context != nullptr), write_buf);
+        if (request->tracing_context)
+            request->tracing_context->serialize(write_buf);
+
+        writeIntBinary(static_cast<uint32_t>(Coordination::size(request->getOpNum()) + request->sizeImpl()), write_buf);
+        Coordination::write(request->getOpNum(), write_buf);
+        request->writeImpl(write_buf);
+    }
+
+    return write_buf.getBuffer();
+}
+
+void KeeperStateMachine::patchSerializedRequestBatch(
+    nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch)
+{
+    chassert(data.size() > patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        chassert(batch.requests.size() == 1);
+
+    auto * fields_start = reinterpret_cast<BufferBase::Position>(data.data_begin() + patched_fields_offset);
+    WriteBufferFromPointer write_buf(fields_start, data.size() - patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.requests[0].time, write_buf);
+    writeIntBinary(batch.requests[0].zxid, write_buf);
+    auto digest = batch.getDigest();
+    if (!digest.has_value())
+        digest.emplace();
+    writeIntBinary(static_cast<uint8_t>(digest->version), write_buf);
+    writeIntBinary(digest->value, write_buf);
+    if (serialization_version >= KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.committed_log_idx, write_buf);
+    write_buf.finalize();
+}
+
+std::shared_ptr<KeeperRequestBatch> KeeperStateMachine::parseRequestBatch(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * patched_fields_offset)
+{
+    ReadBufferFromNuraftBuffer buffer(data);
+
+    int64_t marker = 0;
+    readIntBinary(marker, buffer);
+
+    if (marker != BATCH_ENTRY_MARKER)
+    {
+        /// Legacy format: the entry is a single request, and `marker` is its session id.
+        /// For legacy versions `patched_fields_offset` is the request end position; which
+        /// patchable fields follow it is determined by `serialization_version`.
+        auto batch = std::make_shared<KeeperRequestBatch>();
+        batch->requests.push_back(*parseRequest(data, final, serialization_version, patched_fields_offset));
+        return batch;
+    }
+
+    uint8_t format_version = 0;
+    readIntBinary(format_version, buffer);
+    if (format_version != BATCH_ENTRY_FORMAT_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported batch log entry format version {} (expected {})",
+            format_version,
+            BATCH_ENTRY_FORMAT_VERSION);
+
+    if (serialization_version)
+        *serialization_version = ZooKeeperLogSerializationVersion::REQUEST_BATCH;
+    if (patched_fields_offset)
+        *patched_fields_offset = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET;
+
+    uint32_t header_size = 0;
+    readIntBinary(header_size, buffer);
+
+    int64_t committed_log_idx = 0;
+    int64_t first_zxid = 0;
+    KeeperDigest digest;
+    readIntBinary(first_zxid, buffer);
+    uint8_t digest_version = 0;
+    readIntBinary(digest_version, buffer);
+    digest.version = static_cast<KeeperDigestVersion>(digest_version);
+    readIntBinary(digest.value, buffer);
+    readIntBinary(committed_log_idx, buffer);
+
+    int32_t dispatcher_server_id = -1;
+    readIntBinary(dispatcher_server_id, buffer);
+    uint32_t request_count = 0;
+    readIntBinary(request_count, buffer);
+
+    /// Skip header fields appended by future format extensions.
+    if (header_size < static_cast<size_t>(buffer.getPosition()) || header_size > data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: invalid header size {} in entry of {} bytes", header_size, data.size());
+    buffer.seek(header_size, SEEK_SET);
+
+    /// Loose lower bound on the serialized size of one request, only used to reject corrupted
+    /// counts before reserving memory.
+    constexpr size_t min_request_record_size = 3 * sizeof(int64_t) + sizeof(uint8_t) + sizeof(uint32_t) + sizeof(int32_t);
+    if (request_count == 0 || request_count > (data.size() - header_size) / min_request_record_size)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: {} requests don't fit in {} bytes", request_count, data.size());
+
+    /// Reapply the patchable fields on every parse: the leader may have patched the buffer in
+    /// place since a previous parse cached the batch.
+    const auto update_patched_fields = [&](KeeperRequestBatch & batch)
+    {
+        batch.committed_log_idx = committed_log_idx;
+        for (size_t i = 0; i < batch.requests.size(); ++i)
+            /// first_zxid == 0 means the leader hasn't assigned zxids to this batch yet.
+            batch.requests[i].zxid = first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(i);
+        batch.requests.back().digest = digest;
+    };
+
+    /// The batch cache is keyed by (session_id, xid) of the first request.
+    int64_t first_session_id = 0;
+    int64_t first_xid = 0;
+    readIntBinary(first_session_id, buffer);
+    readIntBinary(first_xid, buffer);
+    buffer.seek(header_size, SEEK_SET);
+
+    const bool should_cache = min_request_size_to_cache != 0 && first_session_id != -1
+        && first_session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
+        && std::all_of(
+            non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return first_xid != non_cacheable_xid; });
+
+    if (should_cache)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        if (auto xid_to_batch_it = parsed_batch_cache.find(first_session_id); xid_to_batch_it != parsed_batch_cache.end())
+        {
+            auto & xid_to_batch = xid_to_batch_it->second;
+            if (auto batch_it = xid_to_batch.find(first_xid); batch_it != xid_to_batch.end())
+            {
+                auto batch = batch_it->second;
+                chassert(batch->requests.size() == request_count);
+                update_patched_fields(*batch);
+                if (final)
+                    xid_to_batch.erase(batch_it);
+                return batch;
+            }
+        }
+    }
+
+    auto batch = std::make_shared<KeeperRequestBatch>();
+    batch->dispatcher_server_id = dispatcher_server_id;
+    batch->requests.reserve(request_count);
+
+    for (uint32_t i = 0; i < request_count; ++i)
+    {
+        auto & request_for_session = batch->requests.emplace_back();
+        readIntBinary(request_for_session.session_id, buffer);
+        int64_t xid = 0;
+        readIntBinary(xid, buffer);
+        readIntBinary(request_for_session.time, buffer);
+
+        uint8_t has_tracing_context = 0;
+        readIntBinary(has_tracing_context, buffer);
+        std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
+        if (has_tracing_context)
+        {
+            tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+            tracing_context->deserialize(buffer);
+        }
+
+        uint32_t request_size = 0;
+        readIntBinary(request_size, buffer);
+        const size_t body_end_position = static_cast<size_t>(buffer.getPosition()) + request_size;
+        if (body_end_position > data.size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: request {} of {} exceeds the entry", i, request_count);
+
+        Coordination::OpNum opnum = {};
+        Coordination::read(opnum, buffer);
+        request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+        request_for_session.request->xid = xid;
+        request_for_session.request->readImpl(buffer);
+        if (static_cast<size_t>(buffer.getPosition()) > body_end_position)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted batch log entry: request {} of {} has declared size {} but parsing consumed more",
+                i,
+                request_count,
+                request_size);
+        /// Skip request fields appended by future format extensions.
+        buffer.seek(body_end_position, SEEK_SET);
+
+        if (tracing_context)
+            request_for_session.request->tracing_context = std::move(tracing_context);
+    }
+
+    if (static_cast<size_t>(buffer.getPosition()) != data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Corrupted batch log entry: {} bytes left over after parsing {} requests",
+            data.size() - buffer.getPosition(),
+            request_count);
+
+    update_patched_fields(*batch);
+
+    if (should_cache && !final)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        parsed_batch_cache[first_session_id].emplace(first_xid, batch);
+    }
+
+    return batch;
 }
 
 std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -652,7 +893,7 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-//TODO(keeper-batch) Process all requests of the batch under one storage-lock/process_and_responses_lock acquisition (splitting into runs where SessionID needs different handling), collect responses into one batched response_callback call, assert digest only after the last request, keep per-request commit_callback for now, setLastCommitIndex once per batch; `zxid = log_idx` fallback is legacy-only.
+//TODO(keeper-batch2) Process all requests of the batch under one storage-lock/process_and_responses_lock acquisition (splitting into runs where SessionID needs different handling), collect responses into one batched response_callback call, assert digest only after the last request, keep per-request commit_callback for now, setLastCommitIndex once per batch; `zxid = log_idx` fallback is legacy-only.
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
