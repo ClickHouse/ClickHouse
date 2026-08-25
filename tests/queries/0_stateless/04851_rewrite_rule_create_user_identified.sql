@@ -20,8 +20,8 @@ DROP USER user_04851_a;
 CREATE USER user_04851_a IDENTIFIED WITH plaintext_password BY 'secret_04851';
 DROP USER user_04851_a;
 
--- The per-method `VALID UNTIL` clause is kept outside the authentication node's `children`;
--- it still distinguishes templates.
+-- The per-method `VALID UNTIL` clause is registered in the authentication node's `children`
+-- and distinguishes templates.
 CREATE USER user_04851_a IDENTIFIED WITH no_password VALID UNTIL '2126-01-01';
 DROP USER user_04851_a;
 
@@ -37,8 +37,17 @@ DROP USER user_04851_b;
 SET query_rules = '';
 DROP RULE rule_04851_valid_until;
 
--- A placeholder inside the per-method `VALID UNTIL` (an AST member the matcher does not
--- traverse) is rejected at DDL time.
-CREATE RULE rule_04851_placeholder AS (CREATE USER user_04851_b IDENTIFIED WITH no_password VALID UNTIL {d:String}) REJECT WITH 'blocked'; -- { serverError REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE }
+-- A placeholder inside the per-method `VALID UNTIL` is supported: the deadline expression is
+-- registered in the authentication node's `children`, so the matcher binds it like any other
+-- child placeholder and the rule fires for any expiration.
+CREATE RULE rule_04851_placeholder AS (CREATE USER user_04851_b IDENTIFIED WITH no_password VALID UNTIL {d:String}) REJECT WITH 'blocked';
+SET query_rules = 'rule_04851_placeholder';
+CREATE USER user_04851_b IDENTIFIED WITH no_password VALID UNTIL '2126-03-03'; -- { serverError REWRITE_RULE_REJECTION }
+CREATE USER user_04851_b IDENTIFIED WITH no_password VALID UNTIL '2126-04-04'; -- { serverError REWRITE_RULE_REJECTION }
+-- Without a `VALID UNTIL` clause there is nothing for the placeholder to bind: no match.
+CREATE USER user_04851_b IDENTIFIED WITH no_password;
+DROP USER user_04851_b;
+SET query_rules = '';
+DROP RULE rule_04851_placeholder;
 
 SELECT count() FROM system.users WHERE name IN ('user_04851_a', 'user_04851_b');
