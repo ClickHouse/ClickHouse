@@ -32,3 +32,12 @@ clickhouse_add_executable(benchmark_sched_getcpu sched_getcpu.cpp)
 target_link_libraries (benchmark_sched_getcpu PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(hash_join_bandwidth_model
+    hash_join_bandwidth_model.cpp
+    hash_join_bench.cpp
+    concurrent_hash_join_bench.cpp
+    radix_hash_join_bench.cpp)
+target_link_libraries (hash_join_bandwidth_model PRIVATE
+    dbms
+    boost::program_options)

@@ -49,6 +49,11 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsUInt64 radix_join_max_partitions_per_pass;
+    extern const SettingsBool radix_join_size_tables_by_distinct_estimate;
+    extern const SettingsFloat radix_join_probe_buffer_fraction;
+    extern const SettingsUInt64 radix_join_probe_buffer_min_bytes;
+    extern const SettingsUInt64 radix_join_probe_buffer_max_bytes;
 
     extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
@@ -103,6 +108,11 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 radix_join_max_partitions_per_pass;
+    extern const QueryPlanSerializationSettingsBool radix_join_size_tables_by_distinct_estimate;
+    extern const QueryPlanSerializationSettingsFloat radix_join_probe_buffer_fraction;
+    extern const QueryPlanSerializationSettingsUInt64 radix_join_probe_buffer_min_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 radix_join_probe_buffer_max_bytes;
 
     extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
     extern const QueryPlanSerializationSettingsBool parallel_non_joined_rows_processing;
@@ -168,6 +178,11 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
+    radix_join_max_partitions_per_pass = query_settings[Setting::radix_join_max_partitions_per_pass];
+    radix_join_size_tables_by_distinct_estimate = query_settings[Setting::radix_join_size_tables_by_distinct_estimate];
+    radix_join_probe_buffer_fraction = query_settings[Setting::radix_join_probe_buffer_fraction];
+    radix_join_probe_buffer_min_bytes = query_settings[Setting::radix_join_probe_buffer_min_bytes];
+    radix_join_probe_buffer_max_bytes = query_settings[Setting::radix_join_probe_buffer_max_bytes];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
@@ -218,6 +233,11 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
+    radix_join_max_partitions_per_pass = settings[QueryPlanSerializationSetting::radix_join_max_partitions_per_pass];
+    radix_join_size_tables_by_distinct_estimate = settings[QueryPlanSerializationSetting::radix_join_size_tables_by_distinct_estimate];
+    radix_join_probe_buffer_fraction = settings[QueryPlanSerializationSetting::radix_join_probe_buffer_fraction];
+    radix_join_probe_buffer_min_bytes = settings[QueryPlanSerializationSetting::radix_join_probe_buffer_min_bytes];
+    radix_join_probe_buffer_max_bytes = settings[QueryPlanSerializationSetting::radix_join_probe_buffer_max_bytes];
 
     joined_block_split_single_row = settings[QueryPlanSerializationSetting::joined_block_split_single_row];
     parallel_non_joined_rows_processing = settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing];
@@ -273,6 +293,11 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
     settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
+    settings[QueryPlanSerializationSetting::radix_join_max_partitions_per_pass] = radix_join_max_partitions_per_pass;
+    settings[QueryPlanSerializationSetting::radix_join_size_tables_by_distinct_estimate] = radix_join_size_tables_by_distinct_estimate;
+    settings[QueryPlanSerializationSetting::radix_join_probe_buffer_fraction] = radix_join_probe_buffer_fraction;
+    settings[QueryPlanSerializationSetting::radix_join_probe_buffer_min_bytes] = radix_join_probe_buffer_min_bytes;
+    settings[QueryPlanSerializationSetting::radix_join_probe_buffer_max_bytes] = radix_join_probe_buffer_max_bytes;
 
     settings[QueryPlanSerializationSetting::joined_block_split_single_row] = joined_block_split_single_row;
     settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing] = parallel_non_joined_rows_processing;

@@ -117,6 +117,14 @@ public:
         return addBlockToJoin(block, check_limits);
     }
 
+    /// Overload carrying the 0-based build lane index (< the join's max_threads, stable per build stream,
+    /// but not guaranteed distinct across streams) so a join can bind stable per-lane build state
+    /// without a thread-local slot cache. Default ignores the lane and forwards.
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits, size_t /*build_lane*/) /// NOLINT
+    {
+        return addBlockToJoin(block, num_rows, check_limits);
+    }
+
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
      * TODO: pass correct left block sample to the constructor.
@@ -128,6 +136,11 @@ public:
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual JoinResultPtr joinBlock(Block block) = 0;
+
+    /// Overload carrying the 0-based probe lane index (< the join's max_threads, stable per probe stream,
+    /// but not guaranteed distinct across streams). Lets a join keep stable per-lane probe scratch
+    /// without locking. Default ignores the lane and forwards.
+    virtual JoinResultPtr joinBlock(Block block, size_t /*lane*/) { return joinBlock(std::move(block)); }
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.

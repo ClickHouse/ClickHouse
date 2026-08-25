@@ -2,7 +2,9 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
@@ -12,6 +14,11 @@
 
 #include <algorithm>
 #include <type_traits>
+
+namespace ProfileEvents
+{
+    extern const Event HashJoinProbeMatchMicroseconds;
+}
 
 namespace DB
 {
@@ -185,7 +192,14 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    size_t processed_rows = 0;
+    {
+        /// The matching phase: hash table lookups building the matched-row list (row_refs /
+        /// offsets), excluded from `HashJoinProbeGatherMicroseconds` which times the later,
+        /// separate materialization of output blocks from that list (`HashJoinResult::next`).
+        ProfileEventTimeIncrement<Microseconds> match_watch(ProfileEvents::HashJoinProbeMatchMicroseconds);
+        processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    }
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 

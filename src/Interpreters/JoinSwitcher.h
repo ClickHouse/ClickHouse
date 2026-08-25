@@ -27,6 +27,9 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
+
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
     /// @returns false, if join-on-disk disk limit exceeded

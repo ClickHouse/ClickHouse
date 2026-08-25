@@ -1,7 +1,14 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
+
+namespace ProfileEvents
+{
+    extern const Event HashJoinProbeGatherMicroseconds;
+}
 
 namespace DB
 {
@@ -401,6 +408,11 @@ void HashJoinResult::setNextBlock(ScatteredBlock && block)
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    /// The gather phase: materializing output blocks from the matched-row list built by the
+    /// earlier, separately-timed matching phase (`HashJoinProbeMatchMicroseconds`); this covers
+    /// right-side column gather (`appendRightColumns`) and left-side column replication.
+    ProfileEventTimeIncrement<Microseconds> gather_watch(ProfileEvents::HashJoinProbeGatherMicroseconds);
+
     ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {
