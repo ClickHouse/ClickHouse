@@ -263,8 +263,9 @@ TypeIndex typeIdx(const IDataType * data_type)
 
 /** Both transposes exchange the two indices of an 8x8 tile: the byte transpose moves the byte at
   * 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same one
-  * level down, within a lane. The scalar loops below carry out that exchange one byte (or one bit)
-  * at a time; a byte shuffle performs it a whole vector at a time.
+  * level down, within a lane. The scalar loops below carry out either exchange one byte (or one
+  * bit) at a time. The byte exchange instead becomes a single whole-vector byte shuffle, and the
+  * bit exchange three mask-and-shift delta swaps per lane.
   *
   * The kernels are written with generic clang vectors, so no arch-specific code or runtime
   * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence.
