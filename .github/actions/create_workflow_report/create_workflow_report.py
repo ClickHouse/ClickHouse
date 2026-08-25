@@ -692,7 +692,7 @@ def get_new_fails_this_pr(
     # Combine both types of fails and select only desired columns
     desired_columns = ["job_name", "test_name", "test_status", "results_link"]
     if len(checks_fails) > 0 and "labels" in checks_fails.columns:
-        desired_columns.append("labels")
+        desired_columns.insert(desired_columns.index("results_link"), "labels")
         if len(regression_fails) > 0:
             regression_fails["labels"] = ""
     all_pr_fails = pd.concat([checks_fails, regression_fails], ignore_index=True)[
@@ -1048,7 +1048,12 @@ def add_labels_to_checks_fails(
         lambda row: labels_map.get((row["job_name"], row["test_name"]), ""),
         axis=1,
     )
-    return df
+    cols = [c for c in df.columns if c != "labels"]
+    if "results_link" in cols:
+        cols.insert(cols.index("results_link"), "labels")
+    else:
+        cols.append("labels")
+    return df[cols]
 
 
 def format_results_as_html_table(results, *, branch_name: str = "") -> str:
