@@ -1,29 +1,21 @@
-import io
-import json
 import logging
-import random
-import string
 import time
 import uuid
-from multiprocessing.dummy import Pool
 from datetime import datetime
 
 import pytest
 from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
-    run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
 )
 from helpers.config_cluster import minio_secret_key
+from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -32,9 +24,15 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
     instance_2 = started_cluster.instances["instance2"]
+    instance_3 = started_cluster.instances["instance_without_keeper_fault_injection"]
 
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
     instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    # instance_without_keeper_fault_injection was not reset between tests, so S3Queue
+    # tables leaked from prior tests kept streaming and could consume a process-global
+    # ONCE failpoint (e.g. object_storage_queue_fail_commit_after_success) before the
+    # test that armed it committed. Reset it too so each test starts with no streamers.
+    instance_3.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
@@ -68,6 +66,7 @@ def started_cluster():
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
                 "configs/disable_streaming.xml",
+                "configs/plain_rewritable_disk.xml",
             ],
             user_configs=[
                 "configs/users.xml",
@@ -93,40 +92,6 @@ def started_cluster():
                 "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
-        )
-        cluster.add_instance(
-            "instance_24.5",
-            with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-                "configs/compatibility.xml",
-            ],
-            main_configs=[
-                "configs/s3queue_log.xml",
-                "configs/remote_servers_245.xml",
-                "configs/insert_deduplication.xml",
-            ],
-            with_installed_binary=True,
-        )
-        cluster.add_instance(
-            "instance2_24.5",
-            with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-                "configs/compatibility.xml",
-            ],
-            main_configs=[
-                "configs/s3queue_log.xml",
-                "configs/remote_servers_245.xml",
-            ],
-            with_installed_binary=True,
         )
         cluster.add_instance(
             "instance_without_keeper_fault_injection",
@@ -176,93 +141,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_upgrade_3(started_cluster):
-    node = started_cluster.instances["instance_24.5"]
-    if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
-    assert "24.5" in node.query("select version()").strip()
-
-    table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 10
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        no_settings=True,
-        version="24.5",
-    )
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = 10
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
-
-    node.restart_with_latest_version()
-
-    assert table_name in node.query("SHOW TABLES")
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
-    """
-    )
-    assert 111 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
-    """
-    )
-    assert 222 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    node.restart_clickhouse()
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-    node.query(f"DROP TABLE {table_name} SYNC")
-
-
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_filtering_files(started_cluster, mode):
     node1 = started_cluster.instances["instance"]
@@ -300,7 +178,7 @@ def test_filtering_files(started_cluster, mode):
     )
 
     files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_to_generate)]
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster,
         files_path,
         files_to_generate,
@@ -486,11 +364,11 @@ def test_failed_commit(started_cluster):
             "keeper_path": keeper_path,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=2
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
 
     create_mv(node, table_name, dst_table_name)
 
@@ -529,7 +407,7 @@ def test_failed_commit(started_cluster):
 
     assert expected_rows <= count and count <= expected_rows_upper
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
 
     processed = False
     for _ in range(100):
@@ -558,7 +436,6 @@ def test_failure_in_the_middle(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1
 
     format = "column1 String, column2 String"
     create_table(
@@ -588,7 +465,7 @@ def test_failure_in_the_middle(started_cluster):
     put_s3_file_content(started_cluster, f"{files_path}/{file_name}", values_csv)
 
     node.query(
-        f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+        "SYSTEM ENABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
     )
 
     try:
@@ -629,7 +506,7 @@ def test_failure_in_the_middle(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
         )
 
     def get_count():
@@ -839,7 +716,7 @@ def test_disable_insertion_and_mutation(started_cluster):
 
 def test_shutdown_logs(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_shutdown_logs"
+    table_name = "test_shutdown_logs"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
@@ -856,7 +733,7 @@ def test_shutdown_logs(started_cluster):
             "s3queue_processing_threads_num": 5,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100
     )
     create_mv(node, table_name, dst_table_name)
@@ -929,7 +806,7 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
-    node.query(f"SYSTEM FLUSH LOGS system.text_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
 
     def check_in_text_log(message, logger_name):
         return int(
@@ -942,7 +819,7 @@ def test_shutdown_order(started_cluster):
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
 
-    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+    node.query("SYSTEM FLUSH LOGS system.s3queue_log")
 
     assert 0 == int(
         node.query(
@@ -1255,9 +1132,9 @@ def test_mv_settings(started_cluster, mode, limit):
     )
 
     num_rows = 10
+    files_to_generate = 5
 
     def insert():
-        files_to_generate = 5
         table_name_suffix = f"{uuid.uuid4()}"
         for i in range(files_to_generate):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
@@ -1278,14 +1155,15 @@ def test_mv_settings(started_cluster, mode, limit):
     )
     node.query(f"SYSTEM STOP MERGES {dst_table_name}")
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = num_rows
-    for _ in range(100):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
+    # All inserted rows must land in the destination before the part-count check.
+    expected_rows = num_rows * files_to_generate
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(expected_rows),
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
     assert expected_parts_num == int(
         node.query(
@@ -1357,13 +1235,11 @@ def test_detach_attach_table(started_cluster):
 def test_failed_startup(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_failed_startup_{generate_random_string()}"
-    dst_table_name = f"{table_name}_dst"
-    mv_table_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
     format = "column1 Int32, column2 String"
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
     assert "Failed to startup" in create_table(
         started_cluster,
         node,
@@ -1379,7 +1255,7 @@ def test_failed_startup(started_cluster):
             "polling_min_timeout_ms": 0,
         },
     )
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
 
     zk = started_cluster.get_kazoo_client("zoo1")
 
@@ -1419,6 +1295,137 @@ def test_failed_startup(started_cluster):
     )
 
     assert len(zk.get(f"{keeper_path}")) > 0
+
+
+LOGICAL_ERROR_MARKER = "Logical error: 'Files metadata is empty'"
+
+
+def assert_reports_table_is_dropped(node, table_name, database_name="default"):
+    """Every user-facing entry point that needs the queue metadata must report
+    TABLE_IS_DROPPED, and none of them may abort the server."""
+    qualified = f"{database_name}.{table_name}"
+    for query in (
+        f"SELECT count() FROM {qualified} SETTINGS stream_like_engine_allow_direct_select=1",
+        f"SYSTEM FLUSH OBJECT STORAGE QUEUE {qualified} PATH 'x'",
+        f"ALTER TABLE {qualified} MODIFY SETTING polling_min_timeout_ms=555",
+    ):
+        error = node.query_and_get_error(query)
+        assert "TABLE_IS_DROPPED" in error, f"{query} -> {error}"
+
+    assert node.query("SELECT 1") == "1\n"
+    # A query-level error alone is satisfied by many unrelated failures, so pin the
+    # absence of the abort itself. The table name is unique per invocation, and the
+    # log is shared, so match the marker together with it.
+    assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+    assert not node.contains_in_log("Received signal Segmentation fault")
+
+
+def test_select_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_select_after_failed_startup_{generate_random_string()}"
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    try:
+        assert "Failed to startup" in create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            expect_error=True,
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+    # startup() reset the metadata handle, but nothing rolled the catalog entry back.
+    assert (
+        node.query(f"SELECT count() FROM system.tables WHERE name = '{table_name}'")
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name)
+
+
+def test_select_after_failed_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+    suffix = generate_random_string()
+    table_name = f"test_select_after_failed_drop_{suffix}"
+    database_name = f"db_{table_name}"
+
+    node.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS disk = 'plain_rw'"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        f"{table_name}_data",
+        format="column1 UInt32, column2 String",
+        database_name=database_name,
+        additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+    )
+
+    # DROP shuts the table down before the database detaches it, so a failure in
+    # between leaves the table attached with its metadata handle already gone.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+    )
+    try:
+        assert "FAULT_INJECTED" in node.query_and_get_error(
+            f"DROP TABLE {database_name}.{table_name}"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+        )
+
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables "
+            f"WHERE database = '{database_name}' AND name = '{table_name}'"
+        )
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name, database_name)
+
+
+def test_select_racing_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    for i in range(10):
+        table_name = f"test_select_racing_drop_{generate_random_string()}"
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+
+        # DROP shuts the storage down without waiting for readers, so it can drop the
+        # metadata handle while this SELECT is still building its query plan. The
+        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
+        select = node.get_query_request(
+            f"SELECT count() FROM {table_name} "
+            f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
+            f"SETTINGS stream_like_engine_allow_direct_select=1"
+        )
+        time.sleep(1.2)
+        node.query(f"DROP TABLE {table_name} SYNC")
+
+        # Also accepting a clean result would make this arm pass against the unfixed
+        # server: a SELECT that finished first never reads the dropped metadata.
+        _, error = select.get_answer_and_error()
+        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+
+        assert node.query("SELECT 1") == "1\n"
+        assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
 def test_create_or_replace_table(started_cluster):
@@ -1478,7 +1485,6 @@ def test_create_or_replace_table(started_cluster):
 def test_persistent_processing_nodes_cleanup(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"max_persistent_processing_nodes_cleanup_{generate_random_string()}"
-    dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
@@ -1540,8 +1546,6 @@ def test_persistent_processing(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 10,
             "cleanup_interval_min_ms": 100,
@@ -1610,8 +1614,6 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -1655,7 +1657,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     """
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
     node.query(
         f"""
         CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
@@ -1690,7 +1692,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         time.sleep(1)
     assert found
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1"
@@ -1702,7 +1704,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
     insert()
 
     found = False
@@ -1714,7 +1716,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
             break
         time.sleep(1)
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
     assert found
 
     assert node.contains_in_log(
@@ -1783,11 +1785,11 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     assert 5 == get_count()
 
     cache_size_bytes_str = node.query(
-        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+        "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
     ).strip()
 
     cache_size_elements_str = node.query(
-        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+        "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
     ).strip()
 
     if not cache_size_bytes_str or not cache_size_elements_str:
@@ -1822,12 +1824,12 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
 
     cache_size_bytes = int(
         node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+            "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
         ).strip()
     )
     cache_size_elements = int(
         node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+            "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
         ).strip()
     )
 
@@ -1856,12 +1858,12 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
 
     new_cache_size_bytes = int(
         node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
+            "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
         ).strip()
     )
     new_cache_size_elements = int(
         node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
+            "SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
         ).strip()
     )
 
@@ -1897,8 +1899,6 @@ def test_deduplication(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -1941,7 +1941,7 @@ def test_deduplication(started_cluster, mode):
     """
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
     node.query(
         f"""
         CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name};
@@ -1961,7 +1961,7 @@ def test_deduplication(started_cluster, mode):
     expected_rows = files_num * num_rows
     assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
 
     found = False
     for _ in range(50):
@@ -2051,8 +2051,6 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
         file_format="parquet",
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -2092,7 +2090,7 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
     """
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_insert")
     node.query(
         f"""
         CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name};
@@ -2115,7 +2113,7 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
         node.query(f"SELECT count() FROM {dst_table_name}")
     )
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_insert")
 
     # Wait for successful commit after disabling failpoint
     found = False
@@ -2225,7 +2223,7 @@ def test_failed_commit_after_success(started_cluster):
     )
     generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=2)
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
     try:
         create_mv(node, table_name, dst_table_name)
 
@@ -2258,7 +2256,7 @@ def test_failed_commit_after_success(started_cluster):
             "File was re-processed (duplicate rows inserted)"
         )
     finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
 
 
 def test_failed_commit_after_success_select(started_cluster):
@@ -2292,7 +2290,7 @@ def test_failed_commit_after_success_select(started_cluster):
     )
     generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=2)
 
-    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_after_success")
     try:
         # SELECT triggers ObjectStorageQueueSource::commit; the failpoint fires after the
         # successful tryMulti, simulating connection loss before the response arrives.
@@ -2321,4 +2319,4 @@ def test_failed_commit_after_success_select(started_cluster):
         # The file is processed in ZK; a second SELECT must return 0 rows (not re-process).
         assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
     finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")

@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -121,7 +122,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain distributed tables
         if (db.second->isExternal())
@@ -206,3 +207,6 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDistributionQueue) }

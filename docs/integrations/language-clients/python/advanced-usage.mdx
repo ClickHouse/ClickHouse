@@ -1,0 +1,180 @@
+---
+sidebarTitle: 'Advanced usage'
+keywords: ['clickhouse', 'python', 'advanced', 'raw', 'async', 'threading']
+description: 'Advanced usage with ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-usage
+title: 'Advanced usage'
+doc_type: 'reference'
+---
+
+## Raw API {#raw-api}
+
+For use cases which don't require transformation between ClickHouse data and native or third party data types and structures, the ClickHouse Connect client provides methods for direct usage of the ClickHouse connection.
+
+### Client `raw_query` method {#client-rawquery-method}
+
+The `Client.raw_query` method allows direct usage of the ClickHouse HTTP query interface using the client connection. The return value is an unprocessed `bytes` object. It offers a convenient wrapper with parameter binding, error handling, retries, and settings management using a minimal interface:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | str | Required | Any valid ClickHouse query. |
+| `parameters` | dict or sequence | `None` | See [Parameters argument](/integrations/language-clients/python/driver-api#parameters-argument). |
+| `settings` | dict | `None` | See [Settings argument](/integrations/language-clients/python/driver-api#settings-argument-1). |
+| `fmt` | str | `None` | ClickHouse output format. ClickHouse uses TSV when no format is specified. |
+| `use_database` | bool | `True` | Include the database configured on the client. |
+| `external_data` | `ExternalData` | `None` | External file or binary data. See [External data](/integrations/language-clients/python/advanced-querying#external-data). |
+| `transport_settings` | dict | `None` | HTTP headers added to this request. |
+
+It is the caller's responsibility to handle the resulting `bytes` object. Note that the `Client.query_arrow` is just a thin wrapper around this method using the ClickHouse `Arrow` output format.
+
+### Client `raw_stream` method {#client-rawstream-method}
+The synchronous `Client.raw_stream` method has the same API as `raw_query`, but returns an `io.IOBase` stream of byte chunks. Close the stream when processing finishes. `AsyncClient.raw_stream` is awaited and returns an async `StreamContext` for use with `async with` and `async for`.
+
+### Client `raw_insert` method {#client-rawinsert-method}
+
+The `Client.raw_insert` method allows direct inserts of `bytes` objects or `bytes` object generators using the client connection. Because it does no processing of the insert payload, it is highly performant. The method provides options to specify settings and insert format:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `table` | str | Required | Simple or database-qualified target table. |
+| `column_names` | Sequence[str] | `None` | Column names for the insert block. Required when `fmt` does not include names. |
+| `insert_block` | str, bytes, generator, or `BinaryIO` | Required | Data to insert. Strings are encoded with the client encoding. |
+| `settings` | dict | `None` | See [Settings argument](/integrations/language-clients/python/driver-api#settings-argument-1). |
+| `fmt` | str | `None` | ClickHouse input format of the `insert_block` payload. `Native` is used when no format is specified. |
+| `compression` | str | `None` | Compression already applied to `insert_block`, such as `"gzip"`, `"lz4"`, or `"zstd"`. |
+| `transport_settings` | dict | `None` | HTTP headers added to this request. |
+
+It is the caller's responsibility to ensure that the `insert_block` is in the specified format and uses the specified compression method. ClickHouse Connect uses these raw inserts for file uploads and PyArrow Tables, delegating parsing to the ClickHouse server.
+
+## Saving query results as files {#saving-query-results-as-files}
+
+You can stream files directly from ClickHouse to the local file system using the `raw_stream` method. For example, if you'd like to save the results of a query to a CSV file, you could use the following code snippet:
+
+```python
+import clickhouse_connect
+
+if __name__ == "__main__":
+    client = clickhouse_connect.get_client()
+    query = (
+        "SELECT number, toString(number) AS number_as_str "
+        "FROM system.numbers LIMIT 5"
+    )
+    stream = client.raw_stream(query=query, fmt="CSVWithNames")
+    try:
+        with open("output.csv", "wb") as file:
+            for chunk in stream:
+                file.write(chunk)
+    finally:
+        stream.close()
+        client.close()
+```
+
+The code above yields an `output.csv` file with the following content:
+
+```csv
+"number","number_as_str"
+0,"0"
+1,"1"
+2,"2"
+3,"3"
+4,"4"
+```
+
+Similarly, you could save data in [TabSeparated](/reference/formats/TabSeparated/TabSeparated) and other formats. See [Formats for Input and Output Data](/reference/formats) for an overview of all available format options.
+
+## Multithreaded, multiprocess, and async/event driven use cases {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
+
+ClickHouse Connect works well in multithreaded, multiprocess, and event-loop-driven/asynchronous applications. All query and insert processing occurs within a single thread, so operations are generally thread-safe. (Parallel processing of some operations at a low level is a possible future enhancement to overcome the performance penalty of a single thread, but even in that case thread safety will be maintained.)
+
+Because each query or insert executed maintains state in its own `QueryContext` or `InsertContext` object, respectively, these helper objects aren't thread-safe, and they shouldn't be shared between multiple processing streams. See the additional discussion about context objects in the [QueryContexts](/integrations/language-clients/python/advanced-querying#querycontexts) and [InsertContexts](/integrations/language-clients/python/advanced-inserting#insertcontexts) sections.
+
+Additionally, in an application that has two or more queries and/or inserts "in flight" at the same time, there are two further considerations to keep in mind. The first is the ClickHouse "session" associated with the query/insert, and the second is the HTTP connection pool used by ClickHouse Connect Client instances.
+
+## AsyncClient {#asyncclient}
+
+ClickHouse Connect provides a native aiohttp-based client for asyncio applications. Install the optional dependency before using it:
+
+```bash
+pip install "clickhouse-connect[async]"
+```
+
+Await `get_async_client` to create and initialize a client. I/O methods such as `query`, `command`, and `insert` are coroutines:
+
+```python
+import asyncio
+
+import clickhouse_connect
+
+
+async def main():
+    async with await clickhouse_connect.get_async_client() as client:
+        result = await client.query(
+            "SELECT name FROM system.databases ORDER BY name LIMIT 1"
+        )
+        print(result.result_rows)
+
+
+asyncio.run(main())
+```
+
+The async client follows the same query, insert, raw, Arrow, and streaming contract as the synchronous client. It uses aiohttp for network I/O. CPU-bound Native-format parsing may run in an executor so that it doesn't block the event loop.
+
+Async streaming methods are awaited before entering the returned context:
+
+```python
+async with await client.query_rows_stream(
+    "SELECT number FROM numbers(100000)"
+) as stream:
+    async for row in stream:
+        process(row)
+```
+
+Unlike the synchronous factory, `get_async_client` disables automatic session IDs by default so concurrent coroutines can share a client. Pass an explicit `session_id` or `autogenerate_session_id=True` only when you need session state and will avoid concurrent queries in that session.
+
+## Managing ClickHouse session IDs {#managing-clickhouse-session-ids}
+
+Each ClickHouse query occurs within the context of a ClickHouse "session". Sessions are currently used for two purposes:
+- To associate specific ClickHouse settings with multiple queries (see the [user settings](/reference/settings/session-settings)). The ClickHouse `SET` command is used to change the settings for the scope of a user session.
+- To track [temporary tables.](/reference/statements/create/table#temporary-tables)
+
+By default, a synchronous `Client` uses a generated session ID. `SET` statements and temporary tables therefore persist across requests from that client. The async factory does not generate a session ID by default. ClickHouse doesn't allow concurrent queries in the same session, and the client raises a `ProgrammingError` if this is attempted, so use one of the following patterns:
+
+1. Create a separate `Client` instance for each thread/process/event handler that needs session isolation. This preserves per-client session state (temporary tables and `SET` values).
+2. Use a unique `session_id` for each query via the `settings` argument when calling `query`, `command`, or `insert`, if you don't require shared session state.
+3. Disable sessions on a shared client by setting `autogenerate_session_id=False` before creating the client (or pass it directly to `get_client`).
+
+```python
+import clickhouse_connect
+from clickhouse_connect import common
+
+common.set_setting("autogenerate_session_id", False)
+client = clickhouse_connect.get_client(
+    host="somehost.com",
+    username="dbuser",
+    password="password",
+)
+```
+
+Alternatively, pass `autogenerate_session_id=False` directly to `get_client(...)`.
+
+In this case ClickHouse Connect doesn't send a `session_id`; the server doesn't treat separate requests as belonging to the same session. Temporary tables and session-level settings won't persist across requests.
+
+## Customizing the HTTP connection pool {#customizing-the-http-connection-pool}
+
+ClickHouse Connect uses `urllib3` connection pools to handle the underlying HTTP connection to the server. By default, all client instances share the same connection pool, which is sufficient for the majority of use cases. This default pool maintains up to 8 HTTP Keep Alive connections to each ClickHouse server used by the application.
+
+For large multi-threaded applications, separate connection pools may be appropriate. Customized connection pools can be provided as the `pool_mgr` keyword argument to the main `clickhouse_connect.get_client` function:
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver import httputil
+
+big_pool_mgr = httputil.get_pool_manager(maxsize=16, num_pools=12)
+
+client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+```
+
+Clients can share a pool manager, or each client can use a separate manager. For more details, see the [`urllib3` PoolManager documentation](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
+
+The async client owns an aiohttp pool rather than using `urllib3`. Configure it through `connector_limit`, `connector_limit_per_host`, and `keepalive_timeout` on `get_async_client`. Calling `await async_client.close_connections()` rotates the pool without interrupting in-flight requests.

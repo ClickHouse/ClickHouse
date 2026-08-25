@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP server'
+title: 'خادم ClickHouse MCP'
+description: 'كيف يوفّر خادم ClickHouse MCP طبقة الوصول القائمة على معيار مفتوح لـ Agentic Data Stack'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'MCP', 'Model Context Protocol', 'ClickHouse MCP server']
+---
+
+يُعد خادم ClickHouse MCP **طبقة الوصول القائمة على معيار مفتوح** في [Agentic Data Stack](/ar/products/agentic-data-stack/overview): إذ يتيح الوصول إلى ClickHouse من واجهة الدردشة عبر Model Context Protocol، بحيث يتمكن الوكيل من استكشاف بياناتك وتشغيل استعلامات للقراءة فقط عليها.
+
+في هذه المنظومة، يعمل الخادم مفتوح المصدر إلى جانب ClickHouse ويكون مُعَدًّا مسبقًا في LibreChat. ويعرض للوكيل ثلاث أدوات:
+
+* **سرد قواعد البيانات** — تعداد قواعد البيانات في نسخة ClickHouse المتصلة.
+* **سرد الجداول** — فحص الجداول وبُناها داخل قاعدة بيانات.
+* **تشغيل استعلامات SELECT** — تنفيذ استعلامات للقراءة فقط وإرجاع النتائج.
+
+لتشغيله كجزء من المنظومة، راجع [دليل إعداد Docker](/ar/products/agentic-data-stack/docker-setup). ولاستخدام خادم ClickHouse MCP مع عملاء آخرين وأطر عمل الوكلاء، أو لقراءة شفرته المصدرية وإعداده:
+
+* [فهرس تكاملات MCP](/ar/guides/use-cases/ai-ml/MCP): أدلة العملاء ومكتبات الوكلاء.
+* [مستودع MCP](https://github.com/ClickHouse/mcp-clickhouse): الشيفرة المصدرية والإعداد.
+
+<Info>
+  **هل تفضّل خادم MCP مُدارًا؟** يوفّر ClickHouse Cloud [Remote MCP server](/ar/products/cloud/features/ai-ml/remote-mcp) مُدارًا بالكامل — من دون تثبيت، مع مصادقة OAuth، ومجموعة أدوات أوسع تضيف عمليات إدارية (الخدمات، الفوترة، ClickPipes، النسخ الاحتياطية) إلى جانب أدوات القراءة فقط المذكورة أعلاه. راجع [مقارنته مع الخادم مفتوح المصدر](/ar/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss).
+</Info>

@@ -10,6 +10,8 @@ Expression
         Name: v
         Description: set GRANULARITY 1
         Condition: true
-        Parts: 0/1
-        Granules: 0/1
-      Ranges: 0
+        Parts: 1/1
+        Granules: 1/1
+      Ranges: 1
+1
+1

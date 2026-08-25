@@ -1,6 +1,5 @@
 #pragma once
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/StorageID.h>
@@ -17,6 +16,9 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 struct ObjectInfo
 {
@@ -53,7 +55,12 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
-    String getIdentifier() const;
+    /// Lazy materialization: if set, read only these rows of the file.
+    /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
+    std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    String getIdentifier(bool include_file_bucket_info = true) const;
+    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

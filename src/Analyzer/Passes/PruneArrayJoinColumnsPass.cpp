@@ -17,6 +17,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -55,7 +57,7 @@ using ArrayJoinUsageMap = std::unordered_map<const IQueryTreeNode *, std::unorde
 using ArrayJoinNodeSet = std::unordered_set<const IQueryTreeNode *>;
 
 /// Map: (ArrayJoinNode raw ptr, column name) → post-pruning column DataType.
-using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, DataTypePtr>>;
+using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, UnorderedMapWithMemoryTracking<std::string, DataTypePtr>>;
 
 /// Map: (ArrayJoinNode raw ptr, column name, old 1-based index) → new 1-based index.
 using IndexRemapMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, std::unordered_map<UInt64, UInt64>>>;
@@ -345,7 +347,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     ArrayJoinUsageMap usage_map;
     ArrayJoinNodeSet tracked_nodes;
 
-    auto table_expressions = extractTableExpressions(top_query_node->getJoinTree(), /*add_array_join=*/ true);
+    auto table_expressions = extractTableExpressions(top_query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ true);
     for (const auto & table_expr : table_expressions)
     {
         auto * array_join_node = table_expr->as<ArrayJoinNode>();

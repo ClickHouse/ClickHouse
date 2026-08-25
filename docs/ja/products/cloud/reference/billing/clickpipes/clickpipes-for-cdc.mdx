@@ -1,0 +1,144 @@
+---
+sidebarTitle: '変更データキャプチャ（CDC）'
+slug: /cloud/reference/billing/clickpipes/postgres-cdc
+title: 'ClickPipes for CDC'
+description: '変更データキャプチャ（CDC）ClickPipes の料金体系の概要'
+doc_type: 'reference'
+keywords: ['請求', 'clickpipes', 'cdc 料金', 'コスト', '料金']
+---
+
+このセクションでは、ClickPipes の変更データキャプチャ (CDC) コネクタの料金モデルについて説明します。
+
+<div id="cdc-oltp">
+  ## OLTP CDC
+</div>
+
+| コネクタ                                | 機能のライフサイクル | 課金ステータス                                                                                                       |
+| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| **Postgres CDC (変更データキャプチャ)&#x20;** | 一般提供 (GA)  | 記載の[料金ディメンション](#pricing-dimensions-oltp)に基づき課金されます。                                                             |
+| **MySQL CDC (変更データキャプチャ)&#x20;**    | パブリックベータ   | パブリックベータ期間中は**無料**です。コネクタが**2026年9月1日**に一般提供 (GA) へ移行すると、記載の[料金ディメンション](#pricing-dimensions-oltp)に基づく課金が開始されます。 |
+| **MongoDB CDC**                     | パブリックベータ   | パブリックベータ期間中は**無料**です。コネクタが一般提供 (GA) へ移行すると、記載の[料金ディメンション](#pricing-dimensions-oltp)に基づく課金が開始されます。               |
+
+<div id="pricing-dimensions-oltp">
+  ### 料金ディメンション
+</div>
+
+OLTP CDC (変更データキャプチャ) コネクタの料金は、[データ量](#data-volume-oltp)と[コンピュート](#compute-oltp)の 2 つの次元に基づいて算出されます。
+
+<div id="data-volume-oltp">
+  #### データ量
+</div>
+
+データベースのレプリケーションストリームから読み取られ、ClickHouse に取り込まれる非圧縮の生バイト数です。料金はインジェストのフェーズによって異なります。
+
+* **初期ロード / 再同期**: このフェーズでは、コネクタがレプリケーション対象として選択されたテーブルの整合性のあるスナップショットをキャプチャして取り込みます。これは、ClickPipe を初めて作成したとき、既存の ClickPipe に新しいテーブルを追加したとき、または整合性のあるスナップショットを再取り込みする必要がある回復不能なエラーが発生したときに行われます。
+
+* **継続的レプリケーション (CDC)&#x20;**: このフェーズでは、コネクタがレプリケーション対象として選択されたテーブルで発生する、insert、update、delete などの継続的な変更をキャプチャします。初期ロードフェーズが完了し、ClickPipe が `Running` 状態に移行すると、このフェーズになります。
+
+| フェーズ                        | コスト        |
+| --------------------------- | ---------- |
+| **初期ロード / 再同期**             | $0.10 / GB |
+| **継続的レプリケーション (CDC)&#x20;** | $0.20 / GB |
+
+<div id="compute-oltp">
+  #### コンピュート
+</div>
+
+CDC ClickPipes では、**サービスごと**にコンピュートユニットがプロビジョニングされ、同一サービス内のすべての CDC ClickPipes で**共有**されます。デフォルトでプロビジョニングされるコンピュートユニットは、組織のティアによって異なります。
+
+| ティア                          | コンピュートユニット (CU)                | コスト        |
+| ---------------------------- | ------------------------------ | ---------- |
+| **Basic ティア**                | 0.5 CU (1 vCPU、4 GB RAM) /サービス | $0.10 / 時間 |
+| **Scale または Enterprise ティア** | 1 CU (2 vCPU、8 GB RAM) /サービス   | $0.20 / 時間 |
+
+コンピュートは共有されるため、CDC ClickPipes の使用量をスケールしても、この料金項目はサービスごとに**固定**です。[CDC ClickPipes サービスのスケーリング](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate)により、追加のコンピュートユニットをプロビジョニングできます。料金は比例して増加します。
+
+<div id="example-oltp">
+  ### 例
+</div>
+
+<Note>
+  この例では、複数のコネクタを組み合わせて、CDC ClickPipes の共有コンピュート料金モデルを説明します。[MySQL CDC はパブリックベータ期間中は無料です](#cdc-oltp)。
+</Note>
+
+次の構成の **Scale** ティアのサービスを考えます。
+
+* 8 つのテーブルをレプリケートする **Postgres CDC (変更データキャプチャ)&#x20;**&#x20;ClickPipe 1 つ。初期ロードは 200 GB、変更分 (CDC) は月あたり 100 GB。
+* 5 つのテーブルをレプリケートする **MySQL CDC (変更データキャプチャ) ClickPipe** 1 つ。初期ロードは 100 GB、変更分 (CDC) は月あたり 50 GB。
+
+<div id="cost-breakdown-oltp">
+  #### 月額料金の内訳
+</div>
+
+##### 初月 {#cost-breakdown-first-month-oltp}
+
+**初期ロード**（一回限り、低料金）：
+
+$$(200 + 100) \text{ GB} \times \$0.10/\text{GB} = \$30$$
+
+**継続的レプリケーション（CDC）**：
+
+$$(100 + 50) \text{ GB} \times \$0.20/\text{GB} = \$30$$
+
+**コンピュート**（両方のClickPipeで共有、サービスごとに課金）：
+
+$$1 \text{ コンピュートユニット} \times \$0.20/\text{hr} \times 730 \text{ hours} = \$146$$
+
+**初月の合計**：
+
+$$\$30 \text{ （初期ロード）} + \$30 \text{ (CDC)} + \$146 \text{ （コンピュート）} = \$206$$
+
+##### 翌月以降 {#cost-breakdown-following-months-oltp}
+
+$$\$30 \text{ (CDC)} + \$146 \text{ (コンピュート)} = \$176 \text{ / 月}$$
+
+CDC（変更データキャプチャ）ClickPipes では、コンピュートはコネクタの種類にかかわらず、サービス内の**すべての CDC（変更データキャプチャ）ClickPipes で共有される固定コスト**です。この例では、MySQL ClickPipe を追加しても発生するのは**取り込みデータ**のコストのみで、追加のコンピュートコストは発生しません。つまり、料金は実行している ClickPipes の数ではなく、取り込むデータ量に応じて増加します。
+
+パフォーマンスのボトルネックを避け、サービス内でプロビジョニングされたコンピュートを効率的に再利用するために、ワークロードを複数の ClickPipes に分割したりスケールアップしたりする妥当な理由がない限り、同一のアップストリームデータベースインスタンス上のすべてのテーブルを単一の ClickPipe でレプリケーションすることを推奨します。
+
+<div id="cdc-dwh">
+  ## データウェアハウス CDC
+</div>
+
+データウェアハウス CDC (変更データキャプチャ) コネクタの料金は現在開発中です。
+
+| コネクタ             | 機能ライフサイクル   | 課金ステータス                  |
+| ---------------- | ----------- | ------------------------ |
+| **BigQuery CDC** | プライベートプレビュー | プライベートプレビュー期間中は**無料**です。 |
+
+<div id="faq-cdc">
+  ## CDC ClickPipes よくある質問
+</div>
+
+<Accordion title="CDC ClickPipes に ClickHouse Cloud クレジットを使用できますか？">
+  はい。ClickPipes の料金は、ClickHouse Cloud の統合料金体系に含まれます。お持ちの
+  プラットフォームクレジットは、ClickPipes の利用にも自動的に適用されます。
+</Accordion>
+
+<Accordion title="既存の月額 ClickHouse Cloud 利用額に対して、CDC ClickPipes による追加コストはどの程度見込まれますか？">
+  コストへの影響は、ユースケース、データ量、組織ティアによって大きく異なります。ほとんどのお客様では、基準となる月額 ClickHouse Cloud 利用額に対して **5～25%** 増加しますが、利用額の少ないサービスではこれを超える場合があります。CDC ClickPipes のコストは効率的にスケールします。同じサービス内のすべての CDC ClickPipes でコンピュートが共有されるため、新しい ClickPipes を追加しても、取り込みデータ量に応じたわずかな追加コストしか発生しません。
+
+  `Billing Status` で **free** と表示される CDC ClickPipes コネクタについては、ClickPipes UI のデータ量メトリクス (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) と ClickHouse Cloud の [Prometheus 互換エンドポイント](/integrations/clickpipes/monitoring)を基に、将来のコストを見積もることができます。
+</Accordion>
+
+<Accordion title="ClickHouse Cloud の請求書では、CDC ClickPipes のコストをどこで確認できますか？">
+  CDC ClickPipes のコストは、ClickHouse Cloud の請求書で `Entity Type` が `clickpipe` の個別明細として表示され、料金ディメンション (`ClickPipe Data Transfer ($)`、`ClickPipe Compute ($)`、`ClickPipe Initial Load and Resyncs ($)`) 別に分類されます。
+
+  請求の照合には、ClickPipes UI (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) でリアルタイムのデータ量メトリクスを監視するか、ClickHouse Cloud の [Prometheus 互換エンドポイント](/integrations/clickpipes/monitoring)を使用して、これらのメトリクスを既存の監視スタックに取り込むことができます。
+</Accordion>
+
+<Accordion title="CDC ClickPipes は ClickHouse Cloud サービスがアイドル状態になるのを防ぎますか？">
+  いいえ。ただし、CDC は継続的に実行されるため、設定された同期間隔でサービスが起動する可能性があります。取り込むデータがある**場合**、CDC ClickPipes は設定された同期間隔でサービスを起動しますが、それ以外の場合は通常どおりサービスをアイドル状態にできます。特定の同期時に取り込むデータがない場合、CDC ClickPipes はサービスを起動**しません**。
+</Accordion>
+
+<Accordion title="CDC ClickPipe を一時停止した場合、料金は発生しますか？">
+  はい。サービス内のすべての CDC ClickPipes でプロビジョニングされ共有される **コンピュート** リソースに対して料金が発生します。パイプが一時停止中はデータが取り込まれないため、データ量に対する料金は発生しません。
+
+  <Note>
+    レプリケーションログの有効期限切れにより回復不能な状態になる可能性があり、アップストリームデータソースの健全性にも影響を及ぼすおそれがあるため、CDC ClickPipe を長期間一時停止することは**推奨されません**。
+  </Note>
+</Accordion>
+
+<Accordion title="サービス内の CDC ClickPipes に割り当てられるコンピュートをスケールできますか？">
+  CDC ClickPipes にデフォルトでプロビジョニングされるコンピュートリソースは、スケーリングなしでほとんどのワークロードを処理できるよう最適化されています。リソース使用状況のボトルネックが見られる場合は、[CDC ClickPipes サービスをスケール](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate)できます。コンピュートのコストは、プロビジョニングされたコンピュートユニットに比例して増加します。
+</Accordion>

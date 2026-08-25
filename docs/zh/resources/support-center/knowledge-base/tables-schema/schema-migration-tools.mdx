@@ -1,0 +1,147 @@
+---
+date: 2023-06-07
+title: "ClickHouse schema 迁移工具"
+description: "了解 ClickHouse 的 schema 迁移工具，以及如何管理随时间变化的数据库 schema。"
+tags: ['工具和实用程序']
+keywords: ['自动 schema 迁移']
+---
+
+<div id="what-is-schema-management">
+  ## 什么是 schema 管理？
+</div>
+
+schema 管理是将版本控制原则应用于数据库 schema 的一种实践。它通常包括跟踪并自动化对表、列及其关系的变更，以确保 schema 更新在不同环境中可重复、可审计且保持一致。当出于新的用例或性能优化需要修改数据库中数据的形态时，就需要用到 schema 管理。
+
+<div id="why-is-it-important">
+  ### 为什么这很重要？
+</div>
+
+Schema 管理工具可让你将 schema 变更与应用部署一并自动化。部署新版本应用前，通常需要先完成 schema 变更这一前置条件。这类工具也常被称为“schema 迁移”或“数据库迁移”工具，因为用户本质上是在将数据库从一个版本迁移到另一个版本。
+
+如果没有 schema 管理工具，数据库变更就只能手动进行，不仅容易出错，也难以在不同团队和环境之间协调。虽然你始终可以直接对数据库执行 DDL，但这类工具能够提供版本控制、自动化部署、回滚支持和审计追踪。对 ClickHouse 来说尤其如此，因为某些 DDL 变更可能代价高昂，甚至不可逆，因此采用包含审查步骤的结构化迁移流程尤为关键。
+
+<div id="types-of-schema-management-approaches">
+  ### schema 管理方法的类别
+</div>
+
+schema 管理工具通常分为两类。
+
+<div id="imperative">
+  #### 命令式
+</div>
+
+这类工具使用版本化的 SQL 文件来描述如何从状态 A 变更到状态 B。你需要将显式的 DDL 语句 (例如 `CREATE TABLE`、`ALTER TABLE` 或 `DROP COLUMN`) 写入文件中。然后，工具会按顺序执行这些文件，并跟踪哪些文件已经应用。在这一类方法中，你需要明确指定要执行的 SQL。
+
+示例：Golang Migrate、Goose 和 Flyway。
+
+<div id="declarative">
+  #### 声明式
+</div>
+
+这类工具首先由用户定义目标状态的 schema。工具会检测当前数据库与目标状态之间的差异，然后生成并应用所需的迁移。这种方法减少了手动编写迁移的工作量，也能降低 schema 漂移的风险。在这一类别中，工具会决定具体运行哪些 SQL。
+
+示例：Atlas 和 Liquibase。
+
+还有第三类工具，它们较少关注数据库 schema 变更，而更关注对数据本身的转换。
+
+示例：dbt。
+
+本文只讨论用于数据库 schema 变更的工具。
+
+请选择一种符合团队工作方式的工具。命令式工具能让你完全清楚将要运行哪些 DDL，但需要专门投入精力来识别和管理 schema 漂移。声明式工具会自动完成大部分维护工作，并有助于防止 schema 漂移，但在将其应用到 ClickHouse 之前，你始终应先审查生成的执行计划。务必确保自动生成的计划中没有隐藏任何异常变更或高开销的重写操作。
+
+<div id="what-to-consider-when-choosing-a-tool">
+  ## 选择工具时需要考虑的事项
+</div>
+
+<div id="what-does-your-team-already-use">
+  ### 你的团队已经在用什么？
+</div>
+
+你们很可能会因为熟悉某个生态而倾向于选择相应的工具。如果你的团队主要使用 Go，那么 Golang Migrate 或 Goose 可能会感觉很顺手。如果你身处 Java 生态，可能已经在使用 Flyway 或 Liquibase。如果你的基础设施团队使用 Terraform 和基础设施即代码模式，那么 Atlas 的声明式模型可能会是一个很合适的选择。选择团队已经熟悉的工具确实很有价值：最好的工具，就是那个能被团队采纳并持续使用的工具。
+
+<div id="what-is-your-desired-process">
+  ### 您期望采用什么流程？
+</div>
+
+请思考 schema 变更会如何在您的组织中流转。考虑您是否需要：
+
+* 简单的“编写 SQL、在 CI 中运行、完成”的工作流，例如 Goose 或 Golang Migrate。
+* 带有审批管理、审计记录和 RBAC 的工作流，例如 Bytebase 或 Liquibase。
+* 以声明式方式定义您的 schema，并让工具自行判断差异，例如 Atlas。
+
+请根据您的需求和流程选择合适的工具。
+
+<div id="recommended-tools">
+  ## 推荐工具
+</div>
+
+以下是我们综合考虑成熟度、与 ClickHouse 的兼容性、社区采用度以及运维适配性后，通常向 ClickHouse 用户推荐的工具。
+
+<div id="atlas">
+  ### Atlas
+</div>
+
+[Atlas](https://atlasgo.io/guides/clickhouse) 是一款 schema-as-code 工具，采用声明式方式。你可以在 HCL 或 SQL 中定义期望的 schema 状态，然后由 Atlas 检查当前 database、计算差异、生成 migration plan，并在你审阅后 (可选) 应用该计划。
+
+**为什么它很适合 ClickHouse：** Atlas 对 ClickHouse 提供了完善的原生支持，包括表、视图、materialized views、projections、分区和 UDFs。Atlas 在 2025 年 9 月发布的 v0.37 版本中新增了 cluster 支持。它同时支持 HCL 和纯 SQL 的 schema 定义。
+
+**需要注意的地方：** Atlas 的 ClickHouse driver 仅在 Pro 方案或试用期间可用。Atlas 会生成 migration plan，但并不了解这些计划的实际成本。有些差异看起来可能很简单，比如修改列类型，但却可能在一个数 TB 的表上触发代价高昂的变更。应用生成的计划前，务必先进行审阅。
+
+**最适合：** 希望采用 infrastructure-as-code 工作流并自动检测漂移的团队。
+
+* **Type:** 声明式
+* **Language:** Go，以单个二进制可执行文件形式分发
+* **License and availability:** Open Core；Atlas 命令行客户端提供 Apache 2.0 社区版，但 ClickHouse 支持需要 Pro 方案或试用
+* **集群支持:** 是
+
+<div id="golang-migrate">
+  ### Golang Migrate
+</div>
+
+[Golang Migrate](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse) 是一款简单且广泛使用的迁移工具。你可以编写带有 up 和 down 步骤的版本化 SQL 文件，该工具会按顺序应用这些文件，并在 ClickHouse database 中的 `schema_migrations` 表里跟踪状态。
+
+**为什么它很适合 ClickHouse：** 它简单且灵活。你可以准确编写自己想要执行的 ClickHouse DDL。它是单个 Go 二进制文件，没有 runtime 依赖项，因此很容易集成到 CI/CD 管道或 Docker 容器中。
+
+**需要注意的地方：** 如果某个 migration 文件包含多条语句，而其中一条执行到一半失败，database 可能会处于部分已应用的状态，需要手动干预。遵循“每个文件只包含一条语句”的原则，就能较好地避免这种情况。
+
+**最适合：** 适合希望保持简单，并且完全掌控针对其 ClickHouse instance 执行哪些 SQL 的团队。
+
+* **Type：** 命令式
+* **Language：** Go
+* **License：** 开源，MIT
+* **集群支持：** 是
+
+<div id="goose">
+  ### Goose
+</div>
+
+[Goose](https://github.com/pressly/goose) 是另一款基于 Go 的迁移工具，其理念与 Golang Migrate 相似。你可以编写版本化的 SQL 文件，或为复杂逻辑编写 Go 函数，Goose 会按顺序执行这些迁移，并在 ClickHouse 的版本表中跟踪状态。
+
+**为什么它很适合 ClickHouse：** Goose 采用 SQL-first 方式，所需配置极少，命令行客户端简单直观，并且易于集成到 CI/CD 中。Goose 还支持将迁移编写为 Go 函数，这让你在处理纯 SQL 无法表达的复杂逻辑时拥有更大的灵活性。
+
+**需要注意的地方：** Goose 不提供 schema 差异比较或自动生成迁移的功能。
+
+**最适合：** 已经在使用 Goose 的团队，或相比 Golang Migrate 更偏好其迁移文件约定的团队。
+
+* **类型：** 命令式
+* **语言：** Go，以单个二进制可执行文件形式分发
+* **许可证：** 开源，MIT
+* **集群支持：** 不支持
+
+<div id="other-tools-in-the-ecosystem">
+  ## 生态系统中的其他工具
+</div>
+
+以下工具也支持 ClickHouse。它们是否更合适，取决于您的技术栈和工作流。不过，我们通常还是推荐使用上面提到的工具。
+
+| 工具                                                                                            | 许可证  | 适用场景                                                       |
+| :-------------------------------------------------------------------------------------------- | :--- | :--------------------------------------------------------- |
+| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | 开放核心 | 适合需要在多个环境中进行治理、审批工作流和审计追踪的大型组织                             |
+| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 开源   | 适合已标准化使用 Flyway，或采用基于 JVM 基础设施的团队                          |
+| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | 开放核心 | 适合在多个数据库中使用 Liquibase，并希望保持一致性的团队                          |
+| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 开源   | 适合希望使用简单、专注于 ClickHouse 的迁移运行器的 Node.js 或 TypeScript 团队    |
+| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 开源   | 适合希望使用具备环境感知能力的 ClickHouse 特有工具的 Python 团队                 |
+| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 开源   | 适合偏好使用原生 ClickHouse 客户端部署脚本，或在复杂部署中进行显式依赖管理的团队             |
+| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 开源   | 适合已使用 SQLAlchemy 进行数据库访问的 Python 团队                        |
+| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 开源   | 适合希望使用简单的、基于文件的迁移运行器、命令行客户端和库，并支持 ClickHouse 集群的 Python 团队 |

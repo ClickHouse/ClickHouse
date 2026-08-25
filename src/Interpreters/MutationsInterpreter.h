@@ -50,6 +50,13 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ContextPtr context
 );
 
+/// Re-run set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) on an AST that was re-parsed from a
+/// serialized mutation command, mirroring what `executeQuery` does for top-level queries. Re-parsing loses
+/// this normalization, so any consumer that feeds a re-parsed mutation predicate or `UPDATE` assignment
+/// into the analyzer (`buildQueryTree`) must call this first; otherwise the analyzer rejects such
+/// subqueries with "UNION mode UNION_DEFAULT must be normalized".
+void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
@@ -71,6 +78,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
+        /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
+        bool apply_on_fly_for_read = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
@@ -266,7 +276,7 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
 
-        /// --- New analyzer path (populated when analyzer is enabled) ---
+        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 

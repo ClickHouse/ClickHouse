@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'خيارات إضافية'
+keywords: ['ClickHouse', 'بايثون', 'خيارات', 'إعدادات']
+description: 'خيارات إضافية في ClickHouse Connect'
+slug: /integrations/language-clients/python/additional-options
+title: 'خيارات إضافية'
+doc_type: 'مرجع'
+---
+
+يوفّر ClickHouse Connect عددًا من الخيارات الإضافية لحالات الاستخدام المتقدمة.
+
+<div id="global-settings">
+  ## الإعدادات العامة
+</div>
+
+هناك عدد من الإعدادات التي تتحكم في سلوك ClickHouse Connect على مستوى عام. ويمكن الوصول إليها من الحزمة `common` ذات المستوى الأعلى:
+
+```python
+from clickhouse_connect import common
+
+common.set_setting("autogenerate_session_id", False)
+print(common.get_setting("invalid_setting_action"))
+# Output: error
+```
+
+<Note>
+  اضبط إعدادات إنشاء العميل قبل إنشاء العملاء. تُنسخ إعدادات مثل معرّفات الجلسات والاستعلامات المُولَّدة وتعريف المنتج إلى حالة خاصة بكل عميل، لذا لا تؤثر التغييرات العامة اللاحقة في العملاء الحاليين. تختلف إعدادات الربط والإدراج عن ذلك. تُقرأ قيمتا `naive_datetime_binding` و`dict_parameter_format` عند ربط المعلمات. وتُقرأ قيمة `naive_datetime_insert` عند إجراء تسلسل لعمود إدراج أصلي يحتوي على كائنات `datetime` من بايثون أو سلاسل ISO لـ `DateTime64`. تؤثر التغييرات في هذه الإعدادات في العملاء الحاليين. ويستخدم سياق إدراج قابل لإعادة الاستخدام قيمة `naive_datetime_insert` الحالية لكل عملية إدراج.
+</Note>
+
+الإعدادات العامة التالية معرّفة حاليًا:
+
+| اسم الإعداد               | الافتراضي  | الخيارات                      | الوصف                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `autogenerate_session_id` | `True`     | `True`, `False`               | أنشئ معرّف جلسة UUID لكل عميل متزامن ما لم يُوفَّر معرّف جلسة. تضبط الدالة المُنشِئة غير المتزامنة هذه القيمة على `False` افتراضيًا.                                                                                                                                                                                     |
+| `autogenerate_query_id`   | `True`     | `True`, `False`               | أنشئ معرّف استعلام UUID لكل طلب ما لم يُوفَّر معرّف.                                                                                                                                                                                                                                                                     |
+| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | نسّق قواميس بايثون المستخدمة في ربط المعلمات بتنسيق JSON أو كقيم map حرفية في ClickHouse.                                                                                                                                                                                                                                |
+| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | الإجراء المتخذ لإعداد يُبلغ الخادم بأنه readonly. يتجاهله `drop`، ويرسله `send`، بينما يؤدي `error` إلى إطلاق الاستثناء `ProgrammingError`. تُرسل الإعدادات غير الموجودة في `system.settings` للمستخدم الحالي، مثل إعداد جُعل `CHANGEABLE_IN_READONLY` لدور ما، كي يقبلها الخادم أو يرفضها، ما لم يكن الإجراء هو `drop`. |
+| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | يتحكم في ربط معلمات الاستعلام `datetime` غير المرتبطة بمنطقة زمنية. ينسّق `wall` قيم datetime هذه كما هي. ويستعيد `legacy` سلوك التحويل الأقدم وفق المنطقة الزمنية المحلية للمضيف. أرفق `tzinfo` للحفاظ على لحظة زمنية محددة.                                                                                            |
+| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | يتحكم في إدراج كائنات بايثون لقيم `datetime` غير المرتبطة بمنطقة زمنية وسلاسل ISO غير المرتبطة بمنطقة زمنية التي يقبلها `DateTime64`. يستخدم `local` المنطقة الزمنية للعملية للتوافق. ويستخدم `server` المنطقة الزمنية المعلنة للعمود، ثم المنطقة الزمنية للخادم. لا تتغير أعمدة NumPy وPandas ذات النوع `datetime64`.   |
+| `max_connection_age`      | `600`      | أي عدد من الثواني             | الحد الأقصى لعمر اتصال HTTP دائم مُعاد استخدامه. يساعد التدوير على توزيع الاتصالات بين العُقد خلف موازن التحميل.                                                                                                                                                                                                         |
+| `product_name`            | `""`       | أي سلسلة نصية                 | معرّف المنتج المُضاف إلى معلومات العميل. استخدم قيمة مثل `"my-product/1.0"`.                                                                                                                                                                                                                                             |
+| `readonly`                | `0`        | `0`, `1`                      | إعداد مهمل لا ينفّذ أي إجراء، ومُحتفَظ به للتوافق مع الإصدار 1.x. يقرأ العميل إعداد `readonly` الخاص بالخادم مباشرةً.                                                                                                                                                                                                    |
+| `send_os_user`            | `True`     | `True`, `False`               | ضمّن مستخدم نظام التشغيل المكتشف في معلومات العميل.                                                                                                                                                                                                                                                                      |
+| `send_integration_tags`   | `True`     | `True`, `False`               | ضمّن عمليات التكامل التي يستخدمها العميل، مثل Pandas أو SQLAlchemy، في HTTP User-Agent.                                                                                                                                                                                                                                  |
+| `use_protocol_version`    | `True`     | `True`, `False`               | تفاوض على إصدار بروتوكول العميل المستخدم في ميزات تنسيق Native، مثل البيانات الوصفية للمنطقة الزمنية لعمود `DateTime`. عطّل هذا الخيار للوكلاء الذين يرفضون `client_protocol_version`.                                                                                                                                   |
+| `max_error_size`          | `1024`     | أي عدد صحيح غير سالب          | الحد الأقصى لعدد الأحرف المضمّنة في خطأ العميل. استخدم `0` للرسالة كاملةً.                                                                                                                                                                                                                                               |
+| `http_buffer_size`        | `10485760` | بايت                          | حجم المخزن المؤقت في الذاكرة لاستعلامات HTTP المتدفقة، والقيمة الافتراضية هي 10 MiB.                                                                                                                                                                                                                                     |
+
+<div id="compression">
+  ## الضغط
+</div>
+
+يدعم ClickHouse Connect ضغط الاستجابة باستخدام lz4 وzstd وbrotli وgzip وdeflate. كما تدعم عمليات الإدراج Native كلاً من lz4 وzstd وbrotli وgzip. يوازن الضغط بين استهلاك وقت CPU وتقليل حجم النقل عبر الشبكة.
+
+لتلقّي بيانات مضغوطة، يجب ضبط `enable_http_compression` على ClickHouse server إلى 1، أو يجب أن تكون لدى المستخدم permission لتغيير هذا الإعداد على أساس &quot;لكل query&quot;.
+
+يُتحكَّم في الضغط من خلال الوسيط `compress` في `get_client` و`get_async_client`. تشير القيمة الافتراضية `True` إلى جميع ترميزات الاستجابة المتاحة، وتضغط insert blocks الخاصة بـ Native باستخدام lz4. اضبط `compress=False` لتعطيل الضغط، أو مرّر إحدى القيم `"lz4"` أو `"zstd"` أو `"br"` أو `"gzip"` لطلب طريقة محددة.
+
+لا تستخدم methods الخاصة بالعميل الخام إعداد `compress` على مستوى client. تُرجع `raw_query` و`raw_stream` بيانات غير مضغوطة، بينما يستخدم `raw_insert` وسيط `compression` خاصًا به يصف الضغط المطبّق مسبقًا على payload.
+
+يُثبَّت دعم lz4 وzstd مع ClickHouse Connect. في بايثون 3.14، يستخدم zstd وحدة المكتبة القياسية `compression.zstd`. وتستخدم إصدارات بايثون من 3.10 إلى 3.13 `backports.zstd`. وحتى إذا كان مفسّر CPython 3.14+ مخصصًا ومبنيًا دون دعم zstd، فيمكن استيراده؛ إذ يُستبعد zstd من methods المتاحة، ولا يظهر error إلا عند طلب zstd صراحةً. أما Brotli فهو اختياري ويجب تثبيته بشكل منفصل قبل استخدام `compress="br"`.
+
+يكون gzip أبطأ عمومًا من lz4 أو zstd في workloads الخاصة بـ ClickHouse.
+
+<div id="http-proxy-support">
+  ## دعم HTTP وكيل support
+</div>
+
+يتعرّف ClickHouse Connect على متغيرَي البيئة القياسيين `HTTP_PROXY` و`HTTPS_PROXY`. تنطبق هذه المتغيرات على جميع العملاء داخل العملية. لتهيئة وكيل لكل عميل على حدة، مرّر `http_proxy` أو `https_proxy` إلى `get_client` أو `get_async_client`.
+
+يستخدم العميل المتزامن `urllib3`. لاستخدام وكيل SOCKS، ثبّت PySocks ومرّر `urllib3.contrib.socks.SOCKSProxyManager` باعتباره الوسيط `pool_mgr` إلى `get_client`. لا يدعم العميل غير المتزامن الوسيط `pool_mgr`.
+
+<div id="variant-dynamic-json-data-types">
+  ## أنواع البيانات Variant وDynamic وJSON
+</div>
+
+يدعم ClickHouse Connect أنواع بيانات ClickHouse الحالية `Variant` و`Dynamic` و`JSON`. وقد أُزيل النوع القديم `Object('json')` في clickhouse-connect 0.14، وهو غير مدعوم.
+
+<div id="usage-notes">
+  ### ملاحظات الاستخدام
+</div>
+
+* تُقرأ قيم `Variant` باعتبارها نوع بايثون المطابق. وتختار عمليات insert الأصلية عضوًا بناءً على نوع قيمة بايثون.
+* عندما تتوافق عدة أعضاء في `Variant` مع نوع بايثون نفسه، غلّف القيمة باستخدام `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` لتحديد العضو صراحةً.
+* يعيد تنسيق القراءة `typed` لـ `Variant` كائنات `TypedVariant(value, type_name)` ويحتفظ بنوع العضو الأصلي. فعِّله باستخدام `query_formats={"Variant": "typed"}`.
+* تُقرأ قيم `Dynamic` باعتبارها نوع بايثون المطابق. وتُرسَل عمليات insert حاليًا عبر التمثيل `String`.
+* يمكن insert قيم `JSON` على هيئة قواميس بايثون أو سلاسل JSON object. ويعيد تنسيق القراءة الافتراضي قواميس؛ استخدم تنسيق القراءة `"string"` لإرجاع JSON string.
+* تُرجع الاستعلامات التي تحدد subcolumn من `Variant` أو `Dynamic` أو `JSON` النوع الفعلي لذلك الـ subcolumn.
+
+تستخدم بعض القيم المخزنة في منطقة `shared-data` ضمن أعمدة `JSON` أو `Dynamic` أنواعًا لا يستطيع client فك ترميزها بعد. وتُعاد هذه القيم على شكل raw bytes. كما تستخدم هذه الأنواع المعقدة أيضًا مسار التحويل في بايثون الخالص، لذا قد تكون أبطأ من الأنواع scalar المعروفة.

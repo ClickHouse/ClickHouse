@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: '部署选项'
+description: '部署 ClickStack - ClickHouse 可观测性栈'
+doc_type: '参考'
+keywords: ['ClickStack', '可观测性']
+---
+
+ClickStack 提供多种部署选项，以适应不同的使用场景。
+
+下表汇总了各类部署选项。[Getting Started 指南](/zh/clickstack/getting-started/index) 重点演示了选项 1 和 2。这里也一并列出，以求完整。
+
+| 名称             | 描述                                                             | 适用场景                             | 限制                                | 示例链接                                                    |
+| -------------- | -------------------------------------------------------------- | -------------------------------- | --------------------------------- | ------------------------------------------------------- |
+| 托管 ClickStack  | 在 ClickHouse Cloud 中托管的 ClickHouse 和 ClickStack UI (HyperDX) 。 | 生产部署、演示、概念验证                     | 无                                 | [托管](/zh/clickstack/deployment/managed)                    |
+| 一体化            | 将所有 ClickStack 组件打包在单个 Docker 容器中。                             | 非生产部署、演示、概念验证                    | 不建议用于生产环境                         | [一体化](/zh/clickstack/deployment/all-in-one)                |
+| Helm           | 面向 Kubernetes 部署的官方 Helm 图表。支持 ClickHouse Cloud 和生产级扩缩容。       | Kubernetes 上的生产部署                | 需要具备 Kubernetes 知识，并通过 Helm 进行定制  | [Helm](/zh/clickstack/deployment/helm)                     |
+| Docker Compose | 通过 Docker Compose 分别部署各个 ClickStack 组件。                        | 本地测试、概念验证、单服务器生产部署、自备 ClickHouse | 不具备容错能力，且需要管理多个容器                 | [Docker Compose](/zh/clickstack/deployment/docker-compose) |
+| 仅 HyperDX      | 独立使用 HyperDX，并配合自有的 ClickHouse 和 schema。                       | 现有 ClickHouse 用户、自定义事件管道         | 不包含 ClickHouse，用户必须自行管理摄取和 schema | [仅 HyperDX](/zh/clickstack/deployment/hyperdx-only)        |
+| 仅本地模式          | 完全在浏览器中运行，并使用本地存储。无后端，也不持久化。                                   | 演示、调试、使用 HyperDX 进行开发            | 无认证、不持久化、不支持告警、仅限单用户              | [仅本地模式](/zh/clickstack/deployment/local-mode-only)         |

@@ -22,6 +22,14 @@ _clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-t
 _clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
 STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
 GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
+MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
+HUNG_CHECK_EXIT_CODE = _clickhouse_test_globals["HUNG_CHECK_EXIT_CODE"]
+
+# Synthetic leaf names for an aborted run, keyed by exit code. The liveness name
+# claims only what its probe establishes - the check failed - because the check
+# also fails on a non-200 *response*.
+ABORTED_RUN_DEFAULT_LEAF = "Server died"
+ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
 
 # Exit codes that mean the run was aborted mid-flight, so per-test results
 # (if any) are incomplete and we cannot trust which test "caused" the
@@ -45,9 +53,16 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_C
 # checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
 # that run AFTER all tests have finished. Per-test results in that case are
 # complete and authoritative and must not be demoted.
+# `MAX_FAILURES_EXIT_CODE` is likewise excluded: the run stopped early because
+# too many tests failed, but the server is alive and those failures are real
+# and already attributed - so they must be reported as FAIL, not "Server died".
+# `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
+# for the other members, so the same demotion applies; only the synthetic leaf's
+# name differs.
 ABORTED_RUN_EXIT_CODES = frozenset(
     {
         STOP_TESTING_EXIT_CODE,
+        HUNG_CHECK_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
@@ -55,7 +70,11 @@ ABORTED_RUN_EXIT_CODES = frozenset(
     }
 )
 
-SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
+NO_TESTS_SIGN = "No tests were run"
+NO_TESTS_FILTERED_OUT_SIGN = (
+    "No tests were run because every explicitly requested test was filtered out"
+)
+SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -83,6 +102,7 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
@@ -98,6 +118,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        no_tests_run = False
         test_results = []
         test_end = True
 
@@ -108,6 +129,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if NO_TESTS_FILTERED_OUT_SIGN in line:
+                    no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
                 if HUNG_SIGN in line:
@@ -176,7 +199,7 @@ class FTResultsProcessor:
                         info="".join(test[3])[:16384],
                     )
                 )
-            except Exception as e:
+            except Exception:
                 print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
                 self.debug_files.append(self.tests_output_file)
@@ -204,15 +227,35 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            no_tests_run=no_tests_run,
             retries=retries,
         )
 
         return s
 
-    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
+    def run(
+        self,
+        task_name="Tests",
+        runner_exit_code: Optional[int] = None,
+        is_bugfix_validation: bool = False,
+        allow_no_tests: bool = False,
+    ):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
+
+        if s.no_tests_run and allow_no_tests and not s.hung:
+            # The job was given an explicit list of tests (flaky, targeted or
+            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # filtered every one of them out - e.g. all are tagged `no-tsan` in a
+            # TSan job. A generic "No tests were run" banner is not sufficient:
+            # it is also printed after runner-level failures before the first test.
+            return Result.create_from(
+                name=task_name,
+                results=test_results,
+                status=Result.Status.SKIPPED,
+                info="No tests to run - every selected test is filtered out in this job flavor",
+            )
 
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAIL
@@ -227,17 +270,55 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
-                # Multiple tests failed when the server died - this is a parallel
-                # run where we can't tell which test (if any) caused the crash.
+                # Multiple tests failed before the run was aborted - this is a
+                # parallel run where we can't tell which test (if any) caused it.
                 # Mark them all as UNKNOWN so they don't pollute failure reports.
-                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
-                # entry added from the server log.
+                # The actual failure is captured by the synthetic leaf below and
+                # by the LOGICAL_ERROR entries added from the server log.
                 for result in failed_results:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
-                # Single test failed - sequential run, this test is the culprit.
-                failed_results[0].status = Result.Status.ERROR
-            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+                # Exactly one FAIL was captured before the abort. The runner may
+                # still have been parallel (`--jobs` is always passed), so this
+                # is best-effort attribution of the culprit, not proof of a
+                # single-test sequential run. Demote it to ERROR so a test that
+                # merely witnessed the abort is not reported as an ordinary test
+                # failure - except in bugfix validation, where the job runs only
+                # the PR's own changed tests: a server death or hang while they
+                # run is the expected reproduction of the bug regardless of
+                # which of them got its FAIL printed first, so keep the FAIL for
+                # `invert_bugfix_validation_status` instead of tripping its
+                # fail-closed ERROR guard and reporting the run inconclusive
+                # (#105789). This matches the >1-failed path (UNKNOWN rows +
+                # flipped synthetic row), which already validates the
+                # parallel-crash case. Accepted tradeoff:
+                # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
+                # 128+SIGKILL from an OOM of the runner), so in bugfix
+                # validation such an abort with a single failed test reads as
+                # a reproduction too.
+                if not is_bugfix_validation:
+                    failed_results[0].status = Result.Status.ERROR
+            leaf = (
+                ABORTED_RUN_LIVENESS_LEAF
+                if runner_exit_code == HUNG_CHECK_EXIT_CODE
+                else ABORTED_RUN_DEFAULT_LEAF
+            )
+            test_results.append(Result(leaf, Result.Status.FAIL, info=leaf))
+        elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
+            # The run stopped early because too many tests failed
+            # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
+            # branch above, the server is alive and the parsed failures are real
+            # and correctly attributed - so leave them as FAIL (do not demote to
+            # UNKNOWN, do not synthesize a "Server died" leaf) and just add an
+            # informational summary. `state` stays FAIL from the parsed failures.
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    "Too many test failures",
+                    Result.Status.FAIL,
+                    info="Stopped early after reaching the --max-failures limit. The failing tests above are the real failures.",
+                )
+            )
         elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
             # The run stopped gracefully because the global time limit was
             # reached. This is the *expected* stop condition for the flaky and

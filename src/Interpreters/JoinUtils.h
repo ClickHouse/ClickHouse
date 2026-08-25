@@ -17,7 +17,6 @@ struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
 
-using ColumnRawPtrs = std::vector<const IColumn *>;
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
@@ -64,6 +63,15 @@ public:
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
     }
 
+    /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
+    /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
+    /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
+    const UInt8 * getRawDataOrNull() const
+    {
+        chassert(kind != Kind::Unknown || column);
+        return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
+    }
+
     Kind getKind() const { return kind; }
 
 private:
@@ -83,11 +91,17 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
+/// Like materializeColumns, but keeps LowCardinality columns as-is (only removes Const/Sparse). Used
+/// for the probe side of single-LowCardinality-column joins, whose key getter consumes the dictionary.
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
+
+Int64 getCurrentQueryMemoryUsage();
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
@@ -130,6 +144,11 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
+
+constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
+{
+    return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
+}
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 

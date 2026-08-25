@@ -15,9 +15,10 @@ extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 namespace DB
 {
 
-/// Takes client requests from KeeperTCPHandler (or whoever else calls putRequest), passes them
-/// to nuraft leader, detects when they're committed (or failed), and passes responses back to
-/// KeeperTCPHandler (or whoever registers their response callback by calling registerSession).
+/// KeeperRequestDispatcher takes client requests from KeeperTCPHandler (or whoever else calls
+/// putRequest), passes them to nuraft leader, detects when they're committed (or failed), and
+/// passes responses back to KeeperTCPHandler (or whoever registers their response callback by
+/// calling registerSession).
 ///
 /// Considerations:
 ///  * Forwarding. If nuraft leader is not on this node, requests are sent to the leader node.
@@ -61,7 +62,7 @@ namespace DB
 ///    throughout nuraft.
 ///    (All intermediate messages inside nuraft are small, so there's no situation where our
 ///     moderate amount of requests translates to disproportionately large memory usage inside nuraft.)
-///  * After going through nuraft, newly committed requests end up in KeeperStateMachine<Storage>::commit,
+///  * After going through nuraft, newly committed requests end up in KeeperStateMachine::commit,
 ///    which produces responses and passes them to KeeperRequestDispatcher::onResponse.
 ///    From onResponse they go to responses_queue, then to KeeperTCPHandler::responses (through responseThread).
 ///    The total size of responses_queue + all KeeperTCPHandler::responses queues is tracked by
@@ -80,10 +81,11 @@ namespace DB
 ///  equally fast because KeeperRequestDispatcher shouldn't be the bottleneck.
 ///  One part where performance may matter is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
+
 class KeeperRequestDispatcher
 {
 public:
-    explicit KeeperRequestDispatcher(KeeperServer * server_);
+    KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
 
     /// Start response draining before Raft startup. NuRaft can commit catch-up
     /// entries during `KeeperServer::startup`, before request dispatch is safe.
@@ -93,9 +95,16 @@ public:
     /// uses `raft_instance` to open a client append stream.
     void startupDispatchThread();
 
+    /// Shutdown is split in two because responses are produced by nuraft's commit thread, which
+    /// only `KeeperServer::shutdown` joins. Call order must be:
+    ///   shutdownRequests() -> KeeperServer::shutdown() -> drainAndCheckQueues(...)
+    /// shutdownRequests must run first because it needs a live `raft_instance` to send the
+    /// session Close requests, and `KeeperServer::shutdown` destroys it.
+    void shutdownRequests();
+
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.
-    void shutdown(bool closed_all_connections);
+    void drainAndCheckQueues(bool closed_all_connections);
 
     /// May block for up to operation_timeout_ms if queue is full.
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
@@ -115,6 +124,8 @@ public:
     void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 
 private:
+    friend class KeeperRequestDispatcherTestAccessor;
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -270,6 +281,8 @@ private:
 
     KeeperServer * server;
     KeeperContextPtr keeper_context;
+    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
+    KeeperSpecialResponseRouter special_response_router;
     LoggerPtr log;
 
     ThreadFromGlobalPool dispatch_thread;
@@ -332,6 +345,11 @@ private:
 
     void popBatch(size_t batch_idx);
     bool tryPopRequest(KeeperRequestForSession & request); // call instead of requests_queue.tryPop
+
+    /// Pop everything from requests_queue and responses_queue, discarding it.
+    /// Returns the number of response bytes released, i.e. how much response_bytes_in_all_queues
+    /// was decremented by.
+    size_t drainQueues();
 
     void recreateStreamWithBackoff();
     void dropInFlightRequests();

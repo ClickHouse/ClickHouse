@@ -19,5 +19,4 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04335.orc', ORC)
 -- all errors into CANNOT_EXTRACT_TABLE_STRUCTURE.
 SELECT sum(length(s)) FROM file(currentDatabase() || '_04335.arrow', Arrow, 'x UInt64, s String') SETTINGS max_memory_usage = 20000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
 SELECT sum(length(s)) FROM file(currentDatabase() || '_04335.arrows', ArrowStream, 'x UInt64, s String') SETTINGS max_memory_usage = 20000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
--- The legacy Arrow-based ORC reader (the fast decoder is a separate code path).
-SELECT sum(length(s)) FROM file(currentDatabase() || '_04335.orc', ORC, 'x UInt64, s String') SETTINGS max_memory_usage = 20000000, input_format_orc_use_fast_decoder = 0; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SELECT sum(length(s)) FROM file(currentDatabase() || '_04335.orc', ORC, 'x UInt64, s String') SETTINGS max_memory_usage = 20000000; -- { serverError MEMORY_LIMIT_EXCEEDED }

@@ -1,11 +1,13 @@
 #pragma once
+
+#include <set>
+
+#include <base/sleep.h>
+#include <Common/HTTPFieldLess.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 
-#include <base/sleep.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-
-#include <set>
 
 namespace DB
 {
@@ -66,28 +68,14 @@ public:
 
     const Poco::URI & getURI() const { return uri; }
 
-    struct ci_less
-    {
-        bool operator()(const std::string & a, const std::string & b) const
-        {
-            return std::lexicographical_compare(
-                a.begin(), a.end(),
-                b.begin(), b.end(),
-                [](unsigned char ac, unsigned char bc)
-                {
-                    return std::tolower(ac) < std::tolower(bc);
-                });
-        }
-    };
-
-    const std::set<String, ci_less> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::set<String, ci_less> forward_headers;
+    const std::set<String, HTTPFieldLess> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -100,7 +88,7 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
+    Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};

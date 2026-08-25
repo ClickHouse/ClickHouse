@@ -2,10 +2,13 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
@@ -265,9 +268,10 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     if (it->type != "minmax")
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
 
-    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    static const MergeTreeSettings default_settings;
+    auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, *it, default_settings);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
-    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
+    if (!index_ptr->getDeserializedFormat(*patch_part, index_ptr->getFileName()))
         return {};
 
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
@@ -279,7 +283,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
 
     MergeTreeIndexReader reader(
         index_ptr,
-        patch_part,
+        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(patch_part, std::make_shared<AlterConversions>()),
         total_marks_without_final,
         index_mark_ranges,
         mark_cache.get(),
@@ -298,12 +302,12 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, nullptr, granule);
+        reader.read(ranges[i].begin, nullptr, granule, /*readable_ranges=*/ nullptr);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, nullptr, granule);
+            reader.read(j, nullptr, granule, /*readable_ranges=*/ nullptr);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);

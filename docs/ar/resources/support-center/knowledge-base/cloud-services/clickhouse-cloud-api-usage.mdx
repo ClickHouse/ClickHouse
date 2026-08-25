@@ -1,0 +1,67 @@
+---
+title: إدارة خدمة ClickHouse Cloud باستخدام واجهة برمجة التطبيقات وcURL
+description: تعرّف على كيفية تشغيل خدمة ClickHouse Cloud وإيقافها واستئنافها باستخدام نقاط نهاية واجهة برمجة التطبيقات وأوامر cURL.
+date: 2023-06-07
+tags: ['إدارة Cloud', 'الأدوات والبرامج المساعدة']
+keywords: ['cURL', 'إدارة Cloud', 'ClickHouse API']
+---
+
+<div id="how-to-start-stop-and-resume-a-cloud-service-using-the-clickhouse-api-and-curl">
+  ## كيفية تشغيل خدمة ClickHouse Cloud وإيقافها واستئنافها باستخدام ClickHouse واجهة برمجة تطبيقات وcURL
+</div>
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف يمكن بدء خدمة ClickHouse Cloud وإيقافها واستئناف تشغيلها باستخدام نقاط النهاية لواجهة برمجة التطبيقات؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+1. لإيقاظ خدمة ClickHouse Cloud أو استئنافها من حالة الخمول، يمكنك إرسال Ping إلى المثيل:
+
+```bash
+curl -X GET https://abc123.us-west-2.aws.clickhouse.cloud:8443/ping
+```
+
+2. لإيقاف خدمة ClickHouse Cloud، استخدم نقطة النهاية `/state` مع الأمر `stop`. وتكون الصياغة كما يلي:
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/<org_uuid>/services/<service_uuid>/state -u <key_id>:<key_secret> -H "Content-Type: application/json" -d ''{"command": "<stop|start>"}''
+```
+
+على سبيل المثال، يؤدي الأمر التالي إلى إيقاف الخدمة `2e2124ca-c5ac-459d-a6f2-abc123549d2a`:
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "stop"}'
+```
+
+يبدو الناتج كما يلي:
+
+```response
+{"result":{"id":"2e2124ca-c5ac-459d-a6f2-abc123549d2a","name":"mars-s3","provider":"aws","regionId":"us-west-2","state":"stopping","endpoints":[{"protocol":"nativesecure","host":"abc123.us-west-2.aws.clickhouse.cloud","port":9440},{"protocol":"https","host":"abc123ntrb.us-west-2.aws.clickhouse.cloud","port":8443}],"tier":"production","idleScaling":true,"idleTimeoutMinutes":5,"minTotalMemoryGb":24,"maxTotalMemoryGb":48,"ipAccessList":[{"source":"[0.0.0.0/0](http://0.0.0.0/0)","description":"Anywhere"}],"createdAt":"2022-10-21T18:46:31Z"},"status":200}%
+```
+
+3. لإعادة تشغيل الخدمة، استخدم الأمر `start`:
+
+```bash
+curl -X PATCH https://api.clickhouse.cloud/v1/organizations/123abcd0-e9b5-4f55-9e42-0fb04392445c/services/2e2124ca-c5ac-459d-a6f2-abc123549d2a/state -u abc123:ABC123 -H "Content-Type: application/json" -d '{"command": "start"}'
+```
+
+<Note>
+  فيما يلي الحالات المختلفة التي يمكن أن تكون عليها الخدمة:
+
+  ```
+  "state":"stopping"
+  "state":"stopped"
+  "state":"starting"
+  "state":"running"
+  "state":"idle"
+  ```
+</Note>
+
+<Note>
+  تُعتبر خدمة ClickHouse Cloud التي تكون **&quot;idle&quot;** قد بدأت بالفعل، لذا فإن الأمر `start` لن يؤدي إلى استئنافها أو إيقاظها. استخدم نقطة النهاية `ping` الموضحة في الخطوة 1 لإيقاظ الخدمة.
+</Note>

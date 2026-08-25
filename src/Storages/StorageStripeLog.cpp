@@ -263,16 +263,7 @@ public:
         data_out->finalize();
         data_out_compressed->finalize();
 
-        /// Save the new indices.
-        storage.saveIndices(lock);
-
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
-        /// Save the new file sizes.
-        storage.saveFileSizes(lock);
+        storage.saveIndicesAndFileSizes(lock);
 
         storage.updateTotalRows(lock);
 
@@ -380,6 +371,18 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
+}
+
+size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
+{
+    const auto lock_timeout = getLockTimeout(local_context);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    return std::min(num_streams, std::max(1uz, indices.blocks.size()));
 }
 
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
@@ -559,10 +562,33 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.update(data_file_path);
-    file_checker.update(index_file_path);
-    file_checker.save();
+    file_checker.updateAndSave({data_file_path, index_file_path});
     total_bytes = file_checker.getTotalSize();
+}
+
+
+void StorageStripeLog::saveIndicesAndFileSizes(const WriteLock & lock)
+{
+    /// The index file is itself one of the files whose size is recorded, so the count of saved indices
+    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
+    size_t num_indices_saved_before = num_indices_saved;
+    try
+    {
+        saveIndices(lock);
+
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
+
+        saveFileSizes(lock);
+    }
+    catch (...)
+    {
+        num_indices_saved = num_indices_saved_before;
+        throw;
+    }
 }
 
 
@@ -647,9 +673,10 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;
@@ -697,7 +724,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append, /* sync= */ false);
         }
 
         /// Append the index.
@@ -722,8 +749,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         }
 
         /// Finish writing.
-        saveIndices(lock);
-        saveFileSizes(lock);
+        saveIndicesAndFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -770,9 +796,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
 
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](/reference/engines/table-engines/log-family/log) when a high number of tables are required. This is at the expense of read efficiency.
 
 ## Creating a table {#table_engines-stripelog-creating-a-table}
 
@@ -785,7 +811,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-stripelog-writing-the-data}
 

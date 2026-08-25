@@ -1,0 +1,103 @@
+{
+  "tabs": [
+    {
+      "pages": [
+        "pt-BR/index"
+      ],
+      "tab": "Início"
+    },
+    {
+      "menu": [
+        {
+          "$ref": "./get-started/navigation.json"
+        },
+        {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
+          "$ref": "./guides/navigation.json"
+        },
+        {
+          "$ref": "./reference/navigation.json"
+        }
+      ],
+      "tab": "Banco de dados"
+    },
+    {
+      "menu": [
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "ClickHouse Cloud"
+        },
+        {
+          "$ref": "./products/cloud/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
+          "item": "Langfuse"
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "Código aberto"
+        },
+        {
+          "$ref": "./products/agentic-data-stack/navigation.json"
+        },
+        {
+          "$ref": "./chdb/navigation.json"
+        },
+        {
+          "$ref": "./products/kubernetes-operator/navigation.json"
+        }
+      ],
+      "tab": "Soluções"
+    },
+    {
+      "menu": [
+        {
+          "item": "Ecossistema",
+          "pages": [
+            "pt-BR/integrations/home",
+            "pt-BR/integrations/data-catalogs"
+          ]
+        },
+        {
+          "$ref": "./integrations/clickpipes/navigation.json"
+        },
+        {
+          "$ref": "./integrations/language-clients/navigation.json"
+        },
+        {
+          "$ref": "./integrations/connectors/navigation.json"
+        }
+      ],
+      "tab": "Integrações"
+    },
+    {
+      "menu": [
+        {
+          "$ref": "./resources/support-center/navigation.json"
+        },
+        {
+          "$ref": "./resources/develop-contribute/navigation.json"
+        },
+        {
+          "$ref": "./resources/changelogs/navigation.json"
+        },
+        {
+          "$ref": "./resources/about/navigation.json"
+        }
+      ],
+      "tab": "Recursos"
+    }
+  ]
+}

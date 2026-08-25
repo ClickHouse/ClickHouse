@@ -1,0 +1,338 @@
+---
+sidebarTitle: 'استكشاف الأخطاء وإصلاحها وأفضل الممارسات'
+slug: /integrations/fivetran/troubleshooting
+description: 'الأخطاء الشائعة، ونصائح استكشاف الأخطاء وإصلاحها، وأفضل الممارسات لوجهة ClickHouse في Fivetran.'
+title: 'استكشاف الأخطاء وإصلاحها وأفضل الممارسات'
+doc_type: 'guide'
+keywords: ['fivetran', 'وجهة ClickHouse', 'استكشاف الأخطاء وإصلاحها', 'أفضل الممارسات', 'تصحيح الأخطاء']
+---
+
+<div id="common-errors">
+  ## الأخطاء الشائعة
+</div>
+
+<div id="grants-test-failed">
+  ### فشل اختبار منح الصلاحيات أو تعذّر تنفيذ العمليات المرتبطة بالأذونات
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+Test grants failed, cause: user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**السبب:** لا يملك مستخدم Fivetran الامتيازات المطلوبة. يتطلب الـ connector منح `ALTER` و`CREATE DATABASE` و`CREATE TABLE` و`INSERT` و`SELECT` على `*.*` (جميع قواعد البيانات والجداول).
+
+<Note>
+  تستعلم استعلامات التحقق من الامتيازات من `system.grants`، ولا تطابق إلا الامتيازات الممنوحة مباشرةً للمستخدم. ولا يتم اكتشاف الامتيازات المعيّنة من خلال دور في ClickHouse. راجع قسم [الامتيازات الممنوحة عبر الأدوار](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants) لمزيد من التفاصيل.
+</Note>
+
+**الحل:**
+
+امنح الامتيازات المطلوبة مباشرةً لمستخدم Fivetran:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+<div id="mutations-not-completed">
+  ### خطأ أثناء انتظار اكتمال جميع عمليات التعديل
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+error while waiting for all mutations to be completed: ... initial cause: ...
+```
+
+**السبب:** تم إرسال عملية `ALTER TABLE ... UPDATE` أو `ALTER TABLE ... DELETE` من نوع mutation، لكن الموصّل انتهت مهلته أثناء انتظار اكتمالها على جميع النسخ المتماثلة. وغالبًا ما يحتوي جزء &quot;initial cause&quot; من الخطأ على خطأ ClickHouse الأصلي (وعادةً ما يكون بالرمز 341، &quot;Unfinished&quot;).
+
+يمكن أن يحدث هذا عندما:
+
+* يكون عنقود ClickHouse Cloud تحت حملٍ مرتفع.
+* تتوقف عقدة واحدة أو أكثر أثناء تنفيذ عملية mutation.
+
+**الحلول:**
+
+1. **تحقق من تقدّم عملية mutation**: شغّل الاستعلام التالي للتحقق من عمليات mutation المعلّقة:
+   ```sql
+   SELECT database, table, mutation_id, command, create_time, is_done
+   FROM system.mutations
+   WHERE NOT is_done
+   ORDER BY create_time DESC;
+   ```
+2. **تحقق من حالة العنقود**: تأكد من أن جميع العقد سليمة.
+3. **انتظر ثم أعد المحاولة**: تكتمل عمليات mutation في النهاية بمجرد أن تستعيد حالة العنقود عافيتها. سيعيد Fivetran محاولة المزامنة تلقائيًا.
+
+<div id="column-mismatch-error">
+  ### خطأ عدم تطابق الأعمدة
+</div>
+
+**رسالة الخطأ:**
+
+قد تظهر أخطاء مختلفة إذا كان عدم تطابق الأعمدة ناتجًا عن تغيّر في مخطط المصدر. على سبيل المثال:
+
+```sh
+columns count in ClickHouse table (8) does not match the input file (6). Expected columns: id, name, ..., got: id, name, ...
+```
+
+أو:
+
+```sh
+column user_email was not found in the table definition. Table columns: ...; input file columns: ...
+```
+
+**السبب:** الأعمدة في جدول الوجهة في ClickHouse لا تتطابق مع الأعمدة في البيانات التي تتم مزامنتها. يمكن أن يحدث هذا عندما:
+
+* أُضيفت أعمدة إلى جدول ClickHouse أو أُزيلت منه يدويًا.
+* لم يُطبَّق تغيير في المخطط في المصدر على النحو الصحيح.
+
+**الحلول:**
+
+1. **تذكّر عدم تعديل الجداول المُدارة بواسطة Fivetran يدويًا.** راجع [أفضل الممارسات](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#dont-modify-tables).
+2. **أعِد العمود إلى حالته السابقة**: إذا كنت تعرف النوع الذي ينبغي أن يكون عليه العمود، فأعِد العمود إلى النوع المتوقع باستخدام [تعيين تحويل الأنواع](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#type-mapping) كمرجع.
+3. **أعِد مزامنة الجدول**: في لوحة معلومات Fivetran، شغِّل إعادة مزامنة تاريخية للجدول المتأثر.
+4. **احذف وأعِد الإنشاء**: كحل أخير، احذف جدول الوجهة ودَع Fivetran يعيد إنشاءه أثناء المزامنة التالية.
+
+<div id="ast-too-big">
+  ### ‏AST كبيرة جدًا (الرمز 168)
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+code: 168, message: AST is too big. Maximum: 50000
+```
+
+أو
+
+```sh
+code: 62, message: Max query size exceeded
+```
+
+**السبب:** تؤدي دفعات UPDATE أو DELETE الكبيرة إلى إنشاء عبارات SQL ذات أشجار بنية مجردة بالغة التعقيد. ويشيع ذلك مع الجداول العريضة أو عند تفعيل وضع السجل التاريخي.
+
+**الحل:**
+
+خفّض `mutation_batch_size` و`hard_delete_batch_size` في ملف [التهيئة المتقدمة](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#advanced-configuration). تكون القيمة الافتراضية لكليهما `1500`، ويقبلان قيماً بين `200` و`1500`.
+
+***
+
+<div id="memory-limit-exceeded">
+  ### تم تجاوز الحد الأقصى للذاكرة / نفاد الذاكرة (OOM) (الرمز 241)
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+code: 241, message: (total) memory limit exceeded: would use 14.01 GiB
+```
+
+**السبب:** تتطلب عملية INSERT ذاكرة أكبر من الذاكرة المتاحة. يحدث هذا عادةً أثناء المزامنات الأولية الكبيرة، أو مع الجداول ذات الأعمدة الكثيرة، أو عمليات Batch المتزامنة.
+
+**الحلول:**
+
+1. **تقليل `write_batch_size`**: جرّب خفضها إلى 50,000 للجداول الكبيرة.
+2. **تقليل حمل قاعدة البيانات**: تحقّق من الحمل على خدمة ClickHouse Cloud لمعرفة ما إذا كان هناك حمل زائد.
+3. **ترقية خدمة ClickHouse Cloud** لتوفير مزيد من الذاكرة.
+
+***
+
+<div id="unexpected-eof">
+  ### EOF غير متوقعة / خطأ في الاتصال
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+ClickHouse connection error: unexpected EOF
+```
+
+أو `FAILURE_WITH_TASK` من دون تتبّع مكدس في سجلات Fivetran.
+
+**السبب:**
+
+* لم تُضبط قائمة الوصول لعناوين IP للسماح بمرور حركة Fivetran.
+* مشكلات شبكة عابرة بين Fivetran وClickHouse Cloud.
+* بيانات مصدر تالفة أو غير صالحة تؤدي إلى تعطل موصل الوجهة.
+
+**الحلول:**
+
+1. **تحقّق من قائمة الوصول لعناوين IP**: في ClickHouse Cloud، انتقل إلى **الإعدادات &gt; الأمان** وأضف [عناوين IP الخاصة بـ Fivetran](https://fivetran.com/docs/using-fivetran/ips) أو اسمح بالوصول من أي مكان.
+2. **إعادة المحاولة**: تعيد إصدارات الموصل الأحدث المحاولة تلقائيًا عند حدوث أخطاء EOF. وغالبًا ما تكون الأخطاء المتقطعة (1–2 يوميًا) عابرة.
+3. **إذا استمرت المشكلة**: افتح تذكرة دعم مع ClickHouse وقدّم نافذة الوقت الخاصة بالخطأ. واطلب أيضًا من دعم Fivetran التحقيق في جودة بيانات المصدر.
+
+***
+
+<div id="uint64-type-error">
+  ### يتعذّر تعيين النوع UInt64
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+cause: can't map type UInt64 to Fivetran types
+```
+
+**السبب:** يربط الموصّل `LONG` بـ `Int64` فقط، وليس بـ `UInt64` مطلقًا. يظهر هذا الخطأ عند تعديل نوع أحد الأعمدة يدويًا في جدول تديره Fivetran.
+
+**الحلول:**
+
+1. **لا تعدّل أنواع الأعمدة يدويًا** في الجداول التي تديرها Fivetran.
+2. **لاستعادة الوضع**: أعد العمود إلى النوع المتوقّع (مثل `Int64`) أو احذف الجدول ثم أعد مزامنته.
+3. **للأنواع المخصّصة**: أنشئ [عرضًا ماديًا](/ar/reference/statements/create/view#materialized-view) فوق الجدول الذي تديره Fivetran.
+
+***
+
+<div id="no-primary-keys">
+  ### لا توجد مفاتيح أساسية للجدول
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+Failed to alter table ... cause: no primary keys for table
+```
+
+**السبب:** يتطلب كل جدول ClickHouse وجود `ORDER BY`. عندما لا يحتوي المصدر على مفتاح أساسي، تضيف Fivetran الحقل `_fivetran_id` تلقائيًا. يحدث هذا الخطأ في حالات نادرة يكون فيها للمصدر مفتاح أساسي (PK)، لكن البيانات لا تتضمنه.
+
+**الحلول:**
+
+1. **تواصل مع دعم Fivetran** للتحقيق في مسار معالجة بيانات المصدر.
+2. **تحقق من مخطط المصدر**: تأكد من وجود أعمدة المفتاح الأساسي في البيانات.
+
+***
+
+<div id="role-based-grants">
+  ### فشل الأذونات المستندة إلى الأدوار
+</div>
+
+**رسالة الخطأ:**
+
+```sh
+user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**السبب:** يفحص الـconnector الامتيازات باستخدام:
+
+```sql
+SELECT access_type, database, table, column FROM system.grants WHERE user_name = 'my_user'
+```
+
+لا يُرجع هذا سوى الامتيازات الممنوحة مباشرةً. أما الامتيازات المُسندة عبر دور في ClickHouse فتكون قيمتها `user_name = NULL` و`role_name = 'my_role'`، لذا لا تظهر في هذا الفحص.
+
+**الحل:**
+
+**امنح الامتيازات مباشرةً** لمستخدم Fivetran:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+***
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="dedicated-service">
+  ### خدمة ClickHouse مخصّصة لـ Fivetran
+</div>
+
+عند ارتفاع حمل الإدخال، فكّر في استخدام [compute-compute separation](/ar/products/cloud/features/infrastructure/warehouses) في ClickHouse Cloud لإنشاء خدمة مخصّصة لأحمال الكتابة الخاصة بـ Fivetran. يعزل هذا الإدخال عن الاستعلامات التحليلية ويمنع التنافس على الموارد.
+
+على سبيل المثال، يمكن استخدام المعمارية التالية:
+
+* **الخدمة A (للكتابة)**: وجهة Fivetran + أدوات إدخال أخرى (ClickPipes، وموصلات Kafka)
+* **الخدمة B (للقراءة)**: أدوات BI، ولوحات المعلومات، والاستعلامات الفورية
+
+<div id="optimizing-reading-queries">
+  ### تحسين استعلامات القراءة
+</div>
+
+يستخدم ClickHouse `SharedReplacingMergeTree` لجداول الوجهة في Fivetran، وهو إصدار من [محرك الجداول `ReplacingMergeTree`](/ar/concepts/features/operations/update/replacing-merge-tree) في ClickHouse Cloud. وجود صفوف مكررة بالمفتاح الأساسي نفسه أمر طبيعي — إذ تحدث إزالة التكرارات بشكل غير متزامن أثناء عمليات الدمج في الخلفية. وعند القراءة، يجب توخي الحذر لتجنب إرجاع صفوف مكررة، لأن بعض الصفوف قد لا تكون أُزيلت تكراراتها بعد.
+
+يُعد استخدام الكلمة المفتاحية `FINAL` أبسط طريقة لتجنب الصفوف المكررة، لأنه يفرض دمج أي صفوف لم تُزل تكراراتها بعد وقت القراءة:
+
+```sql
+SELECT * FROM schema.table FINAL WHERE ...
+```
+
+هناك طرق لتحسين عملية `FINAL` هذه — على سبيل المثال، من خلال التصفية على أعمدة المفتاح باستخدام شرط `WHERE`. لمزيد من التفاصيل، راجع قسم [أداء FINAL](/ar/concepts/features/operations/update/replacing-merge-tree#final-performance) في دليل ReplacingMergeTree.
+
+إذا لم تكن هذه التحسينات كافية، فلديك خيارات إضافية تتيح تجنّب استخدام `FINAL` مع الاستمرار في التعامل مع القيم المكررة بشكل صحيح:
+
+* إذا كنت تريد تنفيذ استعلام على عمود رقمي تزداد قيمه باستمرار، [يمكنك استخدام `max(the_column)`](/ar/concepts/features/operations/insert/deduplication#avoiding-final).
+* إذا كنت بحاجة إلى استرجاع أحدث قيمة لبعض الأعمدة لمفتاح معيّن، فيمكنك استخدام [`argMax(the_column, _fivetran_id)`](https://clickhouse.com/blog/10-best-practice-tips#perfecting_replacingmergetree).
+
+<div id="primary-key-optimization">
+  ### تحسين المفتاح الأساسي وORDER BY
+</div>
+
+يقوم Fivetran بمطابقة المفتاح الأساسي للجدول المصدر مع عبارة `ORDER BY` في ClickHouse. وعندما لا يحتوي المصدر على PK، يصبح `_fivetran_id` (وهو UUID) مفتاح الفرز، مما قد يؤدي إلى ضعف أداء الاستعلامات لأن ClickHouse يبني [الفهرس الأساسي المتناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) من أعمدة `ORDER BY`.
+
+**التوصيات في هذه الحالة إذا لم يكن أي تحسين آخر كافيًا:**
+
+1. **تعامل مع جداول Fivetran على أنها جداول مرحلية خام.** لا تستعلم منها مباشرةً لأعمال التحليلات.
+2. **إذا لم يكن أداء الاستعلامات كافيًا بعد**، فاستخدم [عرضًا ماديًا قابلاً للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view) لإنشاء نسخة من الجدول يكون فيها `ORDER BY` محسّنًا ليتناسب مع أنماط الاستعلام لديك. وعلى عكس العروض المادية التزايدية، تعيد العروض المادية القابلة للتحديث تشغيل الاستعلام كاملًا وفق جدول زمني، مما يعالج عمليتي `UPDATE` و`DELETE` اللتين يُجريهما Fivetran أثناء المزامنة بشكل صحيح:
+   ```sql
+   CREATE MATERIALIZED VIEW schema.table_optimized
+   REFRESH EVERY 1 HOUR
+   ENGINE = ReplacingMergeTree()
+   ORDER BY (user_id, event_date)
+   AS SELECT * FROM schema.table_raw FINAL;
+   ```
+
+<Note>
+  تجنّب العروض المادية التزايدية (غير القابلة للتحديث) مع الجداول التي يديرها Fivetran. ولأن Fivetran يُجري عمليتي `UPDATE` و`DELETE` للحفاظ على تزامن البيانات، فلن تعكس العروض المادية التزايدية هذه التغييرات وستحتوي على بيانات قديمة أو غير صحيحة.
+</Note>
+
+<div id="dont-modify-tables">
+  ### لا تُعدِّل الجداول التي يديرها Fivetran يدويًا
+</div>
+
+تجنّب إجراء تغييرات DDL يدويًا (مثل `ALTER TABLE ... MODIFY COLUMN`) على الجداول التي يديرها Fivetran. يتوقّع الموصّل مخطط البيانات الذي أنشأه. قد تتسبب التغييرات اليدوية في [أخطاء تعيين الأنواع](#uint64-type-error) وإخفاقات عدم تطابق مخطط البيانات.
+
+استخدم العروض المادية لإجراء التحويلات المخصّصة.
+
+<div id="debugging">
+  ## تصحيح أخطاء العمليات
+</div>
+
+عند تشخيص حالات الفشل:
+
+* تحقّق من `system.query_log` في ClickHouse بحثًا عن المشكلات من جهة الخادم.
+* اطلب المساعدة من Fivetran بشأن المشكلات من جهة العميل.
+
+بالنسبة إلى أخطاء الموصل، [أنشئ issue على GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues) أو تواصل مع [ClickHouse Support](/ar/resources/about/support).
+
+<div id="debugging-fivetran-syncs">
+  ### استكشاف أخطاء مزامنة Fivetran وإصلاحها
+</div>
+
+استخدم الاستعلامات التالية لتشخيص حالات فشل المزامنة في ClickHouse.
+
+<div id="check-errors">
+  #### تحقّق من أحدث أخطاء ClickHouse المتعلقة بـ Fivetran
+</div>
+
+```sql
+SELECT event_time, query, exception_code, exception
+FROM system.query_log
+WHERE client_name LIKE 'fivetran-destination%'
+  AND exception_code > 0
+ORDER BY event_time DESC
+LIMIT 50;
+```
+
+<div id="check-activity">
+  #### تحقّق من أحدث نشاط لمستخدم Fivetran
+</div>
+
+```sql
+SELECT event_time, query_kind, query, exception_code, exception
+FROM system.query_log
+WHERE user = '{fivetran_user}'
+ORDER BY event_time DESC
+LIMIT 100;
+```

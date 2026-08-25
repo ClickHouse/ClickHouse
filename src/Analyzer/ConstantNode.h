@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 
-#include <Analyzer/ConstantValue.h>
+#include <Core/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -52,13 +52,20 @@ public:
         return constant_value.getColumn();
     }
 
-    /// Get constant value
+    /// Get constant value as a `Field` (materializes it). Prefer the typed getters below where a caller
+    /// only needs a scalar - they avoid the `Field`.
     Field getValue() const
     {
-        Field out;
-        constant_value.getColumn()->get(0, out);
-        return out;
+        return constant_value.getField();
     }
+
+    /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
+    bool isNull() const { return constant_value.isNull(); }
+    UInt64 getUInt() const { return constant_value.getUInt(); }
+    Int64 getInt() const { return constant_value.getInt(); }
+    Float64 getFloat64() const { return constant_value.getFloat64(); }
+    bool getBool() const { return constant_value.getBool(); }
+    std::string_view getDataAt() const { return constant_value.getDataAt(); }
 
     /// Get constant value string representation
     String getValueStringRepresentation() const;
@@ -102,12 +109,29 @@ public:
         mask_id = id;
     }
 
+    /// Whether this constant is hidden as a secret (e.g. a key argument of `encrypt`).
+    bool isMasked() const
+    {
+        return mask_id != 0;
+    }
+
+    /// Placeholder shown instead of the value when this constant is hidden as a secret.
+    String getMaskString() const
+    {
+        chassert(isMasked());
+        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
+            return "[HIDDEN]";
+        return "[HIDDEN id: " + std::to_string(mask_id) + "]";
+    }
+
     void convertToNullable() override;
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     String getValueName(const IColumn::Options & options) const
     {
+        if (isMasked())
+            return getMaskString();
         return constant_value.getValueName(options);
     }
 

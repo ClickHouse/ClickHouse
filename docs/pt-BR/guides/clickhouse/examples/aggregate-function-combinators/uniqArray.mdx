@@ -1,0 +1,68 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: 'Exemplo de uso do combinador uniqArray'
+keywords: ['uniq', 'array', 'combinator', 'examples', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`Array`](/pt-BR/reference/functions/aggregate-functions/combinators#-array)
+pode ser aplicado à função [`uniq`](/pt-BR/reference/functions/aggregate-functions/uniq)
+para calcular o número aproximado de elementos distintos considerando todos os arrays,
+usando a função de agregação com combinador `uniqArray`.
+
+A função `uniqArray` é útil quando você precisa contar elementos distintos em
+múltiplos arrays em um conjunto de dados. Ela é equivalente a usar `uniq(arrayJoin())`, em que
+`arrayJoin` primeiro achata os arrays e depois `uniq` conta os elementos distintos.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, usaremos um conjunto de dados de exemplo com os interesses dos usuários em diferentes
+categorias para demonstrar como `uniqArray` funciona. Vamos compará-lo com
+`uniq(arrayJoin())` para mostrar a diferença na contagem de elementos distintos.
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+A função `uniqArray` conta elementos únicos considerando todas as arrays combinadas, de forma semelhante a `uniq(arrayJoin())`.
+Neste exemplo:
+
+* `uniqArray` retorna 5 porque há 5 interesses únicos em todas as arrays de todos os usuários: &#39;reading&#39;, &#39;gaming&#39;, &#39;music&#39;, &#39;sports&#39;, &#39;cooking&#39;
+* `uniq(arrayJoin())` também retorna 5, mostrando que ambas as funções contam elementos únicos em todas as arrays
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`uniq`](/pt-BR/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/pt-BR/reference/functions/regular-functions/array-join)
+* [`Array combinador`](/pt-BR/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/pt-BR/reference/functions/aggregate-functions/uniqCombined)

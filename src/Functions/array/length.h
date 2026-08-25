@@ -16,6 +16,10 @@ namespace ErrorCodes
 struct LengthImpl
 {
     static constexpr auto is_fixed_to_constant = true;
+    static constexpr auto is_volume_reducing = true;
+
+    /// The length of a QBit is the dimension of the vector, which is a property of the type, so it is a constant.
+    static constexpr auto supports_qbit = true;
 
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
@@ -26,6 +30,11 @@ struct LengthImpl
     static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res, size_t)
     {
         res = n;
+    }
+
+    static void qbitToConstant(size_t dimension, UInt64 & res)
+    {
+        res = dimension;
     }
 
     static void vectorFixedToVector(const ColumnString::Chars & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/, size_t)

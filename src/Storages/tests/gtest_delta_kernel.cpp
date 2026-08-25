@@ -106,3 +106,74 @@ TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
 }
 
 #endif
+
+#if USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
+
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+
+#include <optional>
+
+namespace
+{
+std::optional<std::string> findBuilderOption(
+    const std::vector<std::pair<std::string, std::string>> & options, const std::string & name)
+{
+    for (const auto & [k, v] : options)
+        if (k == name)
+            return v;
+    return std::nullopt;
+}
+}
+
+/// Empty connection string
+TEST(DeltaLakeAzureKernelHelper, VendedSasTokenSetsAccountName)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.endpoint.sas_auth = "sv=2021-06-08&sig=abcDEF123";
+    /// auth_method intentionally left default: the empty ConnectionString alternative that
+    /// the vended-credentials / Unity catalog path produces.
+    ASSERT_EQ(params.auth_method.index(), 0u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto account = findBuilderOption(options, "azure_storage_account_name");
+    ASSERT_TRUE(account.has_value());
+    ASSERT_EQ(*account, "testaccount");
+
+    const auto sas = findBuilderOption(options, "azure_storage_sas_key");
+    ASSERT_TRUE(sas.has_value());
+    ASSERT_EQ(*sas, "sv=2021-06-08&sig=abcDEF123");
+
+    const auto container = findBuilderOption(options, "azure_container_name");
+    ASSERT_TRUE(container.has_value());
+    ASSERT_EQ(*container, "testcontainer");
+}
+
+/// A real connection string (non-empty ConnectionString alternative) must still be parsed
+/// into its components, including the account name.
+TEST(DeltaLakeAzureKernelHelper, ConnectionStringSetsAccountName)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    const std::string connection_string =
+        "DefaultEndpointsProtocol=https;AccountName=testaccount;"
+        "AccountKey=dGVzdGtleQ==;EndpointSuffix=core.windows.net";
+    params.endpoint.storage_account_url = connection_string;
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = DB::AzureBlobStorage::ConnectionString{connection_string};
+    ASSERT_EQ(params.auth_method.index(), 0u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto account = findBuilderOption(options, "azure_storage_account_name");
+    ASSERT_TRUE(account.has_value());
+    ASSERT_EQ(*account, "testaccount");
+
+    const auto key = findBuilderOption(options, "azure_storage_account_key");
+    ASSERT_TRUE(key.has_value());
+    ASSERT_EQ(*key, "dGVzdGtleQ==");
+}
+
+#endif

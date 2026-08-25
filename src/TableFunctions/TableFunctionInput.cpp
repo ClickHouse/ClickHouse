@@ -129,7 +129,44 @@ void registerTableFunctionInput(TableFunctionFactory & factory)
     /// `input` only reads the data stream that the client is sending alongside the INSERT query;
     /// it does not access arbitrary hosts or storages, so it does not need the `CREATE TEMPORARY TABLE` grant
     /// and is allowed in readonly mode.
-    factory.registerFunction<TableFunctionInput>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionInput>({.description = R"DOCS_MD(
+`input(structure)` - table function that allows effectively converting and inserting data sent to the
+server with a given structure to a table with another structure.
+
+`structure` - structure of data sent to the server in following format `'column1_name column1_type, column2_name column2_type, ...'`.
+For example, `'id UInt32, name String'`.
+
+This function can be used only in `INSERT SELECT` query and only once but otherwise behaves like ordinary table function
+(for example, it can be used in subquery, etc.).
+
+Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](/reference/formats/index)
+that must be specified in the end of query (unlike ordinary `INSERT SELECT`).
+
+The main feature of this function is that when server receives data from client it simultaneously converts it
+according to the list of expressions in the `SELECT` clause and inserts into the target table. Temporary table
+with all transferred data is not created.
+
+## Examples {#examples}
+
+- Let the `test` table has the following structure `(a String, b String)`
+    and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
+    data from the `data.csv` into the `test` table with simultaneous conversion looks like this:
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
+```
+
+- If `data.csv` contains data of the same structure `test_structure` as the table `test` then these two queries are equal:
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }

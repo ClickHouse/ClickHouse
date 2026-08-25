@@ -1,0 +1,92 @@
+---
+description: 'Documentación de las funciones de tabla'
+sidebarTitle: 'Resumen'
+slug: /sql-reference/table-functions/
+title: 'Funciones de tabla'
+doc_type: 'reference'
+---
+
+Las funciones de tabla son métodos para crear tablas.
+
+<div id="usage">
+  ## Uso
+</div>
+
+Las funciones de tabla se pueden usar en la cláusula [`FROM`](/es/reference/statements/select/from)
+de una consulta `SELECT`. Por ejemplo, puede usar `SELECT` para leer datos de un archivo en su máquina local
+mediante la función de tabla `file`.
+
+```bash title="Query"
+echo "1, 2, 3" > example.csv
+```
+
+```text title="Response"
+./clickhouse client
+:) SELECT * FROM file('example.csv')
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  2 │  3 │
+└────┴────┴────┘
+```
+
+También puede usar funciones de tabla para crear una tabla temporal que solo está disponible
+en la consulta actual. Por ejemplo:
+
+```sql title="Query"
+SELECT * FROM generateSeries(1,5);
+```
+
+```response title="Response"
+┌─generate_series─┐
+│               1 │
+│               2 │
+│               3 │
+│               4 │
+│               5 │
+└─────────────────┘
+```
+
+La tabla se elimina cuando finaliza la consulta.
+
+Las funciones de tabla pueden utilizarse para crear tablas, usando la siguiente sintaxis:
+
+```sql title="Query"
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+Por ejemplo:
+
+```sql title="Query"
+CREATE TABLE series AS generateSeries(1, 5);
+SELECT * FROM series;
+```
+
+```response title="Response"
+┌─generate_series─┐
+│               1 │
+│               2 │
+│               3 │
+│               4 │
+│               5 │
+└─────────────────┘
+```
+
+Por último, las funciones de tabla pueden utilizarse para `INSERT` datos en una tabla. Por ejemplo,
+podríamos escribir el contenido de la tabla que creamos en el ejemplo anterior
+en un archivo del disco usando de nuevo la función de tabla `file`:
+
+```sql title="Query"
+INSERT INTO FUNCTION file('numbers.csv', 'CSV') SELECT * FROM series;
+```
+
+```bash title="Query"
+cat numbers.csv
+1
+2
+3
+4
+5
+```
+
+<Note>
+  No puedes usar funciones de tabla si la opción [allow&#95;ddl](/es/reference/settings/session-settings/allow#allow_ddl) está deshabilitada.
+</Note>
