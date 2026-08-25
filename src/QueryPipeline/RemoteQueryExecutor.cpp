@@ -778,7 +778,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        /// When the query was sent synchronously (async_query_sending_for_remote = 0), sendQueryUnlocked already opened the fragment span. 
+        /// When the query was sent synchronously (async_query_sending_for_remote = 0), sendQueryUnlocked already opened the fragment span.
         /// Hand it over to the read context: the fiber span continues it with the same start time and attributes.
         OpenTelemetry::SpanAttributes initial_span_attributes;
         UInt64 initial_span_start_time_us = 0;
