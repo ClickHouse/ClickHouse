@@ -31,7 +31,10 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    /// Exactly one of trace_id and query_id is set; a query_id is resolved to the
+    /// most recent trace of that query when the function executes.
     UUID trace_id{};
+    String query_id;
     UInt64 timeline_width = 40;
     String cluster;
 };

@@ -12,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/BlockIO.h>
@@ -23,6 +24,8 @@
 #include <Common/quoteString.h>
 
 #include <fmt/format.h>
+
+#include <array>
 
 namespace DB
 {
@@ -42,51 +45,93 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
     auto & args = function->arguments->children;
     if (args.empty() || args.size() > 3)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires 1 to 3 arguments: trace_id [, timeline_width [, cluster]], got {}",
+            "Table function '{}' requires 1 to 3 arguments: trace_id|query_id [, timeline_width [, cluster]], got {}",
             getName(), args.size());
 
-    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
-    const auto * trace_id_literal = args[0]->as<ASTLiteral>();
-    if (!trace_id_literal)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires a constant trace_id as the first argument", getName());
+    /// Arguments are positional (trace_id, timeline_width, cluster) but each can also be
+    /// given as `name = value`. `query_id` exists only in the named form: a query id cannot
+    /// be told apart from a trace id positionally, because server-generated query ids are
+    /// UUIDs themselves.
+    static constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
 
-    if (trace_id_literal->value.getType() == Field::Types::UUID)
+    bool has_trace_id = false;
+    for (size_t i = 0; i < args.size(); ++i)
     {
-        trace_id = trace_id_literal->value.safeGet<UUID>();
-    }
-    else if (trace_id_literal->value.getType() == Field::Types::String)
-    {
-        const auto & trace_id_str = trace_id_literal->value.safeGet<String>();
-        ReadBufferFromString buf(trace_id_str);
-        readUUIDText(trace_id, buf);
-        if (!buf.eof())
+        String param_name{positional_names[i]};
+        ASTPtr value = args[i];
+
+        if (const auto * equals = args[i]->as<ASTFunction>(); equals && equals->name == "equals")
+        {
+            const auto * identifier = equals->arguments->children.at(0)->as<ASTIdentifier>();
+            if (!identifier)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}': the left side of a named argument must be an identifier, got '{}'",
+                    getName(), args[i]->formatForErrorMessage());
+            param_name = identifier->name();
+            value = equals->arguments->children.at(1);
+        }
+
+        value = evaluateConstantExpressionOrIdentifierAsLiteral(value, context);
+
+        if (param_name == "trace_id")
+        {
+            const auto * trace_id_literal = value->as<ASTLiteral>();
+            if (!trace_id_literal)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' requires a constant trace_id", getName());
+
+            if (trace_id_literal->value.getType() == Field::Types::UUID)
+            {
+                trace_id = trace_id_literal->value.safeGet<UUID>();
+            }
+            else if (trace_id_literal->value.getType() == Field::Types::String)
+            {
+                const auto & trace_id_str = trace_id_literal->value.safeGet<String>();
+                ReadBufferFromString buf(trace_id_str);
+                readUUIDText(trace_id, buf);
+                if (!buf.eof())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{}': cannot parse '{}' as a trace_id UUID", getName(), trace_id_str);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' requires a String or UUID trace_id, got '{}'",
+                    getName(), value->formatForErrorMessage());
+            }
+            has_trace_id = true;
+        }
+        else if (param_name == "query_id")
+        {
+            query_id = checkAndGetLiteralArgument<String>(value, "query_id");
+            if (query_id.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}': query_id must not be empty", getName());
+        }
+        else if (param_name == "timeline_width")
+        {
+            timeline_width = checkAndGetLiteralArgument<UInt64>(value, "timeline_width");
+            if (timeline_width == 0 || timeline_width > 1024)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}': timeline_width must be in [1, 1024], got {}", getName(), timeline_width);
+        }
+        else if (param_name == "cluster")
+        {
+            cluster = checkAndGetLiteralArgument<String>(value, "cluster");
+            /// Fail early with a clear error instead of a confusing one from the internal query.
+            context->getCluster(cluster);
+        }
+        else
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}': cannot parse '{}' as a trace_id UUID", getName(), trace_id_str);
+                "Table function '{}': unknown argument '{}'; expected trace_id, query_id, timeline_width or cluster",
+                getName(), param_name);
+        }
     }
-    else
-    {
+
+    if (has_trace_id == !query_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires a String or UUID trace_id as the first argument, got '{}'",
-            getName(), args[0]->formatForErrorMessage());
-    }
-
-    if (args.size() >= 2)
-    {
-        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
-        timeline_width = checkAndGetLiteralArgument<UInt64>(args[1], "timeline_width");
-        if (timeline_width == 0 || timeline_width > 1024)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}': timeline_width must be in [1, 1024], got {}", getName(), timeline_width);
-    }
-
-    if (args.size() == 3)
-    {
-        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
-        cluster = checkAndGetLiteralArgument<String>(args[2], "cluster");
-        /// Fail early with a clear error instead of a confusing one from the internal query.
-        context->getCluster(cluster);
-    }
+            "Table function '{}' requires exactly one of trace_id and query_id", getName());
 }
 
 ColumnsDescription TableFunctionTraceView::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
@@ -136,6 +181,17 @@ String formatDurationUs(UInt64 us)
     return fmt::format("{} us", us);
 }
 
+Block executeInternalQuery(const String & query, ContextPtr context)
+{
+    auto query_context = Context::createCopy(context);
+    query_context->makeQueryContext();
+    /// The copied context carries the enclosing query's id; the internal query must
+    /// register under its own, or the process list rejects it as already running.
+    query_context->setCurrentQueryId("");
+    auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
+    return pullMonoBlock(io.pipeline);
+}
+
 }
 
 StoragePtr TableFunctionTraceView::executeImpl(
@@ -147,6 +203,27 @@ StoragePtr TableFunctionTraceView::executeImpl(
         ? "system.opentelemetry_span_log"
         : fmt::format("clusterAllReplicas({}, system.opentelemetry_span_log)", quoteString(cluster));
 
+    UUID effective_trace_id = trace_id;
+    if (!query_id.empty())
+    {
+        /// The query's root span ('query') carries its id in the `clickhouse.query_id`
+        /// attribute. A custom query id can be reused across runs, so several traces may
+        /// match: take the most recent one - that is what a debugging session wants.
+        Block lookup = executeInternalQuery(
+            fmt::format(
+                "SELECT trace_id FROM {} WHERE operation_name = 'query'"
+                " AND attribute['clickhouse.query_id'] = {} ORDER BY finish_time_us DESC LIMIT 1",
+                source, quoteString(query_id)),
+            context);
+        if (lookup.rows() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "No trace found for query_id '{}'. The query must run with tracing enabled"
+                " (a traceparent or opentelemetry_start_trace_probability); spans are flushed"
+                " to the log in background: run SYSTEM FLUSH LOGS opentelemetry_span_log and retry",
+                query_id);
+        effective_trace_id = (*lookup.getByPosition(0).column)[0].safeGet<UUID>();
+    }
+
     /// LowCardinality columns are converted to plain types so that the code below and the
     /// declared structure of the `attribute` result column need no special cases.
     String query = fmt::format(
@@ -156,21 +233,15 @@ StoragePtr TableFunctionTraceView::executeImpl(
         " toString(attribute['clickhouse.shard_num']) AS shard_num,"
         " CAST(attribute, 'Map(String, String)') AS attribute"
         " FROM {} WHERE trace_id = toUUID('{}') ORDER BY start_time_us, span_id",
-        source, toString(trace_id));
+        source, toString(effective_trace_id));
 
-    auto query_context = Context::createCopy(context);
-    query_context->makeQueryContext();
-    /// The copied context carries the enclosing query's id; the internal query must
-    /// register under its own, or the process list rejects it as already running.
-    query_context->setCurrentQueryId("");
-    auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
-    Block spans = pullMonoBlock(io.pipeline);
+    Block spans = executeInternalQuery(query, context);
 
     size_t rows = spans.rows();
     if (rows == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No spans found for trace_id '{}'. Spans are flushed to the log in background:"
-            " run SYSTEM FLUSH LOGS opentelemetry_span_log and retry", toString(trace_id));
+            " run SYSTEM FLUSH LOGS opentelemetry_span_log and retry", toString(effective_trace_id));
 
     const auto & col_span_id = *spans.getByName("span_id").column;
     const auto & col_parent = *spans.getByName("parent_span_id").column;
@@ -322,7 +393,7 @@ Returns one row per span of the trace, in depth-first tree order:
 - `timeline` - a fixed-width bar: the position is the span's start offset within the trace, the length is proportional to its duration;
 - `attribute` - the span attributes.
 
-Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, at most 1024), optional `cluster` - read `clusterAllReplicas(cluster, system.opentelemetry_span_log)` instead of the local span log, because in a cluster every node writes its spans to its own log.
+Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, at most 1024), optional `cluster` - read `clusterAllReplicas(cluster, system.opentelemetry_span_log)` instead of the local span log, because in a cluster every node writes its spans to its own log. Arguments can also be passed by name (`name = value`). Instead of `trace_id`, the named argument `query_id` selects the most recent trace of that query - named only, because a server-generated query id is itself a UUID and cannot be told apart from a trace id positionally: `traceView(query_id = '<query id>')`.
 
 Spans are flushed to the log in background: run `SYSTEM FLUSH LOGS opentelemetry_span_log` first.
 Example:
