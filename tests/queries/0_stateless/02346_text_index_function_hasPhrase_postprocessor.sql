@@ -10,6 +10,7 @@
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
+SET log_queries = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -210,6 +211,61 @@ INSERT INTO tab VALUES (1, 'foo bar');
 
 SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;  -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;  -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE tab;
+
+SELECT '8. IN and NOT IN filter postprocessors with phrase positions.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(message IN ('the', 'very'), '', message), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES
+    (1, 'see the cat'),
+    (2, 'see very cat'),
+    (3, 'see a cat'),
+    (4, 'see cat')
+SETTINGS log_comment = 'text_index_positions_fast_path_in';
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(message NOT IN ('fox', 'cat'), '', message), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES
+    (1, 'fox junk cat'),
+    (2, 'fox dog cat'),
+    (3, 'fox red cat'),
+    (4, 'fox dog bird'),
+    (5, 'cat fox')
+SETTINGS log_comment = 'text_index_positions_fast_path_not_in';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, max(ProfileEvents['TextIndexPostprocessorFastPath']) > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment IN ('text_index_positions_fast_path_in', 'text_index_positions_fast_path_not_in')
+GROUP BY log_comment
+ORDER BY log_comment;
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 

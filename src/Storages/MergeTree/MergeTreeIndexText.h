@@ -495,7 +495,7 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
     // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    bool addToken(std::string_view token, UInt32 token_position);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }

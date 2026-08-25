@@ -1,5 +1,5 @@
 <test>
-  <!-- Build a text index whose postprocessor is a filter-only stop-word filter,
+  <!-- Build a text index with phrase positions whose postprocessor is a filter-only stop-word filter,
        both the drop-set form if(token IN (...), '', token) at several drop rates
        and the keep-set form if(token NOT IN (...), '', token). -->
 
@@ -18,10 +18,11 @@
     CREATE TABLE tab_filter_{drop_pct} (
       id UInt64,
       text String,
-      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text IN ('a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'), '', text))
+      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text IN ('a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'), '', text), support_phrase_search = 1)
     )
     ENGINE = MergeTree
     ORDER BY id
+    SETTINGS allow_experimental_text_index_phrase_search = 1
   </create_query>
   <create_query>
     CREATE TABLE tab_src_{drop_pct} (id UInt64, text String) ENGINE = MergeTree ORDER BY id;
@@ -41,10 +42,11 @@
     CREATE TABLE tab_filter_not_in (
       id UInt64,
       text String,
-      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text NOT IN ('fox', 'cat', 'dog', 'bird', 'tree', 'river', 'stone'), '', text))
+      INDEX idx (text) TYPE text(tokenizer = splitByNonAlpha, postprocessor = if(text NOT IN ('fox', 'cat', 'dog', 'bird', 'tree', 'river', 'stone'), '', text), support_phrase_search = 1)
     )
     ENGINE = MergeTree
     ORDER BY id
+    SETTINGS allow_experimental_text_index_phrase_search = 1
   </create_query>
 
   <query>INSERT INTO tab_filter_{drop_pct} SELECT * FROM tab_src_{drop_pct}</query>

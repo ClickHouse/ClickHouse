@@ -42,3 +42,10 @@
 []
 []
 7. Separator-emitting postprocessor: rejected consistently on both read paths.
+8. IN and NOT IN filter postprocessors with phrase positions.
+text_index_positions_fast_path_in	1
+text_index_positions_fast_path_not_in	1
+[1,2,4]
+[1,2,4]
+[1,2,3]
+[1,2,3]

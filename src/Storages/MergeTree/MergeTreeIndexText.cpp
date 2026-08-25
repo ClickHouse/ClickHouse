@@ -58,6 +58,7 @@ namespace ProfileEvents
     extern const Event TextIndexTokensCacheNegativeHits;
     extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
+    extern const Event TextIndexPostprocessorFastPath;
 }
 
 namespace DB
@@ -1638,8 +1639,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            addToken({token_start, token_length}, token_position);
-            ++token_position;
+            if (addToken({token_start, token_length}, token_position))
+                ++token_position;
             return false;
         });
 }
@@ -1673,23 +1674,23 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+bool MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
+    ArenaKeyHolder key_holder(token, *arena);
 
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
         it = tokens_map.find(token);
         if (!it)
-            return;
+            return false;
 
         if (it->getMapped().isFiltered())
             it->getMapped().clearFiltered();
     }
     else
     {
-        ArenaKeyHolder key_holder(token, *arena);
         tokens_map.emplace(key_holder, it, inserted);
 
         if (postprocessor_drop_filter)
@@ -1699,26 +1700,30 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
                 if (postprocessor_drop_filter->tokens.contains(token))
                 {
                     it->getMapped().markFiltered();
-                    return;
+                    return false;
                 }
             }
             else if (it->getMapped().isFiltered())
-                return;
+                return false;
         }
+    }
 
-        if (position_map)
-        {
-            TokenToPositionListMap::LookupResult pos_it;
+    if (position_map)
+    {
+        TokenToPositionListMap::LookupResult pos_it;
+        if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
             position_map->emplace(key_holder, pos_it, inserted);
-            auto & positions_builder = pos_it->getMapped();
-            positions_builder.add(static_cast<UInt32>(current_row), token_position);
-        }
+        else
+            position_map->emplace(key_holder.key, pos_it, inserted);
+        auto & positions_builder = pos_it->getMapped();
+        positions_builder.add(static_cast<UInt32>(current_row), token_position);
     }
 
     PostingListBuilder & posting_list_builder = it->getMapped();
     posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
 
     ++num_processed_tokens;
+    return true;
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1811,14 +1816,14 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , postprocessor(postprocessor_)
 {
     /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
-    /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
-    /// dense position renumbering after drops). Any other postprocessor uses the general per-batch path.
-    if (postprocessor->hasActions() && !params.positions)
+    /// addToken so dropped tokens never build postings. Any other postprocessor uses the general per-batch path.
+    if (postprocessor->hasActions())
     {
         if (const auto * inline_filter = postprocessor->getInlineFilter())
         {
             granule_builder.postprocessor_drop_filter = inline_filter;
             granule_builder.seedDropFilter();
+            ProfileEvents::increment(ProfileEvents::TextIndexPostprocessorFastPath);
             use_postprocessor_drop_fast_path = true;
         }
     }
@@ -1906,8 +1911,8 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
 
             if constexpr (tokenize)
                 granule_builder.addDocument(ref);
-            else
-                granule_builder.addToken(ref, token_position++);
+            else if (granule_builder.addToken(ref, token_position))
+                ++token_position;
         }
         granule_builder.incrementCurrentRow();
     }
