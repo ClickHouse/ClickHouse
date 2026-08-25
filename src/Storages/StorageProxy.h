@@ -40,6 +40,7 @@ public:
     std::optional<SerializationInfoByName> tryGetSerializationHints() const override { return getNested()->tryGetSerializationHints(); }
     bool hasAutomaticLowCardinalitySerialization() const override { return getNested()->hasAutomaticLowCardinalitySerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
     /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
     /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,

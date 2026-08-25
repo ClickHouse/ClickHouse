@@ -84,9 +84,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-/// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
-/// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
-/// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
+/// Version 7 registers the `enable_adaptive_aggregator`, `adaptive_aggregator_freeze_threshold` and
+/// `adaptive_aggregator_freeze_threshold_bytes` plan settings. As with version 5, an older peer rejects the
+/// unknown names, so they are written only towards a peer at this version or above; a peer below it has no
+/// adaptive aggregation to drive anyway.
 /// Version 8 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
 /// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
 /// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
