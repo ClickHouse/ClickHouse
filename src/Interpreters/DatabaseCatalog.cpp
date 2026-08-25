@@ -1464,7 +1464,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
     auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
@@ -1527,7 +1527,11 @@ void DatabaseCatalog::undropTable(StorageID table_id)
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
     while (!isSharedPtrUnique(dropped_table.table))
+    {
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     dropped_table.table.reset();
 
     auto ast_attach = make_intrusive<ASTCreateQuery>();
@@ -1942,7 +1946,8 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     }
 
     /// For DROP DATABASE we should ignore dependent tables from the same database.
-    /// TODO unload tables in reverse topological order and remove this code
+    /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
+    /// and referential dependencies, so a dependent is always dropped before the tables it depends on.
     std::vector<StorageID> from_other_databases;
     for (const auto & dependent : dependents)
         if (dependent.database_name != removing_table.database_name)

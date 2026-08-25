@@ -42,6 +42,13 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 SET parallel_replicas_prefer_local_join=1;
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
+-- Keep the plan identical between the collect and apply runs: a randomized join order
+-- (query_plan_optimize_join_order_randomize) combined with a randomized runtime filter
+-- threshold makes AutoPR decline to apply for the RIGHT join (apply=0 instead of 1).
+-- Keep runtime filters ENABLED with the threshold pinned to its default: the probe side of the
+-- RIGHT join (62500 rows) exceeds it, so the apply path is exercised with `BuildRuntimeFilterStep`
+-- present - this test is the only mode=1 APPLY coverage for that RIGHT JOIN plan shape.
+SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 -- Small blocks so enough are fed to the statistics collector.

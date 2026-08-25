@@ -24,12 +24,15 @@ namespace ErrorCodes
 #define LIST_OF_TIME_SERIES_SETTINGS(DECLARE, ALIAS) \
     DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags.", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
-    DECLARE(Bool, use_all_tags_column_to_generate_id, true, "When generating an expression to calculate an identifier of a time series, this flag enables using the 'all_tags' column in that calculation. The 'all_tags' is a virtual column containing all tags except the metric name", 0) \
+    DECLARE(Bool, use_all_tags_column_to_generate_id, false, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series", 0) \
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table always gets 'TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)' derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data, which is the user's responsibility. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
+    DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. If not set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -102,6 +105,17 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {
+    if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
+    {
+        /// Settings of the recent samples table make no sense without the table itself.
+        if (settings[TimeSeriesSetting::recent_samples_partition_by].value)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_partition_by` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+        if (settings[TimeSeriesSetting::recent_samples_index_granularity].isChanged())
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_index_granularity` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+    }
+
     if (!settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
         /// Reject only an explicit conflicting value.
