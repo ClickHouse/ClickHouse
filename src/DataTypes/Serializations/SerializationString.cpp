@@ -424,7 +424,8 @@ try
 catch (...)
 {
     /// We could have resized `data` beyond the last complete value, restore consistency (even in case of exceptions).
-    data.resize_exact(offsets.back());
+    /// `offsets` can be empty if an exception was thrown before the first value was fully read.
+    data.resize_exact(offsets.empty() ? 0 : offsets.back());
     throw;
 }
 
