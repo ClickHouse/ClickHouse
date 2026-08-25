@@ -436,13 +436,6 @@ public:
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
 
-    /// Let a pass that adds filters after the initial PK analysis rebuild the conditions and ranges
-    void invalidateIndexes()
-    {
-        indexes.reset();
-        analyzed_result_ptr.reset();
-    }
-
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().

@@ -237,6 +237,19 @@ void optimizeTreeSecondPass(
     };
 
     Stack stack;
+
+    /// Before the index analysis below, so that the copied conjuncts take part in it, and before
+    /// `tryAddJoinRuntimeFilter`, which wraps both sides and would hide the source filters.
+    /// Without the index analysis a copied conjunct is just a full scan filter, so skip the pass then
+    bool predicates_were_lifted = false;
+    if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
+    {
+        traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
+        {
+            predicates_were_lifted |= tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+        });
+    }
+
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -286,7 +299,8 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    bool join_runtime_filters_were_added = false;
+    /// A lifted predicate has to be pushed down as well, so it can reach PREWHERE
+    bool push_down_rerun_needed = predicates_were_lifted;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -296,31 +310,8 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            /// Must run before `tryAddJoinRuntimeFilter`, which wraps both sides and would hide the
-            /// source filters from the lift's walk. Without the PK re-analysis below the copied
-            /// conjunct is just a full scan filter, so skip the pass entirely then
-            if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
-            {
-                if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
-                {
-                    join_runtime_filters_were_added = true;
-                    /// Re-run PK analysis here, before `convertLogicalJoinToPhysical` reorganizes the
-                    /// children. `applyFilters` short-circuits on a populated `indexes`, hence the reset.
-                    /// The walk needs its own stack: `traverseQueryPlan` clears the one it is given
-                    Stack inner_stack;
-                    for (auto * child : frame_node.children)
-                    {
-                        traverseQueryPlan(inner_stack, *child, [&](auto & fn)
-                        {
-                            if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
-                                mt->invalidateIndexes();
-                            optimizePrimaryKeyConditionAndLimit(inner_stack);
-                        });
-                    }
-                }
-            }
             if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                push_down_rerun_needed |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
             /// Joins left in the outer plan are converted right after the fragment is created.
@@ -330,7 +321,7 @@ void optimizeTreeSecondPass(
 
     /// If join runtime filters or lifted join predicates were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
-    if (join_runtime_filters_were_added)
+    if (push_down_rerun_needed)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -760,10 +751,10 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// Join-filter pushdown and lazy materialization replace `FilterStep`s without carrying over
-    /// the QCC key that `updateQueryConditionCache` set earlier in this pass. Re-walk the plan
-    /// so the surviving main-branch `FilterStep` gets the key.
-    if (optimization_settings.use_query_condition_cache && (join_runtime_filters_were_added || lazy_materialization_applied))
+    /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
+    /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
+    /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
+    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
