@@ -1663,7 +1663,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (num_streams > 1)
     {
         /// Reduce the number of num_streams if the data is small.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// The comparison is done with a division rather than with `num_streams * info.min_marks_for_concurrent_read`,
+        /// because `num_streams` is derived from `max_streams_to_max_threads_ratio`, which is a `Float64` setting,
+        /// and the product can overflow. `info.min_marks_for_concurrent_read` is always at least one.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             /*
             If the data is fragmented, then allocate the size of parts to num_streams. If the data is not fragmented, besides the sum_marks and
@@ -1887,7 +1890,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// Additional increase of streams number in case of skewed parts, like it's
         /// done in `spreadMarkRangesAmongStreams` won't affect overall performance
         /// due to the single downstream `MergingSortedTransform`.
-        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+        /// As in `spreadMarkRangesAmongStreams`, the comparison avoids the overflow of
+        /// `num_streams * info.min_marks_for_concurrent_read`.
+        if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
