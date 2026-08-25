@@ -385,6 +385,18 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
+size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
+    /// storage is listed, which is too expensive at planning time, so report the request as is.
+    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
+        || configuration->getPathForRead().hasGlobs())
+        return num_streams;
+
+    /// A static list of keys: the read creates at most one source per key.
+    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+}
+
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
