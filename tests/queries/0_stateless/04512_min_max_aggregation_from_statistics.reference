@@ -36,3 +36,6 @@ not applied: lightweight delete
 the merge applies the delete and rebuilds statistics
 2019-05-05	2020-12-30	100001
 1
+not applied: count over an expression must still evaluate the argument
+100001
+0
