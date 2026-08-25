@@ -123,8 +123,8 @@ public:
     {
         mutable NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
-        size_t score;
-        unsigned size;
+        size_t score = 0;
+        unsigned size = 0;
     };
 
     explicit FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings);
