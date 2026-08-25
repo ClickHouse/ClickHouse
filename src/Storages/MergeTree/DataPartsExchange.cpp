@@ -832,6 +832,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     if (!to_remote_disk)
         part_storage_for_loading->beginTransaction();
 
+    /// Not `MergeTreeData::reclaimStaleTemporaryPartDirectory`: that one only handles directories
+    /// directly under the table data path, while a fetch with `to_detached` writes under `detached/`.
     if (part_storage_for_loading->exists())
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
@@ -904,13 +906,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         if (part_storage_for_loading->hasActiveTransaction())
             part_storage_for_loading->commitTransaction();
 
-        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
+        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings(), PartDirIntent::OpenExisting);
         new_data_part = builder.withPartFormatFromDisk().build();
 
         new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
-        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
         new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
