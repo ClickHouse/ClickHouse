@@ -184,7 +184,11 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY id
     SETTINGS storage_policy = 's3_cache', index_granularity = 512, min_bytes_for_wide_part = 0,
              enable_block_number_column = 1, enable_block_offset_column = 1,
-             apply_patches_on_merge = 0;
+             apply_patches_on_merge = 0,
+             -- Only a v1 patch is applied in Join mode, the mode that reads the patch part's
+             -- implicit minmax index. A v2 patch is applied in MergeOnKey mode, which performs
+             -- no such read.
+             patch_parts_version = 'v1';
 
     -- A retried insert consumes ZooKeeper block numbers, so part ids stop being
     -- deterministic and the fixture assertion below no longer knows the merged part's name.
