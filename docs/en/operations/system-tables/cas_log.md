@@ -16,6 +16,9 @@ findings. It is a much finer-grained, per-event complement to
 [`system.cas_gc_log`](/operations/system-tables/cas_gc_log),
 which only records one `Start`/`Finish` row per GC round.
 
+The table is created only if the `cas_log` server setting is
+specified (it is enabled by default in the shipped `config.xml`).
+
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Host name of the server that emitted the event.

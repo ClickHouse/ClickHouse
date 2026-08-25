@@ -77,6 +77,11 @@ positioning.
 - **Other S3-compatible object stores qualify only if they pass the capability probe** — a store
   that silently ignores conditional writes is refused at mount time rather than trusted. Bucket
   versioning must be off; it is not required to be on.
+- **An `encrypted` disk wrapping a `CAS` disk is not supported yet** — `CREATE TABLE` on such a
+  disk succeeds, but the first `INSERT` fails (`Autocommit writes are not supported for content part
+  files on a content-addressed disk`). Layering a `cache` disk in front of `CAS` is the supported
+  wrapper shape (see [configuration](/antalya/cas/configuration)); encryption at rest currently has
+  to come from the object store side.
 - **The format and settings surface can still change.** CAS is pre-release: there is no persisted
   production data to keep compatible, so a format change costs a version bump, not a migration.
   Treat every detail on these pages as subject to change until the format is declared stable.
