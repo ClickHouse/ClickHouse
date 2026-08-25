@@ -1,11 +1,14 @@
 export const GlobalSearch = ({ placeholder = "ابحث في مستندات ClickHouse..." }) => {
   // Mintlify evaluates imported components as self-contained functions, so
   // helpers used by the component must stay within the component scope.
+  // The legacy *.mintlify.app source exposed pages at the host root, while
+  // the *.mintlify.site source includes a /docs prefix.
+  const previewUrlPattern = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/
   const transformSource = (source) => {
     let url = source.url || ""
-    const isPreview = url.indexOf("private-7c7dfe99.mintlify.app") !== -1
+    const isPreview = previewUrlPattern.test(url)
     if (isPreview) {
-      url = url.replace(/^https?:\/\/private-7c7dfe99\.mintlify\.app\//, "https://clickhouse.com/docs/")
+      url = url.replace(previewUrlPattern, "https://clickhouse.com/docs/")
     }
     const tabs = []
     if (isPreview || /clickhouse\.com\/docs(\/|$)/.test(url)) {
@@ -29,7 +32,7 @@ export const GlobalSearch = ({ placeholder = "ابحث في مستندات Click
     // These are public client-side Inkeep keys, also used by inkeep-init.js.
     const keyStaging = "d3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54"
     const keyLocal = "b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b"
-    const apiKey = /\.mintlify\.app$/.test(window.location.hostname) ? keyStaging : keyLocal
+    const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? keyStaging : keyLocal
     const embedUrl = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js"
     const config = {
       baseSettings: {
@@ -107,7 +110,7 @@ export const GlobalSearch = ({ placeholder = "ابحث في مستندات Click
       try {
         widget = api.EmbeddedSearch("#" + targetId, config)
       } catch (error) {
-        console.log("فشل البحث العام في Inkeep:", error)
+        console.log("Inkeep global search failed:", error)
       }
     }
 
@@ -180,7 +183,7 @@ export const GlobalSearch = ({ placeholder = "ابحث في مستندات Click
         if (widget && typeof widget.unmount === "function") widget.unmount()
         else if (widget && typeof widget.destroy === "function") widget.destroy()
       } catch (error) {
-        // تجاهل أخطاء التنظيف الصادرة عن عنصر واجهة منفصل بالفعل.
+        // Ignore cleanup errors from an already-detached widget.
       }
       if (el) el.dataset.inkeepMounted = ""
     }

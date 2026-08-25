@@ -1,0 +1,40 @@
+<clickhouse>
+    <!--
+        Negative case for the separation between handler-group scanning and top-level exemption.
+        `<http_handlers>` legitimately references `config://config_payload`, so `<config_payload>`
+        is exempt as a static-response payload. `<config_payload>` happens to contain handler-shaped
+        children, but the server reads it only as an opaque response string (via `config://`), never
+        as an HTTP handler group. The validator must therefore NOT re-scan `<config_payload>` as a
+        handler group, and must NOT exempt the unrelated top-level `<secret_unknown_section>` that
+        those nested children reference. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+
+        `<http_handlers>` is placed first so the merged document order reproduces the false-negative
+        in the pre-fix code (which used a single set: scanning `http_handlers` recorded
+        `config_payload` as referenced, then re-scanned `config_payload` as a handler group and
+        wrongly whitelisted `secret_unknown_section`).
+    -->
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/payload_rule</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://config_payload</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+
+    <config_payload>
+        <rule>
+            <methods>GET</methods>
+            <url>/nested_rule</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://secret_unknown_section</response_content>
+            </handler>
+        </rule>
+    </config_payload>
+
+    <secret_unknown_section>must not be exempted via a payload section</secret_unknown_section>
+</clickhouse>

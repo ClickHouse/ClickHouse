@@ -30,25 +30,31 @@ namespace
 {
 
 /// Column-native conversion for the cases where CAST provably matches `convertFieldToType`:
-/// plain numeric-to-numeric in the default mode. `castColumnAccurateOrNull` uses the same accurate
-/// numeric conversion (`accurate::convertNumeric`, strict) as `convertFieldToType`'s default path
-/// (out-of-range / inexact-narrowing -> NULL). Returns:
+/// plain native-numeric-to-native-numeric, in the default AND `strict` modes. `castColumnAccurateOrNull`
+/// uses the same accurate numeric conversion (`accurate::convertNumeric`) as `convertFieldToType`'s
+/// default path (out-of-range / inexact-narrowing -> NULL). For native numbers `strict` and default
+/// agree with it too: `strict` only rejects additional cases for types that are already excluded here -
+/// `Bool` (10 is not a valid `Bool`) and `Decimal` (scale reduction; `castColumnAccurateOrNull` would
+/// round, so it must NOT be used for strict Decimal - and it isn't, `Decimal` is not a native number).
+/// The strict native-number equivalence is pinned by `gtest_convert_column_to_type`. Returns:
 ///   - the converted size-1 column of `to` on success,
 ///   - a null `ColumnPtr{}` when not representable,
 ///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
-/// Excluded: `strict` / `convert_inexact_floats` modes (different rounding/precision rules), `Bool`
-/// (clamp semantics), and anything non-native-numeric (Decimal/Date/Enum/String/wrappers/composite).
+/// Excluded: `convert_inexact_floats` mode (allows rounding, so `castColumnAccurateOrNull` differs),
+/// `Bool` (clamp/validity semantics), and anything non-native-numeric
+/// (Decimal/Date/Enum/String/wide-int/wrappers/composite).
 std::optional<ColumnPtr> tryConvertNumericColumnNative(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    bool strict,
     bool convert_inexact_floats)
 {
-    if (strict || convert_inexact_floats)
+    if (convert_inexact_floats)
         return std::nullopt;
     if (!isNativeNumber(from) || !isNativeNumber(to) || isBool(from) || isBool(to))
         return std::nullopt;
+    /// `strict` is intentionally not a parameter: for native numbers it is equivalent to the default
+    /// accurate path (both reject non-representable values), so this fast path serves strict too.
 
     ColumnWithTypeAndName arg{value.getPtr(), from, ""};
     ColumnPtr casted = castColumnAccurateOrNull(arg, to);
@@ -139,7 +145,7 @@ ColumnPtr convertColumnToTypeOrNull(
     const ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
-    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
+    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
         return std::move(*native);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native

@@ -1,18 +1,19 @@
 #pragma once
 
 #include <algorithm>
-#include <functional>
+#include <iterator>
 #include <utility>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/inlined_vector.h>
 
 #include <base/sort.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -23,51 +24,119 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Per-bucket storage of timeseries samples keyed by timestamp.
-/// When two samples share a timestamp the larger value is kept.
+/// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the largest real value (a NaN survives only when every sample at the timestamp is NaN).
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
-    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source, which is safe for
-    /// any type without pointers into itself. `absl::flat_hash_map` qualifies: the address of its inline
-    /// single-element storage (small object optimization) is computed from `this`, the rest is on the heap.
-    /// No standard trait expresses this (weaker than `std::is_trivially_copyable`) property, hence the
-    /// explicit declaration.
+    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source,
+    /// which is safe here: the buffer's inline single-sample storage is addressed relative to `this` (and the samples are trivially copyable),
+    /// an allocated buffer is reached only through a pointer to the heap - no pointers into itself either way.
     static constexpr bool is_position_independent = true;
 
     void add(TimestampType timestamp, ValueType value)
     {
-        auto [it, inserted] = buffer.emplace(timestamp, value);
-        if (!inserted)
-            it->second = std::max(it->second, value);
+        /// Out-of-order and duplicate timestamps are rare (measured ~1 per 1.5 billion adds on production-shaped multithreaded reads), hence `[[unlikely]]`.
+        if (!buffer.empty() && timestamp <= buffer.back().first) [[unlikely]]
+        {
+            auto & last = buffer.back();
+            if (timestamp == last.first)
+            {
+                last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
+                return;
+            }
+            sorted = false;
+        }
+        buffer.emplace_back(timestamp, value);
+    }
+
+    ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
+    {
+        if (count == 0)
+            return;
+
+        const size_t old_size = buffer.size();
+        buffer.resize(old_size + count);
+        auto * __restrict appended = buffer.data() + old_size;
+        for (size_t i = 0; i < count; ++i)
+            appended[i] = {timestamps[i], values[i]};
+
+        UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
+        for (size_t i = 1; i < count; ++i)
+            in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
+        sorted = sorted && in_order;
     }
 
     void merge(const AggregateFunctionTimeseriesSamples & other)
     {
-        buffer.reserve(buffer.size() + other.buffer.size());
-        for (const auto & [timestamp, value] : other.buffer)
-            add(timestamp, value);
+        if (other.buffer.empty())
+        {
+            /// Nothing to merge: the state is left as is (a rare unsorted state stays unsorted until a later operation sorts it).
+            return;
+        }
+
+        if (buffer.empty())
+        {
+            buffer = other.buffer;
+            sorted = other.sorted;
+            sort();
+            return;
+        }
+
+        sort();
+
+        /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
+        const Buffer * rhs = &other.buffer;
+        Buffer sorted_other_buffer;
+        if (!other.sorted)
+        {
+            sorted_other_buffer = other.buffer;
+            sortBuffer(sorted_other_buffer);
+            rhs = &sorted_other_buffer;
+        }
+
+        /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
+        if (buffer.back().first < rhs->front().first)
+        {
+            buffer.insert(buffer.end(), rhs->begin(), rhs->end());
+            return;
+        }
+        if (rhs->back().first < buffer.front().first)
+        {
+            buffer.insert(buffer.begin(), rhs->begin(), rhs->end());
+            return;
+        }
+
+        Buffer merged;
+        merged.reserve(buffer.size() + rhs->size());
+        std::merge(buffer.begin(), buffer.end(), rhs->begin(), rhs->end(), std::back_inserter(merged), lessByTimestamp);
+        deduplicateSorted(merged);
+        buffer = std::move(merged);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        writeBinaryLittleEndian(buffer.size(), buf);
-        for (const auto & [timestamp, value] : buffer)
+        /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
+        if (!sorted) [[unlikely]]
         {
-            writeBinaryLittleEndian(timestamp, buf);
-            writeBinaryLittleEndian(value, buf);
+            Buffer sorted_buffer = buffer;
+            sortBuffer(sorted_buffer);
+            writeSamples(sorted_buffer, buf);
+            return;
         }
+        writeSamples(buffer, buf);
     }
 
     void deserialize(ReadBuffer & buf)
     {
         /// Deserialize replaces any previous contents.
         buffer.clear();
+        sorted = true;
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
         buffer.reserve(sample_count);
+        /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `sort` restores the invariant if it was violated.
         for (size_t s = 0; s < sample_count; ++s)
         {
             TimestampType timestamp;
@@ -76,6 +145,7 @@ public:
             readBinaryLittleEndian(value, buf);
             add(timestamp, value);
         }
+        sort();
     }
 
     /// Throws if any sample's timestamp is outside the range.
@@ -91,38 +161,79 @@ public:
         });
     }
 
-    /// Invokes `f(timestamp, value)` for every sample, in arbitrary order. Used by the per-function sliding
-    /// aggregators for order-independent aggregates (e.g. linear regression moments).
+    /// Invokes `f(timestamp, value)` for every sample, in ascending timestamp order with duplicates collapsed.
     template <typename F>
     void forEachSample(F && f) const
     {
+        /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
+        if (!sorted) [[unlikely]]
+        {
+            Buffer sorted_buffer = buffer;
+            sortBuffer(sorted_buffer);
+            for (const auto & [timestamp, value] : sorted_buffer)
+                f(timestamp, value);
+            return;
+        }
         for (const auto & [timestamp, value] : buffer)
-            f(timestamp, value);
-    }
-
-    /// Invokes `f(timestamp, value)` for every sample in ascending timestamp order, using `temp_buffer` as a
-    /// reused sort buffer. Used by the order-dependent aggregators (rate reset accounting, counting transitions).
-    template <typename F>
-    void forEachSampleSorted(F && f, VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> & temp_buffer) const
-    {
-        temp_buffer.clear();
-        temp_buffer.reserve(buffer.size());
-        for (const auto & [timestamp, value] : buffer)
-            temp_buffer.emplace_back(timestamp, value);
-        ::sort(temp_buffer.begin(), temp_buffer.end());
-        for (const auto & [timestamp, value] : temp_buffer)
             f(timestamp, value);
     }
 
 private:
-    /// Samples keyed by timestamp. Uses `AllocatorWithMemoryTracking` so per-bucket sample memory is counted by
-    /// the `MemoryTracker`, like the rest of the aggregate state.
-    absl::flat_hash_map<
-        TimestampType,
-        ValueType,
-        absl::container_internal::hash_default_hash<TimestampType>,
-        std::equal_to<>,
-        AllocatorWithMemoryTracking<std::pair<const TimestampType, ValueType>>> buffer;
+    /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
+    using Buffer = absl::InlinedVector<
+        std::pair<TimestampType, ValueType>,
+        /* N = */ 1,
+        AllocatorWithMemoryTracking<std::pair<TimestampType, ValueType>>>;
+
+    static void writeSamples(const Buffer & samples, WriteBuffer & buf)
+    {
+        writeBinaryLittleEndian(samples.size(), buf);
+        for (const auto & [timestamp, value] : samples)
+        {
+            writeBinaryLittleEndian(timestamp, buf);
+            writeBinaryLittleEndian(value, buf);
+        }
+    }
+
+    static bool lessByTimestamp(const std::pair<TimestampType, ValueType> & lhs, const std::pair<TimestampType, ValueType> & rhs)
+    {
+        return lhs.first < rhs.first;
+    }
+
+    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
+    static void deduplicateSorted(Buffer & buf)
+    {
+        size_t last_unique = 0;
+        for (size_t i = 1; i < buf.size(); ++i)
+        {
+            if (buf[i].first == buf[last_unique].first)
+                buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
+            else
+                buf[++last_unique] = buf[i];
+        }
+        if (!buf.empty())
+            buf.resize(last_unique + 1);
+    }
+
+    static void sortBuffer(Buffer & buf)
+    {
+        ::sort(buf.begin(), buf.end(), lessByTimestamp);
+        deduplicateSorted(buf);
+    }
+
+    /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
+    void sort()
+    {
+        if (sorted)
+            return;
+        sortBuffer(buffer);
+        sorted = true;
+    }
+
+    /// The samples, sorted by timestamp and deduplicated whenever `sorted` is true.
+    Buffer buffer;
+    /// Cleared by an out-of-order `add`; while set, timestamps in `buffer` are strictly increasing.
+    bool sorted = true;
 };
 
 }
