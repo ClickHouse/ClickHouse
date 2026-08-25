@@ -574,8 +574,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
 
-        /// If part has non-adaptive granularity we always have to read at least one column
-        /// because we cannot determine the correct size of the last granule without reading data.
+        /// A step that needs no column of its own still reads one when the granularity is not adaptive.
+        /// That was once necessary, the last granule being assumed full, but `fixFromRowsCount` now
+        /// corrects it at part load and at write finalize, so the condition is only conservative.
         if (!step_column_names.empty() || !has_adaptive_granularity)
         {
             injectRequiredColumns(
