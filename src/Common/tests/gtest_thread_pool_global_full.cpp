@@ -14,6 +14,11 @@ namespace CurrentMetrics
     extern const Metric LocalThreadScheduled;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
 /// Test what happens if local ThreadPool cannot create a ThreadFromGlobalPool.
 /// There was a bug: if local ThreadPool cannot allocate even a single thread,
 ///  the job will be scheduled but never get executed.
@@ -29,6 +34,25 @@ struct AlwaysFailToAllocateThread
     AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(1.0); }
     ~AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(0.0); }
 };
+
+/// A pool refuses a job either because it could not start a thread or because its queue would
+/// not admit it. Both refusals carry `CANNOT_SCHEDULE_TASK`, so the reason string is the only
+/// thing that distinguishes them, and only the first one is what these tests are about.
+void expectFailureToStartThread(ThreadPool & pool, ThreadPool::Job job)
+{
+    bool threw = false;
+    try
+    {
+        pool.scheduleOrThrowOnError(std::move(job));
+    }
+    catch (const DB::Exception & e)
+    {
+        threw = true;
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+        EXPECT_TRUE(e.message().contains("failed to start the thread")) << e.message();
+    }
+    EXPECT_TRUE(threw);
+}
 
 }
 
@@ -52,7 +76,7 @@ TEST(ThreadPool, GlobalFull1)
     for (size_t i = capacity; i < num_jobs; ++i)
     {
         AlwaysFailToAllocateThread always_fail;
-        EXPECT_THROW(pool.scheduleOrThrowOnError(func), DB::Exception);
+        expectFailureToStartThread(pool, func);
         ++counter;
     }
 
@@ -75,7 +99,7 @@ TEST(ThreadPool, GlobalFull2)
     ThreadPool another_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
     {
         AlwaysFailToAllocateThread always_fail;
-        EXPECT_THROW(another_pool.scheduleOrThrowOnError(func), DB::Exception);
+        expectFailureToStartThread(another_pool, func);
     }
 
     ++counter;
