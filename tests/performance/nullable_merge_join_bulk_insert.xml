@@ -1,0 +1,41 @@
+<test>
+    <!--
+        Keep the join output column nullable while the source column is not
+        nullable. One right row matches a large duplicate-key range on the
+        left, so MergeJoin copies the right value in bulk into the Nullable
+        column.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <join_algorithm>partial_merge</join_algorithm>
+        <join_use_nulls>1</join_use_nulls>
+    </settings>
+
+    <create_query>
+        CREATE TABLE nullable_bulk_left
+        (
+            k UInt64
+        ) ENGINE = MergeTree ORDER BY k
+    </create_query>
+    <create_query>
+        CREATE TABLE nullable_bulk_right
+        (
+            k UInt64,
+            value String
+        ) ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <fill_query>INSERT INTO nullable_bulk_left SELECT toUInt64(0) FROM numbers(1048576)</fill_query>
+    <fill_query>INSERT INTO nullable_bulk_right SELECT toUInt64(0), repeat('x', 64) FROM numbers(1)</fill_query>
+
+    <query>
+        SELECT sum(length(r.value))
+        FROM nullable_bulk_left AS l
+        ALL LEFT JOIN nullable_bulk_right AS r ON l.k = r.k
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_right</drop_query>
+</test>
