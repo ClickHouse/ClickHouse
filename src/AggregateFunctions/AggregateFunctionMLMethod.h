@@ -135,8 +135,12 @@ public:
     /// Used for serialization when necessary
     virtual void write(WriteBuffer &) const {}
 
-    /// Used for serialization when necessary
-    virtual void read(ReadBuffer &) {}
+    /// Used for serialization when necessary. The state comes from the data, so the updaters that
+    /// store vectors must check them against `expected_size` (the size of the gradient, that is,
+    /// the number of weights plus one for the bias): the updaters index these vectors by the
+    /// weight number during `merge` and `addToBatch`. An empty vector is also valid: versions
+    /// before 23.2 serialized the vectors empty until the first update.
+    virtual void read(ReadBuffer &, UInt64 /* expected_size */) {}
 };
 
 
@@ -172,7 +176,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     Float64 alpha{0.1};
@@ -209,7 +213,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     const Float64 alpha = 0.9;
@@ -251,7 +255,7 @@ public:
 
     void write(WriteBuffer & buf) const override;
 
-    void read(ReadBuffer & buf) override;
+    void read(ReadBuffer & buf, UInt64 expected_size) override;
 
 private:
     /// beta1 and beta2 hyperparameters have such recommended values
