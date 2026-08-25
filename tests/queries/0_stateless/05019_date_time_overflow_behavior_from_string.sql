@@ -54,3 +54,13 @@ SELECT CAST(materialize('4294967296') AS DateTime); -- { serverError VALUE_IS_OU
 SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":"4294967296"}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT * FROM format(Values, 'v DateTime', '(\'4294967296\')'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDateTime('4294967295'), toDateTime('1700000000'), toDateTimeOrNull('4294967296'), toDateTimeOrZero('4294967296');
+
+SELECT 'throw, Date32 rejects what it cannot represent instead of substituting a default';
+SELECT toDate32('2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
+SELECT toDate32('99999999'); -- { serverError CANNOT_PARSE_DATE }
+SELECT CAST(materialize('2000-13-01') AS Date32); -- { serverError CANNOT_PARSE_DATE }
+SELECT * FROM format(CSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
+SELECT * FROM format(TSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
+SELECT * FROM format(JSONEachRow, 'v Date32', '{"v":"2000-13-01"}'); -- { serverError CANNOT_PARSE_DATE }
+SELECT toDate32OrNull('2000-13-01'), toDate32('2299-12-31'), toDate32('1900-01-01');
+SELECT v FROM format(CSV, 'v Variant(Date32, String)', '2000-13-01') SETTINGS allow_experimental_variant_type = 1;

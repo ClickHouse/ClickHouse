@@ -679,7 +679,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -689,6 +689,22 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
         readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
+
+    if (!saturate_on_overflow)
+    {
+        /// Every four-digit year fits into Date32, so only a calendar-invalid date can fail here
+        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        if (!ret)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
+            else
+                return false;
+        }
+
+        date = *ret;
+        return ReturnType(true);
+    }
 
     /// A calendar-invalid date (e.g. month 13) yields 1900-01-01 (-getDayNumOffsetEpoch(), -25567) for Date32 and 1970-01-01 for Date.
     date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
@@ -706,9 +722,9 @@ inline void readDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & da
     readDateTextImpl<void>(date, buf, date_lut, nullptr, saturate_on_overflow);
 }
 
-inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), bool saturate_on_overflow = true)
 {
-    readDateTextImpl<void>(date, buf, date_lut);
+    readDateTextImpl<void>(date, buf, date_lut, nullptr, saturate_on_overflow);
 }
 
 inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
@@ -721,9 +737,9 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl &
     return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters, saturate_on_overflow);
 }
 
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters, saturate_on_overflow);
 }
 
 UUID parseUUID(std::span<const UInt8> src);

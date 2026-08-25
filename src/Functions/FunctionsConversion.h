@@ -1089,10 +1089,10 @@ inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool)
+inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     ExtendedDayNum tmp(0);
-    readDateText(tmp, rb, *time_zone);
+    readDateText(tmp, rb, *time_zone, saturate_on_overflow);
     x = tmp;
 }
 
@@ -1163,10 +1163,10 @@ inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool)
+inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     ExtendedDayNum tmp(0);
-    if (!tryReadDateText(tmp, rb, *time_zone))
+    if (!tryReadDateText(tmp, rb, *time_zone, nullptr, saturate_on_overflow))
         return false;
     x = tmp;
     return true;
