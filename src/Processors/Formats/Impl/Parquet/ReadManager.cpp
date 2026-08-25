@@ -75,21 +75,12 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
 
-    /// Static per-stage memory and thread budgets (fractions summing to 1 within each resource) so no
-    /// stage starves the others (e.g. ColumnData eating all memory and blocking the small index reads
-    /// other row groups need). Memory and threads are budgeted separately because a single shared
-    /// fraction coupled read-ahead and decode: ColumnDataPrefetch holds small compressed pages, so it
-    /// gets most of the memory to keep many reads outstanding and hide latency; ColumnData holds large
-    /// decoded columns, so its memory is bounded but it gets most threads (decode is the real CPU work).
-    /// Index/bloom stages only issue async reads, so they get one thread-share each and a small memory
-    /// floor.
-    ///
-    /// Two knobs re-balance the data stages (index/bloom shares are fixed):
-    ///  - prefetch_memory_fraction: of the memory budget reserved for column data (0.75 of the total),
-    ///    the share given to ColumnDataPrefetch (compressed read-ahead) vs ColumnData (decoded output).
-    ///  - decode_thread_fraction: ColumnData's share of the thread pool; the five read-issuing stages
-    ///    split the remainder equally.
-    /// The defaults (0.6, 0.375) reproduce the previously hard-coded fractions.
+    /// Per-stage memory/thread budgets (each resource sums to 1) so no stage starves the others.
+    /// Prefetch holds small compressed pages -> most memory (keep reads outstanding, hide latency);
+    /// decode holds large columns -> bounded memory but most threads (only CPU-bound stage);
+    /// index/bloom only issue async reads -> fixed small shares. Two knobs re-balance the data stages:
+    /// prefetch_memory_fraction splits the 0.75 data-memory budget prefetch/decode; decode_thread_fraction
+    /// is decode's thread share (issuers split the rest). Defaults preserve the old hard-coded fractions.
     const auto & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources->opaque.get());
     const double mem_frac = ext.prefetch_memory_fraction;
     const double dec_thr = ext.decode_thread_fraction;
