@@ -360,7 +360,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     const Serializations serializations = header.getSerializations();
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
-    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
+    /// The single-value exemption is decided by the logical shape of the result (one row, one column),
+    /// not by the flattened display shape: a lone named Tuple column split into subcolumns is still a single value.
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && original_header->columns() == 1 && total_rows == 0)
         cut_to_width = 0;
 
     WidthsPerColumn widths;
