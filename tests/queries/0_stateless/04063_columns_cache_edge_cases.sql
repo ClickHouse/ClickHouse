@@ -467,13 +467,22 @@ DROP TABLE IF EXISTS t_cache_mixed_parts;
 
 CREATE TABLE t_cache_mixed_parts (id UInt64, value String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 1000, index_granularity = 1000;
+SETTINGS min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 1000, index_granularity = 1000;
 
--- Insert small data (compact parts)
+-- Keep both parts alive until the assertions below have run.
+SYSTEM STOP MERGES t_cache_mixed_parts;
+
+-- Insert small data (compact part: fewer rows than min_rows_for_wide_part)
 INSERT INTO t_cache_mixed_parts SELECT number, toString(number) FROM numbers(100);
 
--- Insert larger data (might be wide parts)
+-- Insert larger data (wide part: at least min_rows_for_wide_part rows)
 INSERT INTO t_cache_mixed_parts SELECT number + 1000, repeat(toString(number), 100) FROM numbers(2000);
+
+-- Prove the mixed shape actually holds, so the cache assertions below are not vacuous:
+-- exactly one active compact part and one active wide part.
+SELECT countIf(part_type = 'Compact') = 1, countIf(part_type = 'Wide') = 1
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_cache_mixed_parts' AND active;
 
 SYSTEM DROP COLUMNS CACHE;
 

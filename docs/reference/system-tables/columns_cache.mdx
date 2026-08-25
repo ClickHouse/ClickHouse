@@ -18,9 +18,10 @@ Each entry corresponds to a contiguous row range `[row_begin, row_end)` of a
 single column of a single data part.
 
 The cache identifies entries by table UUID, so it is only active for tables in
-databases that assign UUIDs (`Atomic` and `Replicated`). Tables in legacy
-`Ordinary` databases, which do not have UUIDs, are silently excluded from the
-cache. Only wide parts participate in the cache; compact parts are silently
+databases that assign UUIDs (`Atomic` and `Replicated`). Tables in databases
+without UUIDs are silently excluded from the cache; this includes legacy
+`Ordinary` databases and `Shared` databases, the default database engine in
+ClickHouse Cloud. Only wide parts participate in the cache; compact parts are silently
 excluded.
 
 The cache is controlled by the server settings `columns_cache_size` and

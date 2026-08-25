@@ -1082,7 +1082,12 @@ void IMergeTreeDataPart::clearCaches()
         && !isProjectionPart()
         && storage.getStorageID().uuid != UUIDHelpers::Nil)
     {
-        if (auto columns_cache = storage.getContext()->getColumnsCache(); columns_cache && columns_cache->maxSizeInBytes() != 0)
+        /// Call removePart even when the cache is sized to zero: a reader that started
+        /// while the cache was still enabled holds an invalidation stamp and could
+        /// repopulate entries for this removed part after a config reload re-enables
+        /// the cache. ColumnsCache::removePart handles the zero-sized case internally
+        /// by advancing the cache-wide invalidation stamp.
+        if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
             columns_cache->removePart(storage.getStorageID().uuid, name);
         }
