@@ -99,8 +99,15 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     const auto gather_cost = estimator.estimateCost(gather);
     const Float64 physical_rows = limit * node_count;
     EXPECT_DOUBLE_EQ(gather_cost.cost.network, physical_rows * bytes_per_row);
-    /// The gather funnel is priced on the same physical rows.
-    EXPECT_GE(gather_cost.cost.sequential, physical_rows);
+    /// The limit above stops the receiver after the trimmed L rows, so the funnel and the
+    /// receive merge are priced on L; the sender merge sees its node's share of the
+    /// shipped rows.
+    const auto & config = memo.getContext().cost_config;
+    EXPECT_DOUBLE_EQ(gather_cost.cost.sequential,
+        config.exchange_fixed_overhead
+        + config.funnel_sequential_cost_per_row * limit
+        + config.merge_sequential_cost_per_row * limit
+        + config.merge_sequential_cost_per_row * physical_rows / node_count);
 }
 
 TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)

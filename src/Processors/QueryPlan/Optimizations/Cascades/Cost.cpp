@@ -304,11 +304,17 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// selectivity, which can be far below its rows, even below one row; such a result is funnelled
     /// at the rows it cannot exceed, capped at the largest known leaf. Other unknown results keep
     /// their search value: an aggregation of a small input is small.
+    /// A sorted gather under a limit funnels only the consumed rows: the receiver pulls merged rows
+    /// until the limit is satisfied and cancels the senders. The network term above keeps the shipped
+    /// rows - the senders push eagerly until the cancel arrives.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
     {
         Float64 funnelled_rows = rows;
         if (inputs.output_stats.rows_unknown && inputs.output_stats.search_value_is_join_product)
             funnelled_rows = std::max(1.0, std::min(inputs.output_stats.max_row_count, inputs.unknown_exchange_rows));
+        else if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
+            sorted_gather && sorted_gather->getMaintainSortDescription())
+            funnelled_rows = std::min(funnelled_rows, inputs.output_stats.estimated_row_count);
         cost.network += std::max(0.0, funnelled_rows - rows) * inputs.output_stats.estimated_bytes_per_row;
         cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnelled_rows;
     }
