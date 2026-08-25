@@ -9467,8 +9467,17 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             {
                 auto data_parts_lock = lockParts();
+
+                /// The new parts are committed first and the destination partition is removed only afterwards,
+                /// through `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper`, so the parts being
+                /// replaced are not covered by any of the new parts and the per-part check of the
+                /// 'max_table_size_*' limits cannot see them. Check the limits for the operation as a whole instead.
+                throwIfTableSizeLimitsExceededForReplacement(
+                    data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+
                 for (auto & part : dst_parts)
-                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
+                    renameTempPartAndReplaceUnlocked(
+                        part, transaction, data_parts_lock, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
             }
             transaction.renameParts();
 

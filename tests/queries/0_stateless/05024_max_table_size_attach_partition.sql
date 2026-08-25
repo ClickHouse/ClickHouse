@@ -1,6 +1,6 @@
 -- The parts of an attached partition are committed in a single transaction, one by one, under the same
--- lock on the parts set. Every part is counted against the 'max_table_size_*' limits as soon as it is
--- accepted into the working set (in the `PreActive` state), so the batch cannot overshoot the limits.
+-- lock on the parts set. The whole batch is counted against the 'max_table_size_*' limits before any of
+-- its parts is accepted into the working set, so the batch cannot overshoot the limits.
 
 DROP TABLE IF EXISTS t_max_size_attach_src;
 DROP TABLE IF EXISTS t_max_size_attach_dst;

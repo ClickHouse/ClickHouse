@@ -897,6 +897,19 @@ public:
     /// operation (in the 'PreActive' state) are counted as well.
     void throwIfTableSizeLimitsExceeded() const;
 
+    /// The same, for an operation that adds a whole batch of parts at once and removes the parts covered by
+    /// 'drop_range' only afterwards: `REPLACE PARTITION FROM` and `ATTACH PARTITION FROM` commit the new parts
+    /// first, with block numbers above the range being dropped, and remove the destination partition later
+    /// through `removePartsInRangeFromWorkingSet`. The parts being replaced are therefore not covered by any of
+    /// the new parts and the per-part check cannot see them. The whole batch is accounted at once, and a
+    /// replacement that is not larger than what it replaces is always allowed, exactly like a size-reducing
+    /// merge or mutation, so that a table that has crossed a limit can be brought back under it.
+    /// 'drop_range' is empty for `ATTACH PARTITION FROM`, which does not remove anything.
+    void throwIfTableSizeLimitsExceededForReplacement(
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
@@ -2153,6 +2166,23 @@ private:
         const DataPartsAnyLock & parts_lock,
         const IMergeTreeDataPart * added_part,
         const DataPartsVector & covered_parts) const;
+
+    /// The aggregate size of a set of data parts, as it is accounted by the 'max_table_size_*' limits.
+    struct PartsSize
+    {
+        UInt64 rows = 0;
+        UInt64 bytes_compressed = 0;
+        UInt64 bytes_uncompressed = 0;
+    };
+
+    /// The size of the given parts. Patch parts represent mutations of rows in regular parts,
+    /// not additional table rows, so they do not contribute to the number of rows.
+    static PartsSize calculatePartsSize(const DataPartsVector & parts);
+
+    /// The current size of the table as it is accounted by the 'max_table_size_*' limits: the number of rows
+    /// of the parts that are or are about to become active, and the number of bytes of all the parts that
+    /// occupy the disks, including the inactive ones.
+    PartsSize calculateTableSizeForLimits(const DataPartsAnyLock & parts_lock) const;
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor
