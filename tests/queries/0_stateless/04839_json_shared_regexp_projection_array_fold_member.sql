@@ -11,7 +11,9 @@ CREATE TABLE arrayfold_member_04839
 (
     id UInt64,
     arr Array(Tuple(doc JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'), other JSON(max_dynamic_paths=5, SHARED REGEXP '^oth_'))),
-    seed JSON(max_dynamic_paths=5)
+    -- arrayFold requires the lambda's return type to equal the accumulator's, and `x.doc` keeps its
+    -- retained rule, so the seed has to carry the same one.
+    seed JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -28,7 +30,8 @@ ALTER TABLE arrayfold_member_04839
     ADD PROJECTION p (SELECT id, arrayFold((acc, x) -> tupleElement(x, 'doc'), arr, seed) WHERE id > 0 ORDER BY id);
 ALTER TABLE arrayfold_member_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
--- doc's rule is kept and other's is not: the donor was the member the body reads, not the array.
+-- `^oth_` must be absent: donating the whole `arr` would offer both tuple elements' rules, so its
+-- absence is what shows the donor was the member the body reads.
 SELECT
     'arrayFold donates the member the body reads',
     countIf(position(type, '^tag_') > 0 AND position(type, '^oth_') = 0)
