@@ -402,8 +402,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// early exit — the flag is checked before the partial split below.
     const bool reading_in_order = reading_step->readsInOrder();
 
-    /// Skip if projection was applied.
-    if (reading_step->getAnalyzedResult())
+    /// Skip if projection was applied. A non-null analysis result alone does not imply
+    /// a projection: join-order estimation runs index analysis for join relations and
+    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
+    if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
     /// Find a LIMIT that applies directly to the reading step's output (only Expression/Filter
@@ -426,11 +428,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                 break;
             continue;
         }
-        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
-        /// The DISTINCT transform honors the hint even when the enclosing limit has
-        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
-        /// query terminates reading early; if the hint seeding ever starts to account for that,
-        /// this check follows automatically.
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is
+        /// produced, so any non-zero hint means the query terminates reading early.
         if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
         {
             limit_above_reading = distinct_step->getLimitHint();
@@ -473,7 +472,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// both for the non-intersecting split and for the set/true-branch plans.
     /// The WHERE filter was already pushed by optimizePrimaryKeyConditionAndLimit,
     /// so selectRangesToRead uses the PK condition for index analysis.
-    auto analyzed_result = reading_step->selectRangesToRead();
+    /// Reuse the partition/PK/index ranges memoized on `ReadFromMergeTree` by join-order
+    /// estimation. This is an analysis-time range set, not an estimated join cardinality
+    /// or a row count observed during execution. The PK conditions were pushed before that
+    /// pass as well, so re-running the analysis would produce the same ranges.
+    auto analyzed_result = reading_step->getAnalyzedResult();
+    if (!analyzed_result)
+        analyzed_result = reading_step->selectRangesToRead();
     if (reading_step->getParts().empty())
         return;
 
@@ -707,7 +712,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         SizeLimits{},
         nullptr));
 
-    set_plan.optimize(optimization_settings);
+    /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
+    /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
+    /// above, so keep it out.
+    auto set_plan_optimization_settings = optimization_settings;
+    set_plan_optimization_settings.creating_set_partitions_independently = false;
+    set_plan.optimize(set_plan_optimization_settings);
 
     /// Shared state between LazyFinalKeyAnalysisTransform and LazyReadReplacingFinalSource.
     auto shared_state = std::make_shared<LazyFinalSharedState>();

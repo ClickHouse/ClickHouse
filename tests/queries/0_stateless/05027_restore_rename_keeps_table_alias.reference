@@ -1,0 +1,63 @@
+BACKUP_CREATED
+-- restore the database under a new name
+RESTORED
+v_plain
+(`id` UInt64) AS SELECT a.id FROM db.t1 AS a
+1
+2
+v_final
+(`id` UInt64) AS SELECT a.id FROM db.t1 AS a FINAL
+1
+2
+v_comma
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a, db.t2 AS b WHERE a.id = b.id
+1	p
+2	q
+v_comma_final
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a FINAL, db.t2 AS b WHERE a.id = b.id
+1	p
+2	q
+v_join
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a INNER JOIN db.t2 AS b ON a.id = b.id
+1	p
+2	q
+v_subquery_alias
+(`id` UInt64) AS SELECT s.id FROM (SELECT id FROM db.t1) AS s
+1
+2
+-- restore the database under its original name
+RESTORED
+v_plain
+(`id` UInt64) AS SELECT a.id FROM db.t1 AS a
+1
+2
+v_final
+(`id` UInt64) AS SELECT a.id FROM db.t1 AS a FINAL
+1
+2
+v_comma
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a, db.t2 AS b WHERE a.id = b.id
+1	p
+2	q
+v_comma_final
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a FINAL, db.t2 AS b WHERE a.id = b.id
+1	p
+2	q
+v_join
+(`id` UInt64, `y` String) AS SELECT a.id, b.y FROM db.t1 AS a INNER JOIN db.t2 AS b ON a.id = b.id
+1	p
+2	q
+v_subquery_alias
+(`id` UInt64) AS SELECT s.id FROM (SELECT id FROM db.t1) AS s
+1
+2
+-- restore a view together with the table it reads, both under new names
+RESTORED
+(`id` UInt64) AS SELECT a.id FROM db.t1 AS a
+1
+2
+-- restore a view alone, leaving the table it reads where it is
+RESTORED
+(`id` UInt64) AS SELECT a.id FROM source_db.t1 AS a
+1
+2

@@ -34,7 +34,9 @@ for ((i = 0; i < 100; ++i)); do
         "--optimize_distributed_group_by_sharding_key=1"
         "--prefer_localhost_replica=0"
     )
-    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
+    # The query uses `FORMAT Null` to discard the output (we only care about NETWORK_ERROR side effects).
+    # Do not pass `--format`: the `format` setting now takes precedence over the query `FORMAT` clause and would un-discard the output.
+    $CLICKHOUSE_CLIENT "${opts[@]}" -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
 
     # expect zero new network errors
     network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
