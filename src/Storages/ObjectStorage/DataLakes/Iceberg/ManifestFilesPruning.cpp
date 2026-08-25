@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <fmt/ranges.h>
 
@@ -200,11 +201,130 @@ String ManifestFilesPruner::partitionFilterHash() const
 {
     if (!partition_key_condition.has_value())
         return "no_partition_condition";
-    /// A hash collision here would silently return a wrong prune decision
-    /// (missing data), so use the full serialized condition rather than a
-    /// 64-bit hash. It is bounded by the query's partition predicate and
-    /// identical for every query sharing that predicate.
-    return partition_key_condition->toString();
+
+    /// The KeyCondition is built from the full query filter, so its RPN also
+    /// contains atoms for non-partition columns. Canonicalize before
+    /// serializing so the key depends only on the partition predicate:
+    ///   - atoms over non-partition columns are replaced with UNKNOWN
+    ///   - UNKNOWN AND x -> x, x AND UNKNOWN -> x
+    ///   - UNKNOWN OR x -> UNKNOWN, x OR UNKNOWN -> UNKNOWN
+    ///   - NOT UNKNOWN -> UNKNOWN
+    /// An UNKNOWN result means the partition predicate is unrestricted.
+    const auto & rpn = partition_key_condition->getRPN();
+    constexpr auto unknown_function = KeyCondition::RPNElement::FUNCTION_UNKNOWN;
+
+    auto is_unknown = [&](const KeyCondition::RPNElement & element)
+    {
+        if (element.function == unknown_function)
+            return true;
+        if (!element.key_columns.empty())
+            return false;
+        /// Leaf atoms without key columns are also non-partition atoms;
+        /// compound partition atoms (e.g. space-filling curves) keep their
+        /// key_columns and are serialized as-is.
+        switch (element.function)
+        {
+            case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
+            case KeyCondition::RPNElement::FUNCTION_IN_SET:
+            case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
+            case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+            case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    auto canonical = [&](const KeyCondition::RPNElement & element)
+    {
+        KeyCondition::RPNElement result = element;
+        if (is_unknown(element))
+        {
+            result.function = unknown_function;
+            result.key_columns.clear();
+        }
+        return result;
+    };
+
+    std::vector<KeyCondition::RPNElement> simplified;
+    auto top_is_unknown = [&] { return !simplified.empty() && simplified.back().function == unknown_function; };
+
+    for (const auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case KeyCondition::RPNElement::FUNCTION_AND:
+            {
+                chassert(simplified.size() >= 2);
+                auto rhs = std::move(simplified.back());
+                simplified.pop_back();
+                auto lhs = std::move(simplified.back());
+                simplified.pop_back();
+
+                const bool lhs_unknown = lhs.function == unknown_function;
+                const bool rhs_unknown = rhs.function == unknown_function;
+                if (lhs_unknown && rhs_unknown)
+                    simplified.push_back(std::move(lhs));
+                else if (lhs_unknown)
+                    simplified.push_back(std::move(rhs));
+                else if (rhs_unknown)
+                    simplified.push_back(std::move(lhs));
+                else
+                {
+                    simplified.push_back(std::move(lhs));
+                    simplified.push_back(std::move(rhs));
+                    simplified.push_back(element);
+                }
+                break;
+            }
+            case KeyCondition::RPNElement::FUNCTION_OR:
+            {
+                chassert(simplified.size() >= 2);
+                auto rhs = std::move(simplified.back());
+                simplified.pop_back();
+                auto lhs = std::move(simplified.back());
+                simplified.pop_back();
+
+                if (lhs.function == unknown_function || rhs.function == unknown_function)
+                    simplified.push_back(KeyCondition::RPNElement(unknown_function));
+                else
+                {
+                    simplified.push_back(std::move(lhs));
+                    simplified.push_back(std::move(rhs));
+                    simplified.push_back(element);
+                }
+                break;
+            }
+            case KeyCondition::RPNElement::FUNCTION_NOT:
+            {
+                chassert(!simplified.empty());
+                /// NOT UNKNOWN is UNKNOWN; otherwise apply the NOT.
+                if (!top_is_unknown())
+                    simplified.push_back(element);
+                break;
+            }
+            default:
+                simplified.push_back(canonical(element));
+                break;
+        }
+    }
+
+    if (simplified.empty() || simplified.back().function == unknown_function)
+        return "no_partition_condition";
+
+    std::vector<String> names;
+    if (partition_key != nullptr)
+        names = partition_key->column_names;
+
+    WriteBufferFromOwnString buf;
+    for (size_t i = 0; i < simplified.size(); ++i)
+    {
+        if (i != 0)
+            writeChar(';', buf);
+        buf << simplified[i].toString(names);
+    }
+    return buf.str();
 }
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
