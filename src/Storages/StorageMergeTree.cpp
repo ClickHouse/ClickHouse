@@ -862,12 +862,28 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     future_part->updatePath(storage, reserved_space.get());
 
+    if (future_part->merge_type == MergeType::TTLClearIndex
+        && storage.partitions_with_ttl_clear_index_merges.contains(future_part->part_info.getPartitionId()))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Tagging a second TTLClearIndex merge in partition {}. This is a bug.",
+            future_part->part_info.getPartitionId());
+    }
+
     for (const auto & part : future_part->parts)
     {
         if (storage.currently_merging_mutating_parts.contains(part))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
+
+    if (future_part->merge_type == MergeType::TTLClearIndex)
+    {
+        [[maybe_unused]] const bool inserted
+            = storage.partitions_with_ttl_clear_index_merges.emplace(future_part->part_info.getPartitionId()).second;
+        chassert(inserted);
+    }
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
@@ -886,6 +902,10 @@ void CurrentlyMergingPartsTagger::finalize()
         storage.currently_merging_mutating_parts.erase(part);
         storage.currently_mutating_part_future_versions.erase(part);
     }
+
+    if (future_part->merge_type == MergeType::TTLClearIndex
+        && storage.partitions_with_ttl_clear_index_merges.erase(future_part->part_info.getPartitionId()) != 1)
+        std::terminate();
 
     storage.currently_processing_in_background_condition.notify_all();
 }
@@ -1696,10 +1716,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             MergeSelectorApplier(
                 /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*partitions_with_ttl_clear_index_merges_=*/partitions_with_ttl_clear_index_merges,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID()
-            ),
+                /*storage_id_=*/getStorageID()),
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);

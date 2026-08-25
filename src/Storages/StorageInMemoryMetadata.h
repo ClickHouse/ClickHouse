@@ -122,6 +122,9 @@ struct StorageInMemoryMetadata
     /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
+    /// Validate that table TTLs which target secondary indices refer to existing indices.
+    void validateTTLIndexClearTargets() const;
+
     /// TTLs for separate columns
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
 
@@ -200,9 +203,13 @@ struct StorageInMemoryMetadata
     TTLDescriptions getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
 
-    // Just wrapper for table TTLs, return info about recompression ttl
+    // Just wrapper for table TTLs, return info about group-by ttl
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
+
+    // Just wrapper for table TTLs, return info about index-clear ttl
+    TTLDescriptions getIndexClearTTLs() const;
+    bool hasAnyIndexClearTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
 

@@ -226,6 +226,7 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
+        bool clear_expired_indexes{false};
         /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
@@ -295,6 +296,9 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
+        /// Set only after `promise` has been fulfilled by the metadata-only CLEAR INDEX
+        /// replacement. Makes `execute` skip all remaining subtasks and stages.
+        bool task_finished{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -309,6 +313,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         bool need_remove_expired_values{false};
+        bool need_clear_expired_indexes{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -363,6 +368,7 @@ private:
         bool prepare() const;
         bool executeImpl() const;
         void finalize() const;
+        void prepareClearIndexReplacementPart() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;

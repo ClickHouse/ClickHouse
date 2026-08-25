@@ -48,12 +48,16 @@ struct ChooseContext
     const MergeTreeSettings & merge_tree_settings;
     const PartitionIdToTTLs & next_delete_times;
     const PartitionIdToTTLs & next_recompress_times;
+    const std::unordered_set<String> & partitions_with_ttl_clear_index_merges;
     const time_t current_time;
     const bool aggressive;
+    const bool can_generate_ttl_clear_index_merges;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
+    chassert(type != MergeType::TTLClearIndex);
+
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
         const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
@@ -100,6 +104,38 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
+
+    /// Clear index files - 4 priority. Generation is enabled separately for rolling-upgrade safety
+    /// because the merge type is serialized in replicated `MergeTree` log entries.
+    if (!ctx.merge_constraints.empty()
+        && ctx.metadata_snapshot.hasAnyIndexClearTTL()
+        && ctx.can_generate_ttl_clear_index_merges)
+    {
+        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+        /// Slow clears cannot stack up within one partition, while fast clears can drain a backlog without a fixed delay.
+        const auto range_filter = [&](PartsRangeView range)
+        {
+            chassert(!range.empty());
+            return !ctx.partitions_with_ttl_clear_index_merges.contains(range.front().info.getPartitionId())
+                && (!ctx.range_filter || ctx.range_filter(range));
+        };
+
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, range_filter); !merge_ranges.empty())
+        {
+            MergeSelectorChoices choices;
+            choices.reserve(merge_ranges.size());
+            for (auto & range : merge_ranges)
+            {
+                const bool apply_patches_in_rewrite
+                    = !range.front().can_preserve_files_for_index_clear
+                    && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+                PartsRange patch_parts = apply_patches_in_rewrite ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
+                choices.push_back(MergeSelectorChoice{std::move(range), std::move(patch_parts), MergeType::TTLClearIndex});
+            }
+            return choices;
+        }
+    }
+
 
     return {};
 }
@@ -171,11 +207,13 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 MergeSelectorApplier::MergeSelectorApplier(
     std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
+    std::unordered_set<String> partitions_with_ttl_clear_index_merges_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
     StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
+    , partitions_with_ttl_clear_index_merges(std::move(partitions_with_ttl_clear_index_merges_))
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
@@ -197,6 +235,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool can_generate_ttl_clear_index_merges,
     time_t current_time) const
 {
     ChooseContext ctx{
@@ -210,8 +249,10 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .merge_tree_settings = *merge_tree_settings,
         .next_delete_times = next_delete_times,
         .next_recompress_times = next_recompress_times,
+        .partitions_with_ttl_clear_index_merges = partitions_with_ttl_clear_index_merges,
         .current_time = current_time,
         .aggressive = aggressive,
+        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

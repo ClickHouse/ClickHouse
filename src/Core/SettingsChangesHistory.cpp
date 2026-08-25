@@ -147,6 +147,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
+            {"enable_ttl_clear_index_merge_type_generation", false, false, "New setting. Allows generating `TTLClearIndex` merge log entries after all replicas support the type."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

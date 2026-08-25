@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -1180,32 +1181,18 @@ static NameSet collectFilesToSkip(
     /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
     files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
-    auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
+    auto add_skip_index_files = [&](const std::set<MergeTreeIndexPtr> & indexes)
     {
-        /// Skip every substream present in the source part (`getAllSubstreamsInPart` covers a stale
-        /// legacy file alongside the current one), resolving each against checksums via
-        /// `getStreamNameOrHash` so `replace_long_file_name_to_hash` names match too. Missing one
-        /// leaks it into the new part with no checksum entry and `CHECK TABLE` fails.
-        for (const auto & index_substream : index->getAllSubstreamsInPart(
-                 source_part->checksums, index->getFileName(), &source_part->getDataPartStorage()))
-        {
-            const String stream_name = index->getFileName() + index_substream.suffix;
-            const String logical_data = stream_name + index_substream.extension;
-            const String logical_mrk = stream_name + mrk_extension;
-            files_to_skip.insert(logical_data);
-            files_to_skip.insert(logical_mrk);
-
-            if (auto hashed_data = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums))
-                files_to_skip.insert(*hashed_data + index_substream.extension);
-            if (auto hashed_mrk = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums))
-                files_to_skip.insert(*hashed_mrk + mrk_extension);
-        }
+        for (const auto & file : getSkipIndexSubstreamFileNames(
+            indexes,
+            mrk_extension,
+            source_part->checksums,
+            &source_part->getDataPartStorage()))
+            files_to_skip.insert(file);
     };
 
-    for (const auto & index : indices_to_recalc)
-        skip_index(index);
-    for (const auto & index : indices_to_drop)
-        skip_index(index);
+    add_skip_index_files(indices_to_recalc);
+    add_skip_index_files(indices_to_drop);
 
     /// The packed skip-index archive bundles multiple indices into one file. Hardlinking it would
     /// carry along data of indices we're about to recalculate or drop. updateIndicesToRecalculateAndDrop
@@ -1555,7 +1542,7 @@ static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
-    ExecuteTTLType execute_ttl_type,
+    bool write_ttl_infos,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -1574,7 +1561,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (write_ttl_infos)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -1835,6 +1822,7 @@ struct MutationContext
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    bool rewrite_ttl_infos{false};
 
     MergeTreeTransactionPtr txn;
 
@@ -2507,6 +2495,8 @@ private:
         /// inherit data for every contained index, including ones we're about to drop or that
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
+        const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -2538,6 +2528,7 @@ private:
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
+                || skipIndexHasFilesInPackedArchive(*index_ptr, source_disk_storage, ctx->mrk_extension)
                 || index_checksums_missing;
 
             if (need_recalculate)
@@ -2865,7 +2856,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -2894,70 +2885,25 @@ private:
             }
         }
 
-        /// Create hardlinks for unchanged files
-        for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
+        NameSet effective_files_to_skip = ctx->files_to_skip;
+        for (const auto & [rename_from, _] : ctx->files_to_rename)
+            effective_files_to_skip.insert(rename_from);
+
+        const PartFileCopyOptions copy_options
         {
-            if (ctx->files_to_skip.contains(it->name()))
-                continue;
-
-            String file_name = it->name();
-
-            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
-            {
-                return rename_pair.first == file_name;
-            });
-
-            if (rename_it != ctx->files_to_rename.end())
-            {
-                /// RENAMEs and DROPs already processed
-                continue;
-            }
-
-            String destination = it->name();
-
-            if (it->isFile())
-            {
-                if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                {
-                    ctx->new_data_part->getDataPartStorage().copyFileFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination);
-                }
-                else
-                {
-                    ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination);
-
-                    hardlinked_files.insert(it->name());
-                }
-            }
-            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
-            {
-                // it's a projection part directory
-                ctx->new_data_part->getDataPartStorage().createProjection(destination);
-
-                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
-                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
-
-                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
-                {
-                    if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                    {
-                        projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-                    }
-                    else
-                    {
-                        auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
-
-                        projection_data_part_storage_dst->createHardLinkFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-
-                        hardlinked_files.insert(file_name_with_projection_prefix);
-                    }
-                }
-
-                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
-            }
+            .files_to_skip = &effective_files_to_skip,
+            .copy_instead_of_hardlinks = (*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+            .checkpoint_after_projection = true,
+            .cancellation_callback = {},
+        };
+        if (auto copied_hardlinks = copyPartFilesWithSkip(
+                ctx->source_part->getDataPartStorage(),
+                ctx->new_data_part->getDataPartStorage(),
+                copy_options,
+                ctx->context->getReadSettings(),
+                ctx->context->getWriteSettings()))
+        {
+            hardlinked_files.insert(copied_hardlinks->begin(), copied_hardlinks->end());
         }
 
         /// Tracking of hardlinked files required for zero-copy replication.
@@ -2991,23 +2937,13 @@ private:
         /// at a file that doesn't exist in the new part.
         auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
-            /// Strip the checksum of every substream present in the source (`getAllSubstreamsInPart`
-            /// covers a stale legacy file too); a `getSubstreams`-only walk would leave a stale
-            /// `.idx` checksum pointing at a file absent from the new part.
-            for (const auto & index_substream : index->getAllSubstreamsInPart(
-                     ctx->source_part->checksums, index->getFileName(), &ctx->source_part->getDataPartStorage()))
-            {
-                String stream_name = index->getFileName() + index_substream.suffix;
-
-                /// Check for both original and hashed filenames
-                auto actual_data_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, ctx->source_part->checksums);
-                if (actual_data_stream_name)
-                    ctx->new_data_part->checksums.remove(*actual_data_stream_name + index_substream.extension);
-
-                auto actual_mark_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums);
-                if (actual_mark_stream_name)
-                    ctx->new_data_part->checksums.remove(*actual_mark_stream_name + ctx->mrk_extension);
-            }
+            const std::set<MergeTreeIndexPtr> indexes = {index};
+            for (const auto & file : getSkipIndexSubstreamFileNames(
+                indexes,
+                ctx->mrk_extension,
+                ctx->source_part->checksums,
+                &ctx->source_part->getDataPartStorage()))
+                ctx->new_data_part->checksums.remove(file);
         };
 
         for (const auto & index : ctx->indices_to_drop)
@@ -3227,7 +3163,7 @@ private:
             ctx->source_part,
             ctx->new_data_part,
             ctx->all_gathered_data,
-            ctx->execute_ttl_type,
+            ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -3624,64 +3560,20 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         /// DROP INDEX removes the index from metadata before the mutation runs, so ctx->indices_to_drop
         /// (set of shared_ptr keyed off current metadata) stays empty here. Probe the source archive
-        /// directly for each dropped name across the union of substream/extension patterns used by
-        /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
-        /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
-        /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
-        static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-        static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
-        const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
-
-        /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never
-        /// claims one of them. Ownership comes from each survivor's own `getSubstreams` and only for
-        /// the extension it declares; over-claiming would protect, and so leak, a dropped index's
-        /// file.
-        ///
-        /// Only an index that is itself packed can own a member of this archive, and the test has to
-        /// be on the survivor rather than on the candidate filename: in a collision the survivor's
-        /// speculative name and the dropped index's real member are the same string, so asking
-        /// whether that string is in the archive is always true exactly when it matters.
-        NameSet surviving_index_owned_files;
+        /// directly for each dropped name while protecting exact files owned by surviving indexes.
+        std::set<MergeTreeIndexPtr> surviving_indexes;
         for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
         {
-            if (ctx->indices_to_drop_names.contains(index.name))
-                continue;
-
-            auto surviving_index = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
-            if (!source_part->isSkipIndexInPackedArchive(*surviving_index))
-                continue;
-
-            const String surviving_file_name = surviving_index->getFileName();
-            for (const auto & substream : surviving_index->getSubstreams())
-            {
-                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + substream.extension);
-                /// An upgraded part may still carry minmax's legacy `.idx` for a `.idx2` substream.
-                if (substream.extension == ".idx2")
-                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ".idx");
-                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
-            }
+            if (!ctx->indices_to_drop_names.contains(index.name))
+                surviving_indexes.insert(index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings()));
         }
-
-        for (const auto & idx_name : ctx->indices_to_drop_names)
-        {
-            const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
-            for (const auto & sub : known_substream_suffixes)
-            {
-                for (const auto & ext : known_index_extensions)
-                {
-                    const String candidate = idx_file_name + sub + ext;
-                    if (surviving_index_owned_files.contains(candidate))
-                        continue;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
-                        ctx->dropped_skip_index_archive_file_names.insert(candidate);
-                }
-                const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
-                if (surviving_index_owned_files.contains(mrk_candidate))
-                    continue;
-                if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
-                    ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
-            }
-        }
+        ctx->dropped_skip_index_archive_file_names = getDroppedSkipIndexArchiveFileNames(
+            ctx->indices_to_drop_names,
+            surviving_indexes,
+            ctx->metadata_snapshot->escape_index_filenames,
+            ctx->mrk_extension,
+            *source_part,
+            *source_disk_storage);
 
         /// archive_dirty: source's skp_idx.packed cannot be hardlinked into the new part,
         /// either because a virtual file inside it is being dropped / recomputed, OR because the
@@ -3702,7 +3594,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
+                if (skipIndexHasFilesInPackedArchive(*idx, source_disk_storage, ctx->mrk_extension)) { archive_dirty = true; break; }
 
         if (archive_dirty)
         {
@@ -3725,18 +3617,15 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                     continue;
 
                 auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
-                const String file_name = index_ptr->getFileName();
-                /// Probe what the source actually holds, not the writer's `getSubstreams`, so a
-                /// legacy `.idx` member is pre-loaded into the rebuilt archive.
-                for (const auto & sub : index_ptr->getAllSubstreamsInPart(
-                         source_part->checksums, file_name, &source_part->getDataPartStorage()))
+                const std::set<MergeTreeIndexPtr> index_set = {index_ptr};
+                for (const auto & file : getSkipIndexSubstreamFileNames(
+                    index_set,
+                    ctx->mrk_extension,
+                    ctx->source_part->checksums,
+                    &ctx->source_part->getDataPartStorage()))
                 {
-                    const String data = file_name + sub.suffix + sub.extension;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
-                        ctx->preserved_skip_index_archive_file_names.insert(data);
-                    const String mrk = file_name + sub.suffix + ctx->mrk_extension;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk))
-                        ctx->preserved_skip_index_archive_file_names.insert(mrk);
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(file))
+                        ctx->preserved_skip_index_archive_file_names.insert(file);
                 }
             }
         }
@@ -4045,6 +3934,19 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    for (const auto & ttl : ctx->metadata_snapshot->getIndexClearTTLs())
+    {
+        if (!ctx->materialized_indices.contains(ttl.index_name))
+            continue;
+
+        const auto it = ctx->new_data_part->ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (it != ctx->new_data_part->ttl_infos.index_clear_ttl.end() && it->second.finished())
+        {
+            it->second.ttl_finished = false;
+            ctx->rewrite_ttl_infos = true;
+        }
+    }
 
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {

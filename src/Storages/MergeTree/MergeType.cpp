@@ -19,7 +19,7 @@ MergeType checkAndGetMergeType(std::underlying_type_t<MergeType> merge_type)
 
 bool isTTLMergeType(MergeType merge_type)
 {
-    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress || merge_type == MergeType::TTLDrop;
+    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress || merge_type == MergeType::TTLDrop || merge_type == MergeType::TTLClearIndex;
 }
 
 }

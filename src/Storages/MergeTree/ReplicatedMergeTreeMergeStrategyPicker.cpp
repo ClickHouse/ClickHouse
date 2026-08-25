@@ -36,6 +36,40 @@ ReplicatedMergeTreeMergeStrategyPicker::ReplicatedMergeTreeMergeStrategyPicker(S
     : storage(storage_)
 {}
 
+ReplicatedMergeTreeMergeStrategyPicker::TTLClearIndexExecutionRole
+ReplicatedMergeTreeMergeStrategyPicker::getTTLClearIndexExecutionRole(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    if (entry.merge_type != MergeType::TTLClearIndex)
+        return TTLClearIndexExecutionRole::NotApplicable;
+
+    if (entry.source_replica == storage.replica_name)
+        return TTLClearIndexExecutionRole::Source;
+
+    if (entry.source_replica.empty())
+        return TTLClearIndexExecutionRole::Failover;
+
+    const String source_active_path
+        = storage.zookeeper_path + "/replicas/" + entry.source_replica + "/is_active";
+    if (!storage.getZooKeeper()->exists(source_active_path))
+        return TTLClearIndexExecutionRole::Failover;
+
+    if (storage.checkReplicaHavePart(entry.source_replica, entry.new_part_name))
+        return TTLClearIndexExecutionRole::WaitForSource;
+
+    const auto source_preference_timeout
+        = (*storage.getSettings())[MergeTreeSetting::execute_merges_on_single_replica_time_threshold].totalSeconds();
+    if (source_preference_timeout == 0)
+        return TTLClearIndexExecutionRole::NotApplicable;
+    if (entry.create_time + source_preference_timeout <= time(nullptr))
+        return TTLClearIndexExecutionRole::Failover;
+
+    for (const auto & source_part : entry.source_parts)
+        if (!storage.checkReplicaHavePart(entry.source_replica, source_part))
+            return TTLClearIndexExecutionRole::Failover;
+
+    return TTLClearIndexExecutionRole::WaitForSource;
+}
+
 
 bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
 {

@@ -279,4 +279,60 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
+/// A successful merge removes the files that made the part selectable. The caller also excludes
+/// partitions with an outstanding clear-index merge.
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+{
+}
+
+PartsRanges TTLIndexClearMergeSelector::select(
+    const PartsRanges & parts_ranges,
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
+{
+    if (merge_constraints.empty())
+        return {};
+
+    PartsRanges result;
+    for (const auto & range : parts_ranges)
+    {
+        for (const auto & part : range)
+        {
+            if (!canConsiderPart(part))
+                continue;
+
+            const auto ttl = getTTLForPart(part);
+            if (!ttl || ttl > current_time)
+                continue;
+
+            if (part.size > merge_constraints.front().max_size_bytes
+                || part.rows > merge_constraints.front().max_size_rows)
+                continue;
+
+            PartsRange single_part_range{part};
+            if (range_filter && !range_filter(single_part_range))
+                continue;
+
+            result.push_back(std::move(single_part_range));
+            return result;
+        }
+    }
+
+    return result;
+}
+
+time_t TTLIndexClearMergeSelector::getTTLForPart(const PartProperties & part) const
+{
+    return part.next_index_clear_ttl;
+}
+
+bool TTLIndexClearMergeSelector::canConsiderPart(const PartProperties & part) const
+{
+    if (part.is_in_volume_where_merges_avoid)
+        return false;
+
+    return part.all_ttl_calculated_if_any && part.next_index_clear_ttl != 0;
+}
+
 }

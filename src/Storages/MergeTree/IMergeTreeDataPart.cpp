@@ -3037,8 +3037,8 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked(
 
     /// The computation must run outside the dedicated arena: `calculateEachColumnSizes` resolves a
     /// stream name and builds a sample column for every column and substream, which is heavy
-    /// short-lived churn that must stay out of the shared arena. All callers (the eager load path
-    /// and every lazy getter) reach this from the default arenas.
+    /// short-lived churn that must stay out of the shared arena. Both calculations accumulate into
+    /// local values and assign members only at the end, so an exception leaves previous values intact.
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
@@ -3062,8 +3062,11 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
     auto new_column_sizes_ptr = std::make_unique<ColumnSizeByName>();
-    calculateEachColumnSizes(*new_column_sizes_ptr, total_columns_size);
+    ColumnSize new_total_columns_size;
+    calculateEachColumnSizes(*new_column_sizes_ptr, new_total_columns_size);
+
     columns_sizes = std::move(new_column_sizes_ptr);
+    total_columns_size = new_total_columns_size;
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
@@ -3079,6 +3082,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
+    IndexSize new_total_secondary_indices_size;
 
     /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
     /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.
@@ -3132,12 +3136,13 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
             if (counted_mark_streams.emplace(index_stream_name).second)
                 substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
-            total_secondary_indices_size.add(substream_size);
+            new_total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
         }
     }
 
     secondary_index_sizes = std::make_shared<IndexSizeByName>(std::move(new_secondary_index_sizes));
+    total_secondary_indices_size = new_total_secondary_indices_size;
 }
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
@@ -3283,6 +3288,18 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
     {
         if (!ttl_infos.rows_where_ttl.contains(rows_where_desc.result_column))
+            return false;
+    }
+
+    for (const auto & recompression_desc : metadata_snapshot->getRecompressionTTLs())
+    {
+        if (!ttl_infos.recompression_ttl.contains(recompression_desc.result_column))
+            return false;
+    }
+
+    for (const auto & index_clear_desc : metadata_snapshot->getIndexClearTTLs())
+    {
+        if (!ttl_infos.index_clear_ttl.contains(index_clear_desc.result_column))
             return false;
     }
 

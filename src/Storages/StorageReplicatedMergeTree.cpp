@@ -4495,15 +4495,21 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 MergeSelectorApplier(
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*partitions_with_ttl_clear_index_merges_=*/merges_and_mutations_queued.partitions_with_ttl_clear_index_merges,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
-                ));
+                    /*storage_id_=*/getStorageID()));
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
             else
+            {
                 merge_predicate = queue.getMergePredicate(zookeeper, partitions_to_merge_in);
+                /// Constructing the ZooKeeper predicate pulls newly created log entries into the local queue.
+                /// Refresh the partition guard so an immediately rescheduled selector cannot assign a second clear.
+                merges_and_mutations_queued.partitions_with_ttl_clear_index_merges
+                    = queue.countMergesAndPartMutations().partitions_with_ttl_clear_index_merges;
+            }
         }
 
         PreformattedMessage out_reason;
@@ -4515,10 +4521,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 MergeSelectorApplier(
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*partitions_with_ttl_clear_index_merges_=*/merges_and_mutations_queued.partitions_with_ttl_clear_index_merges,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
-                ),
+                    /*storage_id_=*/getStorageID()),
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
@@ -6583,10 +6589,10 @@ bool StorageReplicatedMergeTree::optimize(
                         MergeSelectorApplier(
                             /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
+                            /*partitions_with_ttl_clear_index_merges_=*/{},
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
-                        ),
+                            /*storage_id_=*/getStorageID()),
                         /*partitions_hint=*/std::nullopt);
                 }
                 else

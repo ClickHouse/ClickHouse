@@ -44,6 +44,8 @@ void ASTTTLElement::writeJSON(WriteBuffer & out) const
 
     if (!destination_name.empty())
         w.writeString("destination_name", destination_name);
+    if (!index_name.empty())
+        w.writeString("index_name", index_name);
 
     w.writeBool("if_exists", if_exists);
     w.writeChild("ttl_expr", ttl());
@@ -81,6 +83,7 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'destination_type' value in JSON AST for TTLElement: '{}'", dest_type_str);
 
     destination_name = r.getString("destination_name");
+    index_name = r.getString("index_name");
     if_exists = r.getBool("if_exists");
 
     auto ttl_child = r.readChild("ttl_expr");
@@ -162,6 +165,14 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     else if (!group_by_key.empty() || !group_by_assignments.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'group_by_key'/'group_by_assignments' are only valid for TTL GROUP BY during AST JSON deserialization");
+
+    if (mode == TTLMode::CLEAR_INDEX)
+    {
+        if (index_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TTL CLEAR INDEX requires a non-empty 'index_name' during AST JSON deserialization");
+    }
+    else if (!index_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'index_name' is only valid for TTL CLEAR INDEX during AST JSON deserialization");
 }
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -212,6 +223,11 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     {
         ostr << " RECOMPRESS ";
         recompression_codec->format(ostr, settings, state, frame);
+    }
+    else if (mode == TTLMode::CLEAR_INDEX)
+    {
+        ostr << " CLEAR INDEX ";
+        ostr << backQuoteIfNeed(index_name);
     }
     else if (mode == TTLMode::DELETE)
     {
