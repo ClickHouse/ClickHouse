@@ -117,7 +117,7 @@ public:
     void keepLeftPipelineInOrder() override;
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish() override;
+    void onProbePhaseFinish(size_t matched_right_rows) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a

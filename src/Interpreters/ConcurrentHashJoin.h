@@ -58,6 +58,8 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
+    /// Computes the probe side zero copy decision.
+    void initialize(const Block & left_sample_block) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
@@ -103,7 +105,12 @@ public:
     }
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish() override { probe_phase_finished = true; }
+
+    void onProbePhaseFinish(size_t matched_right_rows) override
+    {
+        hash_table_matches = matched_right_rows;
+        probe_phase_finished = true;
+    }
 
     void setEnableLazyColumnsIndexing(bool value) override
     {
@@ -132,6 +139,9 @@ private:
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;
     bool probe_phase_finished = false;
+    bool use_zero_copy_right = false;
+    bool use_zero_copy_left = false;
+    size_t hash_table_matches = 0;
     std::once_flag row_store_init_flag;
 
     HashJoinStatsCollectingParams stats_collecting_params;
@@ -155,7 +165,7 @@ private:
 
     JoinAnalysisCounters collectMatchedRowsCounters() const;
 
-    bool useZeroCopyApproach(const Block & from_block) const;
+    static bool useZeroCopyApproach(const Block & from_block);
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
 
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);

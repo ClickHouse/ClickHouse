@@ -33,6 +33,19 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
+/// Sums the match totals reported by each probe stream as it drains.
+class RightRowsMatchCounter
+{
+public:
+    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
+    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+
+private:
+    std::atomic_size_t matched_right_rows{0};
+};
+
+using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
+
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
@@ -49,6 +62,7 @@ public:
         bool on_totals_ = false,
         bool default_totals_ = false,
         FinishCounterPtr finish_counter_ = nullptr,
+        RightRowsMatchCounterPtr match_counter_ = nullptr,
         bool emit_non_joined_ = true);
 
     ~JoiningTransform() override;
@@ -91,6 +105,9 @@ private:
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
+
+    RightRowsMatchCounterPtr match_counter;
+    size_t matched_right_rows = 0;
 
     Block readExecute(Chunk & chunk);
 };

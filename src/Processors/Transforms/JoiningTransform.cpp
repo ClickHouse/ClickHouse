@@ -46,6 +46,7 @@ JoiningTransform::JoiningTransform(
     bool on_totals_,
     bool default_totals_,
     FinishCounterPtr finish_counter_,
+    RightRowsMatchCounterPtr match_counter_,
     bool emit_non_joined_)
     : IProcessor({input_header}, {output_header})
     , join(std::move(join_))
@@ -54,6 +55,7 @@ JoiningTransform::JoiningTransform(
     , default_totals(default_totals_)
     , finish_counter(std::move(finish_counter_))
     , max_block_size(max_block_size_)
+    , match_counter(std::move(match_counter_))
 {
     if (!join->isFilled())
         inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
@@ -128,10 +130,12 @@ IProcessor::Status JoiningTransform::prepare()
         if (!is_drained && finish_counter)
         {
             is_drained = true;
+            if (match_counter)
+                match_counter->add(matched_right_rows);
             if (finish_counter->isLast())
             {
                 is_last_drained = true;
-                join->onProbePhaseFinish();
+                join->onProbePhaseFinish(match_counter ? match_counter->get() : 0);
             }
         }
 
@@ -267,7 +271,10 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
 
     if (data.is_last)
+    {
+        matched_right_rows += join_result->getMatchedRightRows();
         join_result.reset();
+    }
 
     return std::move(data.block);
 }

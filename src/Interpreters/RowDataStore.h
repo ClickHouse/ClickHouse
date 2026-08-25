@@ -37,18 +37,21 @@ public:
     };
 
     using RowLayout = std::vector<FieldLayout>;
+    using RowLayoutPtr = std::shared_ptr<const RowLayout>;
+
+    explicit RowDataStore(RowLayoutPtr layout_);
 
     /// Compute the row-major layout for `columns` in input order.
-    static RowLayout computeLayout(const Columns & columns, const DataTypes & types);
+    static RowLayoutPtr computeLayout(const Columns & columns, const DataTypes & types);
 
     /// Create the row-major buffer and fills it with rows from `columns` in input order.
-    static std::shared_ptr<RowDataStore> create(const Columns & columns, const DataTypes & types);
+    static std::shared_ptr<RowDataStore> create(const RowLayoutPtr & layout, const Columns & columns);
 
     /// Scatter rows from the row-major buffer into columns in layout order.
     MutableColumns scatterRows(size_t start, size_t length) const;
     MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
 
-    FieldLayout getFieldLayout(size_t input_col_index) const;
+    const FieldLayout & getFieldLayout(size_t input_col_index) const;
 
     /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
     std::optional<size_t> getBatchSize() const;
@@ -63,10 +66,8 @@ private:
 
     /// Contiguous buffer of rows.
     Chars chars;
-    RowLayout layout;
+    RowLayoutPtr layout;
     size_t row_length;
-
-    explicit RowDataStore(RowLayout && layout_);
 
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.

@@ -95,11 +95,15 @@ struct ColumnsWithRowNumbers
 
 struct RowStorePointers
 {
+    /// Either `ptrs` or `base_ptr` should be used.
     /// Pre-resolved pointers into `RowDataStore` rows, one entry per output row.
     /// A nullptr entry is interpreted as a default value.
     VectorWithMemoryTracking<const char *> ptrs;
     /// Whether `ptrs` contains any nullptr entry.
     bool has_defaults = false;
+    /// A contiguous run of rows: row `i` is `base_ptr + i * row_length`.
+    const char * base_ptr = nullptr;
+    size_t row_length = 0;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.

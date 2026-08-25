@@ -81,17 +81,11 @@ void updateStatistics(
     const auto & hash_joins,
     const DB::StatsCollectingParams & build_params,
     const DB::StatsCollectingParams & match_params,
-    bool probe_phase_finished)
+    bool probe_phase_finished,
+    size_t hash_table_matches)
 {
     if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
-    {
-        const auto ht_matches = std::accumulate(
-            hash_joins.begin(),
-            hash_joins.end(),
-            0ull,
-            [](auto acc, const auto & hash_join) { return acc + hash_join->data->getHashTableMatches(); });
-        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = ht_matches}, match_params);
-    }
+        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_params);
 
     if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
         return;
@@ -252,6 +246,9 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         auto shared_index = getData(hash_joins[0])->stored_columns_index;
         for (size_t i = 1; i < slots; ++i)
             getData(hash_joins[i])->stored_columns_index = shared_index;
+
+        /// Decision must be done on the materialized block.
+        use_zero_copy_right = useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
     }
     catch (...)
     {
@@ -268,7 +265,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!build_phase_finished)
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished);
+        updateStatistics(
+            hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished, hash_table_matches);
 
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
@@ -317,18 +315,17 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// and given to the other slots.
     std::call_once(row_store_init_flag, [&]
     {
-        const auto access_indexes = hash_joins[0]->data->initRowStore(right_block);
+        const auto layout_with_access_indexes = hash_joins[0]->data->initRowStore(right_block);
         for (size_t i = 1; i < slots; ++i)
-            hash_joins[i]->data->initRowStore(access_indexes);
+            hash_joins[i]->data->initRowStore(layout_with_access_indexes);
     });
 
     /// We also build the row store here to avoid building it multiple times on different threads.
-    bool use_zero_copy = useZeroCopyApproach(right_block);
     RowDataStorePtr block_row_store = nullptr;
-    if (use_zero_copy)
+    if (use_zero_copy_right)
         block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy);
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy_right);
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -429,6 +426,7 @@ class ConcurrentHashJoinResult : public IJoinResult
     ScatteredBlocks dispatched_blocks;
     size_t next_block = 0;
     JoinResultPtr current_result;
+    size_t matched_right_rows = 0;
 public:
     explicit ConcurrentHashJoinResult(
         const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_,
@@ -455,6 +453,7 @@ public:
         auto data = current_result->next();
         if (data.is_last)
         {
+            matched_right_rows += current_result->getMatchedRightRows();
             if (data.next_block)
                 dispatched_blocks[next_block] = std::move(*data.next_block);
             else
@@ -465,6 +464,8 @@ public:
         bool is_last = next_block >= dispatched_blocks.size() && data.is_last;
         return {std::move(data.block), nullptr, is_last};
     }
+
+    size_t getMatchedRightRows() const override { return matched_right_rows; }
 };
 
 JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
@@ -476,13 +477,20 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
         dispatched_blocks.emplace_back(std::move(block));
     else
     {
-        bool use_zero_copy = useZeroCopyApproach(block);
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), use_zero_copy);
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), use_zero_copy_left);
     }
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
     return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
+}
+
+void ConcurrentHashJoin::initialize(const Block & left_sample_block)
+{
+    /// Decision must be done on the materialized block.
+    Block sample = left_sample_block;
+    hash_joins[0]->data->materializeColumnsFromLeftBlock(sample);
+    use_zero_copy_left = useZeroCopyApproach(sample);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
@@ -799,7 +807,7 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
 
 /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
 /// This is not beneficial when the whole set of columns is e.g. a single small column.
-bool ConcurrentHashJoin::useZeroCopyApproach(const Block & from_block) const
+bool ConcurrentHashJoin::useZeroCopyApproach(const Block & from_block)
 {
     constexpr auto threshold = sizeof(IColumn::Selector::value_type);
     const auto & data_types = from_block.getDataTypes();

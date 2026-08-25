@@ -84,31 +84,20 @@ Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sampl
     return filtered_block;
 }
 
-struct RowStoreColumnsSplit
+std::pair<Columns, Columns> extractRowStoreColumns(const Block & block, const ColumnAccessIndexes & access_indexes)
 {
-    /// Columns that go into the row store, with their types.
     Columns row_store_columns;
-    DataTypes row_store_types;
-    /// Columns that stay columnar.
     Columns remaining_columns;
-};
-
-RowStoreColumnsSplit extractRowStoreColumns(const Block & block, const ColumnAccessIndexes & access_indexes)
-{
-    RowStoreColumnsSplit split;
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const auto & column = block.getByPosition(i);
         if (access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
-        {
-            split.row_store_columns.push_back(column.column);
-            split.row_store_types.push_back(column.type);
-        }
+            row_store_columns.push_back(column.column);
         else
-            split.remaining_columns.push_back(column.column);
+            remaining_columns.push_back(column.column);
     }
 
-    return split;
+    return {row_store_columns, remaining_columns};
 }
 
 }
@@ -709,7 +698,7 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
-std::optional<ColumnAccessIndexes> HashJoin::initRowStore(const Block & block)
+std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(const Block & block)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
@@ -753,38 +742,40 @@ std::optional<ColumnAccessIndexes> HashJoin::initRowStore(const Block & block)
     }
 
     /// Add each field's offset, size and nullability to the row store access indexes.
-    const RowDataStore::RowLayout layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
+    RowDataStore::RowLayoutPtr layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
     for (auto & access_index : access_indexes)
     {
         if (access_index.type != ColumnAccessIndex::Type::RowStore)
             continue;
-        const auto & field = layout[access_index.index];
+        const auto & field = (*layout)[access_index.index];
         access_index.field_offset = field.offset;
         access_index.field_size = field.size;
         access_index.is_nullable = field.is_nullable;
     }
 
     data->row_store_state = RowStoreState::Initialized;
+    data->row_store_layout = std::move(layout);
     data->column_access_indexes = std::move(access_indexes);
 
     LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
-    return data->column_access_indexes;
+    return {RowStoreLayoutWithAccessIndexes{data->row_store_layout, data->column_access_indexes}};
 }
 
-void HashJoin::initRowStore(const std::optional<ColumnAccessIndexes> & access_indexes)
+void HashJoin::initRowStore(const std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> & layout_with_access_indexes)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
         return;
 
-    if (!access_indexes)
+    if (!layout_with_access_indexes)
     {
         data->row_store_state = RowStoreState::Disabled;
         return;
     }
 
     data->row_store_state = RowStoreState::Initialized;
-    data->column_access_indexes = *access_indexes;
+    data->row_store_layout = layout_with_access_indexes->layout;
+    data->column_access_indexes = layout_with_access_indexes->access_indexes;
 }
 
 RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
@@ -792,8 +783,8 @@ RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
     if (data->row_store_state != RowStoreState::Initialized)
         return nullptr;
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    auto split = extractRowStoreColumns(block_to_save, data->column_access_indexes);
-    return RowDataStore::create(split.row_store_columns, split.row_store_types);
+    auto [columns, _] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+    return RowDataStore::create(data->row_store_layout, columns);
 }
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
@@ -900,10 +891,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         Columns columns;
         if (data->row_store_state == RowStoreState::Initialized)
         {
-            auto split = extractRowStoreColumns(block_to_save, data->column_access_indexes);
-            columns = std::move(split.remaining_columns);
+            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+            columns = std::move(remaining_columns);
             if (!row_store)
-                row_store = RowDataStore::create(split.row_store_columns, split.row_store_types);
+                row_store = RowDataStore::create(data->row_store_layout, row_store_columns);
         }
         else
             columns = block_to_save.getColumns();
@@ -1334,7 +1325,7 @@ HashJoin::~HashJoin()
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
-                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = getHashTableMatches()}, stats_collecting_params.match);
+                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, stats_collecting_params.match);
         }
     }
     catch (...)

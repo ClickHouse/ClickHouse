@@ -606,6 +606,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     const bool emit_non_joined = !use_parallel_non_joined || delayed_root != nullptr;
     /// finish_counter is needed for non-joined rows emission and for publishing probe runtime statistics.
     auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
+    auto joining_right_rows_match_counter = std::make_shared<RightRowsMatchCounter>();
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
@@ -620,7 +621,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, emit_non_joined);
+            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -805,8 +806,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto finish_counter = std::make_shared<FinishCounter>(1);
-        auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
+        auto match_counter = std::make_shared<RightRowsMatchCounter>();
+        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());

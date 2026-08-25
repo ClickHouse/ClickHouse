@@ -300,9 +300,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
-void SpillingHashJoin::onProbePhaseFinish()
+void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
 {
-    chosen_join->onProbePhaseFinish();
+    chosen_join->onProbePhaseFinish(matched_right_rows);
 }
 
 bool SpillingHashJoin::hasPostBuildPhase() const
@@ -337,7 +337,9 @@ void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    if (!concurrent_join)
+    if (concurrent_join)
+        concurrent_join->initialize(sample_block);
+    else
         hash_join->initialize(sample_block);
 }
 

@@ -189,8 +189,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
-    join.addHashTableMatches(added_columns.lazy_output.hash_table_matches);
-
     if (auto * stats = join.matched_rows_stats.get())
     {
         const size_t probed_rows = processed_rows ? processed_rows : block.rows();
@@ -216,6 +214,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
+        added_columns.lazy_output.hash_table_matches,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,
