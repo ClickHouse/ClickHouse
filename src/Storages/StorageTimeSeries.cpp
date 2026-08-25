@@ -458,6 +458,23 @@ Strings StorageTimeSeries::getDataPaths() const
     return data_paths;
 }
 
+#if CLICKHOUSE_CLOUD
+std::vector<StorageID> StorageTimeSeries::getInnerStorageIDs() const
+{
+    if (!has_inner_tables)
+        return {};
+
+    std::vector<StorageID> inner_table_storage_ids;
+    inner_table_storage_ids.reserve(targets.size());
+    for (const auto & target : targets)
+    {
+        if (target.is_inner_table && DatabaseCatalog::instance().tryGetTable(target.table_id, getContext()))
+            inner_table_storage_ids.push_back(target.table_id);
+    }
+    return inner_table_storage_ids;
+}
+#endif
+
 
 bool StorageTimeSeries::optimize(
     const ASTPtr & query,
