@@ -198,7 +198,7 @@ std::string_view trimMarkdownLine(std::string_view line)
     return line;
 }
 
-bool isSyntaxSectionLabel(std::string_view line)
+std::string_view trimMarkdownSectionLabel(std::string_view line)
 {
     line = trimMarkdownLine(line);
 
@@ -216,7 +216,21 @@ bool isSyntaxSectionLabel(std::string_view line)
     if (line.ends_with(':'))
         line = trimMarkdownLine(line.substr(0, line.size() - 1));
 
-    return equalsCaseInsensitive(line, "syntax");
+    return line;
+}
+
+bool isSyntaxSectionLabel(std::string_view line)
+{
+    return equalsCaseInsensitive(trimMarkdownSectionLabel(line), "syntax");
+}
+
+bool isRelatedSectionLabel(std::string_view line)
+{
+    line = trimMarkdownSectionLabel(line);
+    return equalsCaseInsensitive(line, "related")
+        || equalsCaseInsensitive(line, "related content")
+        || equalsCaseInsensitive(line, "related statements")
+        || equalsCaseInsensitive(line, "see also");
 }
 
 /// Detects syntax which is already documented by a Markdown section or by prose immediately introducing an SQL block.
@@ -243,6 +257,27 @@ bool descriptionDocumentsSyntax(std::string_view description)
                 return true;
             syntax_block_follows = toLowerCopyASCII(line).ends_with("syntax:");
         }
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
+/// Detects an existing cross-reference section, whose entries should remain the source of truth for the page.
+bool descriptionDocumentsRelated(std::string_view description)
+{
+    bool in_code_block = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+            in_code_block = !in_code_block;
+        else if (!in_code_block && isRelatedSectionLabel(line))
+            return true;
 
         if (eol == std::string_view::npos)
             break;
@@ -308,7 +343,7 @@ String composeMarkdown(
         result += "**Part of:** `" + enclosing + "`";
     }
 
-    if (!related.empty())
+    if (!related.empty() && !descriptionDocumentsRelated(result))
     {
         String related_str;
         for (const auto & name : related)
