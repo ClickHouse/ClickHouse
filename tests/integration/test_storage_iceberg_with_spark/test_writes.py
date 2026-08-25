@@ -652,3 +652,131 @@ def test_writes_decimal_partition_not_first(started_cluster_iceberg_with_spark, 
         prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE ts > '2026-01-01 00:00:00' ORDER BY ALL")
         == 2
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_writes_decimal_partition_same_shape(started_cluster_iceberg_with_spark, storage_type):
+    """Two partition columns of the same decimal shape must not collide on the Avro `fixed` name.
+
+    `fixed` is a named Avro type whose generated name used to depend only on `(precision, scale)`,
+    so a spec like `PARTITION BY (price_a, price_b)` with two `Decimal(18, 4)` columns emitted two
+    definitions of the same name into one manifest schema and failed schema compilation on insert.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_decimal_partition_same_shape_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(price_a Decimal(18, 4), price_b Decimal(18, 4), number Int64)",
+        2,
+        partition_by="(price_a, price_b)",
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1.5000, 2.5000, 10), (-3.2500, 4.7500, 20)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert (
+        instance.query(
+            f"SELECT * FROM {TABLE_NAME} ORDER BY ALL",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        )
+        == "-3.2500\t4.7500\t20\n1.5000\t2.5000\t10\n"
+    )
+
+    def prunned_files(select_expression):
+        return check_validity_and_get_prunned_files_general(
+            instance,
+            TABLE_NAME,
+            {"use_iceberg_partition_pruning": 0},
+            {"use_iceberg_partition_pruning": 1},
+            "IcebergPartitionPrunedFiles",
+            select_expression,
+        )
+
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 0
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE price_a < 0 ORDER BY ALL") == 1
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE price_b > 3 ORDER BY ALL") == 1
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_writes_decimal_wide_minmax_pruning(started_cluster_iceberg_with_spark, storage_type):
+    """Min/max statistics of `Decimal128` and `Decimal256` columns must be consumable by the reader.
+
+    The bounds are longer than 8 bytes, which the bound deserializer used to reject, silently
+    disabling `IcebergMinMaxIndexPrunedFiles` for these widths. `control` carries the same
+    magnitudes in a type whose bounds are known to prune, to tell a decimal-specific gap apart
+    from a table that simply cannot be pruned.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_decimal_wide_minmax_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(d128 Decimal(38, 10), d256 Decimal(76, 20), control Int64)",
+        2,
+    )
+
+    # One file per insert, so the min/max bounds of every file cover exactly one row.
+    for d128, d256, control in [
+        ("1.5", "1.5", "1"),
+        ("9999999999999999999999999999.5", "99999999999999999999999999999999999999999999999999999999.5", "500"),
+        ("-9999999999999999999999999999.5", "-99999999999999999999999999999999999999999999999999999999.5", "-500"),
+    ]:
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} VALUES ({d128}, {d256}, {control})",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+
+    base_settings = {
+        "input_format_parquet_bloom_filter_push_down": 0,
+        "input_format_parquet_filter_push_down": 0,
+        "output_format_decimal_trailing_zeros": 1,
+    }
+
+    def measure(predicate, index):
+        query = f"SELECT * FROM {TABLE_NAME} {predicate} ORDER BY ALL"
+        without_pruning = instance.query(
+            query, settings={**base_settings, "use_iceberg_partition_pruning": 0}
+        )
+        query_id = f"{TABLE_NAME}-{index}"
+        with_pruning = instance.query(
+            query,
+            query_id=query_id,
+            settings={**base_settings, "use_iceberg_partition_pruning": 1},
+        )
+        instance.query("SYSTEM FLUSH LOGS")
+        pruned = instance.query(
+            f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).strip()
+        return without_pruning, with_pruning, int(pruned or 0)
+
+    predicates = [
+        "",
+        "WHERE control < -100",
+        "WHERE d128 > 1000000",
+        "WHERE d128 < -1000000",
+        "WHERE d256 > 1000000",
+        "WHERE d256 < -1000000",
+    ]
+    measured = {
+        predicate: measure(predicate, index) for index, predicate in enumerate(predicates)
+    }
+
+    # Pruning must never change the result, whatever it manages to skip.
+    for predicate, (without_pruning, with_pruning, _) in measured.items():
+        assert without_pruning == with_pruning, predicate
+
+    assert measured[""][2] == 0
+    assert measured["WHERE control < -100"][2] == 2
+    assert measured["WHERE d128 > 1000000"][2] == 2
+    assert measured["WHERE d128 < -1000000"][2] == 2
+    assert measured["WHERE d256 > 1000000"][2] == 2
+    assert measured["WHERE d256 < -1000000"][2] == 2
