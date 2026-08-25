@@ -191,10 +191,9 @@ TEST(CascadesTopNSort, PartitionedBoundedSortIsNotTopN)
     EXPECT_FALSE(isTopNSort(partitioned_bounded));
 }
 
-/// A sorted gather's sender merges its streams into one before shipping, so a source with
-/// several streams per node (disjoint layout) pays the per-row merge, while a single-stream
-/// source ships as is.
-TEST(CascadesSortedGatherCost, SendSideMergePricedByInputStreamLayout)
+/// A sorted gather pays the receiver's merge of the bucket streams into one, and a sender
+/// with several streams per node (disjoint layout) also pays its own merge before shipping.
+TEST(CascadesSortedGatherCost, SendAndReceiveMergesPriced)
 {
     constexpr Float64 rows = 10000;
     constexpr size_t node_count = 4;
@@ -219,22 +218,30 @@ TEST(CascadesSortedGatherCost, SendSideMergePricedByInputStreamLayout)
         return std::pair{group_id, source};
     };
 
-    auto gather_cost_over = [&](StreamLayout layout)
+    auto gather_cost_over = [&](StreamLayout layout, bool sorted)
     {
         auto [group_id, source] = make_source(layout);
+        std::optional<SortDescription> maintain_sort;
+        if (sorted)
+            maintain_sort = makeSortDescription();
         auto gather = std::make_shared<GroupExpression>(
-            std::make_unique<GatherExchangeStep>(header, node_count, makeSortDescription()));
+            std::make_unique<GatherExchangeStep>(header, node_count, std::move(maintain_sort)));
         gather->properties.distribution.node_count = 1;
-        gather->properties.sorting = makeSortDescription();
+        if (sorted)
+            gather->properties.sorting = makeSortDescription();
         gather->inputs.push_back({group_id, source->properties});
         auto gather_group_id = memo.addGroup(gather);
         memo.getGroup(gather_group_id)->statistics = makeStats(rows, 10);
         return estimator.estimateCost(gather).cost.sequential;
     };
 
-    const Float64 over_single = gather_cost_over(StreamLayout::Single);
-    const Float64 over_disjoint = gather_cost_over(StreamLayout::Disjoint);
+    const Float64 unordered = gather_cost_over(StreamLayout::Single, /*sorted=*/false);
+    const Float64 over_single = gather_cost_over(StreamLayout::Single, /*sorted=*/true);
+    const Float64 over_disjoint = gather_cost_over(StreamLayout::Disjoint, /*sorted=*/true);
 
     const auto & config = memo.getContext().cost_config;
+    /// The receiver merges the sorted bucket streams into one: a full per-row merge.
+    EXPECT_DOUBLE_EQ(over_single - unordered, config.merge_sequential_cost_per_row * rows);
+    /// A sender with several streams per node merges its node's share before shipping.
     EXPECT_DOUBLE_EQ(over_disjoint - over_single, config.merge_sequential_cost_per_row * rows / node_count);
 }
