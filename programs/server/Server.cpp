@@ -1359,9 +1359,10 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::DATA_PATH_ON_OVERLAY_FS,
                 PreformattedMessage::create(
-                    "The data directory {} is located on an overlay filesystem, which reduces I/O performance."
-                    " If this is the writable layer of a container, the data will also be lost when the container is removed;"
-                    " mount a volume for the data directory instead.", String(data_path)));
+                    "The <path> directory {} is located on an overlay filesystem, which reduces I/O performance."
+                    " If this is the writable layer of a container, what is stored there will also be lost when the container is removed;"
+                    " mount a volume for it instead. Tables on other configured disks are not covered by this check.",
+                    String(data_path)));
 
         std::error_code ec;
         auto data_space = fs::space(canonical_data_path, ec);
@@ -1370,8 +1371,8 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::DATA_PATH_NOT_ON_LARGEST_FILESYSTEM,
                 PreformattedMessage::create(
-                    "The data directory {} is on a filesystem of size {}, while a much larger filesystem ({}) is mounted at {}."
-                    " Make sure the data directory is on the intended volume.",
+                    "The <path> directory {} is on a filesystem of size {}, while a much larger filesystem ({}) is mounted at {}."
+                    " Make sure it is on the intended volume. Tables on other configured disks are not covered by this check.",
                     String(data_path),
                     formatReadableSizeWithBinarySuffix(data_space.capacity),
                     formatReadableSizeWithBinarySuffix(largest_fs_capacity),
