@@ -1,5 +1,5 @@
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -18,7 +18,7 @@ ColumnMap::MutablePtr createEmptyMap()
     auto offsets = ColumnArray::ColumnOffsets::create();
     auto nested_data = ColumnTuple::create(Columns{std::move(keys), std::move(values)});
     auto nested = ColumnArray::create(std::move(nested_data), std::move(offsets));
-    return ColumnMap::create(std::move(nested));
+    return ColumnMap::create(nested->assumeMutable());
 }
 
 ColumnMap::MutablePtr createMap()
@@ -38,7 +38,7 @@ ColumnMap::MutablePtr createMap()
 
     auto nested_data = ColumnTuple::create(Columns{std::move(keys), std::move(values)});
     auto nested = ColumnArray::create(std::move(nested_data), std::move(offsets));
-    return ColumnMap::create(std::move(nested));
+    return ColumnMap::create(nested->assumeMutable());
 }
 
 }
