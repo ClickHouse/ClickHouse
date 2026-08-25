@@ -1,9 +1,13 @@
 #pragma once
 
+#include <functional>
+#include <string_view>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Session.h>
 #include <base/types.h>
 
@@ -168,6 +172,13 @@ public:
 
     String execute(const String & query);
 
+    /** Runs a query whose `FORMAT` writes one row per line (`JSONEachRow` and its kin) and hands
+      * every line to `on_row` while the query is still running, without collecting the output.
+      * An exception thrown by the callback cancels the query and propagates, which is how the
+      * caller refuses an oversized result before the rest of it is materialized.
+      */
+    void executeStreaming(const String & query, const std::function<void(std::string_view)> & on_row);
+
     void authenticate(const String & username, const String & password);
 
     /// The name of the user this connection has authenticated as, or an empty string before a
@@ -178,6 +189,10 @@ public:
     ParserLimits getParserLimits() const;
 
 private:
+    /// A query context with the query id and the output settings every reply-building query runs
+    /// under (see `applyReplyOutputSettings`).
+    ContextMutablePtr makeQueryContext();
+
     std::unique_ptr<Session> & session;
     Poco::Net::SocketAddress address;
     pcg64_fast gen;

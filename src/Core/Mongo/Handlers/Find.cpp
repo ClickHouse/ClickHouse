@@ -132,7 +132,6 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
         ast->format(sql_buffer, IAST::FormatSettings(true));
     }
 
-    sql_query += " FORMAT JSON";
     sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1, allow_suspicious_types_in_group_by = 1";
 
     /// Mongo reads a collection that does not exist as empty rather than raising an error.

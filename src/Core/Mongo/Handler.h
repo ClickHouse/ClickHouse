@@ -55,6 +55,25 @@ void validateReadConcern(const rapidjson::Value & json, const char * command);
 void rejectUnsupportedCommandFields(
     const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * command);
 
+/** Refuses a document-valued option of a command unless it asks for nothing: absent, null, or an
+  * empty document. A non-empty one - the `filter` of a `listCollections`, the `cursor` options of
+  * a command answered whole in the first batch - would change the answer, so it is refused rather
+  * than dropped.
+  */
+void rejectNonEmptyDocumentOption(const rapidjson::Value & json, const char * name, const char * command);
+
+/** The `filter` of a `listCollections` or `listDatabases` command, reduced to what is
+  * implemented: no filter at all, or an equality on `name` - which is what a driver itself sends
+  * when it probes for one collection, e.g. the `create_collection` of PyMongo lists with
+  * `{"name": <name>}` first. Returns the name to keep, or nothing when every name passes; any
+  * other filter is refused rather than ignored.
+  */
+std::optional<String> getNameEqualityFilter(const rapidjson::Value & json, const char * command);
+
+/// A boolean option of a command, such as the `nameOnly` of `listCollections` and `listDatabases`.
+/// Returns nothing when the member is absent or null; anything but a boolean is an error.
+std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * name, const char * command);
+
 /** Refuses the fields of a command, or of one of the write statements of a command, that this
   * endpoint does not implement. A field that changes what a write does - `arrayFilters` and
   * `collation` of an `update`, `collation` of a `delete` - would otherwise be dropped silently and
@@ -97,9 +116,13 @@ std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson
 /** Runs a `SELECT` and builds the reply a Mongo client expects from a command that returns
   * documents: `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<database>.<collection>"}, "ok": 1}`.
   * The whole result is returned in the first batch, so the cursor is already exhausted.
-  * The `meta` of the result drives the conversion of each value (see `appendTypedValue`), and
-  * the dotted name of a column - the way the dialect addresses a nested field - becomes the
-  * nested document it names: the row `{"profile.name": "x"}` returns as `{"profile": {"name": "x"}}`.
+  * `sql_query` must carry no `FORMAT` clause: the function appends a row-per-line format of its
+  * own and streams the rows into the reply as they arrive, checking the reply against
+  * `maxBsonObjectSize` on every row, so an oversized result cancels the query rather than being
+  * materialized first. The names-and-types header of the result drives the conversion of each
+  * value (see `appendTypedValue`), and the dotted name of a column - the way the dialect
+  * addresses a nested field - becomes the nested document it names: the row
+  * `{"profile.name": "x"}` returns as `{"profile": {"name": "x"}}`.
   *
   * `holds_documents` says that the query was rewritten to return the documents of a collection as
   * they are stored, so that each row is turned into a reply out of its document rather than out of

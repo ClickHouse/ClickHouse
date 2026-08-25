@@ -173,10 +173,6 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
         ast->format(sql_buffer, IAST::FormatSettings(true));
     }
 
-    /// The settings the pipeline needs are part of the formatted query already, and a second
-    /// `SETTINGS` clause would not parse.
-    sql_query += " FORMAT JSON";
-
     /// Mongo reads a collection that does not exist as empty rather than raising an error, the same
     /// way `find`, `count` and `distinct` do here. The pipeline is translated first, so that a
     /// malformed one is still an error.

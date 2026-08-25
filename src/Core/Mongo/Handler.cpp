@@ -192,6 +192,55 @@ void rejectUnsupportedCommandFields(
     }
 }
 
+void rejectNonEmptyDocumentOption(const rapidjson::Value & json, const char * name, const char * command)
+{
+    auto it = json.FindMember(name);
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return;
+    if (!it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command must be a document", name, command);
+    if (!it->value.ObjectEmpty())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The '{}' of a '{}' command is not supported: it would be answered as a command that does not ask for it",
+            name,
+            command);
+}
+
+std::optional<String> getNameEqualityFilter(const rapidjson::Value & json, const char * command)
+{
+    auto it = json.FindMember("filter");
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return std::nullopt;
+    if (!it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'filter' of a '{}' command must be a document", command);
+    if (it->value.ObjectEmpty())
+        return std::nullopt;
+
+    if (it->value.MemberCount() == 1)
+    {
+        auto name = it->value.FindMember("name");
+        if (name != it->value.MemberEnd() && name->value.IsString())
+            return String(name->value.GetString(), name->value.GetStringLength());
+    }
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "The 'filter' of a '{}' command is supported only as an equality on 'name': anything else would be answered as a command "
+        "that does not ask for it",
+        command);
+}
+
+std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * name, const char * command)
+{
+    auto it = json.FindMember(name);
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return std::nullopt;
+    if (!it->value.IsBool())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command must be a boolean", name, command);
+    return it->value.GetBool();
+}
+
 void rejectUnsupportedFields(
     const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * what, const char * command)
 {
@@ -646,6 +695,8 @@ bool insertColumnPath(FieldTree & tree, std::string_view remaining_path, size_t 
     return insertColumnPath(*entry->subtree, remaining_path.substr(dot + 1), column);
 }
 
+/// `row` is one row of a positional row-per-line format, an array holding one value per column
+/// in the order of `columns`, which is where a leaf entry's `column` index points.
 void appendFieldTree(
     bson_t * document,
     const FieldTree & tree,
@@ -655,12 +706,7 @@ void appendFieldTree(
     for (const auto & entry : tree.entries)
     {
         if (!entry.subtree)
-        {
-            const auto & [column_name, column_type] = columns[entry.column];
-            auto it = row.FindMember(column_name.c_str());
-            if (it != row.MemberEnd())
-                appendTypedValue(document, entry.name, it->value, column_type);
-        }
+            appendTypedValue(document, entry.name, row[static_cast<rapidjson::SizeType>(entry.column)], columns[entry.column].second);
         else
         {
             bson_t child;
@@ -740,54 +786,99 @@ std::vector<Document> executeSelectIntoCursor(
     /// on the wire: besides the row documents themselves, every row costs an element header in
     /// the `firstBatch` array - the type byte and the decimal index as a NUL-terminated key -
     /// and the envelope around the batch is measured by building the reply with no rows. The
-    /// bound is checked while the rows are collected, so an oversized result is dropped before
-    /// it is held whole in memory.
+    /// query streams its rows into the reply one by one, and the bound is checked on each,
+    /// so an oversized result cancels the query rather than being materialized first.
     size_t reply_size = buildCursorReply({}, collection).getBson()->len;
 
     std::vector<Document> selected;
-    {
-        auto output = executor->execute(sql_query);
 
-        rapidjson::Document result_json;
-        if (result_json.Parse(output.data()).HasParseError())
+    std::vector<String> names;
+    std::vector<std::pair<String, DataTypePtr>> columns;
+    FieldTree tree;
+
+    auto append_row_document = [&](bson_t * row_document)
+    {
+        selected.emplace_back(row_document);
+
+        reply_size += 2 + std::to_string(selected.size() - 1).size() + selected.back().getBson()->len;
+        if (reply_size > MAX_BSON_OBJECT_SIZE)
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "The result is larger than the largest reply that can be sent ({} bytes). "
+                "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
+                MAX_BSON_OBJECT_SIZE);
+    };
+
+    /// The documents of a collection are read back as one JSON object per line, whose members
+    /// already carry their names; a typed result is read as one array per line, positional,
+    /// preceded by a line of names and a line of types that plays the part the `meta` of a
+    /// `FORMAT JSON` result used to: the type of a column restores the BSON type its JSON text
+    /// does not carry (see `appendTypedValue`).
+    auto on_row = [&](std::string_view line)
+    {
+        rapidjson::Document json;
+        if (json.Parse(line.data(), line.size()).HasParseError())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
-        auto columns = extractResultColumns(result_json);
-
-        FieldTree tree;
-        for (size_t i = 0; i < columns.size(); ++i)
+        if (holds_documents)
         {
-            /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
-            /// the literal key it always was, rather than dropping the column.
-            if (!insertColumnPath(tree, columns[i].first, i))
-                tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
-        }
-
-        auto data_it = result_json.FindMember("data");
-        if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
-
-        for (const auto & json_data : data_it->value.GetArray())
-        {
-            if (!json_data.IsObject())
+            if (!json.IsObject())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
 
             bson_t * row_document = bson_new();
-            if (holds_documents)
-                appendDocumentOfRow(row_document, json_data);
-            else
-                appendFieldTree(row_document, tree, json_data, columns);
-            selected.emplace_back(row_document);
-
-            reply_size += 2 + std::to_string(selected.size() - 1).size() + selected.back().getBson()->len;
-            if (reply_size > MAX_BSON_OBJECT_SIZE)
-                throw Exception(
-                    ErrorCodes::LIMIT_EXCEEDED,
-                    "The result is larger than the largest reply that can be sent ({} bytes). "
-                    "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
-                    MAX_BSON_OBJECT_SIZE);
+            appendDocumentOfRow(row_document, json);
+            append_row_document(row_document);
+            return;
         }
-    }
+
+        if (!json.IsArray())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is malformed");
+
+        if (names.empty())
+        {
+            for (const auto & name : json.GetArray())
+            {
+                if (!name.IsString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+                names.emplace_back(name.GetString());
+            }
+            if (names.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no column list");
+            return;
+        }
+
+        if (columns.empty())
+        {
+            if (json.Size() != names.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                const auto & type = json[static_cast<rapidjson::SizeType>(i)];
+                if (!type.IsString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+                columns.emplace_back(names[i], DataTypeFactory::instance().get(type.GetString()));
+            }
+
+            for (size_t i = 0; i < columns.size(); ++i)
+            {
+                /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
+                /// the literal key it always was, rather than dropping the column.
+                if (!insertColumnPath(tree, columns[i].first, i))
+                    tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
+            }
+            return;
+        }
+
+        if (json.Size() != columns.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is malformed");
+
+        bson_t * row_document = bson_new();
+        appendFieldTree(row_document, tree, json, columns);
+        append_row_document(row_document);
+    };
+
+    executor->executeStreaming(
+        sql_query + (holds_documents ? " FORMAT JSONEachRow" : " FORMAT JSONCompactEachRowWithNamesAndTypes"), on_row);
 
     auto reply = buildCursorReply(selected, collection);
     chassert(reply.getBson()->len == reply_size);
