@@ -260,7 +260,7 @@ def _git_log_merge_prs(
         if not m:
             continue
         pr_number, head_owner = int(m.group(1)), m.group(2)
-        if head_owner.lower() != repo.split("/")[0].lower():
+        if head_owner == 'ClickHouse':
             continue
         rows.append(
             {
@@ -362,8 +362,8 @@ def get_prs_in_release_dataframe(
     f"""
     PRs merged into branch_ref that belong in the next release notes: after the latest GitHub
     Release tag on this history, or after the oldest rebase bootstrap if no such tag exists.
-    Only merge commits whose subject has from <repo_owner>/ (e.g. from Altinity/) are included.
-    Columns: pr_number, pr_name, labels. Omits PRs labeled cicd.
+    Merge commits whose subject is from the upstream repository (ClickHouse/) are omitted.
+    Columns: pr_number, pr_name, labels.
 
     Returns (dataframe, baseline_date YYYY-MM-DD or None).
     """
