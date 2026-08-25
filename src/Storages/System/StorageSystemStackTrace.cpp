@@ -822,8 +822,6 @@ void StorageSystemStackTrace::readImpl(
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
-#endif
-
 namespace DB
 {
 
@@ -911,3 +909,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 )DOCS_MD")
 
 }
+
+#endif
