@@ -1,0 +1,66 @@
+case 1 wrong results
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+case 2 column count
+Empty	Empty	2024-01-01 00:00:00	1
+Empty	Empty	2024-01-01 00:00:00	2
+Empty	Empty	2024-01-01 00:00:00	1
+case 3 type mismatch
+Empty	2024-01-01 00:00:00	1
+Empty	2024-01-01 00:00:00	2
+Empty	2024-01-01 00:00:00	1
+positional variants
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+USD	Empty	1
+USD	Empty	2
+USD	Empty	1
+1	Empty	USD	1
+1	Empty	USD	2
+1	Empty	USD	1
+Empty	1
+Empty	2
+Empty	1
+alias body shapes
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+EMPTY	USD	1
+EMPTY	USD	2
+EMPTY	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	Empty	EMPTY	USD	1
+Empty	Empty	EMPTY	USD	2
+Empty	Empty	EMPTY	USD	1
+distributed engine table
+Empty	USD	1
+Empty	USD	2
+Empty	Empty	2024-01-01 00:00:00	1
+Empty	Empty	2024-01-01 00:00:00	2
+Empty	USD	1
+Empty	USD	2
+window clauses
+Empty	USD	2
+Empty	USD	2
+Empty	USD	1
+Empty	2
+Empty	2
+negative controls
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
+Empty	USD	2024-01-01 00:00:00	1
+Empty	USD	2024-01-01 00:00:00	2
+Empty	USD	1
+Empty	USD
+Empty	USD
+Empty	USD	1
+Empty	USD	2
+Empty	USD	1
