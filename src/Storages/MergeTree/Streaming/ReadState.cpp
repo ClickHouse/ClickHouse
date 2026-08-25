@@ -57,16 +57,12 @@ void ReadState::updatePartitionCursor(const std::string & partition, PartitionCu
 void ReadState::updatePartitionWatermark(const std::string & partition, Field watermark)
 {
     partition_last_read_time[partition] = std::chrono::steady_clock::now();
-
-    auto & current = partition_watermarks[partition];
-    if (watermark > current)
-        current = std::move(watermark);
+    partition_watermarks[partition] = std::move(watermark);
 }
 
 void ReadState::updateGlobalWatermark(const Field & watermark)
 {
-    if (watermark > last_emitted_watermark)
-        last_emitted_watermark = watermark;
+    last_emitted_watermark = watermark;
 }
 
 void ReadState::updatePartitionSet(const ClassifiedPartitions & partitions)
