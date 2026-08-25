@@ -31,6 +31,7 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Formats/IInputFormat.h>
 
 #include <Columns/ColumnSet.h>
 #include <Common/typeid_cast.h>
