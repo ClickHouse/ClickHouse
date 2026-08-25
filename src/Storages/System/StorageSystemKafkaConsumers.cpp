@@ -317,7 +317,17 @@ REGISTER_SYSTEM_TABLE_DOCUMENTATION(
     "kafka_consumers",
     .description = R"DOCS_MD(
 Contains information about Kafka consumers.
-Applicable for [Kafka table engine](/reference/engines/table-engines/integrations/kafka) (native ClickHouse integration)
+Applicable for [Kafka table engine](/reference/engines/table-engines/integrations/kafka) (native ClickHouse integration).
+
+<Info>
+**Availability**
+
+`system.kafka_consumers` is present only in ClickHouse builds compiled with Kafka support (`USE_RDKAFKA`). On builds without it, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. You can check whether your build has it enabled with:
+
+```sql
+SELECT value FROM system.build_options WHERE name = 'USE_RDKAFKA';
+```
+</Info>
 )DOCS_MD",
     .get_columns = getKafkaConsumersColumnsDescription,
     .examples = R"DOCS_MD(
