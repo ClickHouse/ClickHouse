@@ -774,13 +774,14 @@ the partition does not have to fit into a single merge: each merge still
 respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
 StochasticSimple merge selectors.
 
-This setting only waives the size-ratio requirement that normally keeps an
-unbalanced merge from being assigned; it does not turn any other heuristic off.
-`merge_selector_window_size` still bounds which parts are examined,
-`min_parts_to_merge_at_once` still sets the floor on how many parts a merge
-must cover, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+Forcing works exactly like `min_age_to_force_merge_seconds`: it waives the
+size-ratio requirement that normally keeps an unbalanced merge from being
+assigned, and it also waives the `min_parts_to_merge_at_once` floor, so a
+forced merge can cover fewer parts than that floor asks for. No other
+heuristic is turned off: `merge_selector_window_size` still bounds which parts
+are examined, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
 still trims a trailing small part from a selected range of three parts or more.
-Any of those that a workload needs off must be turned off explicitly through
+Either of those that a workload needs off must be turned off explicitly through
 its own setting.
 
 Cannot be combined with `min_age_to_force_merge_seconds` together with
