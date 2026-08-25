@@ -1,0 +1,63 @@
+--- Split into numbered files
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+data.1.tsv	300	300	599
+data.2.tsv	300	600	899
+data.3.tsv	100	900	999
+data.tsv	300	0	299
+1000	499500
+--- The numbering continues from the number in the name of the first file
+data.5.tsv
+data.6.tsv
+data.7.tsv
+data.8.tsv
+--- The number can be in the name of the first file
+data.0.tsv
+data.1.tsv
+data.2.tsv
+data.3.tsv
+--- A non-numeric part of the name is not a sequence number
+data.1.v2.tsv
+data.2.v2.tsv
+data.3.v2.tsv
+data.v2.tsv
+--- A new file on each insert continues the numbering as well
+data.5.Parquet
+data.6.Parquet
+--- Without splitting everything goes into a single file
+data.tsv
+--- The files are truncated on the second insert with engine_file_truncate_on_insert
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+1000	499500
+--- All the split files are visible for the File engine table
+1000	499500	4
+--- An exception if the name is already taken
+FILE_ALREADY_EXISTS
+--- The taken names are skipped with engine_file_allow_create_multiple_files
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv
+1000	499500
+--- Every file is complete on its own, for a format with a prefix and a suffix
+1000	499500	10
+--- The size of the compressed data is taken into account
+1000000	499999500000	1
+--- Every partition is split on its own
+p_0.1.tsv
+p_0.2.tsv
+p_0.tsv
+p_1.1.tsv
+p_1.2.tsv
+p_1.tsv
+0	500	249500
+1	500	250000
+--- It is not possible to split the data written into a file descriptor
+NOT_IMPLEMENTED

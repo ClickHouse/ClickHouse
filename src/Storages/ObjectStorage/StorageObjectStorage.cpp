@@ -22,6 +22,7 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -796,11 +797,30 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path,
+            getStartSequenceNumber(paths.front().path, paths.size())))
     {
         paths.push_back({*new_key});
     }
     configuration->setPaths(paths);
+
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
+    StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    if (settings.split_on_write_by_size_bytes)
+    {
+        get_next_path = [storage = object_storage, config = configuration, settings,
+                         key = paths.front().path,
+                         sequence_number = getStartSequenceNumber(paths.front().path, paths.size())]() mutable -> String
+        {
+            String new_key = getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+            auto all_paths = config->getPaths();
+            all_paths.push_back({new_key});
+            config->setPaths(all_paths);
+            return new_key;
+        };
+    }
 
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
@@ -809,7 +829,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        settings.split_on_write_by_size_bytes,
+        std::move(get_next_path));
 }
 
 bool StorageObjectStorage::optimize(

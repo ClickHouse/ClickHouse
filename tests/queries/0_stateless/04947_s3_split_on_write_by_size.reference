@@ -1,0 +1,27 @@
+--- Split into numbered objects
+data.1.tsv	300	300	599
+data.2.tsv	300	600	899
+data.3.tsv	100	900	999
+data.tsv	300	0	299
+1000	499500
+--- The numbering continues from the number in the key of the first object
+data.5.tsv	300
+data.6.tsv	300
+data.7.tsv	300
+data.8.tsv	100
+--- Without splitting everything goes into a single object
+1	1000
+--- All the split objects are visible for the S3 engine table
+1000	499500	4
+--- An exception if the key is already taken
+BAD_ARGUMENTS
+--- The taken keys are skipped with s3_create_new_file_on_insert
+data.1.tsv	1
+data.2.tsv	300
+data.3.tsv	1
+data.4.tsv	300
+data.5.tsv	100
+data.tsv	300
+--- Every partition is split on its own
+0	500	249500	3
+1	500	250000	3

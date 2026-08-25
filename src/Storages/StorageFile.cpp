@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -80,6 +81,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <filesystem>
+#include <functional>
 #include <shared_mutex>
 #include <algorithm>
 #include <unordered_set>
@@ -108,6 +110,7 @@ namespace Setting
     extern const SettingsBool engine_file_allow_create_multiple_files;
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsUInt64 engine_file_split_on_write_by_size_bytes;
     extern const SettingsBool engine_file_truncate_on_insert;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
@@ -2595,9 +2598,39 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
 }
 
 
+/// Returns the name of the next file to write when the data is split by size (see `engine_file_split_on_write_by_size_bytes`).
+/// `sequence_number` is advanced past the returned name. If the generated name is already taken, either the number is
+/// skipped (when `engine_file_allow_create_multiple_files` is enabled) or an exception is thrown.
+static String getNextPathForSplittingBySize(
+    const String & path, size_t & sequence_number, bool truncate_on_insert, bool allow_create_multiple_files)
+{
+    while (true)
+    {
+        String new_path = setSequenceNumberInFileName(path, sequence_number);
+        ++sequence_number;
+
+        if (truncate_on_insert || !fs::exists(new_path))
+            return new_path;
+
+        if (!allow_create_multiple_files)
+            throw Exception(
+                ErrorCodes::FILE_ALREADY_EXISTS,
+                "File {} already exists, but it is needed to continue writing the data split by size. "
+                "You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting, "
+                "or you can configure ClickHouse to skip the taken names "
+                "by enabling the setting `engine_file_allow_create_multiple_files`",
+                new_path);
+    }
+}
+
+
 class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
+    /// Called when the current file has reached the size limit configured by `engine_file_split_on_write_by_size_bytes`.
+    /// Returns the name of the next file to write the data into.
+    using GetNextPathCallback = std::function<String()>;
+
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
@@ -2609,7 +2642,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        size_t split_on_write_by_size_bytes_ = 0,
+        GetNextPathCallback get_next_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2621,7 +2656,10 @@ public:
         , format_name(format_name_)
         , format_settings(format_settings_)
         , flags(flags_)
+        , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
+        , get_next_path(std::move(get_next_path_))
     {
+        checkSplittingIsPossible();
         initialize();
     }
 
@@ -2637,7 +2675,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        size_t split_on_write_by_size_bytes_ = 0,
+        GetNextPathCallback get_next_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2649,10 +2689,13 @@ public:
         , format_name(format_name_)
         , format_settings(format_settings_)
         , flags(flags_)
+        , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
+        , get_next_path(std::move(get_next_path_))
         , lock(std::move(lock_))
     {
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        checkSplittingIsPossible();
         initialize();
     }
 
@@ -2660,6 +2703,22 @@ public:
     {
         if (isCancelled())
             cancelBuffers();
+    }
+
+    void checkSplittingIsPossible() const
+    {
+        if (!split_on_write_by_size_bytes)
+            return;
+
+        if (use_table_fd)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot split the data by size while writing into a file descriptor. "
+                "Set `engine_file_split_on_write_by_size_bytes` to 0 to write into the table {}",
+                table_name_for_log);
+
+        if (!get_next_path)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next file");
     }
 
     void initialize()
@@ -2676,7 +2735,8 @@ public:
         }
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
-        bool do_not_write_prefix = naked_buffer->size();
+        bytes_in_file_before_write = naked_buffer->size();
+        bool do_not_write_prefix = bytes_in_file_before_write;
         const auto & settings = getContext()->getSettingsRef();
 
         /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
@@ -2687,6 +2747,8 @@ public:
                 ErrorCodes::CANNOT_APPEND_TO_FILE,
                 "Data cannot be appended to {} because the {} format doesn't support appends",
                 use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
+
+        destination_buf = naked_buffer.get();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
@@ -2694,8 +2756,13 @@ public:
             static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
             settings[Setting::snappy_mode]);
 
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-                                                                             *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
+        /// With the parallel formatting, the data is written into the buffer by a background thread,
+        /// and the amount of the written data cannot be checked after every block without a data race.
+        writer = split_on_write_by_size_bytes
+            ? FormatFactory::instance().getOutputFormat(format_name,
+                                                        *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings)
+            : FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
+                                                                          *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -2707,7 +2774,23 @@ public:
     {
         if (isCancelled())
             return;
+
+        /// The previous file is already finished. Start the next one only now, when there is data for it.
+        if (split_on_write_by_size_bytes && !writer)
+        {
+            path = get_next_path();
+            initialize();
+        }
+
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+
+        /// Continue writing into a new file as soon as the current one became large enough.
+        /// The current block is always written in full, so the file can be larger than the requested size.
+        if (split_on_write_by_size_bytes && bytes_in_file_before_write + destination_buf->count() >= split_on_write_by_size_bytes)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
     void onFinish() override
@@ -2742,6 +2825,7 @@ private:
     {
         writer.reset();
         write_buf.reset();
+        destination_buf = nullptr;
     }
 
     void cancelBuffers() noexcept
@@ -2756,6 +2840,11 @@ private:
     String table_name_for_log;
 
     std::unique_ptr<WriteBuffer> write_buf;
+    /// Non-owning pointer to the buffer that writes to the file (`write_buf` may be a compressing wrapper around it).
+    /// It is used to count the number of bytes written to the file.
+    WriteBuffer * destination_buf = nullptr;
+    /// The size of the file before this insert - the data can be appended to an already existing file.
+    size_t bytes_in_file_before_write = 0;
     OutputFormatPtr writer;
 
     int table_fd;
@@ -2767,6 +2856,8 @@ private:
     std::optional<FormatSettings> format_settings;
 
     int flags;
+    const size_t split_on_write_by_size_bytes;
+    const GetNextPathCallback get_next_path;
     std::unique_lock<std::shared_timed_mutex> lock;
 };
 
@@ -2807,6 +2898,22 @@ public:
 
         validatePartitionKey(filepath, true);
         checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
+
+        const auto & settings = context->getSettingsRef();
+        const size_t split_on_write_by_size_bytes = settings[Setting::engine_file_split_on_write_by_size_bytes];
+
+        StorageFileSink::GetNextPathCallback get_next_path;
+        if (split_on_write_by_size_bytes)
+        {
+            get_next_path = [partition_path = filepath,
+                             sequence_number = getStartSequenceNumber(filepath, 1),
+                             truncate_on_insert = settings[Setting::engine_file_truncate_on_insert].value,
+                             allow_create_multiple_files = settings[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
+            {
+                return getNextPathForSplittingBySize(partition_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+            };
+        }
+
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -2818,7 +2925,9 @@ public:
             format_settings,
             format_name,
             context,
-            flags);
+            flags,
+            split_on_write_by_size_bytes,
+            std::move(get_next_path));
     }
 
 private:
@@ -2905,12 +3014,11 @@ SinkToStoragePtr StorageFile::write(
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                auto pos = path.find_first_of('.', path.find_last_of('/'));
-                size_t index = paths.size();
+                size_t index = getStartSequenceNumber(path, paths.size());
                 String new_path;
                 do
                 {
-                    new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                    new_path = setSequenceNumberInFileName(path, index);
                     ++index;
                 }
                 while (fs::exists(new_path));
@@ -2928,6 +3036,24 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
+    /// When the data is split by size, the files after the first one are named `data.1.Parquet`, `data.2.Parquet`, ...
+    /// The new files are added to the list of paths of the table, so that they are visible for reading.
+    const size_t split_on_write_by_size_bytes = context->getSettingsRef()[Setting::engine_file_split_on_write_by_size_bytes];
+    StorageFileSink::GetNextPathCallback get_next_path;
+    if (split_on_write_by_size_bytes && !use_table_fd && !paths.empty())
+    {
+        get_next_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this()),
+                         first_path = paths.front(),
+                         sequence_number = getStartSequenceNumber(paths.front(), paths.size()),
+                         truncate_on_insert = context->getSettingsRef()[Setting::engine_file_truncate_on_insert].value,
+                         allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
+        {
+            String new_path = getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
+            storage->paths.push_back(new_path);
+            return new_path;
+        };
+    }
+
     return std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
@@ -2940,7 +3066,9 @@ SinkToStoragePtr StorageFile::write(
         format_settings,
         format_name,
         context,
-        flags);
+        flags,
+        split_on_write_by_size_bytes,
+        std::move(get_next_path));
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -3218,6 +3346,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 - [engine_file_empty_if_not_exists](/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
 - [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_split_on_write_by_size_bytes](/reference/settings/session-settings/engine-file#engine_file_split_on_write_by_size_bytes) - splits the written data into multiple numbered files of approximately the specified size. Disabled by default.
 - [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 )DOCS_MD",

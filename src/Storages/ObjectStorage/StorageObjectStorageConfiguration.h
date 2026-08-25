@@ -43,6 +43,8 @@ struct StorageObjectStorageQuerySettings
     /// Insert settings:
     bool truncate_on_insert;
     bool create_new_file_on_insert;
+    /// If not zero, a new file is started as soon as this number of bytes is written into the current one.
+    size_t split_on_write_by_size_bytes;
 
     /// Schema inference settings:
     bool schema_inference_use_cache;

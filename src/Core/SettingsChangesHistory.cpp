@@ -204,6 +204,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
+            {"use_statistics_for_min_max_aggregation", true, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts."},
+            {"engine_file_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into a `File` engine table or into the `file` table function into multiple numbered files of the specified size."},
+            {"s3_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an S3 engine table or into the `s3` table function into multiple numbered objects of the specified size."},
+            {"azure_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an Azure Blob Storage engine table or into the `azureBlobStorage` table function into multiple numbered blobs of the specified size."},
+            {"hdfs_split_on_write_by_size_bytes", 0, 0, "New setting to split the data written into an HDFS engine table or into the `hdfs` table function into multiple numbered files of the specified size."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

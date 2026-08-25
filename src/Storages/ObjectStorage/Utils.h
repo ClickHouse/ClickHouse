@@ -16,6 +16,16 @@ std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const std::string & key,
     size_t sequence_number);
 
+/// Returns the key of the next object to write when the data is split by size (see `*_split_on_write_by_size_bytes`).
+/// `sequence_number` is advanced past the returned key. If the generated key is already taken, either the number is
+/// skipped (when `create_new_file_on_insert` is enabled) or an exception is thrown.
+std::string getNextKeyForSplittingBySize(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
+    const std::string & key,
+    size_t & sequence_number);
+
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
