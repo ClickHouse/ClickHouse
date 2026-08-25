@@ -738,6 +738,40 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+IStorage::ColumnSizeByName StorageMemory::getColumnSizes() const
+{
+    auto current_data = data.get();
+
+    ColumnSizeByName column_sizes;
+    for (const auto & block : *current_data)
+    {
+        for (const auto & elem : block)
+        {
+            /// For a table with `compress = true` the stored columns are `ColumnCompressed`,
+            /// whose `byteSize` is the compressed size - the amount of data a read of the
+            /// column has to decompress, which is exactly the weight the WHERE -> PREWHERE
+            /// optimization orders conditions by.
+            column_sizes[elem.name].data_compressed += elem.column->byteSize();
+        }
+    }
+
+    return column_sizes;
+}
+
+bool StorageMemory::supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+{
+    /// A pinned snapshot (atomic `CREATE MATERIALIZED VIEW ... POPULATE`) must observe the set of
+    /// blocks captured at subscription time, while `totalRows` reflects the latest committed state.
+    if (query_context)
+    {
+        if (query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+            return false;
+        if (query_context->hasQueryContext() && query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+            return false;
+    }
+    return true;
+}
+
 std::optional<UInt64> StorageMemory::totalRows(ContextPtr) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency

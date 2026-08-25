@@ -69,6 +69,21 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPinnedSnapshot() const override { return true; }
 
+    /// `PREWHERE` (and the row-level security filter) are applied inside the reading source:
+    /// only the columns of the conditions are read at first, and the remaining columns are read
+    /// only for the blocks where some rows pass and only for the passing rows. For a table with
+    /// `compress = true` this skips decompression of the remaining columns.
+    bool supportsPrewhere() const override { return true; }
+
+    /// Real per-column in-memory sizes (compressed sizes when `compress = true`), so the
+    /// WHERE -> PREWHERE query plan optimization can order conditions by the cost of reading
+    /// their columns. Also shown in `system.columns`.
+    ColumnSizeByName getColumnSizes() const override;
+
+    /// `totalRows` is exact (maintained under the write mutex), so `SELECT count() FROM table`
+    /// is served from metadata.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
+
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
 
