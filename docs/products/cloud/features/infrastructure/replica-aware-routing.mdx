@@ -2,43 +2,41 @@
 title: 'Replica-aware routing'
 slug: /manage/replica-aware-routing
 description: 'Route related requests to the same ClickHouse Cloud replica for temporary tables, sessions, cache reuse, and read-after-write consistency'
-keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session_id', 'session affinity', 'temporary tables', 'read-after-write consistency']
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency']
 doc_type: 'guide'
-noindex: true
 ---
 
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge/>
+<EnterprisePlanFeatureBadge feature="Replica-aware routing" support="true"/>
 
-Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. The proxy maps each routing value to one replica. The mapping remains stable while the number of replicas remains unchanged; scaling the service can map the value to a different replica.
 
 <Warning>
 **Requires the HTTP interface**
 
-Replica-aware routing is applied at the proxy layer over the [HTTP/HTTPS interface](/interfaces/http). ClickHouse Cloud is transitioning replica-aware routing from `session_id` to the `X-ClickHouse-Replica-Tag` header. The tabs below describe both methods during the rollout.
+Replica-aware routing is applied at the proxy layer over the [HTTP/HTTPS interface](/concepts/features/interfaces/http) using the `X-ClickHouse-Replica-Tag` header.
 
-Replica-aware routing is **currently unavailable over the native protocol** (native port, e.g. the [clickhouse-go](/integrations/go) driver in its default native mode). Native-protocol clients must switch to HTTP and send the routing value on every request.
+Replica-aware routing is **currently unavailable over the native protocol** (native port, e.g. the [clickhouse-go](/integrations/language-clients/go/index) driver in its default native mode). Native-protocol clients must switch to HTTP and send the routing value on every request.
 </Warning>
 
 ## Prerequisites {#prerequisites}
 
 - Your service needs **2 or more replicas**. On a single-replica service, there's nothing to pin to.
 - Available on **Enterprise** by default when the feature is GA.
-- Supported on standard ClickHouse Cloud services. [BYOC](/cloud/reference/byoc/overview) isn't supported yet.
+- Supported on standard ClickHouse Cloud services. [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) isn't supported yet.
 
 ## Configuring replica-aware routing {#configuring-replica-aware-routing}
 
-Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, cache reuse, or read-after-write consistency). Before migrating an existing service, ask Support to confirm that header-based routing is enabled for it. Continue using `session_id` until you receive confirmation; `X-ClickHouse-Replica-Tag` won't provide sticky routing until the rollout reaches your service. No restart is required.
+Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, cache reuse, or read-after-write consistency). No restart is required.
 
 ## HTTP-based routing {#http-based-routing}
 
-<Tabs>
-<Tab title="X-ClickHouse-Replica-Tag (preferred)">
-
-To pin a workload to a replica, send an `X-ClickHouse-Replica-Tag` header on the [HTTPS interface](/interfaces/http). The proxy uses consistent hashing on the header value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
+To pin a workload to a replica, send an `X-ClickHouse-Replica-Tag` header on the [HTTPS interface](/concepts/features/interfaces/http). The proxy uses consistent hashing on the header value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
 
 Use your existing service hostname. No special sticky hostnames or DNS changes are required. The header value can be any string you choose, such as an application name, user ID, or workload label. Requests without the header keep normal load balancing.
 
@@ -62,63 +60,11 @@ For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass the header with
 
 On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with an `X-ClickHouse-Replica-Tag` header, then reuse the same header value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.
 
-For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/operations/settings/settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
+For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/reference/settings/session-settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
 
 ### Check which replica you hit {#check-which-replica}
 
 Run the `SELECT hostName()` example again with the same `X-ClickHouse-Replica-Tag` value. You should get the same hostname while the number of replicas remains unchanged. A different header value may map to a different replica.
-
-</Tab>
-
-<Tab title="session_id (legacy)">
-
-<Warning>
-`X-ClickHouse-Replica-Tag` is replacing `session_id` for replica-aware routing. Continue using `session_id` until Support confirms that header-based routing is enabled for your service.
-</Warning>
-
-**Concurrent requests fail with `SESSION_IS_LOCKED`**
-
-- Because `session_id` creates a ClickHouse HTTP session, only one query can run within a given session at a time.
-- After header-based routing is enabled for your service, workloads that only need replica affinity can switch to `X-ClickHouse-Replica-Tag`. Concurrent requests can share the same replica tag.
-- If you need ClickHouse HTTP session state, serialize requests sharing a `session_id`.
-
-To pin a workload to a replica, send a `session_id` query parameter on the [HTTPS interface](/interfaces/http). The proxy uses consistent hashing on the parameter value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
-
-Use your existing service hostname. No special sticky hostnames or DNS changes are required. The `session_id` can be any string you choose, such as an application name, user ID, or workload label. Requests without `session_id` keep normal load balancing.
-
-Set the `session_id` query parameter on each request:
-
-```bash
-echo 'SELECT hostName()' | curl \
-  -H 'X-ClickHouse-User: default' \
-  -H 'X-ClickHouse-Key: <password>' \
-  'https://<host>:8443/?session_id=my-workload-1' -d @-
-```
-
-For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass `session_id` as a [setting](/integrations/language-clients/go/database-sql-api#sessions). The driver sends it as a URL query parameter.
-
-### Read-after-write consistency with `session_id` {#session-id-read-after-write-consistency}
-
-On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with a `session_id`, then reuse the same `session_id` on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.
-
-For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/operations/settings/settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
-
-### Check which replica you hit with `session_id` {#session-id-check-which-replica}
-
-Run the `SELECT hostName()` example again with the same `session_id`. You should get the same hostname while the number of replicas remains unchanged. A different `session_id` may map to a different replica.
-
-</Tab>
-</Tabs>
-
-## Legacy subdomain-based routing {#subdomain-based-routing-deprecated}
-
-Subdomain-based routing is no longer enabled on new services. If you already use sticky subdomains, contact [Support](https://clickhouse.com/support/program) to migrate to the [HTTP header method](#http-based-routing).
-
-<Accordion title="How legacy subdomain-based routing works">
-
-Previously, enabling replica-aware routing allowed a wildcard subdomain on top of the service hostname. For a service with the host name `abcxyz123.us-west-2.aws.clickhouse.cloud`, any hostname matching `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` (e.g. `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) was hashed by Envoy to a consistent replica. The original hostname continued to use `LEAST_CONNECTION` load balancing, the default routing algorithm.
-
-</Accordion>
 
 ## Limitations of replica-aware routing {#limitations-of-replica-aware-routing}
 
@@ -128,23 +74,21 @@ Scaling out or in changes the routing hash ring. Requests sharing the same routi
 
 ### Replica-aware routing isn't workload isolation {#not-workload-isolation}
 
-Sticky routing only controls *which* replica handles a request. That replica may still serve other traffic. For dedicated compute, use [compute-compute separation](/cloud/reference/warehouses).
+Sticky routing only controls *which* replica handles a request. That replica may still serve other traffic. For dedicated compute, use [compute-compute separation](/products/cloud/features/infrastructure/warehouses).
 
-### Private Link and the legacy subdomain method {#replica-aware-routing-does-not-work-out-of-the-box-with-private-link}
+### Private networking {#private-networking}
 
-HTTP-based routing works with [private networking](/cloud/security/connectivity/private-networking) on your normal service hostname. No extra DNS entries are required.
-
-The legacy subdomain method doesn't: you must add DNS for the `*.sticky.*` hostname pattern, and incorrect setup can imbalance load across replicas.
+HTTP-based routing works with [private networking](/products/cloud/guides/security/connectivity/private-networking) on your normal service hostname. No extra DNS entries are required.
 
 ### Replica-aware routing requires the HTTP protocol {#replica-aware-routing-requires-http}
 
-Sticky routing is keyed on an HTTP header or query parameter, depending on the routing method available for your service. The native binary protocol doesn't carry either value for the HTTP proxy to hash on, so replica-aware routing isn't available over the native protocol. Native-protocol clients must move the relevant workload to the HTTP interface to use this feature.
+Sticky routing is keyed on the `X-ClickHouse-Replica-Tag` HTTP header. The native binary protocol doesn't carry this value for the HTTP proxy to hash on, so replica-aware routing isn't available over the native protocol. Native-protocol clients must move the relevant workload to the HTTP interface to use this feature.
 
 ## Troubleshooting {#troubleshooting}
 
 **Queries still land on different replicas with the same routing value**
 
-- Confirm that you're using the routing method available for your service: the `X-ClickHouse-Replica-Tag` header or the legacy `session_id` URL query parameter.
+- Confirm that every request includes the `X-ClickHouse-Replica-Tag` header.
 - Confirm that every request uses exactly the same routing value.
 - Wait briefly after enablement. It can take under a minute to take effect.
 - Check whether the number of replicas recently changed; remapping is expected after scaling. Use `SELECT hostName()` to discover the new mapping.
