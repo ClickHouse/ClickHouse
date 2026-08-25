@@ -790,9 +790,9 @@ namespace
 /// Cascades identity extras tags for `SortingStep`. Unique within the step; never reused.
 /// `threshold_tracker` needs no tag: it has no stable value to encode, and a starved tracker only
 /// means less top-N pruning, never wrong rows.
-/// `use_buffering` needs no tag either: `serialize` writes it exactly where it is read, for
-/// `FinishSorting`; `enableBuffering` can also set it on a `Full` sort, where its only reader
-/// (`mergingSorted`) is never called, so it is inert there.
+/// `SortingStep::use_buffering` needs no tag either (unlike the `sort_settings` flag below):
+/// `serialize` writes it exactly where it is read, for `FinishSorting`; `enableBuffering` can also
+/// set it on a `Full` sort, where its only reader (`mergingSorted`) is never called, so it is inert.
 enum SortingStepIdentityTag : UInt64
 {
     SKIP_SCATTER_BY_PARTITION_TAG = 1,

@@ -532,6 +532,10 @@ nothing, while a wrong one on a read returns wrong rows.
   read. A field deliberately kept off the wire because a remote node re-derives it, or because
   losing an optimization there is the safe direction, is usually an extra: neither argument
   transfers to identity, where the two steps both run locally.
+- The encoding always serializes with `for_cache_key = false`, on both the `Serialization` context
+  and the sets registry (set in `Processors/QueryPlan/StepIdentity.cpp`), so a field the wire format
+  gates on `!for_cache_key` — `AggregatingStep::final`, the stats cache key, runtime-filter id
+  values — counts as *on the wire* for the audit and needs no tag.
 - `supportsCascadesIdentity` must be false for every instance whose `serialize` **or**
   `serializeSettings` would throw, and must establish that without a try/catch. The recurring
   `serializeSettings` throw class is the `NonZeroUInt64` plan settings: assigning a zero throws
