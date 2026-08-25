@@ -1,5 +1,8 @@
 -- Tags: no-parallel, no-parallel-replicas, no-release
--- Tag no-parallel: drops the (instance-wide) query condition cache and counts entries in it
+-- Tag no-parallel: the last check compares SelectedMarks and asserts a QueryConditionCacheHits
+--                  across two separate queries on the instance-wide query condition cache; a
+--                  sibling test's SYSTEM DROP QUERY CONDITION CACHE landing between them flips
+--                  both, which the table_uuid scoping below cannot prevent
 -- Tag no-parallel-replicas: single-node test; parallel replicas relocate index analysis and the
 --                           query condition cache writes, so the per-entry counts below do not hold
 -- Tag release: reads table_uuid/condition_hash/matching_marks from system.query_condition_cache,
@@ -58,10 +61,10 @@ SELECT max(entries_per_part) FROM
     GROUP BY part_name
 );
 
--- Both writers contributed to that single entry: index analysis excluded a leading run of granules
--- and the row-level filter excluded granules further in, so the bitmap both starts with a zero and
--- keeps at least one matching granule.
-SELECT max(startsWith(matching_marks, '0')), max(countMatches(matching_marks, '1') > 0)
+-- The surviving entry keeps exactly the two granules that hold a matching row, so both writers'
+-- exclusions are present: index analysis zeroed the leading run and the row-level filter zeroed
+-- every other surviving granule. Either exclusion alone leaves more granules matching.
+SELECT max(startsWith(matching_marks, '0')), max(countMatches(matching_marks, '1'))
 FROM system.query_condition_cache
 WHERE table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'tab');
 
@@ -93,7 +96,7 @@ SELECT 'the collapsed entry is applied: same rows, fewer marks, one consultation
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT sum(b) FROM tab WHERE a > 1200 AND b = 7 SETTINGS log_comment = '04652_cold';
 SELECT sum(b) FROM tab WHERE a > 1200 AND b = 7 SETTINGS log_comment = '04652_warm';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- The second read of the same predicate reads strictly fewer marks, and reports exactly one hit for
 -- the whole consultation even though two keys used to be probed.
 SELECT
