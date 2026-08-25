@@ -79,9 +79,12 @@ public:
             visitChildren(*ast);
     }
 
-    /// Add the default database to table expressions only, without rewriting anything else.
-    /// This is used after SQL UDF expansion, where the rest of the query has already been
-    /// normalized and only the table names brought in by the expansion are still unqualified.
+    /// Add the default database to the table names only, without rewriting anything else.
+    /// The table names live in table expressions and in the arguments of the functions which
+    /// take a table (or dictionary) name: the right argument of `IN`, the first argument of
+    /// `dictGet`. This is used after SQL UDF expansion, where the rest of the query has already
+    /// been normalized and only the names brought in by the expansion are still unqualified,
+    /// and for the metadata written before the names were qualified at CREATE time.
     void visitTableExpressions(IAST & ast) const
     {
         visitTableExpressionsImpl(ast);
@@ -162,8 +165,61 @@ private:
                 visitTableFunction(*table_expression->table_function);
         }
 
+        if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
+            visitFunctionTableNameArguments(*function);
+
         for (auto & child : ast.children)
             visitTableExpressionsImpl(*child);
+    }
+
+    /// Qualify the table names which are carried by function arguments rather than by table
+    /// expressions, in the same way as `visit(ASTFunction &)` of the full traversal does:
+    /// the dictionary name in the first argument of `dictGet` and the table name in the right
+    /// argument of `IN` (and of the similar operators). The subqueries among the arguments are
+    /// covered by the generic recursion of `visitTableExpressionsImpl`.
+    void visitFunctionTableNameArguments(ASTFunction & function) const
+    {
+        const bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
+        const bool is_dict_get = functionIsDictGet(function.name);
+        if (!is_operator_in && !is_dict_get)
+            return;
+
+        auto & arguments = function.arguments->children;
+
+        if (is_dict_get && !arguments.empty())
+        {
+            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+            {
+                /// A compound identifier is already qualified, and a parameterized name is only
+                /// known when the view is called, so there is nothing to qualify.
+                if (!identifier->compound() && !identifier->isParam())
+                {
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
+                    arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
+                }
+            }
+            else if (auto * literal = arguments[0]->as<ASTLiteral>())
+            {
+                auto & literal_value = literal->value;
+                if (literal_value.getType() == Field::Types::String)
+                {
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), context);
+                    literal_value = qualified_dictionary_name.getFullName();
+                }
+            }
+        }
+
+        if (is_operator_in && arguments.size() > 1)
+        {
+            /// A plain identifier in the right argument of `IN` is a table name.
+            if (auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && !identifier->as<ASTTableIdentifier>())
+            {
+                if (auto maybe_table_identifier = identifier->createTable())
+                    arguments[1] = maybe_table_identifier;
+            }
+
+            tryVisit<ASTTableIdentifier>(arguments[1]);
+        }
     }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
