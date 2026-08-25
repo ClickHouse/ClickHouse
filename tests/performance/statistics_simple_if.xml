@@ -13,10 +13,6 @@
     <query>SELECT kurtSamp(number) FROM numbers(100000000)</query>
     <query>SELECT corr(number, number + 1) FROM numbers(100000000)</query>
 
-    <query>SELECT skewSamp(number) FROM numbers(100000000)</query>
-    <query>SELECT varSamp(toFloat64(number)) FROM numbers(100000000)</query>
-    <query>SELECT varSamp(toInt64(number)) FROM numbers(100000000)</query>
-
     <!-- ~20% NULL values, random so the branch predictor doesn't do all the work -->
     <create_query>CREATE TABLE nullfloat64_stats (x Nullable(Float64)) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO nullfloat64_stats
@@ -26,5 +22,10 @@
     </fill_query>
     <query>SELECT varSamp(x) FROM nullfloat64_stats</query>
     <query>SELECT varSampIf(x, rand32() % 2 = 0) FROM nullfloat64_stats</query>
+
+    <!-- Plain (non-If) moments over numbers(): level 3, and the Float64 and Int64 source paths -->
+    <query>SELECT skewSamp(number) FROM numbers(100000000)</query>
+    <query>SELECT varSamp(toFloat64(number)) FROM numbers(100000000)</query>
+    <query>SELECT varSamp(toInt64(number)) FROM numbers(100000000)</query>
     <drop_query>DROP TABLE IF EXISTS nullfloat64_stats</drop_query>
 </test>
