@@ -63,7 +63,7 @@ A `create_query`/`fill_query` normally must succeed on both servers being compar
 <create_query do_not_check_in_pr="12345">CREATE TABLE tab (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS new_setting = 1</create_query>
 ```
 
-When such a query fails on the reference server, the remaining setup queries are skipped there, the whole test runs on the new server only, and its queries are reported under "Backward-incompatible queries" instead of failing the check. The attribute is only allowed on top-level `create_query`/`fill_query` elements, is validated in every run, and is not compatible with `<query type="shell">` in the same test.
+When such a query fails on the reference server, the remaining setup queries are skipped there, the whole test runs on the new server only, and its queries are reported under "Backward-incompatible queries" instead of failing the check. The opt-out applies only in the PR named by the attribute. The attribute is only allowed on top-level `create_query`/`fill_query` elements and is not compatible with `<query type="shell">` in the same test.
 
 ### Shell-script queries
 
