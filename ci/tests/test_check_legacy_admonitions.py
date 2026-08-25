@@ -1,0 +1,68 @@
+"""Regression tests for the canonical documentation admonition guard."""
+
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+
+
+SCRIPT = (
+    Path(__file__).parents[1]
+    / "jobs"
+    / "scripts"
+    / "docs"
+    / "check_legacy_admonitions.py"
+)
+SPEC = importlib.util.spec_from_file_location("check_legacy_admonitions", SCRIPT)
+CHECK = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(CHECK)
+
+
+class TestLegacyAdmonitionGuard(unittest.TestCase):
+    @staticmethod
+    def temporary_repo():
+        scratch_root = Path(__file__).parents[2] / "tmp"
+        scratch_root.mkdir(exist_ok=True)
+        return tempfile.TemporaryDirectory(dir=scratch_root)
+
+    def test_untitled_opener_split_across_literals_is_rejected(self):
+        fixtures = [
+            (
+                Path("src/example.cpp"),
+                'constexpr auto doc = ":::note" "\\nBody\\n:::";\n',
+            ),
+            (
+                Path("ci/jobs/scripts/docs/autogenerate/sql/example.sql"),
+                "SELECT ':::note' || '\\nBody\\n:::';\n",
+            ),
+        ]
+        for relative_path, content in fixtures:
+            with self.subTest(relative_path=relative_path), self.temporary_repo() as root:
+                repo_root = Path(root)
+                path = repo_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+
+                findings = CHECK.find_legacy_admonitions(repo_root)
+
+                self.assertEqual(len(findings), 1)
+                self.assertTrue(findings[0].startswith(f"{relative_path}:1:"))
+
+    def test_syntax_mentions_are_not_rejected(self):
+        fixtures = [
+            'constexpr auto syntax = ":::note";\n',
+            'constexpr auto syntax = ":::note" "suffix";\n',
+            "SELECT ':::note' || 'suffix';\n",
+        ]
+        for content in fixtures:
+            with self.subTest(content=content), self.temporary_repo() as root:
+                repo_root = Path(root)
+                path = repo_root / "src/example.cpp"
+                path.parent.mkdir(parents=True)
+                path.write_text(content, encoding="utf-8")
+
+                self.assertEqual(CHECK.find_legacy_admonitions(repo_root), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
