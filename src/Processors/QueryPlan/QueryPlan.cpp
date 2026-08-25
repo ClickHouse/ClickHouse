@@ -843,6 +843,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
 
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
+    // TODO reasoning for !QueryPlanOptimizations::planContainsLogicalExchange(*root)
     bool make_distributed_plan = effective_settings.make_distributed_plan && !QueryPlanOptimizations::planContainsLogicalExchange(*root);
     if (make_distributed_plan)
     {
