@@ -3,37 +3,52 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 
-STATIC_GENERATED_PATHS = (
+CLOUD_GENERATED_PATHS = (
     Path("resources/changelogs/cloud/index.mdx"),
     Path("resources/changelogs/cloud/release-notes-index.mdx"),
+)
+SHARED_GENERATED_PATHS = (
     Path("resources/changelogs/navigation.json"),
 )
+SCOPES = ("cloud", "oss")
 OSS_YEAR = re.compile(r"^# (\d{4}) Changelog\s*$", re.MULTILINE)
 GENERATOR_COMMAND = "python3 _site/scripts/update_changelogs.py"
 
 
-def generated_paths(docs_root: Path) -> list[Path]:
-    changelog_path = docs_root.parent / "CHANGELOG.md"
-    content = changelog_path.read_text(encoding="utf-8")
-    years = OSS_YEAR.findall(content)
-    if len(years) != 1:
-        raise ValueError(
-            "Expected one current-year heading in CHANGELOG.md, "
-            f"found {len(years)}"
-        )
-    oss_changelog = Path("resources/changelogs/oss") / f"{years[0]}.mdx"
-    return [docs_root / path for path in (*STATIC_GENERATED_PATHS, oss_changelog)]
+def generated_paths(docs_root: Path, scopes: set[str]) -> list[Path]:
+    paths = []
+
+    if "cloud" in scopes:
+        paths.extend(CLOUD_GENERATED_PATHS)
+
+    if scopes:
+        paths.extend(SHARED_GENERATED_PATHS)
+
+    if "oss" in scopes:
+        changelog_path = docs_root.parent / "CHANGELOG.md"
+        content = changelog_path.read_text(encoding="utf-8")
+        years = OSS_YEAR.findall(content)
+        if len(years) != 1:
+            raise ValueError(
+                "Expected one current-year heading in CHANGELOG.md, "
+                f"found {len(years)}"
+            )
+        paths.append(Path("resources/changelogs/oss") / f"{years[0]}.mdx")
+
+    return [docs_root / path for path in paths]
 
 
-def check_freshness(docs_root: Path) -> list[str]:
+def check_freshness(docs_root: Path, scopes: set[str]) -> list[str]:
     try:
-        paths = generated_paths(docs_root)
+        paths = generated_paths(docs_root, scopes)
+        all_paths = generated_paths(docs_root, set(SCOPES))
     except (OSError, ValueError) as error:
         return [f"cannot determine generated changelog files: {error}"]
 
@@ -44,7 +59,7 @@ def check_freshness(docs_root: Path) -> list[str]:
             + ", ".join(str(path.relative_to(docs_root)) for path in missing)
         ]
 
-    before = {path: path.read_bytes() for path in paths}
+    before = {path: path.read_bytes() for path in all_paths if path.is_file()}
     generator = docs_root / "_site/scripts/update_changelogs.py"
     process = subprocess.run(
         [sys.executable, str(generator)],
@@ -54,8 +69,9 @@ def check_freshness(docs_root: Path) -> list[str]:
     )
     stale = [path for path in paths if path.read_bytes() != before[path]]
 
-    for path in stale:
-        path.write_bytes(before[path])
+    for path, content in before.items():
+        if path.read_bytes() != content:
+            path.write_bytes(content)
 
     if process.returncode != 0:
         return [
@@ -76,13 +92,19 @@ def check_freshness(docs_root: Path) -> list[str]:
     return []
 
 
-def main() -> int:
-    docs_root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("docs_root", nargs="?", default=".")
+    parser.add_argument("--scope", action="append", choices=SCOPES, dest="scopes")
+    args = parser.parse_args(argv)
+
+    docs_root = Path(args.docs_root).resolve()
     if not (docs_root / "docs.json").is_file():
         print(f"Error: no docs.json in {docs_root}; pass the docs root.")
         return 2
 
-    errors = check_freshness(docs_root)
+    scopes = set(args.scopes or SCOPES)
+    errors = check_freshness(docs_root, scopes)
     if errors:
         print(f"FAIL: {len(errors)} changelog problem(s):")
         for error in errors:

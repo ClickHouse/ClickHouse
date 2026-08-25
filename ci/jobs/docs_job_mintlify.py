@@ -49,14 +49,22 @@ QUICKSTARTS_CHECK_TRIGGERS = (
     )
 )
 
-# The changelog freshness check rewrites generated files and compares them with
-# the checkout. Run it only when the PR changes its inputs, outputs, or tooling.
-# Otherwise a stale generated file already present on `master` would fail every
-# unrelated docs PR until a separate regeneration change is merged.
-CHANGELOGS_CHECK_TRIGGERS = (
+# The changelog freshness check rewrites generated files and compares the
+# relevant outputs with the checkout. Keep the Cloud and Open-source scopes
+# independent so stale output in one cannot block an unrelated change in the
+# other.
+CLOUD_CHANGELOGS_CHECK_TRIGGERS = (
+    "docs/resources/changelogs/cloud/",
+)
+OSS_CHANGELOGS_CHECK_TRIGGERS = (
     "CHANGELOG.md",
-    "docs/resources/changelogs/",
+    "docs/resources/changelogs/oss/",
+)
+SHARED_CHANGELOGS_CHECK_TRIGGERS = (
+    "docs/resources/changelogs/navigation.json",
     "docs/_site/scripts/update_changelogs.py",
+)
+CHANGELOGS_CHECK_TOOLING_TRIGGERS = (
     "ci/jobs/scripts/docs/changelogs_check.py",
     "ci/jobs/scripts/docs/mintlify_docs_check.py",
     "ci/jobs/docs_job_mintlify.py",
@@ -94,15 +102,38 @@ def _quickstarts_check_should_run():
     return any(f.startswith(QUICKSTARTS_CHECK_TRIGGERS) for f in changed_files)
 
 
-def _changelogs_check_should_run():
+def _changelogs_check_scopes():
     changed_files = Info().get_changed_files()
     if changed_files is None:
         print(
             "Warning: the changed-file list is unavailable; skipping the "
             "changelog freshness check."
         )
-        return False
-    return any(f.startswith(CHANGELOGS_CHECK_TRIGGERS) for f in changed_files)
+        return ()
+
+    if any(
+        f.startswith(SHARED_CHANGELOGS_CHECK_TRIGGERS) for f in changed_files
+    ):
+        return ("cloud", "oss")
+
+    scopes = []
+    if any(
+        f.startswith(CLOUD_CHANGELOGS_CHECK_TRIGGERS) for f in changed_files
+    ):
+        scopes.append("cloud")
+    if any(
+        f.startswith(OSS_CHANGELOGS_CHECK_TRIGGERS) for f in changed_files
+    ):
+        scopes.append("oss")
+    if scopes:
+        return tuple(scopes)
+
+    if any(
+        f.startswith(CHANGELOGS_CHECK_TOOLING_TRIGGERS) for f in changed_files
+    ):
+        return ("cloud", "oss")
+
+    return ()
 
 
 def _is_trusted_clickhouse_connect_sync(info):
@@ -184,16 +215,20 @@ if __name__ == "__main__":
         if selected(name)
     ]
 
-    # Changelog freshness: blocking only for PRs that change changelog inputs,
-    # outputs, or tooling. Unrelated PRs must not inherit a stale generated-file
-    # failure from `master`.
-    if _changelogs_check_should_run():
+    # Changelog freshness: check only the affected Cloud/Open-source outputs.
+    # Tooling-only changes check both scopes, while a content PR remains scoped
+    # even when it also adjusts the checker itself.
+    changelog_scopes = _changelogs_check_scopes()
+    if changelog_scopes:
         changelog_name, changelog_command = CHANGELOGS_CHECK
         if selected(changelog_name):
+            scope_args = " ".join(
+                f"--scope {shlex.quote(scope)}" for scope in changelog_scopes
+            )
             results.append(
                 Result.from_commands_run(
                     name=changelog_name,
-                    command=changelog_command,
+                    command=f"{changelog_command} {scope_args}",
                     workdir=docs_dir,
                 )
             )
