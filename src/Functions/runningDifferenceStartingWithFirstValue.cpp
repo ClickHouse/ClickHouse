@@ -10,8 +10,7 @@ REGISTER_FUNCTION(RunningDifferenceStartingWithFirstValue)
     FunctionDocumentation::Description description = R"(
 Calculates the difference between consecutive row values in a data block, but unlike [`runningDifference`](#runningDifference), it returns the actual value of the first row instead of `0`.
 
-<Warning>
-**Deprecated**
+<Warning title="Deprecated">
 
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.

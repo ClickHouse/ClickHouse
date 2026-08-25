@@ -11,8 +11,7 @@ REGISTER_FUNCTION(RunningDifference)
 Calculates the difference between two consecutive row values in the data block.
 Returns `0` for the first row, and for subsequent rows the difference to the previous row.
 
-<Warning>
-**Deprecated**
+<Warning title="Deprecated">
 
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.

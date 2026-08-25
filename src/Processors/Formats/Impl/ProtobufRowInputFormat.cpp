@@ -280,8 +280,7 @@ This means that before every message its length should be written as a [variable
 
 ### Reading and writing data {#basic-examples}
 
-<Info>
-**Example files**
+<Info title="Example files">
 
 The files used in this example are available in the [examples repository](https://github.com/ClickHouse/formats/ProtoBuf)
 </Info>

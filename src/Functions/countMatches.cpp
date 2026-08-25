@@ -209,8 +209,7 @@ REGISTER_FUNCTION(CountMatches)
     FunctionDocumentation::Description description_case_sensitive = R"(
 Returns number of matches of a regular expression in a string.
 
-<Info>
-**Version dependent behavior**
+<Info title="Version dependent behavior">
 
 The behavior of this function depends on the ClickHouse version:
 

@@ -212,8 +212,7 @@ The start time is included in the event, while the end time is excluded.
 Columns with a start time and an end time must be of the same data type.
 The function calculates the total number of active (concurrent) events for each event start time.
 
-<Tip>
-**Requirements**
+<Tip title="Requirements">
 
 Events must be ordered by the start time in ascending order.
 If this requirement is violated the function raises an exception.
@@ -221,8 +220,7 @@ Every data block is processed separately.
 If events from different data blocks overlap then they can not be processed correctly.
 </Tip>
 
-<Warning>
-**Deprecated**
+<Warning title="Deprecated">
 
 It is advised to use [window functions](/reference/functions/window-functions) instead.
 </Warning>

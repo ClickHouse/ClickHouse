@@ -155,8 +155,7 @@ Allows to store special marker ([NULL](/reference/syntax)) that denotes "missing
 
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
 
-<Info>
-**Beta: Nullable Tuples**
+<Info title="Beta: Nullable Tuples">
 
 * [Nullable(Tuple(...))](/reference/data-types/tuple#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
 </Info>

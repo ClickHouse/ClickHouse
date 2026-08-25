@@ -77,8 +77,7 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     FunctionDocumentation::Description sipHash128_description = R"(
 Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
-<Tip>
-**use sipHash128Reference for new projects**
+<Tip title="use sipHash128Reference for new projects">
 
 This 128-bit variant differs from the reference implementation and is weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
@@ -109,8 +108,7 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
 Same as [`sipHash128`](#sipHash128) but additionally takes an explicit key argument instead of using a fixed key.
 
-<Tip>
-**use sipHash128ReferenceKeyed for new projects**
+<Tip title="use sipHash128ReferenceKeyed for new projects">
 
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.

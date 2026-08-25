@@ -183,8 +183,7 @@ REGISTER_FUNCTION(RunningAccumulate)
     FunctionDocumentation::Description description = R"(
 Accumulates the states of an aggregate function for each row of a data block.
 
-<Warning>
-**Deprecated**
+<Warning title="Deprecated">
 
 The state is reset for each new block of data.
 Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions) instead.

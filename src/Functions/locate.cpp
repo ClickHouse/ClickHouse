@@ -22,8 +22,7 @@ REGISTER_FUNCTION(Locate)
     FunctionDocumentation::Description description = R"(
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-<Info>
-**Version dependent behavior**
+<Info title="Version dependent behavior">
 
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.

@@ -528,8 +528,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
-<Info>
-**Zero-copy replication is not ready for production**
+<Info title="Zero-copy replication is not ready for production">
 
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 </Info>
@@ -875,8 +874,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
-<Info>
-**Zero-copy replication is not ready for production**
+<Info title="Zero-copy replication is not ready for production">
 
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 </Info>
@@ -1832,8 +1830,7 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-**`use_paimon_metadata_files_cache` lifecycle**
+<Info title="`use_paimon_metadata_files_cache` lifecycle">
 
 How `use_paimon_metadata_files_cache` is applied depends on how the Paimon table is accessed:
 
@@ -2291,8 +2288,7 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-<Info>
-**Unsupported gsutil URI**
+<Info title="Unsupported gsutil URI">
 
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
 </Info>

@@ -672,8 +672,7 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-**Beta Feature**
+<Info title="Beta Feature">
 
 Requires `SET enable_nullable_tuple_type = 1`
 This is a Beta feature.
