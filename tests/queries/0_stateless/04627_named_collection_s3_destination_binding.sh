@@ -282,12 +282,33 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
     WHERE query_id = '$MASK_QID' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
       AND position(message, '${CLICKHOUSE_TEST_UNIQUE_NAME}_pw') > 0"
 
+echo '--- and the destination it names is masked too, not only the origin it compares against'
+# The two sides of that message are redacted independently: the origin cannot hold a credential by
+# construction, the reported destination can, so each needs its own arm.
+${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c effuserinfo)"
+${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c effuserinfo) AS url = '$OTHER/', format = 'CSV'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.maskedeff (a String)
+    ENGINE = S3($(c effuserinfo), url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw2@localhost:11111/test/$DATA')"
+${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c effuserinfo)
+    SET access_key_id = 'test', secret_access_key = 'testtest'"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.maskedeff"
+MASK_QID2="${CLICKHOUSE_TEST_UNIQUE_NAME}_maskeff"
+${CLICKHOUSE_CLIENT} --query_id "$MASK_QID2" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.maskedeff" > /dev/null 2>&1
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
+    WHERE query_id = '$MASK_QID2' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning';
+    SELECT 'secret', count() FROM system.text_log
+    WHERE query_id = '$MASK_QID2' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
+      AND position(message, '${CLICKHOUSE_TEST_UNIQUE_NAME}_pw2') > 0"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.maskedeff"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_kodb"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
-for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later userinfo; do
+for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later userinfo effuserinfo; do
     ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c $n)"
 done

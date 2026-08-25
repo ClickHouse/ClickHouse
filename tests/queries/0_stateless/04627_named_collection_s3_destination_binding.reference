@@ -50,3 +50,6 @@ refused
 --- the replay warning names the destination without disclosing a url credential
 warning	1
 secret	0
+--- and the destination it names is masked too, not only the origin it compares against
+warning	1
+secret	0
