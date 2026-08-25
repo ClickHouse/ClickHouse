@@ -1,9 +1,9 @@
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
+
 -- Test that text index analysis is separated from MergeTreeReaderTextIndex:
 -- 1) Direct read from text index works even when use_skip_indexes_on_data_read = 0
 -- 2) Two text indexes with different selectivities both filter marks correctly
-SET explain_query_plan_default = 'legacy';
 
 SET log_queries = 1;
 SET enable_analyzer = 0; -- Consistent EXPLAIN output
@@ -13,7 +13,6 @@ SET query_plan_direct_read_from_text_index = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_remove_unused_columns = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
-SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 

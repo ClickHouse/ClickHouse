@@ -16,8 +16,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
-#include <Common/CurrentThread.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -33,7 +31,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -59,12 +56,17 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
 
 /// Takes a geometry (Ring, Polygon or MultiPolygon) and returns an array of H3 hexagons that cover this geometry.
 /// The geometry should be in spherical coordinates as it is in GeoJSON.
-class FunctionH3PolygonToCells final : public IFunction
+class FunctionH3PolygonToCells : public IFunction
 {
 public:
     static constexpr auto name = "h3PolygonToCells";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PolygonToCells>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3PolygonToCells>(context); }
+
+    explicit FunctionH3PolygonToCells(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -77,12 +79,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Resolved from the executing thread rather than captured: this instance can be stored in table
-        /// metadata and then run by any later query.
-        QueryStatusPtr process_list_element;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            process_list_element = query_context->getProcessListElementSafe();
-
         const bool is_const_geometry = isColumnConst(*arguments[0].column);
 
         /// Avoid materializing const geometry to full column — extract the inner data column instead,
@@ -108,10 +104,10 @@ public:
 
         const auto & data_resolution = col_resolution->getData();
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = dst->getData();
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
 
         size_t current_offset = 0;
 
@@ -122,13 +118,9 @@ public:
 
             // polygonToCells does not work for points and lines
             if constexpr (std::is_same_v<ColumnToPointsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be Point", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
             if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be LineString", getName());
-            if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be MultiLineString", getName());
-            if constexpr (std::is_same_v<ColumnToMultiPointsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be MultiPoint", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
 
             if (input_rows_count == 0)
                 return;
@@ -156,7 +148,7 @@ public:
                 const_multi_polygon = to_multi_polygon(std::move(geometries[0]));
 
             /// Reuse buffer across rows to avoid repeated allocations
-            VectorWithMemoryTracking<H3Index> hindex_vec;
+            std::vector<H3Index> hindex_vec;
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -176,19 +168,18 @@ public:
                 if (process_list_element && process_list_element->isKilled())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
-                const size_t row_start_offset = current_offset;
                 for (const auto & polygon : multi_polygon)
                 {
-                    VectorWithMemoryTracking<LatLng> exterior;
+                    std::vector<LatLng> exterior;
                     exterior.reserve(polygon.outer().size());
                     for (const auto & point : polygon.outer())
                         exterior.push_back(toH3LatLng(toRadianPoint(point)));
 
-                    VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
+                    std::vector<std::vector<LatLng>> holes;
                     holes.reserve(polygon.inners().size());
                     for (const auto & inner : polygon.inners())
                     {
-                        VectorWithMemoryTracking<LatLng> hole;
+                        std::vector<LatLng> hole;
                         hole.reserve(inner.size());
                         for (const auto & point : inner)
                             hole.push_back(toH3LatLng(toRadianPoint(point)));
@@ -199,31 +190,18 @@ public:
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
                     int64_t polygon_size = 0;
-                    H3Error size_err = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
-                    if (size_err != E_SUCCESS)
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Failed to estimate H3 polygon to cells size in function {}: {}",
-                            getName(), describeH3Error(size_err));
-
+                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
                     const size_t vec_size = static_cast<size_t>(polygon_size);
-                    const size_t row_size_so_far = current_offset - row_start_offset;
-                    if (vec_size > MAX_ARRAY_SIZE || row_size_so_far + vec_size > MAX_ARRAY_SIZE)
+                    if (vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
                             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
-                            getName(), row_size_so_far + vec_size, toString(resolution));
+                            getName(), vec_size, toString(resolution));
 
                     hindex_vec.assign(vec_size, 0);
-                    H3Error fill_err = polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
-                    if (fill_err != E_SUCCESS)
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Failed to compute H3 polygon to cells in function {}: {}",
-                            getName(), describeH3Error(fill_err));
+                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
 
-                    /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
-                    dst_data.getData().reserve(dst_data.size() + vec_size);
+                    dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
                     {
                         if (hindex != 0)
@@ -232,39 +210,35 @@ public:
                             dst_data.insert(hindex);
                         }
                     }
+
+                    dst_offsets[row] = current_offset;
                 }
-
-                if (current_offset - row_start_offset > MAX_ARRAY_SIZE)
-                    throw Exception(
-                        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
-                        getName(), current_offset - row_start_offset, toString(resolution));
-
-                dst_offsets[row] = current_offset;
             }
         });
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 
 private:
+    QueryStatusPtr process_list_element;
+
     class GeoPolygonContainer
     {
     private:
         // Store the polygon data
-        VectorWithMemoryTracking<LatLng> mainLoopVerts;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
+        std::vector<LatLng> mainLoopVerts;
+        std::vector<std::vector<LatLng>> holeVerts;
 
         // Temporary storage for C-style structs
-        mutable GeoLoop mutableMainLoop{};
-        mutable GeoPolygon mutablePolygon{};
-        mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
+        mutable GeoLoop mutableMainLoop;
+        mutable GeoPolygon mutablePolygon;
+        mutable std::vector<GeoLoop> mutableHoles;
 
     public:
         // Constructor to create from C++ data
         explicit GeoPolygonContainer(
-            VectorWithMemoryTracking<LatLng> && mainLoop,
-            VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> && holes = {})
+            std::vector<LatLng> && mainLoop,
+            std::vector<std::vector<LatLng>> && holes = {})
             : mainLoopVerts(std::move(mainLoop)), holeVerts(std::move(holes)) {}
 
         // Method to get C-style GeoPolygon pointer

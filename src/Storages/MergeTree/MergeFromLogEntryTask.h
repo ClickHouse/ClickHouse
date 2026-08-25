@@ -22,8 +22,6 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    ~MergeFromLogEntryTask() override;
-
     Priority getPriority() const override { return priority; }
 
     void cancel() noexcept override

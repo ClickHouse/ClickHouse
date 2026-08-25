@@ -198,7 +198,7 @@ BlobCopierThread::BlobCopierThread(
     , replication_tasks_pool(CurrentMetrics::BlobCopierThreads, CurrentMetrics::BlobCopierThreadsActive, CurrentMetrics::BlobCopierThreadsScheduled, 0, 0, 0)
     , replication_tasks_runner(replication_tasks_pool, ThreadName::BLOB_COPIER_TASK)
 {
-    task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
+    task = context->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
 }
 
@@ -209,8 +209,6 @@ void BlobCopierThread::run()
 
     executeBlobsReplication(metadata_request_batch.load(), replication_tasks_runner, cluster, metadata_storage, object_storages, log);
     finished_rounds.fetch_add(1);
-    /// Wake up `triggerAndWait`; a bare store does not wake an `std::atomic::wait` (see `BlobKillerThread::run`).
-    finished_rounds.notify_all();
 
     const int64_t schedule_after_ms = DelayWithJitter(reschedule_interval_sec.load() * 1000).getDelayWithJitter(-500, 500);
     task->scheduleAfter(schedule_after_ms);

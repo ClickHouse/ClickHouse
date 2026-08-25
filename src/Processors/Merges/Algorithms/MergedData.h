@@ -33,12 +33,6 @@ public:
 
     bool hasEnoughRows() const;
 
-    size_t rowsToInsertBeforeFlush(
-        const ColumnRawPtrs & raw_columns,
-        size_t start_index,
-        size_t max_rows,
-        size_t block_size) const;
-
     UInt64 mergedRows() const { return merged_rows; }
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }

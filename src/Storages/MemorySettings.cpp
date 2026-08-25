@@ -33,11 +33,17 @@ MemorySettings::MemorySettings(const MemorySettings & settings) : impl(std::make
 {
 }
 
-MemorySettings::MemorySettings(MemorySettings && settings) noexcept = default;
+MemorySettings::MemorySettings(MemorySettings && settings) noexcept : impl(std::make_unique<MemorySettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 MemorySettings::~MemorySettings() = default;
 
-MemorySettings & MemorySettings::operator=(MemorySettings && settings) noexcept = default;
+MemorySettings & MemorySettings::operator=(MemorySettings && settings) noexcept
+{
+    *impl = std::move(*settings.impl);
+    return *this;
+}
 
 MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 

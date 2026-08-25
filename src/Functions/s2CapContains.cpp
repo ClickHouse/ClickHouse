@@ -36,7 +36,7 @@ namespace
  *
  * This function returns whether a cap contains a point.
  */
-class FunctionS2CapContains final : public IFunction
+class FunctionS2CapContains : public IFunction
 {
 public:
     static constexpr auto name = "s2CapContains";
