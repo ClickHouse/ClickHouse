@@ -927,6 +927,12 @@ def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
             "tracked_file_ttl_sec": 1,
             "cleanup_interval_min_ms": 100,
             "cleanup_interval_max_ms": 200,
+            # The source bucket goes empty after the first move, and the default polling backs off by
+            # 30s per idle poll up to 10 minutes, so the re-upload below would not be picked up inside
+            # this test's wait windows. Keep polling flat and fast.
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
         },
         engine_name="S3Queue",
         after_processing="move",
