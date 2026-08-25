@@ -53,6 +53,7 @@ namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_before_get_object[];
     extern const char s3_read_inject_etag_mismatch[];
 }
 
@@ -214,6 +215,7 @@ bool ReadBufferFromS3::nextImpl()
             }
 
             /// Try to read a next portion of data.
+            CurrentThread::checkIfNotCancelled();
             next_result = impl->next();
             break;
         }
@@ -314,6 +316,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             std::istream & istr = result->GetBody();
 
             bool cancelled = false;
+            CurrentThread::checkIfNotCancelled();
             copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
@@ -325,6 +328,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
+            CurrentThread::checkIfNotCancelled();
             istr.ignore(INT64_MAX);
         }
         catch (...)
@@ -350,6 +354,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
+    CurrentThread::checkIfNotCancelled();
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(
@@ -582,6 +587,9 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
             bucket, key, version_id.empty() ? "Latest" : version_id, range_begin);
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
+    CurrentThread::checkIfNotCancelled();
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())

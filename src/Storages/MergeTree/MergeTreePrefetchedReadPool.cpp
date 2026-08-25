@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -98,6 +99,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// readers_future and waits for the job in its destructor.
     prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
     {
+        CurrentThread::checkIfNotCancelled();
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
         if (task.ranges.empty())
         {
@@ -190,8 +192,9 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     /// only inside this MergeTreePrefetchedReadPool, where read tasks are created and distributed,
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the thread task. When a thread calls getTask(), it will wait for it is not ready yet.
-    return [=, context = getContext()]() mutable
+    return [reader, priority, context = getContext()]() mutable
     {
+        CurrentThread::checkIfNotCancelled();
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
         reader->prefetchBeginOfRange(priority);

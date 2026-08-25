@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/CurrentThread.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -84,7 +85,11 @@ public:
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
-    void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
+    void reportBroken() override
+    {
+        CurrentThread::checkIfNotCancelled();
+        data_part->storage.reportBrokenPart(data_part);
+    }
 
     size_t getMarksCount() const override { return data_part->getMarksCount(); }
 

@@ -75,6 +75,7 @@ static struct InitFiu
     ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
+    PAUSEABLE_ONCE(s3_read_before_get_object) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
