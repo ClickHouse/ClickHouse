@@ -221,7 +221,7 @@ END_TARGET_SPECIFIC_CODE
  */
 #define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
 
-#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
 #define USE_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 1
