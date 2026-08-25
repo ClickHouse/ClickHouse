@@ -255,14 +255,17 @@ void StorageTimeSeries::updateRecentSamplesHorizon(Int64 timestamp)
 }
 
 
-void StorageTimeSeries::replaceRecentSamplesHorizon(std::optional<Int64> timestamp)
+void StorageTimeSeries::scheduleRecentSamplesHorizonUpdateForParts(const Strings & part_names)
 {
-    std::lock_guard lock(recent_samples_horizon_mutex);
-    recent_samples_horizon = timestamp;
+    {
+        std::lock_guard lock(recent_samples_horizon_mutex);
+        recent_samples_horizon_pending_parts.insert(part_names.begin(), part_names.end());
+    }
+    scheduleRecentSamplesMaintenance();
 }
 
 
-void StorageTimeSeries::stripLegacyRecentSamplesTableTTL(ContextPtr local_context)
+void StorageTimeSeries::stripLegacyRecentSamplesTableTTL(ContextPtr local_context) const
 {
     auto recent_samples = getTargetTable(ViewTarget::RecentSamples, local_context);
     auto metadata = recent_samples->getInMemoryMetadataPtr(local_context, false);
@@ -314,6 +317,21 @@ void StorageTimeSeries::startup()
         stripLegacyRecentSamplesTableTTL(context);
     }
 
+    if (isInnerTable(ViewTarget::Samples))
+    {
+        auto samples = getTargetTable(ViewTarget::Samples, getContext());
+        if (auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(samples.get()))
+        {
+            std::weak_ptr<StorageTimeSeries> weak_storage = std::static_pointer_cast<StorageTimeSeries>(shared_from_this());
+            replicated->setReplicatedPartsCommittedCallback(
+                [weak_storage](const Strings & part_names)
+                {
+                    if (auto storage = weak_storage.lock())
+                        storage->scheduleRecentSamplesHorizonUpdateForParts(part_names);
+                });
+        }
+    }
+
     recent_samples_maintenance_task->activate();
     recent_samples_maintenance_task->schedule();
 }
@@ -347,14 +365,26 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
             return context;
         };
         auto context = make_maintenance_context();
-        auto select_max = [&](ViewTarget::Kind target_kind, std::string_view column_name) -> std::optional<Int64>
+        auto select_max = [&](
+            ViewTarget::Kind target_kind,
+            std::string_view column_name,
+            const std::unordered_set<String> * parts = nullptr) -> std::optional<Int64>
         {
             auto target_id = getTargetTable(target_kind, context)->getStorageID();
             String target_name = fmt::format(
                 "{}.{}", backQuoteIfNeed(target_id.database_name), backQuoteIfNeed(target_id.table_name));
+            String filter;
+            if (parts)
+                filter = fmt::format(
+                    " WHERE _part IN ({})",
+                    fmt::join(*parts | std::views::transform([](const String & part) { return quoteString(part); }), ", "));
             std::optional<Int64> result;
             executeInternalQuery(
-                fmt::format("SELECT maxOrNull({}) AS max_timestamp FROM {}", backQuoteIfNeed(String{column_name}), target_name),
+                fmt::format(
+                    "SELECT maxOrNull({}) AS max_timestamp FROM {}{}",
+                    backQuoteIfNeed(String{column_name}),
+                    target_name,
+                    filter),
                 make_maintenance_context(),
                 [&](const Block & block)
                 {
@@ -365,8 +395,92 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
             return result;
         };
 
-        std::optional<Int64> stored_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
-        replaceRecentSamplesHorizon(stored_horizon);
+        std::optional<UInt64> rebuild_version;
+        std::optional<Int64> horizon_before_rebuild;
+        {
+            std::lock_guard lock(recent_samples_horizon_mutex);
+            if (recent_samples_horizon_invalidated)
+            {
+                rebuild_version = recent_samples_horizon_invalidation_version;
+                horizon_before_rebuild = recent_samples_horizon;
+                recent_samples_horizon_pending_parts.clear();
+            }
+        }
+
+        if (rebuild_version)
+        {
+            auto rebuilt_horizon = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp);
+            bool invalidated_during_rebuild;
+            {
+                std::lock_guard lock(recent_samples_horizon_mutex);
+                invalidated_during_rebuild = recent_samples_horizon_invalidation_version != *rebuild_version;
+                if (!invalidated_during_rebuild)
+                {
+                    if (recent_samples_horizon != horizon_before_rebuild
+                        && recent_samples_horizon
+                        && (!rebuilt_horizon || *rebuilt_horizon < *recent_samples_horizon))
+                        rebuilt_horizon = recent_samples_horizon;
+                    recent_samples_horizon = rebuilt_horizon;
+                    recent_samples_horizon_invalidated = false;
+                }
+            }
+            if (invalidated_during_rebuild)
+            {
+                scheduleRecentSamplesMaintenance();
+                return;
+            }
+        }
+
+        std::unordered_set<String> pending_parts;
+        {
+            std::lock_guard lock(recent_samples_horizon_mutex);
+            pending_parts.swap(recent_samples_horizon_pending_parts);
+        }
+        if (!pending_parts.empty())
+        {
+            try
+            {
+                auto samples = getTargetTable(ViewTarget::Samples, context);
+                auto * merge_tree = dynamic_cast<MergeTreeData *>(samples.get());
+                if (!merge_tree)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Pending samples parts require a MergeTree target");
+
+                auto resolve_active_parts = [&]
+                {
+                    std::unordered_set<String> result;
+                    for (const auto & part_name : pending_parts)
+                    {
+                        if (auto part = merge_tree->getActiveContainingPart(part_name))
+                            result.insert(part->name);
+                    }
+                    return result;
+                };
+
+                auto active_parts = resolve_active_parts();
+                std::optional<Int64> timestamp;
+                if (!active_parts.empty())
+                    timestamp = select_max(ViewTarget::Samples, TimeSeriesColumnNames::Timestamp, &active_parts);
+
+                auto active_parts_after_query = resolve_active_parts();
+                if (timestamp)
+                    updateRecentSamplesHorizon(*timestamp);
+                if (active_parts != active_parts_after_query)
+                {
+                    {
+                        std::lock_guard lock(recent_samples_horizon_mutex);
+                        recent_samples_horizon_pending_parts.insert(pending_parts.begin(), pending_parts.end());
+                    }
+                    if (recent_samples_maintenance_task)
+                        recent_samples_maintenance_task->scheduleAfter(60000);
+                }
+            }
+            catch (...)
+            {
+                std::lock_guard lock(recent_samples_horizon_mutex);
+                recent_samples_horizon_pending_parts.insert(pending_parts.begin(), pending_parts.end());
+                throw;
+            }
+        }
 
         if (!isInnerTable(ViewTarget::RecentSamples))
             return;
@@ -648,6 +762,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         {
             std::lock_guard lock(recent_samples_horizon_mutex);
             recent_samples_horizon.reset();
+            recent_samples_horizon_invalidated = true;
+            ++recent_samples_horizon_invalidation_version;
+            recent_samples_horizon_pending_parts.clear();
         }
         if (!isInnerTable(ViewTarget::RecentSamples))
             scheduleRecentSamplesMaintenance();

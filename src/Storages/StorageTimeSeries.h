@@ -8,6 +8,7 @@
 #include <array>
 #include <mutex>
 #include <optional>
+#include <unordered_set>
 
 
 namespace DB
@@ -128,8 +129,8 @@ private:
     friend class TimeSeriesSink;
 
     void updateRecentSamplesHorizon(Int64 timestamp);
-    void replaceRecentSamplesHorizon(std::optional<Int64> timestamp);
-    void stripLegacyRecentSamplesTableTTL(ContextPtr local_context);
+    void scheduleRecentSamplesHorizonUpdateForParts(const Strings & part_names);
+    void stripLegacyRecentSamplesTableTTL(ContextPtr local_context) const;
     void scheduleRecentSamplesMaintenance();
 
     /// Represents one of the target tables; `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
@@ -164,6 +165,9 @@ private:
 
     mutable std::mutex recent_samples_horizon_mutex;
     std::optional<Int64> recent_samples_horizon;
+    bool recent_samples_horizon_invalidated = true;
+    UInt64 recent_samples_horizon_invalidation_version = 0;
+    std::unordered_set<String> recent_samples_horizon_pending_parts;
     std::mutex recent_samples_maintenance_mutex;
     BackgroundSchedulePoolTaskHolder recent_samples_maintenance_task;
 };
