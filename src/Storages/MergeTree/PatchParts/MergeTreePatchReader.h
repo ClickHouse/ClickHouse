@@ -19,10 +19,13 @@ public:
     MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
     virtual ~MergeTreePatchReader() = default;
 
+    /// `result_has_data_columns` is false when the readers chain's anchor reader produces only a row
+    /// filter (lazy materialization), so `result_header` carries no join-key columns for range pruning.
     virtual std::vector<PatchReadResultPtr> readPatches(MarkRanges & ranges,
         const ReadResult & main_result,
         const Block & result_header,
-        const PatchReadResult * last_read_patch) = 0;
+        const PatchReadResult * last_read_patch,
+        bool result_has_data_columns) = 0;
 
     virtual std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const = 0;
 
@@ -51,7 +54,8 @@ public:
         MarkRanges & ranges,
         const ReadResult & main_result,
         const Block & result_header,
-        const PatchReadResult * last_read_patch) override;
+        const PatchReadResult * last_read_patch,
+        bool result_has_data_columns) override;
 
     std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const override;
@@ -72,7 +76,8 @@ public:
         MarkRanges & ranges,
         const ReadResult & main_result,
         const Block & result_header,
-        const PatchReadResult * last_read_patch) override;
+        const PatchReadResult * last_read_patch,
+        bool result_has_data_columns) override;
 
     std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     /// Return true because patch with Join mode is shared between all data

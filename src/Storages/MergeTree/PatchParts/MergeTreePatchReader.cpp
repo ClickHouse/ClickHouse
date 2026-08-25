@@ -125,7 +125,8 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
     const Block & /*result_header*/,
-    const PatchReadResult * last_read_patch)
+    const PatchReadResult * last_read_patch,
+    bool /*result_has_data_columns*/)
 {
     std::vector<PatchReadResultPtr> results;
 
@@ -202,7 +203,8 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
     const Block & result_header,
-    const PatchReadResult * /*last_read_patch*/)
+    const PatchReadResult * /*last_read_patch*/,
+    bool result_has_data_columns)
 {
     std::vector<PatchReadResultPtr> results;
     const auto & sample_block = range_reader.getSampleBlock();
@@ -235,7 +237,14 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     auto reader_settings = range_reader.getReader()->getMergeTreeReaderSettings();
     auto stats_entry = patch_join_cache->getStatsEntry(loaded_part_info->getDataPart(), reader_settings);
 
-    if (!stats_entry->stats.empty())
+    /// Pruning patch ranges by the result block's block-number/offset range requires those join-key
+    /// columns to be materialized in `result_block`. They are absent when the readers chain's anchor
+    /// reader produces only a row filter (lazy materialization's MergeTreeReaderIndex): the keys are
+    /// read by a later reader. In that case skip pruning and read all candidate ranges — applyPatchJoin
+    /// matches rows exactly by (block number, offset), so the result is correct, only less selective.
+    /// Recovering the pruning would mean deferring the patch read until the keys are materialized; not
+    /// worth it for lazy materialization, whose re-read selects only a handful of rows (LIMIT) anyway.
+    if (result_has_data_columns && !stats_entry->stats.empty())
     {
         PatchStats result_stats;
         result_stats.block_number_stat = getResultBlockStat(result_block, BlockNumberColumn::name);
