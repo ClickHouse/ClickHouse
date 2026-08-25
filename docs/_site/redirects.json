@@ -1496,8 +1496,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",
@@ -1612,8 +1616,16 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -2016,8 +2028,16 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -39200,6 +39220,10 @@
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupArray",
     "source": "/sql-reference/aggregate-functions/reference/grouparray"
   },
@@ -54408,8 +54432,12 @@
     "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+    "source": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles"
   },
   {
     "destination": "/ar/concepts/features/interfaces/prometheus",
