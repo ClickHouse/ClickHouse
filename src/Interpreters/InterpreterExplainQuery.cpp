@@ -421,6 +421,29 @@ namespace
             return false;
         }
 
+        /// Whether this `SELECT` may call a parameterized view directly: a table expression written as a
+        /// function call whose name no registered table function has (`QueryAnalyzer::resolveTableFunction`
+        /// considers a parameterized view only after `TableFunctionFactory::tryGet` fails; the legacy
+        /// `Context::executeTableFunction` resolves it the same way). Used by the pre-expansion
+        /// nested-subquery walk: once `ExpandParameterizedViewsMatcher` has rewritten the call into a plain
+        /// subquery over the view's base tables, no gate can attribute that subquery to a view any more.
+        /// A name that is neither a table function nor a parameterized view is admitted too - the analysis
+        /// of the nested `SELECT` then fails exactly as the real query would, and a non-`ACCESS_DENIED`
+        /// failure leaves the subquery unchecked as usual.
+        static bool referencesParameterizedViewCandidate(const ASTSelectQuery & select)
+        {
+            for (const auto * table_expression : getTableExpressions(select))
+            {
+                if (!table_expression || !table_expression->table_function)
+                    continue;
+
+                const auto * function = table_expression->table_function->as<ASTFunction>();
+                if (function && !TableFunctionFactory::instance().isTableFunctionName(function->name))
+                    return true;
+            }
+            return false;
+        }
+
         /// Whether the `analyze()`-mode `InterpreterSelectQuery` run on this `SELECT` will rewrite its table
         /// expressions into generated per-table subqueries. `JoinedTables::rewriteMultipleJoins` (called from
         /// `InterpreterSelectQuery` before the table join is built) does that for every query joining more
@@ -519,7 +542,8 @@ namespace
         /// A nested `SELECT` the analysis cannot resolve on its own (e.g. one referring to a `WITH` table of
         /// the enclosing query) is left unchecked - as with an unresolvable view body, nothing is revealed,
         /// because the dump only ever prints the user's own subquery text. An `ACCESS_DENIED` is propagated.
-        static void checkNestedSelectsViewBaseTableAccess(const ASTPtr & node, const Data & data)
+        static void checkNestedSelectsViewBaseTableAccess(
+            const ASTPtr & node, const Data & data, bool include_parameterized_view_candidates = false)
         {
             const auto & context = data.getContext();
             ASTs nested_selects;
@@ -552,7 +576,8 @@ namespace
             for (const auto & nested_select_node : nested_selects)
             {
                 const auto & nested_select = nested_select_node->as<const ASTSelectQuery &>();
-                if (!referencesNonParameterizedView(nested_select, context))
+                if (!referencesNonParameterizedView(nested_select, context)
+                    && !(include_parameterized_view_candidates && referencesParameterizedViewCandidate(nested_select)))
                     continue;
 
                 if (!check_context)
@@ -574,7 +599,7 @@ namespace
                     /// per-table subqueries, so the top-level check finds nothing and the walk has to
                     /// descend into them.
                     if (nested_tables_may_be_rewritten_into_subqueries)
-                        checkNestedSelectsViewBaseTableAccess(nested_select_copy, data);
+                        checkNestedSelectsViewBaseTableAccess(nested_select_copy, data, include_parameterized_view_candidates);
 
                     checkNonParameterizedViewBaseTableAccess(
                         nested_select_copy->as<const ASTSelectQuery &>(),
@@ -1778,6 +1803,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// them, exactly as a real `SELECT ... FROM pv(...)` does in `StorageView::readImpl`.
                 ASTPtr explained_query_before_expansion = ast.getExplainedQuery()->clone();
 
+                /// As on the `EXPLAIN SYNTAX` path: a parameterized view reachable only from a nested
+                /// subquery (`IN` / `EXISTS` operand) is about to be rewritten into a plain subquery that
+                /// no later check can attribute to a view, and in legacy mode nothing else resolves those
+                /// operands. Check the nested `SELECT`s while the call is still intact. With the analyzer,
+                /// the pre-check on the original query below resolves nested subqueries itself.
+                if (!analyzer_enabled_for_explained_query)
+                {
+                    ExplainAnalyzedSyntaxVisitor::Data pre_expansion_data(query_context, /*analyzer_enabled_for_explained_query_=*/ false);
+                    ExplainAnalyzedSyntaxMatcher::checkNestedSelectsViewBaseTableAccess(
+                        ast.getExplainedQuery(), pre_expansion_data, /*include_parameterized_view_candidates=*/ true);
+                }
+
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
                 const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
@@ -1849,6 +1886,24 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// from the query. Keep the original query so the access check can still see and enforce the
             /// `SELECT` grant on the view object, matching real execution.
             ASTPtr explained_query_before_expansion = ast.getExplainedQuery()->clone();
+
+            /// A parameterized view reachable only from a nested subquery - `WHERE x IN (SELECT ... FROM
+            /// pv(...))`, `EXISTS (...)`, ... - is rewritten into a plain subquery over its base tables by
+            /// the expansion below, and the outer `InterpreterSelectQuery` analysis never resolves `IN` /
+            /// `EXISTS` operands, so no later check can attribute that subquery to a view any more: the
+            /// dump would reveal the parameter-substituted view body with no base-table check ever having
+            /// run. Check those nested `SELECT`s now, while the call is still intact: analyzing the nested
+            /// `SELECT` resolves `pv(...)` through `Context::executeTableFunction`, which builds the
+            /// substituted view and resolves its body under `StorageView::getSQLSecurityOverriddenContext` -
+            /// denying an invoker without the base-table grant exactly as really executing the nested
+            /// subquery does. This is legacy-only: with the analyzer, the pre-check on the original query
+            /// below resolves nested subqueries itself.
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                ExplainAnalyzedSyntaxVisitor::Data pre_expansion_data(query_context, /*analyzer_enabled_for_explained_query_=*/ false);
+                ExplainAnalyzedSyntaxMatcher::checkNestedSelectsViewBaseTableAccess(
+                    ast.getExplainedQuery(), pre_expansion_data, /*include_parameterized_view_candidates=*/ true);
+            }
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
             /// so EXPLAIN SYNTAX shows what the view actually expands to.

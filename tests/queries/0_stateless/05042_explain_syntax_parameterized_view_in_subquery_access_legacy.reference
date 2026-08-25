@@ -1,0 +1,60 @@
+-- The parameterized view is inside an IN subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- The parameterized view is inside a NOT IN subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- The parameterized view is inside a GLOBAL IN subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- The parameterized view is inside an EXISTS subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- The parameterized view is inside an IN subquery nested in another IN subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- JOIN-side parameterized view with FINAL
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- JOIN-side parameterized view with SAMPLE
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- IN subquery over the view with FINAL
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- SQL SECURITY DEFINER parameterized view inside an IN subquery
+  reader SELECT: OK
+  reader EXPLAIN SYNTAX: OK
+  reader EXPLAIN AST optimize: OK
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- No view at all, IN subquery over a granted table
+  reader SELECT: OK
+  reader EXPLAIN SYNTAX: OK
+  reader EXPLAIN AST optimize: OK
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
