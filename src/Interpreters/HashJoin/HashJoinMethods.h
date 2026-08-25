@@ -26,8 +26,11 @@ template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
     /// `new_keys` counts keys the map lacked, not rows accepted: `any_take_last_row` overwrites.
+    /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
+    /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
+    /// prove that the write leaves the flag alone and has to reload it.
     static ALWAYS_INLINE bool insertOne(
-        const HashJoin & join,
+        bool any_take_last_row,
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
@@ -40,9 +43,10 @@ struct Inserter
 
         const bool inserted = emplace_result.isInserted();
         new_keys += inserted;
-        if (inserted || join.anyTakeLastRow())
-            new (&emplace_result.getMapped()) HashMap::mapped_type(stored_block_no, row_no);
-        return inserted || join.anyTakeLastRow();
+        const bool store_row = inserted || any_take_last_row;
+        if (store_row)
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, row_no);
+        return store_row;
     }
 
     static ALWAYS_INLINE bool insertAll(
@@ -70,8 +74,12 @@ struct Inserter
         return inserted;
     }
 
+    /// `asof_type` and `asof_inequality` are read from the join once, before the loop, for the reason
+    /// given above `insertOne`: reading them here would be a load per row, and the type is behind an
+    /// `std::optional` that was dereferenced on every row even though only an insert needs it.
     static ALWAYS_INLINE bool insertAsof(
-        HashJoin & join,
+        TypeIndex asof_type,
+        ASOFJoinInequality asof_inequality,
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
@@ -86,9 +94,8 @@ struct Inserter
 
         const bool inserted = emplace_result.isInserted();
         new_keys += inserted;
-        TypeIndex asof_type = *join.getAsofType();
         if (inserted)
-            time_series_map = new (time_series_map) HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
+            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, asof_inequality));
         (*time_series_map)->insert(asof_column, stored_block_no, row_no);
         return inserted;
     }

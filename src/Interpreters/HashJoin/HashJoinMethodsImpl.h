@@ -325,10 +325,19 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
+    [[maybe_unused]] TypeIndex asof_type{};
+    [[maybe_unused]] ASOFJoinInequality asof_inequality{};
     if constexpr (is_asof_join)
+    {
         asof_column = key_columns.back();
+        /// Hoisted out of the loop below, see `Inserter::insertAsof`.
+        asof_type = *join.getAsofType();
+        asof_inequality = join.getAsofInequality();
+    }
 
     const size_t rows = ScatteredBlock::Selector::size(selector);
+    /// Hoisted out of the loop below, see `Inserter::insertOne`.
+    [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
 
     std::optional<KeyGetter> own_key_getter;
     ColumnRawPtrs dense_key_ptrs;
@@ -388,10 +397,10 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(
-                join, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys, *asof_column);
+                asof_type, asof_inequality, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys, *asof_column);
         else if constexpr (mapped_one)
-            result.is_inserted
-                |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);
+            result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
+                any_take_last_row, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);
         else
             result.all_values_unique
                 &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);
