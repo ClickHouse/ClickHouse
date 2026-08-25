@@ -1070,11 +1070,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         return true;
     };
 
-    const bool can_short_circuit_ttl_drop =
+    const bool can_short_circuit_fully_expired_merge =
         global_ctx->metadata_snapshot->hasOnlyRowsTTL()
         && (global_ctx->future_part->merge_type == MergeType::TTLDrop || all_source_parts_fully_expired());
 
-    if (can_short_circuit_ttl_drop)
+    if (can_short_circuit_fully_expired_merge)
     {
         LOG_DEBUG(ctx->log, "Skipping data pipeline: all {} source parts are fully expired",
             global_ctx->future_part->parts.size());
