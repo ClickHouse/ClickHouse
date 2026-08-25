@@ -29,12 +29,14 @@ To capture ``expect`` for a commit:
 """
 
 import os
+import subprocess
+from unittest.mock import patch
 
 import pandas as pd
 from clickhouse_driver import Client
 from testflows.core import *
 
-from create_workflow_report import get_checks_fails
+from create_workflow_report import _git_log_merge_prs, get_checks_fails
 
 
 def check_result_matches_expect(df: pd.DataFrame, expect: list[str]) -> None:
@@ -149,10 +151,32 @@ def test_checks_fails_query(self, case_id, commit_sha, head_ref, expect):
         check_result_matches_expect(df, list(expect))
 
 
+@TestScenario
+def test_git_log_merge_prs_includes_fork_prs(self):
+    """Test PR merge history includes contributor forks."""
+    stdout = "\n".join(
+        [
+            f"{'e' * 40}\tMerge pull request #2226 from strtgbb/community-pr-failure-artifacts",
+            f"{'a' * 40}\tMerge pull request #113355 from ClickHouse/backport/26.6/112784",
+            f"{'b' * 40}\tMerge pull request #2252 from Altinity/ci/antalya-26.6/container-dns",
+        ]
+    )
+    with When("I collect fork, upstream, and Altinity pull request merges"):
+        with patch(
+            "create_workflow_report.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout=stdout),
+        ):
+            df = _git_log_merge_prs("baseline", "branch", None, "Altinity/ClickHouse")
+
+    with Then("fork and Altinity pull requests are included but upstream is omitted"):
+        assert set(df["pr_number"]) == {2226, 2252}
+
+
 @Name("test report queries")
 @TestModule
 def test_report_queries(self):
     Scenario(run=test_checks_fails_query, flags=TE)
+    Scenario(run=test_git_log_merge_prs_includes_fork_prs, flags=TE)
 
 
 if main():
