@@ -335,9 +335,11 @@ namespace
 {
 
 /// Visit every `FutureSetFromSubquery` reachable from `root`. Sets do not live only in the plan's
-/// own nodes: a set's source is a plan of its own (that is where a nested `IN` keeps its set), and
-/// the parallel-replicas local branch hangs off `ReadFromLocalParallelReplicaStep` rather than being
-/// a child node. Both have to be followed or the walk misses exactly the sets that get rebuilt.
+/// own nodes: a set's source is a plan of its own (that is where a nested `IN` keeps its set), steps
+/// such as `ReadFromMerge` and `JoinStepLogicalLookup` own nested plans reachable through
+/// `getChildPlans`, and the parallel-replicas local branch hangs off `ReadFromLocalParallelReplicaStep`,
+/// which is not a child node and has no `getChildPlans`. All of them have to be followed or the walk
+/// misses exactly the sets that get rebuilt.
 void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureSetFromSubquery &)> & visit)
 {
     if (!root || !root->getRootNode())
@@ -363,6 +365,9 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureS
         {
             forEachSubquerySet(read_from_local->getQueryPlan(), visit);
         }
+
+        for (auto * child_plan : node->step->getChildPlans())
+            forEachSubquerySet(child_plan, visit);
 
         for (auto * child : node->children)
             stack.push_back(child);
