@@ -135,6 +135,7 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
         "docker_compose_iceberg_hms_catalog.yml",
         "docker_compose_iceberg_lakekeeper_catalog.yml",
         "docker_compose_iceberg_nessie_catalog.yml",
+        "docker_compose_iceberg_seaweedfs_catalog.yml",
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -176,8 +177,17 @@ public:
     template<typename TMessage>
     std::unique_ptr<TMessage> receiveWithPayloadSize(Int32 payload_size)
     {
+        if (payload_size < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Negative payload size {} received from client", payload_size);
+
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>(payload_size);
-        message->deserialize(*in);
+
+        /// The message is parsed with a buffer limited to the declared payload size, so that parsing
+        /// cannot read past the end of the message. Otherwise a client could declare a small message
+        /// and then stream data without a terminator, making the parser consume it without a bound.
+        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(payload_size)});
+        message->deserialize(limited_in);
         return message;
     }
 
@@ -441,7 +451,9 @@ public:
 
             parameters.insert({std::move(parameter_name), std::move(parameter_value)});
 
-            if (payload_size < 0)
+            /// `payload_size` is the declared size of the message and never changes, so the check
+            /// has to be made against the remaining size instead.
+            if (ps < 0)
             {
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Size of payload is larger than one declared in the message of type {}.",

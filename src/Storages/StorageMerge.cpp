@@ -37,6 +37,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1188,6 +1189,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
@@ -1380,7 +1385,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
-    ASTPtr expr = row_policy_filter_ptr->expression;
+    /// `RowPolicyFilter::expression` is the parsed policy condition owned by `RowPolicyCache`. That AST is
+    /// shared: every query of every user reading this table gets the same nodes, and a policy defined on a
+    /// whole database is shared by all its tables. `TreeRewriter` and `ExpressionAnalyzer` rewrite the AST
+    /// they are given in place - they normalize identifiers, substitute the results of scalar subqueries for
+    /// the subqueries themselves, and record `ASTLiteral::unique_column_name` - so they must be handed a
+    /// private copy. Analyzing the shared AST is both a data race against concurrent readers of the same
+    /// policy and a correctness bug: a scalar subquery such as `USING x <= (SELECT max(v) FROM limits)` gets
+    /// replaced by its value in the cache and is then frozen for the rest of the server's lifetime.
+    /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
+    ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
     auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
@@ -1629,6 +1643,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);

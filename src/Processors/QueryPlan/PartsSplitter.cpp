@@ -1225,7 +1225,9 @@ Pipes readByLayers(
         merging_pipes[i] = step_getter(layers[i]);
 
         auto & filter_function = filters[i];
-        if (!filter_function)
+        /// An empty per-layer pipe has no header. It carries nothing to filter and is removed when the
+        /// layer pipes are united, so do not attempt to add a transform to it.
+        if (!filter_function || merging_pipes[i].empty())
             continue;
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());

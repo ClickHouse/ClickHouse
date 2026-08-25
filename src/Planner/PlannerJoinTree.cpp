@@ -378,6 +378,12 @@ bool applyTrivialCountIfPossible(
     if (!count_func)
         return false;
 
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
+        return false;
+
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
     /// require reading some data (but much faster than reading columns).
     /// Set a special flag in query info so the storage will see it and optimize count in read() method.
@@ -1300,7 +1306,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
+                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
+                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
+                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
+                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
+                    /// of the partial aggregation states its consumer expects.
+                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
+                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+                    if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
+                        && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
