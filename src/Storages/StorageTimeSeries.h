@@ -45,7 +45,7 @@ public:
     std::string getName() const override { return "TimeSeries"; }
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
-    Int64 getRecentSamplesHorizon(Int64 fallback) const;
+    std::optional<Int64> getRecentSamplesHorizon() const;
 
     /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;

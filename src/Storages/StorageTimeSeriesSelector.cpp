@@ -824,11 +824,11 @@ void StorageTimeSeriesSelector::readImpl(
         static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
-        Int64 horizon = time_series_storage->getRecentSamplesHorizon(config.max_time.value);
-        Int128 min_guaranteed_time = static_cast<Int128>(horizon)
-            - static_cast<Int128>(recent_samples_ttl_seconds) * scale_multiplier
-            + static_cast<Int128>(safety_margin_seconds) * scale_multiplier;
-        if ((static_cast<Int128>(config.min_time.value) >= min_guaranteed_time)
+        auto horizon = time_series_storage->getRecentSamplesHorizon();
+        if (horizon
+            && (static_cast<Int128>(config.min_time.value) >= static_cast<Int128>(*horizon)
+                - static_cast<Int128>(recent_samples_ttl_seconds) * scale_multiplier
+                + static_cast<Int128>(safety_margin_seconds) * scale_multiplier)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
             samples_table_kind = ViewTarget::RecentSamples;

@@ -26,6 +26,8 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Storages/AlterCommands.h>
@@ -79,6 +81,10 @@ namespace
     void executeInternalQuery(
         const String & query, const ContextMutablePtr & context, const std::function<void(const Block &)> & consume)
     {
+        QueryScope query_scope;
+        if (!CurrentThread::getGroup())
+            query_scope = QueryScope::create(context);
+
         auto io = executeQuery(query, context, QueryFlags{.internal = true}).second;
         try
         {
@@ -226,10 +232,10 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
-Int64 StorageTimeSeries::getRecentSamplesHorizon(Int64 fallback) const
+std::optional<Int64> StorageTimeSeries::getRecentSamplesHorizon() const
 {
     std::lock_guard lock(recent_samples_horizon_mutex);
-    return recent_samples_horizon.value_or(fallback);
+    return recent_samples_horizon;
 }
 
 
@@ -330,12 +336,10 @@ void StorageTimeSeries::maintainRecentSamples(bool throw_on_error)
         {
             StorageReplicatedMergeTree::ReplicatedStatus status;
             replicated->getStatus(status, false);
+            if (recent_samples_maintenance_task)
+                recent_samples_maintenance_task->scheduleAfter(60000);
             if (!status.is_leader)
-            {
-                if (recent_samples_maintenance_task)
-                    recent_samples_maintenance_task->scheduleAfter(60000);
                 return;
-            }
         }
 
         std::vector<std::pair<String, Int64>> partition_maxima;
