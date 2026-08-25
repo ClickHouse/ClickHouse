@@ -52,14 +52,15 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.base2 TO ${full};
 # Print 'OK' only when the query succeeds, 'ACCESS_DENIED' when it is rejected for access reasons,
 # and the full unexpected error otherwise (which makes the reference diff fail) so that a positive
 # case that starts throwing a different exception cannot silently pass.
+# The queries go over HTTP: a debug-build client takes seconds just to start, and with this many
+# probes the per-invocation startup cost alone pushed the test over the 180 s limit.
 run() {
     local user="$1"
     local label="$2"
     local query="$3"
     local out
-    out=$(${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer 0 --query "${query}" 2>&1)
-    local status=$?
-    if [ "${status}" -eq 0 ]; then
+    out=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&enable_analyzer=0" --data-binary "${query}" 2>&1)
+    if ! echo "${out}" | grep -q "DB::Exception"; then
         echo "${label}: OK"
     elif echo "${out}" | grep -q "ACCESS_DENIED"; then
         echo "${label}: ACCESS_DENIED"
