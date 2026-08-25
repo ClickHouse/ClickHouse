@@ -44,7 +44,7 @@ GCS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび
 
 GCS ClickPipe は、ファイルがバケットに辞書式順序で追加されることを前提としており、この暗黙的な順序に基づいてファイルを順番に取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書式で後に来る名前である**必要があります**。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` がバケットに追加された場合、ファイル名が最後に取り込まれたファイルよりも辞書式で後ではないため、**無視**されます。
 
-このモードでは、GCS ClickPipe は指定されたパス内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルがないかポーリングします。特定のファイルや時点からインジェストを開始することは**できません** — ClickPipes は常に指定されたパス内のすべてのファイルを読み込みます。
+このモードでは、GCS ClickPipe は指定されたパス内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルがないかポーリングします。特定のファイルの後から継続的インジェストを開始するには、**Start after** を設定します。ClickPipes は、設定値以下の辞書式順序のファイルをスキップし、その時点から新しいファイルの取り込みを継続します。
 
 <div id="continuous-ingestion-any-order">
   #### 順不同
@@ -60,7 +60,7 @@ GCS ClickPipe は、ファイルがバケットに辞書式順序で追加され
   公開バケットでは**順不同モード**はサポートされていません。これを使用するには、**サービス アカウント**認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
 </Note>
 
-このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。特定のファイルまたは時点からインジェストを開始することは**できません**。ClickPipes は常に、選択したパス内のすべてのファイルを読み込みます。
+このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。サブスクリプション経由で配信されたファイルのみを取り込むには、**初期ロードをスキップ**を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、Pub/Sub サブスクリプション経由で配信されたファイルのみを処理します。
 
 <div id="file-pattern-matching">
   ### ファイルパターンのマッチング
@@ -167,7 +167,7 @@ HMACキーを持つサービス アカウントを作成するには、[この�
 
 GCS ClickPipes では、メタデータの検出とデータのインジェストに、それぞれ ClickPipes サービスと ClickHouse Cloud サービスという 2 つの異なるネットワーク経路を使用します。ネットワークセキュリティをさらに強化したい場合 (たとえば、コンプライアンス要件への対応のため) 、**両方の経路でネットワークアクセスを設定する必要があります**。
 
-* **IP ベースのアクセス制御**では、GCS バケットの [IP フィルタリング ルール](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) で、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)に記載されている ClickPipes サービスリージョンの静的 IP と、ClickHouse Cloud サービスの [静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行します。
+* **IP ベースのアクセス制御**では、GCS バケットの [IP フィルタリング ルール](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) で、[こちら](/ja/integrations/clickpipes/networking/static-ips)に記載されている ClickPipes サービスリージョンの静的 IP と、ClickHouse Cloud サービスの [静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行します。
 
   ```bash
   # Replace <your-region> with your ClickHouse Cloud region
@@ -180,18 +180,20 @@ GCS ClickPipes では、メタデータの検出とデータのインジェス�
 
 ClickPipes には、ほとんどのユースケースの要件を満たす妥当なデフォルト設定が用意されています。さらに細かなチューニングが必要な場合は、以下の設定を調整できます。
 
-| Setting                              | Default value | Description                                                                                                           |
-| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | 1 回の挿入バッチで処理するバイト数。                                                                                                   |
-| `Max file count`                     | 100           | 1 回の挿入バッチで処理するファイルの最大数。                                                                                               |
-| `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                       |
-| `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行される挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                           |
-| `Min insert block size bytes`        | 1GB           | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                       |
-| `Max download threads`               | 4             | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                |
-| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                             |
-| `Parallel distributed insert select` | 2             | [parallel distributed insert select の設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false         | アタッチされたビューへのプッシュを、[順次ではなく同時実行で](/ja/reference/settings/session-settings#parallel_view_processing)行うかどうか。              |
-| `Use cluster function`               | true          | 複数ノードにまたがってファイルを並列処理するかどうか。                                                                                           |
+| Setting                              | Default value | Description                                                                                                                 |
+| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 1 回の挿入バッチで処理するバイト数。                                                                                                         |
+| `Max file count`                     | 100           | 1 回の挿入バッチで処理するファイルの最大数。                                                                                                     |
+| `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings/max-threads#max_threads)。                                    |
+| `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行される挿入スレッドの最大数](/ja/reference/settings/session-settings/max-insert#max_insert_threads)。                         |
+| `Min insert block size bytes`        | 1GB           | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                     |
+| `Max download threads`               | 4             | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings/max-download#max_download_threads)。                            |
+| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                                   |
+| `Start after`                        | None          | 順序付き継続的インジェストでは、設定したファイル名またはパス以下の辞書順のファイルをスキップします。                                                                          |
+| `Skip initial load`                  | false         | 順序なし継続的インジェストでは、既存ファイルの初期スキャンをスキップし、設定した Pub/Sub サブスクリプションからのオブジェクト通知のみを処理します。                                              |
+| `Parallel distributed insert select` | 2             | [parallel distributed insert select の設定](/ja/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | アタッチされたビューへのプッシュを、[順次ではなく同時実行で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)行うかどうか。              |
+| `Use cluster function`               | true          | 複数ノードにまたがってファイルを並列処理するかどうか。                                                                                                 |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の詳細設定" size="lg" border />
 

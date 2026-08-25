@@ -12,7 +12,7 @@ keywords: ['AWS PrivateLink', 'VPC エンドポイントサービス', 'MSK', 'K
 
 このガイドでは、[AWS PrivateLink VPC endpoint services](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) を使って、Amazon MSK クラスターを ClickPipes から利用できるように公開する方法を説明します。
 
-この方法は、[MSK multi-VPC connectivity](/ja/integrations/clickpipes/aws-privatelink#msk-multi-vpc) が利用できない場合や、それだけでは不十分な場合に使用します。たとえば、次のようなケースです。
+この方法は、[MSK multi-VPC connectivity](/ja/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) が利用できない場合や、それだけでは不十分な場合に使用します。たとえば、次のようなケースです。
 
 * ClickPipes から MSK へのクロスリージョン接続。
 * MSK Express クラスター。
@@ -139,18 +139,18 @@ ClickHouse Cloud console で、各ブローカーの VPC エンドポイント�
 3. `Reverse private endpoint` を選択します。
 4. VPC エンドポイントのタイプとして `VPC endpoint service` を選択します。
 5. ブローカー固有の VPC エンドポイントサービス名を入力します。
-6. `Custom private DNS name` に、そのブローカーの元の MSK ブローカー hostname を入力します。
+6. `Custom private DNS name` に、そのブローカーの元の MSK ブローカー ホスト名 を入力します。
 7. エンドポイントを作成します。
 8. エンドポイントが承認待ちの場合は、AWS の VPC エンドポイントサービス console でエンドポイントの接続リクエストを承認します。
 
-すべてのブローカー hostname に対応する RPE が作成されるまで、この手順を繰り返します。
+すべてのブローカー ホスト名 に対応する RPE が作成されるまで、この手順を繰り返します。
 
 カスタム private DNS の動作、命名規則、API/Terraform のオプションについては、以下を参照してください。
-[Custom private DNS](/ja/integrations/clickpipes/aws-privatelink#custom-private-dns)。
+[Custom private DNS](/ja/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)。
 
 リバースプライベートエンドポイントは、[OpenAPI](/ja/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) または Terraform を使って作成することもできます。
 
-OpenAPI では、各ブローカーに対して 1 つのリバースプライベートエンドポイントを作成し、`type` を `VPC_ENDPOINT_SERVICE` に設定したうえで、ブローカー固有の VPC エンドポイントサービス名と、そのブローカー hostname 用のカスタム private DNS マッピングを 1 つ指定します。
+OpenAPI では、各ブローカーに対して 1 つのリバースプライベートエンドポイントを作成し、`type` を `VPC_ENDPOINT_SERVICE` に設定したうえで、ブローカー固有の VPC エンドポイントサービス名と、そのブローカー ホスト名 用のカスタム private DNS マッピングを 1 つ指定します。
 
 ```json
 {
@@ -171,7 +171,7 @@ Terraform を使用する場合は、エンドポイントの作成に [`clickho
   ## Kafka ClickPipe を作成する
 </div>
 
-リバース プライベート エンドポイントを使用して ClickPipe を作成するには、[ClickPipes AWS PrivateLink ガイド](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+リバース プライベート エンドポイントを使用して ClickPipe を作成するには、[ClickPipes AWS PrivateLink ガイド](/ja/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 に従ってください。
 
 Kafka ClickPipe を作成する際は、次の点に注意してください。

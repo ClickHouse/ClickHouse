@@ -16,6 +16,14 @@ integration:
 
 Oui, MySQL ClickPipe prend en charge MariaDB 10.0 et les versions ultérieures. Sa configuration est très proche de celle de MySQL, avec la réplication GTID utilisée par défaut.
 
+<div id="mariadb-partial-row-event-unsupported">
+  ### Pourquoi mon pipe a-t-il échoué en raison d’un événement de lignes partielles MariaDB non pris en charge ?
+</div>
+
+MariaDB 12.3 et les versions ultérieures peuvent émettre un [événement de lignes partielles](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event) dans le binlog, que nous ne prenons pas encore en charge.
+
+Pour récupérer, resynchronisez le pipe. Pour réduire le risque que cela se reproduise, vous pouvez également augmenter le paramètre `binlog_row_event_fragment_threshold` sur la source afin que moins de modifications de lignes soient fragmentées ; maintenez-le inférieur à `max_allowed_packet`, car un seul événement binlog non fragmenté dépassant `max_allowed_packet` ferait échouer le flux de réplication (voir [Pourquoi mon pipe échoue-t-il avec une erreur binlog liée à max&#95;allowed&#95;packet ?](#binlog-event-exceeded-max-allowed-packet)).
+
 <div id="mariadb-compressed-column-unsupported">
   ### Pourquoi mon pipe a-t-il échoué en raison d’une colonne MariaDB COMPRESSED non prise en charge ?
 </div>
@@ -74,6 +82,47 @@ Cela est le plus souvent dû à des lignes contenant de grandes valeurs `BLOB`, 
   ```
   Définissez-le également dans la configuration de votre serveur (par exemple `my.cnf` ou le DB Parameter Group) afin qu’il soit conservé après les redémarrages.
 * **Si une seule ligne dépasse 1G :** resynchronisez le pipe.
+
+<div id="binlog-partial-json-unsupported">
+  ### Pourquoi mon pipe échoue-t-il avec une erreur de binlog JSON incomplet ?
+</div>
+
+Si votre pipe échoue avec une erreur semblable à :
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+cela signifie que le serveur MySQL source a [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) défini sur `PARTIAL_JSON`. Lorsque cette option est activée, MySQL enregistre les mises à jour des colonnes `JSON` sous forme de différences partielles (uniquement les chemins modifiés), plutôt que sous la forme du document complet. ClickPipes ne peut pas appliquer ces différences partielles, donc le CDC ne peut pas progresser.
+
+Pour résoudre ce problème :
+
+* **Désactivez `PARTIAL_JSON` sur la source.** Rétablissez une valeur vide :
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  Supprimez également ce paramètre de la configuration de votre serveur (par exemple, `my.cnf` ou le DB Parameter Group) afin que ce réglage soit conservé après les redémarrages.
+* **Resynchronisez le pipe** afin que la réplication reprenne à partir d&#39;un offset propre.
+
+<div id="secure-transport-required">
+  ### Pourquoi mon pipe échoue-t-il avec une erreur require_secure_transport ?
+</div>
+
+Si votre pipe échoue avec une erreur semblable à :
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+cela signifie que [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) est activé sur le serveur source — il rejette toute connexion non chiffrée — alors que TLS est désactivé sur le ClickPipe. Dans RDS pour MySQL, ce paramètre provient du [groupe de paramètres DB](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html) de l’instance. Dans Aurora MySQL, il s’agit d’un paramètre du [groupe de paramètres de cluster DB](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL), qui n’est pas disponible dans les groupes de paramètres d’instance. Aucun des deux ne nécessite de redémarrage pour prendre effet. Dans Aurora MySQL 8.4, ce paramètre est défini par défaut sur `ON`, tandis que les versions 2 et 3 utilisent `OFF`. Un pipe dont la réplication fonctionnait correctement peut donc commencer à échouer après une modification de paramètre ou une mise à niveau de version, sans aucune modification de sa configuration.
+
+Pour résoudre ce problème :
+
+* **Réactivez TLS sur le pipe.** Dans les **Settings** du pipe, ouvrez les paramètres de connexion et désactivez le toggle **Disable TLS**. Si l’enregistrement affiche ensuite une erreur de certificat, consultez [Pourquoi est-ce que j’obtiens une erreur de validation de certificat TLS lors de la connexion à MySQL ?](#tls-certificate-validation-error) pour savoir comment définir un hôte TLS, téléverser un certificat d’autorité de certification (CA) racine ou ignorer la vérification du certificat.
+* **Ou désactivez `require_secure_transport` sur la source** — dans le groupe de paramètres DB sur RDS ou dans le groupe de paramètres de cluster DB sur Aurora — si les connexions non chiffrées sont acceptables dans votre environnement.
+
+La réplication reprend là où elle s’est arrêtée une fois la connexion établie. Si le pipe est resté en échec plus longtemps que votre période de rétention des binlogs (consultez [Comment la réplication est-elle gérée ?](#how-is-replication-managed)), vous devrez le resynchroniser.
 
 <div id="tls-certificate-validation-error">
   ### Pourquoi est-ce que j’obtiens une erreur de validation de certificat TLS lors de la connexion à MySQL ?

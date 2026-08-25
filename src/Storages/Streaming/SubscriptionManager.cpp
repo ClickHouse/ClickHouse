@@ -19,29 +19,28 @@ void StreamSubscriptionManager::registerSubscription(StreamSubscriptionPtr subsc
     subscriptions.push_back(subscription);
 }
 
-void StreamSubscriptionManager::executeOnEachSubscription(const std::function<void(StreamSubscriptionPtr & subscription)> & func)
+std::vector<StreamSubscriptionPtr> StreamSubscriptionManager::takeAllSubscriptions()
 {
-    auto lock = lockShared();
-
+    std::vector<StreamSubscriptionPtr> collected;
     bool need_clean = false;
-    for (const auto & subscription : subscriptions)
+
     {
-        auto locked_sub = subscription.lock();
+        auto lock = lockShared();
+        collected.reserve(subscriptions.size());
 
-        if (locked_sub == nullptr)
+        for (const auto & subscription : subscriptions)
         {
-            need_clean = true;
-            continue;
+            if (auto locked_sub = subscription.lock())
+                collected.push_back(std::move(locked_sub));
+            else
+                need_clean = true;
         }
-
-        func(locked_sub);
     }
 
     if (need_clean)
-    {
-        lock.unlock();
         clean();
-    }
+
+    return collected;
 }
 
 bool StreamSubscriptionManager::isEmpty() const

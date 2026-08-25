@@ -1,0 +1,37 @@
+<test>
+    <!-- Derived compare-chain conjuncts must cost nothing per row. -->
+
+    <create_query>
+        CREATE TABLE t_chain_derived ENGINE = MergeTree ORDER BY tuple() AS
+        SELECT
+            repeat('p', 100) || 'a' || toString(number % 100) AS s1,
+            repeat('p', 100) || 'b' || toString(number % 100) AS s2,
+            repeat('p', 100) || 'c' || toString(number % 100) AS s3,
+            repeat('p', 100) || 'd' || toString(number % 100) AS s4,
+            if(number % 100 = 0, 'a', 'z') || repeat('q', 200) || toString(number) AS b,
+            leftPad(toString(number % 100000), 8, '0') AS x,
+            number AS k
+        FROM numbers_mt(10000000)
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_chain_derived_join ENGINE = MergeTree ORDER BY tuple() AS
+        SELECT number AS k, number - (number % 2) AS v FROM numbers_mt(10000000)
+    </create_query>
+
+    <!-- Filter tax: three derived string comparisons sharing a 100-byte prefix with the constant. -->
+    <query>SELECT count() FROM t_chain_derived WHERE s1 &lt; s2 AND s2 &lt; s3 AND s3 &lt; s4 AND s4 &lt; repeat('p', 100) || 'z'</query>
+
+    <!-- PREWHERE hoist: the derived comparison must not drag the expensive expression into PREWHERE. -->
+    <query>SELECT count() FROM t_chain_derived WHERE hex(sipHash64(repeat(x, 200))) &lt; b AND b &lt; 'z'</query>
+
+    <!-- Derived across the join: `r.k > 9900000` must stay executable and shrink the build side. -->
+    <query>SELECT count() FROM t_chain_derived_join AS l INNER JOIN t_chain_derived AS r ON l.k = r.k WHERE l.v &lt; r.k AND 9900000 &lt; l.v</query>
+
+    <!-- Same-side chain in a join query: the derived comparisons must stay free per row,
+         and the join input (12% of rows pass the chain) must be unchanged by hinting them. -->
+    <query>SELECT count() FROM t_chain_derived AS l INNER JOIN t_chain_derived_join AS r ON l.k = r.k WHERE l.s1 &lt; l.s2 AND l.s2 &lt; l.s3 AND l.s3 &lt; l.s4 AND l.s4 &lt; repeat('p', 100) || 'd2'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_chain_derived</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_chain_derived_join</drop_query>
+</test>
