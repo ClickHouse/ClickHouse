@@ -36,7 +36,7 @@ SELECT id FROM tab_regex_extract WHERE hasAllTokens(doc, ['red', 'green']) ORDER
 
 DROP TABLE tab_regex_extract;
 
--- 2. No capture groups: falls back to indexing the matches themselves (std::regex_iterator semantics),
+-- 2. No capture groups: falls back to indexing the RE2 matches themselves,
 -- unlike the default separator mode which would index the text *between* the digit runs.
 
 DROP TABLE IF EXISTS tab_regex_extract_nogroup;

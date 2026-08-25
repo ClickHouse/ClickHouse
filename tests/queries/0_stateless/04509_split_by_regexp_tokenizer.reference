@@ -78,7 +78,7 @@ SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized)
 -- extract = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
 SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
 ['hello','world']
--- No capture groups: falls back to the whole match (std::regex_iterator semantics)
+-- No capture groups: falls back to the whole RE2 match
 SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
 ['1','22','333']
 -- Contrast with extract = 0 (separator mode) on the same pattern: the text *between* matches

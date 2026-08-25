@@ -346,10 +346,10 @@ private:
 /// by leading, trailing or consecutive separators) are not emitted, since empty tokens are useless for
 /// a text index.
 /// In `extract` mode, each match contributes at most one token: capture group 1 of the match (or, if
-/// the pattern has no capture groups, the whole match - i.e. `std::regex_iterator` semantics). A match
-/// whose group 1 did not participate, or captured an empty string, contributes no token. Either way,
-/// scanning resumes after the whole match (not just after the captured span), so consecutive matches
-/// never overlap.
+/// the pattern has no capture groups, the whole match - i.e. the RE2 match itself). A match whose
+/// group 1 did not participate, or captured an empty string, contributes no token. Either way, scanning
+/// resumes after the whole match (not just after the captured span), so consecutive matches never
+/// overlap.
 struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
 {
     explicit SplitByRegexpTokenizer(const String & regexp_, bool extract_ = false);
