@@ -950,7 +950,7 @@ private:
             /// If reload is blocked the call to startLoading is still needed to obtain values
             /// that have already been loaded
             if (info->loading_id < min_id)
-                startLoading(*info, forced_to_reload, reload_blocked, *min_id);
+                startLoading(*info, forced_to_reload, *min_id);
 
             /// Wait for the next event if loading wasn't completed, or stop otherwise.
             return (info->state_id >= min_id);
@@ -987,7 +987,7 @@ private:
                 auto reload_blocked = reload_blocker.isCancelled();
 
                 if (info.loading_id < min_id)
-                    startLoading(info, forced_to_reload, reload_blocked, *min_id);
+                    startLoading(info, forced_to_reload, *min_id);
 
                 all_ready &= ((reload_blocked && info.blocked) || info.state_id >= min_id);
             }
@@ -1022,7 +1022,7 @@ private:
         return 1;
     }
 
-    void startLoading(Info & info, bool forced_to_reload = false, bool reload_blocked = false, size_t min_id_to_finish_loading_dependencies_ = 1)
+    void startLoading(Info & info, bool forced_to_reload = false, size_t min_id_to_finish_loading_dependencies_ = 1)
     {
         if (info.isLoading())
         {
@@ -1038,12 +1038,22 @@ private:
 
         putBackFinishedThreadsToPool();
 
+        /// Checked here (rather than trusted to be passed correctly by every caller) so that
+        /// SYSTEM STOP RELOAD DICTIONARIES is respected for every path that can trigger a load,
+        /// including config-driven reloads (setConfiguration) and eager initial loads
+        /// (enableAlwaysLoadEverything), not just the explicit reload/get paths.
+        bool reload_blocked = reload_blocker.isCancelled();
+
         /// All loadings have unique loading IDs.
         size_t loading_id = next_id_counter;
         ++next_id_counter;
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
+        /// Reset the stale flag from a previous blocked attempt: this attempt has not been
+        /// decided yet, so `blocked` (and thus `LoadResult::blocked`) must not read as true
+        /// while this fresh attempt is in progress.
+        info.blocked = false;
 
         LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
