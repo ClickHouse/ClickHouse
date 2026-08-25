@@ -448,6 +448,19 @@ if __name__ == "__main__":
         )
         print_res.set_comment(_skip_msg)
         results.append(print_res)
+        if not is_local_run:
+            # The post-hook updates the PR comment's coverage section from this
+            # file. Without it, a skipped run would leave the previous commit's
+            # numbers in the comment with nothing to say they are stale. The
+            # hook renders this marker above the last complete run's numbers.
+            with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                json.dump(
+                    {
+                        "skipped_reason": skip_reason,
+                        "commit_sha": current_commit_sha,
+                    },
+                    f,
+                )
     elif not is_master_branch:
         diff_res = Result.from_commands_run(
             name="Generate LLVM Coverage Diff Report",
