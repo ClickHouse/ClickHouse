@@ -2702,9 +2702,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
     client_info.is_from_introspection_port = is_from_introspection_port;
 
-    state->run_query_in_background = passed_settings[Setting::run_query_in_background].changed
-        ? passed_settings[Setting::run_query_in_background].value
-        : session->sessionOrGlobalContext()->getSettingsRef()[Setting::run_query_in_background].value;
+    {
+        auto tmp_context = Context::createCopy(session->sessionOrGlobalContext());
+        SettingsChanges settings_changes_copy = passed_settings.changes();
+        tmp_context->clampToSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
+        tmp_context->applySettingsChanges(settings_changes_copy);
+        state->run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
+    }
 
     state->query_context = state->run_query_in_background
         ? session->makeDetachedQueryContext(client_info)
