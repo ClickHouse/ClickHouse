@@ -1,27 +1,20 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, memory-engine
+# Tags: no-ordinary-database, no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The temporary file that BACKUP of a Memory table streams through is sized by
-# temporary_files_buffer_size, never by max_compress_block_size: the latter is a column
-# compression setting, it has no lower bound, and a small value makes every compressed frame
-# its own write, so the compressed stream grows larger than the data it encodes.
-#
-# Oracle is the byte ratio, not wall clock: compression must never expand. The uncompressed
-# figure is fixed by the data, so the assertion is independent of machine speed, sanitizer
-# and disk backend. The accounted column fails if the byte accounting itself goes away, so
-# the ratio cannot be satisfied by two absent counters.
-#
-# The two arms differ only in WHICH setting is made tiny, so together they say which setting
-# reaches the buffer: only the temporary_files_buffer_size arm may expand.
+# Same property as 04801, for the KeeperMap backup path: the temporary file it streams rows
+# through is sized by temporary_files_buffer_size, never by max_compress_block_size. That path
+# is separate from the Memory one - a post-collecting task writing binary strings from Keeper
+# instead of a native block stream - so it needs its own arm.
 
 $CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS test;
-CREATE TABLE test (x String) ENGINE = Memory SETTINGS compress = 1;
-INSERT INTO test SELECT 'Hello, world' FROM numbers(1000000);
+DROP TABLE IF EXISTS test SYNC;
+CREATE TABLE test (key UInt64, value String)
+ENGINE = KeeperMap('/' || currentDatabase() || '/test04802') PRIMARY KEY(key);
+INSERT INTO test SELECT number, 'Hello, world' FROM numbers(50000);
 "
 
 function check_backup()
@@ -54,6 +47,6 @@ RESTORE TABLE test FROM File('${CLICKHOUSE_TEST_UNIQUE_NAME}_mcbs.zip');
 " --format Null
 
 $CLICKHOUSE_CLIENT -m -q "
-SELECT count(), min(x), max(x) FROM test;
-DROP TABLE test;
+SELECT count(), min(value), max(value) FROM test;
+DROP TABLE test SYNC;
 "
