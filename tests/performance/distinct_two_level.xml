@@ -1,0 +1,20 @@
+<test>
+    <!-- Final DISTINCT over inputs whose distinct set crosses `distinct_two_level_threshold`, so the
+         hash set is promoted to two-level and the filter is built in parallel across buckets. Each
+         query targets a different `SetVariants` key family so the whole two-level build is exercised. -->
+
+    <!-- single numeric key (key32/key64) -->
+    <query>SELECT count() FROM (SELECT DISTINCT if(number % 2, number % 30000000, rand() % 80000) FROM numbers_mt(100000000)) FORMAT Null</query>
+
+    <!-- fixed-width multi-key (keys128) -->
+    <query>SELECT count() FROM (SELECT DISTINCT number % 20000000, number % 15000000 FROM numbers_mt(80000000)) FORMAT Null</query>
+
+    <!-- complex serialized key (hashed): number plus a string component -->
+    <query>SELECT count() FROM (SELECT DISTINCT if(number % 10 > 0, number, rand() % 30000), materialize('string') FROM numbers_mt(20000000)) FORMAT Null</query>
+
+    <!-- high cardinality single string column (key_string) -->
+    <query>SELECT count() FROM (SELECT DISTINCT toString(if(number % 2, number % 30000000, rand() % 80000)) FROM numbers_mt(50000000)) FORMAT Null</query>
+
+    <!-- multiple string columns (hashed) -->
+    <query>SELECT count() FROM (SELECT DISTINCT toString(number % 5000000), toString(rand() % 100000) FROM numbers_mt(50000000)) FORMAT Null</query>
+</test>
