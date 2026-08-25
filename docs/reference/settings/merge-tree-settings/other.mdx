@@ -40,6 +40,12 @@ Possible values:
 - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
 - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
 
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Always copy data instead of hardlinking during mutations/replaces/detaches
+and so on.
+
 ## apply_patches_on_merge {#apply_patches_on_merge}
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>

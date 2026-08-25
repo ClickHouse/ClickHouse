@@ -9,11 +9,26 @@ without a round trip to the server.
 
 ## Building
 
+This is a CMake project of its own, not part of the main build: it cross-compiles to
+`wasm32-wasip1`, which cannot be mixed into a tree configured for the host. Point it at the
+toolchain file that wasi-sdk ships. Note that the release for 64-bit ARM is named `arm64`, which
+is neither what `uname -m` nor what `dpkg --print-architecture` calls it.
+
 ```bash
-curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
-./utils/wasm-parser/build.sh
-node utils/wasm-parser/test.mjs tmp/wasm-parser/parser.wasm
+mkdir -p tmp && curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz | tar xz -C tmp
+export WASI_SDK=$PWD/tmp/wasi-sdk-33.0-x86_64-linux
+
+cmake -S utils/wasm-parser -B tmp/build-wasm -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$WASI_SDK/share/cmake/wasi-sdk-p1.cmake" \
+    -DWASI_SDK_PREFIX="$WASI_SDK"
+cmake --build tmp/build-wasm
+ctest --test-dir tmp/build-wasm --output-on-failure
 ```
+
+`ctest` runs two tests: `parser-cases` drives the module through `test.mjs` with `node`, and
+`parser-size` asserts the byte ceiling for the configuration that was built. Both, in the two
+extreme configurations, are what the `Build (wasm_parser)` job runs in CI, inside the
+`clickhouse/wasm-builder` image.
 
 The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 
@@ -25,31 +40,60 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
 | `ch_features()` | bit 0: `ch_format` is exported; bit 1: DCL parses |
 
-`build.sh --no-formatting` builds a module that only answers whether a query parses; it has no
-`ch_format`. `build.sh --no-dcl` builds one that does not accept access management. Both are
+`-DENABLE_FORMATTING=OFF` builds a module that only answers whether a query parses; it has no
+`ch_format`. `-DENABLE_DCL=OFF` builds one that does not accept access management. Both are
 described below; `ch_features` reports which of them a given module was built with.
 
-Nothing here needs the WebAssembly exception-handling proposal. `tryParseQuery` reports a syntax
-error by returning null rather than by throwing, and no code in `src/Parsers` catches anything, so
-the build passes `-fignore-exceptions`. The handful of parser checks that still report an invalid
-query by throwing - `Frame start cannot be UNBOUNDED FOLLOWING`, for one - reach the same place
-through a `setjmp` boundary that `wasm_runtime.cpp` jumps to instead of aborting. Recovery covers
-`DB::Exception` and nothing else: anything else arriving there - a `std::bad_alloc` from
-`operator new`, say - is an object of an unrelated type that cannot be read, so its type name is
-reported and the module stops.
+No C++ exception ever unwinds here. `tryParseQuery` reports a syntax error by returning null
+rather than by throwing, and no code in `src/Parsers` catches anything, so the build passes
+`-fignore-exceptions`, which emits no landing pads and no unwind tables. The handful of parser
+checks that still report an invalid query by throwing - `Frame start cannot be UNBOUNDED
+FOLLOWING`, for one - reach the same place through a `setjmp` boundary in `wasm_sjlj.c` that
+`__cxa_throw` jumps to instead of aborting. Recovery covers `DB::Exception` and nothing else:
+anything else arriving there - a `std::bad_alloc` from `operator new`, say - is an object of an
+unrelated type that cannot be read, so its type name is reported and the module stops.
+
+That boundary is the one thing here that needs an engine implementing the WebAssembly
+exception-handling proposal, because LLVM lowers `setjmp`/`longjmp` onto it. It also has to be
+its own translation unit, outside the LTO unit: run on LTO-merged bitcode, the lowering pass
+links without complaint and produces a module whose `longjmp` escapes as an uncaught
+WebAssembly exception. `wasm_sjlj.c` is that translation unit and holds nothing else; every
+frame in between is still compiled and optimized as part of the whole.
+
+## Downloading it from CI
+
+`Build (wasm_parser)` publishes both configurations it builds as the `CH_WASM_PARSER_BIN`
+artifact, so a consumer does not have to build anything:
+
+```
+https://clickhouse-builds.s3.amazonaws.com/REFs/master/<sha>/build_wasm_parser/parser.wasm
+https://clickhouse-builds.s3.amazonaws.com/REFs/master/<sha>/build_wasm_parser/parser-no-formatting-no-dcl.wasm
+
+https://clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/build_wasm_parser/parser.wasm
+```
+
+There is nothing else to download. Unlike the Emscripten build of the whole server
+(`Build (wasm64)`), this one emits no JavaScript sidecar: a consumer instantiates the `.wasm`
+itself and supplies the WASI preview1 imports - `node:wasi` under Node.js, as `test.mjs` does, or
+a shim in a browser.
 
 ## What it costs
 
-Stripped, 320 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`:
+Stripped, 334 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 1168636 | 362827 | 273666 | 293095 |
-| `--no-dcl` | 966857 | 296331 | 225230 | 241372 |
-| `--no-formatting` | 926511 | 298006 | 229139 | 246040 |
-| `--no-formatting --no-dcl` | 754152 | 242329 | 188219 | 201737 |
+| everything | 1192938 | 373235 | 280590 | 300190 |
+| `-DENABLE_DCL=OFF` | 991349 | 306793 | 231848 | 248273 |
+| `-DENABLE_FORMATTING=OFF` | 950695 | 308082 | 236600 | 253745 |
+| both off | 778457 | 251073 | 195080 | 208982 |
 
-Brotli is what a browser will actually get, and it is 24% better than gzip here.
+Brotli is what a browser will actually get, and it is 25% better than gzip here.
+
+`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling about 8% above each of these, which the
+`parser-size` test asserts. Raise the ceiling and update this table in the same change as any
+growth that is meant to happen.
 
 The first version of this build was 2.7 MB. Most of what went is listed under "What is left out";
 the rest came from compiling for size rather than speed, from dropping locale support, and from
@@ -68,15 +112,15 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, `--no-formatting --no-dcl`** | 754152 | 242329 | 188219 | 201737 |
-| **this, everything** | 1168636 | 362827 | 273666 | 293095 |
+| **this, both off** | 778457 | 251073 | 195080 | 208982 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
+| **this, everything** | 1192938 | 373235 | 280590 | 300190 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 188219 — the same ballpark, for a grammar of comparable size.
+build's 195080 — the same ballpark, for a grammar of comparable size.
 
 The two JS parsers are smaller, and both are reimplementations. `@clickhouse/parser` is a Peggy
 grammar with Zod schemas for the same dialect, so it can drift from the server, where this cannot;
@@ -86,7 +130,8 @@ smallest thing here per dialect, and covers much less of any of them; loading al
 costs more than this whole module.
 
 `sql.js` is a whole SQLite — engine, storage and all, not a parser — and is here only for scale.
-It is the one entry smaller than this uncompressed and larger after compression. `polyglot` is a
+It is barely half the size of the full build uncompressed and yet lands next to it after brotli,
+which says more about how well a grammar compresses than about either one. `polyglot` is a
 transpiler carrying thirty grammars and thirty generators; stripped, but built at Rust's default
 release settings rather than for size.
 
@@ -111,9 +156,30 @@ something a browser has no use for, and each would otherwise dominate the bundle
   compiled into the binary.
 * **Query masking.** Configured on the server; there is nothing to mask client-side.
 
-The `shim/` directory supplies the POSIX headers wasi-libc omits (`netdb.h`, `ucontext.h`,
-`sched.h`, `pwd.h`, rounding modes in `fenv.h`, `sun_path`, `__u6_addr`). Nothing in the build
-calls into them - they exist so that headers naming those types in signatures still compile.
+## The `shim/` directory
+
+`shim/` is on the include path ahead of the sysroot and supplies what wasi-libc omits. Nothing in
+the build calls into any of it: these exist so that headers naming those types in a signature
+still compile. Five are left, each traceable to one construct in Poco:
+
+| header | who names it | what it would take to drop |
+| --- | --- | --- |
+| `netdb.h` | `Net/SocketDefs.h` includes it unconditionally | a `POCO_NO_NAME_RESOLUTION` guard there, plus matching guards in `DNS.h`, `HostEntry.h` and `NetworkInterface.h`, none of which are built here |
+| `net/if.h` | same, and `IPAddress.cpp` calls `if_nametoindex` for scoped IPv6 | the same guard, and taking the scope-id handling out of `IPAddress.cpp` |
+| `sched.h` | `Thread_POSIX.h` names `SCHED_OTHER` in an enumerator and three default arguments | guarding six sites in a class that is otherwise real |
+| `fenv.h` | `FPEnvironment_C99.h` names the `FE_*` rounding modes, which WebAssembly does not have | `POCO_NO_FPENVIRONMENT`, whose branch in `FPEnvironment.h` has its `#include` commented out and whose `FPEnvironment_DUMMY.h` is not vendored |
+| `__struct_in6_addr.h` | `IPAddressImpl.cpp` reads `in6_addr` as four 32-bit words, which Poco spells `__u6_addr.__u6_addr32`; wasi-libc's `in6_addr` is a plain byte array | rewriting about twenty sites in `IPAddressImpl.cpp` to go through the byte array |
+
+This is the one shim that redefines a type wasi-libc already has rather than adding a missing one,
+so it is the one worth being uneasy about. It is safe here only because it shadows
+`__struct_in6_addr.h`, which every wasi-libc header that mentions the type includes, so the whole
+build agrees on the layout - and because no socket is ever created, so nothing hands the struct to
+libc.
+
+Four others are gone: `signal.h` and `ucontext.h` became unnecessary once `Common/StackTrace.h`
+stopped declaring the signal-context entry points in a minimal build, `pwd.h` went with
+`Poco/Path.cpp`, which nothing in the closure needs, and `__struct_sockaddr_un.h` went once
+`Poco/Platform.h` started saying that WASI has no Unix domain sockets.
 
 ## Formatting is all or nothing
 
@@ -145,7 +211,7 @@ answers whether a query parses never looks at the string, so there it does not m
 
 ## What each kind of query costs
 
-`--no-dcl` leaves out access management - `CREATE USER`, `CREATE ROLE`, quotas, row policies,
+`-DENABLE_DCL=OFF` leaves out access management - `CREATE USER`, `CREATE ROLE`, quotas, row policies,
 settings profiles, masking policies, `GRANT`, `REVOKE`, `CHECK GRANT`, `SET ROLE`, `EXECUTE AS`,
 `SHOW GRANTS`, `SHOW ACCESS`, `SHOW CREATE USER` and `SHOW PRIVILEGES`. `CLICKHOUSE_PARSER_NO_DCL`
 takes them out of the two dispatch functions in `ParserQuery.cpp` and `ParserQueryWithOutput.cpp`,
@@ -153,11 +219,14 @@ and the linker then drops `src/Parsers/Access` and `src/Access/Common` with them
 view still parses: it is part of `CREATE`, not of access management.
 
 It is worth a build option because nothing else comes close. Below is what each family of
-statements costs at the margin - the whole module, minus that one family:
+statements costs at the margin - the whole module, minus that one family. Only the first row is
+re-measured against the table above; the rest are from the original measurement, and are indicative
+rather than current - the DCL row moved by 190 bytes between the two, which is the order of drift
+to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`--no-dcl`) | 201779 | 66496 |
+| DCL (`-DENABLE_DCL=OFF`) | 201589 | 66442 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |
