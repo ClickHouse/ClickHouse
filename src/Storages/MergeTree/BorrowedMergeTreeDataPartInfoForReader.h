@@ -82,6 +82,10 @@ public:
     Int64 getMaxDataVersion() const override { return part_info.getDataVersion(); }
     IndexPtr getIndexPtr() const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BorrowedMergeTreeDataPartInfoForReader doesn't have index"); }
 
+    /// The partition value is not loaded for a borrowed part. Only the folding of partition predicates
+    /// into skip-index conditions asks for it, and skip indexes are never read through a borrowed part.
+    const MergeTreePartition & getPartition() const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BorrowedMergeTreeDataPartInfoForReader doesn't have partition information"); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part_storage; }
 
     const NamesAndTypesList & getColumns() const override { return columns; }
