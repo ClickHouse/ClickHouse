@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-trap "rm -rf '${DATA_DIR}' 2>/dev/null" EXIT
+OUTSIDE_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_outside"
+trap "rm -rf '${DATA_DIR}' '${OUTSIDE_DIR}' 2>/dev/null" EXIT
 rm -rf "${DATA_DIR}"
 mkdir -p "${DATA_DIR}/country=PT/yr=2024"
 printf '0\n1\n2\n' > "${DATA_DIR}/country=PT/yr=2024/a.csv"
@@ -47,15 +48,26 @@ $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${DATA_DIR}/link/{..,missing}/*.csv', 'CSV', 'id UInt64');
 "
 
-# The same file, reached by a pattern whose expansion leaves no wildcard. That takes the
-# exact-match branch instead of the directory iterator, so the two branches are covered
-# separately.
+# When the expansion leaves no wildcard, the exact-match branch folds the `..` away, so the
+# path names the lexical sibling (222) rather than the symlink's target. That fold is what keeps
+# the path passed to the access-control check identical to the one that is opened.
 $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${DATA_DIR}/link/{..,missing}/x.csv', 'CSV', 'id UInt64');
 "
 
-# The post-read rename must move the file that was read, so it lands next to it rather than in
-# the lexical parent's directory. Printed as the new name plus the id read from it.
+# A `..` behind a symlink must not widen the sandbox. `esc` points outside user_files, so a `..`
+# that survived expansion would name the target's parent there, while the access-control check,
+# which normalizes its own copy, would only ever see an in-sandbox path. The row is readable on
+# disk, so printing it would mean the read escaped; the count must stay 0.
+rm -rf "${OUTSIDE_DIR}"
+mkdir -p "${OUTSIDE_DIR}/inner"
+printf '999\n' > "${OUTSIDE_DIR}/secret.csv"
+ln -s "${OUTSIDE_DIR}/inner" "${DATA_DIR}/esc"
+$CLICKHOUSE_CLIENT -q "
+SELECT count() FROM file('${DATA_DIR}/esc/{..,missing}/secret.csv', 'CSV', 'id UInt64') WHERE id = 999;
+" 2>/dev/null || echo 0
+
+# The post-read rename must move the file that was read, not a namesake elsewhere.
 RENAME_DIR="${DATA_DIR}/rename"
 mkdir -p "${RENAME_DIR}/deep/target"
 printf '111\n' > "${RENAME_DIR}/deep/x.csv"
@@ -66,5 +78,20 @@ $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${RENAME_DIR}/link/{..,missing}/x.csv', 'CSV', 'id UInt64')
 SETTINGS rename_files_after_processing = 'processed_%f%e';
 "
-[ -f "${RENAME_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
-[ -f "${RENAME_DIR}/x.csv" ] && echo "the lexical sibling was left alone"
+[ -f "${RENAME_DIR}/processed_x.csv" ] && echo "renamed the file that was read"
+[ -f "${RENAME_DIR}/deep/x.csv" ] && echo "the symlinked namesake was left alone"
+
+# Same rename, reached through the directory iterator instead. Here the matched path keeps its
+# `..`, so the file read lives under the symlink's target and the rename must land there too.
+WREN_DIR="${DATA_DIR}/wrename"
+mkdir -p "${WREN_DIR}/deep/target"
+printf '111\n' > "${WREN_DIR}/deep/x.csv"
+printf '222\n' > "${WREN_DIR}/x.csv"
+ln -s "${WREN_DIR}/deep/target" "${WREN_DIR}/link"
+
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${WREN_DIR}/link/{..,missing}/*.csv', 'CSV', 'id UInt64')
+SETTINGS rename_files_after_processing = 'processed_%f%e';
+"
+[ -f "${WREN_DIR}/deep/processed_x.csv" ] && echo "renamed beside the file that was read"
+[ -f "${WREN_DIR}/x.csv" ] && echo "the lexical sibling was left alone"

@@ -2,7 +2,11 @@
 3
 1
 111
-111
+222
+0
+222
+renamed the file that was read
+the symlinked namesake was left alone
 111
 renamed beside the file that was read
 the lexical sibling was left alone
