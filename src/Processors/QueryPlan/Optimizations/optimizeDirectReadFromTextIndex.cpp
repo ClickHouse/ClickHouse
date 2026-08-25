@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -223,12 +224,14 @@ const String * getTrackedHaystackColumn(const ActionsDAG::Node & function_node, 
 }
 
 /// Appends the index tokenizer to the two-argument text-search functions of `dag`, which otherwise fall back
-/// to `splitByNonAlpha` and answer a different question than the index does. Returns true if anything changed.
+/// to `splitByNonAlpha` and answer a different question than the index does. Returns the filter node of the
+/// rewritten DAG, whose name changed with the added argument, or nullptr when nothing was rewritten.
 ///
 /// Only the tokenizer: a preprocessor changes the value that is searched, so applying it here would change
 /// results for predicates the index cannot answer anyway. That is left to the rewrite next to the scan.
-bool injectTextIndexTokenizers(
+const ActionsDAG::Node * injectTextIndexTokenizers(
     ActionsDAG & dag,
+    const String & filter_column_name,
     const std::unordered_map<String, String> & tracked_columns,
     const std::unordered_map<String, String> & tokenizers,
     const ContextPtr & context)
@@ -262,12 +265,20 @@ bool injectTextIndexTokenizers(
     }
 
     if (replacements.empty())
-        return false;
+        return nullptr;
 
-    for (auto & output : dag.outputs)
+    const auto * filter_node = &dag.findInOutputs(filter_column_name);
+
+    for (auto & output : dag.getOutputs())
+    {
+        bool is_filter_node = (output == filter_node);
         output = replaceNodes(dag, output, replacements);
 
-    return true;
+        if (is_filter_node)
+            filter_node = output;
+    }
+
+    return filter_node;
 }
 
 /// Helper function.
@@ -1035,7 +1046,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 /// same-named column of the other join side is left alone.
 static void injectTextIndexTokenizersAboveScan(const Stack & stack, ReadFromMergeTree & read_from_merge_tree_step)
 {
-    if (stack.size() < 3)
+    if (stack.size() < 2)
         return;
 
     auto tokenizers = collectTextIndexTokenizers(read_from_merge_tree_step);
@@ -1048,8 +1059,7 @@ static void injectTextIndexTokenizersAboveScan(const Stack & stack, ReadFromMerg
 
     auto context = read_from_merge_tree_step.getContext();
 
-    /// The filter next to the scan is handled by the rewrite below, which also applies the preprocessor.
-    for (auto it = stack.rbegin() + 2; it != stack.rend() && !tracked_columns.empty(); ++it)
+    for (auto it = stack.rbegin() + 1; it != stack.rend() && !tracked_columns.empty(); ++it)
     {
         QueryPlan::Node * node = it->node;
         auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
@@ -1065,13 +1075,23 @@ static void injectTextIndexTokenizersAboveScan(const Stack & stack, ReadFromMerg
             continue;
         }
 
+        /// A filter next to the scan is rewritten below instead, which also applies the preprocessor.
+        bool is_adjacent_to_scan = (it == stack.rbegin() + 1);
+
         ActionsDAG & filter_dag = filter_step->getExpression();
-        if (injectTextIndexTokenizers(filter_dag, tracked_columns, tokenizers, context))
+        const auto * new_filter_node = is_adjacent_to_scan
+            ? nullptr
+            : injectTextIndexTokenizers(filter_dag, filter_step->getFilterColumnName(), tracked_columns, tokenizers, context);
+
+        /// Read before the step is replaced: that destroys the step owning `filter_dag`.
+        auto tracked_columns_above = trackColumnsThroughDAG(filter_dag, tracked_columns);
+
+        if (new_filter_node)
             node->step = std::make_unique<FilterStep>(
                 filter_step->getInputHeaders().front(), filter_dag.clone(),
-                filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                new_filter_node->result_name, filter_step->removesFilterColumn());
 
-        tracked_columns = trackColumnsThroughDAG(filter_step->getExpression(), tracked_columns);
+        tracked_columns = std::move(tracked_columns_above);
     }
 }
 
