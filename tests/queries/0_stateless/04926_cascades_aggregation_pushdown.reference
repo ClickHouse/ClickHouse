@@ -19,6 +19,17 @@ Expression ((Project names + Projection))
         Aggregating
           Filter
             ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 2b. negative: non-deterministic join condition function (`rand`) blocks the pushdown, classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 3. near-unique keys: pushdown does not pay off, classic shape
 Expression ((Project names + Projection))
   MergingAggregated

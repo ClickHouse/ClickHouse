@@ -55,6 +55,9 @@ EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1
 SELECT '-- 2. same with INNER JOIN';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 
+SELECT '-- 2b. negative: non-deterministic join condition function (`rand`) blocks the pushdown, classic shape';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key AND rand() % 2 = 0 GROUP BY t1.key;
+
 SELECT '-- 3. near-unique keys: pushdown does not pay off, classic shape';
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 99000000}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;

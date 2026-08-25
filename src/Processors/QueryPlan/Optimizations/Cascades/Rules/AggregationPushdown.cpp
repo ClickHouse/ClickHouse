@@ -74,6 +74,10 @@ struct JoinOutputBindings
 /// at most once (see `isFullPushdownAllowed`), the aggregation stays final below the join and
 /// the rebuilt join itself becomes the alternative - no merge above. B strictly dominates A
 /// there (same grouping, one step less), so only B is emitted when it is legal.
+///
+/// The rule also bails out when the join condition reads a function non-deterministic in scope
+/// of the query (e.g. `rand`): the multiplicity argument requires the condition to be a pure
+/// function of the pushed side's group keys (see `collectConditionInputs`).
 class AggregationPushdown : public IOptimizationRule
 {
 public:
@@ -204,7 +208,8 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
 }
 
 /// Nullopt when a reachable `INPUT` cannot be attributed to exactly one side or is missing from
-/// that side's header.
+/// that side's header, or when the condition reads a function non-deterministic in scope of the
+/// query (e.g. `rand`).
 std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & join_step)
 {
     std::unordered_map<const ActionsDAG::Node *, JoinActionRef> input_refs;
@@ -231,6 +236,13 @@ std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & jo
         stack.pop_back();
         if (!visited.insert(node).second)
             continue;
+
+        /// The multiplicity argument requires the condition to be a pure function of the pushed
+        /// side's group keys; a function non-deterministic in scope of the query (`rand`)
+        /// evaluates per joined row, and the rewrite would collapse those per-row evaluations to
+        /// one per group. Same predicate as `dagContainsNonDeterministicFunction` in `Utils.cpp`.
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministicInScopeOfQuery())
+            return {};
 
         if (node->type == ActionsDAG::ActionType::INPUT)
         {
