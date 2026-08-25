@@ -36,6 +36,23 @@ echo "$json" | ${CLICKHOUSE_CLIENT} --dialect clickhouse_json --enable_json_ast_
     | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '$db' AND name = 'v'"
 
+# `attach_as_replicated` is a table-only flag, and the conversion it asks for rewrites the metadata
+# on disk. A view spelling aimed at a stored table must be rejected before that happens.
+${CLICKHOUSE_CLIENT} --multiquery --query "
+CREATE TABLE $db.t2 (k UInt64) ENGINE = MergeTree ORDER BY k;
+DETACH TABLE $db.t2;
+"
+json=$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('ATTACH VIEW $db.t2')" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); d["attach_as_replicated"]=True; print(json.dumps(d))')
+
+echo "$json" | ${CLICKHOUSE_CLIENT} --dialect clickhouse_json --enable_json_ast_dialect 1 2>&1 \
+    | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --multiquery --query "
+ATTACH TABLE $db.t2;
+SELECT engine FROM system.tables WHERE database = '$db' AND name = 't2';
+DROP TABLE $db.t2;
+"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 ATTACH VIEW $db.v;
 SELECT * FROM $db.v;

@@ -1817,18 +1817,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
-        /// Set replicated or not replicated MergeTree engine in metadata and query
-        if (create.attach_as_replicated.has_value())
-        {
-            if (database->isTableExist(create.getTable(), getContext()))
-                throw Exception(
-                    ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exists",
-                    backQuoteIfNeed(create.getDatabase()),
-                    backQuoteIfNeed(create.getTable()));
-            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
-        }
-
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
@@ -1853,6 +1841,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Cannot ATTACH VIEW {}.{}, it is a WindowView. Replace VIEW with TABLE, keeping the "
                 "rest of the query",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        /// Follows the checks of the stored kind above: the conversion rewrites the metadata on disk
+        /// and removes transaction files, and neither can be rolled back once the query fails.
+        if (create.attach_as_replicated.has_value())
+        {
+            if (database->isTableExist(create.getTable(), getContext()))
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable()));
+            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+        }
 
         /// `getRequiredAccess` ran on the stub, which has no definition, so nothing the stored
         /// definition carries is authorized yet, and CREATE_VIEW alone reaches here. An `IF NOT
