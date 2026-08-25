@@ -400,35 +400,48 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
 }
 
 
-UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Block & block) const
+void DeduplicationInfo::calculateDataHashes() const
 {
-    chassert(offset < offsets.size());
+    std::vector<size_t> pending;
+    for (size_t offset = 0; offset < tokens.size(); ++offset)
+        if (tokens[offset].by_user.empty() && !tokens[offset].data_hash_batch.has_value())
+            pending.push_back(offset);
 
-    if (tokens[offset].data_hash_batch.has_value())
-        return tokens[offset].data_hash_batch.value();
+    if (pending.empty())
+        return;
 
-    /// Cache miss: an actual column-wise hash pass over the token's rows. Counting these makes the
-    /// prewarm optimization observable: pre-warming keeps this at O(tokens); the per-partition
+    /// Counted per token, not per pass: pre-warming keeps this at O(tokens); the per-partition
     /// cold-clone path drives it to O(partitions*tokens) for tokens that span several partitions.
-    ProfileEvents::increment(ProfileEvents::DuplicationDataHashComputations);
+    ProfileEvents::increment(ProfileEvents::DuplicationDataHashComputations, pending.size());
 
-    chassert(block.rows() == getRows());
+    chassert(original_block && original_block->rows() == getRows());
 
-    auto cols = block.getColumns();
-
-    SipHash hash;
-    size_t begin = getTokenBegin(offset);
-    size_t end = getTokenEnd(offset);
-    /// ColumnSparse hashes row-wise while the same data materialized hashes column-wise, so a merge flipping
-    /// the source part to sparse serialization would move the block id of an otherwise unchanged query.
-    /// A replicated column hashes row-wise whatever it wraps, so its nested representation cannot move the stream.
-    for (const auto & col : cols)
+    /// Column-major, with the whole batch of tokens in flight: a sparse column hashes row-wise
+    /// while the same data materialized hashes column-wise, so a merge flipping the source part's
+    /// serialization would otherwise move the block id of a query whose result never changed.
+    /// Hashing one column at a time keeps a single materialized column alive, hashing all the
+    /// tokens against it keeps the materialization at one per column instead of one per token.
+    std::vector<SipHash> hashes(pending.size());
+    for (const auto & col : original_block->getColumns())
     {
-        auto full = (!col->isReplicated() && recursiveHasSparse(col)) ? recursiveRemoveSparse(col) : col;
-        full->updateHashWithValueRange(begin, end, hash);
+        auto dense = recursiveRemoveSparse(col);
+        for (size_t i = 0; i < pending.size(); ++i)
+            dense->updateHashWithValueRange(getTokenBegin(pending[i]), getTokenEnd(pending[i]), hashes[i]);
     }
 
-    tokens[offset].data_hash_batch = hash.get128();
+    for (size_t i = 0; i < pending.size(); ++i)
+        tokens[pending[i]].data_hash_batch = hashes[i].get128();
+}
+
+
+UInt128 DeduplicationInfo::getDataHash(size_t offset) const
+{
+    chassert(offset < offsets.size());
+    chassert(tokens[offset].by_user.empty());
+
+    if (!tokens[offset].data_hash_batch.has_value())
+        calculateDataHashes();
+
     return tokens[offset].data_hash_batch.value();
 }
 
@@ -447,7 +460,7 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
     }
     else
     {
-        auto data_hash = calculateDataHashColumnWise(offset, *original_block);
+        auto data_hash = getDataHash(offset);
         extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
     }
 
@@ -533,14 +546,7 @@ void DeduplicationInfo::cacheDataHashes() const
     if (disabled)
         return;
 
-    for (size_t offset = 0; offset < offsets.size(); ++offset)
-    {
-        if (!tokens[offset].by_user.empty() || tokens[offset].data_hash_batch.has_value())
-            continue;
-
-        chassert(original_block);
-        calculateDataHashColumnWise(offset, *original_block);
-    }
+    calculateDataHashes();
 }
 
 
@@ -581,12 +587,7 @@ void DeduplicationInfo::prewarmDataHashes() const
     if (!original_block || !original_block->rows())
         return;
 
-    for (size_t i = 0; i < tokens.size(); ++i)
-    {
-        if (!tokens[i].by_user.empty())
-            continue;
-        calculateDataHashColumnWise(i, *original_block);
-    }
+    calculateDataHashes();
 }
 
 
@@ -877,7 +878,6 @@ void DeduplicationInfo::updateOriginalBlock(const Chunk & chunk, SharedHeader he
     /// is called (e.g. in the sink), avoiding redundant recomputation during squashing.
     /// The columns are COW-shared with the chunk, so this does not increase memory usage.
     original_block = std::make_shared<Block>(header->cloneWithColumns(chunk.getColumns()));
-
 }
 
 
