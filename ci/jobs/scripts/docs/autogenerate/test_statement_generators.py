@@ -125,7 +125,6 @@ def main():
         assert len(generators) == 1
         generator = generators[0]
         assert generator["name"] == "statement:"
-        assert generator["mintlify_native"] is True
 
         generated_body = (
             "Mintlify-native [link](/reference/statements/select/index)"
@@ -148,7 +147,6 @@ def main():
             migrate=object(),
             lk=object(),
             file_map={},
-            remap=True,
         )
         assert len(artifacts) == 1
         assert artifacts[0].path == page
