@@ -13,7 +13,7 @@ WITH arrayMap(x -> nullIf(x, toInt32(42)), [toInt32(42)]) AS h
 SELECT has(h, NULL) AS has, hasAll(h, [NULL]), hasAny(h, [NULL]), hasSubstr(h, [NULL]),
        startsWith(h, [NULL]), endsWith(h, [NULL]);
 
-SELECT '-- two arrays that print identically must still answer differently --';
+SELECT '-- two arrays a user cannot tell apart must answer identically --';
 WITH arrayMap(x -> nullIf(x, toInt32(42)), [toInt32(42), 5]) AS a,
      arrayMap(x -> nullIf(x, toInt32(99)), [toInt32(99), 5]) AS b
 SELECT toString(a) = toString(b) AS printed_alike, hasAll(a, [42]), hasAll(b, [42]),
@@ -29,9 +29,74 @@ SELECT hasAll(arrayMap(x -> nullIf(x, toInt8(42)), [toInt8(42)]), [toInt8(42)]),
        hasAll(arrayMap(x -> nullIf(x, toUInt32(42)), [toUInt32(42)]), [toUInt32(42)]),
        hasAll(arrayMap(x -> nullIf(x, toUInt64(42)), [toUInt64(42)]), [toUInt64(42)]);
 
-SELECT '-- an array long enough to use the vectorised loop, not only the remainder --';
+SELECT '-- a long haystack with a one-element needle, which is the remainder path --';
 WITH arrayMap(x -> nullIf(x, toInt32(42)), arrayMap(i -> if(i = 20, toInt32(42), toInt32(i)), range(40))) AS h
 SELECT length(h), has(h, 42) AS has, hasAll(h, [42]), hasAny(h, [42]), hasAll(h, [NULL]);
+
+SELECT '-- needles long enough to enter the vectorised loop, on every width --';
+-- hasAll admits its vector loop only when BOTH sizes exceed a per-width threshold (3 for
+-- 64-bit, 7 for 32-bit, 15 for 16- and 8-bit), and it is the NEEDLE size that is compared
+-- against it. A 16-element needle clears all four, and 22 also leaves a remainder on all
+-- four, so the vector loop and the hand-off to the remainder loop are both covered.
+-- The haystack is 1..24, every value genuinely present, plus one NULL hiding 100. So a
+-- needle containing 100 can only fail because the NULL is respected, and the arms whose
+-- needles hold none of it must keep matching.
+WITH arrayMap(x -> nullIf(x, toInt8(100)), arrayMap(i -> toInt8(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'Int8' AS width, has(h, toInt8(100)) AS has,
+       hasAll(h, arrayMap(i -> toInt8(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toInt8(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toInt8(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toInt8(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toInt8(99)), arrayConcat([toInt8(99)], arrayMap(i -> toInt8(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toInt16(100)), arrayMap(i -> toInt16(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'Int16' AS width, has(h, toInt16(100)) AS has,
+       hasAll(h, arrayMap(i -> toInt16(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toInt16(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toInt16(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toInt16(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toInt16(99)), arrayConcat([toInt16(99)], arrayMap(i -> toInt16(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toInt32(100)), arrayMap(i -> toInt32(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'Int32' AS width, has(h, toInt32(100)) AS has,
+       hasAll(h, arrayMap(i -> toInt32(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toInt32(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toInt32(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toInt32(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toInt32(99)), arrayConcat([toInt32(99)], arrayMap(i -> toInt32(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toInt64(100)), arrayMap(i -> toInt64(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'Int64' AS width, has(h, toInt64(100)) AS has,
+       hasAll(h, arrayMap(i -> toInt64(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toInt64(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toInt64(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toInt64(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toInt64(99)), arrayConcat([toInt64(99)], arrayMap(i -> toInt64(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toUInt8(100)), arrayMap(i -> toUInt8(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'UInt8' AS width, has(h, toUInt8(100)) AS has,
+       hasAll(h, arrayMap(i -> toUInt8(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toUInt8(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toUInt8(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toUInt8(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toUInt8(99)), arrayConcat([toUInt8(99)], arrayMap(i -> toUInt8(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toUInt16(100)), arrayMap(i -> toUInt16(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'UInt16' AS width, has(h, toUInt16(100)) AS has,
+       hasAll(h, arrayMap(i -> toUInt16(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toUInt16(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toUInt16(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toUInt16(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toUInt16(99)), arrayConcat([toUInt16(99)], arrayMap(i -> toUInt16(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toUInt32(100)), arrayMap(i -> toUInt32(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'UInt32' AS width, has(h, toUInt32(100)) AS has,
+       hasAll(h, arrayMap(i -> toUInt32(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toUInt32(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toUInt32(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toUInt32(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toUInt32(99)), arrayConcat([toUInt32(99)], arrayMap(i -> toUInt32(i + 1), range(15))))) AS needle_null_16;
+WITH arrayMap(x -> nullIf(x, toUInt64(100)), arrayMap(i -> toUInt64(if(i = 24, 100, i + 1)), range(25))) AS h
+SELECT 'UInt64' AS width, has(h, toUInt64(100)) AS has,
+       hasAll(h, arrayMap(i -> toUInt64(if(i = 0, 100, i)), range(16))) AS payload_16,
+       hasAll(h, arrayMap(i -> toUInt64(if(i = 0, 100, i)), range(22))) AS payload_22,
+       hasAll(h, arrayMap(i -> toUInt64(i + 1), range(16))) AS present_16,
+       hasAll(h, arrayMap(i -> toUInt64(i + 1), range(22))) AS present_22,
+       hasAll(h, arrayMap(x -> nullIf(x, toUInt64(99)), arrayConcat([toUInt64(99)], arrayMap(i -> toUInt64(i + 1), range(15))))) AS needle_null_16;
 
 SELECT '-- String and Tuple elements --';
 WITH arrayMap(x -> nullIf(x, 'zz'), ['zz']) AS h

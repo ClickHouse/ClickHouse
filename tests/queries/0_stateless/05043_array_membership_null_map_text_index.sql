@@ -2,7 +2,7 @@
 -- A text index answers hasAll and hasAny with its own evaluator, so it must agree with the
 -- ordinary array path on an array whose NULL element hides a value equal to the needle.
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS t_null_map_text;
 
@@ -29,21 +29,41 @@ SELECT '-- matching ids, index off --';
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz']) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz']) ORDER BY id SETTINGS use_skip_indexes = 0;
 
+-- query_plan_direct_read_from_text_index selects which of the two modes below runs, and the
+-- test runner randomizes it, so both arms pin it explicitly. Each mode is also asserted on
+-- the plan rather than on results alone: post-fix every path returns the same row, so a
+-- result-only check would still pass if index evaluation silently declined.
 SELECT '-- matching ids, index on, reading through the index --';
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz']) ORDER BY id
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz']) ORDER BY id
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
+SELECT countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
+      SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1);
 
 SELECT '-- matching ids, index on, pruning only --';
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz']) ORDER BY id
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 SELECT id FROM t_null_map_text WHERE hasAny(arr, ['zz']) ORDER BY id
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
+SELECT countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule,
+       countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
+      SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0);
+
+-- Negative control for both probes above: with the index off neither token may appear, so a
+-- token that happens to match something unrelated in the plan text cannot read as a pass.
+SELECT '-- plan-shape negative control, index off --';
+SELECT countIf(explain ILIKE '%Name: idx%') > 0 AS index_used,
+       countIf(explain ILIKE '%__text_index%') > 0 AS reads_through_index,
+       countIf(explain ILIKE '%Granules: 1/2%') > 0 AS prunes_a_granule
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['zz'])
+      SETTINGS use_skip_indexes = 0);
 
 SELECT '-- control: a needle that is genuinely present in both rows --';
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['a']) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM t_null_map_text WHERE hasAll(arr, ['a']) ORDER BY id
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE t_null_map_text;

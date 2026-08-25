@@ -10,9 +10,13 @@
 -- matching ids, index on, reading through the index --
 2
 2
+1
 -- matching ids, index on, pruning only --
 2
 2
+1	0
+-- plan-shape negative control, index off --
+0	0	0
 -- control: a needle that is genuinely present in both rows --
 1
 2
