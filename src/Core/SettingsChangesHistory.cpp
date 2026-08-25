@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"write_through_distributed_cache", false, false, "The setting moved to the server configuration: writing to the distributed cache is now switched by the server setting with the same name, which is applied without a restart (so that merges, mutations and `Buffer` flushes follow it too, instead of being pinned to the value the server started with). A value in the `default` profile is still picked up as the server setting; use `force_write_through_distributed_cache` to deviate from it per query."},
             {"force_read_through_distributed_cache", "auto", "auto", "New setting overriding the server setting `read_through_distributed_cache` for a single query."},
             {"force_write_through_distributed_cache", "auto", "auto", "New setting overriding the server setting `write_through_distributed_cache` for a single query."},
+            {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
