@@ -848,7 +848,11 @@ TEST(CASRefWriterRuntimeIdentity, ColdReadRejectsReplacementByExternalPoolActor)
         NamespaceLifeId::fromCatalogEntry(successor.ns, successor.incarnation));
 }
 
-TEST(CASRefWriterRuntimeIdentity, ColdReadRejectsUnrelatedCatalogMutationBetweenObservations)
+/// The cold-reader revalidation is about THIS namespace's row, not whole-catalog stillness: an
+/// unrelated namespace admitted between the two observations must not refuse the admission (that
+/// refusal starved cold admissions under a parallel workload sharing one pool), while the target's
+/// own row staying identical still publishes the runtime against the observed life.
+TEST(CASRefWriterRuntimeIdentity, ColdReadAdmitsThroughUnrelatedCatalogMutationBetweenObservations)
 {
     auto backend = std::make_shared<RefWriterTestBackend>();
     auto store = openPool(backend);
@@ -863,11 +867,43 @@ TEST(CASRefWriterRuntimeIdentity, ColdReadRejectsUnrelatedCatalogMutationBetween
         DB::Cas::tests::fixture::admitLive(*backend, layout, unrelated);
     });
 
-    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { (void)store->listRefs(ns); });
+    EXPECT_NO_THROW((void)store->listRefs(ns));
+    store->setReadableCatalogAfterObservationHookForTest(nullptr);
+
+    EXPECT_NE(store->refTableRuntimeIdentityForTest(ns), 0u);
+}
+
+/// The per-row narrowing must not skip the second cut's ambiguity validation: an ALIASING incarnation
+/// admitted between the two observations (another namespace stealing this life's incarnation --
+/// physical life-owned keys use only the incarnation) leaves the target's own row byte-identical yet
+/// must still refuse the admission. The whole-catalog comparison refused this implicitly; the
+/// narrowed check must refuse it explicitly.
+TEST(CASRefWriterRuntimeIdentity, ColdReadRejectsAliasingIncarnationAdmittedBetweenObservations)
+{
+    auto backend = std::make_shared<RefWriterTestBackend>();
+    auto store = openPool(backend);
+    const Layout & layout = store->layout();
+    const RootNamespace ns{"srv1/aliasing-incarnation-target"};
+    const RootNamespace alias{"srv1/aliasing-incarnation-thief"};
+    DB::Cas::tests::casAdmitRecoverableEntry(*backend, layout, ns, store->liveWriterEpoch());
+    const CatalogEntry target_row = catalogEntryOrThrow(*backend, layout, ns);
+    ASSERT_EQ(store->refTableRuntimeIdentityForTest(ns), 0u);
+
+    store->setReadableCatalogAfterObservationHookForTest([&]
+    {
+        CatalogEntry thief;
+        thief.ns = alias;
+        thief.state = NsState::Creating;
+        thief.incarnation = target_row.incarnation;
+        thief.creator = CreatorFence{
+            .server_root_id = "srv1", .writer_epoch = store->liveWriterEpoch(), .fence_generation = 1};
+        CasRefCatalog::casAdmitEntry(*backend, layout, 1, thief);
+    });
+
+    EXPECT_THROW((void)store->listRefs(ns), DB::Exception);
     store->setReadableCatalogAfterObservationHookForTest(nullptr);
 
     EXPECT_EQ(store->refTableRuntimeIdentityForTest(ns), 0u);
-    EXPECT_NO_THROW((void)store->listRefs(ns));
 }
 
 TEST(CASRefWriterRuntimeIdentity, WarmReadableRuntimeDoesNotReadCatalog)
@@ -4222,8 +4258,8 @@ TEST(CASRefWriterNamespaceRemoval, PresenceProbeCreatingIsPresentAndRemovalWaits
 
 /// A "no catalog row" observation must never be turned into `false` by a race. Pausing the probe
 /// right after its first catalog read and admitting a fresh `Creating` row before it resumes must
-/// surface as a typed retry, not a stale absent answer; an unchanged catalog across both reads
-/// legitimately settles on absent.
+/// answer present -- the second read sees the born row; a stale absent answer is the one forbidden
+/// outcome. A namespace absent from both reads legitimately settles on absent.
 TEST(CASRefWriterNamespaceRemoval, PresenceProbeNoRowObservationRevalidatesRatherThanRacingToAbsent)
 {
     auto backend = std::make_shared<RefWriterTestBackend>();
@@ -4245,11 +4281,12 @@ TEST(CASRefWriterNamespaceRemoval, PresenceProbeNoRowObservationRevalidatesRathe
     });
 
     std::exception_ptr raced_error;
+    bool raced_answer = false;
     std::thread racer([&]
     {
         try
         {
-            (void)store->namespaceStillLogicallyPresent(racing);
+            raced_answer = store->namespaceStillLogicallyPresent(racing);
         }
         catch (...)
         {
@@ -4276,11 +4313,74 @@ TEST(CASRefWriterNamespaceRemoval, PresenceProbeNoRowObservationRevalidatesRathe
     racer.join();
     store->setNamespacePresenceProbeAfterFirstReadHookForTest(nullptr);
 
-    ASSERT_TRUE(raced_error) << "a namespace born after the first read must never resolve to a stale absent";
-    EXPECT_THROW(std::rethrow_exception(raced_error), DB::Exception);
+    if (raced_error)
+        std::rethrow_exception(raced_error);
+    EXPECT_TRUE(raced_answer) << "a namespace born after the first read must never resolve to a stale absent";
 
     /// Negative control: an unraced, genuinely absent namespace settles on `false`.
     EXPECT_FALSE(store->namespaceStillLogicallyPresent(stable));
+}
+
+/// The starvation regression: proving THIS row absent must not require the WHOLE catalog to hold
+/// still. An unrelated namespace admitted between the probe's two reads changes the catalog token and
+/// content, yet the target -- absent from both reads -- settles on `false` instead of a retry storm
+/// (observed live as a 193/194 retry-later loop under a parallel workload sharing one pool).
+TEST(CASRefWriterNamespaceRemoval, PresenceProbeIgnoresUnrelatedCatalogChurnBetweenReads)
+{
+    auto backend = std::make_shared<RefWriterTestBackend>();
+    auto store = openPool(backend);
+    const Layout & layout = store->layout();
+    const RootNamespace target{"srv1/presence_churn_target_stays_absent"};
+    const RootNamespace unrelated{"srv1/presence_churn_unrelated_born"};
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool paused = false;
+    bool resume = false;
+    store->setNamespacePresenceProbeAfterFirstReadHookForTest([&]
+    {
+        std::unique_lock lock(mutex);
+        paused = true;
+        cv.notify_all();
+        cv.wait(lock, [&] { return resume; });
+    });
+
+    std::exception_ptr probe_error;
+    bool answer = true;
+    std::thread prober([&]
+    {
+        try
+        {
+            answer = store->namespaceStillLogicallyPresent(target);
+        }
+        catch (...)
+        {
+            probe_error = std::current_exception();
+        }
+    });
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return paused; });
+    }
+
+    CatalogEntry born;
+    born.ns = unrelated;
+    born.state = NsState::Creating;
+    born.incarnation = UInt128(5678);
+    born.creator = CreatorFence{.server_root_id = "srv1", .writer_epoch = store->liveWriterEpoch(), .fence_generation = 1};
+    CasRefCatalog::casAdmitEntry(*backend, layout, 1, born);
+
+    {
+        std::lock_guard lock(mutex);
+        resume = true;
+    }
+    cv.notify_all();
+    prober.join();
+    store->setNamespacePresenceProbeAfterFirstReadHookForTest(nullptr);
+
+    if (probe_error)
+        std::rethrow_exception(probe_error);
+    EXPECT_FALSE(answer) << "unrelated churn between the two reads must not force a retry or a wrong present";
 }
 
 /// Every unreadable or ambiguous observation must throw, never answer `false`. Covers a catalog `GET`

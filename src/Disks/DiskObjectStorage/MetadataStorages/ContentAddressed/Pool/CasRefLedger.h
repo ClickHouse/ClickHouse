@@ -208,9 +208,10 @@ public:
     /// never emitted a ref transaction can otherwise look `Removed` without ever having been removed).
     ///
     /// NEVER creates or mutates a catalog entry -- a probe is the wrong event to birth a namespace on --
-    /// and NEVER answers `false` for an unreadable, ambiguous, or changing observation: every such case
-    /// throws instead, because the caller (`existsDirectory`) uses `false` as permission to physically
-    /// remove a directory tree. A resident runtime already proven `Live` is trusted as an O(1) fast
+    /// and NEVER answers `false` for an unreadable or ambiguous observation, or when THIS namespace's
+    /// row changes under the probe: those cases throw (or answer present) instead, because the caller
+    /// (`existsDirectory`) uses `false` as permission to physically remove a directory tree. Unrelated
+    /// catalog churn between the probe's reads is permitted -- it says nothing about this row. A resident runtime already proven `Live` is trusted as an O(1) fast
     /// path so an ordinary warm table does not pay a `ref_catalog` fetch per probe; every other shape
     /// re-reads the exact catalog row.
     bool namespaceStillLogicallyPresent(const RootNamespace & ns);

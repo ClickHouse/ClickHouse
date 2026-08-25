@@ -591,19 +591,26 @@ std::shared_ptr<CasRefLedger::RefTableRuntime> CasRefLedger::acquireReadableRefT
     if (readable_catalog_after_observation_hook_for_test)
         readable_catalog_after_observation_hook_for_test();
 
-    /// The backend token, unlike a process-local invalidation counter, observes catalog mutations by
-    /// every actor that shares this pool. Validate both the token and the decoded canonical value:
-    /// neither a token-reuse defect nor an unrelated catalog write may let a life derived from the
-    /// first cut become the first resident runtime. This second GET is deliberately immediately before
-    /// the queue-locked fence/slot recheck in `acquireRefTableRuntime`; the held-handle warm path above
-    /// pays none.
+    /// Revalidate THIS namespace's row by value before the life derived from the first cut becomes the
+    /// first resident runtime. Comparing the whole catalog (token + content) here starves under
+    /// unrelated-namespace churn -- every cold admission would retry whenever ANY other namespace
+    /// mutates -- while our row's identity is what the published runtime actually depends on. A row
+    /// that changed state or incarnation, or vanished, still forces a fresh observation; transitions
+    /// after this read are caught by `invalidateRemovedCatalogLife` exactly as before. This second GET
+    /// is deliberately immediately before the queue-locked fence/slot recheck in
+    /// `acquireRefTableRuntime`; the held-handle warm path above pays none.
     const CasRefCatalog::Snapshot second_catalog = CasRefCatalog::read(backend, layout);
     check_fence_or_throw(admitted_generation);
-    const bool catalog_changed
-        = second_catalog.token != first_catalog.token || second_catalog.catalog != first_catalog.catalog;
-    if (catalog_changed)
+    /// The first read's ambiguity validation does not cover an aliasing incarnation admitted BETWEEN
+    /// the reads; physical life-owned keys use only the incarnation, so an ambiguous second cut must
+    /// refuse admission even when this namespace's own row is untouched.
+    second_catalog.life_index.throwIfAmbiguous("CAS cold readable runtime admission");
+    const auto second_it = std::find_if(second_catalog.catalog.entries.begin(), second_catalog.catalog.entries.end(),
+        [&](const CatalogEntry & entry) { return entry.ns == ns; });
+    const bool row_changed = second_it == second_catalog.catalog.entries.end() || !(*second_it == *it);
+    if (row_changed)
         throwCasWriteRetryLater(fmt::format(
-            "CAS namespace '{}': its catalog changed while a cold reader observed life {}; "
+            "CAS namespace '{}': its catalog row changed while a cold reader observed life {}; "
             "retry from a fresh catalog observation",
             ns.string(), renderIncarnation(life.incarnation)));
 
@@ -4777,9 +4784,8 @@ bool CasRefLedger::namespaceStillLogicallyPresent(const RootNamespace & ns)
 
     /// Cold path: an exact catalog observation. `Creating` and `Live` both answer present immediately --
     /// `true` is always the safe direction, so no revalidation is needed for either. A missing row is
-    /// the one answer that must never be manufactured by a race, so it alone is re-confirmed against a
-    /// second read before being trusted (mirroring `acquireReadableRefTableRuntime`'s own token/value
-    /// revalidation).
+    /// the one answer that must never be manufactured by a race, so it alone is re-confirmed by a
+    /// second read of this namespace's row before being trusted.
     const uint64_t admitted_generation = fence_generation_fn();
     check_fence_or_throw(admitted_generation);
     const CasRefCatalog::Snapshot first_catalog = CasRefCatalog::read(backend, layout);
@@ -4796,13 +4802,18 @@ bool CasRefLedger::namespaceStillLogicallyPresent(const RootNamespace & ns)
     const CatalogEntry * entry = find_entry(first_catalog);
     if (!entry)
     {
+        /// The second read corroborates absence of THIS row only. Each read is one token-CAS'd full
+        /// catalog value, so absence in two independent reads is a valid linearization at the second
+        /// one. Requiring the WHOLE catalog to hold still between the reads starves under
+        /// unrelated-namespace churn (the catalog is pool-global and a parallel workload mutates it
+        /// continuously) while adding nothing to this row's proof. A row that appears in between
+        /// answers present: `true` is always the safe direction, and the caller's next poll runs the
+        /// full state dispatch against a fresh observation.
         const CasRefCatalog::Snapshot second_catalog = CasRefCatalog::read(backend, layout);
         check_fence_or_throw(admitted_generation);
-        if (second_catalog.token != first_catalog.token || second_catalog.catalog != first_catalog.catalog)
-            throwCasWriteRetryLater(fmt::format(
-                "CAS namespace '{}': its catalog changed while probing table-root cleanup completeness; "
-                "retry from a fresh observation", ns.string()));
-        return false;   /// no catalog row, twice-confirmed: proven absent
+        if (find_entry(second_catalog))
+            return true;
+        return false;   /// no catalog row in two atomic observations: proven absent
     }
 
     if (entry->state == NsState::Creating || entry->state == NsState::Live)
