@@ -46,3 +46,10 @@ ln -s "${DATA_DIR}/deep/target" "${DATA_DIR}/link"
 $CLICKHOUSE_CLIENT -q "
 SELECT id FROM file('${DATA_DIR}/link/{..,missing}/*.csv', 'CSV', 'id UInt64');
 "
+
+# The same file, reached by a pattern whose expansion leaves no wildcard. That takes the
+# exact-match branch instead of the directory iterator, so the two branches are covered
+# separately.
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${DATA_DIR}/link/{..,missing}/x.csv', 'CSV', 'id UInt64');
+"

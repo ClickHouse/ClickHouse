@@ -226,8 +226,7 @@ void listFilesWithRegexpMatchingImpl(
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             (void)fs::canonical(path_for_ls + for_match);
-            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
-            absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
+            const fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             /// This exact-match branch is reached for suffixes without globs, including the
             /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
             /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
