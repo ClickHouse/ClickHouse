@@ -375,8 +375,16 @@ function settingFeatureState(content) {
 }
 
 function splitEntitySections(content, entityKind, relativePath, route) {
-  if (!['function', 'setting'].includes(entityKind)) return [];
+  if (!['aggregate-function', 'function', 'setting'].includes(entityKind)) return [];
   if (relativePath === 'settings/beta-and-experimental-features.mdx') return [];
+
+  function isEntityHeading(title, anchor) {
+    if (title === anchor) return true;
+    if (headingAnchor(title) !== headingAnchor(anchor)) return false;
+
+    const plainTitle = title.replace(/[`*_]/g, '').trim();
+    return /[a-z][A-Z]|[._]/.test(plainTitle) || /^[A-Z0-9 _-]+$/.test(plainTitle);
+  }
 
   const headings = [];
   let offset = 0;
@@ -389,7 +397,7 @@ function splitEntitySections(content, entityKind, relativePath, route) {
       else if (fence[0] === fenceMatch[1][0] && fenceMatch[1].length >= fence.length) fence = null;
     } else if (!fence) {
       const heading = lineWithoutNewline.match(/^##\s+(.+?)\s+\{#([^}\n]+)\}\s*$/);
-      if (heading && heading[1] === heading[2]) {
+      if (heading && isEntityHeading(heading[1], heading[2])) {
         headings.push({
           title: heading[1],
           anchor: heading[2],
@@ -460,6 +468,21 @@ function entityAliases(content, title) {
       : match[1].split(',').map((alias) => alias.replace(/[`*_]/g, '').trim());
     for (const alias of candidates) {
       if (alias && alias !== title) aliases.add(alias);
+    }
+  }
+
+  for (const section of content.matchAll(
+    /^##\s+Aliases\s+\{#[^}\n]+\}\s*\r?\n([\s\S]*?)(?=^#{1,2}\s|(?![\s\S]))/gmi,
+  )) {
+    for (const match of section[1].matchAll(/`([^`\n]+)`/g)) {
+      const alias = match[1].trim();
+      if (
+        alias
+        && alias !== title
+        && alias.toLocaleLowerCase().startsWith(title.toLocaleLowerCase())
+      ) {
+        aliases.add(alias);
+      }
     }
   }
   return [...aliases];
@@ -779,6 +802,10 @@ async function main() {
     const aliases = Array.isArray(frontmatter.keywords)
       ? frontmatter.keywords.map(String)
       : [];
+    const documentName = String(frontmatter.sidebarTitle ?? title);
+    for (const alias of entityAliases(content, documentName)) {
+      if (!aliases.includes(alias)) aliases.push(alias);
+    }
     const legacyRoute = normalizeLegacyRoute(frontmatter.slug);
 
     for (const match of content.matchAll(
@@ -798,7 +825,7 @@ async function main() {
     const sourceId = `reference:${relativePath.replace(/\.mdx?$/, '')}`;
     const splitSections = splitEntitySections(content, entityKind, relativePath, route);
     const documentRecords = splitSections.length > 0
-      ? splitSections.map((section) => ({
+      ? splitSections.map((section, index) => ({
         id: `${sourceId}/${section.anchor}`,
         entityKind,
         name: section.title,
@@ -809,6 +836,10 @@ async function main() {
         legacyRoutes: [
           `${route}#${section.anchor}`,
           ...(legacyRoute && legacyRoute !== route ? [`${legacyRoute}#${section.anchor}`] : []),
+          ...(index === 0 ? [
+            route,
+            ...(legacyRoute && legacyRoute !== route ? [legacyRoute] : []),
+          ] : []),
         ],
         sourcePath: relativePath,
         featureState: entityKind === 'setting' ? settingFeatureState(section.content) : null,
@@ -823,7 +854,7 @@ async function main() {
       : [{
         id: sourceId,
         entityKind,
-        name: String(frontmatter.sidebarTitle ?? title),
+        name: documentName,
         title,
         description,
         aliases,
@@ -845,18 +876,16 @@ async function main() {
       document.sections = extractSections(document.content);
       document.contentHash = hash(document.content);
       documents.push(document);
-      if (splitSections.length > 0) {
-        for (const alias of document.aliases) {
-          entitySearchRecords.push({
-            id: `${document.id}:alias:${alias}`,
-            title: alias,
-            description: `Alias of ${document.title}`,
-            aliases: [document.title],
-            route: document.route,
-            entityKind: document.entityKind,
-            headings: [],
-          });
-        }
+      for (const alias of document.aliases) {
+        entitySearchRecords.push({
+          id: `${document.id}:alias:${alias}`,
+          title: alias,
+          description: `Alias of ${document.title}`,
+          aliases: [document.title],
+          route: document.route,
+          entityKind: document.entityKind,
+          headings: [],
+        });
       }
     }
   }
@@ -953,7 +982,11 @@ async function main() {
   console.log(`Bundle SHA-256: ${bundleHash}`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+
+export { entityAliases, splitEntitySections };

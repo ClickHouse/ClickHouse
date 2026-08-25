@@ -10,8 +10,7 @@ const projectDirectory = path.resolve(scriptDirectory, '..');
 const repositoryDirectory = path.resolve(projectDirectory, '..');
 const sourceDocsDirectory = path.join(repositoryDirectory, 'docs');
 const defaultArtifactDirectory = path.join(projectDirectory, '.artifacts/latest');
-const generatedDirectory = path.join(projectDirectory, 'src/generated');
-const stagingDirectory = path.join(projectDirectory, 'src/generated.next');
+const defaultGeneratedDirectory = path.join(projectDirectory, 'src/generated');
 
 const componentNames = new Set([
   'Accordion',
@@ -19,6 +18,7 @@ const componentNames = new Set([
   'Card',
   'CloudNotSupportedBadge',
   'CloudOnlyBadge',
+  'Columns',
   'Danger',
   'ExperimentalBadge',
   'Frame',
@@ -265,9 +265,25 @@ async function headerNavigationConfig(sourceSiteConfig) {
 }
 
 function parseArguments(argv) {
-  if (argv.length === 0) return defaultArtifactDirectory;
-  if (argv.length === 2 && argv[0] === '--artifact') return path.resolve(argv[1]);
-  throw new Error('Usage: node scripts/prepare-content.mjs [--artifact <directory>]');
+  const options = {
+    artifactDirectory: defaultArtifactDirectory,
+    generatedDirectory: defaultGeneratedDirectory,
+  };
+  const names = new Map([
+    ['--artifact', 'artifactDirectory'],
+    ['--generated', 'generatedDirectory'],
+  ]);
+
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = names.get(argv[index]);
+    if (!name || index + 1 >= argv.length) {
+      throw new Error(
+        'Usage: node scripts/prepare-content.mjs [--artifact <directory>] [--generated <directory>]',
+      );
+    }
+    options[name] = path.resolve(argv[index + 1]);
+  }
+  return options;
 }
 
 function hash(value) {
@@ -310,7 +326,10 @@ function rewriteReferenceLinks(content, routeRewrites) {
     .replace(markdownLink, '](/docs/$1')
     .replace(componentLink, 'href=$1/docs/$2');
 
-  for (const [oldRoute, newRoute] of routeRewrites) {
+  const rewrites = [...routeRewrites].sort(([left], [right]) => (
+    Number(right.includes('#')) - Number(left.includes('#'))
+  ));
+  for (const [oldRoute, newRoute] of rewrites) {
     const oldRoutePattern = escapeRegularExpression(oldRoute);
     if (oldRoute.includes('#')) {
       rewritten = rewritten
@@ -528,7 +547,8 @@ function frontmatter(document) {
 }
 
 async function main() {
-  const artifactDirectory = parseArguments(process.argv.slice(2));
+  const { artifactDirectory, generatedDirectory } = parseArguments(process.argv.slice(2));
+  const stagingDirectory = `${generatedDirectory}.next`;
   const [
     manifest,
     documentPayload,
@@ -574,19 +594,57 @@ async function main() {
   }
 
   const routeRewrites = new Map();
+  const routeRedirects = new Map();
+  function preferredLegacyTarget(oldRoute, left, right) {
+    const legacyName = path.posix.basename(oldRoute.split('#')[0]);
+    const leftMatches = path.posix.basename(left) === legacyName;
+    const rightMatches = path.posix.basename(right) === legacyName;
+    if (leftMatches === rightMatches) return null;
+    return leftMatches ? left : right;
+  }
   function addRouteRewrite(oldRoute, newRoute) {
     const existing = routeRewrites.get(oldRoute);
     if (existing && existing !== newRoute) {
-      throw new Error(`Legacy route ${oldRoute} maps to both ${existing} and ${newRoute}`);
+      const preferred = oldRoute.includes('#')
+        ? null
+        : preferredLegacyTarget(oldRoute, existing, newRoute);
+      if (!preferred) {
+        throw new Error(`Legacy route ${oldRoute} maps to both ${existing} and ${newRoute}`);
+      }
+      routeRewrites.set(oldRoute, preferred);
+      return;
     }
     if (oldRoute !== newRoute) routeRewrites.set(oldRoute, newRoute);
   }
+  function addRouteRedirect(oldRoute, newRoute) {
+    if (!oldRoute.startsWith('/docs/') || oldRoute.includes('#')) {
+      throw new Error(`Cannot materialize legacy route ${oldRoute}`);
+    }
+    const existing = routeRedirects.get(oldRoute);
+    if (existing && existing !== newRoute) {
+      const preferred = preferredLegacyTarget(oldRoute, existing, newRoute);
+      if (!preferred) {
+        throw new Error(`Legacy route ${oldRoute} redirects to both ${existing} and ${newRoute}`);
+      }
+      routeRedirects.set(oldRoute, preferred);
+      return;
+    }
+    if (oldRoute !== newRoute) routeRedirects.set(oldRoute, newRoute);
+  }
+  const canonicalRoutes = new Set(documentPayload.documents.map((document) => document.route));
   for (const document of documentPayload.documents) {
     if (/(^|\/)index\.mdx?$/.test(document.sourcePath)) {
       addRouteRewrite(`${document.route}/index`, document.route);
+      addRouteRedirect(`${document.route}/index`, document.route);
     }
     for (const legacyRoute of document.legacyRoutes ?? []) {
-      if (legacyRoute.includes('#')) addRouteRewrite(legacyRoute, document.route);
+      addRouteRewrite(legacyRoute, document.route);
+      if (!legacyRoute.includes('#')) addRouteRedirect(legacyRoute, document.route);
+    }
+  }
+  for (const route of routeRedirects.keys()) {
+    if (canonicalRoutes.has(route)) {
+      throw new Error(`Legacy route ${route} collides with a generated document`);
     }
   }
 
@@ -679,6 +737,12 @@ async function main() {
       'utf8',
     ),
     writeJson(path.join(stagingDirectory, 'data/manifest.json'), manifest),
+    writeJson(path.join(stagingDirectory, 'data/redirects.json'), {
+      schemaVersion: 1,
+      redirects: [...routeRedirects]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([from, to]) => ({ from, to })),
+    }),
     writeJson(path.join(stagingDirectory, 'data/header-navigation.json'), headerNavigation),
     writeJson(path.join(stagingDirectory, 'data/versions.json'), versionConfig),
     writeJson(path.join(stagingDirectory, 'mintlify/docs.json'), docsConfig),

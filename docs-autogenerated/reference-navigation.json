@@ -224,6 +224,32 @@
       ]
     },
     {
+      "id": "reference.statements",
+      "label": "Statements",
+      "match": { "sourcePrefix": "statements/" },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.statements.create-dictionary",
+          "label": "CREATE DICTIONARY",
+          "match": { "sourcePrefix": "statements/create/dictionary/" },
+          "documentsPosition": "after",
+          "groups": [
+            {
+              "id": "reference.statements.create-dictionary.layouts",
+              "label": "Layouts",
+              "match": { "sourcePrefix": "statements/create/dictionary/layouts/" }
+            },
+            {
+              "id": "reference.statements.create-dictionary.sources",
+              "label": "Sources",
+              "match": { "sourcePrefix": "statements/create/dictionary/sources/" }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "reference.system-tables",
       "label": "System Tables",
       "match": { "sourcePrefix": "system-tables/" }
