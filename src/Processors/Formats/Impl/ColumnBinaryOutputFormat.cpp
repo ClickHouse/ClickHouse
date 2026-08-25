@@ -11,7 +11,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include <Formats/ColumnarV1Wire.h>
+#include <Formats/ColumnBinaryWire.h>
 
 #include <limits>
 
@@ -81,7 +81,7 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
             "ColumnBinary: block has {} rows, exceeding the maximum representable row count ({})",
             rows, std::numeric_limits<uint32_t>::max());
 
-    const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES;
+    const uint64_t hdr_desc_size = ColumnBinaryWire::FRAME_HEADER_BYTES + block.columns() * ColumnBinaryWire::COL_DESC_BYTES;
     uint64_t cursor = hdr_desc_size;
 
     for (size_t i = 0; i < block.columns(); ++i)
@@ -105,8 +105,8 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : static_cast<uint32_t>(rows);
 
-        ColumnarV1::ColDescriptor desc{};
-        cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc);
+        ColumnBinaryWire::ColDescriptor desc{};
+        cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc);
     }
 
     // Callers that preallocate straight from this return value (e.g. the buffered WASM guest
@@ -147,7 +147,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     uint32_t num_cols = static_cast<uint32_t>(chunk.getNumColumns());
 
     // Layout pass: build descriptors (compute offsets and total size).
-    const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES;
+    const uint64_t hdr_desc_size = ColumnBinaryWire::FRAME_HEADER_BYTES + num_cols * ColumnBinaryWire::COL_DESC_BYTES;
     uint64_t cursor = hdr_desc_size;
 
     // `expectMaterializedColumns` returns false for this format so that a top-level
@@ -173,7 +173,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         chunk.setColumns(std::move(columns), num_rows);
     }
 
-    std::vector<ColumnarV1::ColDescriptor> descs(num_cols);
+    std::vector<ColumnBinaryWire::ColDescriptor> descs(num_cols);
     for (uint32_t i = 0; i < num_cols; ++i)
     {
         const IColumn & raw_col = *chunk.getColumns()[i];
@@ -184,7 +184,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         checkColumnStructure(i, *actual);
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
-        cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);
+        cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);
     }
 
     // Mirror ColumnBinaryInputFormat's read-side check: reject before allocating/writing
@@ -221,9 +221,9 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     // Write header and descriptor table.
     std::memcpy(buf,     &num_rows, 4);
     std::memcpy(buf + 4, &num_cols, 4);
-    std::memcpy(buf + ColumnarV1::COLUMNAR_HEADER_BYTES,
+    std::memcpy(buf + ColumnBinaryWire::FRAME_HEADER_BYTES,
                 descs.data(),
-                num_cols * ColumnarV1::COLUMNAR_DESC_BYTES);
+                num_cols * ColumnBinaryWire::COL_DESC_BYTES);
 
     // Write column data.
     std::span<uint8_t> buf_span{buf, cursor};
@@ -236,7 +236,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
             : &raw_col;
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
-        ColumnarV1::writeColData(actual, is_nullable, col_rows, descs[i], buf_span);
+        ColumnBinaryWire::writeColData(actual, is_nullable, col_rows, descs[i], buf_span);
     }
 
     if (!use_prealloc)
@@ -256,7 +256,7 @@ ColumnBinaryOutputFormat::ColumnBinaryOutputFormat(WriteBuffer & out_, SharedHea
     // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
     // types) here so callers find out at format construction, not on the first block.
     for (const auto & col : header_->getColumnsWithTypeAndName())
-        ColumnarV1::validateColumnarV1SupportedType(col.type);
+        ColumnBinaryWire::validateColumnBinaryWireSupportedType(col.type);
 }
 
 void registerOutputFormatColumnBinary(FormatFactory & factory)
@@ -267,7 +267,7 @@ void registerOutputFormatColumnBinary(FormatFactory & factory)
         const FormatSettings & format_settings,
         FormatFilterInfoPtr /*format_filter_info*/)
     {
-        ColumnarV1::checkColumnBinaryFormatIsAllowed(format_settings.column_binary.allow_experimental);
+        ColumnBinaryWire::checkColumnBinaryFormatIsAllowed(format_settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryOutputFormat>(
             buf,
             std::make_shared<const Block>(sample),

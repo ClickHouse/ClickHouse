@@ -1,4 +1,4 @@
-// Test module for COLUMNAR_V1 WASM ABI.
+// Test module for ColumnBinary WASM ABI.
 //
 // Exported functions:
 //   str_byte_sum_col(s String) -> UInt64   — sum of all byte values in each string
@@ -77,8 +77,8 @@ static int buf_push(Buffer * b, uint8_t byte) {
     return buf_append(b, &byte, 1);
 }
 
-// ── COLUMNAR_V1 wire constants ────────────────────────────────────────────────
-// Must match src/Formats/ColumnarV1Wire.h exactly.
+// ── ColumnBinary wire constants ────────────────────────────────────────────────
+// Must match src/Formats/ColumnBinaryWire.h exactly.
 
 #define COL_BYTES      0u
 #define COL_FIXED8     1u

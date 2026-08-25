@@ -1,5 +1,5 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
-#include <Formats/ColumnarV1Wire.h>
+#include <Formats/ColumnBinaryWire.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
@@ -74,7 +74,7 @@ namespace DB
 {
 
 using namespace WebAssembly;
-using namespace ColumnarV1;
+using namespace ColumnBinaryWire;
 
 namespace Setting
 {
@@ -271,8 +271,8 @@ private:
 };
 
 /// The user-facing `ColumnBinary` format is gated behind
-/// `allow_experimental_column_binary_format` because its `COLUMNAR_V1` frame header carries no
-/// wire version yet. The `COLUMNAR_V1` WASM UDF ABI shares that wire format but not the gate:
+/// `allow_experimental_column_binary_format` because its `ColumnBinary` frame header carries no
+/// wire version yet. The `ColumnBinary` WASM UDF ABI shares that wire format but not the gate:
 /// WASM UDFs are experimental in their own right, and their frames never outlive a single call,
 /// so no persisted data can be misparsed by a future layout change. Start from the query's own
 /// format settings so per-query knobs (e.g. `column_binary_disable_preallocation`) still apply.
@@ -316,7 +316,7 @@ public:
         // The result type is only read back lazily on the first call, so validate it eagerly
         // here too.
         if (serialization_format == "ColumnBinary")
-            validateColumnarV1SupportedType(result_type);
+            validateColumnBinaryWireSupportedType(result_type);
     }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
@@ -360,7 +360,7 @@ public:
             else if (chunk)
             {
                 // `Chunk::append` concatenates with `insertRangeFrom`, which is not const-safe, and
-                // `COLUMNAR_V1` preserves top-level const, so a multi-frame result can legitimately
+                // `ColumnBinary` preserves top-level const, so a multi-frame result can legitimately
                 // contain const chunks. A const destination would only grow its row count and repeat
                 // the first frame's value for every later frame; a const source would reach
                 // `insertRangeFrom`'s `assert_cast`, which is a plain `static_cast` in release
@@ -885,7 +885,7 @@ private:
     /// of a LowCardinality dictionary on wires that materialize its values per row).
     ///
     /// This estimate sizes values by their in-memory column width, which models the
-    /// binary wires (COLUMNAR_V1, ColumnBinary, Buffers, RowBinary) directly. For the
+    /// binary wires (ColumnBinary, ColumnBinary, Buffers, RowBinary) directly. For the
     /// text-like formats the callers in execute() scale the result by
     /// wire_size_expansion_factor (worst-case wire expansion of fixed-width values,
     /// quoting/escaping and Enum name rendering — see wireSizeExpansionFactor and
@@ -937,12 +937,12 @@ private:
                     else if (unwrapped_declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                         total += unwrapped_declared_type->getSizeOfValueInMemory() + null_map_bytes;
                     else if (typeid_cast<const ColumnArray *>(data_col) || typeid_cast<const ColumnTuple *>(data_col))
-                        total += ColumnarV1::complexDataSize(*data_col, 1) + null_map_bytes;
+                        total += ColumnBinaryWire::complexDataSize(*data_col, 1) + null_map_bytes;
                     else if (const auto * const_map = typeid_cast<const ColumnMap *>(data_col))
-                        total += ColumnarV1::complexDataSize(const_map->getNestedColumn(), 1) + null_map_bytes;
+                        total += ColumnBinaryWire::complexDataSize(const_map->getNestedColumn(), 1) + null_map_bytes;
                     else if (const auto * const_lc = typeid_cast<const ColumnLowCardinality *>(data_col))
                         // COL_IS_CONST reuses the normal COL_LOWCARD layout with 1 row (see
-                        // "COL_IS_CONST sets data for 1 row" in ColumnarV1Wire.h), so it still
+                        // "COL_IS_CONST sets data for 1 row" in ColumnBinaryWire.h), so it still
                         // carries the full header + a 1-entry dictionary + a 1-entry index —
                         // not just the resolved value's own size. preserve_const is only ever
                         // true on the dictionary-encoding wires, hence the literal true here.
@@ -1003,12 +1003,12 @@ private:
                 // (non-row-scaled) element count, so charge just the outer sentinel offset
                 // entry instead of calling into it.
                 total += (row_count == 0 ? sizeof(uint64_t) : (materialized_const
-                    ? ColumnarV1::complexDataSize(*col, 1) * row_count
-                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count)))) + null_map_bytes;
+                    ? ColumnBinaryWire::complexDataSize(*col, 1) * row_count
+                    : ColumnBinaryWire::complexDataSize(*col, static_cast<uint32_t>(row_count)))) + null_map_bytes;
             else if (const auto * map_col = typeid_cast<const ColumnMap *>(col))
                 total += (row_count == 0 ? sizeof(uint64_t) : (materialized_const
-                    ? ColumnarV1::complexDataSize(map_col->getNestedColumn(), 1) * row_count
-                    : ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count)))) + null_map_bytes;
+                    ? ColumnBinaryWire::complexDataSize(map_col->getNestedColumn(), 1) * row_count
+                    : ColumnBinaryWire::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count)))) + null_map_bytes;
             else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
                 total += estimateLowCardTotalBytes(*lc_col, row_count, materialized_const, wire_encodes_low_cardinality) + null_map_bytes;
             else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
@@ -1020,7 +1020,7 @@ private:
     }
 
     /// Recursively estimate the serialized byte size of a single row of a COL_COMPLEX-shaped
-    /// column (Array/Tuple, possibly nested). Mirrors ColumnarV1::complexDataSize's byte
+    /// column (Array/Tuple, possibly nested). Mirrors ColumnBinaryWire::complexDataSize's byte
     /// layout (uint64 offset entry per Array level, nested payload) but for one row instead
     /// of the whole column, so a single oversized row (e.g. one 10k-element Array(UInt64))
     /// is priced precisely instead of falling back to a flat 256-byte guess.
@@ -1081,11 +1081,11 @@ private:
         if (const auto * s = typeid_cast<const ColumnString *>(&col))
             return s->getChars().size() + (col.size() + 1) * sizeof(uint64_t);
         if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
-            return ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(col.size()));
+            return ColumnBinaryWire::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(col.size()));
         if (typeid_cast<const ColumnArray *>(&col) || typeid_cast<const ColumnTuple *>(&col))
-            return ColumnarV1::complexDataSize(col, static_cast<uint32_t>(col.size()));
+            return ColumnBinaryWire::complexDataSize(col, static_cast<uint32_t>(col.size()));
         if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
-            // A LowCardinality Variant alternative only exists on the COLUMNAR_V1 wire,
+            // A LowCardinality Variant alternative only exists on the ColumnBinary wire,
             // which dictionary-encodes it.
             return estimateLowCardTotalBytes(*lc_col, col.size(), /* materialized_const */ false, /* wire_has_dictionary */ true);
         if (col.valuesHaveFixedSize())
@@ -1166,7 +1166,7 @@ private:
     {
         size_t num_variants = var.getNumVariants();
         // num_variants is every declared alternative; the wire header only counts non-empty
-        // ones (k <= num_variants, see the COL_VARIANT writer in ColumnarV1Wire.h), so this is
+        // ones (k <= num_variants, see the COL_VARIANT writer in ColumnBinaryWire.h), so this is
         // a safe upper bound rather than an exact figure.
         size_t header_bytes = 4 + num_variants * (4 + 40); // sub_rows + embedded ColDescriptor per alternative
         // Fixed per-column structural cost, present on the wire regardless of row count (see
@@ -1189,7 +1189,7 @@ private:
             {
                 const IColumn & sub = var.getVariantByLocalDiscriminator(local);
                 if (const auto * lc_sub = typeid_cast<const ColumnLowCardinality *>(&sub); lc_sub && !sub.empty())
-                    // Variant alternatives only exist on the COLUMNAR_V1 wire, which
+                    // Variant alternatives only exist on the ColumnBinary wire, which
                     // dictionary-encodes LowCardinality.
                     fixed_sub_bytes += estimateLowCardTotalBytes(*lc_sub, 0, false, /* wire_has_dictionary */ true);
             }
@@ -1212,7 +1212,7 @@ private:
     /// Precise per-row Variant cost: locate the row's active alternative and size just that
     /// one value, rather than the flat 256-byte guess. Every row unconditionally carries a
     /// 1-byte discriminator and a 4-byte row-offset entry on the wire (see the COL_VARIANT
-    /// writer in ColumnarV1Wire.h), even a null row, so those are never skipped.
+    /// writer in ColumnBinaryWire.h), even a null row, so those are never skipped.
     static size_t estimateVariantRowBytes(const ColumnVariant & var, size_t row_index)
     {
         constexpr size_t control_bytes = 1 + 4; // discriminator + row-offset entry
@@ -1475,7 +1475,7 @@ private:
     Strings argument_names;
     ContextPtr context;
     bool preserve_const_columns;
-    /// Empty for COLUMNAR_V1 (its wire never goes through a serialization format).
+    /// Empty for ColumnBinary (its wire never goes through a serialization format).
     String buffered_serialization_format;
     /// Worst-case wire-size expansion of the in-memory estimate for this wire; see
     /// wireSizeExpansionFactor above.

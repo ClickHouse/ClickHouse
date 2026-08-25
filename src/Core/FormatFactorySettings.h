@@ -289,7 +289,7 @@ The way how to output UUID in MsgPack format.
     DECLARE(Bool, allow_experimental_column_binary_format, false, R"(
 Allow the experimental `ColumnBinary` input and output format.
 
-`ColumnBinary` exposes the `COLUMNAR_V1` wire format, which is still evolving and carries
+`ColumnBinary` exposes a flat columnar wire format, which is still evolving and carries
 no version field in its frame header, so a future incompatible layout change would misparse
 previously written data rather than reject it. Do not persist `ColumnBinary` data until the
 layout is frozen and the frame header is versioned.
@@ -302,7 +302,7 @@ The maximum total size in bytes of a single ColumnBinary frame's column data sec
 ColumnBinaryOutputFormat writes one frame per Chunk without splitting, so this must stay
 above the largest valid frame you expect to read or write; it exists only to reject
 frames whose descriptor-declared data_offset/data_size would otherwise force an
-unreasonably large allocation before any data has been validated. The COLUMNAR_V1 WASM
+unreasonably large allocation before any data has been validated. The ColumnBinary WASM
 UDF ABI shares this wire format and is bounded by a wasm32 guest's 4 GiB linear memory
 address space regardless of this setting.
 )", 0) \

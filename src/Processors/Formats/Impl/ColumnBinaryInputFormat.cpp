@@ -7,7 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/ColumnarV1Wire.h>
+#include <Formats/ColumnBinaryWire.h>
 #include <IO/ReadBuffer.h>
 
 namespace DB
@@ -30,7 +30,7 @@ ColumnBinaryInputFormat::ColumnBinaryInputFormat(
     // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
     // types) here so callers find out at format construction, not on the first block.
     for (const auto & col : header_->getColumnsWithTypeAndName())
-        ColumnarV1::validateColumnarV1SupportedType(col.type);
+        ColumnBinaryWire::validateColumnBinaryWireSupportedType(col.type);
 }
 
 void ColumnBinaryInputFormat::checkNumCols(uint32_t num_cols) const
@@ -60,9 +60,9 @@ uint64_t ColumnBinaryInputFormat::validateDescriptorsAndGetFrameEnd(
     uint64_t data_end = static_cast<uint64_t>(hdr_desc_size);
     for (uint32_t i = 0; i < num_cols; ++i)
     {
-        ColumnarV1::ColDescriptor desc{};
+        ColumnBinaryWire::ColDescriptor desc{};
         std::memcpy(&desc,
-                    hdr_desc.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
+                    hdr_desc.data() + ColumnBinaryWire::FRAME_HEADER_BYTES + i * ColumnBinaryWire::COL_DESC_BYTES,
                     sizeof(desc));
 
         // null_offset/offsets_offset use 0 as the sentinel for "absent" (no null map / no
@@ -144,14 +144,14 @@ Chunk ColumnBinaryInputFormat::read()
     // that is value-initialized first, so every byte is touched twice before it is ever
     // decoded. Nothing is consumed from the buffer until the whole frame is known to be
     // present, so falling through to the copying branch below re-reads from the frame start.
-    if (in->available() >= ColumnarV1::COLUMNAR_HEADER_BYTES)
+    if (in->available() >= ColumnBinaryWire::FRAME_HEADER_BYTES)
     {
         const auto * pos = reinterpret_cast<const uint8_t *>(in->position());
         std::memcpy(&num_rows, pos, 4);
         std::memcpy(&num_cols, pos + 4, 4);
 
         checkNumCols(num_cols);
-        hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
+        hdr_desc_size = ColumnBinaryWire::FRAME_HEADER_BYTES + static_cast<size_t>(num_cols) * ColumnBinaryWire::COL_DESC_BYTES;
 
         if (in->available() >= hdr_desc_size)
         {
@@ -168,11 +168,11 @@ Chunk ColumnBinaryInputFormat::read()
     {
         // Try to read the 8-byte header; a short read means the frame is truncated (a clean
         // EOF was already handled above).
-        char hdr_buf[ColumnarV1::COLUMNAR_HEADER_BYTES];
-        size_t hdr_read = in->read(hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
-        if (hdr_read < ColumnarV1::COLUMNAR_HEADER_BYTES)
+        char hdr_buf[ColumnBinaryWire::FRAME_HEADER_BYTES];
+        size_t hdr_read = in->read(hdr_buf, ColumnBinaryWire::FRAME_HEADER_BYTES);
+        if (hdr_read < ColumnBinaryWire::FRAME_HEADER_BYTES)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "ColumnBinary: truncated frame header ({} of {} bytes)", hdr_read, ColumnarV1::COLUMNAR_HEADER_BYTES);
+                "ColumnBinary: truncated frame header ({} of {} bytes)", hdr_read, ColumnBinaryWire::FRAME_HEADER_BYTES);
 
         std::memcpy(&num_rows, hdr_buf, 4);
         std::memcpy(&num_cols, hdr_buf + 4, 4);
@@ -180,14 +180,14 @@ Chunk ColumnBinaryInputFormat::read()
         checkNumCols(num_cols);
 
         // Read header + descriptor table into a single buffer.
-        const size_t desc_total = static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
-        hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + desc_total;
+        const size_t desc_total = static_cast<size_t>(num_cols) * ColumnBinaryWire::COL_DESC_BYTES;
+        hdr_desc_size = ColumnBinaryWire::FRAME_HEADER_BYTES + desc_total;
 
         frame_storage.resize(hdr_desc_size);
-        std::memcpy(frame_storage.data(), hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
+        std::memcpy(frame_storage.data(), hdr_buf, ColumnBinaryWire::FRAME_HEADER_BYTES);
 
         if (desc_total > 0)
-            in->readStrict(reinterpret_cast<char *>(frame_storage.data() + ColumnarV1::COLUMNAR_HEADER_BYTES), desc_total);
+            in->readStrict(reinterpret_cast<char *>(frame_storage.data() + ColumnBinaryWire::FRAME_HEADER_BYTES), desc_total);
 
         data_end = validateDescriptorsAndGetFrameEnd(frame_storage, num_cols, hdr_desc_size);
 
@@ -228,9 +228,9 @@ Chunk ColumnBinaryInputFormat::read()
     uint64_t region_start = hdr_desc_size;
     for (uint32_t i = 0; i < num_cols; ++i)
     {
-        ColumnarV1::ColDescriptor desc{};
+        ColumnBinaryWire::ColDescriptor desc{};
         std::memcpy(&desc,
-                    buf.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
+                    buf.data() + ColumnBinaryWire::FRAME_HEADER_BYTES + i * ColumnBinaryWire::COL_DESC_BYTES,
                     sizeof(desc));
 
         // data_offset + data_size cannot overflow here: the loop above already rejected that.
@@ -254,7 +254,7 @@ Chunk ColumnBinaryInputFormat::read()
                     i, off, region_start, region_end);
 
         const auto & expected_type = header_->getByPosition(i).type;
-        auto column = ColumnarV1::readColumnFromDesc(buf.subspan(0, region_end), desc, num_rows, expected_type);
+        auto column = ColumnBinaryWire::readColumnFromDesc(buf.subspan(0, region_end), desc, num_rows, expected_type);
 
         // Defence in depth for the whole tag dispatch, not just the families that check the
         // declared type themselves: the chunk goes on to be inserted into the destination
@@ -290,7 +290,7 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        ColumnarV1::checkColumnBinaryFormatIsAllowed(settings.column_binary.allow_experimental);
+        ColumnBinaryWire::checkColumnBinaryFormatIsAllowed(settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryInputFormat>(buf, header, params, settings);
     });
 

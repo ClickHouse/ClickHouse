@@ -1,4 +1,4 @@
-/// Unit tests for the COLUMNAR_V1 wire format encoder/decoder.
+/// Unit tests for the ColumnBinary wire format encoder/decoder.
 ///
 /// There are two distinct wire formats for Array columns:
 ///
@@ -38,19 +38,19 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Formats/ColumnarV1Wire.h>
+#include <Formats/ColumnBinaryWire.h>
 
 using namespace DB;
-using namespace DB::ColumnarV1;
+using namespace DB::ColumnBinaryWire;
 
 namespace
 {
 
-// Build a complete single-column COLUMNAR_V1 wire buffer (CH→WASM format).
+// Build a complete single-column ColumnBinary wire buffer (CH→WASM format).
 std::vector<uint8_t> encodeCHColumn(const IColumn * col, uint32_t num_rows)
 {
     ColDescriptor desc{};
-    uint64_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    uint64_t cursor = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     cursor = buildColDescriptor(col, /*is_const=*/false, /*is_nullable=*/false, num_rows, cursor, desc);
 
     std::vector<uint8_t> buf(cursor, 0);
@@ -58,7 +58,7 @@ std::vector<uint8_t> encodeCHColumn(const IColumn * col, uint32_t num_rows)
     uint32_t one = 1;
     std::memcpy(buf.data(),     &num_rows, 4);
     std::memcpy(buf.data() + 4, &one,      4);
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     writeColData(col, /*is_nullable=*/false, num_rows, desc, {buf.data(), buf.size()});
     return buf;
@@ -67,7 +67,7 @@ std::vector<uint8_t> encodeCHColumn(const IColumn * col, uint32_t num_rows)
 ColDescriptor readDesc(const std::vector<uint8_t> & buf)
 {
     ColDescriptor desc{};
-    std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, COLUMNAR_DESC_BYTES);
+    std::memcpy(&desc, buf.data() + FRAME_HEADER_BYTES, COL_DESC_BYTES);
     return desc;
 }
 
@@ -75,7 +75,7 @@ ColDescriptor readDesc(const std::vector<uint8_t> & buf)
 
 // ── ColumnString round-trip (COL_BYTES format is the same in both directions) ─
 
-TEST(ColumnarV1Wire, StringEncodeDecodeRoundTrip)
+TEST(ColumnBinaryWire, StringEncodeDecodeRoundTrip)
 {
     auto col = ColumnString::create();
     col->insertData("hello", 5);
@@ -106,7 +106,7 @@ TEST(ColumnarV1Wire, StringEncodeDecodeRoundTrip)
 //   uint64[4] inner = {0, 3, 6, 9}      (32 bytes, no null terminators)
 //   chars = "foobarbaz"                  (9 bytes)
 
-TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
+TEST(ColumnBinaryWire, ArrayStringEncoderLayout)
 {
     auto nested_str = ColumnString::create();
     nested_str->insertData("foo", 3);
@@ -153,7 +153,7 @@ TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
 //   uint64[4] outer = {0, 2, 2, 3}   (32 bytes)
 //   uint64[3] elems = {10, 20, 30}   (24 bytes)
 
-TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
+TEST(ColumnBinaryWire, ArrayUInt64EncoderLayout)
 {
     auto nested_u64 = ColumnUInt64::create();
     nested_u64->getData().push_back(10);
@@ -199,12 +199,12 @@ TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
 //   uint64[3]    = {10, 20, 30}              24 bytes  (Tuple field 0)
 //   float64[3]   = {1.5, 2.5, 3.5}          24 bytes  (Tuple field 1)
 
-TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
+TEST(ColumnBinaryWire, DecodeArrayOfTupleUInt64Float64)
 {
     const uint32_t num_rows = 2;
     const uint32_t num_elems = 3;
 
-    constexpr uint32_t data_off       = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    constexpr uint32_t data_off       = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     constexpr uint32_t outer_bytes    = (num_rows + 1u) * 8u;       // 24 (uint64 offsets)
     constexpr uint32_t u64_bytes      = num_elems * 8u;             // 24
     constexpr uint32_t f64_bytes      = num_elems * 8u;             // 24
@@ -223,7 +223,7 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     // Outer offsets
     uint64_t * outer = reinterpret_cast<uint64_t *>(buf.data() + data_off);
@@ -269,7 +269,7 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
 //
 // 4 unique strings — wire must use normal COL_BYTES encoding.
 
-TEST(ColumnarV1Wire, StringEncodesAsColBytes)
+TEST(ColumnBinaryWire, StringEncodesAsColBytes)
 {
     auto col = ColumnString::create();
     col->insertData("a", 1);
@@ -288,7 +288,7 @@ TEST(ColumnarV1Wire, StringEncodesAsColBytes)
 // 3 rows of Tuple(Float64, Float64): [(1.0,2.0), (3.0,4.0), (5.0,6.0)]
 // Wire: COL_COMPLEX, no offsets (offsets_offset=0), data = field0[3] + field1[3]
 
-TEST(ColumnarV1Wire, TupleFloat64EncoderLayout)
+TEST(ColumnBinaryWire, TupleFloat64EncoderLayout)
 {
     auto f0 = ColumnFloat64::create();
     f0->getData() = {1.0, 3.0, 5.0};
@@ -327,7 +327,7 @@ TEST(ColumnarV1Wire, TupleFloat64EncoderLayout)
 //   float64[3] field0             (24 bytes)
 //   float64[3] field1             (24 bytes)
 
-TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
+TEST(ColumnBinaryWire, ArrayOfTupleFloat64EncoderLayout)
 {
     auto f0 = ColumnFloat64::create();
     f0->getData() = {1.0, 3.0, 5.0};
@@ -382,7 +382,7 @@ TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
 //   data_offset    → K=2, records with inner ColDescriptors
 //   sub-column data readable via inner descriptors
 
-TEST(ColumnarV1Wire, VariantUInt64String)
+TEST(ColumnBinaryWire, VariantUInt64String)
 {
     auto u64_sub = ColumnUInt64::create();
     u64_sub->getData() = {10, 20};
@@ -434,7 +434,7 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     const uint8_t * rec0 = block + 4u;
     EXPECT_EQ(rec0[0], 0u);  // global_discriminator
     ColDescriptor inner0{};
-    std::memcpy(&inner0, rec0 + 4u, COLUMNAR_DESC_BYTES);
+    std::memcpy(&inner0, rec0 + 4u, COL_DESC_BYTES);
     EXPECT_EQ(inner0.type, COL_FIXED64);
     EXPECT_EQ(inner0.null_offset, 2u);  // sub_rows stored for WASM navigation
     EXPECT_EQ(inner0.data_size, 2u * sizeof(uint64_t));
@@ -444,10 +444,10 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     EXPECT_EQ(u64_data[1], 20u);
 
     // Record 1: global_d=1, inner_desc for String sub-column (1 row)
-    const uint8_t * rec1 = rec0 + 4u + COLUMNAR_DESC_BYTES;
+    const uint8_t * rec1 = rec0 + 4u + COL_DESC_BYTES;
     EXPECT_EQ(rec1[0], 1u);  // global_discriminator
     ColDescriptor inner1{};
-    std::memcpy(&inner1, rec1 + 4u, COLUMNAR_DESC_BYTES);
+    std::memcpy(&inner1, rec1 + 4u, COL_DESC_BYTES);
     EXPECT_EQ(inner1.type, COL_BYTES);
     EXPECT_EQ(inner1.null_offset, 1u);  // sub_rows stored for WASM navigation
 
@@ -461,14 +461,14 @@ TEST(ColumnarV1Wire, VariantUInt64String)
 
 // ── Nullable string encodes with COL_IS_NULLABLE and a valid null_offset ──────
 
-TEST(ColumnarV1Wire, NullableStringEncoding)
+TEST(ColumnBinaryWire, NullableStringEncoding)
 {
     auto str = ColumnString::create();
     for (int i = 0; i < 6; ++i)
         str->insertData(i % 2 == 0 ? "foo" : "bar", 3);
 
     ColDescriptor desc{};
-    buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
+    buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, FRAME_HEADER_BYTES + COL_DESC_BYTES, desc);
 
     EXPECT_EQ(desc.type, COL_BYTES | COL_IS_NULLABLE);
     EXPECT_NE(desc.null_offset, 0u);
@@ -476,7 +476,7 @@ TEST(ColumnarV1Wire, NullableStringEncoding)
 
 // ── Nullable UInt64 encodes with COL_IS_NULLABLE and a valid null_offset ──────
 
-TEST(ColumnarV1Wire, NullableFixed64Encoding)
+TEST(ColumnBinaryWire, NullableFixed64Encoding)
 {
     auto col = ColumnUInt64::create();
     for (int rep = 0; rep < 3; ++rep)
@@ -484,7 +484,7 @@ TEST(ColumnarV1Wire, NullableFixed64Encoding)
             col->getData().push_back(v);
 
     ColDescriptor desc{};
-    buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
+    buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, FRAME_HEADER_BYTES + COL_DESC_BYTES, desc);
 
     EXPECT_EQ(desc.type, COL_FIXED64 | COL_IS_NULLABLE);
     EXPECT_NE(desc.null_offset, 0u);
@@ -495,10 +495,10 @@ TEST(ColumnarV1Wire, NullableFixed64Encoding)
 // Int8 values {-1, 0, 127} encoded as COL_FIXED8; decoder must produce
 // ColumnVector<Int8>, not ColumnUInt8.
 
-TEST(ColumnarV1Wire, DecodeFixed8AsInt8)
+TEST(ColumnBinaryWire, DecodeFixed8AsInt8)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows, 0);
     uint32_t one = 1;
@@ -509,7 +509,7 @@ TEST(ColumnarV1Wire, DecodeFixed8AsInt8)
     desc.type        = COL_FIXED8;
     desc.data_offset = data_off;
     desc.data_size   = num_rows;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     int8_t vals[3] = {-1, 0, 127};
     std::memcpy(buf.data() + data_off, vals, 3);
@@ -529,10 +529,10 @@ TEST(ColumnarV1Wire, DecodeFixed8AsInt8)
 // COL_FIXED64 descriptor claims data_size = 3*8 = 24 bytes, but the buffer
 // only has 10 bytes of payload → readColumnarOutput must throw WASM_ERROR.
 
-TEST(ColumnarV1Wire, BoundsCheckDataOverflow)
+TEST(ColumnBinaryWire, BoundsCheckDataOverflow)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + 10, 0);  // too small for 3×uint64
     uint32_t one = 1;
@@ -543,7 +543,7 @@ TEST(ColumnarV1Wire, BoundsCheckDataOverflow)
     desc.type        = COL_FIXED64;
     desc.data_offset = data_off;
     desc.data_size   = num_rows * 8u;  // 24 — exceeds actual payload
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeUInt64>();
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
@@ -555,10 +555,10 @@ TEST(ColumnarV1Wire, BoundsCheckDataOverflow)
 // COL_BYTES: the offsets array is valid, but wire_offsets[1] = 100, which
 // is larger than data_size = 5 → must throw WASM_ERROR.
 
-TEST(ColumnarV1Wire, BoundsCheckWireOffsetOutOfRange)
+TEST(ColumnBinaryWire, BoundsCheckWireOffsetOutOfRange)
 {
     const uint32_t num_rows    = 1;
-    const uint32_t offsets_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t offsets_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_off    = offsets_off + (num_rows + 1u) * 4u;
     const uint32_t data_size   = 5u;
 
@@ -572,7 +572,7 @@ TEST(ColumnarV1Wire, BoundsCheckWireOffsetOutOfRange)
     desc.offsets_offset = offsets_off;
     desc.data_offset    = data_off;
     desc.data_size      = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     uint32_t wire_offs[2] = {0, 100};  // 100 >> data_size (5)
     std::memcpy(buf.data() + offsets_off, wire_offs, 8);
@@ -587,10 +587,10 @@ TEST(ColumnarV1Wire, BoundsCheckWireOffsetOutOfRange)
 // COL_COMPLEX describing Array(UInt64) for 3 rows but the data section is
 // truncated so there is no room for the 4 outer uint32 offsets.
 
-TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetsOverflow)
+TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetsOverflow)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_size = 4u;  // only 4 bytes — too small for (3+1)×4 = 16 offset bytes
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
@@ -602,7 +602,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetsOverflow)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
@@ -615,11 +615,11 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetsOverflow)
 // Outer uint64 offsets {0,1} claim 1 element; inner string offsets {0,9999}
 // claim 9999 chars that don't exist in the buffer → must throw.
 
-TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
+TEST(ColumnBinaryWire, BoundsCheckComplexStringCharsOverflow)
 {
     // Sequential layout: outer uint64[2] + inner uint64[2], no char bytes
     const uint32_t num_rows  = 1;
-    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off  = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_size = 2u * 8u + 2u * 8u;  // outer[2] + inner[2], uint64 each
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
@@ -631,7 +631,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     // outer uint64 offsets: {0, 1} — 1 string element in row 0
     uint64_t outer[2] = {0, 1};
@@ -652,10 +652,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
 // First field (UInt64, 2×8 = 16 bytes) fits; second field claims another
 // 16 bytes that don't exist in the truncated buffer.
 
-TEST(ColumnarV1Wire, BoundsCheckComplexFixedDataOverflow)
+TEST(ColumnBinaryWire, BoundsCheckComplexFixedDataOverflow)
 {
     const uint32_t num_rows  = 2;
-    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off  = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_size = 16u;  // room for only 1 field (2×8), not 2
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
@@ -667,7 +667,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexFixedDataOverflow)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     DataTypes fields = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
     auto result_type = std::make_shared<DataTypeTuple>(fields);
@@ -677,10 +677,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexFixedDataOverflow)
 
 // ── COL_COMPLEX bounds: array outer offset not monotonic ──────────────────────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetNotMonotonic)
+TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetNotMonotonic)
 {
     const uint32_t num_rows = 2;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Array(UInt64) for 2 rows: outer_offsets = [0, 3, 1] (not monotonic: 1 < 3)
     // total_elems = outer_offs[2] = 1
@@ -693,7 +693,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetNotMonotonic)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 3 * 4;  // 3 uint32 offsets
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     // outer_offsets: [0, 3, 1] — non-monotonic
     uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
@@ -707,10 +707,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetNotMonotonic)
 
 // ── COL_COMPLEX bounds: array offset exceeds total_elems ──────────────────────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetExceedsTotal)
+TEST(ColumnBinaryWire, BoundsCheckComplexArrayOffsetExceedsTotal)
 {
     const uint32_t num_rows = 2;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Array(UInt64) for 2 rows: outer_offsets = [0, 2, 5] (off[1]=2 > total=5? No, off[2]=5 > off[1]=2)
     // Actually: off[2]=5 is total_elems, off[1]=2 should be <= 5 — that's fine.
@@ -724,7 +724,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetExceedsTotal)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 3 * 4;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
     outer_offs[0] = 0;
@@ -737,10 +737,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetExceedsTotal)
 
 // ── COL_COMPLEX bounds: string offset not monotonic ──────────────────────────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetNotMonotonic)
+TEST(ColumnBinaryWire, BoundsCheckComplexStringOffsetNotMonotonic)
 {
     const uint32_t num_rows = 1;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Array(String) for 1 row: wire_offsets = [0, 4, 2] (not monotonic: 2 < 4)
     // total_chars = wire_offs[1] = 2
@@ -753,7 +753,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetNotMonotonic)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 3 * 4 + 4;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
     wire_offs[0] = 0;
@@ -766,10 +766,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetNotMonotonic)
 
 // ── COL_COMPLEX bounds: string offset exceeds total_chars ────────────────────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetExceedsTotal)
+TEST(ColumnBinaryWire, BoundsCheckComplexStringOffsetExceedsTotal)
 {
     const uint32_t num_rows = 1;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Array(String) for 1 row: wire_offsets = [0, 10, 2] (off[1]=10 > total=2)
     std::vector<uint8_t> buf(data_off + 3 * 4 + 2);
@@ -781,7 +781,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetExceedsTotal)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 3 * 4 + 2;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     uint32_t * wire_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
     wire_offs[0] = 0;
@@ -794,10 +794,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringOffsetExceedsTotal)
 
 // ── COL_COMPLEX bounds: total_elems exceeds available data ────────────────────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
+TEST(ColumnBinaryWire, BoundsCheckComplexTotalElemsExceedsData)
 {
     const uint32_t num_rows = 1;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Array(UInt64) for 1 row: outer_offsets = [0, 0xFFFFFFFF]
     // total_elems = outer_offs[n] = 0xFFFFFFFF — huge, but only 4 bytes of actual data
@@ -810,7 +810,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 2 * 4;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     uint32_t * outer_offs = reinterpret_cast<uint32_t *>(buf.data() + data_off);
     outer_offs[0] = 0;
@@ -822,10 +822,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexTotalElemsExceedsData)
 
 // ── COL_COMPLEX bounds: data_end constrained to data_size, not buf.size() ─────
 
-TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
+TEST(ColumnBinaryWire, BoundsCheckComplexDataEndTruncated)
 {
     const uint32_t num_rows = 1;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     // Buffer has 100 bytes but data_size says only 4 bytes of complex data.
     // The decoder must not read beyond data_size.
@@ -838,7 +838,7 @@ TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
     desc.type        = COL_COMPLEX;
     desc.data_offset = data_off;
     desc.data_size   = 4;  // only 4 bytes of complex data (1 uint32)
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     // Write a UInt64 at offset 4 — but data_size only allows up to 4+4=8,
     // and we need 8 bytes for one UInt64. This should fail.
@@ -858,10 +858,10 @@ TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
 // reach undefined behavior downstream (e.g. ColumnNullable::insertRangeFrom's
 // release-build assert_cast) instead of a clean parse error.
 
-TEST(ColumnarV1Wire, NullableDescriptorMissingNullMapRejected)
+TEST(ColumnBinaryWire, NullableDescriptorMissingNullMapRejected)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
     uint32_t one = 1;
@@ -873,7 +873,7 @@ TEST(ColumnarV1Wire, NullableDescriptorMissingNullMapRejected)
     desc.null_offset = 0;  // malformed: nullable bit set but no null map
     desc.data_offset = data_off;
     desc.data_size   = num_rows * 8u;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
@@ -887,10 +887,10 @@ TEST(ColumnarV1Wire, NullableDescriptorMissingNullMapRejected)
 // throw std::bad_cast (which callers expecting this function's clean
 // parse-error contract would not handle the same way).
 
-TEST(ColumnarV1Wire, NullableBitAgainstNonNullableDeclaredTypeRejected)
+TEST(ColumnBinaryWire, NullableBitAgainstNonNullableDeclaredTypeRejected)
 {
     const uint32_t num_rows = 3;
-    const uint32_t null_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t null_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_off = null_off + num_rows;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
@@ -903,7 +903,7 @@ TEST(ColumnarV1Wire, NullableBitAgainstNonNullableDeclaredTypeRejected)
     desc.null_offset = null_off;
     desc.data_offset = data_off;
     desc.data_size   = num_rows * 8u;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeUInt64>();  // not Nullable, but wire says it is
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
@@ -916,7 +916,7 @@ TEST(ColumnarV1Wire, NullableBitAgainstNonNullableDeclaredTypeRejected)
 // implicit default (empty string) for String dictionaries, so dict_row_count
 // ends up as 4: "" (default), "a", "b", "c".
 
-TEST(ColumnarV1Wire, LowCardinalityStringEncodeDecodeRoundTrip)
+TEST(ColumnBinaryWire, LowCardinalityStringEncodeDecodeRoundTrip)
 {
     auto lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto lc_col = lowcard_type->createColumn();
@@ -966,10 +966,10 @@ TEST(ColumnarV1Wire, LowCardinalityStringEncodeDecodeRoundTrip)
 // the length against the *remaining* space. These three cases exercise that pattern
 // at the null map, COL_BYTES offsets array, and COL_FIXED8 data sites.
 
-TEST(ColumnarV1Wire, BoundsCheckWrappedNullOffsetRejected)
+TEST(ColumnBinaryWire, BoundsCheckWrappedNullOffsetRejected)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
     uint32_t one = 1;
@@ -982,16 +982,16 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedNullOffsetRejected)
     desc.null_offset = std::numeric_limits<uint64_t>::max() - 1;
     desc.data_offset = data_off;
     desc.data_size   = num_rows * 8u;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
 }
 
-TEST(ColumnarV1Wire, BoundsCheckWrappedColBytesOffsetsOffsetRejected)
+TEST(ColumnBinaryWire, BoundsCheckWrappedColBytesOffsetsOffsetRejected)
 {
     const uint32_t num_rows  = 1;
-    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off  = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint32_t data_size = 1u;
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
@@ -1006,17 +1006,17 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedColBytesOffsetsOffsetRejected)
     desc.offsets_offset = std::numeric_limits<uint64_t>::max() - 4;
     desc.data_offset    = data_off;
     desc.data_size      = data_size;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeString>();
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
 }
 
-TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
+TEST(ColumnBinaryWire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
 {
     const uint32_t num_rows = 4;
-    constexpr uint64_t header_bytes = 4u + 4u + COLUMNAR_DESC_BYTES;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    constexpr uint64_t header_bytes = 4u + 4u + COL_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + header_bytes, 0);
     uint32_t one = 1;
@@ -1034,7 +1034,7 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
     dict_desc.offsets_offset = data_off;  // 0-row COL_BYTES: offsets array is [0], within region
     dict_desc.data_offset = data_off;
     dict_desc.data_size   = 0;
-    std::memcpy(header + 8u, &dict_desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(header + 8u, &dict_desc, COL_DESC_BYTES);
 
     ColDescriptor desc{};
     desc.type = COL_LOWCARD;
@@ -1043,7 +1043,7 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
     desc.offsets_offset = std::numeric_limits<uint64_t>::max() - 2;
     desc.data_offset = data_off;
     desc.data_size   = header_bytes;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
@@ -1056,10 +1056,10 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
 // rows_to_dec * width, the buf.size()-relative bounds check alone would let this
 // read run into whatever bytes happen to follow within the frame.
 
-TEST(ColumnarV1Wire, BoundsCheckFixed64DataSizeMismatchRejected)
+TEST(ColumnBinaryWire, BoundsCheckFixed64DataSizeMismatchRejected)
 {
     const uint32_t num_rows = 3;
-    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
     uint32_t one = 1;
@@ -1070,7 +1070,7 @@ TEST(ColumnarV1Wire, BoundsCheckFixed64DataSizeMismatchRejected)
     desc.type        = COL_FIXED64;
     desc.data_offset = data_off;
     desc.data_size   = 1;  // should be num_rows * 8 = 24
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeUInt64>();
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
@@ -1083,10 +1083,10 @@ TEST(ColumnarV1Wire, BoundsCheckFixed64DataSizeMismatchRejected)
 // without this check, readColumnFromDesc would silently decode header bytes as
 // the column's payload instead of throwing.
 
-TEST(ColumnarV1Wire, OutputRejectsDataOffsetInsideHeader)
+TEST(ColumnBinaryWire, OutputRejectsDataOffsetInsideHeader)
 {
     const uint32_t num_rows = 1;
-    const uint32_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::vector<uint8_t> buf(hdr_desc_size, 0);
     uint32_t one = 1;
@@ -1097,7 +1097,7 @@ TEST(ColumnarV1Wire, OutputRejectsDataOffsetInsideHeader)
     desc.type        = COL_FIXED64;
     desc.data_offset = 0;  // points at the frame header, not a real data section
     desc.data_size   = 8;
-    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(buf.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto result_type = std::make_shared<DataTypeUInt64>();
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);

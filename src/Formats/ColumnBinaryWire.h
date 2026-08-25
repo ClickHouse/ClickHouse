@@ -1,9 +1,9 @@
 #pragma once
 
-/// Wire format helpers for the COLUMNAR_V1 binary format.
+/// Wire format helpers for the `ColumnBinary` wire encoding.
 ///
 /// ── Purpose ─────────────────────────────────────────────────────────────────
-/// COLUMNAR_V1 is a flat columnar encoding used by the ColumnBinary I/O format
+/// It is a flat columnar encoding shared by the `ColumnBinary` I/O format
 /// and the WASM UDF ABI. It is designed for low-overhead host↔guest transfer:
 /// fixed-width columns serialize as a single memcpy; variable-width columns
 /// (strings) pay the unavoidable uint64_t offset conversion.
@@ -12,8 +12,8 @@
 ///
 /// ── Wire layout ─────────────────────────────────────────────────────────────
 ///
-///   [ 4 B num_rows | 4 B num_cols ]       ← COLUMNAR_HEADER_BYTES = 8
-///   [ ColDescriptor × num_cols    ]       ← COLUMNAR_DESC_BYTES = 40 each
+///   [ 4 B num_rows | 4 B num_cols ]       ← FRAME_HEADER_BYTES = 8
+///   [ ColDescriptor × num_cols    ]       ← COL_DESC_BYTES = 40 each
 ///   [ column data blobs ...       ]       ← at offsets given by descriptors
 ///
 /// ColDescriptor holds five uint64 fields (absolute byte offsets into the
@@ -47,7 +47,7 @@
 /// There is no per-row metadata for these types.
 ///
 /// Const column compaction: ClickHouse represents repeated values as
-/// ColumnConst (a single stored value + a logical row count). COLUMNAR_V1
+/// ColumnConst (a single stored value + a logical row count). ColumnBinary
 /// preserves this: COL_IS_CONST sets data for 1 row; the reader replicates it
 /// to the full row count on decode. This avoids materializing, e.g., a million
 /// identical literals just to serialize them.
@@ -70,7 +70,7 @@
 ///
 /// ── Supported types ─────────────────────────────────────────────────────────
 ///
-/// validateColumnarV1SupportedType is the single source of truth for which
+/// validateColumnBinaryWireSupportedType is the single source of truth for which
 /// ClickHouse types this wire format can represent; call it eagerly (at format
 /// construction / CREATE FUNCTION time) rather than discovering a rejection
 /// only once the first block is serialized. Not supported: Nullable(Array/Variant)
@@ -86,7 +86,7 @@
 /// (COL_LOWCARD). Nested LowCardinality (inside Array/Tuple) still fully
 /// materializes to T's full column instead (ColumnLowCardinality::
 /// convertToFullColumn() / insertRangeFromFullColumn) — TODO, see the comment on
-/// validateColumnarV1SupportedType's LowCardinality branch. Any fixed-width type
+/// validateColumnBinaryWireSupportedType's LowCardinality branch. Any fixed-width type
 /// is supported at any width (COL_FIXED8/16/32/64
 /// for 1/2/4/8 bytes, COL_FIXEDN for everything else — UUID, IPv6, Int128/
 /// UInt128, Decimal128/256), and so is FixedString(N) of any length (also
@@ -129,7 +129,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace ColumnarV1
+namespace ColumnBinaryWire
 {
 
 constexpr uint32_t COL_BYTES        = 0;
@@ -151,20 +151,20 @@ constexpr uint32_t COL_IS_CONST     = 0x80u;
 /// `allow_experimental_column_binary_format`: the frame header carries no wire version,
 /// so an incompatible layout change would misparse previously written data rather than
 /// reject it. The gate keeps `ColumnBinary` out of persisted data until the layout is
-/// frozen and the header is versioned. The `COLUMNAR_V1` WASM UDF ABI shares this wire
+/// frozen and the header is versioned. The `ColumnBinary` WASM UDF ABI shares this wire
 /// format but is not gated by this setting — WASM UDFs are experimental in their own
 /// right, and their frames never outlive a single call.
 inline void checkColumnBinaryFormatIsAllowed(bool allow_experimental)
 {
     if (!allow_experimental)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "The 'ColumnBinary' format is experimental: its COLUMNAR_V1 wire layout is still "
+            "The 'ColumnBinary' format is experimental: its ColumnBinary wire layout is still "
             "evolving and its frame header carries no version, so data written today may not be "
             "readable by a future version. Set allow_experimental_column_binary_format = 1 to use it.");
 }
 
-constexpr uint32_t COLUMNAR_HEADER_BYTES = 8;
-constexpr uint32_t COLUMNAR_DESC_BYTES   = 40;
+constexpr uint32_t FRAME_HEADER_BYTES = 8;
+constexpr uint32_t COL_DESC_BYTES   = 40;
 
 struct ColDescriptor
 {
@@ -174,7 +174,7 @@ struct ColDescriptor
     uint64_t data_offset;
     uint64_t data_size;
 };
-static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
+static_assert(sizeof(ColDescriptor) == COL_DESC_BYTES);
 
 // The wire descriptor's own offsets/sizes are uint64_t, but element/row counts are threaded
 // through the recursive size/write/read helpers below as uint32_t (row counts realistically
@@ -188,12 +188,12 @@ inline uint32_t checkFitsUint32(uint64_t value, const char * what)
 {
     if (value > std::numeric_limits<uint32_t>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: {} ({}) exceeds the maximum representable element count ({})",
+            "ColumnBinary: {} ({}) exceeds the maximum representable element count ({})",
             what, value, std::numeric_limits<uint32_t>::max());
     return static_cast<uint32_t>(value);
 }
 
-// Recursively check that `type` can round-trip through the COLUMNAR_V1 wire format,
+// Recursively check that `type` can round-trip through the ColumnBinary wire format,
 // throwing INCORRECT_DATA immediately with the exact reason otherwise. Without this,
 // callers only discover an unsupported signature (nested Nullable/Variant inside
 // Array/Tuple, Map, LowCardinality, or a fixed-width type whose size isn't exactly
@@ -202,7 +202,7 @@ inline uint32_t checkFitsUint32(uint64_t value, const char * what)
 // is_nested is false only for the outermost call; Nullable/Variant are only
 // disallowed once already inside an Array/Tuple (COL_COMPLEX), where there is no
 // wire slot for a nested null map or discriminator.
-inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_nested = false)
+inline void validateColumnBinaryWireSupportedType(const DataTypePtr & type, bool is_nested = false)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
@@ -224,17 +224,17 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
             && (typeid_cast<const DataTypeArray *>(nested_type.get())
                 || typeid_cast<const DataTypeVariant *>(nested_type.get())))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1/ColumnBinary: Nullable(Array/Variant) is not supported: {}", type->getName());
-        validateColumnarV1SupportedType(nested_type, is_nested);
+                "ColumnBinary/ColumnBinary: Nullable(Array/Variant) is not supported: {}", type->getName());
+        validateColumnBinaryWireSupportedType(nested_type, is_nested);
         return;
     }
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
     {
         if (is_nested)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1/ColumnBinary: nested Variant inside Array/Tuple is not supported: {}", type->getName());
+                "ColumnBinary/ColumnBinary: nested Variant inside Array/Tuple is not supported: {}", type->getName());
         for (const auto & alt : variant_type->getVariants())
-            validateColumnarV1SupportedType(alt, is_nested);
+            validateColumnBinaryWireSupportedType(alt, is_nested);
         return;
     }
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
@@ -242,7 +242,7 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
         // Map(K, V) is Array(Tuple(K, V)) under the hood (DataTypeMap::getNestedType());
         // no dedicated wire encoding needed, just validate through the existing Array/
         // Tuple path.
-        validateColumnarV1SupportedType(map_type->getNestedType(), is_nested);
+        validateColumnBinaryWireSupportedType(map_type->getNestedType(), is_nested);
         return;
     }
     if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -254,18 +254,18 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
         // complexDataSize/writeComplexData/the decode lambda) — a nested dictionary
         // encoding raises its own design question (would it share one dictionary across
         // the whole flattened Array, or get one per element-run?) not answered here.
-        validateColumnarV1SupportedType(lowcard_type->getDictionaryType(), is_nested);
+        validateColumnBinaryWireSupportedType(lowcard_type->getDictionaryType(), is_nested);
         return;
     }
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        validateColumnarV1SupportedType(array_type->getNestedType(), /* is_nested */ true);
+        validateColumnBinaryWireSupportedType(array_type->getNestedType(), /* is_nested */ true);
         return;
     }
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & elem : tuple_type->getElements())
-            validateColumnarV1SupportedType(elem, /* is_nested */ true);
+            validateColumnBinaryWireSupportedType(elem, /* is_nested */ true);
         return;
     }
     if (typeid_cast<const DataTypeString *>(type.get()))
@@ -285,7 +285,7 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
     // "supported" and only fails once buildColDescriptor reaches its fixed-width fallback
     // and calls sizeOfValueIfFixed()/getRawData() on a column that has neither.
     throw Exception(ErrorCodes::INCORRECT_DATA,
-        "COLUMNAR_V1/ColumnBinary: type is not supported: {}", type->getName());
+        "ColumnBinary/ColumnBinary: type is not supported: {}", type->getName());
 }
 
 // ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
@@ -336,7 +336,7 @@ inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
         return static_cast<uint64_t>(n) + complexDataSize(null_col->getNestedColumn(), n);
     if (typeid_cast<const ColumnVariant *>(&col))
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+            "ColumnBinary: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
             "use a flat variant column or a different format");
     // Fixed-width fallback (ColumnVector<T>, ColumnUInt8, etc.)
     return static_cast<uint64_t>(n) * col.sizeOfValueIfFixed();
@@ -403,7 +403,7 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     }
     if (typeid_cast<const ColumnVariant *>(&col))
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+            "ColumnBinary: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
             "use a flat variant column or a different format");
     // Fixed-width fallback
     std::memcpy(dst, col.getRawData().data(), n * col.sizeOfValueIfFixed());
@@ -423,7 +423,7 @@ inline uint64_t buildColDescriptor(
     // guarded by is_nullable); unwrap here so the Variant/Array/Tuple dispatch below
     // sees the actual complex column regardless of Nullable wrapping. COL_VARIANT
     // already encodes NULL via its discriminator and is never reached here nullable
-    // (validateColumnarV1SupportedType rejects Nullable(Variant(...))).
+    // (validateColumnBinaryWireSupportedType rejects Nullable(Variant(...))).
     if (const auto * top_null_col = typeid_cast<const ColumnNullable *>(col))
         col = &top_null_col->getNestedColumn();
 
@@ -464,7 +464,7 @@ inline uint64_t buildColDescriptor(
                 ++k;
 
         // Reserve header: uint32 K + K × 24 bytes (discr+pad+ColDescriptor)
-        write_cursor += 4u + k * (4u + COLUMNAR_DESC_BYTES);
+        write_cursor += 4u + k * (4u + COL_DESC_BYTES);
 
         // Now allocate space for each non-empty sub-column.
         for (uint32_t local = 0; local < num_variants; ++local)
@@ -512,7 +512,7 @@ inline uint64_t buildColDescriptor(
 
         write_cursor = (write_cursor + 3ull) & ~3ull;
         desc.data_offset = write_cursor;
-        write_cursor += 4u + 4u + COLUMNAR_DESC_BYTES; // dict_row_count + (index_elem_width+pad) + dict_desc
+        write_cursor += 4u + 4u + COL_DESC_BYTES; // dict_row_count + (index_elem_width+pad) + dict_desc
 
         ColDescriptor dict_desc{};
         write_cursor = buildColDescriptor(&dict_col, false, false, dict_rows, write_cursor, dict_desc);
@@ -693,7 +693,7 @@ inline void writeColData(
         uint8_t * record_ptr = block + 4u;
 
         // Track where sub-column data starts (after header).
-        uint64_t sub_cursor = desc.data_offset + 4u + k * (4u + COLUMNAR_DESC_BYTES);
+        uint64_t sub_cursor = desc.data_offset + 4u + k * (4u + COL_DESC_BYTES);
 
         for (uint32_t local = 0; local < num_variants; ++local)
         {
@@ -710,8 +710,8 @@ inline void writeColData(
 
             std::memcpy(record_ptr,     &global_d,   1u);
             std::memset(record_ptr + 1, 0,           3u);
-            std::memcpy(record_ptr + 4, &inner_desc, COLUMNAR_DESC_BYTES);
-            record_ptr += 4u + COLUMNAR_DESC_BYTES;
+            std::memcpy(record_ptr + 4, &inner_desc, COL_DESC_BYTES);
+            record_ptr += 4u + COL_DESC_BYTES;
 
             writeColData(&sub, false, sub_rows, inner_desc, buf);
         }
@@ -730,14 +730,14 @@ inline void writeColData(
         // deterministic given the same inputs) rather than threading it through some
         // other channel — same pattern the Variant branch above uses for inner_desc.
         ColDescriptor dict_desc{};
-        buildColDescriptor(&dict_col, false, false, dict_rows, desc.data_offset + 4u + 4u + COLUMNAR_DESC_BYTES, dict_desc);
+        buildColDescriptor(&dict_col, false, false, dict_rows, desc.data_offset + 4u + 4u + COL_DESC_BYTES, dict_desc);
 
         uint8_t * header = buf.data() + desc.data_offset;
         std::memcpy(header, &dict_rows, 4u);
         uint8_t idx_elem_sz_byte = static_cast<uint8_t>(idx_elem_sz);
         std::memcpy(header + 4u, &idx_elem_sz_byte, 1u);
         std::memset(header + 5u, 0, 3u);
-        std::memcpy(header + 8u, &dict_desc, COLUMNAR_DESC_BYTES);
+        std::memcpy(header + 8u, &dict_desc, COL_DESC_BYTES);
 
         writeColData(&dict_col, false, dict_rows, dict_desc, buf);
 
@@ -800,7 +800,7 @@ inline void writeColData(
     std::memcpy(buf.data() + desc.data_offset, raw, num_rows * elem_sz);
 }
 
-// Decode one column from a COLUMNAR_V1 frame given its pre-parsed descriptor.
+// Decode one column from a ColumnBinary frame given its pre-parsed descriptor.
 // buf:         the complete frame buffer (all byte offsets in desc are absolute
 //              from buf.data()).
 // desc:        ColDescriptor for this column (read from the descriptor table).
@@ -825,7 +825,7 @@ inline MutableColumnPtr readColumnFromDesc(
     const auto * nullable_result_type = typeid_cast<const DataTypeNullable *>(result_type.get());
     if (is_nullable_wire && !nullable_result_type)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: descriptor sets COL_IS_NULLABLE but declared type {} is not Nullable",
+            "ColumnBinary: descriptor sets COL_IS_NULLABLE but declared type {} is not Nullable",
             result_type->getName());
     const DataTypePtr & base_type = is_nullable_wire
         ? nullable_result_type->getNestedType()
@@ -838,7 +838,7 @@ inline MutableColumnPtr readColumnFromDesc(
     // out-of-bounds pointer that later bounds checks then compare against.
     if (desc.data_offset > buf.size() || desc.data_size > buf.size() - desc.data_offset)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: column data range out of bounds: offset={}, size={}, buf={}",
+            "ColumnBinary: column data range out of bounds: offset={}, size={}, buf={}",
             desc.data_offset, desc.data_size, buf.size());
 
     const uint8_t * const data_end = buf.data() + desc.data_offset + desc.data_size;
@@ -868,7 +868,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // address space, producing UB before the comparison even runs.
             if (outer_bytes > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
+                    "ColumnBinary: COL_COMPLEX nested Array outer offsets out of bounds");
             const uint8_t * outer_offs = p;
             p += outer_bytes;
             // Widen before the multiply: n is guest-controlled, and n * 8u computed in
@@ -883,7 +883,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // can make later offset differences underflow into a huge size downstream.
             if (unalignedLoad<uint64_t>(outer_offs) != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX Array offsets must start at 0");
+                    "ColumnBinary: COL_COMPLEX Array offsets must start at 0");
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(n);
             uint64_t prev_off = 0;
@@ -893,7 +893,7 @@ inline MutableColumnPtr readColumnFromDesc(
                 uint64_t off = unalignedLoad<uint64_t>(outer_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
                 if (off < prev_off)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
+                        "ColumnBinary: COL_COMPLEX Array offsets must be non-decreasing");
                 offsets_col->getData()[i] = off;
                 prev_off = off;
             }
@@ -916,14 +916,14 @@ inline MutableColumnPtr readColumnFromDesc(
             // to avoid overflowing pointer arithmetic on a guest-controlled length.
             if (off_bytes > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
+                    "ColumnBinary: COL_COMPLEX String offsets out of bounds");
             const uint8_t * wire_offs = p;
             p += off_bytes;
             // Same n * 8u wraparound hazard as the Array branch above: widen before the multiply.
             uint64_t total_chars = unalignedLoad<uint64_t>(wire_offs + static_cast<uint64_t>(n) * 8u);
             if (total_chars > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
+                    "ColumnBinary: COL_COMPLEX String chars out of bounds");
             const uint8_t * chars_src = p;
             p += total_chars;
             // wire_offs holds n+1 cumulative byte offsets (offs[0]==0, offs[n]==total_chars);
@@ -932,7 +932,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // huge size and drive an out-of-bounds memcpy.
             if (unalignedLoad<uint64_t>(wire_offs) != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX String offsets must start at 0");
+                    "ColumnBinary: COL_COMPLEX String offsets must start at 0");
             auto col_str = ColumnString::create();
             auto & chars   = col_str->getChars();
             auto & offsets = col_str->getOffsets();
@@ -946,7 +946,7 @@ inline MutableColumnPtr readColumnFromDesc(
                 uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + static_cast<uint64_t>(i) * 8u);
                 if (wire_start != prev_wire_end || wire_end < wire_start)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_COMPLEX String offsets must be non-decreasing and contiguous");
+                        "ColumnBinary: COL_COMPLEX String offsets must be non-decreasing and contiguous");
                 prev_wire_end = wire_end;
                 uint64_t str_len    = wire_end - wire_start;
                 chars.resize(ch_pos + str_len);
@@ -962,7 +962,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // type's own complexData layout.
             if (static_cast<uint64_t>(n) > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX nested Nullable null map out of bounds");
+                    "ColumnBinary: COL_COMPLEX nested Nullable null map out of bounds");
             auto null_map_col = ColumnUInt8::create(n);
             std::memcpy(null_map_col->getData().data(), p, n);
             p += n;
@@ -971,12 +971,12 @@ inline MutableColumnPtr readColumnFromDesc(
         }
         if (typeid_cast<const DataTypeVariant *>(type.get()))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+                "ColumnBinary: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
                 "use a flat variant column or a different format");
         uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
         if (static_cast<uint64_t>(n) * elem_bytes > static_cast<uint64_t>(data_end - p))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_COMPLEX fixed data out of bounds");
+                "ColumnBinary: COL_COMPLEX fixed data out of bounds");
         auto col = type->createColumn();
         col->insertManyDefaults(n);
         std::memcpy(const_cast<char *>(col->getRawData().data()), p, n * elem_bytes);
@@ -998,13 +998,13 @@ inline MutableColumnPtr readColumnFromDesc(
         // assert_cast is a raw static_cast — UB instead of a clean parse error.
         if (desc.null_offset == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_IS_NULLABLE is set but null_offset is 0 (missing null map)");
+                "ColumnBinary: COL_IS_NULLABLE is set but null_offset is 0 (missing null map)");
         // null_offset is an untrusted uint64_t straight from the wire: check the offset
         // against buf.size() first, then the length against the *remaining* space, instead
         // of offset + length > buf.size(), which a large offset can wrap past overflow.
         if (desc.null_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.null_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: null map out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: null map out of bounds: offset={}, rows={}, buf={}",
                 desc.null_offset, rows_to_dec, buf.size());
         // Null map: 1=null, 0=non-null — identical to ColumnNullable layout; direct copy.
         auto null_col = ColumnUInt8::create(rows_to_dec);
@@ -1025,7 +1025,7 @@ inline MutableColumnPtr readColumnFromDesc(
         // rejection. The writer only ever emits COL_BYTES for a ColumnString, so mirror that.
         if (!typeid_cast<const ColumnString *>(base_type->createColumn().get()))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_BYTES descriptor does not match declared type {}", base_type->getName());
+                "ColumnBinary: COL_BYTES descriptor does not match declared type {}", base_type->getName());
 
         // Widen before the +1: rows_to_dec is otherwise-untrusted (guest/network-controlled),
         // and rows_to_dec == UINT32_MAX would wrap (rows_to_dec + 1) to 0 in uint32_t
@@ -1037,11 +1037,11 @@ inline MutableColumnPtr readColumnFromDesc(
         const uint64_t offsets_bytes = (static_cast<uint64_t>(rows_to_dec) + 1u) * 8u;
         if (desc.offsets_offset > buf.size() || offsets_bytes > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_BYTES offsets array out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_BYTES offsets array out of bounds: offset={}, rows={}, buf={}",
                 desc.offsets_offset, rows_to_dec, buf.size());
         if (desc.data_offset > buf.size() || desc.data_size > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_BYTES data out of bounds: offset={}, size={}, buf={}",
+                "ColumnBinary: COL_BYTES data out of bounds: offset={}, size={}, buf={}",
                 desc.data_offset, desc.data_size, buf.size());
 
         const uint8_t  * wire_offsets = buf.data() + desc.offsets_offset;
@@ -1067,12 +1067,12 @@ inline MutableColumnPtr readColumnFromDesc(
             uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + static_cast<uint64_t>(i) * 8u);
             if (wire_start != expected_start)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_BYTES offsets must be contiguous starting at 0: row {} expected "
+                    "ColumnBinary: COL_BYTES offsets must be contiguous starting at 0: row {} expected "
                     "start {}, got {}",
                     i, expected_start, wire_start);
             if (wire_end < wire_start || wire_end > desc.data_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_BYTES invalid string offsets at row {}: [{}, {}), data_size={}",
+                    "ColumnBinary: COL_BYTES invalid string offsets at row {}: [{}, {}), data_size={}",
                     i, wire_start, wire_end, desc.data_size);
             uint64_t str_len    = wire_end - wire_start;
             chars.resize(ch_pos + str_len);
@@ -1083,7 +1083,7 @@ inline MutableColumnPtr readColumnFromDesc(
         }
         if (expected_start != desc.data_size)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_BYTES offsets do not cover the full data block: consumed {}, data_size={}",
+                "ColumnBinary: COL_BYTES offsets do not cover the full data block: consumed {}, data_size={}",
                 expected_start, desc.data_size);
         col = maybe_nullable(std::move(col_str));
     }
@@ -1091,7 +1091,7 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (base_type->getSizeOfValueInMemory() != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED8 type width mismatch: declared type has {} bytes",
+                "ColumnBinary: COL_FIXED8 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
         // desc.data_size is otherwise-untrusted and must match the declared row count exactly:
         // without this check, only the (buf.size()-relative) bounds check below applies, which
@@ -1099,11 +1099,11 @@ inline MutableColumnPtr readColumnFromDesc(
         // next column's payload as long as enough bytes remain in the whole buffer.
         if (desc.data_size != static_cast<uint64_t>(rows_to_dec))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED8 data_size {} does not match row count {}",
+                "ColumnBinary: COL_FIXED8 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED8 data out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_FIXED8 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         // Use base_type so Int8, Bool, etc. round-trip correctly (not just UInt8).
         auto inner = base_type->createColumn();
@@ -1116,16 +1116,16 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (base_type->getSizeOfValueInMemory() != 2)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED16 type width mismatch: declared type has {} bytes",
+                "ColumnBinary: COL_FIXED16 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
         // See the matching check in COL_FIXED8 above.
         if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 2u)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED16 data_size {} does not match row count {}",
+                "ColumnBinary: COL_FIXED16 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 2u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
@@ -1137,16 +1137,16 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (base_type->getSizeOfValueInMemory() != 4)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED32 type width mismatch: declared type has {} bytes",
+                "ColumnBinary: COL_FIXED32 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
         // See the matching check in COL_FIXED8 above.
         if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 4u)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED32 data_size {} does not match row count {}",
+                "ColumnBinary: COL_FIXED32 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
@@ -1158,16 +1158,16 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (base_type->getSizeOfValueInMemory() != 8)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED64 type width mismatch: declared type has {} bytes",
+                "ColumnBinary: COL_FIXED64 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
         // See the matching check in COL_FIXED8 above.
         if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 8u)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED64 data_size {} does not match row count {}",
+                "ColumnBinary: COL_FIXED64 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 8u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
@@ -1185,12 +1185,12 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             if (desc.data_size % rows_to_dec != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_FIXEDN data_size {} not a multiple of row count {}",
+                    "ColumnBinary: COL_FIXEDN data_size {} not a multiple of row count {}",
                     desc.data_size, rows_to_dec);
             elem_size = desc.data_size / rows_to_dec;
             if (base_type->getSizeOfValueInMemory() != elem_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_FIXEDN type width mismatch: declared type has {} bytes, wire has {}",
+                    "ColumnBinary: COL_FIXEDN type width mismatch: declared type has {} bytes, wire has {}",
                     base_type->getSizeOfValueInMemory(), elem_size);
         }
         // rows_to_dec == 0: no width to divide by, but a malformed frame could still
@@ -1198,7 +1198,7 @@ inline MutableColumnPtr readColumnFromDesc(
         // would write desc.data_size bytes into a zero-sized allocation.
         else if (desc.data_size != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_FIXEDN data_size {} must be 0 for an empty column",
+                "ColumnBinary: COL_FIXEDN data_size {} must be 0 for an empty column",
                 desc.data_size);
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
@@ -1222,7 +1222,7 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint64_t outer_offset_bytes = (static_cast<uint64_t>(rows_to_dec) + 1u) * sizeof(uint64_t);
             if (outer_offset_bytes > desc.data_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX outer offsets exceed data_size: need={}, data_size={}",
+                    "ColumnBinary: COL_COMPLEX outer offsets exceed data_size: need={}, data_size={}",
                     outer_offset_bytes, desc.data_size);
             const uint8_t * p = buf.data() + desc.data_offset;
             const uint8_t * outer_offs = p;
@@ -1238,7 +1238,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // ColumnArray whose per-row size underflows into a huge value downstream.
             if (unalignedLoad<uint64_t>(outer_offs) != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_COMPLEX Array offsets must start at 0");
+                    "ColumnBinary: COL_COMPLEX Array offsets must start at 0");
             uint64_t prev_off = 0;
             for (uint32_t i = 0; i < rows_to_dec; ++i)
             {
@@ -1246,7 +1246,7 @@ inline MutableColumnPtr readColumnFromDesc(
                 uint64_t off = unalignedLoad<uint64_t>(outer_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
                 if (off < prev_off)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
+                        "ColumnBinary: COL_COMPLEX Array offsets must be non-decreasing");
                 prev_off = off;
             }
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
@@ -1269,12 +1269,12 @@ inline MutableColumnPtr readColumnFromDesc(
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(base_type.get());
         if (!variant_type)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT descriptor does not match declared type {}", base_type->getName());
+                "ColumnBinary: COL_VARIANT descriptor does not match declared type {}", base_type->getName());
 
         const auto & alt_types = variant_type->getVariants();
         if (alt_types.size() > ColumnVariant::MAX_NESTED_COLUMNS)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT declared type has too many alternatives: {}", alt_types.size());
+                "ColumnBinary: COL_VARIANT declared type has too many alternatives: {}", alt_types.size());
 
         // Neither array is optional for COL_VARIANT, so 0 is not an "absent" sentinel here the
         // way it is for a plain column's null map: the writer's cursor starts past the header
@@ -1285,35 +1285,35 @@ inline MutableColumnPtr readColumnFromDesc(
         // hole for an all-null frame, where row_off is never examined.
         if (desc.null_offset == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT descriptor has no discriminators (null_offset is 0)");
+                "ColumnBinary: COL_VARIANT descriptor has no discriminators (null_offset is 0)");
         if (desc.offsets_offset == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT descriptor has no row offsets (offsets_offset is 0)");
+                "ColumnBinary: COL_VARIANT descriptor has no row offsets (offsets_offset is 0)");
 
         // Discriminators: uint8[rows_to_dec] at null_offset (NULL_DISCRIMINATOR=0xFF for NULL rows).
         if (desc.null_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.null_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT discriminators out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_VARIANT discriminators out of bounds: offset={}, rows={}, buf={}",
                 desc.null_offset, rows_to_dec, buf.size());
         const uint8_t * disc_src = buf.data() + desc.null_offset;
 
         // Row offsets: uint32[rows_to_dec] at offsets_offset (position within the row's sub-column).
         if (desc.offsets_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT row offsets out of bounds: offset={}, rows={}, buf={}",
+                "ColumnBinary: COL_VARIANT row offsets out of bounds: offset={}, rows={}, buf={}",
                 desc.offsets_offset, rows_to_dec, buf.size());
         const uint8_t * offs_src = buf.data() + desc.offsets_offset;
 
         // Header: uint32 K + K x { uint8 global_discriminator, uint8[3] pad, ColDescriptor }.
         if (desc.data_size < 4u)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT header truncated: data_size={}", desc.data_size);
+                "ColumnBinary: COL_VARIANT header truncated: data_size={}", desc.data_size);
         const uint8_t * header = buf.data() + desc.data_offset;
         uint32_t k = unalignedLoad<uint32_t>(header);
-        constexpr uint64_t record_bytes = 4u + COLUMNAR_DESC_BYTES;
+        constexpr uint64_t record_bytes = 4u + COL_DESC_BYTES;
         if (static_cast<uint64_t>(k) * record_bytes > desc.data_size - 4u)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_VARIANT header declares {} sub-variants, exceeding data_size={}",
+                "ColumnBinary: COL_VARIANT header declares {} sub-variants, exceeding data_size={}",
                 k, desc.data_size);
 
         // Map global discriminator -> (inner descriptor, row count in that sub-column).
@@ -1325,14 +1325,14 @@ inline MutableColumnPtr readColumnFromDesc(
             uint8_t global_d = record_ptr[0];
             if (global_d >= alt_types.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_VARIANT sub-variant global discriminator {} out of range [0, {})",
+                    "ColumnBinary: COL_VARIANT sub-variant global discriminator {} out of range [0, {})",
                     static_cast<uint32_t>(global_d), alt_types.size());
             if (sub_present[global_d])
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_VARIANT duplicate global discriminator {}", static_cast<uint32_t>(global_d));
+                    "ColumnBinary: COL_VARIANT duplicate global discriminator {}", static_cast<uint32_t>(global_d));
 
             ColDescriptor inner_desc{};
-            std::memcpy(&inner_desc, record_ptr + 4u, COLUMNAR_DESC_BYTES);
+            std::memcpy(&inner_desc, record_ptr + 4u, COL_DESC_BYTES);
             // null_offset was repurposed by the writer to carry this sub-column's row count
             // (not a real offset — Variant sub-columns are always written with is_nullable=
             // false, so nothing ever reads null_offset as an offset for them). offsets_offset
@@ -1360,13 +1360,13 @@ inline MutableColumnPtr readColumnFromDesc(
             if (inner_desc.offsets_offset != 0
                 && (inner_desc.offsets_offset < payload_start || inner_desc.offsets_offset > sub_region_end))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_VARIANT sub-variant offsets_offset {} outside variant data region [{}, {})",
+                    "ColumnBinary: COL_VARIANT sub-variant offsets_offset {} outside variant data region [{}, {})",
                     inner_desc.offsets_offset, payload_start, sub_region_end);
             if (inner_desc.data_offset < payload_start
                 || inner_desc.data_offset > sub_region_end
                 || inner_desc.data_size > sub_region_end - inner_desc.data_offset)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_VARIANT sub-variant data range [{}, {}) outside variant data region [{}, {})",
+                    "ColumnBinary: COL_VARIANT sub-variant data range [{}, {}) outside variant data region [{}, {})",
                     inner_desc.data_offset, inner_desc.data_offset + inner_desc.data_size,
                     payload_start, sub_region_end);
             sub_by_global[global_d] = {inner_desc, sub_rows};
@@ -1407,7 +1407,7 @@ inline MutableColumnPtr readColumnFromDesc(
             {
                 if (d >= alt_types.size() || row_off != next_offset[d] || row_off >= sub_by_global[d].second)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_VARIANT row {} has invalid discriminator/offset: discr={}, offset={}",
+                        "ColumnBinary: COL_VARIANT row {} has invalid discriminator/offset: discr={}, offset={}",
                         i, static_cast<uint32_t>(d), row_off);
                 ++next_offset[d];
             }
@@ -1422,23 +1422,23 @@ inline MutableColumnPtr readColumnFromDesc(
         const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(base_type.get());
         if (!lowcard_type)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD descriptor does not match declared type {}", base_type->getName());
+                "ColumnBinary: COL_LOWCARD descriptor does not match declared type {}", base_type->getName());
 
         // Header: uint32 dict_row_count, uint8 index_elem_width, uint8[3] pad, ColDescriptor dict_desc.
-        constexpr uint64_t header_bytes = 4u + 4u + COLUMNAR_DESC_BYTES;
+        constexpr uint64_t header_bytes = 4u + 4u + COL_DESC_BYTES;
         if (desc.data_size < header_bytes)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD header truncated: data_size={}", desc.data_size);
+                "ColumnBinary: COL_LOWCARD header truncated: data_size={}", desc.data_size);
         const uint8_t * header = buf.data() + desc.data_offset;
         uint32_t dict_row_count = unalignedLoad<uint32_t>(header);
         uint8_t index_elem_width = header[4];
         if (index_elem_width != 1 && index_elem_width != 2 && index_elem_width != 4 && index_elem_width != 8)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD index element width {} is not one of 1/2/4/8",
+                "ColumnBinary: COL_LOWCARD index element width {} is not one of 1/2/4/8",
                 static_cast<uint32_t>(index_elem_width));
 
         ColDescriptor dict_desc{};
-        std::memcpy(&dict_desc, header + 8u, COLUMNAR_DESC_BYTES);
+        std::memcpy(&dict_desc, header + 8u, COL_DESC_BYTES);
 
         // dict_desc is read from otherwise-untrusted guest/network bytes; confine it to
         // this COL_LOWCARD's own [data_offset, data_offset+data_size) region before
@@ -1457,7 +1457,7 @@ inline MutableColumnPtr readColumnFromDesc(
         // than letting a malformed frame reach that cast.
         if (dict_desc.type & COL_IS_CONST)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD dictionary descriptor must not set COL_IS_CONST");
+                "ColumnBinary: COL_LOWCARD dictionary descriptor must not set COL_IS_CONST");
         // The dictionary payload starts right after this header (the writer places it there),
         // so the addressable region begins at payload_start, not at desc.data_offset — otherwise
         // a malformed frame could point the dictionary back at the header bytes that describe it
@@ -1466,18 +1466,18 @@ inline MutableColumnPtr readColumnFromDesc(
         if (dict_desc.null_offset != 0
             && (dict_desc.null_offset < payload_start || dict_desc.null_offset > region_end))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD dictionary null_offset {} outside data region [{}, {})",
+                "ColumnBinary: COL_LOWCARD dictionary null_offset {} outside data region [{}, {})",
                 dict_desc.null_offset, payload_start, region_end);
         if (dict_desc.offsets_offset != 0
             && (dict_desc.offsets_offset < payload_start || dict_desc.offsets_offset > region_end))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD dictionary offsets_offset {} outside data region [{}, {})",
+                "ColumnBinary: COL_LOWCARD dictionary offsets_offset {} outside data region [{}, {})",
                 dict_desc.offsets_offset, payload_start, region_end);
         if (dict_desc.data_offset < payload_start
             || dict_desc.data_offset > region_end
             || dict_desc.data_size > region_end - dict_desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD dictionary data range [{}, {}) outside data region [{}, {})",
+                "ColumnBinary: COL_LOWCARD dictionary data range [{}, {}) outside data region [{}, {})",
                 dict_desc.data_offset, dict_desc.data_offset + dict_desc.data_size, payload_start, region_end);
 
         // Confining to a subspan ending at region_end (rather than checking
@@ -1508,11 +1508,11 @@ inline MutableColumnPtr readColumnFromDesc(
         // from any real index array - metadata reparsed as payload rather than a rejection.
         if (desc.offsets_offset == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD descriptor has no index array (offsets_offset is 0)");
+                "ColumnBinary: COL_LOWCARD descriptor has no index array (offsets_offset is 0)");
         if (desc.offsets_offset > buf.size()
             || static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD index array out of bounds: offset={}, rows={}, width={}, buf={}",
+                "ColumnBinary: COL_LOWCARD index array out of bounds: offset={}, rows={}, width={}, buf={}",
                 desc.offsets_offset, rows_to_dec, static_cast<uint32_t>(index_elem_width), buf.size());
         const uint8_t * idx_src = buf.data() + desc.offsets_offset;
 
@@ -1534,7 +1534,7 @@ inline MutableColumnPtr readColumnFromDesc(
         for (uint32_t i = 0; i < rows_to_dec; ++i)
             if (idx_col->getUInt(i) >= dict_row_count)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_LOWCARD index {} at row {} exceeds dictionary size {}",
+                    "ColumnBinary: COL_LOWCARD index {} at row {} exceeds dictionary size {}",
                     idx_col->getUInt(i), i, dict_row_count);
 
         // `ColumnUnique` reserves the leading dictionary slots for its special values:
@@ -1551,14 +1551,14 @@ inline MutableColumnPtr readColumnFromDesc(
         const uint32_t num_special_values = dictionary_type.isNullable() ? 2 : 1;
         if (dict_row_count < num_special_values)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: COL_LOWCARD dictionary of type {} has {} rows, but its reserved leading "
+                "ColumnBinary: COL_LOWCARD dictionary of type {} has {} rows, but its reserved leading "
                 "slots require at least {}", dictionary_type.getName(), dict_row_count, num_special_values);
         auto unique_col = DataTypeLowCardinality::createColumnUnique(dictionary_type, std::move(dict_col));
         col = ColumnLowCardinality::create(std::move(unique_col), std::move(idx_col), /* is_shared */ false);
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ColumnBinary: unsupported output ColType {}", raw_type);
     }
 
     if (is_const)
@@ -1576,7 +1576,7 @@ inline MutableColumnPtr readColumnFromDesc(
     return col;
 }
 
-// Decode a single-column COLUMNAR_V1 output buffer into a MutableColumnPtr.
+// Decode a single-column ColumnBinary output buffer into a MutableColumnPtr.
 // This is the entry point used by WASM UDF executors; it enforces num_cols == 1.
 // result_type drives recursive decoding for COL_COMPLEX.
 inline MutableColumnPtr readColumnarOutput(
@@ -1584,9 +1584,9 @@ inline MutableColumnPtr readColumnarOutput(
     const DataTypePtr & result_type,
     size_t expected_rows)
 {
-    if (buf.size() < COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES)
+    if (buf.size() < FRAME_HEADER_BYTES + COL_DESC_BYTES)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output buffer too small: {} bytes", buf.size());
+            "ColumnBinary output buffer too small: {} bytes", buf.size());
 
     uint32_t num_rows = 0;
     uint32_t num_cols = 0;
@@ -1595,13 +1595,13 @@ inline MutableColumnPtr readColumnarOutput(
 
     if (num_rows != expected_rows)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output row count mismatch: expected {}, got {}", expected_rows, num_rows);
+            "ColumnBinary output row count mismatch: expected {}, got {}", expected_rows, num_rows);
     if (num_cols != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output must have exactly 1 column, got {}", num_cols);
+            "ColumnBinary output must have exactly 1 column, got {}", num_cols);
 
     ColDescriptor desc{};
-    std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
+    std::memcpy(&desc, buf.data() + FRAME_HEADER_BYTES, sizeof(desc));
 
     // Mirrors ColumnBinaryInputFormat::read()'s frame validator: null_offset/offsets_offset use
     // 0 as the "absent" sentinel, but any nonzero value, and data_offset unconditionally (it has
@@ -1609,15 +1609,15 @@ inline MutableColumnPtr readColumnarOutput(
     // must point at or past the end of the header + descriptor table. Without this check, a
     // hostile or buggy WASM module could set e.g. data_offset = 0 and have readColumnFromDesc
     // silently decode header/descriptor bytes as the column's payload instead of throwing.
-    constexpr uint64_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES; // num_cols == 1
+    constexpr uint64_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES; // num_cols == 1
     for (uint64_t off : {desc.null_offset, desc.offsets_offset})
         if (off != 0 && off < hdr_desc_size)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1 output descriptor offset {} points inside the header/descriptor table (< {})",
+                "ColumnBinary output descriptor offset {} points inside the header/descriptor table (< {})",
                 off, hdr_desc_size);
     if (desc.data_offset < hdr_desc_size)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output descriptor data_offset {} points inside the header/descriptor table (< {})",
+            "ColumnBinary output descriptor data_offset {} points inside the header/descriptor table (< {})",
             desc.data_offset, hdr_desc_size);
 
     // Confine the decode to this column's own declared region, mirroring
@@ -1627,12 +1627,12 @@ inline MutableColumnPtr readColumnarOutput(
     // trailing bytes past data_offset + data_size, reading outside the blob it declared.
     if (desc.data_size > std::numeric_limits<uint64_t>::max() - desc.data_offset)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output descriptor data_offset + data_size overflows: offset={}, size={}",
+            "ColumnBinary output descriptor data_offset + data_size overflows: offset={}, size={}",
             desc.data_offset, desc.data_size);
     const uint64_t region_end = desc.data_offset + desc.data_size;
     if (region_end > buf.size())
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1 output descriptor data range [{}, {}) exceeds buffer size {}",
+            "ColumnBinary output descriptor data range [{}, {}) exceeds buffer size {}",
             desc.data_offset, region_end, buf.size());
     return readColumnFromDesc(buf.subspan(0, region_end), desc, num_rows, result_type);
 }

@@ -29,7 +29,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ColumnarV1Wire.h>
+#include <Formats/ColumnBinaryWire.h>
 
 #include <Common/typeid_cast.h>
 
@@ -1424,11 +1424,11 @@ TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedRoundTrip)
 
 TEST(ColumnBinary, FrameValidatorRejectsDataOffsetInsideHeader)
 {
-    using namespace ColumnarV1;
+    using namespace ColumnBinaryWire;
 
     const uint32_t num_rows = 1;
     const uint32_t num_cols = 1;
-    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const size_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES;
 
     std::string frame(hdr_desc_size, '\0');
     std::memcpy(frame.data(), &num_rows, 4);
@@ -1440,7 +1440,7 @@ TEST(ColumnBinary, FrameValidatorRejectsDataOffsetInsideHeader)
     desc.offsets_offset = 0;
     desc.data_offset = 0;  // points at the frame header, not a real data section
     desc.data_size = 1;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     Block header;
     header.insert(ColumnWithTypeAndName{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "col0"});
@@ -1452,11 +1452,11 @@ TEST(ColumnBinary, FrameValidatorRejectsDataOffsetInsideHeader)
 
 TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
 {
-    using namespace ColumnarV1;
+    using namespace ColumnBinaryWire;
 
     const uint32_t num_rows = 1;
     const uint32_t num_cols = 1;
-    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const size_t hdr_desc_size = FRAME_HEADER_BYTES + COL_DESC_BYTES;
     const uint64_t data_off = hdr_desc_size;
 
     std::string frame(hdr_desc_size + 8, '\0');
@@ -1469,7 +1469,7 @@ TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
     desc.offsets_offset = 0;
     desc.data_offset = data_off;
     desc.data_size = 8;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
 
     auto nested_type = std::make_shared<DataTypeUInt64>();
     auto col = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
@@ -1490,11 +1490,11 @@ TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
 
 TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
 {
-    using namespace ColumnarV1;
+    using namespace ColumnBinaryWire;
 
     const uint32_t num_rows = 1;
     const uint32_t num_cols = 2;
-    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+    const size_t hdr_desc_size = FRAME_HEADER_BYTES + 2 * COL_DESC_BYTES;
 
     // Genuine layout: col0 = [hdr_desc_size, 100), col1 = [100, 108).
     std::string frame(108, '\0');
@@ -1507,7 +1507,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
     desc0.offsets_offset = 0;
     desc0.data_offset = hdr_desc_size + 4;
     desc0.data_size = 8;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc0, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES, &desc0, COL_DESC_BYTES);
 
     ColDescriptor desc1{};
     desc1.type = COL_FIXED64;
@@ -1515,7 +1515,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
     desc1.offsets_offset = 0;
     desc1.data_offset = 100;
     desc1.data_size = 8;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc1, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES + COL_DESC_BYTES, &desc1, COL_DESC_BYTES);
 
     auto uint64_type = std::make_shared<DataTypeUInt64>();
     Block header;
@@ -1531,11 +1531,11 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
 
 TEST(ColumnBinary, FrameValidatorRejectsCrossColumnDataOffset)
 {
-    using namespace ColumnarV1;
+    using namespace ColumnBinaryWire;
 
     const uint32_t num_rows = 1;
     const uint32_t num_cols = 2;
-    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+    const size_t hdr_desc_size = FRAME_HEADER_BYTES + 2 * COL_DESC_BYTES;
 
     // Both descriptors point at the *second* column's payload, so col0 would decode col1's
     // bytes. Rejecting this is the ordered-layout invariant: once col0's region has been
@@ -1551,8 +1551,8 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnDataOffset)
     desc.offsets_offset = 0;
     desc.data_offset = hdr_desc_size + 8;
     desc.data_size = 8;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES, &desc, COL_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES + COL_DESC_BYTES, &desc, COL_DESC_BYTES);
 
     auto uint64_type = std::make_shared<DataTypeUInt64>();
     Block header;
@@ -1566,11 +1566,11 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnDataOffset)
 
 TEST(ColumnBinary, FrameValidatorRejectsCrossColumnStringOffsets)
 {
-    using namespace ColumnarV1;
+    using namespace ColumnBinaryWire;
 
     const uint32_t num_rows = 1;
     const uint32_t num_cols = 2;
-    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+    const size_t hdr_desc_size = FRAME_HEADER_BYTES + 2 * COL_DESC_BYTES;
 
     // col0 is an empty `String` column: its offsets array must live in its own region, which
     // here is the empty range [hdr_desc_size + 16, hdr_desc_size + 16). Point the offsets
@@ -1588,7 +1588,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnStringOffsets)
     desc0.offsets_offset = col1_data + 4;  // inside col1's region, not col0's own
     desc0.data_offset = col1_data;
     desc0.data_size = 0;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc0, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES, &desc0, COL_DESC_BYTES);
 
     ColDescriptor desc1{};
     desc1.type = COL_FIXEDN;
@@ -1596,7 +1596,7 @@ TEST(ColumnBinary, FrameValidatorRejectsCrossColumnStringOffsets)
     desc1.offsets_offset = 0;
     desc1.data_offset = col1_data;
     desc1.data_size = 24;
-    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc1, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + FRAME_HEADER_BYTES + COL_DESC_BYTES, &desc1, COL_DESC_BYTES);
 
     Block header;
     header.insert(ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "col0"});
