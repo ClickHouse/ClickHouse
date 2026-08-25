@@ -61,6 +61,10 @@ public:
     /// nothing downstream relies on the order of this step - see `applyOrder`.
     void enableParallelDistinct() { parallel_distinct = true; }
 
+    /// A deserialized step cannot know whether the order of its output is consumed downstream, see
+    /// `order_guard_state_is_known`.
+    void forgetOrderGuardState() { order_guard_state_is_known = false; }
+
 private:
     void updateOutputHeader() override;
 
@@ -76,6 +80,12 @@ private:
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
     bool parallel_distinct = false;
+
+    /// `limit_hint` and `has_order_sensitive_post_distinct_limit` are not serialized, and a serialized
+    /// fragment is optimized again on the worker, so a deserialized step would decide whether to
+    /// scatter without knowing that the initiator kept the stream single for a downstream `LIMIT`,
+    /// `OFFSET`, or `LIMIT BY`. Fail close: a step that lost that state never scatters.
+    bool order_guard_state_is_known = true;
 };
 
 }

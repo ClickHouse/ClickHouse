@@ -97,6 +97,11 @@ bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
     if (!parallel_distinct)
         return false;
 
+    /// The order-sensitivity guard of this step did not survive serialization, so it is not known
+    /// whether reordering the output is allowed.
+    if (!order_guard_state_is_known)
+        return false;
+
     /// With a sorted input the transform below deduplicates range by range of equal values, holding one
     /// range at a time instead of a hash table of everything. Scattering the rows would destroy the order
     /// it relies on, and each stream would need a hash table of its own again.
@@ -232,6 +237,8 @@ void DistinctStep::serialize(Serialization & ctx) const
 {
     /// Let's not serialize limit_hint.
     /// Ideally, we can get if from a query plan optimization on the follower.
+    /// The same holds for `has_order_sensitive_post_distinct_limit`; because neither is restored,
+    /// `deserialize` disables the hash scatter of the final `DISTINCT` on the follower.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
@@ -254,8 +261,12 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
     size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
 
-    return std::make_unique<DistinctStep>(
+    auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
+    /// Neither `limit_hint` nor `has_order_sensitive_post_distinct_limit` is serialized, so the guard
+    /// against reordering the output of the final `DISTINCT` cannot be reconstructed here.
+    step->forgetOrderGuardState();
+    return step;
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
