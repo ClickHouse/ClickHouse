@@ -4248,7 +4248,10 @@ bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntime(
         /// critical section, so no transition to `Writing`, `Wedged`, or `NeedsRecovery` can interleave
         /// between certification and capture.
         if (rt->lane_state != RefLaneState::Ready)
+        {
             blocked_lane = rt->lane_state;
+            advancePublishBackoff(*rt);
+        }
         else if (!hasStateBearingSnapshotCandidateUnderStateLock(*rt))
             return false;   /// shares admission: terminal, covered, and seal candidates are all inert
         else

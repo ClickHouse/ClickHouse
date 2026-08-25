@@ -1651,7 +1651,7 @@ TEST(CASSizedReadSettings, CapsToKnownSizePlusSlackButNeverAboveBase)
 
 /// The CountingBackend request-shape recorders that the streaming-memory gates (Task 3/4) consume:
 /// per-key/total getStream counts, the max ranged-get window per key, and the whole-object get flag.
-TEST(CountingBackendShape, RecordsGetStreamAndRangeShape)
+TEST(CASCountingBackendShape, RecordsGetStreamAndRangeShape)
 {
     DB::Cas::tests::CountingBackend backend;
     backend.putIfAbsent("k", String(1000, 'x'));

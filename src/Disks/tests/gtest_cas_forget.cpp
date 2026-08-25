@@ -349,25 +349,25 @@ TEST(CASForget, ForgetCleanFarewellGatedOnDrain)
     }
 }
 
-/// (b1) BOUNDED COMPLETION: FORGET racing an ACTIVE self-remount thread joins it without deadlock. Here the
+/// (b1) BOUNDED COMPLETION: FORGET racing an ACTIVE persistent remount worker joins it without deadlock. Here the
 /// faulting backend keeps every attempt at `StayTransient` (it never reaches `armMountFence`), so this
 /// isolates the join/no-deadlock property; the fence re-arm path is covered by (b2) below. Uses a
 /// `std::future` timeout wait (never a sleep) — the timeout only fires on a genuine deadlock regression.
 TEST(CASForget, ForgetRacingActiveRemountThreadCompletesBounded)
 {
     auto backend = std::make_shared<ToggleableTransportFaultBackend>();
-    /// `background_watermark = true` so `scheduleRemount` actually spawns a recovery thread (mirrors
+    /// `background_watermark = true` so the persistent recovery worker exists (mirrors
     /// gtest_cas_pool.cpp's ShutdownGuardRefusesToArmRemount setup).
     auto store = DB::Cas::Pool::open(backend,
         DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test", .background_watermark = true});
 
     /// Arm the fault so every remount attempt verdicts `StayTransient` fast (no lease-expiry wait), then
-    /// trip the fence and spawn the recovery thread — it now loops `tryRemountOnce` against the fault.
+    /// trip the fence and latch a recovery generation — the worker now loops `tryRemountOnce` against the fault.
     backend->fail.store(true);
     store->tripMountLost();
-    ASSERT_TRUE(store->scheduleRemountForTest()) << "the recovery thread must be armed and running";
+    ASSERT_TRUE(store->scheduleRemountForTest()) << "the recovery worker must accept the request and run";
 
-    /// FORGET from ANOTHER thread must join the active remount thread and finish in bounded time.
+    /// FORGET from ANOTHER thread must join the active remount worker and finish in bounded time.
     std::promise<void> done;
     auto fut = done.get_future();
     std::thread forgetter([&]
@@ -388,7 +388,7 @@ TEST(CASForget, ForgetRacingActiveRemountThreadCompletesBounded)
 
 /// (b2) FENCE RE-LATCH REGRESSION GUARD (the fix's raison d'être): a self-remount that reaches
 /// `armMountFence` re-arms the local fence (`lost=false`) after FORGET has already tripped it. FORGET's
-/// SECOND `tripMountLost` — placed AFTER the remount thread is joined — must override it.
+/// SECOND `tripMountLost` — placed AFTER the remount worker is joined — must override it.
 ///
 /// (b1)'s fault keeps every attempt at `StayTransient`, so it can NOT catch removal of that second trip. To
 /// make EXACTLY ONE reclaim reach `armMountFence` inside FORGET's window, deterministically and without a

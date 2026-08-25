@@ -20,6 +20,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <unordered_set>
 #include <algorithm>
 #include <limits>
@@ -53,13 +54,6 @@ namespace ProfileEvents
     extern const Event CASRefCleanupObjectsDeleted;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -89,63 +83,6 @@ void onGcEnumerationPage()
 /// reach the same wholesale LIST-delete helper the retention prune uses.
 uint64_t deletePrefixWholesale(Backend & backend, const String & prefix, uint64_t bounded_remaining,
                                bool * out_fully_drained = nullptr);
-
-/// The per-hash freshness-meta operations GC schedules on the bounded pool are
-/// best-effort/idempotent by design. The meta is only a point-read freshness marker for the writer/
-/// promote gate; the ledger retired-set + the exact-token body delete remain the actual safety
-/// core. A lost CAS here is never a correctness problem, only a (rare,
-/// self-healing) staleness window for the NEXT point-reader — with ONE exception (triage 2026-07-17
-/// §3.4): the CONDEMN marker is load-bearing for the delete edge. The exact-token delete argument
-/// below assumes the marker was durably written before the delete fires; a swallowed condemn-marker
-/// write lets a writer observe absent/Clean meta and adopt the SAME token the graduated entry later
-/// deletes (a dangling manifest). Graduation to `delete_pending` is therefore GATED on confirmed
-/// durable Condemned evidence for the exact (hash, token) — recorded in-process when the scheduled
-/// `writeCondemnedMeta` reports success, or re-established by a synchronous `loadMeta` re-check at
-/// graduation time. An unconfirmed entry is CARRIED (fail-safe delay) and its marker write retried;
-/// the delete itself and every other meta op stay async/advisory.
-///
-/// GC freshness meta is ADD-ONLY: GC may publish `Condemned`, and may REMOVE the meta once the exact body
-/// token is confirmed deleted/absent (`deleteConfirmedMeta`), but it NEVER transitions `Condemned ->
-/// Clean` on a spare. The SOLE `-> Clean` transition is a WRITER that has already displaced the body with
-/// a fresh incarnation token (`PartWriteTxn::ensureBlobPresent` publication + metadata reconciliation). Rationale: a deposed leader that cleared a
-/// spare's meta then lost its round CAS would leave a durable stray-`Clean` over a still-condemned body;
-/// a writer reading `Clean` would reuse the exact condemned token, which a stale pre-CAS exact-token
-/// redelete then deletes -- live-blob data loss (INV_NO_LOSS). Removing the clear restores the exact-token
-/// delete argument in full: once a hash is `Condemned`, observing `Clean` means EITHER the condemned body
-/// is absent OR a writer already changed its incarnation token, so every stale `deleteExact(t1)` finds the
-/// body absent or `TokenMismatch`.
-
-/// Write the per-hash meta to Condemned: a blob newly entering the retired set this round (either the
-/// fresh zero-in-degree condemn, or a republication-supersede re-condemn of the current token). Absent meta
-/// is created fresh; an already-Condemned meta (a racing condemn, or a replay of this same round) is left
-/// alone rather than clobbering a possibly-newer condemn_round.
-///
-/// Returns whether durable Condemned evidence exists after the call: the conditional write committed,
-/// or an already-Condemned meta was observed. A lost CAS reports false and writes nothing further (the
-/// loser re-reads next time); a thrown backend error propagates (the scheduling wrapper swallows it) —
-/// either way the entry stays UNCONFIRMED and the graduation gate carries it (triage §3.4).
-bool writeCondemnedMeta(Pool & pool, const BlobRef & ref, uint64_t condemn_round, uint64_t size)
-{
-    const auto lm = loadMeta(pool.backend(), pool.layout(), ref);
-    const BlobMeta desired{.state = MetaState::Condemned, .condemn_round = condemn_round, .size = size};
-    if (!lm)
-        return putMetaIfAbsent(pool, ref, desired).outcome == CasOverwriteOutcome::Committed;
-    if (lm->meta.state != MetaState::Condemned)
-        return casMeta(pool, ref, lm->etag, desired).outcome == CasOverwriteOutcome::Committed;
-    return true;
-}
-
-/// Drop the meta after its body was physically deleted (or already found absent) by the round's
-/// exact-token delete. NO tombstone -- an absent meta reads exactly like a Clean one (absent
-/// means not condemned"). Idempotent: an already-absent meta, or one a racing writer/GC pass already
-/// moved, is a silent no-op.
-void deleteConfirmedMeta(Backend & backend, const Layout & layout, const BlobRef & ref)
-{
-    const auto lm = loadMeta(backend, layout, ref);
-    if (!lm)
-        return;
-    deleteMetaExact(backend, layout, ref, lm->etag);
-}
 
 }
 
@@ -370,91 +307,10 @@ Gc::Gc(PoolPtr store_, UInt128 gc_id_, std::function<uint64_t()> now_ms_fn_,
     /// production (no test seam in play) is unaffected.
     if (!mono_ms_fn)
         mono_ms_fn = [s = store]() -> uint64_t { return s->bootMsNow(); };
-    /// Build the bounded pool for this round's per-hash freshness-meta writes here (ctor body),
-    /// not a member-initializer, so it can safely read `store->poolConfig()` AFTER the null check above.
-    const uint64_t configured_pool_size = store->poolConfig().gc_meta_pool_size;
-    const size_t pool_size = static_cast<size_t>(std::max<uint64_t>(1, configured_pool_size));
-    meta_pool = std::make_unique<ThreadPool>(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive,
-                                             CurrentMetrics::LocalThreadScheduled, pool_size);
-}
-
-void Gc::scheduleMetaJob(std::function<void()> job)
-{
-    /// Wrap once: `run` is safe to invoke either on the pool or inline (the scheduling-failure fallback
-    /// below), and NEVER lets an exception escape: a per-hash meta
-    /// op is advisory; the ledger + exact-token body delete are the actual safety core).
-    /// Capture the logger by value under a distinct name (the pool job may outlive nothing here, but it
-    /// must not depend on `this`; the copy also keeps the capture from shadowing the `logger` member).
-    /// `completed` is the `meta_pool_wait` phase's only visible signal: that phase's work runs HERE, on
-    /// a pool thread, so it contributes nothing to the round thread's ProfileEvents delta. Captured as a
-    /// raw pointer to the atomic rather than `this`, keeping `run`'s existing "must not depend on `this`"
-    /// property -- the pool is a member of the same `Gc` and is joined by `~Gc` before the atomic dies.
-    auto run = [job, job_logger = this->logger, completed = &meta_jobs_completed_]()
-    {
-        /// Count one per-hash freshness-meta op EXECUTED (attempt, not success) on this
-        /// bounded pool. `run` is invoked on the pool thread (the common path below) or inline on the
-        /// round's own thread (the scheduling-failure fallback below) -- either way this is pool-scoped
-        /// work, so the counter is GLOBAL-only by design.
-        ProfileEvents::increment(ProfileEvents::CASGCMetaOps);
-        try
-        {
-            job();
-        }
-        catch (...)
-        {
-            ProfileEvents::increment(ProfileEvents::CASGCMetaWriteAnomaly);
-            tryLogCurrentException(job_logger,
-                "CAS gc: a per-hash freshness-meta op failed on the bounded pool (advisory-only; "
-                "never wedges the round)");
-        }
-        /// After the catch: a job that threw still FINISHED, and `meta_pool_wait` reports drain
-        /// progress, not success (the anomaly counter above is what reports failure).
-        completed->fetch_add(1, std::memory_order_relaxed);
-    };
-    meta_jobs_scheduled_.fetch_add(1, std::memory_order_relaxed);
-    try
-    {
-        meta_pool->scheduleOrThrowOnError(run);
-    }
-    catch (...)
-    {
-        /// Scheduling itself failed (e.g. resource exhaustion under a mass-DROP burst) -- run inline
-        /// rather than silently lose the meta write. `run` still never throws.
-        ProfileEvents::increment(ProfileEvents::CASGCMetaWriteAnomaly);
-        tryLogCurrentException(logger,
-            "CAS gc: meta pool scheduling failed; running the op inline on the round's own thread");
-        run();
-    }
-}
-
-void Gc::scheduleCondemnMarkerWrite(const BlobRef & ref, const Token & token,
-                                    uint64_t condemn_round, uint64_t size)
-{
-    scheduleMetaJob([this, ref, token, condemn_round, size]()
-    {
-        if (writeCondemnedMeta(*store, ref, condemn_round, size))
-            noteCondemnMarkerDurable(ref, token);
-        /// A lost CAS / thrown error leaves the (ref, token) UNCONFIRMED: the graduation gate then
-        /// carries the entry and retries this write on a later round (fail-safe delay, triage §3.4).
-    });
-}
-
-void Gc::noteCondemnMarkerDurable(const BlobRef & ref, const Token & token)
-{
-    std::lock_guard lock(condemn_marker_mutex);
-    condemn_markers_confirmed.emplace(ref, token.value);
-}
-
-bool Gc::condemnMarkerConfirmedInProcess(const BlobRef & ref, const Token & token)
-{
-    std::lock_guard lock(condemn_marker_mutex);
-    return condemn_markers_confirmed.contains({ref, token.value});
-}
-
-void Gc::forgetCondemnMarker(const BlobRef & ref, const Token & token)
-{
-    std::lock_guard lock(condemn_marker_mutex);
-    condemn_markers_confirmed.erase({ref, token.value});
+    /// Build the meta writer here (ctor body), not in a member-initializer, so it can safely read
+    /// `store->poolConfig()` AFTER the null check above.
+    meta_writer = std::make_unique<GcMetaWriter>(
+        store, logger, static_cast<size_t>(store->poolConfig().gc_meta_pool_size));
 }
 
 void Gc::runNamespaceJanitorPage(
@@ -497,6 +353,16 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
     RoundReport report;
     GcState state;
     Token state_token;
+
+    /// Every exit path waits for this round's meta jobs. The throwing `meta_pool_wait` phase below is
+    /// a protocol barrier -- this round's condemns must be durable no later than the ledger they are
+    /// paired with -- and covers only the successful path. This cleanup copy is explicitly
+    /// nonthrowing so a pool/framework failure cannot replace an exception already unwinding from
+    /// the round. Without it, a round that throws between the fold and the barrier would leave its
+    /// jobs running into the NEXT round, where their confirmations reach a graduation gate that
+    /// never scheduled them.
+    SCOPE_EXIT({ meta_writer->drainOnExitNoThrow(); });
+
     /// PHASE 1/18 `lease`. Also the ONLY phase a `NotALeader` round emits, which is why the phase rows
     /// are correlated by `round_id` and not by the round number a follower never learns.
     {
@@ -510,8 +376,8 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
 
     /// Baseline for the `meta_pool_wait` phase's job counts (the pool is per-`Gc`, the counters
     /// cumulative), taken before anything in this round can schedule a job.
-    const uint64_t meta_jobs_scheduled_at_round_start = meta_jobs_scheduled_.load(std::memory_order_relaxed);
-    const uint64_t meta_jobs_completed_at_round_start = meta_jobs_completed_.load(std::memory_order_relaxed);
+    const uint64_t meta_jobs_scheduled_at_round_start = meta_writer->scheduled();
+    const uint64_t meta_jobs_completed_at_round_start = meta_writer->completed();
 
     /// Fire the acquire-time hook BEFORE the long fold below, not after the round
     /// returns - a new leader's first round could otherwise run for the whole fold with no
@@ -863,11 +729,10 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
             /// reason to touch it on that path at all).
             if (del_class == DeleteClass::Deleted || del_class == DeleteClass::Absent)
             {
-                const BlobRef ref = entry.ref;
-                scheduleMetaJob([this, ref]() { deleteConfirmedMeta(store->backend(), store->layout(), ref); });
+                meta_writer->scheduleConfirmedMetaDelete(entry.ref);
             }
             /// The entry left the pipeline — drop its in-process condemn-marker confirmation.
-            forgetCondemnMarker(entry.ref, entry.token);
+            meta_writer->forgetCondemnMarker(entry.ref, entry.token);
         }
         for (const RetiredEntry & entry : merge.spared)
         {
@@ -913,7 +778,7 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
             /// the marker: `PartWriteTxn::ensureBlobPresent` refuses adoption on `Condemned` and
             /// publishes the writer's source under a fresh envelope.
             /// The entry left the pipeline — drop its in-process condemn-marker confirmation.
-            forgetCondemnMarker(entry.ref, entry.token);
+            meta_writer->forgetCondemnMarker(entry.ref, entry.token);
         }
         for (const RetiredEntry & entry : merge.graduated)
         {
@@ -961,8 +826,8 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
             /// confirmation on success). `peek_head` itself stays side-effect-free (it runs once per
             /// closed candidate, not just on a real supersede — see its own comment). The SUPERSEDED
             /// (stale) token's in-process confirmation is dropped — that entry left the pipeline.
-            scheduleCondemnMarkerWrite(entry.ref, entry.token, entry.condemn_round, entry.size);
-            forgetCondemnMarker(entry.ref, replaced.old_token);
+            meta_writer->scheduleCondemnMarkerWrite(entry.ref, entry.token, entry.condemn_round, entry.size);
+            meta_writer->forgetCondemnMarker(entry.ref, replaced.old_token);
         }
     }
 
@@ -1011,8 +876,9 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
     /// Wait for the round's whole batch of per-hash freshness-meta writes (condemned during the
     /// fold above, spared/redeleted-confirmed during R3 above) BEFORE the round's retired-list publish and
     /// its single gc/state CAS below — the writer's meta point-read gate must see this round's condemns
-    /// durable no later than the ledger it is paired with. `wait()` never throws here: every scheduled job
-    /// already caught its own exception (see `scheduleMetaJob`).
+    /// durable no later than the ledger it is paired with. Per-hash operation exceptions are caught
+    /// in `GcMetaWriter`, but `ThreadPool::wait` may still rethrow a pool/framework failure. That
+    /// exception must propagate here and prevent the round commit.
     ///
     /// PHASE 12/18 `meta_pool_wait`, AND THE ONE HONEST GAP IN THIS INSTRUMENTATION: the work being
     /// waited on runs on `meta_pool` threads, so none of it appears in this thread's `ProfileEvents`
@@ -1023,15 +889,12 @@ RoundReport Gc::runRegularRound(std::function<void()> on_lease_acquired, bool al
     /// after it, it would always equal `jobs_scheduled` and say nothing.
     {
         GcPhaseTimer t(phase_sink, "meta_pool_wait");
-        const uint64_t scheduled = meta_jobs_scheduled_.load(std::memory_order_relaxed)
-            - meta_jobs_scheduled_at_round_start;
-        const uint64_t completed_on_entry = meta_jobs_completed_.load(std::memory_order_relaxed)
-            - meta_jobs_completed_at_round_start;
-        meta_pool->wait();
+        const uint64_t scheduled = meta_writer->scheduled() - meta_jobs_scheduled_at_round_start;
+        const uint64_t completed_on_entry = meta_writer->completed() - meta_jobs_completed_at_round_start;
+        meta_writer->drain();
         t.metric("jobs_scheduled", scheduled);
         t.metric("jobs_completed_on_entry", completed_on_entry);
-        t.metric("jobs_completed", meta_jobs_completed_.load(std::memory_order_relaxed)
-                                   - meta_jobs_completed_at_round_start);
+        t.metric("jobs_completed", meta_writer->completed() - meta_jobs_completed_at_round_start);
     }
 
     /// Retired-in-snapshot — there is NO separate retired-list object to publish anymore. The
@@ -1856,7 +1719,7 @@ Gc::FoldResult Gc::fold(GcState & state, Token & /*state_token*/, RoundReport & 
         /// sees it; a successful write records the in-process (hash, token) confirmation the graduation
         /// gate consumes (`scheduleCondemnMarkerWrite` captures everything BY VALUE — never by reference
         /// to `cur_blob`, which the fold's tight streaming loop mutates while the job is queued).
-        scheduleCondemnMarkerWrite(ref, observed.token, condemn_round, adjusted.size);
+        meta_writer->scheduleCondemnMarkerWrite(ref, observed.token, condemn_round, adjusted.size);
         return adjusted;
     };
 
@@ -1887,13 +1750,13 @@ Gc::FoldResult Gc::fold(GcState & state, Token & /*state_token*/, RoundReport & 
     /// carry forever), and refuse — never throw (an unreadable meta is missing evidence, not a wedge).
     const auto confirm_condemned_marker = [&](const RetiredEntry & entry) -> bool
     {
-        if (condemnMarkerConfirmedInProcess(entry.ref, entry.token))
+        if (meta_writer->condemnMarkerConfirmedInProcess(entry.ref, entry.token))
             return true;
         try
         {
             if (const auto lm = loadMeta(backend, layout, entry.ref); lm && lm->meta.state == MetaState::Condemned)
             {
-                noteCondemnMarkerDurable(entry.ref, entry.token);   /// memoize for a round-CAS-abort replay
+                meta_writer->noteCondemnMarkerDurable(entry.ref, entry.token);   /// memoize for a round-CAS-abort replay
                 return true;
             }
         }
@@ -1911,7 +1774,7 @@ Gc::FoldResult Gc::fold(GcState & state, Token & /*state_token*/, RoundReport & 
         /// never destructive -- the eventual exact-token delete is a no-op against the fresh token
         /// (`DeleteOutcome::TokenMismatch`/`NotFound`) -- worst case the resurrecting writer's later
         /// same-token adopter sees stale `Condemned` metadata and republishes once unnecessarily.
-        scheduleCondemnMarkerWrite(entry.ref, entry.token, entry.condemn_round, entry.size);
+        meta_writer->scheduleCondemnMarkerWrite(entry.ref, entry.token, entry.condemn_round, entry.size);
         return false;
     };
 

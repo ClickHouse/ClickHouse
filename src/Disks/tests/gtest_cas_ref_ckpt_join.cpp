@@ -73,8 +73,9 @@ constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
 /// Constraint 15's bound, as a number: the encoded size of the WIDEST `_ckpt` this build can produce
 /// (all three fields present, every integer component at `UINT64_MAX`). Pinned as a literal so that
-/// adding a field, or widening one, fails a test rather than quietly moving the bound.
-constexpr size_t CKPT_WORST_CASE_ENCODED_BYTES = 234;
+/// adding a field, or widening one, fails a test rather than quietly moving the bound. Generation 10
+/// added one byte to the shared format-version header (`9` became `10`); the scalar body is unchanged.
+constexpr size_t CKPT_WORST_CASE_ENCODED_BYTES = 235;
 
 /// The high-cardinality side of the size fence, in ONE transaction. Bounded above by the append lane's
 /// 5000-operation cap on a normal-class item (`publishCommittedOps` emits two ops per ref), and kept at

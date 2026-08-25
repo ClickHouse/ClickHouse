@@ -1891,7 +1891,7 @@ TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
     /// `tripMountLost`, which alone already accounts for `mayMutate() == false` above). Counted at
     /// `scheduleRemount`'s own entry regardless of `background_watermark` -- see that accessor's
     /// comment for why this test deliberately does NOT enable `background_watermark` to observe a real
-    /// spawned thread: doing so was tried and makes the store's self-remount attempt race its own
+    /// automatic recovery: doing so was tried and makes the store's self-remount attempt race its own
     /// still-live keeper for 30+ seconds per call (confirmed while building this test), which is not
     /// something a fast unit test should be driving.
     EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
@@ -1958,8 +1958,9 @@ TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted)
         << "the invariant violation must have one explicit terminal state";
     EXPECT_FALSE(store->mayMutate()) << "the local write fence must trip closed on the wedge-contract violation";
-    /// See the sibling test's comment on why this checks the call-count seam (never `background_watermark`
-    /// + a real thread -- that combination makes the store's self-remount race its own still-live keeper).
+    /// See the sibling test's comment on why this checks the call-count seam (never
+    /// `background_watermark` plus automatic recovery -- that combination makes the store's self-remount
+    /// race its own still-live keeper).
     EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
         << "reportImpossibleInterference must have called scheduleRemount exactly once";
 
@@ -4249,6 +4250,7 @@ TEST(CASRefWriterNamespaceRemoval, PresenceProbeCreatingIsPresentAndRemovalWaits
     dead.writer_epoch = store->liveWriterEpoch();
     dead.gc_fenced = true;
     dead.seq = 1;
+    dead.write_attempt_id = UInt128{1};
     backend->putIfAbsent(layout.mountKey("srv1"), encodeMountLease(dead));
 
     EXPECT_NO_THROW(store->dropNamespace(ns));

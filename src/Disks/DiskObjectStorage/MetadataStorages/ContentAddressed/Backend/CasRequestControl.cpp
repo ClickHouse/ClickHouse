@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include <thread>
 #include <utility>
 
@@ -113,6 +114,48 @@ bool isDeterministicLocalFailure(int code)
 {
     return code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::NOT_IMPLEMENTED
         || code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CORRUPTED_DATA;
+}
+
+enum class OverwriteGateClosure : uint8_t
+{
+    Open,
+    FenceOrLifecycleLost,
+    Cancelled,
+    Deadline,
+};
+
+struct OverwriteGateSample
+{
+    OverwriteGateClosure closure;
+    CasOverwriteStopCause stop_cause;
+};
+
+/// Sample the operation stop cause and clock exactly once. The returned closure has already applied
+/// the protocol precedence; callers only map its position to `CasUnresolvedReason`.
+OverwriteGateSample sampleOverwriteGate(
+    const CasOverwriteOperationContext & context,
+    const std::function<uint64_t()> & now_ms,
+    uint64_t required_time_ms)
+{
+    const CasOverwriteStopCause stop_cause = context.stop_cause();
+    const uint64_t now = now_ms();
+    const bool deadline_closed
+        = now >= context.absolute_deadline_ms || required_time_ms > context.absolute_deadline_ms - now;
+
+    if (stop_cause == CasOverwriteStopCause::FenceOrLifecycleLost)
+        return {OverwriteGateClosure::FenceOrLifecycleLost, stop_cause};
+    if (stop_cause == CasOverwriteStopCause::Cancelled)
+        return {OverwriteGateClosure::Cancelled, stop_cause};
+    if (deadline_closed)
+        return {OverwriteGateClosure::Deadline, stop_cause};
+    return {OverwriteGateClosure::Open, stop_cause};
+}
+
+uint64_t saturatingAdd(uint64_t lhs, uint64_t rhs)
+{
+    if (rhs > std::numeric_limits<uint64_t>::max() - lhs)
+        return std::numeric_limits<uint64_t>::max();
+    return lhs + rhs;
 }
 
 }
@@ -421,18 +464,148 @@ CasWriteOutcome CasRequestController::putIfAbsentControlled(
 CasOverwriteResult CasRequestController::putOverwriteControlled(
     std::string_view key, std::string_view bytes, const Token & expected, const std::function<bool()> & fence_ok)
 {
+    const uint64_t operation_start_ms = now_ms();
+    const uint64_t deadline_ms = saturatingAdd(operation_start_ms, budget.operation_deadline_ms);
+    const CasOverwriteOperationContext context{
+        .absolute_deadline_ms = deadline_ms,
+        .deadline_source = CasOverwriteDeadlineSource::RequestBudget,
+        .stop_cause = [&fence_ok]
+        {
+            return fence_ok() ? CasOverwriteStopCause::Continue : CasOverwriteStopCause::FenceOrLifecycleLost;
+        },
+        .wait_before_retry = [this](uint64_t wait_ms)
+        {
+            sleep_ms(wait_ms);
+            return true;
+        },
+        .observe = [](const CasOverwriteProgress &) {},
+    };
+    return putOverwriteControlledImpl(key, bytes, expected, context, /*preserve_legacy_gates=*/true);
+}
+
+CasOverwriteResult CasRequestController::putOverwriteControlled(
+    std::string_view key,
+    std::string_view bytes,
+    const Token & expected,
+    const CasOverwriteOperationContext & context)
+{
+    return putOverwriteControlledImpl(key, bytes, expected, context, /*preserve_legacy_gates=*/false);
+}
+
+CasOverwriteResult CasRequestController::putOverwriteControlledImpl(
+    std::string_view key,
+    std::string_view bytes,
+    const Token & expected,
+    const CasOverwriteOperationContext & context,
+    bool preserve_legacy_gates)
+{
     const String key_s{key};
     const String bytes_s{bytes};
-    const uint64_t deadline_ms = now_ms() + budget.operation_deadline_ms;
+    CasOverwriteDiagnostics diagnostics;
+    diagnostics.deadline_source = context.deadline_source;
+    bool ambiguity_observed = false;
+    bool earlier_attempt_unresolved = false;
+    bool observer_failure_reported = false;
 
-    for (uint32_t attempt_no = 1; attempt_no <= budget.max_attempts; ++attempt_no)
+    const auto observe = [&](CasOverwriteProgressKind kind, uint32_t attempt_no) noexcept
     {
-        if (!fence_ok())
-            return {CasOverwriteOutcome::Unresolved, {}};
-        if (now_ms() + budget.attempt_timeout_ms > deadline_ms)
-            return {CasOverwriteOutcome::Unresolved, {}};
+        try
+        {
+            context.observe(CasOverwriteProgress{kind, attempt_no});
+        }
+        catch (...)
+        {
+            if (!observer_failure_reported)
+            {
+                observer_failure_reported = true;
+                try
+                {
+                    LOG_DEBUG(getLogger("CasRequestControl"),
+                        "CAS overwrite progress observer threw; suppressing this and further observer exceptions");
+                }
+                catch (...)
+                {
+                }
+            }
+        }
+    };
+
+    const auto unresolved = [&](CasUnresolvedReason reason, CasOverwriteStopCause stop_cause)
+    {
+        diagnostics.unresolved_reason = reason;
+        diagnostics.stop_cause = stop_cause;
+        return CasOverwriteResult{CasOverwriteOutcome::Unresolved, {}, diagnostics};
+    };
+
+    const auto resultForGate = [&](const OverwriteGateSample & sample, bool commit_proved)
+        -> std::optional<CasOverwriteResult>
+    {
+        if (sample.closure == OverwriteGateClosure::Open)
+            return std::nullopt;
+
+        if (sample.closure == OverwriteGateClosure::Deadline)
+        {
+            return unresolved(
+                diagnostics.attempts_sent == 0 ? CasUnresolvedReason::NoAttemptSent : CasUnresolvedReason::DeadlineMidWay,
+                CasOverwriteStopCause::Continue);
+        }
+
+        const CasUnresolvedReason reason = diagnostics.attempts_sent == 0
+            ? CasUnresolvedReason::NoAttemptSent
+            : (commit_proved ? CasUnresolvedReason::FenceLostPostWrite : CasUnresolvedReason::FenceLostMidWay);
+        if (commit_proved)
+            ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
+        return unresolved(reason, sample.stop_cause);
+    };
+
+    const auto gate = [&](uint64_t required_time_ms, bool commit_proved = false)
+        -> std::optional<CasOverwriteResult>
+    {
+        return resultForGate(sampleOverwriteGate(context, now_ms, required_time_ms), commit_proved);
+    };
+
+    /// The existing overload historically checked its fence before each `PUT`/sleep and after a
+    /// proven commit, but did not add clock/fence samples around the resolving `GET`. Keep that exact
+    /// schedule while adapting its callbacks into the context representation; otherwise an injected
+    /// clock that advances per sample loses a physical attempt solely because the adapter observed it.
+    const auto legacyGate = [&](uint64_t required_time_ms, bool commit_proved, bool check_deadline)
+        -> std::optional<CasOverwriteResult>
+    {
+        const CasOverwriteStopCause stop_cause = context.stop_cause();
+        if (stop_cause != CasOverwriteStopCause::Continue)
+        {
+            const OverwriteGateClosure closure = stop_cause == CasOverwriteStopCause::FenceOrLifecycleLost
+                ? OverwriteGateClosure::FenceOrLifecycleLost
+                : OverwriteGateClosure::Cancelled;
+            return resultForGate({closure, stop_cause}, commit_proved);
+        }
+        if (!check_deadline)
+            return std::nullopt;
+
+        const uint64_t now = now_ms();
+        if (now > context.absolute_deadline_ms || required_time_ms > context.absolute_deadline_ms - now)
+            return resultForGate({OverwriteGateClosure::Deadline, CasOverwriteStopCause::Continue}, commit_proved);
+        return std::nullopt;
+    };
+
+    while (true)
+    {
+        const auto pre_put_refusal = preserve_legacy_gates
+            ? legacyGate(budget.attempt_timeout_ms, /*commit_proved=*/false, /*check_deadline=*/true)
+            : gate(budget.attempt_timeout_ms);
+        if (pre_put_refusal)
+            return *pre_put_refusal;
+        if (diagnostics.attempts_sent >= budget.max_attempts)
+            return unresolved(CasUnresolvedReason::AttemptsExhausted, CasOverwriteStopCause::Continue);
+
+        const uint32_t attempt_no = diagnostics.attempts_sent + 1;
+        if (attempt_no > 1)
+            observe(CasOverwriteProgressKind::RetryStarted, attempt_no);
+        ++diagnostics.attempts_sent;
+        observe(CasOverwriteProgressKind::PutStarted, attempt_no);
 
         std::optional<PutResult> put;
+        bool attempt_may_still_land = false;
         try
         {
             put = backend->putOverwrite(key_s, bytes_s, expected);
@@ -440,35 +613,86 @@ CasOverwriteResult CasRequestController::putOverwriteControlled(
         catch (const std::exception & e)
         {
             /// A deterministic local bug or a whitelisted synchronous rejection proves no retry can
-            /// help, so surface it unchanged.
-            if (const auto * db_e = dynamic_cast<const Exception *>(&e); db_e && isDeterministicLocalFailure(db_e->code()))
+            /// help. It surfaces unchanged unless an earlier request from this logical operation is
+            /// still ambiguous; that earlier request dominates the call-wide result because it may
+            /// still land after this later attempt was refused.
+            const auto * db_e = dynamic_cast<const Exception *>(&e);
+            const bool definite_failure = (db_e && isDeterministicLocalFailure(db_e->code()))
+                || classifyConditionalWriteResult(e) == CasWriteOutcome::DefiniteFailure;
+            if (definite_failure)
+            {
+                if (!preserve_legacy_gates)
+                {
+                    if (auto refusal = gate(/*required_time_ms=*/0))
+                        return *refusal;
+                    if (earlier_attempt_unresolved)
+                        return unresolved(
+                            CasUnresolvedReason::DefiniteFailureAfterAmbiguity,
+                            CasOverwriteStopCause::Continue);
+                }
                 throw;
-            if (classifyConditionalWriteResult(e) == CasWriteOutcome::DefiniteFailure)
-                throw;
+            }
+            attempt_may_still_land = true;
             /// Else ambiguous -- fall through to resolve below.
         }
 
         if (put && put->outcome == PutOutcome::Done)
         {
-            if (!fence_ok())
-            {
-                ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
-                return {CasOverwriteOutcome::Unresolved, {}};
-            }
-            return {CasOverwriteOutcome::Committed, put->token};
+            const auto post_write_refusal = preserve_legacy_gates
+                ? legacyGate(/*required_time_ms=*/0, /*commit_proved=*/true, /*check_deadline=*/false)
+                : gate(/*required_time_ms=*/0, /*commit_proved=*/true);
+            if (post_write_refusal)
+                return *post_write_refusal;
+            return {CasOverwriteOutcome::Committed, put->token, diagnostics};
         }
 
         /// Ambiguous: either a caught transient exception, or PreconditionFailed (which alone does
         /// NOT prove a real conflict -- it may be our own earlier attempt's write landing under a
         /// concurrent resolve). Resolve with one GET.
+        if (!ambiguity_observed)
+        {
+            ambiguity_observed = true;
+            observe(CasOverwriteProgressKind::BecameAmbiguous, attempt_no);
+        }
+        if (!preserve_legacy_gates)
+        {
+            if (auto refusal = gate(budget.attempt_timeout_ms))
+                return *refusal;
+        }
+
+        observe(CasOverwriteProgressKind::ResolveStarted, attempt_no);
         std::optional<GetResult> got;
         try
         {
             got = backend->get(key_s);
+            diagnostics.resolve_observation_completed = true;
+            diagnostics.observed_bytes = got ? std::optional<String>{got->bytes} : std::nullopt;
         }
         catch (const std::exception &)
         {
+            diagnostics.resolve_observation_completed = false;
+            diagnostics.observed_bytes.reset();
             got.reset();   /// GET failed: still ambiguous, fall through to retry below.
+        }
+
+        if (got && got->token != expected && got->bytes == bytes_s)
+        {
+            diagnostics.resolved_by_get = true;
+            observe(CasOverwriteProgressKind::ResolvedByGet, attempt_no);
+            const auto post_write_refusal = preserve_legacy_gates
+                ? legacyGate(/*required_time_ms=*/0, /*commit_proved=*/true, /*check_deadline=*/false)
+                : gate(/*required_time_ms=*/0, /*commit_proved=*/true);
+            if (post_write_refusal)
+                return *post_write_refusal;
+            return {CasOverwriteOutcome::Committed, got->token, diagnostics};
+        }
+
+        /// Apply stop/deadline precedence to the completed resolve before accepting a conflict,
+        /// waiting, or letting attempt exhaustion decide whether another `PUT` is legal.
+        if (!preserve_legacy_gates)
+        {
+            if (auto refusal = gate(/*required_time_ms=*/0))
+                return *refusal;
         }
 
         if (got && got->token == expected)
@@ -476,28 +700,51 @@ CasOverwriteResult CasRequestController::putOverwriteControlled(
             /// The token we CAS'd against is STILL current: our attempt never applied. Fall through
             /// to the pause-and-reissue gate below (same key, bytes, expected).
         }
-        else if (got && got->bytes == bytes_s)
-        {
-            if (!fence_ok())
-            {
-                ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
-                return {CasOverwriteOutcome::Unresolved, {}};
-            }
-            return {CasOverwriteOutcome::Committed, got->token};
-        }
         else if (got)
         {
             /// A DIFFERENT token AND different bytes: a genuine competing write. Real conflict --
             /// never collapsed into Unresolved/DefiniteFailure, never thrown.
-            return {CasOverwriteOutcome::Conflict, {}};
+            return {CasOverwriteOutcome::Conflict, {}, diagnostics};
         }
         /// else: the GET itself failed or the key vanished -- still ambiguous, fall through to retry.
 
-        if (attempt_no == budget.max_attempts || !pauseBeforeReissue(attempt_no, deadline_ms, fence_ok))
-            return {CasOverwriteOutcome::Unresolved, {}};
-    }
+        if (attempt_may_still_land)
+            earlier_attempt_unresolved = true;
 
-    return {CasOverwriteOutcome::Unresolved, {}};   /// attempt budget exhausted without a definite outcome
+        /// Attempt exhaustion participates only when another physical `PUT` would be sent. It is
+        /// deliberately evaluated after the final attempt's resolving `GET` and after the gate above.
+        if (diagnostics.attempts_sent >= budget.max_attempts)
+        {
+            if (!preserve_legacy_gates)
+            {
+                if (auto refusal = gate(budget.attempt_timeout_ms))
+                    return *refusal;
+            }
+            return unresolved(CasUnresolvedReason::AttemptsExhausted, CasOverwriteStopCause::Continue);
+        }
+
+        const uint64_t backoff_ms = backoffBeforeAttempt(attempt_no + 1);
+        if (backoff_ms == 0)
+            continue;
+
+        const uint64_t retry_reservation_ms = saturatingAdd(backoff_ms, budget.attempt_timeout_ms);
+        const auto pre_wait_refusal = preserve_legacy_gates
+            ? legacyGate(retry_reservation_ms, /*commit_proved=*/false, /*check_deadline=*/true)
+            : gate(retry_reservation_ms);
+        if (pre_wait_refusal)
+            return *pre_wait_refusal;
+
+        const bool wait_completed = context.wait_before_retry(backoff_ms);
+        if (preserve_legacy_gates)
+            continue;
+
+        const OverwriteGateSample after_wait = sampleOverwriteGate(context, now_ms, budget.attempt_timeout_ms);
+        if (!wait_completed && after_wait.stop_cause == CasOverwriteStopCause::Continue)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "CasRequestController: wait_before_retry returned false while stop_cause remained Continue");
+        if (auto refusal = resultForGate(after_wait, /*commit_proved=*/false))
+            return *refusal;
+    }
 }
 
 CasOverwriteResult CasRequestController::putIfAbsentControlledMutable(
@@ -510,9 +757,9 @@ CasOverwriteResult CasRequestController::putIfAbsentControlledMutable(
     for (uint32_t attempt_no = 1; attempt_no <= budget.max_attempts; ++attempt_no)
     {
         if (!fence_ok())
-            return {CasOverwriteOutcome::Unresolved, {}};
+            return {CasOverwriteOutcome::Unresolved, {}, {}};
         if (now_ms() + budget.attempt_timeout_ms > deadline_ms)
-            return {CasOverwriteOutcome::Unresolved, {}};
+            return {CasOverwriteOutcome::Unresolved, {}, {}};
 
         std::optional<PutResult> put;
         try
@@ -534,9 +781,9 @@ CasOverwriteResult CasRequestController::putIfAbsentControlledMutable(
             if (!fence_ok())
             {
                 ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
-                return {CasOverwriteOutcome::Unresolved, {}};
+                return {CasOverwriteOutcome::Unresolved, {}, {}};
             }
-            return {CasOverwriteOutcome::Committed, put->token};
+            return {CasOverwriteOutcome::Committed, put->token, {}};
         }
 
         /// Ambiguous: either a caught transient exception, or PreconditionFailed (which alone does
@@ -562,23 +809,23 @@ CasOverwriteResult CasRequestController::putIfAbsentControlledMutable(
             if (!fence_ok())
             {
                 ProfileEvents::increment(ProfileEvents::CASConditionalWriteFenceLostPostWrite);
-                return {CasOverwriteOutcome::Unresolved, {}};
+                return {CasOverwriteOutcome::Unresolved, {}, {}};
             }
-            return {CasOverwriteOutcome::Committed, got->token};
+            return {CasOverwriteOutcome::Committed, got->token, {}};
         }
         else
         {
             /// Present with DIFFERENT bytes: something else already occupies the key with a
             /// different value. For a MUTABLE marker this is a normal outcome, not corruption --
             /// return it as a value, never thrown.
-            return {CasOverwriteOutcome::Conflict, {}};
+            return {CasOverwriteOutcome::Conflict, {}, {}};
         }
 
         if (attempt_no == budget.max_attempts || !pauseBeforeReissue(attempt_no, deadline_ms, fence_ok))
-            return {CasOverwriteOutcome::Unresolved, {}};
+            return {CasOverwriteOutcome::Unresolved, {}, {}};
     }
 
-    return {CasOverwriteOutcome::Unresolved, {}};   /// attempt budget exhausted without a definite outcome
+    return {CasOverwriteOutcome::Unresolved, {}, {}};   /// attempt budget exhausted without a definite outcome
 }
 
 SlotOccupyResult CasRequestController::slotOccupy(

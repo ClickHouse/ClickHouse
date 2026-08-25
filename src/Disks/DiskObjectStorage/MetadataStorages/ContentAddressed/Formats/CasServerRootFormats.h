@@ -55,6 +55,9 @@ struct MountLease
     uint64_t expires_at_ms = 0;
     uint64_t min_active = 0;   /// UINT64_MAX = retired (farewell)
     bool gc_fenced = false;    /// GC fence-out of an expired lease; terminal
+    /// One holder-originated body identity. Every physical retry of that one logical write reuses
+    /// it; a GC fence copies the observed value while every successor holder body mints a new one.
+    UInt128 write_attempt_id{};
 };
 
 /// Encode the owner anchor as canonical text with the `cas_owner` header and a final newline. The
@@ -86,8 +89,9 @@ ServerEpoch decodeServerEpoch(std::string_view data);
 String encodeMountLease(const MountLease & m);
 
 /// Decode a mount lease and reject bytes after its body line. The reader accepts unknown JSON fields
-/// so newer lease metadata can be read by older code, while malformed field values and trailing data
-/// throw `CORRUPTED_DATA`; cross-field lease validity is enforced by the mount/GC protocol, not here.
+/// so newer lease metadata can be read by older code, while malformed field values, a missing or zero
+/// required identity field, and trailing data throw `CORRUPTED_DATA`; cross-field lease validity is enforced by
+/// the mount/GC protocol, not here.
 MountLease decodeMountLease(std::string_view data);
 
 }

@@ -56,8 +56,10 @@ namespace DB::Cas
 /// metadata object without this field would leave different openers charging different seal bounds.
 /// Generation 9 adds `_ckpt.committed_through`, the exact recovery frontier. Generation-8 pools
 /// must be recreated: the absence of this field has the incompatible meaning that no transaction has
-/// entered durable logical history.
-constexpr uint32_t G_BUILD = 9;
+/// entered durable logical history. Generation 10 adds the required `write_attempt_id` to mount
+/// leases. Generation-9 pools must be recreated because a missing attempt identity makes ambiguous
+/// mount writes impossible to distinguish from a different body under the same writer incarnation.
+constexpr uint32_t G_BUILD = 10;
 
 /// The pool-format generation at which ref-log ids became per-namespace and contiguous. Pool metadata
 /// below this value cannot be opened, because its ref streams carry holes this build reports as
@@ -89,6 +91,11 @@ constexpr uint32_t kPoolGcShardsGeneration = 8;
 
 /// The recreate-only generation at which `_ckpt` gained its exact committed-transaction frontier.
 constexpr uint32_t kCommittedRefFrontierGeneration = 9;
+
+/// The recreate-only generation at which mount leases gained their required durable holder-write
+/// identity. The pool-level reader floor rejects every older pool before it can interpret a mount
+/// body without this field.
+constexpr uint32_t kMountWriteAttemptIdGeneration = 10;
 
 /// Stable identifiers for every self-describing persisted object class. The text registry uses the
 /// corresponding `type` string as the on-disk identity. Numeric values are part of the format history:

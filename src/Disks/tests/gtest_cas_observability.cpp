@@ -9,14 +9,21 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Common/ProfileEvents.h>
+#include <Poco/Exception.h>
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace ProfileEvents
 {
 extern const Event CASGCRetiredCondemned;
 extern const Event CASGCRetireReplaced;
+extern const Event CASMountRenewalAttempts;
+extern const Event CASMountRenewalRetries;
+extern const Event CASMountRenewalResolved;
+extern const Event CASMountRenewalRecovered;
+extern const Event CASMountRenewalDeadlineExceeded;
 }
 
 using namespace DB::Cas;
@@ -31,6 +38,86 @@ PoolPtr openPool(std::shared_ptr<InMemoryBackend> & b)
 {
     b = std::make_shared<InMemoryBackend>();
     return Pool::open(b, PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
+}
+
+class RenewalCounterBackend final : public InMemoryBackend
+{
+public:
+    enum class Fault : uint8_t
+    {
+        None,
+        ThrowBefore,
+        LandThenThrow,
+    };
+
+    using InMemoryBackend::putOverwrite;
+
+    Fault fault = Fault::None;
+
+    PutResult putOverwrite(
+        const String & key,
+        const String & bytes,
+        const Token & expected,
+        const ObjectMeta & meta) override
+    {
+        const Fault current = std::exchange(fault, Fault::None);
+        if (current == Fault::ThrowBefore)
+            throw Poco::TimeoutException("injected renewal timeout before commit");
+
+        PutResult result = InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        if (current == Fault::LandThenThrow)
+            throw Poco::TimeoutException("injected renewal response loss after commit");
+        return result;
+    }
+};
+
+CasRequestBudget renewalCounterBudget(uint32_t max_attempts = 2)
+{
+    return CasRequestBudget{
+        .attempt_timeout_ms = 10,
+        .operation_deadline_ms = 500,
+        .max_attempts = max_attempts,
+        .lease_safety_margin_ms = 20,
+        .retry_initial_backoff_ms = 0,
+        .retry_max_backoff_ms = 0,
+    };
+}
+
+struct RenewalCounterSnapshot
+{
+    uint64_t attempts;
+    uint64_t retries;
+    uint64_t resolved;
+    uint64_t recovered;
+    uint64_t deadline_exceeded;
+};
+
+RenewalCounterSnapshot renewalCounters()
+{
+    using ProfileEvents::global_counters;
+    return {
+        .attempts = global_counters[ProfileEvents::CASMountRenewalAttempts].load(),
+        .retries = global_counters[ProfileEvents::CASMountRenewalRetries].load(),
+        .resolved = global_counters[ProfileEvents::CASMountRenewalResolved].load(),
+        .recovered = global_counters[ProfileEvents::CASMountRenewalRecovered].load(),
+        .deadline_exceeded = global_counters[ProfileEvents::CASMountRenewalDeadlineExceeded].load(),
+    };
+}
+
+void expectRenewalCounterDelta(
+    const RenewalCounterSnapshot & before,
+    const RenewalCounterSnapshot & after,
+    uint64_t attempts,
+    uint64_t retries,
+    uint64_t resolved,
+    uint64_t recovered,
+    uint64_t deadline_exceeded)
+{
+    EXPECT_EQ(after.attempts - before.attempts, attempts);
+    EXPECT_EQ(after.retries - before.retries, retries);
+    EXPECT_EQ(after.resolved - before.resolved, resolved);
+    EXPECT_EQ(after.recovered - before.recovered, recovered);
+    EXPECT_EQ(after.deadline_exceeded - before.deadline_exceeded, deadline_exceeded);
 }
 
 /// Publish ONE ref naming a single-blob part through the real writer sequence (mirrors
@@ -54,6 +141,54 @@ ManifestId publishOneBlobPart(
     build->putBlob(idOf(payload), BlobSource::fromString(payload));
     build->promote(ns, ref, build->buildId(), id);
     return id;
+}
+
+TEST(CASObservability, RenewalCountersHaveExactPhysicalAndLogicalDeltas)
+{
+    const auto run = [](RenewalCounterBackend::Fault fault, uint64_t attempts, uint64_t retries, uint64_t resolved, uint64_t recovered)
+    {
+        auto backend = std::make_shared<RenewalCounterBackend>();
+        uint64_t boot_ms = 100;
+        auto store = Pool::open(backend, PoolConfig{
+            .pool_prefix = "renewal-counter-" + std::to_string(attempts) + "-" + std::to_string(resolved),
+            .server_root_id = "test",
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .cas_request_budget = renewalCounterBudget(),
+            .boot_ms_fn = [&] { return boot_ms; },
+        });
+        backend->fault = fault;
+        const RenewalCounterSnapshot before = renewalCounters();
+        EXPECT_NO_THROW(store->renewWatermarkOnce());
+        const RenewalCounterSnapshot after = renewalCounters();
+        expectRenewalCounterDelta(before, after, attempts, retries, resolved, recovered, 0);
+    };
+
+    run(RenewalCounterBackend::Fault::None, /*attempts=*/1, /*retries=*/0, /*resolved=*/0, /*recovered=*/0);
+    run(RenewalCounterBackend::Fault::ThrowBefore, /*attempts=*/2, /*retries=*/1, /*resolved=*/0, /*recovered=*/1);
+    run(RenewalCounterBackend::Fault::LandThenThrow, /*attempts=*/1, /*retries=*/0, /*resolved=*/1, /*recovered=*/1);
+}
+
+TEST(CASObservability, ExternalLeaseDeadlineCountsOnceWithoutReconstructingAttempts)
+{
+    auto backend = std::make_shared<RenewalCounterBackend>();
+    uint64_t boot_ms = 100;
+    auto store = Pool::open(backend, PoolConfig{
+        .pool_prefix = "renewal-deadline-counter",
+        .server_root_id = "test",
+        .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+        .cas_request_budget = renewalCounterBudget(),
+        .boot_ms_fn = [&] { return boot_ms; },
+    });
+
+    /// The confirmed external safety deadline is 1080. At 1071 a ten-millisecond physical attempt
+    /// no longer fits, so the logical renewal ends without reconstructing a sent attempt.
+    boot_ms = 1071;
+    const RenewalCounterSnapshot before = renewalCounters();
+    EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+    const RenewalCounterSnapshot after = renewalCounters();
+    expectRenewalCounterDelta(
+        before, after, /*attempts=*/0, /*retries=*/0, /*resolved=*/0, /*recovered=*/0,
+        /*deadline_exceeded=*/1);
 }
 
 }
@@ -326,12 +461,14 @@ TEST(CASObservability, CaInspectDecodesMountLeaseToJson)
     MountLease lease;
     lease.server_uuid = hexToU128("000000000000000000000000000000ab");
     lease.writer_epoch = 5;
+    lease.write_attempt_id = hexToU128("00112233445566778899aabbccddeeff");
     lease.hostname = "host1";
     lease.pid = 123;
 
     const String key = layout.mountKey("srid1");
     const String json = caInspectToJson(layout, key, encodeMountLease(lease));
     EXPECT_NE(json.find("\"writer_epoch\":5"), String::npos);
+    EXPECT_NE(json.find("\"write_attempt_id\":\"00112233445566778899aabbccddeeff\""), String::npos);
     EXPECT_NE(json.find("host1"), String::npos);
 }
 

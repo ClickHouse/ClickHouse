@@ -4,6 +4,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
@@ -24,6 +25,7 @@
 namespace ProfileEvents
 {
 extern const Event CASRefSnapshotPublishDispatched;
+extern const Event CASRefSnapshotPublishBackoff;
 }
 
 namespace DB::ErrorCodes
@@ -34,15 +36,14 @@ extern const int NETWORK_ERROR;
 /// Task 6b remainder (Stage B, `{#t2}`): the publication-ordering coverage that Task 6b's rename left
 /// undone. This suite PINS existing behavior of `CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnce`
 /// (the one retry unit), `admitSnapshotPublishUnderStateLock`, `advancePublishBackoff`/
-/// `resetPublishBackoff`, and `dispatchSnapshotPublisher`/`settleSnapshotPublish`. It changes NO
-/// production code.
+/// `resetPublishBackoff`, and `dispatchSnapshotPublisher`/`settleSnapshotPublish`.
 ///
 /// Normative ordering: (1) the immutable snapshot body becomes durable; (2) `_ckpt` advances; (3) the new
 /// snapshot is adopted in this cache's memory. `NeedsRecovery` (this campaign's `Poisoned`) blocks
 /// publication -- a durable transaction may be missing from the cached view -- and forces
 /// `ensureRefTableRecovered` to re-walk the durable stream on the very next touch.
 ///
-/// The suite name is prefixed `Cas` so it is covered by the `Cas*` unit-test gate filter.
+/// The suite name is prefixed `CAS` so it is covered by the `CAS*` unit-test gate filter.
 
 using namespace DB::Cas;
 using DB::Cas::tests::CountingBackend;
@@ -183,6 +184,20 @@ RefTxnId publishRef(const PoolPtr & store, const RootNamespace & ns, const Strin
             return ops;
         },
         RootMutationOrigin::Writer, RootMutationKind::Publish);
+}
+
+void forceAdoptablePublishWedge(
+    const PoolPtr & store, const RootNamespace & ns, uint64_t ref_sequence, const String & ref, uint64_t ordinal)
+{
+    const RefTxnId txn_id{store->writerEpoch(), ref_sequence};
+    RefLogTxn txn;
+    txn.ns = ns.string();
+    txn.txn_id = txn_id;
+    txn.ops = publishCommittedOps(ref, ManifestRef{1, ordinal, 1});
+    const String bytes = sealObject(FormatId::RefLog, encodeRefLogTxn(txn));
+    const NamespaceLifeId life = *store->refTableLifeForTest(ns);
+    store->forceWedgeForTest(
+        ns, txn_id.writer_epoch, txn_id.ref_sequence, store->layout().refLogKey(life, txn_id), bytes);
 }
 
 }
@@ -498,4 +513,155 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     EXPECT_EQ(dispatchCount(), d2 + 1)
         << "resetPublishBackoff must have restarted the schedule at the INITIAL 1000ms interval, not "
            "left it continuing from the 4000ms cap";
+}
+
+TEST(CASRefSnapshotPublishOrdering, NotReadyRefusalBacksOffAndResetsAfterDurablePublish)
+{
+    using ProfileEvents::global_counters;
+    auto backend = std::make_shared<OrderedFaultBackend>();
+
+    CasRequestBudget budget;
+    budget.max_attempts = 1;
+    budget.attempt_timeout_ms = 100;
+    budget.operation_deadline_ms = 5000;
+    budget.lease_safety_margin_ms = 100;
+
+    uint64_t fake_now = 2'000'000;
+    PoolConfig config;
+    config.snapshot_log_count_threshold = 0;
+    config.snapshot_log_bytes_threshold = 1ULL << 40;
+    config.snapshot_publish_backoff_initial_ms = 200;
+    config.snapshot_publish_backoff_max_ms = 30'000;
+    config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
+    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    config.cas_request_budget = budget;
+    auto store = openPool(backend, config);
+    const RootNamespace ns{"srv1/order_not_ready_backoff"};
+
+    const auto dispatch_count = [&]
+    {
+        return global_counters[ProfileEvents::CASRefSnapshotPublishDispatched].load();
+    };
+    const auto backoff_count = [&]
+    {
+        return global_counters[ProfileEvents::CASRefSnapshotPublishBackoff].load();
+    };
+
+    ASSERT_EQ(publishRef(store, ns, "ref_1", 1), (RefTxnId{store->writerEpoch(), 1}));
+    store->waitForSnapshotPublishSettleForTest(ns);
+    ASSERT_EQ(
+        store->newestPublishedSnapshotIdForTest(ns),
+        std::make_optional(RefTxnId{store->writerEpoch(), 1}));
+
+    /// Direct calls remain one attempt per invocation even while a cooldown is armed. This first
+    /// refusal is also the non-hanging RED discriminator: without the production fix the backoff
+    /// counter is unchanged, so the fatal assertion stops before settlement can redispatch forever.
+    forceAdoptablePublishWedge(store, ns, 2, "ref_2", 2);
+    ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged);
+    const uint64_t warmup_backoffs = backoff_count();
+    EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
+    ASSERT_EQ(backoff_count(), warmup_backoffs + 1)
+        << "one admitted NotReady refusal must arm the initial snapshot-publish backoff";
+    EXPECT_FALSE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
+    ASSERT_EQ(backoff_count(), warmup_backoffs + 2)
+        << "a direct call is still one admitted attempt per invocation and doubles the cooldown";
+
+    /// Resolve the exact wedge through the real append-lane adoption path. Its adopted txn and
+    /// the caller's own txn raise the table above threshold, but the warm-up cooldown prevents an
+    /// automatic publish while the fixture prepares one uncovered tail entry.
+    ASSERT_EQ(publishRef(store, ns, "ref_3", 3), (RefTxnId{store->writerEpoch(), 3}));
+    ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+
+    bool appended_during_capture = false;
+    store->setSnapshotAfterCaptureHookForTest([&]
+    {
+        if (appended_during_capture)
+            return;
+        appended_during_capture = true;
+        EXPECT_EQ(publishRef(store, ns, "ref_4", 4), (RefTxnId{store->writerEpoch(), 4}));
+    });
+    ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
+    store->setSnapshotAfterCaptureHookForTest(nullptr);
+    ASSERT_TRUE(appended_during_capture);
+    ASSERT_EQ(
+        store->newestPublishedSnapshotIdForTest(ns),
+        std::make_optional(RefTxnId{store->writerEpoch(), 3}));
+
+    /// One uncovered tail entry now exists with no cooldown. Make the lane non-Ready before the read
+    /// trigger, so the first production dispatch is an admitted refusal rather than a body PUT.
+    forceAdoptablePublishWedge(store, ns, 5, "ref_5", 5);
+    ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged);
+    const uint64_t production_dispatches = dispatch_count();
+    const uint64_t production_backoffs = backoff_count();
+
+    store->resolveRef(ns, "ref_1");
+    store->waitForSnapshotPublishSettleForTest(ns);
+    ASSERT_EQ(dispatch_count(), production_dispatches + 1)
+        << "the over-threshold table must dispatch one admitted refusal";
+    ASSERT_EQ(backoff_count(), production_backoffs + 1)
+        << "the admitted refusal must arm exactly one 200ms cooldown";
+
+    /// Settlement re-evaluates immediately. The armed deadline must stop that handoff from becoming a
+    /// second dispatch, and an ordinary trigger at the same BOOTTIME instant must also remain refused.
+    store->resolveRef(ns, "ref_1");
+    store->waitForSnapshotPublishSettleForTest(ns);
+    EXPECT_EQ(dispatch_count(), production_dispatches + 1);
+    EXPECT_EQ(backoff_count(), production_backoffs + 1);
+
+    uint64_t admitted_retries = 0;
+    uint64_t delay_ms = 200;
+    const std::vector<uint64_t> next_delays{
+        400, 800, 1600, 3200, 6400, 12'800, 25'600, 30'000, 30'000};
+    for (const uint64_t next_delay_ms : next_delays)
+    {
+        fake_now += delay_ms - 1;
+        store->resolveRef(ns, "ref_1");
+        store->waitForSnapshotPublishSettleForTest(ns);
+        EXPECT_EQ(dispatch_count(), production_dispatches + 1 + admitted_retries)
+            << "no retry may dispatch one millisecond before the current deadline";
+        EXPECT_EQ(backoff_count(), production_backoffs + 1 + admitted_retries);
+
+        ++fake_now;
+        store->resolveRef(ns, "ref_1");
+        store->waitForSnapshotPublishSettleForTest(ns);
+        ++admitted_retries;
+        EXPECT_EQ(dispatch_count(), production_dispatches + 1 + admitted_retries)
+            << "exactly one retry must dispatch at the BOOTTIME deadline";
+        EXPECT_EQ(backoff_count(), production_backoffs + 1 + admitted_retries)
+            << "each admitted NotReady retry advances the same bounded cooldown once";
+        delay_ms = next_delay_ms;
+    }
+
+    /// The last two intervals are both 30 seconds: the retry at the first capped deadline must arm the
+    /// same cap, rather than overflow, reset, or continue doubling.
+    EXPECT_EQ(delay_ms, 30'000u);
+
+    /// Adopt the outstanding wedge through production and publish durably. The hook commits one later
+    /// txn after capture while the capped cooldown is still armed; a correct durable publication resets
+    /// that cooldown, so an immediate same-clock read dispatches the leftover tail without waiting.
+    ASSERT_EQ(publishRef(store, ns, "ref_6", 6), (RefTxnId{store->writerEpoch(), 6}));
+    ASSERT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+    bool appended_after_reset_capture = false;
+    store->setSnapshotAfterCaptureHookForTest([&]
+    {
+        if (appended_after_reset_capture)
+            return;
+        appended_after_reset_capture = true;
+        EXPECT_EQ(publishRef(store, ns, "ref_7", 7), (RefTxnId{store->writerEpoch(), 7}));
+    });
+    ASSERT_TRUE(store->tryPublishSnapshotAndAdvanceCheckpointOnce(ns));
+    store->setSnapshotAfterCaptureHookForTest(nullptr);
+    ASSERT_TRUE(appended_after_reset_capture);
+    ASSERT_EQ(
+        store->newestPublishedSnapshotIdForTest(ns),
+        std::make_optional(RefTxnId{store->writerEpoch(), 6}));
+
+    const uint64_t dispatches_before_reset_probe = dispatch_count();
+    store->resolveRef(ns, "ref_1");
+    store->waitForSnapshotPublishSettleForTest(ns);
+    EXPECT_EQ(dispatch_count(), dispatches_before_reset_probe + 1)
+        << "durable publication must clear the capped cooldown for an immediate same-clock trigger";
+    EXPECT_EQ(
+        store->newestPublishedSnapshotIdForTest(ns),
+        std::make_optional(RefTxnId{store->writerEpoch(), 7}));
 }

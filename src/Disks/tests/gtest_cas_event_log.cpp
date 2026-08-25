@@ -8,11 +8,132 @@
 #include <Interpreters/ContentAddressedLog.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/typeid_cast.h>
+#include <Common/Exception.h>
+#include <Poco/Exception.h>
+#include <algorithm>
+#include <atomic>
 #include <mutex>
+#include <utility>
 #include <vector>
 using namespace DB::Cas;
 using DB::Cas::tests::idOf;
 using DB::Cas::tests::u128Of;
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int NETWORK_ERROR;
+}
+
+namespace DB::Cas
+{
+void configureMountRenewObservability(
+    const String * server_root_id, const CasEventSink * event_sink, bool deferred) noexcept;
+void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
+}
+
+namespace
+{
+
+class RenewalEventBackend final : public InMemoryBackend
+{
+public:
+    using InMemoryBackend::get;
+    using InMemoryBackend::putOverwrite;
+
+    bool throw_before_next_overwrite = false;
+    bool throw_nonretryable_next_overwrite = false;
+    bool vanish_on_next_overwrite = false;
+
+    void armResolveProbe()
+    {
+        std::lock_guard lock(resolve_mutex);
+        observe_next_get = true;
+        resolve_started = false;
+    }
+
+    bool resolveStarted()
+    {
+        std::lock_guard lock(resolve_mutex);
+        return resolve_started;
+    }
+
+    std::optional<GetResult> get(const String & key, Range range) override
+    {
+        {
+            std::lock_guard lock(resolve_mutex);
+            if (observe_next_get)
+            {
+                resolve_started = true;
+                observe_next_get = false;
+            }
+        }
+        return InMemoryBackend::get(key, range);
+    }
+
+    PutResult putOverwrite(
+        const String & key,
+        const String & bytes,
+        const Token & expected,
+        const ObjectMeta & meta) override
+    {
+        if (std::exchange(vanish_on_next_overwrite, false))
+        {
+            (void)InMemoryBackend::deleteExact(key, expected);
+            return {PutOutcome::PreconditionFailed, {}};
+        }
+        if (std::exchange(throw_nonretryable_next_overwrite, false))
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "injected deterministic renewal rejection");
+        if (std::exchange(throw_before_next_overwrite, false))
+            throw Poco::TimeoutException("injected renewal timeout before commit");
+        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+    }
+
+private:
+    std::mutex resolve_mutex;
+    bool observe_next_get = false;
+    bool resolve_started = false;
+};
+
+CasRequestBudget renewalEventBudget()
+{
+    return CasRequestBudget{
+        .attempt_timeout_ms = 10,
+        .operation_deadline_ms = 500,
+        .max_attempts = 2,
+        .lease_safety_margin_ms = 20,
+        .retry_initial_backoff_ms = 0,
+        .retry_max_backoff_ms = 0,
+    };
+}
+
+PoolPtr openRenewalEventPool(
+    const std::shared_ptr<RenewalEventBackend> & backend,
+    uint64_t & boot_ms,
+    CasRequestBudget budget = renewalEventBudget(),
+    String prefix = "renewal-events",
+    String server_root_id = "test")
+{
+    return Pool::open(backend, PoolConfig{
+        .pool_prefix = std::move(prefix),
+        .server_root_id = std::move(server_root_id),
+        .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+        .cas_request_budget = budget,
+        .boot_ms_fn = [&] { return boot_ms; },
+    });
+}
+
+std::vector<CasEvent> watermarkRenewEvents(const std::vector<CasEvent> & events)
+{
+    std::vector<CasEvent> result;
+    std::copy_if(events.begin(), events.end(), std::back_inserter(result), [](const CasEvent & event)
+    {
+        return event.type == CasEventType::WatermarkRenew;
+    });
+    return result;
+}
+
+}
 
 /// Round-B opt §6: `reason` is templated rationale (a handful of distinct strings repeated across
 /// every row), unlike `object_hash`/`token` which are genuinely per-row varied -- it belongs alongside
@@ -62,6 +183,317 @@ TEST(CASEvent, PoolEmitsToSink)
     e2.type = CasEventType::BlobPut;
     s->emitEvent(std::move(e2));
     EXPECT_EQ(seen.size(), 1u);
+}
+
+TEST(CASEvent, FirstAttemptRenewalIsSilent)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    uint64_t boot_ms = 100;
+    std::vector<CasEvent> events;
+    auto store = openRenewalEventPool(backend, boot_ms);
+    store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
+
+    EXPECT_NO_THROW(store->renewWatermarkOnce());
+    EXPECT_TRUE(watermarkRenewEvents(events).empty());
+}
+
+TEST(CASEvent, WatermarkRenewEventsAreBoundedAndComplete)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    uint64_t boot_ms = 100;
+    std::vector<CasEvent> events;
+    auto store = openRenewalEventPool(backend, boot_ms);
+    store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
+
+    backend->throw_before_next_overwrite = true;
+    EXPECT_NO_THROW(store->renewWatermarkOnce());
+
+    const std::vector<CasEvent> renewals = watermarkRenewEvents(events);
+    ASSERT_EQ(renewals.size(), 2u);
+    EXPECT_EQ(renewals[0].outcome, "retrying");
+    EXPECT_EQ(renewals[1].outcome, "recovered");
+    EXPECT_EQ(renewals[0].detail.at("attempts_sent"), "1");
+    EXPECT_EQ(renewals[1].detail.at("attempts_sent"), "2");
+    EXPECT_EQ(renewals[0].detail.at("server_root_id"), "test");
+    EXPECT_EQ(renewals[0].detail.at("writer_epoch"), std::to_string(store->writerEpoch()));
+    EXPECT_EQ(renewals[0].detail.at("seq"), "2");
+    EXPECT_EQ(renewals[0].detail.at("write_attempt_id"), renewals[1].detail.at("write_attempt_id"));
+    EXPECT_FALSE(renewals[0].detail.at("write_attempt_id").empty());
+    EXPECT_LT(renewals[0].detail.at("write_attempt_id").size(), 32u);
+
+    for (const CasEvent & event : renewals)
+    {
+        for (const String & key : {
+                 "server_root_id",
+                 "writer_epoch",
+                 "seq",
+                 "write_attempt_id",
+                 "attempts_sent",
+                 "elapsed_ms",
+                 "remaining_confirmed_budget_ms",
+                 "unresolved_reason",
+                 "deadline_source",
+                 "stop_cause",
+                 "classification"})
+            EXPECT_TRUE(event.detail.contains(key)) << "missing detail key " << key;
+    }
+}
+
+TEST(CASEvent, FirstAmbiguityIsVisibleWhileResolveIsInFlight)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    uint64_t boot_ms = 100;
+    std::atomic<uint32_t> retrying_events{0};
+    auto store = openRenewalEventPool(
+        backend, boot_ms, renewalEventBudget(), "renewal-inflight-ambiguity");
+    store->setEventSink([&](CasEvent event)
+    {
+        if (event.type == CasEventType::WatermarkRenew && event.outcome == "retrying")
+        {
+            retrying_events.fetch_add(1);
+            /// The diagnostic callback may consume the remaining recovery budget. The controller
+            /// must re-check its absolute deadline before starting the resolving GET.
+            boot_ms = 1081;
+        }
+    });
+
+    backend->throw_before_next_overwrite = true;
+    backend->armResolveProbe();
+    EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+
+    EXPECT_EQ(retrying_events.load(), 1u)
+        << "first ambiguity must be externally visible before the pre-resolve deadline gate";
+    EXPECT_FALSE(backend->resolveStarted())
+        << "a diagnostic sink that exhausts the budget must prevent the resolving GET from starting";
+    EXPECT_EQ(retrying_events.load(), 1u) << "retrying delivery is bounded to the first ambiguity";
+}
+
+TEST(CASEvent, DeepReentrancyPreservesDeterministicPhysicalAttemptTruth)
+{
+    constexpr size_t depth = 10;
+    std::array<std::shared_ptr<RenewalEventBackend>, depth> backends;
+    std::array<std::unique_ptr<Layout>, depth> layouts;
+    std::array<std::unique_ptr<MountLeaseKeeper>, depth> keepers;
+    std::array<String, depth> server_root_ids;
+    std::array<CasEventSink, depth> sinks;
+    uint64_t wall_ms = 100;
+    uint64_t boot_ms = 100;
+    std::optional<MountRenewResult> deepest_result;
+    std::function<MountRenewResult(size_t)> renew_at;
+
+    renew_at = [&](size_t index)
+    {
+        configureMountRenewObservability(&server_root_ids[index], &sinks[index], /*deferred=*/false);
+        MountRenewResult result = keepers[index]->renew(
+            CasRequestBudget{
+                .attempt_timeout_ms = 10,
+                .operation_deadline_ms = 500,
+                .max_attempts = 1,
+                .lease_safety_margin_ms = 0,
+                .retry_initial_backoff_ms = 0,
+                .retry_max_backoff_ms = 0,
+            },
+            MountRenewOperationEnvironment{});
+        reportMountRenewCompletion(result);
+        return result;
+    };
+
+    for (size_t index = 0; index < depth; ++index)
+    {
+        backends[index] = std::make_shared<RenewalEventBackend>();
+        layouts[index] = std::make_unique<Layout>(fmt::format("deep-renewal-{}", index));
+        server_root_ids[index] = fmt::format("deep-{}", index);
+        sinks[index] = [&, index](CasEvent event)
+        {
+            if (event.type == CasEventType::MountConflict && index + 1 < depth)
+            {
+                MountRenewResult child_result = renew_at(index + 1);
+                if (index + 2 == depth)
+                    deepest_result = std::move(child_result);
+            }
+        };
+        keepers[index] = std::make_unique<MountLeaseKeeper>(
+            backends[index],
+            *layouts[index],
+            server_root_ids[index],
+            UInt128(index + 1),
+            7,
+            std::chrono::milliseconds(1000),
+            [&] { return wall_ms; },
+            [] { return uint64_t{0}; },
+            sinks[index],
+            std::chrono::milliseconds(0),
+            [&] { return boot_ms; });
+        keepers[index]->start();
+
+        if (index + 1 < depth)
+        {
+            const String key = layouts[index]->mountKey(server_root_ids[index]);
+            auto observed = backends[index]->get(key);
+            ASSERT_TRUE(observed.has_value());
+            MountLease foreign = decodeMountLease(observed->bytes);
+            foreign.server_uuid = UInt128(100 + index);
+            ASSERT_EQ(
+                backends[index]->putOverwrite(key, encodeMountLease(foreign), observed->token).outcome,
+                PutOutcome::Done);
+        }
+    }
+    backends.back()->throw_nonretryable_next_overwrite = true;
+
+    const MountRenewResult outer_result = renew_at(0);
+    EXPECT_EQ(outer_result.outcome, MountRenewOutcome::Terminal);
+    ASSERT_TRUE(deepest_result.has_value());
+    EXPECT_EQ(deepest_result->outcome, MountRenewOutcome::Terminal);
+    EXPECT_EQ(deepest_result->diagnostics.attempts_sent, 1u)
+        << "nesting beyond the rich-event stack must not erase physical attempt truth";
+}
+
+TEST(CASEvent, WatermarkRenewSinkFailureCannotChangeOutcome)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    uint64_t boot_ms = 100;
+    auto store = openRenewalEventPool(backend, boot_ms);
+    const String mount_key = store->layout().mountKey("test");
+    const uint64_t seq_before = decodeMountLease(backend->get(mount_key)->bytes).seq;
+    store->setEventSink([](const CasEvent & event)
+    {
+        if (event.type == CasEventType::WatermarkRenew)
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected renewal event sink failure");
+    });
+
+    backend->throw_before_next_overwrite = true;
+    EXPECT_NO_THROW(store->renewWatermarkOnce());
+    EXPECT_EQ(decodeMountLease(backend->get(mount_key)->bytes).seq, seq_before + 1);
+    EXPECT_TRUE(store->mayMutate());
+}
+
+TEST(CASEvent, TerminalRenewalDetailsPreservePhysicalTruthAndClassification)
+{
+    const auto one_failed_event = [](const std::vector<CasEvent> & events) -> CasEvent
+    {
+        const std::vector<CasEvent> renewals = watermarkRenewEvents(events);
+        const auto failed = std::find_if(renewals.begin(), renewals.end(), [](const CasEvent & event)
+        {
+            return event.outcome == "failed";
+        });
+        EXPECT_NE(failed, renewals.end());
+        return failed == renewals.end() ? CasEvent{} : *failed;
+    };
+
+    {
+        auto backend = std::make_shared<RenewalEventBackend>();
+        uint64_t boot_ms = 100;
+        std::vector<CasEvent> events;
+        auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-deterministic-details");
+        store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
+        backend->throw_nonretryable_next_overwrite = true;
+
+        EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+        const CasEvent failed = one_failed_event(events);
+        EXPECT_EQ(failed.detail.at("attempts_sent"), "1");
+        EXPECT_EQ(failed.detail.at("unresolved_reason"), "not_unresolved");
+        EXPECT_EQ(failed.detail.at("stop_cause"), "continue");
+        EXPECT_EQ(failed.detail.at("classification"), "deterministic_failure");
+    }
+
+    {
+        auto backend = std::make_shared<RenewalEventBackend>();
+        uint64_t boot_ms = 100;
+        std::vector<CasEvent> events;
+        CasRequestBudget budget = renewalEventBudget();
+        budget.max_attempts = 1;
+        auto store = openRenewalEventPool(backend, boot_ms, budget, "renewal-exhausted-details");
+        store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
+        backend->throw_before_next_overwrite = true;
+
+        EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+        const CasEvent failed = one_failed_event(events);
+        EXPECT_EQ(failed.detail.at("attempts_sent"), "1");
+        EXPECT_EQ(failed.detail.at("unresolved_reason"), "attempts_exhausted");
+        EXPECT_EQ(failed.detail.at("classification"), "attempts_exhausted");
+    }
+
+    {
+        auto backend = std::make_shared<RenewalEventBackend>();
+        uint64_t boot_ms = 100;
+        std::vector<CasEvent> events;
+        auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-deadline-details");
+        store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
+        boot_ms = 1071;
+
+        EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+        const CasEvent failed = one_failed_event(events);
+        EXPECT_EQ(failed.detail.at("attempts_sent"), "0");
+        EXPECT_EQ(failed.detail.at("unresolved_reason"), "no_attempt_sent");
+        EXPECT_EQ(failed.detail.at("deadline_source"), "external_lease_safety");
+        EXPECT_EQ(failed.detail.at("classification"), "external_lease_deadline");
+    }
+}
+
+TEST(CASEvent, ReentrantRenewalSinkPreservesOuterObservationIdentity)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    uint64_t boot_ms = 100;
+    std::vector<CasEvent> events;
+    PoolPtr store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-reentrant-sink");
+    bool reentered = false;
+    store->setEventSink([&](CasEvent event)
+    {
+        if (event.type != CasEventType::WatermarkRenew)
+            return;
+        events.push_back(event);
+        if (event.outcome == "recovered" && !std::exchange(reentered, true))
+            store->renewWatermarkOnce();
+    });
+
+    backend->throw_before_next_overwrite = true;
+    EXPECT_NO_THROW(store->renewWatermarkOnce());
+
+    ASSERT_TRUE(reentered);
+    ASSERT_EQ(events.size(), 2u);
+    EXPECT_EQ(events[0].outcome, "retrying");
+    EXPECT_EQ(events[1].outcome, "recovered");
+    EXPECT_EQ(events[0].detail.at("seq"), "2");
+    EXPECT_EQ(events[1].detail.at("seq"), events[0].detail.at("seq"));
+    EXPECT_EQ(events[1].detail.at("write_attempt_id"), events[0].detail.at("write_attempt_id"));
+    EXPECT_EQ(decodeMountLease(backend->get(store->layout().mountKey("test"))->bytes).seq, 3u)
+        << "the nested first-attempt success must run without replacing the outer observation";
+}
+
+TEST(CASEvent, PreCompletionConflictReentrancyPreservesOuterTerminalObservation)
+{
+    auto inner_backend = std::make_shared<RenewalEventBackend>();
+    uint64_t inner_boot_ms = 100;
+    auto inner = openRenewalEventPool(
+        inner_backend, inner_boot_ms, renewalEventBudget(), "renewal-reentrant-inner", "inner");
+
+    auto outer_backend = std::make_shared<RenewalEventBackend>();
+    uint64_t outer_boot_ms = 100;
+    CasRequestBudget outer_budget = renewalEventBudget();
+    outer_budget.max_attempts = 1;
+    auto outer = openRenewalEventPool(
+        outer_backend, outer_boot_ms, outer_budget, "renewal-reentrant-outer", "outer");
+    std::vector<CasEvent> outer_events;
+    bool reentered = false;
+    outer->setEventSink([&](CasEvent event)
+    {
+        outer_events.push_back(event);
+        if (event.type == CasEventType::MountConflict && !std::exchange(reentered, true))
+            inner->renewWatermarkOnce();
+    });
+
+    outer_backend->vanish_on_next_overwrite = true;
+    EXPECT_THROW(outer->renewWatermarkOnce(), DB::Exception);
+
+    ASSERT_TRUE(reentered);
+    const std::vector<CasEvent> renewals = watermarkRenewEvents(outer_events);
+    ASSERT_EQ(renewals.size(), 2u);
+    EXPECT_EQ(renewals[0].outcome, "retrying");
+    EXPECT_EQ(renewals[1].outcome, "failed");
+    EXPECT_EQ(renewals[0].detail.at("server_root_id"), "outer");
+    EXPECT_EQ(renewals[1].detail.at("server_root_id"), "outer");
+    EXPECT_EQ(renewals[1].detail.at("write_attempt_id"), renewals[0].detail.at("write_attempt_id"));
+    EXPECT_EQ(renewals[1].detail.at("classification"), "vanished");
 }
 
 /// Round-B opt §6: `emitEvent` takes the event BY VALUE (moved-through, not `const &`), so a

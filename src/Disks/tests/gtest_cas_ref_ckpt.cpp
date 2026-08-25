@@ -272,7 +272,7 @@ TEST(CASRefCheckpoint, CommittedThroughHasCanonicalExactWireEncoding)
                        .committed_through = RefTxnId{9, 11},
                        .checkpoint_snapshot_id = RefTxnId{9, 10},
                        .last_epoch_seal = RefTxnId{8, 12}};
-    const String expected = R"({"type":"cas_ref_ckpt","v":9}
+    const String expected = R"({"type":"cas_ref_ckpt","v":10}
 {"le":"7","cte":"9","cts":"11","cse":"9","css":"10","lse":"8","lss":"12"}
 )";
 
@@ -1180,14 +1180,26 @@ TEST(CASRefCheckpoint, CommitRefChunkDurableBytesUnchangedByExtraction)
     /// The BODY is checked as exact length plus a 128-bit SipHash of it -- not literally byte for byte,
     /// but any change that survives both is a 128-bit collision at a fixed length, which is the trade for
     /// keeping the assertion readable. It is a function of `{format generation, ns, id, ops,
-    /// chain_link}` only -- no incarnation reaches it. The generation-9 committed-frontier cut updates
-    /// the hash while leaving the payload shape and exact length unchanged.
+    /// chain_link}` only -- no incarnation reaches it. Generation 10 changed the shared format header;
+    /// the plaintext discriminator below removes only that change and pins every remaining byte to the
+    /// generation-9 fixture before accepting the new deterministic compressed size and hash.
     const auto got = backend->get(key);
     ASSERT_TRUE(got.has_value()) << "the birth chunk must be durable at its canonical key";
-    EXPECT_EQ(got->bytes.size(), 177u) << "the sealed ref-log body changed size";
+    String as_generation_9 = openObject(FormatId::RefLog, got->bytes);
+    const String generation_10_header = R"({"type":"cas_ref_log","v":10})";
+    ASSERT_TRUE(as_generation_9.starts_with(generation_10_header));
+    as_generation_9.replace(0, generation_10_header.size(), R"({"type":"cas_ref_log","v":9})");
+    EXPECT_EQ(as_generation_9, R"({"type":"cas_ref_log","v":9}
+{"ns":"test/golden@cas@","we":"1","rs":"1"}
+{"op":"namespace_birth"}
+{"op":"owner_transition","nbk":"precommit","nrn":"gold_ref","nme":"1","nmb":"7","nmo":1}
+{"op":"owner_transition","obk":"precommit","orn":"gold_ref","ome":"1","omb":"7","omo":1,"nbk":"committed","nrn":"gold_ref","nme":"1","nmb":"7","nmo":1}
+{"n":3}
+)") << "generation 10 must change only the self-describing header of this ref-log fixture";
+    EXPECT_EQ(got->bytes.size(), 179u) << "the sealed ref-log body changed size";
     SipHash body_hash;
     body_hash.update(got->bytes.data(), got->bytes.size());
-    EXPECT_EQ(getHexUIntLowercase(body_hash.get128()), "784e7fd1ae0010f9cffdac1796730070")
+    EXPECT_EQ(getHexUIntLowercase(body_hash.get128()), "ada75a83638e933c98d731183a46b7b7")
         << "the sealed ref-log body changed content -- preparation must seal the same bytes it sealed "
            "before the extraction";
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CatalogLifecycleReconciler.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcMetaWriter.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcStateFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcOutcomesFormat.h>
@@ -11,7 +12,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool.h>
 #include <atomic>
 #include <functional>
 #include <map>
@@ -873,26 +873,6 @@ private:
     /// Update the remembered observation (steal protocol step 3/4).
     void rememberObservation(const GcLease & lease);
 
-    /// Submit one per-hash freshness-meta op (condemn/spare/delete) to the bounded `meta_pool`.
-    /// NEVER throws: `job` is wrapped in its own try/catch (an exception counts into the
-    /// `CASGCMetaWriteAnomaly` profile event + a log line); if scheduling itself fails (e.g. resource
-    /// exhaustion) the op runs inline rather than being silently lost. Callers must capture every value
-    /// `job` touches BY VALUE (never by reference to a loop-local like the fold's `cur_blob`, which
-    /// mutates across iterations while this job may still be queued).
-    void scheduleMetaJob(std::function<void()> job);
-
-    /// Schedule the async per-hash condemn-marker write for a (ref, token) entering or being carried in
-    /// the retired set; when `writeCondemnedMeta` reports durable Condemned evidence, the in-process
-    /// confirmation for the exact (ref, token) is recorded (the graduation gate's fast path). A swallowed
-    /// write records nothing — the entry stays unconfirmed and graduation carries it (triage §3.4).
-    void scheduleCondemnMarkerWrite(const BlobRef & ref, const Token & token,
-                                    uint64_t condemn_round, uint64_t size);
-
-    /// The in-process condemn-marker confirmation registry (see `condemn_markers_confirmed`).
-    void noteCondemnMarkerDurable(const BlobRef & ref, const Token & token);
-    bool condemnMarkerConfirmedInProcess(const BlobRef & ref, const Token & token);
-    void forgetCondemnMarker(const BlobRef & ref, const Token & token);
-
     PoolPtr store;
     /// Where `GcPhaseTimer` sends one record per GC phase. Empty unless a `CasGcScheduler` installed one
     /// for the current round, in which case every phase of that round emits a row.
@@ -943,29 +923,11 @@ private:
     std::optional<std::pair<SweepRetainClass, uint64_t>> last_retain_rollup;
     uint64_t retain_rollup_passes_since_report = 0;
 
-    /// Bounded pool for the round's per-hash freshness-meta writes (condemn/spare/delete);
-    /// sized from `PoolConfig::gc_meta_pool_size` (constructed in the ctor, after the null/id checks --
-    /// never touches a possibly-null `store` at member-init time). A `unique_ptr` (not a plain member)
-    /// so construction can happen in the ctor body, after validating `store`.
-    std::unique_ptr<ThreadPool> meta_pool;
-
-    /// Cumulative counts of the per-hash freshness-meta jobs this leader handed to `meta_pool` and of
-    /// those that finished. The `meta_pool_wait` phase reports the ROUND's deltas: that phase's work runs
-    /// on other threads, so its `ProfileEvents` delta is empty BY CONSTRUCTION, and these two numbers are
-    /// what distinguish "the queue was deep" from "the endpoint was slow" when read next to its duration.
-    /// Atomic because a pool thread increments `meta_jobs_completed_` while the round thread reads it.
-    std::atomic<uint64_t> meta_jobs_scheduled_{0};
-    std::atomic<uint64_t> meta_jobs_completed_{0};
-
-    /// In-process confirmations of durable condemn-marker writes, keyed (blob, exact incarnation-token
-    /// value): inserted by `scheduleCondemnMarkerWrite`'s completion (and the rebuild's synchronous
-    /// marker publish) when `writeCondemnedMeta` reports durable Condemned evidence; consulted by the
-    /// graduation gate (the delete-authorizing edge, triage §3.4); pruned when the entry settles
-    /// (redelete / spare / supersede). In-memory only — after a restart or leader change the graduation
-    /// gate falls back to a synchronous `loadMeta` re-check (the marker itself is durable). Guarded by
-    /// `condemn_marker_mutex`: meta-pool completions insert concurrently with the fold thread's reads.
-    std::mutex condemn_marker_mutex;
-    std::set<std::pair<BlobRef, String>> condemn_markers_confirmed;
+    /// Owns the bounded pool for this round's per-hash freshness-meta writes and everything those
+    /// writes touch. A `unique_ptr` because its pool size comes from `store->poolConfig()`, which may
+    /// only be read after the constructor body has validated `store` -- a direct member would be
+    /// initialized before that check.
+    std::unique_ptr<GcMetaWriter> meta_writer;
 
     /// Probe B1's two numbers for the round: the ref-log POSITIONS the sealed coverage declares covered
     /// (counted arithmetically over each namespace's cut -- not by listed ids, which under arithmetic
@@ -984,6 +946,10 @@ private:
     uint64_t transactions_unapplied_this_round = 0;
 
 public:
+    /// TEST SEAM: reach the meta writer so a unit test can schedule a real meta op and read the
+    /// round's job accounting without driving a full round.
+    GcMetaWriter & metaWriterForTest() { return *meta_writer; }
+
     /// TEST SEAM: expose catalog-based universe discovery so unit tests can assert it against a catalog
     /// they construct, without driving a full round.
     std::vector<NamespaceLifeId> discoverUniverseForTest()

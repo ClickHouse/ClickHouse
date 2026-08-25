@@ -160,8 +160,9 @@ struct PoolConfig
     /// feedback_ca_gc_never_throw_on_404) and `Gc::runRegularRound` waits for the round's whole batch
     /// before the round's single gc/state CAS, so the meta writes are durable before that CAS commits.
     uint64_t gc_meta_pool_size = 16;
-    bool background_watermark = false;       /// tests drive renewOnce explicitly; gates the merged heartbeat's background thread
-    /// Installed on the pool before a writable mount can start its renewal thread.
+    /// Tests drive `renewWatermarkOnce` explicitly; gates both persistent runtime workers.
+    bool background_watermark = false;
+    /// Installed on the pool before a writable mount can start its runtime-owned workers.
     CasEventSink event_sink = {};
 
     /// Mount-lease TTL: how long a freshly-renewed mount lease is valid. The local
@@ -211,6 +212,8 @@ struct PoolConfig
     /// create. The straggler's own conditional create then LOSES against that occupied slot, whenever it
     /// arrives. Waiting for a race that the protocol already decides is not caution, it is latency.
     std::function<void(uint64_t)> wait_sleep_fn = {};   /// test hook for open/remount waits
+    RuntimeWorkerFactory worker_factory = {};           /// internal test seam; never parsed from disk config
+    std::function<void()> remount_quiesce_hook_for_test = {};
 
     /// a table becomes a publish candidate once its retained
     /// tail -- every applied txn strictly above the newest published snapshot, no age filter -- exceeds
@@ -286,6 +289,7 @@ struct PoolConfig
             .background_watermark = background_watermark,
             .boot_ms_fn = boot_ms_fn,
             .wait_sleep_fn = wait_sleep_fn,
+            .worker_factory = worker_factory,
         };
     }
 };
@@ -457,11 +461,11 @@ public:
     /// `SYSTEM CAS FORGET` — the operator force-Vanish (spec §5). Drives THIS pool to
     /// `Vanished(forgotten)` with the fence-first protocol, node-locally, regardless of the current
     /// lifecycle (it works precisely on a NOT-live disk — a stuck transient/`IdentityLost` pool). In order:
-    /// (1) publish the terminal-intent latch FIRST (so the remount loop / keeper callback bail at their
+    /// (1) publish the terminal-intent latch FIRST (so both runtime worker loops bail at their
     /// next step boundary, bounding the joins below); (2) trip the local fence (the deliberate
     /// decommission act, allowed on a live disk); (3+4) stop the GC scheduler via `stop_and_join_gc` —
     /// injected because the scheduler is owned above the Pool, a no-op in contexts that run none — and stop
-    /// + join the self-remount thread; (5) drain the ref lanes (bounded) and retire the keeper WITHOUT an
+    /// + join both persistent workers; (5) drain the ref lanes (bounded) and retire the keeper WITHOUT an
     /// unearned clean farewell (the lease expires by observation unless the lanes provably drained); then
     /// (6) publish `Vanished(forgotten)` carrying `reason` (the [D5] message with the operator's decommission
     /// timestamp). Idempotent: an already-`Vanished` pool returns immediately (first terminal transition
@@ -721,21 +725,21 @@ public:
     /// call concurrently (serialized internally); also the synchronous test seam.
     bool tryRemountOnce();
 
-    /// Test seam: drive the (private) self-remount arm/refuse path directly — in production the
-    /// keeper's on_lost callback calls `scheduleRemount`, otherwise reachable only via the background
-    /// renewer's cadence. Returns true iff a recovery thread is armed after the call.
+    /// Test seam: latch the private self-remount path directly. In production the runtime terminal
+    /// consumer calls `scheduleRemount`, while external loss paths may latch the same persistent worker.
+    /// Returns true iff an unhandled recovery generation exists after the call.
     bool scheduleRemountForTest();
     /// Test seam: how many times `scheduleRemount` has been ENTERED, counted
-    /// unconditionally as its very first statement -- BEFORE the `background_watermark` early-return, so
-    /// this increments even under the default `background_watermark = false` (no thread ever spawns; a
+    /// unconditionally as its very first statement. This increments even under the default
+    /// `background_watermark = false` (no worker exists; a
     /// test never pays for a real self-remount attempt racing this Pool's own still-live keeper, which
     /// -- confirmed while building this seam -- reliably takes 30+ seconds per call and is not something
     /// a fast unit test should be driving). Positively pins that a production call site (e.g.
     /// `reportImpossibleInterference`) actually invoked `scheduleRemount`, as opposed to merely observing
     /// `mayMutate() == false` (which `tripMountLost` alone already accounts for).
     uint64_t scheduleRemountCallCountForTest() const { return mount_runtime.scheduleRemountCallCountForTest(); }
-    /// Test seam: latch `remount_shutting_down` exactly as `~Pool()` does at its top, WITHOUT tearing
-    /// the Pool down, so a test can assert `scheduleRemount` refuses to spawn once teardown has begun.
+    /// Test seam: publish the same worker-stop request as `~Pool` without tearing the pool down, so a
+    /// test can assert `scheduleRemount` refuses to latch work once teardown has begun.
     void beginShutdownForTest();
 
 
@@ -829,8 +833,8 @@ private:
     /// makes `key` exclusively ours: foreign bytes observed at our own wedge key, or the wedge hard
     /// contract itself violated at new-id-allocation time. LOG_ERROR with full context, emit a
     /// `ForeignInterference` CasEvent, then fence this mount closed and arm the SAME bounded
-    /// self-remount a foreign/superseded lease renewal already drives (`tripMountLost`/
-    /// `scheduleRemount` -- see the keeper's `on_lost` callback). Diagnosis is strictly off the
+    /// self-remount a foreign/superseded lease renewal already drives (`tripMountLost` followed by
+    /// `scheduleRemount`). Diagnosis is strictly off the
     /// critical path: ONE background GET of `key` (best-effort, single attempt), decoded as far as its
     /// ref-log header parses, logged -- never blocking or throwing on the caller's thread. Does NOT
     /// itself throw: every call site raises its OWN `LOGICAL_ERROR` immediately after this returns, so
@@ -1084,14 +1088,14 @@ private:
     /// AFTER this member), but they capture `Pool` and run only at runtime after the Pool is fully
     /// constructed -- exactly as in the pre-3.5 layout, where the mount raw-members these callbacks reach
     /// were also declared after `ref_ledger`. `~Pool` still calls `ref_ledger.drainRefLanesForShutdown`
-    /// explicitly, sequenced between `mount_runtime.stopRemountThread()` and
-    /// `mount_runtime.finishTeardown()` exactly as before.
+    /// explicitly, sequenced between `mount_runtime.stopBackgroundWorkers` and
+    /// `mount_runtime.finishTeardown` exactly as before.
     CasRefLedger ref_ledger;
     /// The mount / write-fence / build-watermark / self-remount runtime, extracted
     /// from Pool. Owns the `MountLeaseKeeper`, the local `MountFence`, the per-server
     /// build watermark (`process_epoch` + the `builds_mutex`-guarded seq/registry) and its in-flight-build
     /// map, the live-incarnation `live_writer_epoch`, the unclean-epoch high-water-mark, and the
-    /// self-remount recovery thread (with its own thread-lifecycle locks). Injected with backend/layout +
+    /// persistent renewal and remount workers (with one driver mutex/condition pair). Injected with backend/layout
     /// the `MountConfig` slice + `server_root_id` + the event-sink reference + the pool `cas_request_budget`
     /// + a `remount_attempt` callback (== `Pool::tryRemountOnce`, which STAYS on Pool: the claim/recovery
     /// ORCHESTRATION drives these owned primitives).
@@ -1099,7 +1103,7 @@ private:
     /// Declared AFTER `ref_ledger` -- preserving the pre-3.5 relative order VERBATIM (the mount raw-members
     /// this component replaces all sat after `ref_ledger`), so `mount_runtime` is destroyed FIRST and
     /// `ref_ledger` LAST. Both orders were proven equally safe -- `~Pool`
-    /// quiesces both subsystems before ANY member dtor runs (stopRemountThread ->
+    /// quiesces both subsystems before ANY member dtor runs (`stopBackgroundWorkers` ->
     /// ref_ledger.drainRefLanesForShutdown -> mount_runtime.finishTeardown), and the ledger's async paths
     /// pin `Pool::shared_from_this`, so no ledger->mount callback can fire during destruction in either
     /// order. Both safe ⇒ this is a pure behavior-preserving relocation, so the ORIGINAL order is kept and
@@ -1108,8 +1112,8 @@ private:
     CasMountRuntime mount_runtime;
 
     /// Serializes `tryRemountOnce` (whose claim/recovery ORCHESTRATION stays on Pool). STAYS here with
-    /// its guarded critical section: the self-remount thread-lifecycle locks + fence
-    /// atomics + build registry moved to `mount_runtime`, but the top-level remount serialization guards
+    /// its guarded critical section: persistent worker ownership, fence atomics, and the build registry
+    /// moved to `mount_runtime`, but the top-level remount serialization guards
     /// the Pool-side orchestration, so it stays on Pool.
     std::mutex remount_mutex;
 

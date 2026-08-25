@@ -59,6 +59,12 @@ constexpr FormatChangePoint POOL_META[] = {
     {1, 1},
     {kPoolGcShardsGeneration, kPoolGcShardsGeneration},
     {kCommittedRefFrontierGeneration, kCommittedRefFrontierGeneration},
+    {kMountWriteAttemptIdGeneration, kMountWriteAttemptIdGeneration},
+};
+
+constexpr FormatChangePoint MOUNT_LEASE[] = {
+    {1, 1},
+    {kMountWriteAttemptIdGeneration, kMountWriteAttemptIdGeneration},
 };
 
 }
@@ -78,6 +84,8 @@ std::span<const FormatChangePoint> changePoints(FormatId id)
             return GC_MAINTENANCE_STATE;
         case FormatId::PoolMeta:
             return POOL_META;
+        case FormatId::MountLease:
+            return MOUNT_LEASE;
         case FormatId::Blob:
         case FormatId::GcState:
         case FormatId::Roster:
@@ -87,7 +95,6 @@ std::span<const FormatChangePoint> changePoints(FormatId id)
         case FormatId::FoldSeal:
         case FormatId::Owner:
         case FormatId::ServerEpoch:
-        case FormatId::MountLease:
         case FormatId::BlobMeta:
         case FormatId::GcHeartbeat:
             return BASELINE;

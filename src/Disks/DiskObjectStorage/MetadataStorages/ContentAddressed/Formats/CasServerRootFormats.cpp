@@ -130,6 +130,7 @@ String encodeMountLease(const MountLease & m)
     writeKey(out, "eat", first); writeIntText(m.expires_at_ms, out);
     writeKey(out, "ma", first);  writeU64StringValue(out, m.min_active);
     writeKey(out, "fen", first); writeBoolValue(out, m.gc_fenced);
+    writeKey(out, "write_attempt_id", first); writeHex128Value(out, m.write_attempt_id);
     closeObject(out, first);
     writeChar('\n', out);
     return std::move(out).take();
@@ -146,6 +147,7 @@ MountLease decodeMountLease(std::string_view data)
     MountLease m;
     bool saw_su = false;
     bool saw_we = false;
+    bool saw_write_attempt_id = false;
     String key;
     while (r.nextKey(key))
     {
@@ -166,10 +168,15 @@ MountLease decodeMountLease(std::string_view data)
         else if (key == "eat") m.expires_at_ms = r.readU64Number();
         else if (key == "ma") m.min_active = r.readU64String();
         else if (key == "fen") m.gc_fenced = r.readBool();
+        else if (key == "write_attempt_id")
+        {
+            m.write_attempt_id = r.readHex128();
+            saw_write_attempt_id = true;
+        }
         else r.skipUnknown(key);
     }
-    if (!saw_su || !saw_we)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing identity field");
+    if (!saw_su || !saw_we || !saw_write_attempt_id || m.write_attempt_id == UInt128{})
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: missing or zero identity field");
     if (!body_in.eof() || !in.eof())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "CAS mount-lease: trailing bytes");
     return m;

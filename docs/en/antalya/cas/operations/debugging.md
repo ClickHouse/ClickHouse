@@ -99,6 +99,49 @@ than `live` (`expired`, `terminated`, `fenced`, `corrupt`) on a member that shou
 thing to check before assuming a lease problem is this node's own. `is_leader` and the other
 process-local columns are `NULL` on every peer's row; run the query on that peer to see its own view.
 
+### Trace a renewal through remount {#trace-renewal-remount}
+
+Nontrivial mount recovery is represented by aggregate `watermark_renew` and `mount_remount` rows,
+not by one warning per physical request. Query both event types in one timeline:
+
+```sql
+SELECT event_time_microseconds, event_type, outcome, reason,
+       detail['server_root_id'] AS server_root_id,
+       detail['writer_epoch'] AS writer_epoch,
+       detail['seq'] AS renewal_sequence,
+       detail['write_attempt_id'] AS write_attempt_id,
+       detail['attempts_sent'] AS attempts_sent,
+       detail['classification'] AS classification,
+       detail['deadline_source'] AS deadline_source,
+       detail['stop_cause'] AS stop_cause,
+       detail['attempt_no'] AS remount_attempt,
+       detail['step'] AS remount_step,
+       detail['error'] AS error
+FROM system.cas_log
+WHERE disk_name = 'cas'
+  AND event_type IN ('watermark_renew', 'mount_remount')
+ORDER BY event_time_microseconds;
+```
+
+Interpret the sequence as follows:
+
+- `retrying -> recovered` with the same `write_attempt_id` means an in-budget blip recovered in the
+  existing epoch; `classification = 'committed_by_get'` means exact `GET` proved a landed request,
+  while `committed_after_retry` means a later identical physical `PUT` completed.
+- A `failed` renewal carries the decisive `unresolved_reason`, `deadline_source`, `stop_cause`, and
+  `classification`. `external_lease_deadline`, `cancelled`, `conflict`,
+  `fence_or_lifecycle_lost`, and `attempts_exhausted` are different operator diagnoses; do not
+  collapse them into a generic timeout.
+- A following `mount_remount` row names the whole-chain `attempt_no` and final `step`. An `ok` row
+  restored `Live` under the reported fresh `writer_epoch`; a `failed` row's `step` and optional
+  `error` identify where that whole-chain attempt stopped.
+
+Use deltas of the mount counters from
+[monitoring](/antalya/cas/operations/monitoring#mount-renewal-remount-counters) to check completeness:
+a recovered blip increments renewal work/recovery but not `CASMountLeaseLost` or remount counters;
+a terminal operational loss increments `CASMountLeaseLost` once, then each whole-chain attempt
+increments exactly one of `CASRemountSucceeded` or `CASRemountFailed`.
+
 ## SQL commands for live diagnosis {#sql-commands}
 
 ### SYSTEM CAS FSCK {#sql-fsck}

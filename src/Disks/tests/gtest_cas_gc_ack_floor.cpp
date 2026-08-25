@@ -848,13 +848,14 @@ TEST(CASGCAckFloor, ExpiredMountFencedOutAndExcluded)
     auto store = openPoolForTest(backend);
     const Layout & layout = store->layout();
 
-    // srid2's keeper claims ONE lease via `start()` and is never renewed again — tests never enable
-    // the background renewal thread (`background_watermark` defaults to false), so this alone models a
+    // srid2's keeper claims ONE lease via `start` and is never renewed again — tests never enable
+    // the runtime-owned renewal worker (`background_watermark` defaults to false), so this alone models a
     // crashed process: a body that is live-shaped (not terminated, not fenced) but whose write token
     // never changes again.
     const String srid2 = "stale-server";
     MountLeaseKeeper srid2_keeper(backend, layout, srid2, DB::UInt128(0x2222), /*writer_epoch=*/1,
-        std::chrono::milliseconds(100), [] { return 1000u; }, [] { return 0u; });
+        std::chrono::milliseconds(100), [] { return 1000u; }, [] { return 0u; }, {},
+        std::chrono::milliseconds(0), [] { return 0u; });
     srid2_keeper.start();
     ASSERT_FALSE(decodeMountLease(backend->get(layout.mountKey(srid2))->bytes).gc_fenced);
 
@@ -909,9 +910,15 @@ TEST(CASGCAckFloor, ExpiredMountFencedOutAndExcluded)
     EXPECT_EQ(fence_out_rows, 1u);
 
     // srid2's writer comes back and tries to renew: its held token was invalidated by the fence rewrite,
-    // so renewOnce fails closed. (It renews on its own clock; liveness is irrelevant — the token guard
+    // so synchronous renewal returns a terminal failure. (It renews on its own clock; liveness is irrelevant — the token guard
     // trips regardless.)
-    EXPECT_THROW(srid2_keeper.renewOnce(), DB::Exception);
+    const MountRenewResult renewed = srid2_keeper.renew(
+        CasRequestBudget{.attempt_timeout_ms = 1, .operation_deadline_ms = 10, .max_attempts = 1,
+                         .lease_safety_margin_ms = 0, .retry_initial_backoff_ms = 0, .retry_max_backoff_ms = 0},
+        MountRenewOperationEnvironment{});
+    ASSERT_EQ(renewed.outcome, MountRenewOutcome::Terminal);
+    ASSERT_NE(renewed.failure, nullptr);
+    EXPECT_THROW(std::rethrow_exception(renewed.failure), DB::Exception);
 
     // The fence-out is pure liveness cleanup: reclaim proceeds through the normal (round-paced) pipeline
     // regardless of srid2's fate — fencing one stale mount must never wedge the reclaim pipeline.

@@ -16,7 +16,7 @@ TEST(CASFormatBattery, BlobMeta)
         .id = FormatId::BlobMeta,
         .encode = [&] { return sealObject(FormatId::BlobMeta, encodeBlobMeta(m)); },
         .decode = [](std::string_view s) { decodeBlobMeta(std::string(openObject(FormatId::BlobMeta, s))); },
-        .golden = "{\"type\":\"cas_blob_meta\",\"v\":9}\n"
+        .golden = "{\"type\":\"cas_blob_meta\",\"v\":10}\n"
                   "{\"st\":\"clean\",\"cr\":\"0\",\"sz\":\"12345\"}\n"});
 }
 
@@ -31,7 +31,7 @@ TEST(CASBlobMetaFormat, CondemnedRoundTripAllFields)
     EXPECT_EQ(back.condemn_round, 7u);
     EXPECT_EQ(back.size, 4096u);
     EXPECT_EQ(encodeBlobMeta(m),
-        "{\"type\":\"cas_blob_meta\",\"v\":9}\n{\"st\":\"condemned\",\"cr\":\"7\",\"sz\":\"4096\"}\n");
+        "{\"type\":\"cas_blob_meta\",\"v\":10}\n{\"st\":\"condemned\",\"cr\":\"7\",\"sz\":\"4096\"}\n");
 }
 
 TEST(CASBlobMetaFormat, FailsClosedOnUnknownStateAndTruncation)

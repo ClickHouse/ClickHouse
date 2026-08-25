@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string_view>
 
 namespace DB::Cas
@@ -162,8 +163,8 @@ struct CasRequestBudget
     /// so when everything is unreachable the fence deadline freezes at `last_renew + mount_lease_ttl`
     /// and `fence_ok` stops the loop ≈ TTL−attempt_timeout−margin (~23s) after the last successful
     /// renewal — the required fail-closed behavior (never an attempt past the lease), not a
-    /// budget limitation. While renewals DO land (blips, throttling, partial outages — the renewer runs
-    /// on its own background thread and keeps extending the fence deadline), the op is NOT bounded by
+    /// budget limitation. While renewals DO land (blips, throttling, partial outages — the runtime-owned
+    /// renewal worker keeps extending the fence deadline), the op is NOT bounded by
     /// the lease TTL and rides the full deadline here.
     uint64_t operation_deadline_ms = 90000;
     /// Maximum number of controlled attempts for one logical operation (the first attempt counts as 1).
@@ -327,12 +328,70 @@ enum class CasOverwriteOutcome : uint8_t
     Unresolved,
 };
 
+enum class CasOverwriteDeadlineSource : uint8_t
+{
+    RequestBudget,
+    ExternalLeaseSafety,
+};
+
+enum class CasOverwriteStopCause : uint8_t
+{
+    Continue,
+    Cancelled,
+    FenceOrLifecycleLost,
+};
+
+enum class CasOverwriteProgressKind : uint8_t
+{
+    PutStarted,
+    BecameAmbiguous,
+    ResolveStarted,
+    RetryStarted,
+    ResolvedByGet,
+};
+
+struct CasOverwriteProgress
+{
+    CasOverwriteProgressKind kind;
+    uint32_t attempt_no;
+};
+
+/// Per-operation gates for a controlled mutable overwrite. `absolute_deadline_ms` uses the same
+/// clock as the controller's injected `now_ms`; it is fixed by the caller before controller entry
+/// and therefore cannot be re-anchored after preemption. `wait_before_retry` is interruptible and
+/// must return false only after publishing a non-`Continue` stop cause. `observe` is diagnostic only:
+/// an exception from it is contained and cannot affect the protocol result.
+struct CasOverwriteOperationContext
+{
+    uint64_t absolute_deadline_ms;
+    CasOverwriteDeadlineSource deadline_source;
+    std::function<CasOverwriteStopCause()> stop_cause;
+    std::function<bool(uint64_t)> wait_before_retry;
+    std::function<void(const CasOverwriteProgress &)> observe;
+};
+
+struct CasOverwriteDiagnostics
+{
+    uint32_t attempts_sent = 0;
+    bool resolved_by_get = false;
+    CasUnresolvedReason unresolved_reason = CasUnresolvedReason::NotUnresolved;
+    CasOverwriteDeadlineSource deadline_source = CasOverwriteDeadlineSource::RequestBudget;
+    CasOverwriteStopCause stop_cause = CasOverwriteStopCause::Continue;
+    /// The last exact resolving GET completed by this controller. `resolve_observation_completed`
+    /// distinguishes a confirmed absence (`observed_bytes == nullopt`) from a failed/not-run read.
+    /// Terminal protocol owners use this snapshot instead of starting diagnostic I/O after the
+    /// controller has closed its deadline/cancellation gate.
+    bool resolve_observation_completed = false;
+    std::optional<String> observed_bytes;
+};
+
 /// Result of one `CasRequestController::putOverwriteControlled` operation. `token` is meaningful
 /// only when `outcome` is `Committed`.
 struct CasOverwriteResult
 {
     CasOverwriteOutcome outcome = CasOverwriteOutcome::Unresolved;
     Token token;   /// set ONLY on Committed
+    CasOverwriteDiagnostics diagnostics;
 };
 
 /// Result of one `CasRequestController::slotOccupy` operation — a WRITE-ONCE conditional create whose
@@ -464,6 +523,17 @@ public:
     CasOverwriteResult putOverwriteControlled(std::string_view key, std::string_view bytes,
                                               const Token & expected, const std::function<bool()> & fence_ok);
 
+    /// Controlled overwrite with a caller-owned absolute deadline, cancellation/lifecycle cause,
+    /// interruptible retry wait, and contained diagnostic observer. Stop and deadline gates run
+    /// before every backend request, before and after every wait, and before accepting a proven
+    /// commit. The physical-attempt limit is considered only when another `PUT` would be sent, so the
+    /// exact resolving `GET` for the final sent attempt is never suppressed.
+    CasOverwriteResult putOverwriteControlled(
+        std::string_view key,
+        std::string_view bytes,
+        const Token & expected,
+        const CasOverwriteOperationContext & context);
+
     /// Controlled put-if-absent for a MUTABLE marker whose bytes are deterministic, where an
     /// EXISTING DIFFERENT value at the key is a normal outcome (Conflict), not corruption. This is
     /// the create-side sibling of `putOverwriteControlled` and deliberately does NOT reuse
@@ -535,6 +605,13 @@ public:
     void setSleepFnForTest(std::function<void(uint64_t)> sleep_ms_);
 
 private:
+    CasOverwriteResult putOverwriteControlledImpl(
+        std::string_view key,
+        std::string_view bytes,
+        const Token & expected,
+        const CasOverwriteOperationContext & context,
+        bool preserve_legacy_gates);
+
     /// The gate between a completed ambiguous attempt and its reissue: fence check FIRST (a fence lost
     /// mid-loop must abort before any sleep), then the capped-exponential backoff sleep — skipped
     /// entirely (returning false, no sleep served) when the sleep plus one more attempt could not fit

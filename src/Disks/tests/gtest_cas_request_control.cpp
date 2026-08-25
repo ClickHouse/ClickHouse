@@ -36,6 +36,7 @@ namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
 }
 #endif
@@ -267,9 +268,12 @@ public:
     std::atomic<uint64_t> put_attempts{0};
 
     std::function<void()> put_overwrite_thrower;
+    std::function<PutResult(const String &, const String &, const Token &, const ObjectMeta &)> put_overwrite_handler;
     std::optional<PutOutcome> put_overwrite_forced_outcome;
     std::atomic<uint64_t> put_overwrite_attempts{0};
 
+    std::function<std::optional<GetResult>(const String &, Range)> get_handler;
+    std::atomic<uint64_t> get_attempts{0};
     bool get_overridden = false;
     std::optional<GetResult> get_override_value;   /// meaningful only when get_overridden
 
@@ -292,6 +296,8 @@ public:
     PutResult putOverwrite(const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) override
     {
         ++put_overwrite_attempts;
+        if (put_overwrite_handler)
+            return put_overwrite_handler(key, bytes, expected, meta);
         if (put_overwrite_thrower)
             put_overwrite_thrower();
         if (put_overwrite_forced_outcome)
@@ -301,6 +307,9 @@ public:
 
     std::optional<GetResult> get(const String & key, Range range) override
     {
+        ++get_attempts;
+        if (get_handler)
+            return get_handler(key, range);
         if (get_overridden)
             return get_override_value;
         return InMemoryBackend::get(key, range);
@@ -310,6 +319,37 @@ public:
 GetResult resultWithBytes(const String & bytes)
 {
     return GetResult{.bytes = bytes, .token = Token{"t", TokenType::Emulated}, .attributes = {}};
+}
+
+CasOverwriteOperationContext overwriteContext(
+    uint64_t absolute_deadline_ms,
+    CasOverwriteDeadlineSource deadline_source = CasOverwriteDeadlineSource::RequestBudget,
+    std::function<CasOverwriteStopCause()> stop_cause = {},
+    std::function<bool(uint64_t)> wait_before_retry = {},
+    std::function<void(const CasOverwriteProgress &)> observe = {})
+{
+    return CasOverwriteOperationContext{
+        .absolute_deadline_ms = absolute_deadline_ms,
+        .deadline_source = deadline_source,
+        .stop_cause = stop_cause ? std::move(stop_cause) : [] { return CasOverwriteStopCause::Continue; },
+        .wait_before_retry = wait_before_retry ? std::move(wait_before_retry) : [](uint64_t) { return true; },
+        .observe = observe ? std::move(observe) : [](const CasOverwriteProgress &) {},
+    };
+}
+
+void expectOverwriteDiagnostics(
+    const CasOverwriteResult & result,
+    uint32_t attempts_sent,
+    bool resolved_by_get,
+    CasUnresolvedReason unresolved_reason,
+    CasOverwriteDeadlineSource deadline_source,
+    CasOverwriteStopCause stop_cause)
+{
+    EXPECT_EQ(result.diagnostics.attempts_sent, attempts_sent);
+    EXPECT_EQ(result.diagnostics.resolved_by_get, resolved_by_get);
+    EXPECT_EQ(result.diagnostics.unresolved_reason, unresolved_reason);
+    EXPECT_EQ(result.diagnostics.deadline_source, deadline_source);
+    EXPECT_EQ(result.diagnostics.stop_cause, stop_cause);
 }
 
 }
@@ -517,6 +557,700 @@ TEST(CASRequestController, OverwriteOperationDeadlineExhaustionReturnsUnresolved
     const auto result = controller.putOverwriteControlled("k", "new-payload", expected, [] { return true; });
     EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
     EXPECT_EQ(backend->put_overwrite_attempts.load(), 2u);
+}
+
+TEST(CASRequestController, AbsoluteDeadlineCannotBeReanchoredAfterPreemption)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    uint64_t clock = 60;
+
+    CasRequestBudget budget;
+    budget.attempt_timeout_ms = 50;
+    budget.operation_deadline_ms = 10000;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+    const auto result = controller.putOverwriteControlled(
+        "k", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 0u);
+    expectOverwriteDiagnostics(
+        result,
+        0,
+        false,
+        CasUnresolvedReason::NoAttemptSent,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, MaxAttemptsOneStillResolvesLostResponseByGet)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    const PutResult predecessor = backend->InMemoryBackend::putIfAbsent("k", "old-payload");
+    ASSERT_EQ(predecessor.outcome, PutOutcome::Done);
+
+    Token landed_token;
+    auto * backend_ptr = backend.get();
+    backend->put_overwrite_handler = [backend_ptr, &landed_token](
+        const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) -> PutResult
+    {
+        const PutResult landed = backend_ptr->InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        landed_token = landed.token;
+        throw Poco::TimeoutException("scripted: response lost after overwrite landed");
+    };
+    std::vector<std::pair<CasOverwriteProgressKind, uint32_t>> progress;
+
+    CasRequestBudget budget;
+    budget.max_attempts = 1;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 0;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    auto context = overwriteContext(
+        1000,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        {},
+        {},
+        [&progress](const CasOverwriteProgress & event) { progress.emplace_back(event.kind, event.attempt_no); });
+    const auto result = controller.putOverwriteControlled("k", "new-payload", predecessor.token, context);
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Committed);
+    EXPECT_EQ(result.token, landed_token);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        true,
+        CasUnresolvedReason::NotUnresolved,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+    const std::vector<std::pair<CasOverwriteProgressKind, uint32_t>> expected_progress{
+        {CasOverwriteProgressKind::PutStarted, 1},
+        {CasOverwriteProgressKind::BecameAmbiguous, 1},
+        {CasOverwriteProgressKind::ResolveStarted, 1},
+        {CasOverwriteProgressKind::ResolvedByGet, 1},
+    };
+    EXPECT_EQ(progress, expected_progress);
+}
+
+TEST(CASRequestController, StopBeforeFirstPutReportsExactCause)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    CasRequestController controller(backend, CasRequestBudget{}, [] { return static_cast<uint64_t>(0); });
+    const auto result = controller.putOverwriteControlled(
+        "k", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(
+            10000,
+            CasOverwriteDeadlineSource::RequestBudget,
+            [] { return CasOverwriteStopCause::Cancelled; }));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 0u);
+    EXPECT_EQ(backend->get_attempts.load(), 0u);
+    expectOverwriteDiagnostics(
+        result,
+        0,
+        false,
+        CasUnresolvedReason::NoAttemptSent,
+        CasOverwriteDeadlineSource::RequestBudget,
+        CasOverwriteStopCause::Cancelled);
+}
+
+TEST(CASRequestController, StopAfterPutSuppressesResolveAndReportsMidWay)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    uint32_t stop_samples = 0;
+    auto stop_cause = [&stop_samples]
+    {
+        ++stop_samples;
+        return stop_samples == 1 ? CasOverwriteStopCause::Continue : CasOverwriteStopCause::Cancelled;
+    };
+
+    CasRequestBudget budget;
+    budget.retry_initial_backoff_ms = 0;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    const auto result = controller.putOverwriteControlled(
+        "k", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(10000, CasOverwriteDeadlineSource::RequestBudget, stop_cause));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 0u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        false,
+        CasUnresolvedReason::FenceLostMidWay,
+        CasOverwriteDeadlineSource::RequestBudget,
+        CasOverwriteStopCause::Cancelled);
+}
+
+TEST(CASRequestController, StopAfterResolvedCommitReportsPostWrite)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    backend->setGetOverride(resultWithBytes("new-payload"));
+    uint32_t stop_samples = 0;
+    auto stop_cause = [&stop_samples]
+    {
+        ++stop_samples;
+        return stop_samples < 3 ? CasOverwriteStopCause::Continue : CasOverwriteStopCause::FenceOrLifecycleLost;
+    };
+
+    CasRequestController controller(backend, CasRequestBudget{}, [] { return static_cast<uint64_t>(0); });
+    const auto result = controller.putOverwriteControlled(
+        "k", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(10000, CasOverwriteDeadlineSource::RequestBudget, stop_cause));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        true,
+        CasUnresolvedReason::FenceLostPostWrite,
+        CasOverwriteDeadlineSource::RequestBudget,
+        CasOverwriteStopCause::FenceOrLifecycleLost);
+}
+
+TEST(CASRequestController, FenceWinsCancellationAndExternalDeadlineWinsDeadlineTie)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    uint64_t clock = 100;
+    CasRequestBudget budget;
+    budget.attempt_timeout_ms = 10;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+
+    bool cancelled = true;
+    bool fenced = true;
+    const auto simultaneous_stop = [&]
+    {
+        if (fenced)
+            return CasOverwriteStopCause::FenceOrLifecycleLost;
+        if (cancelled)
+            return CasOverwriteStopCause::Cancelled;
+        return CasOverwriteStopCause::Continue;
+    };
+    const auto stopped = controller.putOverwriteControlled(
+        "stopped", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety, simultaneous_stop));
+    EXPECT_EQ(stopped.outcome, CasOverwriteOutcome::Unresolved);
+    expectOverwriteDiagnostics(
+        stopped,
+        0,
+        false,
+        CasUnresolvedReason::NoAttemptSent,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::FenceOrLifecycleLost);
+
+    const auto deadline_tie = controller.putOverwriteControlled(
+        "deadline", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+    EXPECT_EQ(deadline_tie.outcome, CasOverwriteOutcome::Unresolved);
+    expectOverwriteDiagnostics(
+        deadline_tie,
+        0,
+        false,
+        CasUnresolvedReason::NoAttemptSent,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 0u);
+}
+
+TEST(CASRequestController, InterruptedWaitResamplesStopCause)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    const Token expected{"old", TokenType::Emulated};
+    backend->setGetOverride(GetResult{.bytes = "old-payload", .token = expected, .attributes = {}});
+    CasOverwriteStopCause stop = CasOverwriteStopCause::Continue;
+    uint32_t waits = 0;
+
+    CasRequestBudget budget;
+    budget.max_attempts = 3;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 100;
+    budget.retry_max_backoff_ms = 100;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    auto context = overwriteContext(
+        10000,
+        CasOverwriteDeadlineSource::RequestBudget,
+        [&stop] { return stop; },
+        [&stop, &waits](uint64_t wait_ms)
+        {
+            EXPECT_EQ(wait_ms, 100u);
+            ++waits;
+            stop = CasOverwriteStopCause::Cancelled;
+            return false;
+        });
+    const auto result = controller.putOverwriteControlled("k", "new-payload", expected, context);
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(waits, 1u);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        false,
+        CasUnresolvedReason::FenceLostMidWay,
+        CasOverwriteDeadlineSource::RequestBudget,
+        CasOverwriteStopCause::Cancelled);
+}
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(CASRequestController, InterruptedWaitWithoutPublishedStopIsAProgrammingException)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    const Token expected{"old", TokenType::Emulated};
+    backend->setGetOverride(GetResult{.bytes = "old-payload", .token = expected, .attributes = {}});
+    uint32_t stop_samples = 0;
+    uint32_t waits = 0;
+
+    CasRequestBudget budget;
+    budget.max_attempts = 3;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 100;
+    budget.retry_max_backoff_ms = 100;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    auto context = overwriteContext(
+        10000,
+        CasOverwriteDeadlineSource::RequestBudget,
+        [&stop_samples]
+        {
+            ++stop_samples;
+            return CasOverwriteStopCause::Continue;
+        },
+        [&waits](uint64_t wait_ms)
+        {
+            EXPECT_EQ(wait_ms, 100u);
+            ++waits;
+            return false;
+        });
+
+    bool threw = false;
+    try
+    {
+        (void)controller.putOverwriteControlled("k", "new-payload", expected, context);
+        FAIL() << "an interrupted wait must publish a non-Continue stop cause";
+    }
+    catch (const DB::Exception & e)
+    {
+        threw = true;
+        EXPECT_EQ(e.code(), DB::ErrorCodes::LOGICAL_ERROR);
+        EXPECT_EQ(
+            e.message(),
+            "CasRequestController: wait_before_retry returned false while stop_cause remained Continue");
+    }
+
+    EXPECT_TRUE(threw);
+    EXPECT_EQ(stop_samples, 5u) << "the false wait was followed by an authoritative stop-cause resample";
+    EXPECT_EQ(waits, 1u);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+}
+#endif
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+TEST(CASRequestControllerDeathTest, InterruptedWaitWithoutPublishedStopIsAProgrammingExceptionAborts)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    const Token expected{"old", TokenType::Emulated};
+    backend->setGetOverride(GetResult{.bytes = "old-payload", .token = expected, .attributes = {}});
+
+    CasRequestBudget budget;
+    budget.max_attempts = 3;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 100;
+    budget.retry_max_backoff_ms = 100;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    auto context = overwriteContext(
+        10000,
+        CasOverwriteDeadlineSource::RequestBudget,
+        [] { return CasOverwriteStopCause::Continue; },
+        [](uint64_t) { return false; });
+
+    EXPECT_DEATH(
+        { (void)controller.putOverwriteControlled("k", "new-payload", expected, context); },
+        "wait_before_retry returned false while stop_cause remained Continue");
+}
+#endif
+
+TEST(CASRequestController, CompletedWaitCrossingDeadlineSendsNoRetry)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    const Token expected{"old", TokenType::Emulated};
+    backend->setGetOverride(GetResult{.bytes = "old-payload", .token = expected, .attributes = {}});
+    uint64_t clock = 0;
+    uint32_t waits = 0;
+
+    CasRequestBudget budget;
+    budget.max_attempts = 3;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 50;
+    budget.retry_max_backoff_ms = 50;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+    auto context = overwriteContext(
+        100,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        {},
+        [&clock, &waits](uint64_t wait_ms)
+        {
+            EXPECT_EQ(wait_ms, 50u);
+            ++waits;
+            clock = 101;
+            return true;
+        });
+    const auto result = controller.putOverwriteControlled("k", "new-payload", expected, context);
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_TRUE(result.token.empty());
+    EXPECT_EQ(waits, 1u);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        false,
+        CasUnresolvedReason::DeadlineMidWay,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, DirectPutCompletingAtDeadlineIsNotAccepted)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    const PutResult predecessor = backend->InMemoryBackend::putIfAbsent("k", "old-payload");
+    ASSERT_EQ(predecessor.outcome, PutOutcome::Done);
+    uint64_t clock = 0;
+    Token landed_token;
+    auto * backend_ptr = backend.get();
+    backend->put_overwrite_handler = [backend_ptr, &clock, &landed_token](
+        const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) -> PutResult
+    {
+        const PutResult landed = backend_ptr->InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        landed_token = landed.token;
+        clock = 100;
+        return landed;
+    };
+
+    CasRequestBudget budget;
+    budget.attempt_timeout_ms = 10;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+    const auto result = controller.putOverwriteControlled(
+        "k",
+        "new-payload",
+        predecessor.token,
+        overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_TRUE(result.token.empty());
+    ASSERT_FALSE(landed_token.empty());
+    const auto durable = backend->InMemoryBackend::get("k", Range{});
+    ASSERT_TRUE(durable.has_value());
+    EXPECT_EQ(durable->bytes, "new-payload");
+    EXPECT_EQ(durable->token, landed_token);
+    EXPECT_NE(durable->token, predecessor.token);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 0u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        false,
+        CasUnresolvedReason::DeadlineMidWay,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, ReadProofCompletingAtDeadlineIsNotAccepted)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    const PutResult predecessor = backend->InMemoryBackend::putIfAbsent("k", "old-payload");
+    ASSERT_EQ(predecessor.outcome, PutOutcome::Done);
+    uint64_t clock = 0;
+    Token landed_token;
+    auto * backend_ptr = backend.get();
+    backend->put_overwrite_handler = [backend_ptr, &landed_token](
+        const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) -> PutResult
+    {
+        const PutResult landed = backend_ptr->InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+        landed_token = landed.token;
+        throw Poco::TimeoutException("scripted: response lost after overwrite landed");
+    };
+    backend->get_handler = [backend_ptr, &clock](const String & key, Range range) -> std::optional<GetResult>
+    {
+        const auto durable = backend_ptr->InMemoryBackend::get(key, range);
+        clock = 100;
+        return durable;
+    };
+
+    CasRequestBudget budget;
+    budget.attempt_timeout_ms = 10;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+    const auto result = controller.putOverwriteControlled(
+        "k",
+        "new-payload",
+        predecessor.token,
+        overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_TRUE(result.token.empty());
+    ASSERT_FALSE(landed_token.empty());
+    const auto durable = backend->InMemoryBackend::get("k", Range{});
+    ASSERT_TRUE(durable.has_value());
+    EXPECT_EQ(durable->bytes, "new-payload");
+    EXPECT_EQ(durable->token, landed_token);
+    EXPECT_NE(durable->token, predecessor.token);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        true,
+        CasUnresolvedReason::DeadlineMidWay,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, ObserverFailureCannotChangeOutcome)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    const PutResult predecessor = backend->InMemoryBackend::putIfAbsent("k", "old-payload");
+    ASSERT_EQ(predecessor.outcome, PutOutcome::Done);
+    auto * backend_ptr = backend.get();
+    bool first_attempt = true;
+    backend->put_overwrite_handler = [backend_ptr, &first_attempt](
+        const String & key, const String & bytes, const Token & expected, const ObjectMeta & meta) -> PutResult
+    {
+        if (first_attempt)
+        {
+            first_attempt = false;
+            throw Poco::TimeoutException("scripted: transient failure before landing");
+        }
+        return backend_ptr->InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+    };
+    uint32_t observer_calls = 0;
+
+    CasRequestBudget budget;
+    budget.max_attempts = 2;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 0;
+    CasRequestController controller(backend, budget, [] { return static_cast<uint64_t>(0); });
+    auto context = overwriteContext(
+        10000,
+        CasOverwriteDeadlineSource::RequestBudget,
+        {},
+        {},
+        [&observer_calls](const CasOverwriteProgress &)
+        {
+            ++observer_calls;
+            throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION, "scripted observer failure");
+        });
+
+    CasOverwriteResult result;
+    EXPECT_NO_THROW(result = controller.putOverwriteControlled("k", "new-payload", predecessor.token, context));
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Committed);
+    EXPECT_EQ(observer_calls, 5u);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 2u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        2,
+        false,
+        CasUnresolvedReason::NotUnresolved,
+        CasOverwriteDeadlineSource::RequestBudget,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, ResolveFailuresExhaustDeadlineWithoutSendingLatePut)
+{
+    auto backend = std::make_shared<ScriptedControllerBackend>();
+    backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+    uint64_t clock = 0;
+    backend->get_handler = [&clock](const String &, Range) -> std::optional<GetResult>
+    {
+        clock = 30;
+        throw Poco::TimeoutException("scripted: resolving GET failed at deadline");
+    };
+
+    CasRequestBudget budget;
+    budget.max_attempts = 5;
+    budget.attempt_timeout_ms = 10;
+    budget.retry_initial_backoff_ms = 0;
+    CasRequestController controller(backend, budget, [&clock] { return clock; });
+    const auto result = controller.putOverwriteControlled(
+        "k", "new-payload", Token{"old", TokenType::Emulated},
+        overwriteContext(30, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+
+    EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+    EXPECT_EQ(backend->put_overwrite_attempts.load(), 1u);
+    EXPECT_EQ(backend->get_attempts.load(), 1u);
+    expectOverwriteDiagnostics(
+        result,
+        1,
+        false,
+        CasUnresolvedReason::DeadlineMidWay,
+        CasOverwriteDeadlineSource::ExternalLeaseSafety,
+        CasOverwriteStopCause::Continue);
+}
+
+TEST(CASRequestController, EveryTerminalShapeReportsExactDiagnostics)
+{
+    const Token expected{"old", TokenType::Emulated};
+    auto make_controller = [](const std::shared_ptr<ScriptedControllerBackend> & backend, uint64_t & clock, uint32_t max_attempts = 2)
+    {
+        CasRequestBudget budget;
+        budget.max_attempts = max_attempts;
+        budget.attempt_timeout_ms = 10;
+        budget.retry_initial_backoff_ms = 0;
+        return CasRequestController(backend, budget, [&clock] { return clock; });
+    };
+
+    for (const auto stop : {CasOverwriteStopCause::Cancelled, CasOverwriteStopCause::FenceOrLifecycleLost})
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        uint64_t clock = 0;
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "pre-stop", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::RequestBudget, [stop] { return stop; }));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 0, false, CasUnresolvedReason::NoAttemptSent,
+            CasOverwriteDeadlineSource::RequestBudget, stop);
+    }
+
+    for (const auto source : {CasOverwriteDeadlineSource::RequestBudget, CasOverwriteDeadlineSource::ExternalLeaseSafety})
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        uint64_t clock = 100;
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "pre-deadline", "new-payload", expected, overwriteContext(100, source));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 0, false, CasUnresolvedReason::NoAttemptSent, source, CasOverwriteStopCause::Continue);
+    }
+
+    for (const auto stop : {CasOverwriteStopCause::Cancelled, CasOverwriteStopCause::FenceOrLifecycleLost})
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+        uint64_t clock = 0;
+        uint32_t stop_samples = 0;
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "mid-stop", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::RequestBudget, [&stop_samples, stop]
+            {
+                ++stop_samples;
+                return stop_samples == 1 ? CasOverwriteStopCause::Continue : stop;
+            }));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 1, false, CasUnresolvedReason::FenceLostMidWay,
+            CasOverwriteDeadlineSource::RequestBudget, stop);
+    }
+
+    for (const auto stop : {CasOverwriteStopCause::Cancelled, CasOverwriteStopCause::FenceOrLifecycleLost})
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        backend->put_overwrite_forced_outcome = PutOutcome::Done;
+        uint64_t clock = 0;
+        uint32_t stop_samples = 0;
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "post-stop", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::RequestBudget, [&stop_samples, stop]
+            {
+                ++stop_samples;
+                return stop_samples == 1 ? CasOverwriteStopCause::Continue : stop;
+            }));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 1, false, CasUnresolvedReason::FenceLostPostWrite,
+            CasOverwriteDeadlineSource::RequestBudget, stop);
+    }
+
+    for (const auto source : {CasOverwriteDeadlineSource::RequestBudget, CasOverwriteDeadlineSource::ExternalLeaseSafety})
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        uint64_t clock = 0;
+        backend->put_overwrite_handler = [&clock](
+            const String &, const String &, const Token &, const ObjectMeta &) -> PutResult
+        {
+            clock = 100;
+            throw Poco::TimeoutException("scripted: ambiguous at deadline");
+        };
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "mid-deadline", "new-payload", expected, overwriteContext(100, source));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 1, false, CasUnresolvedReason::DeadlineMidWay, source, CasOverwriteStopCause::Continue);
+    }
+
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+        backend->setGetOverride(std::nullopt);
+        uint64_t clock = 0;
+        auto controller = make_controller(backend, clock, 1);
+        const auto result = controller.putOverwriteControlled(
+            "attempts", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 1, false, CasUnresolvedReason::AttemptsExhausted,
+            CasOverwriteDeadlineSource::ExternalLeaseSafety, CasOverwriteStopCause::Continue);
+    }
+
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        auto * backend_ptr = backend.get();
+        backend->put_overwrite_handler = [backend_ptr](
+            const String &, const String &, const Token &, const ObjectMeta &) -> PutResult
+        {
+            if (backend_ptr->put_overwrite_attempts.load() == 1)
+                throw Poco::TimeoutException("scripted: first attempt remains ambiguous");
+            throw DB::S3Exception("scripted: later attempt definitely refused", Aws::S3::S3Errors::UNKNOWN, "MalformedXML");
+        };
+        backend->setGetOverride(GetResult{.bytes = "old-payload", .token = expected, .attributes = {}});
+        uint64_t clock = 0;
+        auto controller = make_controller(backend, clock);
+        const auto result = controller.putOverwriteControlled(
+            "definite-after-ambiguity", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::RequestBudget));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        EXPECT_EQ(backend->put_overwrite_attempts.load(), 2u);
+        expectOverwriteDiagnostics(
+            result, 2, false, CasUnresolvedReason::DefiniteFailureAfterAmbiguity,
+            CasOverwriteDeadlineSource::RequestBudget, CasOverwriteStopCause::Continue);
+    }
+
+    {
+        auto backend = std::make_shared<ScriptedControllerBackend>();
+        backend->put_overwrite_thrower = [] { throw Poco::TimeoutException("scripted: ambiguous"); };
+        uint64_t clock = 0;
+        backend->get_handler = [&clock](const String &, Range) -> std::optional<GetResult>
+        {
+            clock = 95;
+            return std::nullopt;
+        };
+        auto controller = make_controller(backend, clock, 1);
+        const auto result = controller.putOverwriteControlled(
+            "deadline-before-attempt-limit", "new-payload", expected,
+            overwriteContext(100, CasOverwriteDeadlineSource::ExternalLeaseSafety));
+        EXPECT_EQ(result.outcome, CasOverwriteOutcome::Unresolved);
+        expectOverwriteDiagnostics(
+            result, 1, false, CasUnresolvedReason::DeadlineMidWay,
+            CasOverwriteDeadlineSource::ExternalLeaseSafety, CasOverwriteStopCause::Continue);
+    }
 }
 
 TEST(CASRequestController, FenceLostBeforeAttemptSendsNoAttempt)

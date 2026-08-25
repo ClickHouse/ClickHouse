@@ -130,7 +130,7 @@ void publishEmptyPart(const PoolPtr & s, const RootNamespace & ns, const String 
 ///   - the boot clock is FROZEN at 0, so `setMountDeadline` alone decides both fence predicates and no
 ///     elapsed real time can flip one of them mid-test (the same load-bearing injection, for the same
 ///     reason, as `gtest_cas_ref_chunked_flush.cpp`'s `openPool`);
-///   - lease renewal is parked an hour out, so the keeper's background renew cannot re-arm the deadline
+///   - lease renewal is parked an hour out, so the runtime-owned renewal worker cannot re-arm the deadline
 ///     underneath a test that just shortened it. Ten seconds (the default) would be enough in practice
 ///     and flaky in principle; this removes the race rather than betting on it.
 PoolPtr openPoolFenceControlled(const BackendPtr & backend)

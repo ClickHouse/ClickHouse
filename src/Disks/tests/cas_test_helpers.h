@@ -42,12 +42,15 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -70,6 +73,43 @@ namespace DB::ErrorCodes
 
 namespace DB::Cas::tests
 {
+
+/// Deterministic two-phase barrier for worker-lifecycle tests. The worker calls `arriveAndWait` at
+/// the exact operation boundary under test; the test waits for that arrival and later calls
+/// `release`. The bounded waits are only hang protection -- correctness never depends on elapsed
+/// time or a polling sleep.
+class ManualBarrier
+{
+public:
+    void arriveAndWait()
+    {
+        std::unique_lock lock(mutex);
+        arrived = true;
+        cv.notify_all();
+        if (!cv.wait_for(lock, std::chrono::seconds(20), [this] { return released; }))
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "CAS test barrier timed out waiting for release");
+    }
+
+    void waitUntilArrived()
+    {
+        std::unique_lock lock(mutex);
+        if (!cv.wait_for(lock, std::chrono::seconds(20), [this] { return arrived; }))
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "CAS test barrier timed out waiting for arrival");
+    }
+
+    void release()
+    {
+        std::lock_guard lock(mutex);
+        released = true;
+        cv.notify_all();
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool arrived = false;
+    bool released = false;
+};
 
 /// Bring up the server-wide blob upload pool (stage-1 §1) if it is not already up, so any test that
 /// drives a `ContentAddressedTransaction` commit -- whose `uploadPendingBlobs` fans out on this pool --
@@ -1013,6 +1053,7 @@ inline void setWatermarkMinActive(
     m.writer_epoch = writer_epoch;
     m.min_active = min_active;
     m.seq = 1;
+    m.write_attempt_id = DB::UInt128{1};
     const String key = layout.mountKey(server_root_id);
     const DB::Cas::HeadResult h = backend.head(key);
     if (h.exists)
@@ -1988,5 +2029,186 @@ public:
 
     std::atomic<bool> fail_meta_writes{true};
 };
+
+/// Blocks INSIDE a blob-meta mutation until `release` is called, so a test can hold a real meta job in
+/// flight and observe that it got there. `entered` is set before blocking.
+///
+/// STARTS DISARMED, and that is load-bearing: the write path itself writes Clean blob meta
+/// (`Pool/CasPartWriteTxn.cpp:314`), so a latch that blocked from construction would block the test's
+/// own fixture instead of the job under test. Call `arm` only once the fixture is built.
+class MetaWriteLatchBackend : public DB::Cas::InMemoryBackend
+{
+public:
+    using DB::Cas::Backend::get;
+    using DB::Cas::Backend::getStream;
+    using DB::Cas::Backend::putIfAbsent;
+    using DB::Cas::Backend::putOverwrite;
+    using DB::Cas::Backend::casPut;
+
+    std::atomic<bool> entered{false};
+
+    void arm()
+    {
+        armed.store(true);
+    }
+
+    void release()
+    {
+        std::lock_guard lock(latch_mutex);
+        released = true;
+        latch_cv.notify_all();
+    }
+
+    DB::Cas::PutResult putIfAbsent(
+        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    {
+        waitIfMeta(key);
+        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+    }
+
+    DB::Cas::PutResult putOverwrite(
+        const String & key, const String & bytes, const DB::Cas::Token & expected,
+        const DB::Cas::ObjectMeta & meta) override
+    {
+        waitIfMeta(key);
+        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+    }
+
+    DB::Cas::CasResult casPut(const String & key, const String & bytes,
+                              const std::optional<DB::Cas::Token> & expected,
+                              const DB::Cas::ObjectMeta & meta) override
+    {
+        waitIfMeta(key);
+        return InMemoryBackend::casPut(key, bytes, expected, meta);
+    }
+
+    DB::Cas::DeleteOutcome deleteExact(const String & key, const DB::Cas::Token & token) override
+    {
+        waitIfMeta(key);
+        return InMemoryBackend::deleteExact(key, token);
+    }
+
+private:
+    void waitIfMeta(const String & key)
+    {
+        if (!armed.load() || !key.ends_with(".meta"))
+            return;
+        entered.store(true);
+        std::unique_lock lock(latch_mutex);
+        latch_cv.wait(lock, [this] { return released; });
+    }
+
+    std::atomic<bool> armed{false};
+    std::mutex latch_mutex;
+    std::condition_variable latch_cv;
+    bool released = false;
+};
+
+/// Makes a GC round throw at its outcome-log write -- after the round has scheduled its confirmed-meta
+/// delete (`Gc/CasGc.cpp`) and before the round's meta-pool wait. Inherits the `.meta` latch so that
+/// job can be held in flight across the throw. Both the fault and the latch start off.
+class OutcomeLogFaultBackend : public MetaWriteLatchBackend
+{
+public:
+    using DB::Cas::Backend::get;
+    using DB::Cas::Backend::putIfAbsent;
+
+    std::atomic<bool> fail_outcome_logs{false};
+
+    DB::Cas::PutResult putIfAbsent(
+        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    {
+        if (fail_outcome_logs.load() && key.contains("outcomes/"))
+            return DB::Cas::PutResult{.outcome = DB::Cas::PutOutcome::PreconditionFailed, .token = {}};
+        return MetaWriteLatchBackend::putIfAbsent(key, bytes, meta);
+    }
+
+    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    {
+        if (fail_outcome_logs.load() && key.contains("outcomes/"))
+            return std::nullopt;
+        return DB::Cas::InMemoryBackend::get(key, range);
+    }
+};
+
+/// Wait until a latched job has provably reached the backend. A bounded wait that FAILS rather than
+/// hangs: a job that never arrives is a broken fixture, and a test that hangs on it reports nothing.
+inline void awaitLatchEntered(MetaWriteLatchBackend & backend)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!backend.entered.load())
+    {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline)
+            << "no meta job reached the backend latch -- the fixture never scheduled one";
+        std::this_thread::yield();
+    }
+}
+
+/// Runs a caller-supplied action ONCE, immediately before the named backend call, so a test can make
+/// the mount slot change inside a window `MountLeaseKeeper::claim` holds open. Each hook clears
+/// itself after firing.
+class MountSlotRaceBackend : public DB::Cas::InMemoryBackend
+{
+public:
+    using DB::Cas::Backend::get;
+    using DB::Cas::Backend::getStream;
+    using DB::Cas::Backend::putIfAbsent;
+    using DB::Cas::Backend::putOverwrite;
+    using DB::Cas::Backend::casPut;
+
+    std::function<void()> before_put_if_absent;
+    std::function<void()> before_get;
+    std::function<void()> before_put_overwrite;
+
+    DB::Cas::PutResult putIfAbsent(
+        const String & key, const String & bytes, const DB::Cas::ObjectMeta & meta) override
+    {
+        fire(before_put_if_absent);
+        return InMemoryBackend::putIfAbsent(key, bytes, meta);
+    }
+
+    std::optional<DB::Cas::GetResult> get(const String & key, DB::Cas::Range range) override
+    {
+        fire(before_get);
+        return InMemoryBackend::get(key, range);
+    }
+
+    DB::Cas::PutResult putOverwrite(
+        const String & key, const String & bytes, const DB::Cas::Token & expected,
+        const DB::Cas::ObjectMeta & meta) override
+    {
+        fire(before_put_overwrite);
+        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+    }
+
+private:
+    static void fire(std::function<void()> & hook)
+    {
+        if (!hook)
+            return;
+        auto once = std::move(hook);
+        hook = nullptr;
+        once();
+    }
+};
+
+/// Expect a DB::Exception with EXACTLY `expected_code` AND a message containing `expected_substring`.
+/// Needed wherever several distinct branches share one code: the code alone does not identify which
+/// one ran, so a test that silently takes the wrong branch would still pass.
+template <typename F>
+void expectThrowsCodeWithMessage(int expected_code, const String & expected_substring, F && fn)
+{
+    try
+    {
+        fn();
+        FAIL() << "expected DB::Exception";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), expected_code);
+        EXPECT_NE(e.message().find(expected_substring), String::npos)
+            << "wrong branch: " << e.message();
+    }
+}
 
 }

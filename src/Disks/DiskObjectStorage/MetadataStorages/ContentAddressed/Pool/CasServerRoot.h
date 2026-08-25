@@ -1,16 +1,15 @@
 #pragma once
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestControl.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool.h>
 #include <base/types.h>
 #include <base/extended_types.h>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -33,157 +32,35 @@ namespace ErrorCodes
 namespace DB::Cas
 {
 
-/// Durable single-writer-slot state machine used by the per-server merged heartbeat
-/// (`CasServerRoot.h`, `MountLeaseKeeper`): anchors a key that has EXACTLY ONE writer, renews it
-/// asynchronously off the write path, and ends with a terminal op; any precondition failure during
-/// renewal means a foreign touch — fail closed with an exception, never re-mint.
-///
-/// This base owns the common machinery (the `seq`/`last_token`/`dead` state, the renewal thread and
-/// its loop, `renewOnce`/`startBackground`/`stopBackground`, and the start/terminal
-/// bookkeeping). The noun ("watermark") and verb ("farewell") used in every fail-closed message are
-/// passed to the base constructor. Subclasses differ ONLY in EXPLICIT policy hooks:
-///   - `prepareRenew`     — runs OFF the state lock before each body encode, returning a per-call
-///                          payload (the watermark reads `min_active` from a Pool callback here).
-///                          Keeping it off `state_mutex` is load-bearing: the watermark callback
-///                          reaches into the Pool's own lock.
-///   - `encodeBody`       — builds the slot's exact JSON bytes for a given `seq` and payload;
-///   - `claim`            — the slot-specific anchor sequence in `start` (the watermark's
-///                          head→putIfAbsent/putOverwrite dance), returning the token we now hold;
-///   - `terminate`        — the terminal op (the watermark's retiring putOverwrite), run under the
-///                          state lock after `dead` is set, owning its own fail-closed throws and
-///                          final bookkeeping.
-///
-/// Every observable op (the JSON body bytes, the anchor put sequence, the renew cadence, the
-/// foreign-touch fail-close conditions and message wording, the stop semantics) is reproduced
-/// exactly by the subclass hooks, with no conditionals in the base that would blur the
-/// single-writer/fail-closed contract.
-class SingleWriterSlot
+enum class MountLeaseKeeperState : uint8_t
 {
-public:
-    /// `slot_name_` is the noun in every message ("watermark"); `terminal_verb_` is the
-    /// verb used in the start/renew/terminal guards ("farewell").
-    SingleWriterSlot(
-        BackendPtr backend_, String key_, std::string_view slot_name_, std::string_view terminal_verb_,
-        std::string_view logger_name_);
+    New,
+    Active,
+    RenewalTerminal,
+    Released,
+};
 
-    /// Stops the background thread only (no terminal op). Destruction without a terminal op leaves
-    /// the slot persisted, with its seq no longer advancing, so full GC observes frozen state.
-    virtual ~SingleWriterSlot();
+enum class MountRenewOutcome : uint8_t
+{
+    Committed,
+    NotAttempted,
+    Terminal,
+};
 
-    /// seq++ via putOverwrite against the last token we wrote; LOGICAL_ERROR on a foreign touch
-    /// (single-writer fail-closed contract).
-    void renewOnce();
+struct MountRenewResult
+{
+    MountRenewOutcome outcome = MountRenewOutcome::Terminal;
+    uint64_t attempt_start_boot_ms = 0;
+    CasOverwriteDiagnostics diagnostics;
+    std::exception_ptr failure;
+};
 
-    /// Starts periodic renewal. The period controls only the wake-up cadence; a failed renewal stops
-    /// the loop and is not silently re-armed by a later call.
-    void startBackground(std::chrono::milliseconds period);
-
-    /// Requests renewal-thread termination and joins it. Safe to call repeatedly, including after a
-    /// renewal failure or from destruction; it does not perform the slot's terminal operation.
-    void stopBackground();
-
-protected:
-    /// Per-call payload prepared OFF the state lock and handed to `encodeBody`. Subclasses needing
-    /// dynamic values (the mount lease's `now_ms` + merged `min_active`) carry them through this opaque
-    /// token. `value2` is a second scalar for slots that renew more than one dynamic field per beat (the
-    /// merged heartbeat: `value` = now_ms, `value2` = min_active).
-    struct RenewPayload
-    {
-        uint64_t value = 0;
-        uint64_t value2 = 0;
-    };
-
-    using Token = ::DB::Cas::Token;
-
-    /// === policy hooks (see class comment) ===
-    virtual RenewPayload prepareRenew() const = 0;
-    virtual String encodeBody(uint64_t seq, const RenewPayload & payload) const = 0;
-    virtual Token claim(const String & body) = 0;
-
-    /// === optional background-renewal observation hooks (default no-op) ===
-    /// Called from `renewOnce` itself, right after a SUCCESSFUL write is recorded (under
-    /// `state_mutex`, on EVERY caller of `renewOnce` — the background loop AND any direct caller,
-    /// such as the startup-arm redo in `CasPool.cpp`'s `mountWritable`). The mount-lease keeper
-    /// refreshes its confirmed-lease wall deadline here, so a direct `renewOnce` (which never goes
-    /// through `onRenewSucceeded` below) still keeps that deadline current. The watermark keeper does
-    /// not override it (no-op), so its behavior is unchanged.
-    virtual void onRenewCommitted() {}
-    /// Called from the background loop after a SUCCESSFUL `renewOnce` (off `state_mutex`, AFTER
-    /// `onRenewCommitted` has already run); the mount-lease keeper fires the boot-domain
-    /// write-fence callback (`on_renew_ok`) here — this hook is background-loop-only, unlike
-    /// `onRenewCommitted` above. The watermark keeper does not override it (no-op), so its behavior
-    /// is unchanged.
-    virtual void onRenewSucceeded() {}
-    /// Called from the background loop when `renewOnce` THREW (the loop is about to stop, off
-    /// `state_mutex`); the mount-lease keeper latches the write fence to lost here. Default no-op.
-    virtual void onRenewFailed() {}
-
-    /// Called from the background loop when `renewOnce` threw and the
-    /// throw was NOT a confirmed mismatch (`onRenewMismatch` -- an observed PUT outcome proving
-    /// supersession; see the flag this checks, `last_renew_failure_was_confirmed_mismatch`, in the
-    /// private section below). Returning `true` means "treat as terminal now" -- fence immediately, the
-    /// legacy behavior and the correct default for a subclass with no lease-deadline concept.
-    /// `MountLeaseKeeper` overrides this to ride out a TRANSIENT exception (a `putOverwrite` that threw
-    /// before any outcome was observed -- a timeout, 5xx, or connection reset) while its last CONFIRMED
-    /// lease has not yet reached its safety-margin boundary: the mount-lease protocol guarantees no
-    /// other writer can claim the slot before that deadline, so continuing to retry (not fencing) is
-    /// safe. Called OFF `state_mutex`, same as `onRenewFailed`.
-    virtual bool shouldFenceOnTransientRenewFailure() { return true; }
-
-    /// Called when the token-guarded renew PUT hits PreconditionFailed. The base contract stays
-    /// fail-closed and LOUD; subclasses may re-read and throw a more precisely classified
-    /// exception (the mount keeper distinguishes a GC fence of our own expired lease from a
-    /// genuine foreign writer). MUST throw — a renew mismatch never continues.
-    virtual void onRenewMismatch(const String & mismatched_key);
-
-    /// Runs the slot's terminal op against the held `last_token`. Called under `state_mutex` with
-    /// `dead` already set (so renewal can never race it). Owns its own fail-closed throws and final
-    /// bookkeeping (the watermark bumps seq/last_token on its retiring putOverwrite).
-    /// May throw — `dead` stays set regardless.
-    virtual void terminate() = 0;
-
-    /// Anchors the slot for seq=1 — durable when `doStart` returns. Subclasses expose this under their
-    /// own public name (`start`). Computes the payload off the lock, then runs the policy `claim`.
-    void doStart();
-
-    /// Stops the background thread, takes the state lock, runs the dead/seq guards (e.g.
-    /// "double farewell" / "discard before start"), sets `dead`, and delegates the op to `terminate`.
-    /// Subclasses expose this under their own public name (`farewell`/`discard`).
-    void doTerminate();
-
-    /// Bookkeeping after a successful write of the given seq/token: records seq, the token we now
-    /// hold, and the local-clock renew time. Must be called under `state_mutex`.
-    void recordWrite(uint64_t new_seq, const Token & token);
-
-    BackendPtr backend;
-    String key;
-
-    mutable std::mutex state_mutex;
-    uint64_t seq = 0;            /// 0 = not started
-    Token last_token;            /// the incarnation WE wrote — the only one we ever renew
-    bool dead = false;           /// set by the terminal op
-
-private:
-    void backgroundLoop(std::chrono::milliseconds period);
-
-    std::string_view slot_name;
-    std::string_view terminal_verb;
-
-    /// Set immediately before `renewOnce` invokes `onRenewMismatch` (which always
-    /// throws) so `backgroundLoop`'s catch block can tell a CONFIRMED mismatch (the PUT completed and
-    /// observed a foreign token -- proven supersession) apart from a TRANSIENT exception
-    /// (`putOverwrite` itself threw before any outcome was observed, or a defensive `dead`/`seq==0`
-    /// guard fired). Reset to `false` at the top of every `renewOnce` call. `renewOnce` and
-    /// `backgroundLoop` run on the SAME background thread, sequentially, so no synchronization is
-    /// needed for this flag.
-    bool last_renew_failure_was_confirmed_mismatch = false;
-
-    std::mutex background_mutex;
-    std::condition_variable wakeup;
-    bool stop_requested = false;
-    ThreadFromGlobalPool thread;
-
-    LoggerPtr log;
+struct MountRenewOperationEnvironment
+{
+    std::function<uint64_t()> boot_ms;
+    std::function<CasOverwriteStopCause()> stop_cause;
+    std::function<bool(uint64_t)> wait_before_retry;
+    std::function<void(const CasOverwriteProgress &)> observe;
 };
 
 /// Validate a `server_root_id` — the explicit, configured identity of the content-addressed layout
@@ -591,12 +468,9 @@ std::vector<MountInfo> listMounts(Backend & backend, const Layout & layout, uint
 bool isCreatorFenceTerminal(Backend & backend, const Layout & layout, const String & server_root_id,
                             uint64_t writer_epoch);
 
-/// Per-server MERGED heartbeat: one `SingleWriterSlot` over the per-server-root mount object carries
-/// the mount lease (liveness) AND the build-watermark floor (`min_active`). One renewal PUT stamps the
-/// clock and the build-watermark floor together. Anchors the slot synchronously on `start`, renews it
-/// async off the write path, and fails closed on any foreign touch (`renewOnce` throws on a
-/// precondition miss). `graceful stop` folds the watermark farewell (`min_active = UINT64_MAX`) into
-/// the terminal already-expired mount body.
+/// Synchronous owner of the durable mount lease and merged build-watermark body. The stable
+/// `CasMountRuntime` is the sole driver: this class never creates a thread, invokes a callback into the
+/// runtime, or performs a durable write from its destructor.
 ///
 /// ADOPT RULE (critical): the steady-state flow is `claimMount(...)` writes the live mount under
 /// (our_uuid, our_epoch), THEN `keeper.start()`. So `start`'s `claim` hook must ADOPT a live mount
@@ -607,13 +481,9 @@ bool isCreatorFenceTerminal(Backend & backend, const Layout & layout, const Stri
 ///   - same uuid + DIFFERENT live epoch → a newer incarnation superseded us → fail closed;
 ///   - foreign uuid → fail closed;
 ///   - absent → `putIfAbsent`; expired-our-uuid (any epoch) → `putOverwrite` reclaim.
-/// After `start`, `renewOnce` (base) keeps the slot alive and already fails closed on a foreign touch.
-class MountLeaseKeeper : public SingleWriterSlot
+class MountLeaseKeeper
 {
 public:
-    /// `min_active_fn_` is read OFF the state lock on each beat (via `prepareRenew`) and stamped into
-    /// the mount body — the merged watermark floor. It reaches into the Pool's own lock, so it must
-    /// never run under `state_mutex`.
     MountLeaseKeeper(
         BackendPtr backend_, const Layout & layout_, const String & srid_, UInt128 server_uuid_,
         uint64_t writer_epoch_, std::chrono::milliseconds ttl_, std::function<uint64_t()> now_ms_fn_,
@@ -624,83 +494,27 @@ public:
         /// tests and wired by CasMountRuntime::installKeeper.
         std::function<uint64_t()> boot_ms_fn_ = {});
 
-    /// Claims (adopts) the mount slot for (server_uuid, writer_epoch) with seq following the observed
-    /// one — durable when `start` returns.
-    void start() { doStart(); }
+    /// Adopt the already-claimed mount. Returns the exact pre-I/O BOOTTIME anchor.
+    uint64_t start();
+    MountRenewResult renew(const CasRequestBudget & budget, const MountRenewOperationEnvironment & environment);
+    void release();
 
-    /// Releases the mount: the terminal op. Stops the background thread first.
-    void stop() { doTerminate(); }
-
-    /// Join the renewal thread BEFORE this object's own `std::function` members (`on_renew_ok` /
-    /// `on_lost`, which reach back into the Pool) are destroyed. The base `~SingleWriterSlot` also
-    /// calls `stopBackground`, but it runs AFTER the derived members are gone — a renewal firing
-    /// `on_lost` in that window would call a destroyed `std::function`. Stopping here closes that window.
-    ~MountLeaseKeeper() override { stopBackground(); }
-
-    /// Local write-fence coupling (set once by `Pool::open` before `startBackground`): the keeper is
-    /// the ONLY thing that touches S3 for the lease, so the fence must reflect the live lease without a
-    /// per-write S3 read. On each SUCCESSFUL background renew the keeper calls `on_renew_ok` (the Pool
-    /// refreshes its monotonic fence deadline); when background renewal FAILS (a foreign/superseded
-    /// touch makes `renewOnce` throw and the loop stop) the keeper calls `on_lost` (the Pool latches
-    /// its fence to lost). Both default to no-op so a keeper used without a Pool is inert.
-    /// `on_renew_ok` receives the ATTEMPT-START boot-domain instant of the renewal it acknowledges —
-    /// the fence deadline must anchor there, never at response time (spec rev.4 Phase B).
-    void setFenceCallbacks(std::function<void(uint64_t)> on_renew_ok_, std::function<void()> on_lost_)
-    {
-        on_renew_ok = std::move(on_renew_ok_);
-        on_lost = std::move(on_lost_);
-    }
-
-protected:
-    /// Reads the current wall-clock stamp and watermark floor without holding the base state lock;
-    /// the callbacks can acquire the Pool lock, so reversing this order would deadlock renewal.
-    RenewPayload prepareRenew() const override;
-
-    /// Encodes one complete mount body, combining the sequence assigned by the base slot with the
-    /// dynamic values returned by `prepareRenew`.
-    String encodeBody(uint64_t seq_, const RenewPayload & payload) const override;
-
-    /// Adopts or claims the mount object for this `(server_uuid, writer_epoch)`, returning the token
-    /// from the durable write that the base slot must retain for its next token-guarded renewal.
-    Token claim(const String & body) override;
-
-    /// Stamps the terminal, already-expired mount body and folds the watermark farewell into it;
-    /// the base state lock and `dead` flag prevent another renewal from racing this write.
-    void terminate() override;
-
-    /// Refreshes `confirmed_deadline_ms` after EVERY successful renewal (background OR a direct
-    /// caller) — see `onRenewCommitted`'s base doc comment.
-    void onRenewCommitted() override;
-
-    /// Fires the boot-domain write-fence callback (`on_renew_ok`) after a confirmed BACKGROUND
-    /// lease renewal. `confirmed_deadline_ms` itself is refreshed by `onRenewCommitted` above (which
-    /// already ran, for this same successful renewal, before the background loop calls this).
-    void onRenewSucceeded() override;
-
-    /// Latches the Pool's local write fence when renewal can no longer prove that this incarnation
-    /// owns the mount slot.
-    void onRenewFailed() override;
-
-    /// Re-reads a failed renewal and classifies it five ways -- fenced_by_gc, same_epoch_state_uncertain
-    /// (this incarnation's own token was advanced past under our own (uuid, epoch): ambiguous, not
-    /// proof of anything, and NOT fatal), superseded (a newer epoch), foreign_writer, and vanished
-    /// (the backing object disappeared) -- every branch stays terminal and fail closed, and NONE
-    /// constructs a `LOGICAL_ERROR`: they throw non-aborting codes (`ABORTED`/`FILE_DOESNT_EXIST`),
-    /// because each is reachable by an ordinary network timeout or environmental condition rather than
-    /// a programming bug -- and because this runs on the keeper's background thread, where an abort at
-    /// exception construction takes the whole process with it.
-    void onRenewMismatch(const String & mismatched_key) override;
-    /// Fence immediately only once our last CONFIRMED lease (the last successful
-    /// `claim`/renew) has reached its safety-margin boundary -- `confirmed_deadline_ms - now <=
-    /// lease_safety_margin`. Until then the mount-lease protocol still guarantees exclusivity.
-    bool shouldFenceOnTransientRenewFailure() override;
+    MountLeaseKeeperState state() const { return keeper_state; }
+    bool canRelease() const { return keeper_state == MountLeaseKeeperState::Active; }
+    uint64_t lastCommittedAttemptStartBootMs() const { return last_committed_attempt_start_boot_ms; }
 
 private:
-    /// Refreshes `confirmed_deadline_ms` from `anchor_wall_ms` + `ttl` — anchor = the pre-I/O wall
-    /// instant of the confirming attempt. Called on every point this keeper KNOWS it holds a live
-    /// lease: both success paths of `claim` (mint and adopt), and every successful `renewOnce`
-    /// (`onRenewCommitted`) — background-driven or a direct caller alike.
-    void refreshConfirmedDeadline(uint64_t anchor_wall_ms);
+    String encodeBody(uint64_t seq_, uint64_t wall_ms, uint64_t min_active, UInt128 write_attempt_id) const;
+    Token claim(const String & body);
+    [[noreturn]] void throwRenewConflict(const CasOverwriteDiagnostics & diagnostics) const;
+    MountRenewResult terminalResult(
+        uint64_t attempt_start_boot_ms,
+        CasOverwriteDiagnostics diagnostics,
+        std::exception_ptr failure);
+    void terminate();
+
+    BackendPtr backend;
+    String key;
 
     String srid;
     UInt128 server_uuid;
@@ -708,37 +522,16 @@ private:
     std::chrono::milliseconds ttl;
     std::function<uint64_t()> now_ms_fn;
     std::function<uint64_t()> min_active_fn;
-    std::function<void(uint64_t)> on_renew_ok;
-    std::function<void()> on_lost;
     CasEventSink event_sink;
     std::chrono::milliseconds lease_safety_margin;
     /// boot-domain clock for the on_renew_ok anchor; empty = real CLOCK_BOOTTIME. Injectable for
     /// tests and wired by CasMountRuntime::installKeeper.
     std::function<uint64_t()> boot_ms_fn;
-    /// BOOTTIME-ms deadline (same clock as `now_ms_fn`/`MountFence`, and for the SAME suspend-safety
-    /// reason -- see `MountFence`'s doc comment in `CasMountRuntime.h`) of the last CONFIRMED lease.
-    /// 0 = none yet (`claim` always sets this before `startBackground` can run, so
-    /// `shouldFenceOnTransientRenewFailure` observing 0 is defensive, not an expected steady state).
-    uint64_t confirmed_deadline_ms = 0;
-    /// Whether this runtime has STOPPED BELIEVING IT OWNS THE MOUNT. Set at `onRenewFailed`, which is
-    /// that one point and is deliberately broader than "a mismatch was classified": the background loop
-    /// also reaches it when a TRANSIENT renewal failure persists past the confirmed lease's
-    /// safety-margin boundary (`shouldFenceOnTransientRenewFailure`), where nothing was classified at
-    /// all and the write fence latches anyway. Both are the same fact for the reader below, and the
-    /// broader one is the SAFE one: what the release path needs to know is whether this runtime still
-    /// claims the slot, not why it stopped.
-    ///
-    /// The release path reads it to tell two opposite situations apart — a deposed writer meeting its
-    /// successor in the slot (the expected end of a failover) from a writer that still believed it owned
-    /// the mount meeting a stranger there (single-writer exclusivity broken). Atomic because the
-    /// keeper's background thread sets it and teardown reads it.
-    std::atomic<bool> deposition_observed{false};
-    /// Pre-I/O anchors of the CURRENT attempt, stashed by prepareRenew (which runs at the start of
-    /// every doStart/renewOnce attempt, off the state lock) and consumed by the success hooks.
-    /// `mutable` + no synchronization is safe: prepareRenew, claim, and the hooks all run on the
-    /// single renewal driver thread (see renewOnce's single-driver invariant).
-    mutable uint64_t last_attempt_wall_ms = 0;
-    mutable uint64_t last_attempt_boot_ms = 0;
+    MountLeaseKeeperState keeper_state = MountLeaseKeeperState::New;
+    uint64_t seq = 0;
+    Token last_token;
+    uint64_t confirmed_deadline_boot_ms = 0;
+    uint64_t last_committed_attempt_start_boot_ms = 0;
 };
 
 /// Mount-lease-scoped staging sweeper for objects left behind by S3-native staging.

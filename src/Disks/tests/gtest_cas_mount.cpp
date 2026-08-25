@@ -3,11 +3,19 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Poco/Exception.h>
+#include <Poco/Message.h>
+#include <Poco/StreamChannel.h>
 
 #include <chrono>
+#include <condition_variable>
+#include <future>
 #include <limits>
 #include <map>
+#include <sstream>
 #include <string>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -21,6 +29,8 @@ namespace ProfileEvents
 {
     extern const Event CASMountLeaseLost;
     extern const Event CASMountExclusivityViolation;
+    extern const Event CASMountRenewalAttempts;
+    extern const Event CASMountRenewalRetries;
 }
 
 using namespace DB::Cas;
@@ -40,6 +50,17 @@ RefCatalog catalogOwning(const String & ns, NsState state)
     if (state == NsState::Creating)
         entry.creator = CreatorFence{.server_root_id = "root/x", .writer_epoch = 1, .fence_generation = 1};
     return RefCatalog{.entries = {std::move(entry)}};
+}
+
+void renewKeeperOrThrow(MountLeaseKeeper & keeper)
+{
+    const MountRenewResult result = keeper.renew(
+        CasRequestBudget{.attempt_timeout_ms = 1, .operation_deadline_ms = 100, .max_attempts = 2,
+                         .lease_safety_margin_ms = 0, .retry_initial_backoff_ms = 0, .retry_max_backoff_ms = 0},
+        MountRenewOperationEnvironment{});
+    if (result.outcome == MountRenewOutcome::Terminal)
+        std::rethrow_exception(result.failure);
+    ASSERT_EQ(result.outcome, MountRenewOutcome::Committed);
 }
 
 class OwnerConflictRevealsManifestBackend : public InMemoryBackend
@@ -89,6 +110,270 @@ public:
     bool winner_installed = false;
 };
 
+class RenewalLogBackend final : public InMemoryBackend
+{
+public:
+    using InMemoryBackend::putOverwrite;
+
+    bool throw_before_next_overwrite = false;
+
+    void armBlockedRetry()
+    {
+        std::lock_guard lock(mutex);
+        blocked_retry_armed = true;
+        renewal_puts = 0;
+        second_put_arrived = false;
+        release_second_put = false;
+    }
+
+    bool waitForSecondPut()
+    {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, std::chrono::seconds(2), [&] { return second_put_arrived; });
+    }
+
+    void releaseSecondPut()
+    {
+        std::lock_guard lock(mutex);
+        release_second_put = true;
+        cv.notify_all();
+    }
+
+    PutResult putOverwrite(
+        const String & key,
+        const String & bytes,
+        const Token & expected,
+        const ObjectMeta & meta) override
+    {
+        {
+            std::unique_lock lock(mutex);
+            if (blocked_retry_armed)
+            {
+                ++renewal_puts;
+                if (renewal_puts == 1)
+                    throw Poco::TimeoutException("injected renewal timeout before blocked retry");
+                if (renewal_puts == 2)
+                {
+                    second_put_arrived = true;
+                    cv.notify_all();
+                    if (!cv.wait_for(lock, std::chrono::seconds(20), [&] { return release_second_put; }))
+                        throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "blocked renewal retry was not released");
+                    blocked_retry_armed = false;
+                }
+            }
+        }
+        if (std::exchange(throw_before_next_overwrite, false))
+            throw Poco::TimeoutException("injected renewal timeout before commit");
+        return InMemoryBackend::putOverwrite(key, bytes, expected, meta);
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool blocked_retry_armed = false;
+    uint32_t renewal_puts = 0;
+    bool second_put_arrived = false;
+    bool release_second_put = false;
+};
+
+class BlockingRenewalDebugChannel final : public Poco::Channel
+{
+public:
+    void log(const Poco::Message & message) override
+    {
+        if (message.getText().find("physical retry attempt") == String::npos)
+            return;
+        std::unique_lock lock(mutex);
+        cv.wait_for(lock, std::chrono::seconds(20), [&] { return released; });
+    }
+
+    void unblock()
+    {
+        std::lock_guard lock(mutex);
+        released = true;
+        cv.notify_all();
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool released = false;
+};
+
+class ScopedBlockingRenewalDebugLog
+{
+public:
+    ScopedBlockingRenewalDebugLog()
+        : logger(getLogger("CasMountLeaseKeeper"))
+        , channel(new BlockingRenewalDebugChannel)
+        , old_channel(logger->getChannel())
+        , old_level(logger->getLevel())
+    {
+        logger->setChannel(channel.get());
+        logger->setLevel("debug");
+    }
+
+    ~ScopedBlockingRenewalDebugLog()
+    {
+        channel->unblock();
+        logger->setChannel(old_channel);
+        logger->setLevel(old_level);
+    }
+
+    void release() { channel->unblock(); }
+
+private:
+    LoggerPtr logger;
+    Poco::AutoPtr<BlockingRenewalDebugChannel> channel;
+    Poco::Channel * old_channel;
+    int old_level;
+};
+
+class ScopedRenewalLogCapture
+{
+public:
+    explicit ScopedRenewalLogCapture(const String & level)
+        : logger(getLogger("CasMountLeaseKeeper"))
+        , channel(new Poco::StreamChannel(stream))
+        , old_channel(logger->getChannel())
+        , old_level(logger->getLevel())
+    {
+        logger->setChannel(channel.get());
+        logger->setLevel(level);
+    }
+
+    ~ScopedRenewalLogCapture()
+    {
+        logger->setChannel(old_channel);
+        logger->setLevel(old_level);
+    }
+
+    String captured() const { return stream.str(); }
+
+private:
+    LoggerPtr logger;
+    std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::AutoPtr<Poco::StreamChannel> channel;
+    Poco::Channel * old_channel;
+    int old_level;
+};
+
+size_t countRenewalLogText(const String & haystack, std::string_view needle)
+{
+    size_t count = 0;
+    for (size_t pos = 0; (pos = haystack.find(needle, pos)) != String::npos; pos += needle.size())
+        ++count;
+    return count;
+}
+
+CasRequestBudget renewalLogBudget(uint32_t max_attempts = 2)
+{
+    return CasRequestBudget{
+        .attempt_timeout_ms = 10,
+        .operation_deadline_ms = 500,
+        .max_attempts = max_attempts,
+        .lease_safety_margin_ms = 20,
+        .retry_initial_backoff_ms = 0,
+        .retry_max_backoff_ms = 0,
+    };
+}
+
+}
+
+TEST(CASMountAudit, RenewalDefaultLogsAreBounded)
+{
+    const auto open_store = [](const std::shared_ptr<RenewalLogBackend> & backend, uint64_t & boot_ms, const String & prefix)
+    {
+        return Pool::open(backend, PoolConfig{
+            .pool_prefix = prefix,
+            .server_root_id = "test",
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .cas_request_budget = renewalLogBudget(),
+            .boot_ms_fn = [&] { return boot_ms; },
+        });
+    };
+
+    {
+        auto backend = std::make_shared<RenewalLogBackend>();
+        uint64_t boot_ms = 100;
+        auto store = open_store(backend, boot_ms, "renewal-log-silent");
+        ScopedRenewalLogCapture capture("information");
+        EXPECT_NO_THROW(store->renewWatermarkOnce());
+        EXPECT_EQ(countRenewalLogText(capture.captured(), "CAS mount renewal"), 0u);
+    }
+
+    {
+        auto backend = std::make_shared<RenewalLogBackend>();
+        uint64_t boot_ms = 100;
+        auto store = open_store(backend, boot_ms, "renewal-log-recovered");
+        ScopedRenewalLogCapture capture("information");
+        backend->throw_before_next_overwrite = true;
+        EXPECT_NO_THROW(store->renewWatermarkOnce());
+        const String output = capture.captured();
+        EXPECT_EQ(countRenewalLogText(output, "CAS mount renewal"), 2u) << output;
+        EXPECT_EQ(countRenewalLogText(output, "entered retry"), 1u) << output;
+        EXPECT_EQ(countRenewalLogText(output, "recovered"), 1u) << output;
+        EXPECT_EQ(countRenewalLogText(output, "physical retry attempt"), 0u) << output;
+    }
+
+    {
+        auto backend = std::make_shared<RenewalLogBackend>();
+        uint64_t boot_ms = 100;
+        auto store = open_store(backend, boot_ms, "renewal-log-debug");
+        ScopedRenewalLogCapture capture("debug");
+        backend->throw_before_next_overwrite = true;
+        EXPECT_NO_THROW(store->renewWatermarkOnce());
+        EXPECT_EQ(countRenewalLogText(capture.captured(), "physical retry attempt 2"), 1u);
+    }
+
+    {
+        auto backend = std::make_shared<RenewalLogBackend>();
+        uint64_t boot_ms = 100;
+        auto store = open_store(backend, boot_ms, "renewal-log-fenced");
+        ScopedRenewalLogCapture capture("information");
+        boot_ms = 1071;
+        EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+        const String output = capture.captured();
+        EXPECT_EQ(countRenewalLogText(output, "CAS mount renewal"), 1u) << output;
+        EXPECT_EQ(countRenewalLogText(output, "fenced"), 1u) << output;
+        EXPECT_EQ(countRenewalLogText(output, "entered retry"), 0u) << output;
+    }
+}
+
+TEST(CASMountAudit, PhysicalRetryCannotBeDelayedByDebugLogging)
+{
+    auto backend = std::make_shared<RenewalLogBackend>();
+    uint64_t boot_ms = 100;
+    auto store = Pool::open(backend, PoolConfig{
+        .pool_prefix = "renewal-debug-order",
+        .server_root_id = "test",
+        .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+        .cas_request_budget = renewalLogBudget(),
+        .boot_ms_fn = [&] { return boot_ms; },
+    });
+
+    const uint64_t attempts_before
+        = ProfileEvents::global_counters[ProfileEvents::CASMountRenewalAttempts].load();
+    const uint64_t retries_before
+        = ProfileEvents::global_counters[ProfileEvents::CASMountRenewalRetries].load();
+    backend->armBlockedRetry();
+    ScopedBlockingRenewalDebugLog blocked_log;
+    auto renewal = std::async(std::launch::async, [&] { store->renewWatermarkOnce(); });
+
+    const bool retry_reached_backend = backend->waitForSecondPut();
+    EXPECT_TRUE(retry_reached_backend)
+        << "diagnostic logging after retry admission must not delay the backend request";
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::CASMountRenewalAttempts].load(),
+        attempts_before + 2)
+        << "physical attempt visibility must precede completion of the in-flight retry";
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::CASMountRenewalRetries].load(),
+        retries_before + 1);
+
+    blocked_log.release();
+    backend->releaseSecondPut();
+    EXPECT_NO_THROW(renewal.get());
 }
 
 TEST(CASServerRootId, ValidationAcceptsCleanPathsRejectsBad)
@@ -139,6 +424,7 @@ TEST(CASServerRoot, KeysAndCodecsRoundTrip)
         m.started_at_ms = 1700000000000ULL;
         m.seq = 99;
         m.expires_at_ms = 1700000030000ULL;
+        m.write_attempt_id = UInt128{1};
         const MountLease back = decodeMountLease(encodeMountLease(m));
         EXPECT_EQ(back.server_uuid, m.server_uuid);
         EXPECT_EQ(back.writer_epoch, m.writer_epoch);
@@ -407,16 +693,66 @@ TEST(CASMountLease, AbsentClaimThenRenewBumpsSeq)
     auto r = claimMount(*b, l, "r", UInt128(1), /*epoch*/ 7, now, /*ttl*/ 100);
     EXPECT_EQ(r.kind, MountClaimResult::Claimed);
     MountLeaseKeeper k(b, l, "r", UInt128(1), 7, std::chrono::milliseconds(100), [&] { return now; },
-                       [] { return uint64_t{0}; });
+                       [] { return uint64_t{0}; }, {}, std::chrono::milliseconds(0));
     k.start();
     EXPECT_EQ(decodeMountLease(b->get(l.mountKey("r"))->bytes).seq, 1u);
-    k.renewOnce();
+    renewKeeperOrThrow(k);
     EXPECT_EQ(decodeMountLease(b->get(l.mountKey("r"))->bytes).seq, 2u);
 }
 
+TEST(CASMountLease, HolderBodiesMintFreshAttemptIdsAndFenceCopiesIt)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    Layout layout("p");
+    uint64_t now = 1000;
+    ASSERT_EQ(claimMount(*backend, layout, "r", UInt128{1}, 7, now, 100).kind, MountClaimResult::Claimed);
+    const String key = layout.mountKey("r");
+    const MountLease claimed = decodeMountLease(backend->get(key)->bytes);
+
+    MountLeaseKeeper keeper(backend, layout, "r", UInt128{1}, 7, std::chrono::milliseconds(100), [&] { return now; },
+                            [] { return uint64_t{0}; }, {}, std::chrono::milliseconds(0));
+    keeper.start();
+    renewKeeperOrThrow(keeper);
+    const MountLease renewed = decodeMountLease(backend->get(key)->bytes);
+    EXPECT_NE(claimed.write_attempt_id, UInt128{});
+    EXPECT_NE(renewed.write_attempt_id, UInt128{});
+    EXPECT_NE(claimed.write_attempt_id, renewed.write_attempt_id);
+
+    auto observed = backend->get(key);
+    ASSERT_TRUE(observed.has_value());
+    MountLease fenced = decodeMountLease(observed->bytes);
+    fenced.gc_fenced = true;
+    ++fenced.seq;
+    ASSERT_EQ(backend->putOverwrite(key, encodeMountLease(fenced), observed->token).outcome, PutOutcome::Done);
+    EXPECT_EQ(decodeMountLease(backend->get(key)->bytes).write_attempt_id, renewed.write_attempt_id);
+}
+
+TEST(CASMountLease, ReclaimAndSuccessorBodiesMintNewAttemptIds)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    Layout layout("p");
+    const String key = layout.mountKey("r");
+    ASSERT_EQ(claimMount(*backend, layout, "r", UInt128{1}, 7, 1000, 100).kind, MountClaimResult::Claimed);
+    const MountLease first = decodeMountLease(backend->get(key)->bytes);
+
+    auto observed = backend->get(key);
+    ASSERT_TRUE(observed.has_value());
+    MountLease fenced = decodeMountLease(observed->bytes);
+    fenced.gc_fenced = true;
+    ++fenced.seq;
+    ASSERT_EQ(backend->putOverwrite(key, encodeMountLease(fenced), observed->token).outcome, PutOutcome::Done);
+    const MountLease fence = decodeMountLease(backend->get(key)->bytes);
+    EXPECT_EQ(fence.write_attempt_id, first.write_attempt_id);
+
+    ASSERT_EQ(claimMount(*backend, layout, "r", UInt128{1}, 8, 2000, 100).kind, MountClaimResult::Claimed);
+    const MountLease successor = decodeMountLease(backend->get(key)->bytes);
+    EXPECT_NE(successor.write_attempt_id, first.write_attempt_id);
+    EXPECT_NE(successor.write_attempt_id, UInt128{});
+}
+
 /// STID 3982-3b48: `rm -rf` of the pool dir under a live mount deletes the mount slot object out from
-/// under a running keeper. The next background renewal must fail closed (stop renewing, latch the
-/// write fence to lost) WITHOUT constructing a `LOGICAL_ERROR` -- that aborts debug/ASan builds at
+/// under a running keeper. The next synchronous renewal must return terminal WITHOUT constructing a
+/// `LOGICAL_ERROR` -- that aborts debug/ASan builds at
 /// exception construction, and there is no foreign writer here to fail closed against, only an
 /// environmental condition.
 TEST(CASMountLease, VanishedBackingStoreStopsRenewalWithoutLogicalError)
@@ -426,7 +762,7 @@ TEST(CASMountLease, VanishedBackingStoreStopsRenewalWithoutLogicalError)
     uint64_t now = 1000;
     ASSERT_EQ(claimMount(*b, l, "r", UInt128(1), /*epoch*/ 7, now, /*ttl*/ 100).kind, MountClaimResult::Claimed);
     MountLeaseKeeper k(b, l, "r", UInt128(1), 7, std::chrono::milliseconds(100), [&] { return now; },
-                       [] { return uint64_t{0}; });
+                       [] { return uint64_t{0}; }, {}, std::chrono::milliseconds(0));
     k.start();
 
     const String mount_key = l.mountKey("r");
@@ -438,7 +774,7 @@ TEST(CASMountLease, VanishedBackingStoreStopsRenewalWithoutLogicalError)
 
     try
     {
-        k.renewOnce();
+        renewKeeperOrThrow(k);
         FAIL() << "renew against a vanished mount object must throw";
     }
     catch (const DB::Exception & e)
@@ -446,7 +782,8 @@ TEST(CASMountLease, VanishedBackingStoreStopsRenewalWithoutLogicalError)
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST) << e.message();
         EXPECT_NE(e.code(), DB::ErrorCodes::LOGICAL_ERROR);
     }
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), lost_before + 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), lost_before)
+        << "keeper classification is metric-free; the runtime records operational loss";
 }
 
 /// STID 3982-3b48 (part 1b): the terminal/clean-release counterpart to the renewal fix above. When
@@ -476,9 +813,9 @@ TEST(CASMountLease, TerminateAfterVanishedBackingStoreIsNoOpRelease)
     /// a renewal, so `terminate()`'s token-guarded farewell PUT is the first thing to observe it.
     ASSERT_EQ(b->deleteExact(mount_key, b->head(mount_key).token).kind, DeleteOutcome::Kind::Deleted);
 
-    EXPECT_NO_THROW(k.stop())
+    EXPECT_NO_THROW(k.release())
         << "clean release against a vanished store must be a no-op, not a LOGICAL_ERROR abort";
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), lost_before + 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), lost_before);
 }
 
 /// rev.6: a bare `claimMount` (no `proven_dead_token`) NEVER reclaims a same-uuid, different-epoch
@@ -727,16 +1064,6 @@ TEST(CASMountLease, KeeperStartAdoptsOurOwnClaimNotDoubleStart)
                        [] { return uint64_t{0}; });
     EXPECT_NO_THROW(k.start());     // adopts our own live (uuid=1,epoch=7) mount — NOT a double-start
     EXPECT_EQ(decodeMountLease(b->get(l.mountKey("r"))->bytes).writer_epoch, 7u);
-
-    // A keeper for the SAME uuid but a DIFFERENT live epoch must fail closed (superseded/double-start):
-    MountLeaseKeeper k2(b, l, "r", UInt128(1), /*epoch*/ 8, std::chrono::milliseconds(100), [&] { return now; },
-                        [] { return uint64_t{0}; });
-    EXPECT_DEATH(
-        {
-            DB::abort_on_logical_error.store(true, std::memory_order_relaxed);
-            k2.start();
-        },
-        "held by a different writer_epoch");
 }
 
 TEST(CASMountFence, SupersededWriterRefusedNoS3Read)
@@ -1016,6 +1343,7 @@ TEST(CASMountLease, BodyCarriesFloorAndFence)
     m.expires_at_ms = 2000;
     m.min_active = 5;
     m.gc_fenced = true;
+    m.write_attempt_id = UInt128{1};
     const MountLease d = decodeMountLease(encodeMountLease(m));
     EXPECT_EQ(d.min_active, 5u);
     EXPECT_TRUE(d.gc_fenced);
@@ -1026,6 +1354,7 @@ TEST(CASMountLease, RetiredSentinelRoundTrips)
 {
     MountLease m;
     m.min_active = std::numeric_limits<uint64_t>::max();
+    m.write_attempt_id = UInt128{1};
     EXPECT_EQ(decodeMountLease(encodeMountLease(m)).min_active,
               std::numeric_limits<uint64_t>::max());
 }
@@ -1058,6 +1387,7 @@ MountLease seedMount(
     m.expires_at_ms = expires_at_ms;
     m.min_active = min_active;
     m.gc_fenced = gc_fenced;
+    m.write_attempt_id = UInt128{1};
     b.putIfAbsent(l.mountKey(srid), encodeMountLease(m));
     return m;
 }
@@ -1458,10 +1788,11 @@ TEST(CASMountObservation, RenewalDuringObservationRestartsIt)
     ASSERT_EQ(claimMount(*b, l, "r", UInt128(1), 7, 500, 500).kind, MountClaimResult::Claimed);
 
     /// The real (still-alive) holder's keeper for epoch 7: `start()` adopts the slot `claimMount` just
-    /// wrote (no seq bump, per the ADOPT RULE), then `renewOnce()` bumps the token mid-observation.
+    /// wrote (no seq bump, per the ADOPT RULE), then synchronous renewal bumps the token mid-observation.
     uint64_t keeper_wall = 500;
     MountLeaseKeeper keeper(b, l, "r", UInt128(1), 7, std::chrono::milliseconds(500),
-                             [&] { return keeper_wall; }, [] { return uint64_t{0}; });
+                             [&] { return keeper_wall; }, [] { return uint64_t{0}; }, {},
+                             std::chrono::milliseconds(0));
     keeper.start();
 
     const uint64_t threshold_ms = 500 + 500 / 20 + 50;   /// = 575
@@ -1480,7 +1811,7 @@ TEST(CASMountObservation, RenewalDuringObservationRestartsIt)
             if (!renewed && mono >= threshold_ms - 50)
             {
                 renewed = true;
-                keeper.renewOnce();
+                renewKeeperOrThrow(keeper);
             }
         },
         /*on_wait_start=*/[&](const MountLease &, uint64_t) { ++wait_starts; });

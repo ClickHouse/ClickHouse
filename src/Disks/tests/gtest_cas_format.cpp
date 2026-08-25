@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Common/Exception.h>
 
 namespace DB::ErrorCodes
@@ -54,9 +55,49 @@ TEST(CASFormat, ChangePointsOfAClassBornAfterGenerationOneStartAtItsBirth)
 TEST(CASFormat, PoolMetaTracksTheRecreateOnlyRecoveryFrontierGeneration)
 {
     const auto cps = changePoints(FormatId::PoolMeta);
-    ASSERT_EQ(cps.size(), 3u);
-    EXPECT_EQ(cps.back().generation, kCommittedRefFrontierGeneration);
-    EXPECT_EQ(cps.back().min_reader, kCommittedRefFrontierGeneration);
+    ASSERT_EQ(cps.size(), 4u);
+    EXPECT_EQ(cps.back().generation, kMountWriteAttemptIdGeneration);
+    EXPECT_EQ(cps.back().min_reader, kMountWriteAttemptIdGeneration);
+}
+
+TEST(CASFormat, MountAttemptIdentityIsARecreateOnlyGenerationTenChange)
+{
+    EXPECT_EQ(G_BUILD, 10u);
+    EXPECT_EQ(kMountWriteAttemptIdGeneration, 10u);
+
+    const auto mount_points = changePoints(FormatId::MountLease);
+    ASSERT_EQ(mount_points.back().generation, kMountWriteAttemptIdGeneration);
+    EXPECT_EQ(mount_points.back().min_reader, kMountWriteAttemptIdGeneration);
+
+    const auto pool_points = changePoints(FormatId::PoolMeta);
+    ASSERT_EQ(pool_points.back().generation, kMountWriteAttemptIdGeneration);
+    EXPECT_EQ(pool_points.back().min_reader, kMountWriteAttemptIdGeneration);
+}
+
+TEST(CASPoolMeta, GenerationNinePoolIsRejectedAtReaderFloor)
+{
+    PoolMeta meta;
+    meta.pool_id = UInt128{1};
+    meta.blob_header_len = 256;
+    meta.gc_shards = 1;
+    meta.min_reader_generation = 10;
+    meta.algos_used = {static_cast<uint8_t>(BlobHashAlgo::CityHash128)};
+    String encoded = encodePoolMeta(meta);
+    const String current = "\"v\":10";
+    const size_t version = encoded.find(current);
+    ASSERT_NE(version, String::npos);
+    encoded.replace(version, current.size(), "\"v\":9");
+
+    try
+    {
+        decodePoolMeta(encoded);
+        FAIL() << "expected UNKNOWN_FORMAT_VERSION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        EXPECT_NE(e.message().find("generation-10 mount-attempt-identity"), String::npos);
+    }
 }
 
 TEST(CASFormat, CurrentVersionsAreGBuild)

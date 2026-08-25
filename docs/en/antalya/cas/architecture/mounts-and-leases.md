@@ -67,15 +67,29 @@ Two failure modes this closes:
 
 One object, `gc/server-roots/<server_root_id>/mount`, carries **both** the liveness lease and the build
 watermark — there is no separate watermark object. `MountLease` fields: `server_uuid`,
-`writer_epoch`, `hostname`, `pid`, `started_at_ms`, renewal `seq`, `expires_at_ms`, `min_active`
-(the build-watermark floor), and `gc_fenced`.
+`writer_epoch`, `write_attempt_id`, `hostname`, `pid`, `started_at_ms`, renewal `seq`,
+`expires_at_ms`, `min_active` (the build-watermark floor), and `gc_fenced`.
 
-- **Cadence.** Renew every `mount_renew_period` (default 10 s), TTL `mount_lease_ttl_ms` (default
-  30 s, TTL/3 renewal ratio). Each beat is a token-guarded `putOverwrite` bumping `seq + 1` —
-  `MountLeaseKeeper` never re-mints the object.
-- **Local fence clock.** `CLOCK_BOOTTIME`, not `CLOCK_MONOTONIC`, so a VM resumed from suspend
-  correctly observes itself expired. The deadline anchors at attempt-*start*, never at response
-  time.
+- **Logical renewal identity.** Each holder-originated body has a fresh nonzero
+  `write_attempt_id`. One logical renewal fixes one immutable `(key, bytes, expected token,
+  write_attempt_id)` tuple before I/O. Every physical retry repeats it byte-for-byte; a later GC
+  fence preserves the observed ID, while reclaim and successor bodies mint new IDs.
+- **Resolve before retry.** A transient or ambiguous conditional `PUT` is followed by one exact
+  `GET`. The keeper adopts the result only when the complete body, including `write_attempt_id`,
+  equals its immutable request. If the predecessor token is still current, another identical `PUT`
+  may follow bounded backoff. A same-pair twin, GC-fenced body, successor, foreign holder, or absent
+  body is never treated as this renewal.
+- **Absolute deadline.** Renewal uses `CLOCK_BOOTTIME`, not `CLOCK_MONOTONIC`, so a VM resumed from
+  suspend correctly observes itself expired. Its absolute deadline is the minimum of the existing
+  request-operation budget and the last confirmed lease deadline minus the safety margin. The
+  controller checks that one configured attempt still fits before each backend `PUT` or resolving
+  `GET`, after each interruptible backoff, and before accepting success. A retry, `GET`, response
+  timestamp, or wall-clock step never extends authority.
+- **Cadence.** The runtime normally starts a logical renewal every `mount_renew_period` (default
+  10 s), with TTL `mount_lease_ttl_ms` (default 30 s, TTL/3 renewal ratio). The next beat is anchored
+  at the committed body's pre-I/O BOOTTIME start. A slow recovery therefore causes an immediate
+  catch-up beat when the nominal cadence has elapsed; it does not wait a fresh full period after the
+  response.
 - **Per-write recheck.** Every durable write or delete captures the fence generation at admission
   and rechecks it immediately before the object-store call and on every conditional retry. Reads
   are not gated.
@@ -83,16 +97,21 @@ watermark — there is no separate watermark object. `MountLease` fields: `serve
   `attempt_timeout + safety_margin` fits inside the remaining lease, rejecting with
   `BAD_ARGUMENTS` at request-admission time rather than mid-flight.
 
-**Losing the lease is neither read-only mode nor an abort.** It trips the local fence (latches
-`lost`, bumps the fence generation, moves the in-process runtime to `TransientNotLive`) and
-schedules a self-remount with exponential backoff from 1 s to 30 s. Only a *foreign* `server_uuid`
-observed on the mount body is `LOGICAL_ERROR` — the owner anchor makes a foreign claim
-protocol-unreachable, so seeing one is an invariant violation, not a recoverable race. A
-`putOverwrite` that threw *before* observing any outcome does not fence while the confirmed
-deadline is still comfortably ahead — only a **confirmed** mismatch is immediately terminal. A real
-fence still costs only an epoch: recovery re-claims with a fresh one, bounded at 3 attempts. This
-is the fail-closed posture from the general CAS invariant: doubt about the source aborts, doubt
-about the mechanism may retry.
+**Losing the lease is neither read-only mode nor a process abort.** `MountLeaseKeeper` is a
+synchronous durable-slot state machine. A committed result advances its token, sequence, confirmed
+BOOTTIME deadline, and cadence anchor. Any admitted deterministic failure, confirmed conflict, or
+ambiguity left at the deadline/attempt limit moves it to `RenewalTerminal`; it cannot mint another
+body or publish a clean farewell. Owner cancellation before any request is the only
+`NotAttempted` result and leaves clean release possible. Cancellation after a request was sent is
+terminal because that request may still land.
+
+After the keeper call returns, `CasMountRuntime` consumes the result. A terminal result trips the
+local fence (latches `lost`, bumps the fence generation, moves the in-process runtime to
+`TransientNotLive`) and latches one self-remount generation. A confirmed foreign/successor or
+same-pair conflict remains a typed fail-closed error; it is never adopted. A real fence still costs
+only an epoch: recovery reclaims with a fresh one, bounded at three whole-chain attempts. This is the
+general CAS posture: doubt about the source fails closed, while transport ambiguity may retry only
+inside authority already proved by the last confirmed lease.
 
 GC's own view of a dead server is symmetric and clock-skew-immune: a slot becomes fence-eligible
 only after the leader observes the *same* renewal token hold stable, on its own monotonic clock,
@@ -183,16 +202,26 @@ under a live mount is an operator-level event.
 
 **Writable open** runs in a strict order: bootstrap-residual proof, capability probe under a
 random per-mount prefix, pool-meta create-or-validate, `validateServerRootId`, owner claim,
-`allocateWriterEpoch`, mount claim and keeper adopt, materialization grace if the predecessor was
-unclean (default 30 s), arm the fence, start background renewal. If the grace period consumed the
-TTL, one fresh renewal re-anchors the deadline before the fence is armed.
+`allocateWriterEpoch`, mount claim and synchronous keeper start, materialization grace if the
+predecessor was unclean (default 30 s), arm the fence, then create and release the runtime-owned
+renewal and remount workers before the writable pool becomes externally visible. If the grace period
+consumed the TTL, one fresh synchronous renewal re-anchors the deadline before the fence is armed.
+Failure to construct either worker joins the partial pair, closes the fence, and fails the writable
+open. No incident path constructs a thread.
 
-**Clean unmount:** stop and join the remount thread, drain the ref lanes, and only if the drain
-*certified* quiescence write the terminal farewell (`expires_at_ms` already-expired,
-`min_active = UINT64_MAX`). That sentinel is what lets a successor reclaim instantly. If the drain
-did not certify, the keeper stops renewing and writes no farewell — an unearned farewell would let
-a successor start mutating while a stale conditional write from the predecessor is still in
-flight.
+The renewal and remount workers are separate and long-lived under one stable `CasMountRuntime`.
+`scheduleRemount` increments a requested-generation latch and wakes the persistent remount worker,
+including while an older generation is active. Before keeper replacement, remount requests
+`ParkRequested` and waits for the renewal driver to report `Parked`, which proves that no keeper call
+is in flight. A successful remount handles only its snapshotted generation; a newer request is
+processed before renewal resumes.
+
+**Clean unmount:** request stop and join both persistent workers, drain the ref lanes, and only if
+the drain *certified* quiescence call `MountLeaseKeeper::release` on an `Active` keeper to write the
+terminal farewell (`expires_at_ms` already expired, `min_active = UINT64_MAX`). That sentinel is what
+lets a successor reclaim instantly. A `RenewalTerminal` keeper, an unresolved ref write, or a sent
+renewal ambiguity writes no farewell — an unearned farewell would let a successor start mutating
+while a stale conditional request from the predecessor is still in flight.
 
 **Crash:** no farewell; the renewal token freezes. Recovery is either the same server restarting
 and waiting out the token-stability observation, or the GC leader fencing the slot first, after
