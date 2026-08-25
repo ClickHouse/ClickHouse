@@ -89,6 +89,21 @@ esac
 
 echo "Using mark/uncompressed cache policy: $cache_policy"
 
+# The filesystem cache (storage_conf) is backed by a separate policy enum without SIEVE,
+# so it keeps its own LRU/SLRU randomization.
+file_cache_policy=""
+if [ $((RANDOM % 2)) -eq 1 ]; then
+    file_cache_policy="SLRU"
+else
+    file_cache_policy="LRU"
+fi
+
+echo "Using filesystem cache policy: $file_cache_policy"
+
+if [ "$file_cache_policy" = "SLRU" ]; then
+    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+fi
+
 # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
 if [ "$cache_policy" != "SLRU" ]; then
     sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
@@ -272,6 +287,10 @@ fi
 rm -f /etc/clickhouse-server/config.d/transactions.xml
 
 sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
+
+if [ "$file_cache_policy" = "SLRU" ]; then
+    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+fi
 
 # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
 if [ "$cache_policy" != "SLRU" ]; then
