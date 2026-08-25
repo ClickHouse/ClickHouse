@@ -37,5 +37,26 @@ from
 )
 order by n;
 
+-- A typed `Array(...)` / `Map(...)` path can neither be wrapped in `Nullable` nor carry NULL itself, so
+-- outer-NULL rows must read as the path default ([] / {}) -- matching a stored subcolumn and the
+-- `Nullable(Tuple(...))` case -- rather than the payload that stays in the hidden nested `ColumnObject`
+-- under the null map. The `if(...)` below nulls the outer JSON while leaving `[3,4]` / `{'k':'v'}` in that
+-- hidden column, and `materialize(...)` forces the non-optimized function path.
+select number, tupleElement(materialize(n), 'arr') as x, toTypeName(x)
+from
+(
+    select number, if(number = 1, null, cast('{"arr":[3,4]}', 'JSON(arr Array(UInt32))'))::Nullable(JSON(arr Array(UInt32))) as n
+    from numbers(2)
+)
+order by number;
+
+select number, tupleElement(materialize(n), 'm') as x, toTypeName(x)
+from
+(
+    select number, if(number = 1, null, cast('{"m":{"k":"v"}}', 'JSON(m Map(String, String))'))::Nullable(JSON(m Map(String, String))) as n
+    from numbers(2)
+)
+order by number;
+
 -- Nullable(QBit) is still rejected.
 select cast(materialize([1., 2., 3., 4.]), 'Nullable(QBit(Float32, 4))').1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
