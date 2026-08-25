@@ -274,6 +274,15 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
         cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
+    /// A sorted gather's sender merges its streams into one before shipping
+    /// (`GatherSendStep`), so a source with several streams per node pays the same per-row
+    /// merge a full sort's final phase pays; a single-stream source ships as is. The senders
+    /// merge concurrently, so each one sees its node's share of the rows.
+    if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step))
+        if (gather->getMaintainSortDescription() && inputs.first_input_properties
+            && inputs.first_input_properties->stream_layout != StreamLayout::Single)
+            cost.sequential += inputs.config.merge_sequential_cost_per_row * rows
+                / std::max(1.0, Float64(inputs.first_input_properties->distribution.node_count));
     return cost;
 }
 
@@ -417,6 +426,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         .parallelism = parallelism,
         .node_count = distribution_node_count,
         .exchange_rows_override = exchange_rows_override,
+        .first_input_properties = selected_inputs.empty() || !selected_inputs[0].expression
+            ? nullptr
+            : &selected_inputs[0].expression->properties,
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());
