@@ -23,3 +23,5 @@ SELECT count() FROM t GROUP BY GROUPING SETS ((a, b), (c))
 1
 1
 2
+1	1
+1

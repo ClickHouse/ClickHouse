@@ -67,6 +67,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// the adaptor wraps it in Nullable itself, otherwise a Dynamic argument would make the result Dynamic
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return getResultType(); }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
@@ -163,6 +166,9 @@ public:
 
 protected:
     DataTypePtr getResultType() const override { return std::make_shared<DataTypeUInt64>(); }
+
+    /// same as normalizedQueryHash: a hash must stay stable, the Variant adaptor would compute it per variant
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     void insertResult(const IAST & ast, IColumn & result) const override
     {

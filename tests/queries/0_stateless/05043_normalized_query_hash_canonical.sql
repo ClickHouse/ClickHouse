@@ -48,3 +48,8 @@ SELECT normalizedQueryHashCanonicalOrNull('SELECT a, b FROM t') = normalizedQuer
 -- over a column, not just constants
 SELECT uniqExact(normalizedQueryHashCanonicalOrNull(q))
 FROM values('q String', 'SELECT a, b FROM t', 'SELECT b, a FROM t', 'SELECT a FROM t', 'SELECT * FROM');
+
+-- same type contract as the plain functions on Dynamic and Variant
+SELECT toTypeName(normalizeQueryCanonical(d)) = toTypeName(normalizeQuery(d)), toTypeName(normalizedQueryHashCanonical(d)) = toTypeName(normalizedQueryHash(d)) FROM (SELECT 'SELECT a'::Dynamic AS d);
+SELECT toTypeName(normalizeQueryCanonical(v)) = toTypeName(normalizeQuery(v)) FROM (SELECT 'SELECT a'::Variant(String, UInt64) AS v);
+SELECT normalizedQueryHashCanonical('SELECT a'::Variant(String, UInt64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
