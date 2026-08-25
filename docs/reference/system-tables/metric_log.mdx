@@ -291,7 +291,6 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts among all read tasks
 - `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with Merge mode among all read tasks
 - `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with Join mode among all read tasks
-- `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied patch parts with MergeOnKey mode (v2) among all read tasks
 - `ProfileEvent_PatchesReadRows` ([UInt64](/reference/data-types/int-uint)) — Total number of rows read from patch parts
 - `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Total number of uncompressed bytes read from patch parts
 - `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/reference/data-types/int-uint)) — Total number of rows added to hash tables when applying patch parts with Join mode
@@ -299,7 +298,6 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading patch parts
 - `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent building indexes for applying patch parts with Merge mode
 - `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent building indexes and hash tables for applying patch parts with Join mode
-- `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent inside applyPatchesMergeOnKey sort-key merge loops
 - `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent analyzing index of patch parts
 - `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/reference/data-types/int-uint)) — Total number of read tasks for which there was any mutation applied on fly
 - `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/reference/data-types/int-uint)) — Total number of applied mutations on-fly among all read tasks
@@ -916,6 +914,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
+- `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).
+- `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/reference/data-types/int-uint)) — How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).
+- `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/reference/data-types/int-uint)) — How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.
+- `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/reference/data-types/int-uint)) — How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
 - `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request was answered from cache without making request to Keeper
 - `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request had to be answered from Keeper
@@ -1309,6 +1311,46 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/reference/data-types/int-uint)) — Number of physical bytes (checksum + header + blob) read from changelog files by the parallel Keeper startup reader
 - `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to snapshot files in Keeper
 - `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in fsync for Keeper snapshot files
+- `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT memtable flushes finished successfully
+- `ProfileEvent_KeeperLSMTMerges` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT merges finished successfully
+- `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions in Keeper LSMT file deletions
+- `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Compressed bytes written to files by Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes written to files by Keeper LSMT memtable flushes
+- `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/reference/data-types/int-uint)) — Number of output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Compressed bytes in output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes in output files published by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of input files fully consumed and dropped by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes in input files fully consumed and dropped by Keeper LSMT merges
+- `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/reference/data-types/int-uint)) — Number of Create entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Create entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/reference/data-types/int-uint)) — Number of Update entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Update entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/reference/data-types/int-uint)) — Number of Remove entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of Remove entries appended to Keeper LSMT uncommitted memtables
+- `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/reference/data-types/int-uint)) — Serialized bytes of entries appended to the Keeper LSMT committed memtable
+- `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/reference/data-types/int-uint)) — Number of writes delayed because Keeper LSMT background flushes or merges fell behind
+- `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/reference/data-types/int-uint)) — Number of committed memtables created by Keeper LSMT
+- `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/reference/data-types/int-uint)) — Number of uncommitted memtables created by Keeper LSMT
+- `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node lookups that found the node in uncommitted memtables
+- `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node lookups that didn't find the node in uncommitted memtables and fell through to committed state
+- `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups that found the node's block already in memory
+- `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups for nodes that don't exist
+- `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT committed node lookups that had to load the node's block
+- `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT node cache entries re-pointed at a freshly loaded block
+- `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/reference/data-types/int-uint)) — Child names (including tombstones) obtained from memtables by Keeper LSMT list operations
+- `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/reference/data-types/int-uint)) — Child names (including tombstones) obtained from files by Keeper LSMT list operations
+- `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/reference/data-types/int-uint)) — Blocks scanned by Keeper LSMT list operations in files
+- `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/reference/data-types/int-uint)) — Entries scanned by Keeper LSMT list operations in files
+- `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of file scans skipped by Keeper LSMT list operations because the parent paths filter ruled out any children
+- `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/reference/data-types/int-uint)) — Number of file scans not skipped by the Keeper LSMT parent paths filter that found no children
+- `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/reference/data-types/int-uint)) — Number of file scans not skipped by the Keeper LSMT parent paths filter that found children
+- `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses served by the weak pointer in the file's block info
+- `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses served by the block cache
+- `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper LSMT block accesses that had to load a block group from disk
+- `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/reference/data-types/int-uint)) — Number of blocks loaded from disk by Keeper LSMT
+- `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Uncompressed bytes of blocks loaded from disk by Keeper LSMT
 - `ProfileEvent_StorageConnectionsCreated` ([UInt64](/reference/data-types/int-uint)) — Number of created connections for storages
 - `ProfileEvent_StorageConnectionsReused` ([UInt64](/reference/data-types/int-uint)) — Number of reused connections for storages
 - `ProfileEvent_StorageConnectionsReset` ([UInt64](/reference/data-types/int-uint)) — Number of reset connections for storages
@@ -1434,6 +1476,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc allocation sample failed
 - `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc deallocation sample failed
 - `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of loading statistics from parts
+- `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it
+- `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`
 - `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/reference/data-types/int-uint)) — Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas
 - `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/reference/data-types/int-uint)) — Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas
 - `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/reference/data-types/int-uint)) — Total number of reused credentials provider from the cache
@@ -2057,6 +2101,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 **Schema**
 This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
+
+The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
