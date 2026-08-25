@@ -61,6 +61,8 @@ namespace Setting
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool query_plan_lift_predicate_across_join;
+    extern const SettingsBool query_plan_fuse_filter_into_array_join;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
@@ -79,7 +81,6 @@ namespace Setting
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
-    extern const SettingsBool query_plan_read_in_order_through_spilling_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -184,6 +185,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     /// With `use_primary_key` disabled the copied conjunct would just be a full scan filter
     lift_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_predicate_across_join]
         && from[Setting::use_primary_key];
+    fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
+    short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
@@ -251,7 +254,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
-    read_in_order_through_spilling_join = from[Setting::query_plan_read_in_order_through_spilling_join];
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
     /// incompatible with distributed execution. When make_distributed_plan is enabled,
     /// always use the materialization path (materializeQueryPlanReferences) instead.
