@@ -2,7 +2,6 @@
 
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
