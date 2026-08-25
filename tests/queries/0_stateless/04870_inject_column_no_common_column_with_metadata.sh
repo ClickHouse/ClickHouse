@@ -191,11 +191,11 @@ SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
 
 echo 'pending rename and drop of the same column'
 
-# A single ALTER can rename a column and then drop it under its new name, so a pending rename and a
-# pending drop of the same column do coexist. (Two statements cannot: an ALTER issued while a RENAME is
-# still pending blocks, even for an unrelated column.) The drop is recorded under the new name while
-# the part holds the old one, so both names have to be consulted before concluding that the part holds
-# unexplained data.
+# A single ALTER can rename a column and then drop it under its new name. `addMutationCommand` folds
+# that pair into one entry -- the drop is recorded under the name the part holds and the rename mapping
+# is erased -- so the part-side name alone answers whether the column is being dropped. This pins that
+# folding: were the drop recorded under the new name instead, the part would look like it holds
+# unexplained data and the read would be refused.
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE IF EXISTS t_rename_then_drop;
 

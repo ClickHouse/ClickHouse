@@ -261,16 +261,10 @@ void injectRequiredColumns(
                 if (storage_snapshot->tryGetColumn(options, column.name))
                     continue;
 
-                /// A drop is recorded under the name the command used, which is the new name when the
-                /// column was also renamed, so check both. (A pending rename currently blocks any
-                /// later ALTER, so the two cannot be pending together today, but that is not a
-                /// guarantee this code should rely on.)
-                bool dropped = alter_conversions
-                    && (alter_conversions->isColumnDropped(column.name, share_nested)
-                        || (alter_conversions->columnHasNewName(column.name)
-                            && alter_conversions->isColumnDropped(alter_conversions->getColumnNewName(column.name), share_nested)));
-
-                if (dropped)
+                /// A drop that followed a rename is recorded under the column's name in the part,
+                /// `addMutationCommand` having resolved it through the rename and erased that mapping,
+                /// so the part-side name is the only one to ask about.
+                if (alter_conversions && alter_conversions->isColumnDropped(column.name, share_nested))
                     continue;
 
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
