@@ -281,6 +281,7 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+            ObjectSource,
 
             Bucket,
             MapBucketsInfo,

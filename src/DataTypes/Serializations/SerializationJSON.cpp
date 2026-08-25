@@ -28,8 +28,9 @@ SerializationJSON<Parser>::SerializationJSON(
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
+    const SerializationPtr & source_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, source_serialization_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -117,6 +118,15 @@ template <typename Parser>
 void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent) const
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);
+
+    /// Writing the stored JSON text is much cheaper than constructing it from the object.
+    /// It cannot be used for pretty printing because the stored text has its own formatting.
+    if (column_object.hasSource() && settings.json.json_type_use_source && !pretty)
+    {
+        auto source = column_object.getSourceColumn().getDataAt(row_num);
+        ostr.write(source.data(), source.size());
+        return;
+    }
 
     /// We need to convert the set of paths in this row to a JSON object.
     /// To do it, we construct the resulting JSON object by iterating over sorted list of paths in current row.
@@ -284,6 +294,12 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
     if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
+
+    /// Store the original JSON text. Rows where the object itself is not available (for example a NULL
+    /// input with input_format_null_as_default) are already filled during parsing.
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    if (column_object.hasSource() && column_object.getSourceColumn().size() != column_object.size())
+        column_object.insertSource(object, settings.json_max_string_column_growth_step);
 }
 
 template <typename Parser>

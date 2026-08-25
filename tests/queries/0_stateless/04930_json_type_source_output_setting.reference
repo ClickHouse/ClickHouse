@@ -1,0 +1,29 @@
+{"a" :   42, "b" : "Hello"}
+{"a":42,"b":"Hello"}
+{"a" :   42, "b" : "Hello"}
+{"json":{"a" :   42, "b" : "Hello"}}
+"{""a"" :   42, ""b"" : ""Hello""}"
+{"a" :   42, "b" : "Hello"}
+{"json":{"a" :   42, "b" : "Hello"}}
+{
+	"meta":
+	[
+		{
+			"name": "json",
+			"type": "JSON(with_source=1)"
+		}
+	],
+
+	"data":
+	[
+		{
+			"json": {
+				"a": 42,
+				"b": "Hello"
+			}
+		}
+	],
+
+	"rows": 1
+}
+{"a":42}

@@ -336,6 +336,7 @@ struct FormatSettings
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
         size_t max_row_size_for_json_each_row = 0;
+        bool json_type_use_source = false;
     } json{};
 
     struct
