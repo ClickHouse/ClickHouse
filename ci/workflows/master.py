@@ -39,6 +39,7 @@ workflow = Workflow.Config(
             )
             for job in SPECIAL_BUILD_JOBS_EXCEPT_WINDOWS
         ],
+        *JobConfigs.wasm_parser_build_jobs,
         # Nothing consumes the Windows cross-build and nothing gates on it, so it starts
         # right away instead of waiting for every regular build and the tidy build.
         WINDOWS_BUILD_JOB,
@@ -76,6 +77,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,

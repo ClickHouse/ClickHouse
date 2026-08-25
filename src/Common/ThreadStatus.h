@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -70,6 +69,9 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
     /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
@@ -94,7 +96,7 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
