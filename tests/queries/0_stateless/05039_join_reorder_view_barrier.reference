@@ -11,6 +11,10 @@
 -- view whose own inner join is reordered
 3	3
 3	3
+-- a view reorders its own join
+1
+-- and costs nothing once reordering is off
+0
 -- merge() inside a view
 2	2
 2	2

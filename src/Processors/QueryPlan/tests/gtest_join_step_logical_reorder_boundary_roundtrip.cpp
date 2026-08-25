@@ -10,9 +10,14 @@
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/Sources/NullSource.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -121,6 +126,39 @@ UInt8 flagsByte(const String & bytes)
     return static_cast<UInt8>(bytes.at(0));
 }
 
+/// A source relation the join order optimizer accepts as a leaf. It has no row estimate, which is
+/// what an unanalyzed relation looks like to the optimizer anyway.
+QueryPlanStepPtr makeSourceStep(const String & column_name)
+{
+    return std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(makeHeader(column_name))));
+}
+
+/// Runs the reorder pass over a two-relation join graph whose root carries the boundary, and hands
+/// back the step of the node the pass leaves behind. `chooseJoinOrder` assembles that node from the
+/// graph, so it is a different object from the one passed in; `rebuilt` reports whether it is, which
+/// is what makes an assertion on the result meaningful.
+QueryPlanStepPtr reorderRootJoin(bool mark_as_boundary, bool & rebuilt)
+{
+    ContextPtr context = getContext().context;
+
+    QueryPlan::Nodes nodes;
+    auto & left_node = nodes.emplace_back();
+    left_node.step = makeSourceStep("left_k");
+    auto & right_node = nodes.emplace_back();
+    right_node.step = makeSourceStep("right_k");
+
+    QueryPlan::Node root;
+    auto step = makeStep(mark_as_boundary);
+    const IQueryPlanStep * step_before = step.get();
+    root.step = std::move(step);
+    root.children = {&left_node, &right_node};
+
+    QueryPlanOptimizations::optimizeJoinLogical(root, nodes, QueryPlanOptimizationSettings(context));
+
+    rebuilt = root.step.get() != step_before;
+    return std::move(root.step);
+}
+
 struct JoinStepLogicalReorderBoundaryRoundTrip : public ::testing::Test
 {
     void SetUp() override
@@ -175,4 +213,35 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, OldFormatZeroFlagsByteYieldsFals
     bytes[0] = 0;
     auto restored = deserializeStep(bytes);
     EXPECT_FALSE(assert_cast<JoinStepLogical &>(*restored).isJoinReorderBoundary());
+}
+
+/// The node a reordered join leaves behind is assembled from the query graph, so it is not the step
+/// the boundary was set on. It is also the node a plan fragment is cloned and streamed from, and the
+/// arms above cannot see that: they serialize a step that was never reordered.
+TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, RebuiltRootKeepsTheBoundaryThroughTheWire)
+{
+    bool rebuilt = false;
+    auto reordered = reorderRootJoin(/*mark_as_boundary=*/true, rebuilt);
+    /// Guards the arm itself: if the pass ever stopped rebuilding the node, everything below would
+    /// pass by describing the step this test constructed rather than the one reordering produced.
+    ASSERT_TRUE(rebuilt);
+
+    auto * reordered_join = typeid_cast<JoinStepLogical *>(reordered.get());
+    ASSERT_TRUE(reordered_join);
+    EXPECT_TRUE(reordered_join->isJoinReorderBoundary());
+
+    auto restored = deserializeStep(serializeStep(*reordered_join));
+    EXPECT_TRUE(assert_cast<JoinStepLogical &>(*restored).isJoinReorderBoundary());
+}
+
+/// The counterpart: reordering must not invent a boundary that the plan never carried.
+TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, RebuiltRootOfAnUnmarkedJoinStaysUnmarked)
+{
+    bool rebuilt = false;
+    auto reordered = reorderRootJoin(/*mark_as_boundary=*/false, rebuilt);
+    ASSERT_TRUE(rebuilt);
+
+    auto * reordered_join = typeid_cast<JoinStepLogical *>(reordered.get());
+    ASSERT_TRUE(reordered_join);
+    EXPECT_FALSE(reordered_join->isJoinReorderBoundary());
 }

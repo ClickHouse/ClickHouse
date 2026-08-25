@@ -51,6 +51,35 @@ INNER JOIN view(
 ON a.c0 = v.c0
 ORDER BY ALL;
 
+-- Being opaque to the enclosing graph must not stop a view from reordering its OWN join. Only a costed
+-- relation carries a bracketed label, and the enclosing graph costs the view as a whole, so a label
+-- naming the view's own relations and NOT the outer alias can only come from the view's own reordering.
+-- Paired with a reordering-off control, so the arm cannot pass on the label text alone.
+SELECT '-- a view reorders its own join';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT a.c0, v.c0
+    FROM t_a_05039 AS a
+    INNER JOIN view(
+        SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y, t_c_05039 AS z WHERE z.c0 = x.c0
+    ) AS v
+    ON a.c0 = v.c0
+    SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
+) WHERE explain LIKE '%x[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
+
+SELECT '-- and costs nothing once reordering is off';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT a.c0, v.c0
+    FROM t_a_05039 AS a
+    INNER JOIN view(
+        SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05039 AS x, t_b_05039 AS y, t_c_05039 AS z WHERE z.c0 = x.c0
+    ) AS v
+    ON a.c0 = v.c0
+    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1,
+             enable_parallel_replicas = 0
+) WHERE explain LIKE '%x[%' AND explain LIKE '%z[%' AND explain NOT LIKE '%a[%';
+
 SELECT '-- merge() inside a view';
 DROP VIEW IF EXISTS v_merge_05039;
 CREATE VIEW v_merge_05039 AS
