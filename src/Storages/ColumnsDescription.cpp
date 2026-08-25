@@ -249,7 +249,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
@@ -408,6 +408,21 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
     column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
 }
 
+}
+
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata)
+{
+    for (auto & column : columns)
+    {
+        /// Same type only: a dropped and re-added column would throw in the helper.
+        const auto * column_in_metadata = metadata.tryGet(column.name);
+        if (!column_in_metadata || !column_in_metadata->codec || !column_in_metadata->type->equals(*column.type))
+            continue;
+
+        /// The customization lands on the shared type instance, i.e. on column.type itself.
+        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
+        attachQuantizeSerializationIfNeeded(column_with_codec);
+    }
 }
 
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)

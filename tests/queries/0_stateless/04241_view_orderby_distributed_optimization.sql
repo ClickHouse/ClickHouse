@@ -370,19 +370,12 @@ SELECT 'view QUALIFY disables pushdown:',
 
 DROP VIEW test_view_qualify_04241;
 
--- View whose inner query carries `LIMIT` through its own `SETTINGS` clause:
--- pushdown must be disabled. `SETTINGS limit = N` constrains which rows the view
--- exposes just like an explicit `LIMIT`, so re-sorting and truncating around it
--- would change which rows the view returns.
-DROP VIEW IF EXISTS test_view_settings_limit_04241;
-CREATE VIEW test_view_settings_limit_04241 AS
-SELECT id, val, ts FROM test_distributed_04241 SETTINGS limit = 5;
-
-SELECT 'view SETTINGS limit disables pushdown:',
-    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_settings_limit_04241 ORDER BY ts DESC LIMIT 10)
-     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
-
-DROP VIEW test_view_settings_limit_04241;
+-- A view whose inner query carries `limit`/`offset` through its own `SETTINGS`
+-- clause is intentionally not covered here: the HTTP "table as file" feature
+-- rejects those query-construction settings in a `VIEW` definition (see
+-- `InterpreterCreateQuery::createTable`), so such a view cannot be created. The
+-- effective-context path (a definer settings profile that sets `limit`/`offset`)
+-- exercises the same pushdown-disabling check below.
 
 -- `prefer_column_name_to_alias = 1`: pushdown must be disabled. The injected
 -- inner `ORDER BY` references view columns by bare identifier; with this setting

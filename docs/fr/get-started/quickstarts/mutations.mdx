@@ -123,7 +123,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Quelques remarques sur les suppressions légères :
 
 * Cette fonctionnalité est disponible uniquement pour la famille de moteurs de table `MergeTree`.
-* Les suppressions légères sont synchrones par défaut et attendent que toutes les répliques aient traité la suppression. Ce comportement est contrôlé par le [`paramètre lightweight_deletes_sync`](/fr/reference/settings/session-settings#lightweight_deletes_sync).
+* Les suppressions légères sont synchrones par défaut et attendent que toutes les répliques aient traité la suppression. Ce comportement est contrôlé par le [`paramètre lightweight_deletes_sync`](/fr/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />
