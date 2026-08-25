@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -65,6 +66,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -124,6 +126,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     }
 
     return false;
+}
+
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
 }
 
 Block appendGroupingSetColumn(Block header)
@@ -210,6 +223,11 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
+{
+    params.top_k = std::move(top_k);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -866,6 +884,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+
+    if (params.bucket_top_k)
+        settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
+                     << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -873,6 +895,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (params.bucket_top_k)
+    {
+        auto bucket_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        bucket_top_k_map->add("Limit", params.bucket_top_k);
+        bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
+        map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
     map.add("Skip merging", skip_merging);
 }
 
@@ -1118,6 +1147,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     {
         settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]
+            = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
@@ -1322,7 +1353,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
