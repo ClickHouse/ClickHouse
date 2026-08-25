@@ -628,6 +628,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     {
         if (total_values_remaining < num_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Trying to read past total number of values in DELTA_BINARY_PACKED encoding");
+        /// Nothing to write. Returning early is important: the output buffer may have zero size,
+        /// and the first-value special case below would write through it.
+        if (num_values == 0)
+            return;
         total_values_remaining -= num_values;
 
         T * out_values = reinterpret_cast<T *>(out_bytes);
@@ -858,7 +862,20 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 return;
             }
             bool direct = string_converter->isTrivial();
-            ColumnString * col_str = assert_cast<ColumnString *>(&col);
+            ColumnString * col_str = nullptr;
+            if (direct)
+                col_str = assert_cast<ColumnString *>(&col);
+            else
+            {
+                /// The destination column is not a ColumnString in this case (e.g. it is a
+                /// ColumnDecimal for a BYTE_ARRAY Decimal), so decode into a temporary string
+                /// column and convert, the same way the unfiltered path above does it.
+                if (!temp_column)
+                    temp_column = ColumnString::create();
+                col_str = assert_cast<ColumnString *>(temp_column.get());
+                col_str->getOffsets().clear();
+                col_str->getChars().clear();
+            }
             col_str->reserve(col_str->size() + pass_count);
             decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset);
             if (!direct)
