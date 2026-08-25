@@ -27,8 +27,13 @@ FROM system.documentation
 WHERE type = 'System Table' AND name IN ('events', 'metrics')
 ORDER BY name;
 
--- Every template placeholder must be resolved before the page is exposed.
+-- Every placeholder owned by the system-table documentation renderer must be
+-- resolved before the page is exposed. Other doubled braces can be meaningful,
+-- for example in the `trace_log` SQL example which formats JSON.
 SELECT count()
 FROM system.documentation
 WHERE type = 'System Table'
-    AND description LIKE '%{{%}}%';
+    AND (
+        description LIKE '%{{PROFILE_EVENTS}}%'
+        OR description LIKE '%{{CURRENT_METRICS}}%'
+        OR description LIKE '%{{ASYNCHRONOUS_METRICS}}%');
