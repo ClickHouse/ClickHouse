@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option) and Azurite
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A server warning would land on stderr, which clickhouse-test turns into a failure.
@@ -40,6 +40,26 @@ $CLIENT -q "SELECT count() FROM ice WHERE _path IN (SELECT DISTINCT _path FROM i
 # This arm passes before and after the fix; it fails if the empty-prefix case prepends '/'.
 # It runs under clickhouse-local, whose path prefix is the root, because a server resolves a
 # relative argument against user_files_path and rejects it before the read.
+# The same join is also performed by the non-glob listing prefilter, which reaches it with a
+# namespace rather than without one. A key that keeps a leading separator must land under the
+# namespace there too, or the prefilter drops the only file before it is read. Azure is the
+# reachable backend: S3 rejects such a key in `S3::URI::validateKey`.
+AZURE_CONN="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
+# Azure container names are limited to 63 characters, so hash the unique name instead of
+# embedding it, and keep it lowercase alphanumeric as the naming rules require.
+AZURE_CONT="cont$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | md5sum | cut -c1-24)"
+AZURE_ARGS="'${AZURE_CONN}', '${AZURE_CONT}', '/slashed.csv', 'CSV', 'auto', 'x UInt64'"
+
+$CLIENT -q "
+INSERT INTO FUNCTION azureBlobStorage(${AZURE_ARGS}) SELECT 1 AS x SETTINGS azure_truncate_on_insert = 1;
+" > /dev/null
+
+# Compared against itself, so it pins the two spellings agreeing rather than either literal.
+$CLIENT -q "
+SELECT count() FROM azureBlobStorage(${AZURE_ARGS})
+WHERE _path IN (SELECT _path FROM azureBlobStorage(${AZURE_ARGS}));
+"
+
 mkdir -p "${BASE_DIR}/rel"
 (
     cd "${BASE_DIR}" || exit 1
