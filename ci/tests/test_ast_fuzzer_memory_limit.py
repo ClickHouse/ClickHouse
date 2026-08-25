@@ -41,10 +41,24 @@ on separate lines).
 
 import os
 import re
+import sys
 import tempfile
+import textwrap
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+from ci.praktika.utils import Shell
 
 _JOB = os.path.join(
     os.path.dirname(__file__), "..", "jobs", "ast_fuzzer_job.py"
+)
+# Real OOM block from PR #116245's BuzzHouse (amd_debug) dmesg.log. Named .txt,
+# not .log: the root .gitignore excludes *.log, which would silently drop the
+# fixture from the commit and leave the tests failing in CI on a missing file.
+_DMESG_OOM_FIXTURE = os.path.join(
+    os.path.dirname(__file__), "fixtures", "dmesg_oom_kill.txt"
 )
 
 
@@ -356,3 +370,133 @@ def test_marker_delimited_block_later_client_241_not_benign():
 
 def test_terminal_block_empty_or_missing_log():
     assert _terminal_block_has_server_mle("") is False
+
+
+# --- The host-OOM branch must report a NAMED sub-result ---
+#
+# `ci/praktika/cidb.py` takes a CIDB row's `test_name` from a sub-result's name,
+# so a job that only appends to `info` lands with `test_name = ''` and is
+# invisible to every per-test query. Commit 6a8fa92277b0d2f dropped the named
+# `Result.from_commands_run(name="OOM in dmesg", ...)` from this branch; the
+# tests below pin it back. Sibling jobs (`clickhouse_proc.py`,
+# `integration_test_job.py`) kept the same shape and are unaffected.
+
+
+def _oom_branch_src():
+    # The OOM check lives inside run_fuzz_job's `else` (non-sanitized) arm, so
+    # `_def_snippet` cannot reach it: slice the block and dedent it instead.
+    src = _job_src()
+    start = src.index("            # Check for OOM in dmesg")
+    marker = 'print("WARNING: dmesg not enabled")'
+    end = src.index(marker, start) + len(marker)
+    return textwrap.dedent(src[start:end])
+
+
+class _ShellDmesgStub:
+    """Stubs ONLY the `dmesg > <path>` dump, which needs CAP_SYSLOG and would
+    otherwise overwrite the fixture the test just pointed the job at. Every
+    other command - the grep the assertion depends on - runs for real."""
+
+    def __init__(self, dmesg_ok=True):
+        self.dmesg_ok = dmesg_ok
+
+    def check(self, command, **kwargs):
+        if command.startswith("dmesg > "):
+            return self.dmesg_ok
+        return Shell.check(command, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(Shell, name)
+
+
+def _run_oom_branch(dmesg_log, dmesg_ok=True, tmp_dir=None):
+    # Execute the real source block against `dmesg_log`. Returns the job-level
+    # (status, info) it would report plus the sub-results it appended.
+    ns = {
+        "Result": Result,
+        "Shell": _ShellDmesgStub(dmesg_ok),
+        "dmesg_log": dmesg_log,
+        "info": [],
+        "status": Result.Status.ERROR,
+        "results": [],
+    }
+    prev_temp_dir = Settings.TEMP_DIR
+    if tmp_dir:
+        # from_commands_run writes its log file under TEMP_DIR; in CI that dir
+        # exists, locally it may not.
+        Settings.TEMP_DIR = tmp_dir
+    try:
+        exec(_oom_branch_src(), ns)  # noqa: S102 - trusted first-party source
+    finally:
+        Settings.TEMP_DIR = prev_temp_dir
+    return ns["status"], ns["info"], ns["results"]
+
+
+def test_oom_in_dmesg_appends_named_sub_result(tmp_path):
+    # The load-bearing regression test: a real #116245 dmesg must produce a
+    # sub-result whose name is non-empty (that name IS the CIDB test_name).
+    _, _, results = _run_oom_branch(_DMESG_OOM_FIXTURE, tmp_dir=str(tmp_path))
+    assert len(results) == 1
+    assert results[0].name == "OOM in dmesg"
+    assert results[0].name != ""
+    assert results[0].status == Result.Status.ERROR
+
+
+def test_oom_in_dmesg_preserves_job_level_error(tmp_path):
+    # The job-level status and human-facing info stay exactly as before the fix:
+    # ERROR (not FAIL), with the same one-line info entry.
+    status, info, results = _run_oom_branch(
+        _DMESG_OOM_FIXTURE, tmp_dir=str(tmp_path)
+    )
+    assert status == Result.Status.ERROR
+    assert "ERROR: OOM in dmesg" in info
+    # `Result.create_from` resolves the children; an ERROR child keeps `error`.
+    assert Result.create_from(results=results, info=info).status == (
+        Result.Status.ERROR
+    )
+
+
+def test_oom_in_dmesg_captures_killed_process_evidence(tmp_path):
+    # `with_info_on_failure` (default True) captures the negated grep's output,
+    # so the killed process, its pid, its RSS and the OOM kind reach the row
+    # without a bespoke parser.
+    _, _, results = _run_oom_branch(_DMESG_OOM_FIXTURE, tmp_dir=str(tmp_path))
+    captured = results[0].info
+    assert "clickhouse-serv" in captured
+    assert "3365" in captured
+    assert "anon-rss:53284736kB" in captured
+    assert "constraint=CONSTRAINT_NONE" in captured
+    assert "global_oom" in captured
+
+
+def test_no_oom_line_appends_nothing(tmp_path):
+    # A dmesg with no OOM line (the common case: the fuzzer failed for another
+    # reason) must not fabricate a row, and must not touch the job status.
+    dmesg = tmp_path / "dmesg.log"
+    dmesg.write_text(
+        "[ 12.0] docker0: port 1(veth0) entered blocking state\n"
+        "[ 12.1] eth0: renamed from veth1\n",
+        encoding="utf-8",
+    )
+    status, info, results = _run_oom_branch(str(dmesg), tmp_dir=str(tmp_path))
+    assert results == []
+    assert info == []
+    assert status == Result.Status.ERROR
+
+
+def test_empty_dmesg_appends_nothing(tmp_path):
+    dmesg = tmp_path / "dmesg.log"
+    dmesg.write_text("", encoding="utf-8")
+    _, info, results = _run_oom_branch(str(dmesg), tmp_dir=str(tmp_path))
+    assert results == []
+    assert info == []
+
+
+def test_dmesg_not_enabled_appends_nothing(tmp_path):
+    # `dmesg` itself failing (not enabled in the container) keeps the old
+    # behaviour: warn and report nothing.
+    _, info, results = _run_oom_branch(
+        _DMESG_OOM_FIXTURE, dmesg_ok=False, tmp_dir=str(tmp_path)
+    )
+    assert results == []
+    assert info == []
