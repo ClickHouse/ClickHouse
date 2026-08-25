@@ -157,7 +157,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
-class HypotheticalIndexStore;
+class HypotheticalObjectStore;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -285,6 +285,9 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
+
+class AIQuotaTracker;
+using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
 
 /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
 /// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
@@ -414,7 +417,7 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
-    mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
+    mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -595,6 +598,9 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
+    bool is_recovery_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -652,6 +658,9 @@ protected:
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
+
+    /// AI-function quota usage for the current query, shared by every AI function call in it.
+    mutable AIQuotaTrackerPtr ai_quota_tracker;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -1014,6 +1023,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
+    void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace
     {
@@ -1040,7 +1050,7 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    HypotheticalIndexStore & getHypotheticalIndexStore() const;
+    HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
@@ -1217,6 +1227,7 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1225,6 +1236,7 @@ public:
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+    void setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles);
 
     AsyncLoader & getAsyncLoader() const;
 
@@ -1346,7 +1358,6 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
-    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1636,6 +1647,7 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
+    ThreadPool & getBackgroundQueryPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1804,6 +1816,9 @@ public:
     void startServers(const ServerType & server_type) const;
     void stopServers(const ServerType & server_type) const;
 
+    using StopIntrospectionServersCallback = std::function<void()>;
+    void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
+
     void shutdown();
 
     bool isInternalQuery() const { return is_internal_query; }
@@ -1811,6 +1826,9 @@ public:
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
+    bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+    void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
@@ -1978,6 +1996,8 @@ public:
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
     ReverseLookupCache & getReverseLookupCache() const;
+
+    AIQuotaTrackerPtr getAIQuotaTracker() const;
 
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
