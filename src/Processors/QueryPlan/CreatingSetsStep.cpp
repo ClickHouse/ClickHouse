@@ -12,7 +12,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Common/typeid_cast.h>
 
