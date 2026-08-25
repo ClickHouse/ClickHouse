@@ -52,8 +52,11 @@ public:
 
     PostingList read(const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates) const
     {
-        if (token_info.embedded_postings)
-            return *token_info.embedded_postings;
+        if (!token_info.embedded_postings.empty())
+        {
+            const auto & embedded = token_info.embedded_postings;
+            return PostingList(embedded.size(), embedded.data());
+        }
 
         PostingList postings;
         for (size_t block_idx : token_info.getBlocksToRead(range))
