@@ -136,7 +136,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool exclude_data_from_backup;
-    extern const MergeTreeSettingsBool exclude_from_backup;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
@@ -3548,7 +3547,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
 
 void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if ((*getSettings())[MergeTreeSetting::exclude_from_backup] || (*getSettings())[MergeTreeSetting::exclude_data_from_backup])
+    if ((*getSettings())[MergeTreeSetting::exclude_data_from_backup])
         return;
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();

@@ -249,7 +249,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
     extern const MergeTreeSettingsBool exclude_data_from_backup;
-    extern const MergeTreeSettingsBool exclude_from_backup;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
@@ -11825,7 +11824,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
 void StorageReplicatedMergeTree::backupData(
     BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if ((*getSettings())[MergeTreeSetting::exclude_from_backup] || (*getSettings())[MergeTreeSetting::exclude_data_from_backup])
+    if ((*getSettings())[MergeTreeSetting::exclude_data_from_backup])
         return;
     /// First we generate backup entries in the same way as an ordinary MergeTree does.
     /// But then we don't add them to the BackupEntriesCollector right away,

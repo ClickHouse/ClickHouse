@@ -2379,9 +2379,6 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     DECLARE(Bool, exclude_data_from_backup, false, R"(
 When enabled, BACKUP includes this table's DDL (CREATE TABLE statement) but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables (for example, materialized-view targets) whose data can be regenerated from a source table, to reduce backup size.
 )", 0) \
-    DECLARE(Bool, exclude_from_backup, false, R"(
-When enabled, this table is completely excluded from BACKUP: neither its DDL nor its data is backed up. On RESTORE the table is not recreated at all.
-)", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

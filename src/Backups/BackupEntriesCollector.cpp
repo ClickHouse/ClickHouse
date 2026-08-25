@@ -549,20 +549,6 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create_table_query = db_table.first;
             const auto & storage = db_table.second;
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
-            if (create.storage && create.storage->settings)
-            {
-                bool exclude_table = false;
-                for (const auto & change : create.storage->settings->changes)
-                {
-                    if (change.name == "exclude_from_backup" && change.value.safeGet<bool>())
-                    {
-                        exclude_table = true;
-                        break;
-                    }
-                }
-                if (exclude_table)
-                    continue;
-            }
             String table_name = create.getTable();
 
             fs::path metadata_path_in_backup;

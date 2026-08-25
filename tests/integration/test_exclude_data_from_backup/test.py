@@ -72,37 +72,6 @@ def test_exclude_data_from_backup_default_false():
     instance.query("DROP TABLE IF EXISTS test.t2")
 
 
-def test_exclude_from_backup():
-    instance.query("CREATE DATABASE IF NOT EXISTS test")
-    instance.query("DROP TABLE IF EXISTS test.t3")
-    instance.query("DROP TABLE IF EXISTS test.t4")
-    instance.query(
-        "CREATE TABLE test.t3 (id UInt64) ENGINE = MergeTree ORDER BY id "
-        "SETTINGS exclude_from_backup = 1"
-    )
-    instance.query("INSERT INTO test.t3 VALUES (1), (2)")
-    instance.query(
-        "CREATE TABLE test.t4 (id UInt64) ENGINE = MergeTree ORDER BY id"
-    )
-    instance.query("INSERT INTO test.t4 VALUES (3), (4)")
-
-    backup_name = new_backup_name()
-    instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    instance.query("DROP TABLE test.t3")
-    instance.query("DROP TABLE test.t4")
-    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
-
-    # t3 was fully excluded: it should NOT exist after restore.
-    assert instance.query("EXISTS test.t3") == "0\n"
-
-    # t4 was not excluded: it should be restored with its data intact.
-    assert instance.query("EXISTS test.t4") == "1\n"
-    assert instance.query("SELECT count() FROM test.t4") == "2\n"
-
-    instance.query("DROP TABLE IF EXISTS test.t4")
-
-
 def test_exclude_data_from_backup_materialized_view_inner_table():
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     instance.query("DROP TABLE IF EXISTS test.mv")
