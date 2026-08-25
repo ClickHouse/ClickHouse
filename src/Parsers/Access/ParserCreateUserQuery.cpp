@@ -1093,6 +1093,8 @@ Allows you to limit the access rights available to a session authenticated with 
 
 When a user logs in with such an authentication method, the access rights of the session are the intersection of the user's access rights (including the rights from granted roles) with the privileges listed in the clause. The clause never adds any access rights: if a listed privilege is not granted to the user, the session does not have it. Sessions authenticated with such a method also cannot grant privileges (the `GRANT OPTION` never survives the intersection) or administer roles. Administering roles includes not only creating, altering, dropping, granting and revoking roles, but also changing which roles are activated by default for a user (`SET DEFAULT ROLE` and `ALTER USER ... DEFAULT ROLE`), which is rejected as well.
 
+`EXECUTE AS` switches the principal of the session, so a statement running under impersonation is limited by the intersection of the **target** user's access rights with the listed privileges, rather than by the rights of the user who logged in. The limit itself is never shed, and impersonating requires `IMPERSONATE ON target` to be both granted to the user and listed in the clause, so a limited credential can never reach further than the same user's unlimited credential.
+
 This provides a convenient way to create tokens for applications: an additional credential with an expiration date and a limited set of privileges, which is tied to the user - it is displayed in `system.query_log` and `system.processes` as the user, it stops working if the user is deleted, and it loses access rights when the user loses them.
 
 <Warning>
