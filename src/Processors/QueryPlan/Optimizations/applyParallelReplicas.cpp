@@ -101,13 +101,13 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
 
     /// Direct read from a text index (`query_plan_direct_read_from_text_index`) rewrites the text-search
     /// functions of the read's PREWHERE into `__text_index_*` virtual columns, which only this read's
-    /// index read tasks materialize. The tasks are not serialized, so a replica deserializing the
-    /// fragment fails with `Column '__text_index_...' not found in table` while building the read step.
-    /// `ReadFromMergeTree::isSerializable` already reports such a step as unshippable and
-    /// `verifyBucketedReadSupported` rejects it for `make_distributed_plan`, but the split marker is
-    /// planted without consulting either, so the read has to be kept local here - as for Top-K above.
-    /// Shipping it also breaks execution when PREWHERE and WHERE carry different text-search queries,
-    /// see https://github.com/ClickHouse/ClickHouse/issues/113664.
+    /// index read tasks materialize. `ReadFromMergeTree::serialize` does not carry that task map, so a
+    /// replica deserializing the fragment fails with `Column '__text_index_...' not found in table`
+    /// while building the read step. Shipping it also breaks execution when PREWHERE and WHERE carry
+    /// different text-search queries, see https://github.com/ClickHouse/ClickHouse/issues/113664.
+    /// `supportsBucketedRead` refuses a bucketed distributed read for the same reason, but nothing
+    /// rejects an ordinary shipped fragment - `isSerializable` is unconditionally true for this step -
+    /// so the read has to be kept local here, as for Top-K above.
     if (!read.getIndexReadTasks().empty())
         return false;
 
