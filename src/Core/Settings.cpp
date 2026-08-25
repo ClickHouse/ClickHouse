@@ -6030,6 +6030,14 @@ Minimum time of delay between 2 background compaction operations.
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
 The time after which the data will be deleted.
 )", 0) \
+    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
+Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
+
+Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
+how long already merged files stay unpublished while compaction keeps finding new work. `0` restores the old behaviour
+of publishing only when compaction runs out of candidates - a state that is never reached while the table keeps
+receiving new data files, so every merged output is then written to object storage and never referenced by a snapshot.
+)", 0) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](/concepts/features/performance/caches/query-cache). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -7504,11 +7512,11 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
 )", 0) \
     \
     /* CLOUD ONLY */ \
-    DECLARE(Bool, read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
+    DECLARE(BoolAuto, force_read_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Overrides the server setting `enable_read_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
-    DECLARE(Bool, write_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
+    DECLARE(BoolAuto, force_write_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Overrides the server setting `enable_write_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
     DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
 Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
@@ -7604,6 +7612,9 @@ Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
 )", 0) \
     DECLARE(String, distributed_cache_file_cache_name, "", R"(
 Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
+)", 0) \
+    DECLARE(String, distributed_cache_client_id, "", R"(
+Only has an effect in ClickHouse Cloud. A setting used only for CI tests - overrides the registry-configured distributed cache client id for this query's requests when non-empty. Lets tests spread data across a bounded set of client ids while keeping the same data on the same client id. It requires `ci_mode` to be enabled in the distributed cache client config: when it is not (the default, as in production), a query that routes a read or write through the distributed cache fails with `SUPPORT_IS_DISABLED` instead of silently falling back to the configured client id. Queries that never reach the distributed cache are unaffected, so the value is ignored there.
 )", 0) \
     DECLARE(Bool, distributed_cache_registry_show_certificate_and_signature, false, R"(
 Only has an effect in ClickHouse Cloud. Show the `certificate` and `signature` columns in the `system.distributed_cache_registry` table. By default these columns are empty to keep the output compact; enable this setting to inspect them.
@@ -8505,6 +8516,12 @@ Max rows of iceberg parquet data file on insert operation.
     DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
 Max bytes of iceberg parquet data file on insert operation.
 )", 0) \
+    DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible. Keeping this above the size compaction can actually produce would make every output file stay below `iceberg_data_file_size_lower_threshold_compaction` and be re-selected forever.
+)", 0) \
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Max bytes of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible.
+)", 0) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0) \
@@ -8977,6 +8994,9 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
+Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
+)", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -9228,6 +9248,8 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_distributed_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_read_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_write_network_bandwidth_for_server, 0) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Bool, read_through_distributed_cache, false) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Bool, write_through_distributed_cache, false) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, async_insert_threads, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
