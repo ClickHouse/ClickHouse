@@ -13,6 +13,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <algorithm>
 #include <memory>
