@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **引数**
 
-* `id` — 時系列の識別子。[`UInt64`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`UUID`](/ja/reference/data-types/uuid) または [`FixedString(16)`](/ja/reference/data-types/fixedstring)
+* `id` — 時系列の識別子。[timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags) の呼び出し時に使用した型と同じ型である必要があります。[`Any`](/ja/reference/data-types/index)
 
 **戻り値**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **引数**
 
-* `id` — 時系列の識別子。[`UInt64`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`UUID`](/ja/reference/data-types/uuid) または [`FixedString(16)`](/ja/reference/data-types/fixedstring)
+* `id` — 時系列の識別子。[timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags) の呼び出し時に使用したものと同じ型である必要があります。[`Any`](/ja/reference/data-types/index)
 
 **戻り値**
 
@@ -831,7 +831,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **引数**
 
-* `id` — 時系列の識別子。[`UInt64`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`UUID`](/ja/reference/data-types/uuid) または [`FixedString(16)`](/ja/reference/data-types/fixedstring)
+* `id` — 時系列の識別子。比較可能な任意の型にできます。識別子が NULL の行はスキップされます。[`Any`](/ja/reference/data-types/index)
 * `tags_array` — (tag&#95;name, tag&#95;value) のペアからなる Array。[`Array(Tuple(String, String))`](/ja/reference/data-types/array) または [`NULL`](/ja/reference/syntax#null)
 * `separate_tag_name_i` — タグ名。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
 * `separate_tag_value_i` — タグの値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Nullable(String)`](/ja/reference/data-types/nullable)

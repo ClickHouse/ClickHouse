@@ -9,19 +9,21 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-GCP 上の ClickHouse BYOC は、VPC Peering と Private Service Connect という 2 つのプライベート接続オプションをサポートしています。トラフィックはすべて GCP ネットワーク内で完結し、パブリックインターネットを経由することはありません。
+GCP 上の ClickHouse BYOC は、VPC Peering と PSC (Private Service Connect) という 2 つのプライベート接続オプションをサポートしています。
 
 <div id="common-prerequisites">
   ## 前提条件
 </div>
 
-VPC ピアリング と Private Service Connect の両方に共通して必要な手順です。
+VPC ピアリング と PSC の両方に共通して必要な手順です。
 
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### ClickHouse BYOC のプライベートロードバランサーを有効にする
 </div>
 
-プライベートロードバランサーを有効にするには、ClickHouse Support までお問い合わせください。
+ClickHouse Cloud console で、BYOC インフラストラクチャの **プライベートロードバランサー** を有効にします。
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC プライベートロードバランサーを有効にする" border />
 
 <div id="gcp-vpc-peering">
   ## VPC ピアリングを設定する
@@ -60,84 +62,84 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
   <Step title="ピアリング接続経由で ClickHouseサービス にアクセスする" id="step-2-access-ch-service-via-peering">
     ClickHouse にプライベートにアクセスするため、ユーザーのピアリング済み VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、公開エンドポイントの形式に `-private` 接尾辞を付けたものです。例:
 
-    * **公開エンドポイント**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
-    * **プライベート エンドポイント**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+    * **公開エンドポイント**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+    * **プライベート エンドポイント**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
   </Step>
 </Steps>
 
-<div id="gcp-psc">
+<div id="setup-psc">
   ## PSC (Private Service Connect) を設定する
 </div>
 
-GCP PSC (Private Service Connect) を使用すると、VPC ピアリング やインターネットゲートウェイを使わずに、ClickHouse BYOC サービスに安全なプライベート接続を確立できます。
+GCP PSC (Private Service Connect) を使用すると、VPC ピアリングやインターネットゲートウェイを介さずに、ClickHouse BYOC サービスへ安全なプライベート接続を確立できます。すべてのトラフィックは GCP ネットワーク内で処理されるため、パブリックインターネットを経由することはありません。
 
 <Steps>
-  <Step title="PSC サービスのセットアップを依頼する" id="step-1-request-psc-setup">
-    BYOC デプロイメント向けに PSC サービスのセットアップを依頼するには、[ClickHouse Support](https://clickhouse.com/cloud/bring-your-own-cloud) に連絡してください。この段階では、特に追加情報は必要ありません。PSC 接続を設定したい旨を伝えるだけで十分です。
-
-    ClickHouse Support が、**プライベート ロードバランサー** や **PSC Service** など、必要なインフラストラクチャ コンポーネントを有効にします。
-  </Step>
-
-  <Step title="GCP PSC のサービス名と DNS 名を取得する" id="step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
-    ClickHouse Support から PSC サービス名が提供されます。ClickHouse Cloud console で「Organization」-&gt;「Infrastructure」と進み、インフラ名をクリックして詳細を表示することでも確認できます。
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-1.webp" size="lg" alt="BYOC PSC エンドポイント" border />
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-2.webp" size="lg" alt="BYOC PSC エンドポイント" border />
-
-    PSC サービス名は、GCP Private Service Connect console の「Published services」でも確認できます (サービス名で絞り込むか、ClickHouse のサービスを探してください) 。
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-3.webp" size="lg" alt="BYOC PSC エンドポイント" border />
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="BYOC PSC エンドポイント" border />
-  </Step>
-
-  <Step title="ネットワーク内に PSC エンドポイントを作成する" id="step-3-create-endpoint">
-    ClickHouse Support 側で PSC サービスが有効化されたら、ClickHouse の PSC サービスに接続するために、クライアントアプリケーションのネットワーク内に PSC エンドポイントを作成する必要があります。
-
-    1. **PSC エンドポイントを作成する**:
-
-    * GCP Console -&gt; Network Services → Private Service Connect → Connect Endpoint に移動します
-    * &quot;Target&quot; で &quot;Published service&quot; を選択し、前の手順で取得した PSC サービス名を &quot;Target details&quot; に入力します
-    * 有効なエンドポイント名を入力します
-    * ネットワークを選択し、サブネットを選択します (これはクライアントアプリケーションの接続元となるネットワークです)
-    * エンドポイント用の IP アドレスを選択するか、新しく作成します。この IP アドレスは、手順 [エンドポイントのプライベート DNS 名を設定する](#step-4-set-private-dns-name-for-endpoint) で使用します
-    * &quot;Add Endpoint&quot; をクリックし、エンドポイントが作成されるまで少し待ちます。
-    * エンドポイントの status は &quot;Accepted&quot; になるはずです。自動的に承認されない場合は ClickHouse Support にお問い合わせください。
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-5.webp" size="lg" alt="BYOC PSC エンドポイントの作成" border />
-
-    2. **PSC Connection ID を取得する**:
-
-    * エンドポイントの詳細を開き、手順 [エンドポイントの PSC Connection ID をサービスの許可リストに追加する](#step-5-add-endpoint-id-allowlist) で使用する &quot;PSC Connection ID&quot; を取得します
-
-    <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="BYOC PSC エンドポイントの詳細" border />
-  </Step>
-
-  <Step title="エンドポイントのプライベート DNS 名を設定する" id="step-4-set-private-dns-name-for-endpoint">
+  <Step title="ClickHouse console でプライベートリンクを有効にする" id="step-1-enable-private-link">
     <Note>
-      DNS の設定方法はいくつかあります。ご利用のユースケースに応じて DNS を設定してください。
+      前提条件として、**プライベート ロード バランサー**が有効になっていることを確認してください。
     </Note>
 
-    [Obtain GCP PSC service name and DNS name](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect) の手順で取得した「DNS 名」のすべてのサブドメイン (ワイルドカード) が GCP PSC エンドポイントの IP アドレスを指すように設定する必要があります。これにより、VPC/ネットワーク内のサービスやコンポーネントがその名前を正しく解決できるようになります。
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink を有効にする" />
   </Step>
 
-  <Step title="エンドポイントのPSC接続IDをサービスの許可リストに追加する" id="step-5-add-endpoint-id-allowlist">
-    PSCエンドポイントが作成され、ステータスが&quot;Accepted&quot;になったら、PSC経由でアクセスする**各 ClickHouseサービス**の許可リストに、そのエンドポイントのPSC接続IDを追加する必要があります。
-
-    **ClickHouse Supportに連絡してください**:
-
-    * エンドポイントのPSC接続IDをClickHouse Supportに提供します
-    * このエンドポイントからのアクセスを許可するClickHouseサービスを指定します
-    * ClickHouse Supportがエンドポイントの接続IDをサービスの許可リストに追加します
+  <Step title={<>エンドポイントの<code>Service name</code>を取得する</>} id="step-2-obtain-endpoint-service-name">
+    1. ClickHouse Cloud console で、PSC 経由で接続するサービスの Settings ページに移動します。
+    2. 「Set up private endpoint」をクリックします。
+    3. 開いたフライアウトで、`Service name` と `DNS name` の値をコピーします。これらは次の手順で使用します。 (プライベートリンクを有効にしてから値が生成されるまで、しばらく時間がかかる場合があります。) 
+       <Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="md" alt="プライベート エンドポイント" border />
   </Step>
 
-  <Step title="PSC 経由で ClickHouse に接続する" id="step-6-connect-via-psc-endpoint">
-    Endpoint Connection ID が許可リストに追加されると、PSC エンドポイントを使用して ClickHouse サービスに接続できます。
+  <Step title="ネットワーク内にエンドポイントを作成する" id="step-3-create-endpoint">
+    1. **自身の GCP console** (クライアントアプリケーションが存在する GCP アカウント) を開き、Network Services → Private Service Connect → Connected Endpoints に移動します。
 
-    PSC エンドポイントの形式はパブリックエンドポイントと似ていますが、`p` サブドメインが含まれます。例:
+    2. 「Connect Endpoint」ボタンをクリックして、Private Service Connect の作成ダイアログを開きます。
+       <Image img="/images/cloud/security/gcp-psc-open.webp" size="md" alt="Google Cloud console で Private Service Connect を開く" border />
 
-    * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
-    * **PSC endpoint**: `h5ju65kv87.p.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+    3. 次のフィールドを入力します。
+       * **Target**: `Published service` を選択します
+       * **Target service**: 前の手順で取得した `Service name` を使用します
+       * **Endpoint name**: 有効なエンドポイント名を入力します
+       * **Network/Subnetwork**: 接続に使用するネットワークを選択します。これはクライアントアプリケーションが接続元として使用するネットワークです
+       * **IP address**: エンドポイント用の新しい IP アドレスを選択または作成します。この IP アドレスは手順[エンドポイントのプライベート DNS 名を設定する](#step-5-set-private-dns-name-for-endpoint)で使用します
+       *  (任意) **Enable global access**: 任意のリージョンからエンドポイントにアクセスできるようにする場合は有効にします
+         <Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="Private Service Connect のグローバルアクセスを有効にする" border />
+       * 「ADD ENDPOINT」ボタンをクリックしてエンドポイントを作成します。
+
+    4. 接続が承認されると、Status カラムが Pending から Accepted に変わります。
+
+    5. エンドポイントを作成したら、`PSC Connection ID` の値をコピーします。これは次の手順で使用します。
+       <Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="md" alt="PSC Connection ID をコピーする" border />
+  </Step>
+
+  <Step title={<>ClickHouse service allow list に<code>Endpoint ID</code>を追加する</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    1. ClickHouse Cloud console で、PSC 経由で接続するサービスの Settings ページに移動します。
+    2. 「Set up private endpoint」をクリックします。
+    3. 開いたフライアウトで、前の手順で取得した `PSC Connection ID` を、任意の説明とともに `Endpoint ID` フィールドに入力します。
+    4. 「Create endpoint」をクリックします。
+
+    <Note>
+      既存の PSC 接続からのアクセスを許可する場合は、既存のエンドポイント用ドロップダウンメニューを使用します。
+      ドロップダウンには、同じインフラストラクチャ内のサービスへの既存の PSC 接続が表示されます。
+    </Note>
+
+    <Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="md" alt="プライベート エンドポイントのフィルター" border />
+  </Step>
+
+  <Step title="エンドポイントのプライベート DNS 名を設定する" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      DNS の設定方法は複数あります。用途に応じて DNS を設定してください。
+    </Note>
+
+    「DNS name」のすべてのサブドメイン (ワイルドカード) を GCP PSC エンドポイントの IP アドレスに向ける必要があります。これにより、VPC/Network 内のサービスやコンポーネントで適切に名前解決できるようになります。
+  </Step>
+
+  <Step title="PSC を使用してインスタンスにアクセスする" id="step-6-connect-via-psc">
+    1. ClickHouse Cloud console で、サービスの Settings ページに移動します。
+    2. 「Set up private endpoint」をクリックします。
+    3. 開いたフライアウトで、`DNS name` をコピーします。
+       <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="md" alt="プライベート エンドポイントの DNS 名" border />
+       <Note>
+         PSC 経由での ClickHouse サービスへのアクセスは、BYOC インフラストラクチャ内で ClickHouse が管理するサービスレベルの **Istio Authorization Policy** によって制御されます。
+       </Note>
   </Step>
 </Steps>
