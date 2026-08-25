@@ -1315,15 +1315,19 @@ SELECT * FROM VALUES(
 
     /// Fixed rows are the namespaces PostgreSQL clients expect to always exist
     /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
-    /// The rest of the namespaces are the real databases. Their oids are synthesized by
-    /// enumerating the visible databases in the stable order of their names, consistently
-    /// with `relnamespace` in `pg_class` below. Hashing the name would be simpler, but the
-    /// oids of an emulated catalog still have to be unique: clients join `pg_class` to
+    /// The rest of the namespaces are the real databases. An oid identifies an object, so
+    /// it is derived from the name of the object alone: it is a hash of the name, and it
+    /// does not change when unrelated databases or tables appear or disappear - clients
+    /// are allowed to remember an oid and use it in a later query. But the oids of the
+    /// emulated catalog also have to be unique, because clients join `pg_class` to
     /// `pg_namespace` on them, and a single collision would make `\d` list a table under
-    /// an unrelated schema or twice. The offset 16384 mirrors PostgreSQL, where oids below
-    /// 16384 are reserved for the system, so synthesized oids cannot collide with the
-    /// well-known ones; namespaces take the even oids and the tables of `pg_class` the odd
-    /// ones, so the two enumerations cannot collide with each other either.
+    /// an unrelated schema or twice. A hash alone does not guarantee that, so the names
+    /// whose hash collides with the hash of another visible name - and only they - fall
+    /// back to a position in a reserved range that is disjoint from the hashed one.
+    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for the
+    /// system, so synthesized oids cannot collide with the well-known ones; namespaces
+    /// take the even oids and the tables of `pg_class` the odd ones, so the two
+    /// enumerations cannot collide with each other either.
     /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
     /// user. `system.databases` is implicitly SELECTable by every user and hides
     /// the databases the user has no `SHOW` privilege for, so the view exposes
@@ -1339,10 +1343,18 @@ SELECT * FROM VALUES(
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
-SELECT
-    toUInt32(16382 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.databases), name)) AS oid,
-    name AS nspname
-FROM system.databases)");
+SELECT * FROM
+(
+    WITH
+        (SELECT arraySort(groupArray(name)) FROM system.databases) AS visible_databases,
+        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes
+    SELECT
+        toUInt32(if(countEqual(database_hashes, sipHash64(name) % 1000000000) = 1,
+            16384 + 2 * (sipHash64(name) % 1000000000),
+            2000016384 + 2 * indexOf(visible_databases, name))) AS oid,
+        name AS nspname
+    FROM system.databases
+))");
 
     /// Fixed rows (oid, relkind) are preserved for driver compatibility; they belong
     /// to the `pg_catalog` namespace, which clients such as psql filter out.
@@ -1364,15 +1376,27 @@ SELECT * FROM VALUES(
     (3074, '', 11, 10, 2, 'S')
 )
 UNION ALL
-SELECT
-    toUInt32(16383 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.tables WHERE database = currentDatabase() AND NOT is_temporary), name)) AS oid,
-    name AS relname,
-    toUInt32(16382 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.databases), currentDatabase())) AS relnamespace,
-    toUInt32(10) AS relowner,
-    toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
-    multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
-FROM system.tables
-WHERE database = currentDatabase() AND NOT is_temporary)");
+SELECT * FROM
+(
+    WITH
+        (SELECT arraySort(groupArray(name)) FROM system.tables WHERE database = currentDatabase() AND NOT is_temporary) AS visible_tables,
+        arrayMap(n -> sipHash64(n) % 1000000000, visible_tables) AS table_hashes,
+        (SELECT arraySort(groupArray(name)) FROM system.databases) AS visible_databases,
+        arrayMap(n -> sipHash64(n) % 1000000000, visible_databases) AS database_hashes
+    SELECT
+        toUInt32(if(countEqual(table_hashes, sipHash64(name) % 1000000000) = 1,
+            16385 + 2 * (sipHash64(name) % 1000000000),
+            2000016385 + 2 * indexOf(visible_tables, name))) AS oid,
+        name AS relname,
+        toUInt32(if(countEqual(database_hashes, sipHash64(currentDatabase()) % 1000000000) = 1,
+            16384 + 2 * (sipHash64(currentDatabase()) % 1000000000),
+            2000016384 + 2 * indexOf(visible_databases, currentDatabase()))) AS relnamespace,
+        toUInt32(10) AS relowner,
+        toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
+        multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
+    FROM system.tables
+    WHERE database = currentDatabase() AND NOT is_temporary
+))");
 
     /// Table access methods. Newer psql versions join `pg_am` in the query behind
     /// the `\d` command. ClickHouse table engines have no PostgreSQL equivalent,

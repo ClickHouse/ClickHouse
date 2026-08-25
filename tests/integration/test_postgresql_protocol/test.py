@@ -779,10 +779,10 @@ def test_catalog_qualifier_is_case_insensitive(started_cluster):
 
     for qualifier in ["pg_catalog", "PG_CATALOG", "Pg_Catalog", '"pg_catalog"']:
         cur.execute(f"SELECT count() FROM {qualifier}.pg_namespace")
-        assert cur.fetchall()[0][0] > 0, qualifier
+        assert int(cur.fetchall()[0][0]) > 0, qualifier
 
         cur.execute(f"SELECT {qualifier}.pg_table_is_visible(1)")
-        assert cur.fetchall()[0][0] in (1, True, "1"), qualifier
+        assert str(cur.fetchall()[0][0]) in ("1", "True"), qualifier
 
     # A quoted qualifier in a different case is a different schema in PostgreSQL,
     # and there is no such database here.
@@ -825,12 +825,12 @@ def test_catalog_oids_are_unique(started_cluster):
 
     cur.execute("SELECT oid, nspname FROM pg_namespace")
     namespaces = cur.fetchall()
-    oids = [row[0] for row in namespaces]
+    oids = [int(row[0]) for row in namespaces]
     assert len(oids) == len(set(oids))
 
     cur.execute("SELECT oid, relname FROM pg_class WHERE relname != ''")
     relations = cur.fetchall()
-    relation_oids = [row[0] for row in relations]
+    relation_oids = [int(row[0]) for row in relations]
     assert len(relation_oids) == len(set(relation_oids))
     assert len(relations) == 16
     # The oid spaces of namespaces and relations must not overlap either.
@@ -857,4 +857,68 @@ def test_catalog_oids_are_unique(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_oids_db")
     for i in range(16):
         cur.execute(f"DROP DATABASE IF EXISTS pg_oids_extra_{i}")
+    ch.close()
+
+
+def test_catalog_oids_are_stable(started_cluster):
+    """An oid identifies an object, and PostgreSQL clients are allowed to remember
+    one and use it in a later query, so the oid of a database or a table must not
+    change when unrelated objects appear."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
+    cur.execute("CREATE DATABASE pg_stable_oids_db")
+    cur.execute("CREATE TABLE pg_stable_oids_db.zzz (id Int32) ENGINE = Memory")
+    ch.close()
+
+    def read_oids():
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            dbname="pg_stable_oids_db",
+        )
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_namespace WHERE nspname = 'pg_stable_oids_db'")
+        namespace_oid = int(cur.fetchall()[0][0])
+        cur.execute("SELECT oid, relnamespace FROM pg_class WHERE relname = 'zzz'")
+        row = cur.fetchall()[0]
+        ch.close()
+        return namespace_oid, int(row[0]), int(row[1])
+
+    before = read_oids()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    # Both names sort before the existing ones, which is what a scheme numbering
+    # the objects by their position in the sorted list of names would shift.
+    cur.execute("CREATE DATABASE pg_stable_oids_aaa")
+    cur.execute("CREATE TABLE pg_stable_oids_db.aaa (id Int32) ENGINE = Memory")
+    ch.close()
+
+    assert read_oids() == before
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
     ch.close()
