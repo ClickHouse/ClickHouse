@@ -332,13 +332,20 @@ BlockIO InterpreterCreateUserQuery::execute()
             }
         }
 
+        /// The resulting user only gets the settings of its default roles, which is every granted role
+        /// unless the statement names them. A role outside that set carries nothing until it is made
+        /// default, and that is checked where the default roles change.
+        RolesOrUsersSet enabled_roles{RolesOrUsersSet::AllTag{}};
+        if (default_roles_from_query)
+            enabled_roles = *default_roles_from_query;
+
         std::vector<UUID> newly_granted;
         for (const auto & role_id : granted_by_query->getMatchingIDs())
         {
             bool granted_to_every_target = !existing_users.empty();
             for (const auto & user : existing_users)
                 granted_to_every_target &= user->granted_roles.isGranted(role_id);
-            if (!granted_to_every_target)
+            if (!granted_to_every_target && enabled_roles.match(role_id))
                 newly_granted.push_back(role_id);
         }
 

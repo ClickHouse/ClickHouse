@@ -1596,3 +1596,51 @@ def test_replacing_a_user_with_the_roles_it_already_has(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_replaced_with_same_role")
     instance.query("DROP ROLE IF EXISTS role_kept_by_replacement")
+
+
+def test_granting_a_role_the_user_will_not_enable(start_cluster):
+    # A user only gets the settings of its default roles. Granting a role outside that set enables nothing,
+    # so it changes no setting - but making it default later does, and that is where it gets refused
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_without_default_roles, user_created_without_default")
+    instance.query("DROP ROLE IF EXISTS role_never_enabled")
+    instance.query(f"CREATE ROLE role_never_enabled SETTINGS {EXPERIMENTAL_SETTING} = 1")
+    instance.query(
+        "CREATE USER user_without_default_roles IDENTIFIED WITH no_password DEFAULT ROLE NONE"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "GRANT role_never_enabled TO user_without_default_roles"
+    )
+    assert output == ""
+    assert error == ""
+
+    assert "0" == instance.query(
+        f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'",
+        user="user_without_default_roles",
+    ).strip()
+
+    # Same for a `CREATE USER` that grants the role without making it default
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER user_created_without_default IDENTIFIED WITH no_password "
+        "DEFAULT ROLE NONE ROLE role_never_enabled"
+    )
+    assert output == ""
+    assert error == ""
+
+    # Enabling it is the change, and it is refused
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_without_default_roles DEFAULT ROLE role_never_enabled"
+    )
+    assert output == ""
+    assert EXPERIMENTAL_BLOCKED in error
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS user_without_default_roles, user_created_without_default")
+    instance.query("DROP ROLE IF EXISTS role_never_enabled")
