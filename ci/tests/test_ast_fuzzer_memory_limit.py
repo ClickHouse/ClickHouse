@@ -521,3 +521,80 @@ def test_dmesg_not_enabled_appends_nothing(tmp_path):
     assert results == []
     assert info == []
     assert status == Result.Status.FAIL
+
+
+# --- The named sub-result must survive to the job result ---
+#
+# `results` is read by `Result.create_from` at the end of the reporting flow, so
+# it has to be initialized before the OOM branch appends to it. A later
+# re-initialization discards the child while the job-level status stays `error`:
+# the check looks unchanged and only the CIDB row goes back to being nameless.
+# The block extractor above cannot observe that ordering, because both the
+# initialization and the `create_from` consumption sit outside the sliced block
+# and the block's namespace supplies its own `results`. So slice the whole flow
+# from the status ladder instead, and seed none of the names it assigns.
+
+
+def _oom_reporting_flow_src():
+    src = _job_src()
+    # Anchored on the status ladder, i.e. upstream of every statement under
+    # test, so a mutation anywhere in the flow stays inside the slice instead of
+    # moving the anchor.
+    start_marker = "\n    # parse runner script exit status\n"
+    end_marker = "\n    result = Result.create_from("
+    assert src.count(start_marker) == 1
+    assert src.count(end_marker) == 1
+    start = src.index(start_marker) + 1
+    call = src.index(end_marker) + 1
+    end = src.index("\n    )\n", call) + len("\n    )")
+    return textwrap.dedent(src[start : end + 1])
+
+
+class _Unreachable:
+    """Satisfies a free name on a branch this path must not take, and reports
+    which one if it ever runs."""
+
+    def __init__(self, what):
+        self.what = what
+
+    def __call__(self, *args, **kwargs):
+        raise AssertionError(f"{self.what} must not run on the host-OOM path")
+
+
+def test_named_oom_child_survives_to_job_result(tmp_path):
+    # Drives the real entry state of a host OOM kill: the server died, so the
+    # ladder sets FAIL, the non-sanitized OOM branch names the child and raises
+    # the status to ERROR, and `create_from` must still see that child.
+    ns = {
+        # ERROR status closes the `is_failed and status != ERROR` gate, and a
+        # benign memory limit needs a live server, so neither may be reached.
+        "FuzzerLogParser": _Unreachable("FuzzerLogParser"),
+        "_is_benign_memory_limit": _Unreachable("_is_benign_memory_limit"),
+        "_fuzzer_log_terminal_block_has_server_mle": _Unreachable(
+            "_fuzzer_log_terminal_block_has_server_mle"
+        ),
+        "Result": Result,
+        "Shell": _ShellDmesgStub(True),
+        "WORKSPACE_PATH": tmp_path,
+        "buzzhouse": False,
+        "dmesg_log": _DMESG_OOM_FIXTURE,
+        "extra_results": [],
+        "fuzzer_exit_code": 137,
+        "fuzzer_log": tmp_path / "fuzzer.log",
+        "is_sanitized": False,
+        "server_died": True,
+        "server_exit_code": 137,
+        "server_log": tmp_path / "server.log",
+        "stderr_log": tmp_path / "stderr.log",
+    }
+    prev_temp_dir = Settings.TEMP_DIR
+    Settings.TEMP_DIR = str(tmp_path)
+    try:
+        exec(_oom_reporting_flow_src(), ns)  # noqa: S102 - trusted first-party source
+    finally:
+        Settings.TEMP_DIR = prev_temp_dir
+    result = ns["result"]
+    assert [r.name for r in result.results] == ["OOM in dmesg"]
+    assert result.results[0].status == Result.Status.ERROR
+    assert "clickhouse-serv" in result.results[0].info
+    assert result.status == Result.Status.ERROR
