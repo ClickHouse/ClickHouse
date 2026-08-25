@@ -130,9 +130,9 @@ def main():
         ]:
             expect_blocked(mod, docs, only)
 
-        # --remap-legacy (the default) must NOT be blocked. Stub generate() so the
-        # dry run does not need a binary; it should simply skip every page.
-        mod.generate = lambda *a, **k: (None, None)
+        # --remap-legacy (the default) must NOT be blocked. Stub artifact
+        # generation so the dry run does not need a binary.
+        mod.generate_artifacts = lambda *a, **k: []
         mod._settings_routing_from_artifacts = lambda *a, **k: {}
         with redirect_stdout(io.StringIO()):
             rc = mod.main(["--docs-dir", docs])  # remap default, dry run
