@@ -1792,10 +1792,27 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(
             return validateDefaultsWithAnalyzer(default_expr_list, columns, context, get_sample_block, insert_time_default_columns);
         else
         {
+            /// A stored definition may legitimately read a virtual column: the analyzer path resolves
+            /// it against `StorageDummy` and rejects it only for insert-time defaults of a definition
+            /// created now (see `assertInsertTimeDefaultsDoNotReferenceVirtuals`). The old analyzer
+            /// resolves virtuals only through a storage snapshot, so give it the same dummy storage —
+            /// but not when insert-time defaults are being checked, where the failed resolution is
+            /// what rejects a fresh DEFAULT/MATERIALIZED over a virtual column.
+            ConstStoragePtr fake_storage;
+            StorageSnapshotPtr fake_storage_snapshot;
+            if (insert_time_default_columns.empty())
+            {
+                auto dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, clearDefaultExpressions(columns));
+                const auto dummy_metadata = dummy->getInMemoryMetadataPtr(context, false);
+                fake_storage_snapshot = dummy->getStorageSnapshot(dummy_metadata, context);
+                fake_storage = std::move(dummy);
+            }
+
             /// Self-aliases are allowed: matcher expansion of `REPLACE (expr AS name)` produces
             /// expressions like `a + 1 AS a`, which the analyzer path accepts. Genuine cyclic
             /// defaults are rejected by detectRecursiveDefaultCycles above.
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, columns.getAll(), {}, {}, false, /* allow_self_aliases = */ true);
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(
+                default_expr_list, columns.getAll(), fake_storage, fake_storage_snapshot, false, /* allow_self_aliases = */ true);
             const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
             for (const auto & action : actions->getActions())
                 if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
