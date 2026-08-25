@@ -5,6 +5,7 @@ from ci.defs.defs import (
     BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     GH_AUTH_TRUSTED_LAMBDA_NAME,
+    LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
 )
@@ -80,7 +81,7 @@ workflow = Workflow.Config(
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
     set_latest_for_docker_merged_manifest=True,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,

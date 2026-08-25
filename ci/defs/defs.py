@@ -86,6 +86,13 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
+]
+
+# Push-only secrets: consumed by the loom code.refresh pre_hook, which runs
+# only in MasterCI and ReleaseBranchCI. Kept out of the shared SECRETS list
+# so untrusted lanes (pull_request, backport) never register them and PR
+# code cannot resolve the loom writer token via Info.get_secret.
+LOOM_SECRETS = [
     Secret.Config(
         name="loom-url",
         type=Secret.Type.AWS_SSM_PARAMETER,
