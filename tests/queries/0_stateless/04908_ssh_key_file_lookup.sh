@@ -44,6 +44,16 @@ EOF
 run_client
 rm "${SSH_HOME}/.ssh/config" "${SSH_HOME}/.ssh/id_${USER_NAME}"
 
+echo '--- An IdentityFile with an environment variable; an entry with an unset variable is skipped'
+mkdir -p "${SSH_HOME}/keys"
+cp "${SSH_HOME}/.ssh/id_ed25519" "${SSH_HOME}/keys/work_id"
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ${CLICKHOUSE_TEST_UNSET_KEY_DIR}/id_%r
+IdentityFile ${CLICKHOUSE_TEST_KEY_DIR}/work_id
+EOF
+CLICKHOUSE_TEST_KEY_DIR="${SSH_HOME}/keys" run_client
+rm -r "${SSH_HOME}/.ssh/config" "${SSH_HOME}/keys"
+
 echo '--- A dead ssh-agent socket does not prevent an explicit key file from being used'
 SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
     --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"

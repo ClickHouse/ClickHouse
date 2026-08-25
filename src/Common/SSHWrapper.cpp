@@ -468,7 +468,12 @@ SSHClientConfiguration getSSHClientConfiguration(const String & host, const Stri
     while (ssh_options_get(session, SSH_OPTIONS_NEXT_IDENTITY, &pattern) == SSH_OK)
     {
         std::unique_ptr<char, SSHStringDeleter> pattern_ptr(pattern);
-        result.identity_files.push_back(expandTokens(pattern_ptr.get(), tokens));
+        /// `ssh` also substitutes `${...}` environment variables in `IdentityFile`.
+        /// An entry referencing an unset variable names no file, so it is skipped, and the other identities still apply.
+        auto expanded_pattern = expandSSHConfigEnvironmentVariables(pattern_ptr.get());
+        if (!expanded_pattern)
+            continue;
+        result.identity_files.push_back(expandTokens(*expanded_pattern, tokens));
     }
 
     result.agent_socket_path = getAgentSocketPath(session, tokens);

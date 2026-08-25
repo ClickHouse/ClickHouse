@@ -4,6 +4,9 @@ Using the SSH key from $HOME/.ssh/id_ed25519.
 --- An IdentityFile with the %r token, the name of the user of the connection
 Using the SSH key from $HOME/.ssh/id_$USER.
 1
+--- An IdentityFile with an environment variable; an entry with an unset variable is skipped
+Using the SSH key from $HOME/keys/work_id.
+1
 --- A dead ssh-agent socket does not prevent an explicit key file from being used
 1
 --- An unset IdentityAgent environment variable does not prevent an explicit key file from being used
