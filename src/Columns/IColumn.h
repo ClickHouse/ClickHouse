@@ -405,8 +405,6 @@ public:
     /// rebuilds the same one.
     /// ColumnSparse is the exception: sparseness is chosen by the storage, and a merge flips it under
     /// an unchanged query, so insert deduplication removes it before hashing.
-    /// ColumnReplicated needs no override: replication is chosen by the query plan, which a retry
-    /// repeats, and the row-wise default keeps the hash independent of the nested/indexes layout.
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 

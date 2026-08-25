@@ -416,11 +416,8 @@ void DeduplicationInfo::calculateDataHashes() const
 
     chassert(original_block && original_block->rows() == getRows());
 
-    /// Column-major, with the whole batch of tokens in flight: a sparse column hashes row-wise
-    /// while the same data materialized hashes column-wise, so a merge flipping the source part's
-    /// serialization would otherwise move the block id of a query whose result never changed.
-    /// Hashing one column at a time keeps a single materialized column alive, hashing all the
-    /// tokens against it keeps the materialization at one per column instead of one per token.
+    /// The hash must not depend on the column's sparse/dense representation, so remove sparse before hashing.
+    /// Column-major so only one column is materialized at a time, instead of a dense copy of the whole block.
     std::vector<SipHash> hashes(pending.size());
     for (const auto & col : original_block->getColumns())
     {
