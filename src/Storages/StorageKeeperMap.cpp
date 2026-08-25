@@ -29,6 +29,7 @@
 #include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -181,12 +182,16 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
 
 std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
 {
-    auto primary_key = formattedAST(ast);
-    if (const auto canonical_primary_key = tryCanonicalPrimaryKey(primary_key + '\n'))
-        return *canonical_primary_key;
+    const auto * expression_list = ast ? ast->as<ASTExpressionList>() : nullptr;
+    if (expression_list && expression_list->children.size() == 1)
+    {
+        auto primary_key = expression_list->children.front()->clone();
+        primary_key->setParenthesized(false);
+        return formattedAST(primary_key);
+    }
 
-    /// Preserve unsupported metadata spelling rather than guessing at equivalence.
-    return primary_key;
+    /// Preserve expression-list spelling until every supported reader canonicalizes each element.
+    return formattedAST(ast);
 }
 
 void verifyTableId(const StorageID & table_id)
