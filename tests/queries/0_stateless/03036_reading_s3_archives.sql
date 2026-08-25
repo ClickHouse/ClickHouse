@@ -35,3 +35,11 @@ SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_compressed
 SELECT id, date FROM s3(s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;
 SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;
 SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='{date=2026-08-21/03036_missing_archive.zip,date=2026-08-22/03036_missing_archive2.zip} :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;
+
+-- The `_path` extraction fast path (`s3_path_filter_limit`) must not apply to archives: the extracted
+-- values are entry virtual paths (`<archive>::<member>`), not object keys, so they either fail the
+-- outer-glob validation (dropping every archive) or feed a bogus object key into `KeysIterator` when
+-- the outer glob happens to match the full entry string (e.g. `*.tar*`).
+SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example2.csv') WHERE _path = 'test/03036_archive1.zip::example2.csv' ORDER BY (id, _file, _path);
+SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example2.csv') WHERE _path IN ('test/03036_archive1.zip::example2.csv', 'test/03036_archive2.zip::example2.csv') ORDER BY (id, _file, _path);
+SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.tar* :: example{2..3}.csv') WHERE _path = 'test/03036_archive3.tar.gz::example2.csv' ORDER BY (id, _file, _path);

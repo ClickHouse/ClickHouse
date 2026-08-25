@@ -420,9 +420,14 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (reading_path.hasGlobs())
     {
-        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
+        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator.
+        /// Not for archives: their `_path` values are entry virtual paths (`<archive>::<member>`), which
+        /// are not object keys - they can neither be validated against the outer glob nor listed by
+        /// `KeysIterator`, so the extraction would drop every archive (or probe a bogus key when the
+        /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
+        /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
