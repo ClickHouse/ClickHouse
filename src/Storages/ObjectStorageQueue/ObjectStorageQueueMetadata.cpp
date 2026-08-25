@@ -795,14 +795,6 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                 std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
 
-                if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
-                {
-                    LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
-                    created_new_metadata = true;
-                    code = Coordination::Error::ZOK;
-                    return;
-                }
-
                 created_new_metadata = false;
 
                 for (auto elem : registered)
