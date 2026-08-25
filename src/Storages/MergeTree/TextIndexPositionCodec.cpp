@@ -38,7 +38,7 @@ void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, Wr
         }
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PaddedPODArray<RoaringishEntry> & entries)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 

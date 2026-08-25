@@ -35,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -368,87 +369,175 @@ UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) 
     return static_cast<UInt32>(new_offset);
 }
 
-void MergeTextIndexesTask::appendPostingsToBitmap(std::span<UInt32> row_ids)
+void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
 {
-    /// If output bitmap is empty, add values directly to it.
-    /// Otherwise, create a new bitmap and union it with the output bitmap.
-    /// Union works in one pass, while adding row ids with `addMany` shifts those
-    /// already placed, and causes reallocations in case when postings are interleaved.
-    if (output_postings_bitmap.isEmpty())
-        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
+    if (!merged_part_offsets)
+        return;
+
+    for (UInt32 & row_id : row_ids)
+        row_id = adjustPartOffset(part_index, row_id);
+}
+
+void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenSource & source)
+{
+    cursor.source = &source;
+    cursor.next_segment = 0;
+    cursor.pos = 0;
+    cursor.buffer.clear();
+
+    const auto & info = source.info;
+
+    if (!info.embedded_postings.empty())
+    {
+        cursor.buffer.insert(info.embedded_postings.begin(), info.embedded_postings.end());
+        adjustPartOffsets({cursor.buffer.data(), cursor.buffer.size()}, segments[source.source_num].part_index);
+        cursor.next_segment = info.offsets.size();
+    }
     else
-        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
+    {
+        bool refilled = advanceCursorSegment(cursor);
+        chassert(refilled);
+    }
 }
 
-void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> row_ids)
+bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
 {
-    if (row_ids.empty())
-        return;
+    const auto & info = cursor.source->info;
+    if (cursor.next_segment == info.offsets.size())
+        return false;
 
-    if (merged_part_offsets)
-    {
-        size_t part_index = segments[source_num].part_index;
-        for (UInt32 & row_id : row_ids)
-            row_id = adjustPartOffset(part_index, row_id);
-    }
-
-    /// Postings of a token are collected in the buffer while they fit into it.
-    if (output_postings_bitmap.isEmpty() && output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        output_postings_array.insert(row_ids.begin(), row_ids.end());
-        return;
-    }
-
-    if (!output_postings_array.empty())
-    {
-        appendPostingsToBitmap(output_postings_array);
-        output_postings_array.clear();
-    }
-
-    appendPostingsToBitmap(row_ids);
-}
-
-void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info)
-{
-    if (!token_info.embedded_postings.empty())
-    {
-        appendPostings(source_num, token_info.embedded_postings);
-        return;
-    }
-
+    size_t source_num = cursor.source->source_num;
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    auto * data_buffer = stream->getDataBuffer();
-    auto & serialization = source_postings_serializations[source_num];
+    stream->seekToMark({info.offsets[cursor.next_segment], 0});
 
-    /// Bitpacked and raw postings are stored as plain row ids: decode them into an array,
-    /// adjust in place and add to the output postings, without materializing an intermediate
-    /// posting list. Roaring postings are decoded into an array only if they must be adjusted.
-    bool deserialize_to_array = merged_part_offsets
-        || token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings);
+    cursor.buffer.clear();
+    cursor.pos = 0;
+    source_postings_serializations[source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, cursor.buffer);
+    adjustPartOffsets({cursor.buffer.data(), cursor.buffer.size()}, segments[source_num].part_index);
+    ++cursor.next_segment;
 
-    for (const auto offset_in_file : token_info.offsets)
+    chassert(!cursor.buffer.empty());
+    chassert(std::is_sorted(cursor.buffer.begin(), cursor.buffer.end()));
+    return true;
+}
+
+template <typename Sink>
+void MergeTextIndexesTask::mergePostings(Sink && sink)
+{
+    absl::InlinedVector<PostingsMergeCursor *, 16> cursor_heap;
+    size_t num_cursors = 0;
+
+    for (const auto & source : output_sources)
     {
-        stream->seekToMark({offset_in_file, 0});
+        if (source.info.cardinality == 0)
+            continue;
 
-        if (deserialize_to_array)
-        {
-            row_ids_buffer.clear();
-            serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
-            appendPostings(source_num, row_ids_buffer);
-        }
-        else
-        {
-            /// Flush the array first to keep at most one of the output containers non-empty.
-            if (!output_postings_array.empty())
-            {
-                appendPostingsToBitmap(output_postings_array);
-                output_postings_array.clear();
-            }
-
-            auto posting = serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
-            output_postings_bitmap |= *posting;
-        }
+        auto & cursor = postings_merge_cursors[num_cursors++];
+        initCursor(cursor, source);
+        cursor_heap.push_back(&cursor);
     }
+
+    /// Min-heap by the cursor's current row id.
+    auto greater = [](const auto * lhs, const auto * rhs) { return lhs->current() > rhs->current(); };
+    std::make_heap(cursor_heap.begin(), cursor_heap.end(), greater);
+
+    while (!cursor_heap.empty())
+    {
+        std::pop_heap(cursor_heap.begin(), cursor_heap.end(), greater);
+        auto * best = cursor_heap.back();
+        cursor_heap.pop_back();
+
+        /// Row ids are globally unique across sources.
+        /// So the next cursor's head is a strict upper bound for the current cursor.
+        bool has_next = !cursor_heap.empty();
+        UInt32 next_value = has_next ? cursor_heap.front()->current() : 0;
+
+        const UInt32 * begin = best->buffer.data() + best->pos;
+        const UInt32 * end = best->buffer.data() + best->buffer.size();
+        const UInt32 * run_end = has_next ? std::lower_bound(begin, end, next_value) : end;
+
+        if (begin == run_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate row id {} in source posting lists on merge of text indexes", best->current());
+
+        sink(std::span<const UInt32>(begin, run_end));
+        best->pos += run_end - begin;
+
+        /// The segment is exhausted: load the next one or drop the cursor.
+        if (run_end == end && !advanceCursorSegment(*best))
+            continue;
+
+        cursor_heap.push_back(best);
+        std::push_heap(cursor_heap.begin(), cursor_heap.end(), greater);
+    }
+}
+
+TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream)
+{
+    using enum PostingsSerialization::Flags;
+    output_postings_buffer.clear();
+
+    mergePostings([&](std::span<const UInt32> row_ids)
+    {
+        output_postings_buffer.insert(row_ids.begin(), row_ids.end());
+    });
+
+    TokenPostingsInfo token_info;
+    token_info.cardinality = static_cast<UInt32>(output_postings_buffer.size());
+
+    if (token_info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
+        token_info.header = RawPostings | EmbeddedPostings;
+        token_info.embedded_postings.assign(output_postings_buffer.begin(), output_postings_buffer.end());
+    }
+    else
+    {
+        token_info.header = RawPostings | SingleBlock;
+        token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        token_info.ranges.emplace_back(output_postings_buffer.front(), output_postings_buffer.back());
+        TextIndexSerialization::serializeRawPostings({output_postings_buffer.data(), output_postings_buffer.size()}, postings_stream.plain_hashing);
+    }
+
+    return token_info;
+}
+
+TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
+{
+    const auto * codec = postings_serialization.getPostingListCodec();
+    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
+    auto encoder = codec->createEncoder();
+    constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 16;
+
+    output_postings_buffer.clear();
+    mergePostings([&](std::span<const UInt32> row_ids)
+    {
+        output_postings_buffer.insert(row_ids.begin(), row_ids.end());
+
+        if (output_postings_buffer.size() >= max_buffered_size)
+        {
+            size_t count = output_postings_buffer.size() - output_postings_buffer.size() % IPostingListEncoder::append_granularity;
+            encoder->append({output_postings_buffer.data(), count}, segment_size);
+            output_postings_buffer.erase(output_postings_buffer.begin(), output_postings_buffer.begin() + count);
+        }
+    });
+
+    if (!output_postings_buffer.empty())
+    {
+        encoder->append({output_postings_buffer.data(), output_postings_buffer.size()}, segment_size);
+    }
+
+    /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
+    if (encoder->cardinality() != total_cardinality)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Merged posting list has {} row ids while source posting lists have {} in total",
+            encoder->cardinality(), total_cardinality);
+    }
+
+    TokenPostingsInfo token_info;
+    token_info.cardinality = static_cast<UInt32>(total_cardinality);
+    encoder->finalize(postings_stream.plain_hashing, token_info);
+    return token_info;
 }
 
 void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info)
@@ -473,64 +562,53 @@ void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostin
 
 void MergeTextIndexesTask::flushPostingList()
 {
+    chassert(!output_sources.empty());
+
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     TokenPostingsInfo token_info;
 
-    if (output_postings_bitmap.isEmpty())
-    {
-        std::sort(output_postings_array.begin(), output_postings_array.end());
-        auto postings_span = std::span<const UInt32>(output_postings_array.data(), output_postings_array.size());
+    /// Sources own disjoint row sets, so the cardinality of the merged posting is sum of source cardinalities.
+    size_t total_cardinality = 0;
+    for (const auto & source : output_sources)
+        total_cardinality += source.info.cardinality;
 
-        token_info = TextIndexSerialization::serializePostings(postings_span, *postings_stream, params, postings_serialization);
-
-        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-            token_info.embedded_postings.assign(output_postings_array.begin(), output_postings_array.end());
-    }
+    if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+        token_info = flushRawPostings(*postings_stream);
     else
-    {
-        /// The array is flushed into the bitmap whenever the bitmap becomes non-empty.
-        chassert(output_postings_array.empty());
-
-        row_ids_buffer.resize(output_postings_bitmap.cardinality());
-        output_postings_bitmap.toUint32Array(row_ids_buffer.data());
-        auto postings_span = std::span<const UInt32>(row_ids_buffer.data(), row_ids_buffer.size());
-
-        token_info = TextIndexSerialization::serializePostings(postings_span, *postings_stream, params, postings_serialization);
-
-        /// The bitmap is populated only when the cardinality exceeds MAX_CARDINALITY_FOR_RAW_POSTINGS, so never embedded here.
-        chassert(!(token_info.header & PostingsSerialization::Flags::EmbeddedPostings));
-    }
+        token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 
     /// Serialize position data if positions are enabled.
     if (params.positions && !output_positions.empty())
-    {
-        auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-
-        /// Entries from multiple source parts may interleave after doc_id remapping.
-        std::sort(output_positions.begin(), output_positions.end());
-
-        size_t out = 0;
-        for (size_t i = 1; i < output_positions.size(); ++i)
-        {
-            if (output_positions[out].sameBucket(output_positions[i]))
-                output_positions[out].mergeBitmap(output_positions[i]);
-            else
-                output_positions[++out] = output_positions[i];
-        }
-
-        output_positions.resize(out + 1);
-
-        token_info.header |= PostingsSerialization::Flags::HasPositions;
-        token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
-
-        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
-    }
+        flushPositions(token_info);
 
     output_infos.push_back(token_info);
-    output_postings_array.clear();
-    output_postings_bitmap.clear();
+    output_sources.clear();
     output_positions.clear();
+}
+
+void MergeTextIndexesTask::flushPositions(TokenPostingsInfo & token_info)
+{
+    auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+
+    /// Entries from multiple source parts may interleave after doc_id remapping.
+    std::sort(output_positions.begin(), output_positions.end());
+
+    size_t out = 0;
+    for (size_t i = 1; i < output_positions.size(); ++i)
+    {
+        if (output_positions[out].sameBucket(output_positions[i]))
+            output_positions[out].mergeBitmap(output_positions[i]);
+        else
+            output_positions[++out] = output_positions[i];
+    }
+
+    output_positions.resize(out + 1);
+
+    token_info.header |= PostingsSerialization::Flags::HasPositions;
+    token_info.position_offset = positions_stream->plain_hashing.count();
+    token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+
+    TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -570,8 +648,6 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     }
 
     output_tokens = ColumnString::create();
-    output_postings_bitmap.clear();
-    output_postings_array.clear();
     output_infos.clear();
 }
 
@@ -625,7 +701,7 @@ bool MergeTextIndexesTask::executeStep()
         {
             if (i > 0 || first_row_is_new_token)
             {
-                if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
+                if (!output_sources.empty())
                     flushPostingList();
 
                 if (output_tokens->size() >= params.dictionary_block_size)
@@ -635,8 +711,10 @@ bool MergeTextIndexesTask::executeStep()
                 output_tokens_str.insertFrom(*source_block.tokens, row);
             }
 
+            /// Postings are decoded lazily on flush.
+            /// Copy the info because the dictionary block it points into may be replaced before that.
             auto & token_info = source_block.token_infos[row];
-            readAndAppendPostings(source_num, token_info);
+            output_sources.push_back({source_num, token_info});
 
             if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
                 readAndAppendPositions(source_num, token_info);
@@ -658,7 +736,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings_bitmap.isEmpty() || !output_postings_array.empty())
+    if (!output_sources.empty())
         flushPostingList();
 
     if (!output_tokens->empty())

@@ -106,14 +106,7 @@ struct PostingListBuildContext
 /// Builds one token's posting list during the index build.
 /// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
 /// Frequent tokens spill to `Large`, whose raw values flush to an encoder every `append_granularity` row ids.
-///
-/// `Large` is also the extension point for optional per-token payloads that cannot live inline:
-/// positions for phrase search live there now, and BM25 scoring data (per-row term frequencies,
-/// document length norms) is expected to be added there in the same way. When such a payload must be
-/// recorded from the very first occurrence of a token (positions), the builder starts in the `Large`
-/// state right away; payloads that stay trivial until a certain event (term frequencies until the first
-/// in-row repeat) may spill to `Large` only when that event happens. Optional payloads must not add
-/// overhead to builds that do not use them.
+/// `Large` is also the extension point for optional per-token payloads that cannot live inline: positions, scoring data.
 struct PostingListBuilder
 {
 public:
@@ -126,20 +119,15 @@ public:
         UInt8 size;
     };
 
-    /// Heap part of the builder for tokens with more than inline_capacity row ids
-    /// (or any token when positions are enabled).
     struct Large
     {
-        /// Spills a token to the heap: copies its `inline_size_` inline row ids out of the variant storage
-        /// (taken by value, since `Large` is constructed in place over that same storage), then appends
-        /// `added_value_`.
+        /// Spills a token from the inline storage to the heap.
         Large(std::array<UInt32, inline_capacity> values_, UInt8 inline_size_, UInt32 added_value_);
 
         /// Starts a token on the heap from its first occurrence, with position tracking enabled.
         Large(UInt32 first_value, UInt32 first_position);
 
-        /// Raw row ids of the current (possibly incomplete) segment. Never empty between adds
-        /// (`add` flushes before appending), so `values.back()` is the last added row id.
+        /// Raw row ids of the current (possibly incomplete) segment.
         PODArray<UInt32, 64> values;
         /// Full segments encoded into the codec's in-memory form. Created lazily on the first
         /// flush: tokens whose posting lists end up raw or embedded never need an encoder.
@@ -358,14 +346,6 @@ struct TextIndexSerialization
         MergeTreeIndexWriterStream & postings_stream,
         MergeTreeIndexWriterStream * positions_stream,
         PositionListBuilder * positions);
-
-    /// Serializes the posting list of a single token and returns its metadata.
-    /// The row ids must be sorted in ascending order and unique (used on merges).
-    static TokenPostingsInfo serializePostings(
-        std::span<const UInt32> postings,
-        MergeTreeIndexWriterStream & postings_stream,
-        const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);

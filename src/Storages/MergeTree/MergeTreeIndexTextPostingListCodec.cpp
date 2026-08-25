@@ -36,7 +36,6 @@ SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type blo
 }
 
 /// Previous appends must not have left a partial block in the open segment
-/// (see the contract in IPostingListEncoder::append_granularity).
 void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t segment_size)
 {
     chassert(!row_ids.empty());

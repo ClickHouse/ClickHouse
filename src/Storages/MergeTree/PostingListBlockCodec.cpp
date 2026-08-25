@@ -37,7 +37,6 @@ namespace
             auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
 
-            /// `resize` grows the buffer geometrically, so no manual reservation is needed here.
             /// Block Layout: [1byte(max_bits)][payload]
             size_t offset = out.size();
             out.resize(out.size() + needed_bytes_with_header);

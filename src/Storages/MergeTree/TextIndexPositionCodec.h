@@ -24,7 +24,7 @@ public:
     static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out);
 
     /// Reads into a memory-tracked array of RoaringishEntry values (the merge path).
-    static void decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries);
+    static void decode(ReadBuffer & in, PaddedPODArray<RoaringishEntry> & entries);
 
     /// Reads into struct-of-arrays form (the query/phrase-search path): de-interleaves the
     /// on-disk AoS entries into pl.doc/group/bitmap.

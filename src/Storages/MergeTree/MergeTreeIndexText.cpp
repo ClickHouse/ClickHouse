@@ -1025,43 +1025,6 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
 }
 
-TokenPostingsInfo TextIndexSerialization::serializePostings(
-    std::span<const UInt32> postings,
-    MergeTreeIndexWriterStream & postings_stream,
-    const MergeTreeIndexTextParams & params,
-    PostingsSerialization & postings_serialization)
-{
-    using enum PostingsSerialization::Flags;
-
-    TokenPostingsInfo info;
-    info.cardinality = static_cast<UInt32>(postings.size());
-
-    /// Embedded postings are serialized later into the dictionary block by the caller.
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-    {
-        info.header = RawPostings | EmbeddedPostings;
-        return info;
-    }
-
-    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        info.header = RawPostings | SingleBlock;
-        info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        info.ranges.emplace_back(postings.front(), postings.back());
-        TextIndexSerialization::serializeRawPostings(postings, postings_stream.plain_hashing);
-        return info;
-    }
-
-    const auto * codec = postings_serialization.getPostingListCodec();
-    chassert(codec);
-    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
-
-    auto encoder = codec->createEncoder();
-    encoder->append(postings, segment_size);
-    encoder->finalize(postings_stream.plain_hashing, info);
-    return info;
-}
-
 void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr)
 {
     for (UInt32 row_id : row_ids)
