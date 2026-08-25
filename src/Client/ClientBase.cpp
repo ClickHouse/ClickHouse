@@ -4063,8 +4063,13 @@ bool ClientBase::processAIChat(const String & text_)
 
     /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
     /// pin that both visible and internal assistant queries need, so fail before probing a
-    /// provider or running an internal query that the server would reject anyway.
-    if (aiSessionReadonly() == 1 && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    /// provider (a client-side provider turn is billable) or running an internal query that the
+    /// server would reject anyway. After a successful `SET profile` the effective dialect is no
+    /// longer knowable from `client_context`, so the pin is applied - and therefore refused -
+    /// unconditionally: fail closed here as well, exactly like `runQueryForAI` and
+    /// `fetchInternalQueryResult` do.
+    if (aiSessionReadonly() == 1
+        && (dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse))
     {
         error_stream << "The AI chat requires the ClickHouse SQL dialect: `readonly = 1` does not allow changing "
                         "the `dialect` setting. Run `SET dialect = 'clickhouse'` first."
@@ -4290,6 +4295,12 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         client_context->setSetting("output_format_schema", String{});
         client_context->setSetting("format_template_resultset", String{});
         client_context->setSetting("format_template_row", String{});
+
+        /// `SHOW CREATE TABLE` of an external-engine table renders its connection configuration,
+        /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
+        /// (and the server allows it). The unconfirmed read-only tool feeds its result straight to
+        /// the AI provider, so the secrets are masked for it regardless of the session setting.
+        client_context->setSetting("format_display_secrets_in_show_and_select", false);
 
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
@@ -4565,6 +4576,18 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
         if (!settings_to_send)
             settings_to_send.emplace();
         settings_to_send->set("log_comment", String(AI_AGENT_LOG_COMMENT));
+    }
+
+    /// The results of the internal queries of the agent (`show_create_table` among them) are sent
+    /// to the AI provider without the user seeing them, so the secrets of external-engine table
+    /// definitions are masked even if the session enabled their display. The setting is sent
+    /// unconditionally: under `readonly = 1` an unchanged value costs nothing, while a session
+    /// that really displays secrets makes the internal query fail instead of leaking them.
+    if (from_ai_agent)
+    {
+        if (!settings_to_send)
+            settings_to_send.emplace();
+        settings_to_send->set("format_display_secrets_in_show_and_select", false);
     }
 #endif
 

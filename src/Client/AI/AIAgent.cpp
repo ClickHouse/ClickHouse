@@ -1,6 +1,7 @@
 #include <Client/AI/AIAgent.h>
 
 #include <Client/AI/AIPrompts.h>
+#include <Client/AI/AITextTruncation.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/scope_guard.h>
@@ -84,19 +85,6 @@ String summarizeToolResult(const ai::ToolResult & result)
             return result.result["result"].get<std::string>();
     }
     return result.result.dump();
-}
-
-/// Cut the string at the given byte size without splitting a UTF-8 sequence (the history is
-/// serialized as JSON later, and an invalid UTF-8 string would fail that serialization).
-void truncateToUTF8Boundary(String & text, size_t size)
-{
-    if (text.size() <= size)
-        return;
-    /// Step back over the continuation bytes of the sequence the cut lands in, then over its
-    /// leading byte.
-    while (size > 0 && (static_cast<unsigned char>(text[size]) & 0xC0) == 0x80)
-        --size;
-    text.resize(size);
 }
 
 /// The approximate byte contribution of one message to the prompt.

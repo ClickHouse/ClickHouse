@@ -1,5 +1,7 @@
 #include <Client/AI/AIAgentTransport.h>
 
+#include <Client/AI/AITextTruncation.h>
+
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBufferFromString.h>
@@ -69,7 +71,18 @@ void renderToolResultValue(const ai::JsonValue & value, WriteBufferFromOwnString
     /// Our tools return objects with a human-readable `result` or `error` field;
     /// render them as plain text and everything else as JSON.
     if (value.is_object() && value.contains("result") && value["result"].is_string())
+    {
         writeString(value["result"].get<std::string>(), out);
+        /// An oversized result carries a `truncated` notice telling the model that it sees only
+        /// a part of the data; without it the model would reason over the cut result as if it
+        /// were complete, instead of re-running the tool with a stricter filter.
+        if (value.contains("truncated") && value["truncated"].is_string())
+        {
+            writeString("\n[", out);
+            writeString(value["truncated"].get<std::string>(), out);
+            writeString("]", out);
+        }
+    }
     else if (value.is_string())
         writeString(value.get<std::string>(), out);
     else
@@ -335,8 +348,10 @@ AIAgentStep AIServerFunctionTransport::step(const String & system_prompt, const 
         String conversation = renderConversation(messages);
         if (conversation.size() > max_conversation_bytes)
         {
-            conversation = "[Earlier conversation omitted to fit the server-side AI request limit.]\n\n"
-                + conversation.substr(conversation.size() - max_conversation_bytes);
+            /// Keep the tail, cutting on a UTF-8 boundary: a sequence split in half would make
+            /// the SQL literal - and the prompt built from it - invalid UTF-8.
+            truncateToUTF8BoundaryFromLeft(conversation, max_conversation_bytes);
+            conversation = "[Earlier conversation omitted to fit the server-side AI request limit.]\n\n" + conversation;
         }
 
         String parameters = "map('system_prompt', " + quoteString(renderSystemPrompt(system_prompt, tools));

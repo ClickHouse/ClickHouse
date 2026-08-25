@@ -154,4 +154,58 @@ TEST(QueryContextBuffer, FormatBlockAsText)
     EXPECT_NE(text.find("truncated: 200 of 500 rows"), String::npos);
 }
 
+
+namespace
+{
+
+bool isValidUTF8(const String & text)
+{
+    size_t i = 0;
+    while (i < text.size())
+    {
+        const auto c = static_cast<unsigned char>(text[i]);
+        size_t length = 0;
+        if (c < 0x80)
+            length = 1;
+        else if ((c & 0xE0) == 0xC0)
+            length = 2;
+        else if ((c & 0xF0) == 0xE0)
+            length = 3;
+        else if ((c & 0xF8) == 0xF0)
+            length = 4;
+        else
+            return false;
+        if (i + length > text.size())
+            return false;
+        for (size_t j = 1; j < length; ++j)
+            if ((static_cast<unsigned char>(text[i + j]) & 0xC0) != 0x80)
+                return false;
+        i += length;
+    }
+    return true;
+}
+
+}
+
+TEST(QueryContextBuffer, TruncationKeepsValidUTF8)
+{
+    /// The buffer is rendered into the prompt of the model, so a truncated query, row or error
+    /// must not end in the middle of a multi-byte sequence.
+    for (size_t extra = 0; extra < 4; ++extra)
+    {
+        /// "ё" is two bytes, so shifting the start by one byte moves the cut into the middle
+        /// of a sequence; the same for the three-byte "…" below.
+        String query(extra, 'x');
+        while (query.size() < QueryContextBuffer::max_query_bytes + 16)
+            query += extra % 2 ? "ё" : "…";
+
+        QueryContextBuffer buffer;
+        buffer.startQuery(query, false);
+        buffer.finishQuery(0.1, false);
+        const String text = buffer.format(0, false);
+        EXPECT_NE(text.find("…"), String::npos);
+        EXPECT_TRUE(isValidUTF8(text)) << "extra = " << extra;
+    }
+}
+
 #endif

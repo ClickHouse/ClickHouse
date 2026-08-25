@@ -156,6 +156,22 @@ TEST(AIAgentProtocol, RenderConversationKeepsTextMixedIntoToolResults)
     EXPECT_NE(rendered.find("User:\nand my next question"), String::npos);
 }
 
+TEST(AIAgentProtocol, RenderConversationKeepsTruncationNotice)
+{
+    /// An oversized tool result is cut and gets a `truncated` note. The note must reach the
+    /// model, otherwise it reasons over a partial result as if it were complete.
+    ai::Messages messages;
+    messages.push_back(ai::Message::tool_results({ai::ToolResultContentPart{
+        "call_1",
+        ai::JsonValue{{"success", true}, {"result", "row1"}, {"truncated", "The result was cut. Re-run with a stricter filter."}},
+        false}}));
+
+    String rendered = AIServerFunctionTransport::renderConversation(messages);
+
+    EXPECT_NE(rendered.find("Tool result [call_1]:\nrow1"), String::npos);
+    EXPECT_NE(rendered.find("Re-run with a stricter filter."), String::npos);
+}
+
 TEST(AIAgentProtocol, RenderSystemPromptListsTools)
 {
     ai::ToolSet tools;

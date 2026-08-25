@@ -67,7 +67,10 @@ bool isProtectedSetting(const String & name)
         || name == "max_memory_usage_for_user"
         || name == "log_comment"
         || name == "profile"
-        || name == "compatibility";
+        || name == "compatibility"
+        /// Masking of the credentials in `SHOW CREATE TABLE` of external-engine tables: the
+        /// sandbox turns it on, and a generated `SETTINGS` clause must not turn it back off.
+        || name == "format_display_secrets_in_show_and_select";
 }
 
 /// The format-schema settings have side effects beyond the validated AST: with

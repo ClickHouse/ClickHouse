@@ -299,6 +299,15 @@ TEST(AIQueryValidation, RejectsLogCommentOverride)
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS log_comment = DEFAULT"));
 }
 
+TEST(AIQueryValidation, RejectsDisplaySecretsOverride)
+{
+    /// The read-only sandbox masks the credentials of external-engine tables in `SHOW CREATE`,
+    /// whose output goes to the AI provider unseen by the user; a generated `SETTINGS` clause
+    /// must not unmask them again.
+    EXPECT_FALSE(isAllowed("SHOW CREATE TABLE t SETTINGS format_display_secrets_in_show_and_select = 1"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_display_secrets_in_show_and_select = DEFAULT"));
+}
+
 TEST(AIQueryValidation, RejectsFormatSchemaSettings)
 {
     /// With `format_schema_source = 'query'`, `FormatSchemaInfo` executes the query from

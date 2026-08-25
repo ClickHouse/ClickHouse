@@ -1,5 +1,7 @@
 #include <Client/AI/QueryContextBuffer.h>
 
+#include <Client/AI/AITextTruncation.h>
+
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
@@ -18,7 +20,10 @@ String truncateForContext(const String & text, size_t max_bytes)
 {
     if (text.size() <= max_bytes)
         return text;
-    return text.substr(0, max_bytes) + "…";
+    /// The result goes into the prompt of the model, so the cut must not split a UTF-8 sequence.
+    String truncated = text;
+    truncateToUTF8Boundary(truncated, max_bytes);
+    return truncated + "…";
 }
 
 /// Format one row of a block as an escaped tab-separated line, capped in length.
