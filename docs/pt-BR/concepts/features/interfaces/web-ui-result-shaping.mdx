@@ -104,9 +104,16 @@ A modelagem é oferecida apenas para as instruções às quais essas configuraç
 
 Uma forma se aplica ao resultado de uma única instrução; portanto, ela não é oferecida em uma execução de várias instruções com &quot;Executar todas&quot;, cujas instruções são consultas separadas com colunas distintas.
 
+Ela também não é oferecida para um resultado de no máximo uma linha em sua primeira página: qualquer ordenação de uma única linha é a mesma ordenação, e um filtro nela só pode mantê-la ou descartá-la; portanto, os controles não poderiam fazer nada além de executar novamente a consulta para as mesmas linhas — e um resultado vazio nem sequer tem uma linha para descartar. Esse é o mesmo motivo pelo qual os controles de [codificação por cores](/pt-BR/concepts/features/interfaces/web-ui-color-coding) ficam ocultos nesse caso: com no máximo uma linha, não há nada para comparar.
+
+Dois tipos de resultados com uma única linha mantêm seus controles, pois, nesses casos, os controles são a única forma de voltar atrás:
+
+* um que já está ordenado ou filtrado, cuja ordenação deve permanecer reversível e cujo filtro deve permanecer removível — um filtro que corresponde a uma única linha é exatamente como um resultado longo se torna curto, e remover os controles junto com ele deixaria o usuário preso com ele ativado;
+* um truncado no limite de exibição, que é a primeira página de um resultado mais longo: o tamanho da página é limitado pelo número de células que a tabela pode mostrar de uma vez; portanto, um resultado muito amplo pode ser truncado para uma única linha, e as linhas posteriores são precisamente aquelas que a ordenação e a paginação permitem alcançar.
+
 Uma forma pertence à instrução em que foi criada. Executar uma instrução diferente — após editar a consulta ou mover o cursor para outra instrução em um editor com várias instruções — a descarta, em vez de aplicar um `ORDER BY` ou uma cláusula `WHERE` a uma coluna que talvez não exista na nova instrução.
 
-Ela também pertence ao contexto em que a instrução foi executada: o banco de dados selecionado, o servidor e o usuário aos quais ela foi enviada e os valores dos parâmetros da consulta. O mesmo texto nomeia colunas diferentes após qualquer uma dessas alterações — `SELECT * FROM events` após alternar o banco de dados ou `SELECT * FROM {tbl:Identifier}` após editar o parâmetro — portanto, a forma também é descartada, e a próxima execução retorna o resultado sem modelagem.
+Ela também pertence ao contexto em que a instrução foi executada: o banco de dados selecionado, o servidor e o usuário aos quais ela foi enviada e os valores dos parâmetros da consulta. O mesmo texto nomeia colunas diferentes após qualquer uma dessas alterações — `SELECT * FROM events` após alternar o banco de dados ou `SELECT * FROM {tbl:Identifier}` após editar o parâmetro — portanto, a forma também é descartada, e a próxima execução retorna o resultado sem forma.
 
 <div id="downloading-and-copying">
   ## Baixando e copiando

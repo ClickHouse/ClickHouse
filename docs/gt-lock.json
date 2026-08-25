@@ -7,36 +7,36 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "ko": {
-          "updatedAt": "2026-08-25T00:02:49.025Z",
+          "updatedAt": "2026-08-25T02:30:33.929Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-25T00:02:49.899Z",
+          "updatedAt": "2026-08-25T02:30:34.569Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-08-25T00:02:48.314Z",
+          "updatedAt": "2026-08-25T02:30:33.518Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-25T00:02:49.621Z",
+          "updatedAt": "2026-08-25T02:30:34.353Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-25T00:02:50.490Z",
+          "updatedAt": "2026-08-25T02:30:34.986Z",
           "fileName": "docs.json",
           "postProcessHash": "934d9898710a24b4913d425e0f39e346445bc0c8f1d677bb40440f2deee546d9"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-25T00:02:49.318Z",
+          "updatedAt": "2026-08-25T02:30:34.133Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-25T00:02:48.659Z",
+          "updatedAt": "2026-08-25T02:30:33.726Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-25T00:02:50.237Z",
+          "updatedAt": "2026-08-25T02:30:34.787Z",
           "fileName": "docs.json"
         }
       },
@@ -137133,51 +137133,50 @@
     },
     {
       "fileId": "f5a40f316d7f32dc8a6cd45e6e28af0db21a41c01886130ff4b457763d95042e",
-      "versionId": "7866cec1484bd4243ec52ccd72140cc037d161c40483184c6fa6f3d2e124a4a0",
+      "versionId": "4fe9add9fa693beaa0afb986b09528658b3dc243b5fe58b291df943ee6ef9c74",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-24T05:33:39.458Z",
-          "fileName": "fr/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "f6a636779e6d3366eb6dd692cbbaaa95be621b1e8ceb46f719b2a8bccfa16e29"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-24T05:33:39.464Z",
-          "fileName": "pt-BR/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "d1980369256ac7223e22db3a9fe98acd4789e1ae73446ab6abe5c21d569fd371"
-        },
-        "zh": {
-          "updatedAt": "2026-08-24T05:33:39.468Z",
-          "fileName": "zh/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "be1a355f482867828c87e2bd9fc35da2fd36dbbaff441fccb6af489f277641a0"
-        },
-        "ko": {
-          "updatedAt": "2026-08-24T05:33:39.470Z",
-          "fileName": "ko/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "be7299f41d4cdde0f56d2f12fc257530a6cedd4a431bb941ce691dd0c0975e37"
-        },
         "es": {
-          "updatedAt": "2026-08-24T05:33:39.471Z",
+          "updatedAt": "2026-08-25T02:30:41.148Z",
           "fileName": "es/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "986bfb372156acb680873658ab557e8e9fff2babfb4c00a1d5ceaeab23d951de"
-        },
-        "ja": {
-          "updatedAt": "2026-08-24T05:33:39.475Z",
-          "fileName": "ja/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "db91461dff95321bc984df4e10a7e8cc08aa56612b9b5901fe38ef9ba066bdd9"
+          "postProcessHash": "7d39da3df2bc4d930c21cf6215557c8148b41d6e7c0bc7c3bb1df1af91564aae"
         },
         "ru": {
-          "updatedAt": "2026-08-24T05:33:39.482Z",
+          "updatedAt": "2026-08-25T02:30:41.151Z",
           "fileName": "ru/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "67cad01150ef05c0d0d43ed1954d4d9348b7ec2709d14d3c9ce317cc22e0a9cc"
+          "postProcessHash": "1ab3220eac7e4862c55c65b781b2589a6ba3eca8a57ec79a6fb9947d53dfe2eb"
+        },
+        "ko": {
+          "updatedAt": "2026-08-25T02:30:41.153Z",
+          "fileName": "ko/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "a06ee99f54964859e5122486f136996844be9a534bb788697307648efc377eb6"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-25T02:30:41.154Z",
+          "fileName": "pt-BR/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "0bddf22fbcabc85b921bd4401001bbf45036d7537f156ef73fd8fe4aa9a3b22a"
+        },
+        "fr": {
+          "updatedAt": "2026-08-25T02:30:41.155Z",
+          "fileName": "fr/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "7e79fee3344f3b2cf732f9bbf45ae6d9a7a20eb18a214ee90f64dcd929ae134a"
+        },
+        "ja": {
+          "updatedAt": "2026-08-25T02:30:41.156Z",
+          "fileName": "ja/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "c06416e5a10ca0980ca7a10da64083a828e1356a30b8ad03b4e1d848ee7dd4be"
         },
         "ar": {
-          "updatedAt": "2026-08-24T05:33:39.493Z",
+          "updatedAt": "2026-08-25T02:30:41.158Z",
           "fileName": "ar/concepts/features/interfaces/web-ui-result-shaping.mdx",
-          "postProcessHash": "ed79af459b6d191cd2bc284c953cf9a50f2dece882e05b7f534520b8741ec39c"
+          "postProcessHash": "7a3ca850ecb4c18790c1a59074dab97493be9e90b0774e27b199eab60c3f168d"
+        },
+        "zh": {
+          "updatedAt": "2026-08-25T02:30:41.160Z",
+          "fileName": "zh/concepts/features/interfaces/web-ui-result-shaping.mdx",
+          "postProcessHash": "5cb7ceec4ea72b2c15fdc52f5fc6c08079e294ce05b24111cacdf7c6da037f81"
         }
       },
-      "fileName": "concepts/features/interfaces/web-ui-result-shaping.mdx",
-      "staged": false
+      "fileName": "concepts/features/interfaces/web-ui-result-shaping.mdx"
     },
     {
       "fileId": "5cce8fe471935df3f9814481dd60db5cb6e2d910baa35066d4943b9dc1e90dda",

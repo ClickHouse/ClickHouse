@@ -104,6 +104,13 @@ La configuración solo está disponible para las sentencias cuyos ajustes config
 
 Una configuración se aplica al resultado de una sola sentencia, por lo que no está disponible para una ejecución de varias sentencias con «Ejecutar todo», cuyas sentencias son consultas independientes con columnas independientes.
 
+Tampoco está disponible para un resultado de como máximo una fila en su primera página: cualquier orden de una sola fila es el mismo orden, y un filtro sobre ella solo puede conservarla o descartarla, por lo que los controles no podrían hacer nada más que volver a ejecutar la consulta para obtener las mismas filas; un resultado vacío ni siquiera tiene una fila que descartar. Es la misma razón por la que los conmutadores de [codificación por colores](/es/concepts/features/interfaces/web-ui-color-coding) se ocultan en ese caso: con no más de una fila no hay nada que comparar.
+
+Dos resultados de una sola fila conservan sus controles, porque en ellos los controles son la única forma de volver atrás:
+
+* uno que ya está ordenado o filtrado, cuyo orden debe seguir siendo reversible y cuyo filtro debe poder borrarse; un filtro que coincide con una sola fila es exactamente como un resultado largo se convierte en uno corto, y quitar los controles junto con él dejaría al usuario con el filtro activado;
+* uno truncado en el límite de visualización, que es la primera página de un resultado más largo: el tamaño de página está limitado por el número de celdas que la tabla puede mostrar a la vez, por lo que un resultado muy ancho puede truncarse a una sola fila, y las filas posteriores son precisamente a las que permiten acceder la ordenación y la paginación.
+
 Una configuración pertenece a la sentencia en la que se creó. Ejecutar una sentencia distinta —tras editar la consulta o mover el cursor a otra sentencia en un editor de varias sentencias— la descarta, en lugar de aplicar un `ORDER BY` o un `WHERE` a una columna que la nueva sentencia podría no tener.
 
 También pertenece al contexto en el que se ejecutó esa sentencia: la base de datos seleccionada, el servidor y el usuario al que se envió, así como los valores de sus parámetros de consulta. El mismo texto designa columnas diferentes tras cambiar cualquiera de estos elementos —`SELECT * FROM events` después de cambiar de base de datos o `SELECT * FROM {tbl:Identifier}` después de editar el parámetro—, por lo que la configuración también se descarta en ese caso y la siguiente ejecución devuelve el resultado sin configuración.
