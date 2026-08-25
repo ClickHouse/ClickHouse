@@ -1478,7 +1478,7 @@ Display named Tuple columns in Pretty formats split into subcolumns, with the na
    └───────┴───┴───────┘
 ```
 
-Nested named tuples add one header line per level of nesting. The setting applies only to the columns of the result: a named tuple nested inside another type (e.g. inside an `Array`) is rendered inside a single cell, according to `output_format_pretty_named_tuples_as_json`.
+Nested named tuples add one header line per level of nesting. The setting applies only to columns of the result whose type is a bare named `Tuple`: a named tuple nested inside another type (e.g. inside an `Array`, or inside a `Nullable` allowed by `enable_nullable_tuple_type`) or hidden behind a custom type name is rendered inside a single cell, according to `output_format_pretty_named_tuples_as_json`. In particular, a `Nullable(Tuple(...))` column keeps the single-cell rendering, so a `NULL` tuple stays distinguishable from a tuple of `NULL` elements.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/reference/engines/table-engines/special/distributed) table when there is no distributed key.
