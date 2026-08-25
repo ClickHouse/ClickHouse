@@ -14,6 +14,10 @@
 namespace DB
 {
 
+/// Throws if the current query has been cancelled. Out of line so that this header does not pull in
+/// CurrentThread and ProcessList.
+void checkPromptingNotCancelled();
+
 template <size_t MaxNumHints>
 class NamePrompter
 {
@@ -21,16 +25,29 @@ public:
     using DistanceIndex = std::pair<size_t, size_t>;
     using DistanceIndexQueue = std::priority_queue<DistanceIndex>;
 
+    /// Scoring one candidate costs the product of the two name lengths, and both the number of
+    /// candidates and the length of a name are query-controlled, so the limit is cumulative over the
+    /// whole call. Exhausting it yields no hint at all: the nearest candidate is only known once every
+    /// candidate has been scored, so a partial scan cannot answer the question this function asks.
+    static constexpr size_t max_prompting_work = 50'000'000;
+
     static VectorWithMemoryTracking<String> getHints(const String & name, const VectorWithMemoryTracking<String> & prompting_strings)
     {
+        if (name.empty())
+            return {};
+
+        checkPromptingNotCancelled();
+
+        size_t work_left = max_prompting_work;
         DistanceIndexQueue queue;
         for (size_t i = 0; i < prompting_strings.size(); ++i)
-            appendToQueue(i, name, queue, prompting_strings);
+            if (!appendToQueue(i, name, queue, prompting_strings, work_left))
+                return {};
         return release(queue, prompting_strings);
     }
 
 private:
-    static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const VectorWithMemoryTracking<String> & prompting_strings)
+    static bool appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const VectorWithMemoryTracking<String> & prompting_strings, size_t & work_left)
     {
         const String & prompt = prompting_strings[ind];
 
@@ -38,10 +55,15 @@ private:
         const size_t min_possible_edit_distance = std::abs(static_cast<int64_t>(name.size()) - static_cast<int64_t>(prompt.size()));
         const size_t mistake_factor = (name.size() + 2) / 3;
         if (min_possible_edit_distance > 0 && name.size() / min_possible_edit_distance < 3)
-            return;
+            return true;
 
         if (prompt.size() <= name.size() + mistake_factor && prompt.size() + mistake_factor >= name.size())
         {
+            /// Compare by division so the product never has to be formed before it is known to fit.
+            if (prompt.size() > work_left / name.size())
+                return false;
+            work_left -= prompt.size() * name.size();
+
             size_t distance = levenshteinDistanceCaseInsensitive(prompt, name);
             if (distance <= mistake_factor)
             {
@@ -50,6 +72,7 @@ private:
                     queue.pop();
             }
         }
+        return true;
     }
 
     static VectorWithMemoryTracking<String> release(DistanceIndexQueue & queue, const VectorWithMemoryTracking<String> & prompting_strings)

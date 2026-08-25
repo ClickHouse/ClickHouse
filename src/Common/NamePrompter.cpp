@@ -1,8 +1,14 @@
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/NamePrompter.h>
 
 namespace DB
 {
+
+void checkPromptingNotCancelled()
+{
+    CurrentThread::checkIfNotCancelled();
+}
 
 String getHintsErrorMessageSuffix(const VectorWithMemoryTracking<String> & hints)
 {
