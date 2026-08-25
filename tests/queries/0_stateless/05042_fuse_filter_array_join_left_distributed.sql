@@ -2,6 +2,8 @@
 -- through it, but a fused filter drops rows) and when the plan may be serialized to older workers.
 
 SET enable_analyzer = 1;
+-- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS t_fuse_edge;
 CREATE TABLE t_fuse_edge (id UInt64, arr Array(String)) ENGINE = MergeTree ORDER BY id;

@@ -1,6 +1,8 @@
 -- Fuse a filter on ARRAY JOINed element columns into the ARRAY JOIN step. Must never change results,
 -- so each case compares query_plan_fuse_filter_into_array_join on vs off and expects equality (1).
 SET enable_analyzer = 1;
+-- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS t_fuse;
 CREATE TABLE t_fuse (id UInt64, arr Array(String), payload String) ENGINE = MergeTree ORDER BY id;
