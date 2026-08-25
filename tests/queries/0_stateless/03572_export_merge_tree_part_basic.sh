@@ -6,6 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./export_part.lib
+. "$CURDIR"/export_part.lib
+
 mt_table="mt_table_${RANDOM}"
 mt_table_partition_expression_with_function="mt_table_partition_expression_with_function_${RANDOM}"
 s3_table="s3_table_${RANDOM}"
@@ -46,8 +49,8 @@ echo "---- Export 3: Export 2020_1_1_0 and 2021_2_2_0 to wildcard table with par
 query "ALTER TABLE $mt_table_partition_expression_with_function EXPORT PART 'cb217c742dc7d143b61583011996a160_1_1_0' TO TABLE $s3_table_wildcard_partition_expression_with_function SETTINGS allow_experimental_export_merge_tree_part = 1"
 query "ALTER TABLE $mt_table_partition_expression_with_function EXPORT PART '3be6d49ecf9749a383964bc6fab22d10_2_2_0' TO TABLE $s3_table_wildcard_partition_expression_with_function SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# below exports are using parts that were exported in export 1 and export 2, so we need to wait for them to complete
-sleep 5
+# wait until part_log has 6 ExportPart records
+wait_for_exports 6
 
 echo "---- Export 4: Export the same part again, it should be idempotent"
 query "ALTER TABLE $mt_table EXPORT PART '2020_1_1_0' TO TABLE $s3_table SETTINGS allow_experimental_export_merge_tree_part = 1"
@@ -55,8 +58,8 @@ query "ALTER TABLE $mt_table EXPORT PART '2020_1_1_0' TO TABLE $s3_table SETTING
 echo "---- Export 5: Export the same part again to wildcard, it should be idempotent"
 query "ALTER TABLE $mt_table EXPORT PART '2022_3_3_0' TO TABLE $s3_table_wildcard SETTINGS allow_experimental_export_merge_tree_part = 1"
 
-# ONE BIG SLEEP after all exports
-sleep 15
+# wait until part_log has 8 ExportPart records (6 from the previous exports)
+wait_for_exports 8
 
 # ============================================================================
 # ALL SELECTS/VERIFICATIONS HAPPEN HERE
