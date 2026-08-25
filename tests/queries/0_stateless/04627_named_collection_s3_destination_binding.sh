@@ -247,11 +247,47 @@ allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}.persisted"
 echo '--- the replay exemption is not reachable from a fresh query against the same collection'
 run "SELECT * FROM s3($(c later), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
 
+echo '--- RESTORE replays the stored definition too, so it loads rather than failing the restore'
+# A local `Disk` destination, so this arm exercises the restore replay and not the backup seam. The
+# restore runs the stored CREATE at strictness SECONDARY_CREATE, which is neither FORCE_* nor a short
+# ATTACH, so `mode` alone does not mark it.
+BK="${CLICKHOUSE_TEST_UNIQUE_NAME}_bk"
+${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${CLICKHOUSE_DATABASE}.persisted TO Disk('backups', '$BK')" > /dev/null
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.persisted"
+allowed_fails_with RESTORED "RESTORE TABLE ${CLICKHOUSE_DATABASE}.persisted FROM Disk('backups', '$BK')"
+allowed_reads "SELECT * FROM ${CLICKHOUSE_DATABASE}.persisted"
+
+echo '--- and a fresh query against that same collection is still refused'
+run "SELECT * FROM s3($(c later), url = '$OWN/$DATA', format = 'CSV', structure = 'a String')"
+
+echo '--- the replay warning names the destination without disclosing a url credential'
+# A stored url may carry userinfo or a presigned signature, and the server log sits outside the
+# `SHOW_NAMED_COLLECTIONS_SECRETS` grant that reading the collection needs.
+${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c userinfo)"
+${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION $(c userinfo) AS
+    url = 'http://u:${CLICKHOUSE_TEST_UNIQUE_NAME}_pw@127.0.0.1:11112/test/', format = 'CSV'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.masked (a String) ENGINE = S3($(c userinfo), url = '$OWN/$DATA')"
+${CLICKHOUSE_CLIENT} -q "ALTER NAMED COLLECTION $(c userinfo)
+    SET access_key_id = 'test', secret_access_key = 'testtest'"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.masked"
+MASK_QID="${CLICKHOUSE_TEST_UNIQUE_NAME}_mask"
+${CLICKHOUSE_CLIENT} --query_id "$MASK_QID" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.masked" > /dev/null 2>&1
+# Both assertions in one arm: a warning that vanished would otherwise read as a redaction. Scoped by
+# query_id and logger_name, so the probe query's own text is not what is being counted.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+${CLICKHOUSE_CLIENT} -q "SELECT 'warning', count() >= 1 FROM system.text_log
+    WHERE query_id = '$MASK_QID' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning';
+    SELECT 'secret', count() FROM system.text_log
+    WHERE query_id = '$MASK_QID' AND logger_name = 'NamedCollectionDestinationBinding' AND level = 'Warning'
+      AND position(message, '${CLICKHOUSE_TEST_UNIQUE_NAME}_pw') > 0"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.masked"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.persisted"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_kodb"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.replay"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
-for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later; do
+for n in keys anon open otherkeys gcp gcpnosign gcpkeys nosign signing keysonly rel later userinfo; do
     ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS $(c $n)"
 done

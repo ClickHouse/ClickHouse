@@ -4,6 +4,7 @@
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -139,7 +140,22 @@ namespace
         UInt16 port;
 
         bool operator==(const Origin & other) const = default;
+
+        /// Safe to log as it stands: an origin holds no userinfo and no query string, the two places a URL
+        /// carries a credential.
+        String toString() const { return fmt::format("{}://{}:{}", scheme, host, port); }
     };
+
+    /// A URL is only safe to log with its userinfo and its presigned-query values masked: a stored `url` may be
+    /// `user:pass@host` or carry `X-Amz-Signature`, and the server log is outside `SHOW_NAMED_COLLECTIONS_SECRETS`.
+    /// The two scans are the pair `FunctionSecretArgumentsFinder` applies, for the same reason.
+    String maskedForLog(const String & url)
+    {
+        String masked = url;
+        maskURIUserinfo(masked);
+        maskPresignedURLParameters(masked);
+        return masked;
+    }
 
     /// The origin `raw` points at, or nullopt when it declares none (a relative URL: no scheme, no host).
     /// `S3::URI` first so that scheme mappings (`s3://bucket/key` -> `https://bucket.s3.amazonaws.com/key`) are
@@ -257,7 +273,7 @@ void validateS3CollectionDestinationBinding(
         const auto effective = declaredOrigin(effective_url, context);
         if (effective && *effective == *declared)
             return;
-        reason = fmt::format("the collection declares the origin of '{}'", stored_url);
+        reason = fmt::format("the collection declares the origin {}", declared->toString());
     }
 
     /// Whoever loads a persisted definition did not choose it, and throwing here aborts server startup rather
@@ -272,7 +288,7 @@ void validateS3CollectionDestinationBinding(
             "collection does not authorise ({}). A query asking for this now is refused; it is allowed here only "
             "because refusing a stored definition would stop the server from starting. Set the server setting "
             "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.",
-            effective_url,
+            maskedForLog(effective_url),
             reason);
         return;
     }

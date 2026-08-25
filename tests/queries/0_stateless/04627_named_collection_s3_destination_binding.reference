@@ -42,3 +42,11 @@ loaded
 payload
 --- the replay exemption is not reachable from a fresh query against the same collection
 refused
+--- RESTORE replays the stored definition too, so it loads rather than failing the restore
+passed-check
+payload
+--- and a fresh query against that same collection is still refused
+refused
+--- the replay warning names the destination without disclosing a url credential
+warning	1
+secret	0
