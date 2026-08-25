@@ -494,9 +494,9 @@ def window_function_generators(docs_dir, file_map):
 
 
 def statement_generators(_docs_dir):
-    # One query enumerates every registered statement. Each source-owned
-    # document carries the same title as its Mintlify page, which gives us a
-    # generated, one-to-one routing key without a checked-in name/path manifest.
+    # One query enumerates every registered statement. Its unique registry name
+    # is also the Mintlify page title, which gives us a generated, one-to-one
+    # routing key without a checked-in name/path manifest.
     # `generate_statement_artifacts` validates both sides strictly.
     return [{
         "name": "statement:",
@@ -2048,61 +2048,48 @@ def generate_statement_artifacts(gen, binary, docs_dir):
     if not rows:
         raise ValueError("statement generator produced no registered statements")
 
-    documents_by_title = {}
-    statement_names = set()
+    documents_by_name = {}
     for row in rows:
         name = row.get("name")
-        title = row.get("title")
         description = row.get("description")
         if (
             not isinstance(name, str)
-            or not isinstance(title, str)
             or not isinstance(description, str)
         ):
             raise ValueError("statement generator output has invalid fields")
-        if name in statement_names:
+        if name in documents_by_name:
             raise ValueError(f"statement generator produced duplicate name {name!r}")
-        statement_names.add(name)
-        if not title:
-            raise ValueError(f"statement {name!r} has no documentation title")
-        body = _statement_document(description, name)
-        if title in documents_by_title:
-            other_name = documents_by_title[title][0]
-            raise ValueError(
-                f"statements {other_name!r} and {name!r} use the same "
-                f"documentation title {title!r}"
-            )
-        documents_by_title[title] = (name, body)
+        documents_by_name[name] = _statement_document(description, name)
 
-    pages_by_title = {}
-    marked_page_titles = set()
-    for title, page, content in _statement_page_candidates(docs_dir):
-        if title in pages_by_title:
+    pages_by_name = {}
+    marked_page_names = set()
+    for name, page, content in _statement_page_candidates(docs_dir):
+        if name in pages_by_name:
             raise ValueError(
-                f"multiple statement pages use the title {title!r}: "
-                f"{pages_by_title[title][0]} and {page}"
+                f"multiple statement pages use the title {name!r}: "
+                f"{pages_by_name[name][0]} and {page}"
             )
-        pages_by_title[title] = (page, content)
+        pages_by_name[name] = (page, content)
         if START_RE.search(content) or END_RE.search(content):
-            marked_page_titles.add(title)
+            marked_page_names.add(name)
 
-    document_titles = set(documents_by_title)
-    missing_pages = sorted(document_titles - set(pages_by_title))
+    registered_names = set(documents_by_name)
+    missing_pages = sorted(registered_names - set(pages_by_name))
     if missing_pages:
         raise ValueError(
             "registered statements have no matching Mintlify page title: "
             + ", ".join(missing_pages)
         )
-    stale_pages = sorted(marked_page_titles - document_titles)
+    stale_pages = sorted(marked_page_names - registered_names)
     if stale_pages:
         raise ValueError(
-            "marked statement pages have no registered statement H1: "
+            "marked statement pages have no registered statement name: "
             + ", ".join(stale_pages)
         )
 
     artifacts = []
-    for title, (_name, body) in documents_by_title.items():
-        page, content = pages_by_title[title]
+    for name, body in documents_by_name.items():
+        page, content = pages_by_name[name]
         artifacts.append(GeneratedArtifact(
             page,
             replace_between_markers(content, body),

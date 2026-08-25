@@ -153,7 +153,6 @@ void registerStatementExists(StatementFactory & factory)
 {
     factory.registerStatement("EXISTS",
     {
-        .title = "EXISTS Statement",
         .description = R"DOCS_MD(
 ```sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]

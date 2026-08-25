@@ -219,7 +219,6 @@ void registerStatementShow(StatementFactory & factory)
 {
     factory.registerStatement("SHOW",
     {
-        .title = "SHOW Statements",
         .description = R"DOCS_MD(
 <Note>
 

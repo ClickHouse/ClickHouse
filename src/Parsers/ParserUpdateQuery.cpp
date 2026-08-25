@@ -106,7 +106,6 @@ void registerStatementUpdate(StatementFactory & factory)
 {
     factory.registerStatement("UPDATE",
     {
-        .title = "The Lightweight UPDATE Statement",
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 

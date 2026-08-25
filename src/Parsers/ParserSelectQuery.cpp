@@ -822,7 +822,6 @@ void registerStatementSelect(StatementFactory & factory)
 {
     factory.registerStatement("SELECT",
     {
-        .title = "SELECT Query",
         .description = R"DOCS_MD(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](/reference/statements/insert-into) it can be forwarded to a different table.
 
@@ -1114,7 +1113,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
     factory.registerStatement("DISTINCT",
     {
-        .title = "DISTINCT Clause",
         .description = R"DOCS_MD(
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
 
@@ -1229,7 +1227,6 @@ SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 
     factory.registerStatement("ALL",
     {
-        .title = "ALL Clause",
         .description = R"DOCS_MD(
 If there are multiple matching rows in a table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` are specified, then an exception will be thrown.
 
@@ -1256,7 +1253,6 @@ SELECT ALL expr_list ...
 
     factory.registerStatement("PREWHERE",
     {
-        .title = "PREWHERE Clause",
         .description = R"DOCS_MD(
 `PREWHERE` can make filtering more efficient by reducing the amount of data read. By default, ClickHouse applies this optimization, even when a query does not explicitly specify `PREWHERE`, by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can specify `PREWHERE` explicitly to control which conditions are applied at this stage.
 
@@ -1400,7 +1396,6 @@ SELECT ... PREWHERE expr ...
 
     factory.registerStatement("WHERE",
     {
-        .title = "WHERE clause",
         .description = R"DOCS_MD(
 The `WHERE` clause allows you to filter the data that comes from the[`FROM`](/reference/statements/select/from) clause of `SELECT`.
 
@@ -1845,7 +1840,6 @@ SELECT ... WHERE expr ...
 
     factory.registerStatement("GROUP BY",
     {
-        .title = "GROUP BY Clause",
         .description = R"DOCS_MD(
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
@@ -2236,7 +2230,6 @@ SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS (...) ..
 
     factory.registerStatement("HAVING",
     {
-        .title = "HAVING Clause",
         .description = R"DOCS_MD(
 Allows filtering the aggregation results produced by [GROUP BY](/reference/statements/select/group-by). It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before aggregation, while `HAVING` is performed after it.
 
@@ -2281,7 +2274,6 @@ SELECT ... GROUP BY ... HAVING expr ...
 
     factory.registerStatement("QUALIFY",
     {
-        .title = "QUALIFY Clause",
         .description = R"DOCS_MD(
 Allows filtering window functions results. It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before window functions evaluation, while `QUALIFY` is performed after it.
 
@@ -2320,7 +2312,6 @@ SELECT ... QUALIFY expr ...
 
     factory.registerStatement("ORDER BY",
     {
-        .title = "ORDER BY Clause",
         .description = R"DOCS_MD(
 The `ORDER BY` clause contains
 
@@ -2956,7 +2947,6 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 
     factory.registerStatement("LIMIT",
     {
-        .title = "LIMIT Clause",
         .description = R"DOCS_MD(
 The `LIMIT` clause controls how many rows are returned from your query results.
 
@@ -3134,7 +3124,6 @@ SELECT TOP m ...
 
     factory.registerStatement("LIMIT BY",
     {
-        .title = "LIMIT BY Clause",
         .description = R"DOCS_MD(
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](/reference/syntax#expressions).
 
@@ -3340,7 +3329,6 @@ SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 
     factory.registerStatement("OFFSET FETCH",
     {
-        .title = "OFFSET FETCH Clause",
         .description = R"DOCS_MD(
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
 

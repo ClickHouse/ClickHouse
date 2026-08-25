@@ -141,7 +141,6 @@ void registerStatementOptimize(StatementFactory & factory)
 {
     factory.registerStatement("OPTIMIZE",
     {
-        .title = "OPTIMIZE Statement",
         .description = R"DOCS_MD(
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/concepts/best-practices/avoid-optimize-final)) as its use case is meant for administration, not for daily operations.
 

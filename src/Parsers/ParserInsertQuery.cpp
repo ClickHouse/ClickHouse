@@ -387,7 +387,6 @@ void registerStatementInsert(StatementFactory & factory)
 {
     factory.registerStatement("INSERT INTO",
     {
-        .title = "INSERT INTO Statement",
         .description = R"DOCS_MD(
 Inserts data into a table.
 

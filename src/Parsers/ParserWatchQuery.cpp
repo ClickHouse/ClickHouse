@@ -86,7 +86,6 @@ void registerStatementWatch(StatementFactory & factory)
 {
     factory.registerStatement("WATCH",
     {
-        .title = "WATCH Statement",
         .description = R"DOCS_MD(
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 

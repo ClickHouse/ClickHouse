@@ -585,7 +585,6 @@ void registerStatementPipeOperators(StatementFactory & factory)
 {
     factory.registerStatement("PIPE OPERATORS",
     {
-        .title = "Pipe Operators",
         .description = R"DOCS_MD(
 Pipe operators allow writing queries as a linear chain of transformations that reads from top to bottom, similar to the [pipe syntax of GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
 

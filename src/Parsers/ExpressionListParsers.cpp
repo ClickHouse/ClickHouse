@@ -4104,7 +4104,6 @@ void registerStatementIn(StatementFactory & factory)
 {
     factory.registerStatement("IN",
     {
-        .title = "IN Operators",
         .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 

@@ -94,7 +94,6 @@ void registerStatementSetRole(StatementFactory & factory)
 {
     factory.registerStatement("SET ROLE",
     {
-        .title = "SET ROLE Statement",
         .description = R"DOCS_MD(
 Activates roles for the current user.
 

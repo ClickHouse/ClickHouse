@@ -325,7 +325,6 @@ void registerStatementRowPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE ROW POLICY",
     {
-        .title = "CREATE ROW POLICY",
         .description = R"DOCS_MD(
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
@@ -510,7 +509,6 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
 
     factory.registerStatement("ALTER ROW POLICY",
     {
-        .title = "ALTER ROW POLICY",
         .description = R"DOCS_MD(
 Changes row policy.
 

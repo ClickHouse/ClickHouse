@@ -102,7 +102,6 @@ void registerStatementMoveAccessEntity(StatementFactory & factory)
 {
     factory.registerStatement("MOVE",
     {
-        .title = "MOVE access entity statement",
         .description = R"DOCS_MD(
 This statement allows to move an access entity from one access storage to another.
 

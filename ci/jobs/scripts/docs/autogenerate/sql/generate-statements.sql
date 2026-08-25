@@ -4,7 +4,6 @@
 -- closed instead of silently omitting it.
 SELECT
     statements.name AS name,
-    statements.title AS title,
     documentation.description AS description
 FROM system.statements AS statements
 LEFT JOIN system.documentation AS documentation

@@ -19,7 +19,6 @@ namespace DB
   * The advantages of embedded documentation are described in `FunctionDocumentation.h`.
   *
   * The documentation can contain:
-  * - title (the title of its reference page, when it has one);
   * - description (the main text);
   * - syntax (how the component is referenced in a query);
   * - examples (queries that can be referenced from the text by names);
@@ -43,7 +42,6 @@ namespace DB
   */
 struct Documentation
 {
-    using Title = String;
     using Description = String;
     using Syntax = String;
 
@@ -61,7 +59,6 @@ struct Documentation
 
     static constexpr VersionNumber VERSION_UNKNOWN;
 
-    Title title {};                                /// E.g. `CREATE TABLE`.
     Description description;                       /// E.g. "The most universal and functional table engine for high-load tasks."
     Syntax syntax {};                              /// E.g. "ENGINE = MergeTree() ORDER BY expr"
     Examples examples {};                          ///

@@ -98,7 +98,6 @@ void registerStatementWith(StatementFactory & factory)
 {
     factory.registerStatement("WITH",
     {
-        .title = "WITH Clause",
         .description = R"DOCS_MD(
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
 

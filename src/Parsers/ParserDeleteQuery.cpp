@@ -104,7 +104,6 @@ void registerStatementDelete(StatementFactory & factory)
 {
     factory.registerStatement("DELETE",
     {
-        .title = "The Lightweight DELETE Statement",
         .description = R"DOCS_MD(
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
 

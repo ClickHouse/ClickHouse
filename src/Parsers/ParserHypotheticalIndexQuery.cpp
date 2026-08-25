@@ -128,7 +128,6 @@ void registerStatementHypotheticalIndex(StatementFactory & factory)
 {
     factory.registerStatement("HYPOTHETICAL INDEX",
     {
-        .title = "Hypothetical Indexes",
         .description = R"DOCS_MD(
 Hypothetical indexes are virtual, session-scoped skip indexes that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are used by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) to estimate how a real skip index would affect a query — typically the skip ratio (fraction of marks that could be skipped) and a rough cost in marks and bytes.
 

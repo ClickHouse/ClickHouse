@@ -200,7 +200,6 @@ void registerStatementExplain(StatementFactory & factory)
 {
     factory.registerStatement("EXPLAIN",
     {
-        .title = "EXPLAIN Statement",
         .description = R"DOCS_MD(
 Shows the execution plan of a statement.
 

@@ -45,7 +45,6 @@ void registerStatementOnCluster(StatementFactory & factory)
 {
     factory.registerStatement("ON CLUSTER",
     {
-        .title = "Distributed DDL Queries (ON CLUSTER Clause)",
         .description = R"DOCS_MD(
 By default, the `CREATE`, `DROP`, `ALTER`, and `RENAME` queries affect only the current server where they are executed. In a cluster setup, it is possible to run such queries in a distributed manner with the `ON CLUSTER` clause.
 

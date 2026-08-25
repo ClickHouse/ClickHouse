@@ -422,7 +422,6 @@ void registerStatementSet(StatementFactory & factory)
 {
     factory.registerStatement("SET",
     {
-        .title = "SET Statement",
         .description = R"DOCS_MD(
 ```sql
 SET param = value

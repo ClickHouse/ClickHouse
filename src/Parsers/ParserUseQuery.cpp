@@ -61,7 +61,6 @@ void registerStatementUse(StatementFactory & factory)
 {
     factory.registerStatement("USE",
     {
-        .title = "USE Statement",
         .description = R"DOCS_MD(
 ```sql
 USE [DATABASE] db
