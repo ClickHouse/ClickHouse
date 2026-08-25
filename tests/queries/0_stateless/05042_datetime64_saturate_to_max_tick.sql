@@ -37,3 +37,8 @@ SELECT 'a fraction inside the boundary second survives, only real overflow satur
 SELECT toDateTime64(9223372036.5, 9), toDateTime64(-9223372036.5, 9);
 SELECT toTime64(3599999.5, 6), toTime64(-3599999.5, 6);
 SELECT toTime64(3600000.5, 6), toTime64(-3600000.5, 6);
+
+SELECT 'wide integer carriers saturate like the narrow ones';
+SELECT toTime64(toUInt128(3600000), 6), toTime64(toInt128(3600000), 6), toTime64(toUInt256(3600000), 6), toTime64(toInt256(-3600000), 6);
+SELECT toDateTime64(toUInt128(300000000000), 9), toDateTime64(toInt128(300000000000), 9), toDateTime64(toInt256(-300000000000), 9);
+SELECT toTime64(toUInt128(3600000), 6) = toTime64(toUInt64(3600000), 6), toTime64(toUInt128(1), 6), toDateTime64(toUInt128(1), 9);
