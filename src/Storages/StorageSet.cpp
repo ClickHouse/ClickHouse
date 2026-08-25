@@ -11,6 +11,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace FailPoints
+{
+    extern const char set_or_join_sink_pause_before_replay[];
 }
 
 class SetOrJoinSink final : public SinkToStorage, WithContext
@@ -103,7 +109,12 @@ SetOrJoinSink::~SetOrJoinSink()
     /// Do not look at `isCancelled` here: a pipeline is also cancelled after it has completed
     /// successfully, and the backup of a finished `INSERT` must survive that.
     if (!insert_finished)
+    {
+        /// A concurrent `rebuildFromBackups` reads the committed backup files, so removing one
+        /// must not interleave with it.
+        std::lock_guard publish_lock(table.mutate_mutex);
         discardStagedBackup();
+    }
 }
 
 void SetOrJoinSink::cancelBuffers() noexcept
@@ -147,6 +158,12 @@ void SetOrJoinSink::discardStagedBackup() noexcept
 
 void SetOrJoinSink::onException(std::exception_ptr)
 {
+    /// The same critical section as the publish phase in `onFinish`: the live state must not be
+    /// rebuilt and swapped while another insert is still replaying its own committed backup,
+    /// otherwise that insert would apply the rows of its backup on top of a rebuilt state that
+    /// already contains them.
+    std::lock_guard publish_lock(table.mutate_mutex);
+
     discardStagedBackup();
 
     if (!state_update_started)
@@ -196,6 +213,13 @@ void SetOrJoinSink::onFinish()
 {
     if (backup_buf)
     {
+        /// The whole publish phase (promote the staged file, then replay it into the live state)
+        /// must be atomic with respect to other persistent inserts and their rollbacks: if the
+        /// rollback of a concurrently failed insert rebuilt the live state from the committed
+        /// backups while this insert is still replaying its own committed backup, the remaining
+        /// blocks of the replay would be applied on top of a state that already contains them.
+        std::lock_guard publish_lock(table.mutate_mutex);
+
         /// Fail before the staged file is promoted: publishing it and only then discovering that the
         /// live state cannot be updated would leave the backup and the state out of sync.
         table.checkInsertIsPossible(getContext());
@@ -206,6 +230,8 @@ void SetOrJoinSink::onFinish()
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
         backup_promoted = true;
+
+        FailPointInjection::pauseFailPoint(FailPoints::set_or_join_sink_pause_before_replay);
 
         state_update_started = true;
         table.restoreFromFile(fs::path(backup_path) / backup_file_name, getContext());

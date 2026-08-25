@@ -4,6 +4,7 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <functional>
+#include <mutex>
 
 
 namespace DB
@@ -52,6 +53,13 @@ protected:
     bool persistent;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
+
+    /// Serializes the operations that publish or roll back committed backups: an `INSERT`
+    /// publishing its staged backup, the rollback of a failed `INSERT`, and (for `Join`)
+    /// mutations and truncation. Without it, the rollback of one failed insert could swap
+    /// the live state while another insert is still replaying its own committed backup,
+    /// so that insert would apply the same rows twice.
+    mutable std::mutex mutate_mutex;
 
     /// Restore from backup.
     void restore();
