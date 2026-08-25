@@ -832,11 +832,11 @@ def test_move_after_processing_preserve_tags_alterable(started_cluster):
         f"ALTER TABLE {table_name} MODIFY SETTING after_processing_move_preserve_tags = 0"
     )
     assert (
-        node.query(
+        "false"
+        == node.query(
             f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}'"
             " AND name = 'after_processing_move_preserve_tags'"
         ).strip()
-        == "0"
     )
 
     create_mv(node, table_name, dst_table_name)
