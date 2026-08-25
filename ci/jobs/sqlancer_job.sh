@@ -326,7 +326,7 @@ XML
 # and `ENGINE = Distributed('default', ...)`), which the embedded config does not
 # define -- it carries no `remote_servers` at all, so those reads fail with
 # `CLUSTER_DOESNT_EXIST`. 127.0.0.1 is treated as local, unlike 127.0.0.{2..255},
-# which is what lets the parallel-replica reads find a local shard.
+# so the shard is served in process rather than over a loopback connection.
 cat > "$SERVER_DIR/config.d/zz_ci_default_cluster.xml" <<'XML'
 <clickhouse>
     <remote_servers>
