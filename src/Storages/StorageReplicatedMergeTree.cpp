@@ -250,7 +250,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
     extern const MergeTreeSettingsBool exclude_data_from_backup;
     extern const MergeTreeSettingsBool exclude_from_backup;
-    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
