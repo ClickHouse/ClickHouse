@@ -129,6 +129,10 @@ struct SystemLogQueueSettings
 template <typename LogElement>
 class SystemLogQueue
 {
+    /// `queue` reallocates while `mutex` is held. libc++ relocates with std::move_if_noexcept, so an element
+    /// that can throw on move is deep-copied instead, and the critical section becomes O(queue size).
+    static_assert(std::is_nothrow_move_constructible_v<LogElement>);
+
 public:
     using Index = ISystemLog::Index;
 
@@ -253,6 +257,8 @@ public:
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+    /// Additional engine SETTINGS added to the default table definition (when no custom engine is configured).
+    static const char * getDefaultEngineSettings() { return ""; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7500; }

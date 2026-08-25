@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: 'Demo Days - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: 'Demo Days do ClickStack de 2026-07-24'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo Days']
+---
+
+<div id="metrics-experience-improvements">
+  ## Melhorias na experiência com métricas
+</div>
+
+*Demonstração por [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Este conjunto de melhorias aperfeiçoa a criação de métricas e dashboards, com base no feedback de um cliente que está migrando do Datadog. Ele tem um fluxo de trabalho de métricas bem estruturado. Ainda não abordamos todo o feedback dele, mas a maior parte se concentrou na criação de gráficos e na investigação de dashboards com centenas de séries temporais na tela.
+
+Uma das alterações não está relacionada a métricas, embora tenha surgido na mesma conversa: os tiles do dashboard agora se ajustam a uma grade visível durante a edição. Ao arrastar ou redimensionar um tile, a grade aparece atrás dele e destaca as células ao redor de sua posição atual. Antes, não ficava claro onde um tile seria colocado ou se movê-lo empurraria outro tile. A grade deixa ambas as situações visíveis. Ela usa a mesma geometria do mecanismo de layout, portanto, as guias correspondem à posição final do tile, inclusive nas bordas direita e inferior.
+
+As alterações nas métricas se concentram em gráficos com muitas séries, algo comum ao agrupar por várias dimensões. Antes, passar o cursor sobre um gráfico mostrava todas as séries naquele timestamp. Em um gráfico com 300 séries, a dica de ferramenta podia ser mais alta que o próprio gráfico, e a série sob o cursor raramente era a que você precisava.
+
+Gráficos com mais de 10 séries agora mostram apenas a série mais próxima do cursor. Essa série é exibida por cima, enquanto as outras ficam esmaecidas. Gráficos com 10 séries ou menos mantêm a dica de ferramenta completa e ordenada, portanto, seu comportamento não mudou. A legenda está mais compacta e pode ser totalmente ocultada. Quando visível, ela também funciona como um controle de seleção e busca rápida, facilitando encontrar uma série específica.
+
+A maior alteração está no modo de tela cheia, para onde as pessoas costumam ir após identificar um desvio que desejam investigar. O modo de tela cheia agora está disponível com um clique em um ícone da barra de ferramentas, em vez de ficar no menu de três pontos. Ao abri-lo, a legenda muda para um layout mais útil, com detalhes resumidos e uma caixa de busca. Filtrar por uma substring no nome da série pode reduzir 300 séries às poucas que interessam, prontas para comparar ao passar o cursor sobre elas.
+
+Um ponto mudou após a chamada. A escolha entre dicas de ferramenta para uma única série ou várias séries será configurável, em vez de depender de um limite fixo. Comparar os valores absolutos de várias séries no mesmo ponto no tempo é útil quando não há muitas delas, portanto, os usuários devem poder escolher o comportamento mais adequado ao gráfico.
+
+**PRs relacionados:** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard): mostrar uma grade de encaixe ao arrastar ou redimensionar um tile, [#2722](https://github.com/hyperdxio/hyperdx/pull/2722) Melhorar o hover do gráfico temporal para gráficos densos, [#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard): mover o modo de tela cheia do tile para um ícone de nível superior na barra de ferramentas, [#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard): desenhar uma série isolada de gráfico temporal além do limite de renderização de linhas, [#2776](https://github.com/hyperdxio/hyperdx/pull/2776) Configurações de exibição configuráveis para gráfico temporal (legenda, dica de ferramenta, estilo de linha)
+
+<div id="trace-viewer-improvements">
+  ## Melhorias no visualizador de traces
+</div>
+
+*Demo por [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Duas pequenas correções no visualizador de traces redesenhado, ambas baseadas diretamente no feedback sobre o novo layout.
+
+O painel de detalhes do span foi movido recentemente para a direita da cascata, mas nem todos preferiram essa posição. Um novo controle ao lado do botão de fechar do painel permite movê-lo entre o lado direito, que continua sendo o padrão, e a parte inferior. Quando o painel está na parte inferior, você pode arrastá-lo até a altura que for mais adequada.
+
+A mesma discussão também revelou um bug de quebra de linha. Com a quebra de linha ativada, valores longos de atributos sem pontos naturais de quebra ainda eram truncados. Um `url.path` sem espaços, hífens ou traços era um exemplo. Agora, os valores de atributos podem ser quebrados em qualquer limite de caractere, tornando o valor completo legível.
+
+**PRs relacionados:** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): quebra de palavras em atributos + alternância de layout
+
+<div id="mcp-server-and-eval-improvements">
+  ## Melhorias no servidor MCP e nas avaliações
+</div>
+
+*Demonstração de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+A menor mudança aqui pode ter o maior impacto na adoção. Era difícil encontrar como habilitar o servidor MCP no ClickHouse Cloud: os usuários precisavam seguir instruções no aplicativo e depois localizar a configuração correta no control plane. Agora, o botão abre diretamente o modal correspondente, onde é possível ativar o servidor.
+
+Brandon continua aprimorando nossa estrutura de avaliação para o MCP, com base em [seu trabalho recente](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals). A estrutura de avaliação agora pode usar um provider e um modelo diferentes daqueles que estão sendo avaliados. Anteriormente, toda a avaliação precisava usar modelos da Anthropic, o que poderia fazer com que um modelo avaliasse sua própria saída. Agora, é possível fornecer uma chave da OpenAI e uma especificação de modelo avaliador com prefixo do provider para direcionar a avaliação pela OpenAI.
+
+A comparação entre avaliadores revelou algumas diferenças úteis. Alguns aplicam a rubrica com muito mais rigor e reprovam uma execução quando ela não usa uma chave específica, enquanto outros aceitam uma resposta suficientemente próxima. Também corrigimos um bug de avaliação desatualizada identificado durante esse trabalho. Reavaliar um batch com outro avaliador agora executa o novo avaliador, em vez de retornar o resultado anterior.
+
+Brandon também adicionou uma nova ferramenta MCP, `clickstack_emerging_signals`, depois de perguntar ao servidor MCP o que ele precisava para obter uma pontuação melhor no cenário de verificação de Saúde do serviço. Trata-se de um detector de novidades em padrões com duas janelas. A ferramenta extrai padrões de logs e eventos de uma janela de referência e de uma janela atual e, em seguida, compara os dois conjuntos. Ela informa padrões novos, que se tornaram significativamente mais frequentes ou que desapareceram.
+
+Isso contrasta com as ferramentas existentes: os padrões de eventos descrevem o que é comum em uma janela, enquanto os deltas de eventos mostram quais atributos mudaram. A nova ferramenta adiciona cerca de 10 pontos à pontuação da verificação de Saúde do serviço.
+
+Também foram adicionadas ao MCP ferramentas CRUD para source e webhook, após uma solicitação para configurar a ingestão a partir de uma skill. Agora, os agents podem criar, atualizar e excluir sources e webhooks, em vez de apenas consultá-los.
+
+O trabalho está em andamento para executar as avaliações na CI de cada pull request, substituindo o processo atual de colar manualmente as pontuações nas descrições dos PRs. A semeadura do S3 está funcionando. O bloqueio restante é conceder à GitHub Action acesso ao bucket. Quando isso for resolvido, os resultados das avaliações deverão chegar muito mais rápido.
+
+**PRs relacionados:** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals): provider/modelo de avaliador independente + correção para ignorar avaliação desatualizada ao trocar de avaliador, [#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp): adicionar a ferramenta clickstack&#95;emerging&#95;signals, [#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp): ferramentas CRUD para source e webhook, [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): esqueleto de CI M1, executar avaliações do MCP de ponta a ponta no GitHub Actions, [#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals): semeadura rápida de snapshot Parquet M2
