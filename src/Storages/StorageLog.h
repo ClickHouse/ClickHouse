@@ -81,6 +81,7 @@ public:
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     Disks getDataDisks() const override { return {disk}; }
     bool supportsSubcolumns() const override { return true; }
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
     ColumnSizeByName getColumnSizes() const override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
