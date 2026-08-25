@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-release
+-- Tags: no-parallel, no-parallel-replicas, no-release, no-old-analyzer
 -- Tag no-parallel: the last check compares SelectedMarks and asserts a QueryConditionCacheHits
 --                  across two separate queries on the instance-wide query condition cache; a
 --                  sibling test's SYSTEM DROP QUERY CONDITION CACHE landing between them flips
@@ -7,6 +7,8 @@
 --                           query condition cache writes, so the per-entry counts below do not hold
 -- Tag release: reads table_uuid/condition_hash/matching_marks from system.query_condition_cache,
 --              which are only available in debug and sanitizer builds
+-- Tag no-old-analyzer: the old analyzer never reaches the query condition cache, so there is
+--                      nothing to count here
 
 -- On a table with no effective skip index, one predicate is recorded under one cache key rather
 -- than two: index analysis and the row-level filter both write the bare condition hash. With an

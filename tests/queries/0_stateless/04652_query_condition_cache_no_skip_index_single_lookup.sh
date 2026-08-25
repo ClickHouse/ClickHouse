@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-old-analyzer
 # Tag no-parallel-replicas: single-node test; parallel replicas relocate index analysis and the
 #                           query condition cache lookups, so the per-part counts below do not hold
+# Tag no-old-analyzer: the old analyzer never reaches the query condition cache, so there is
+#                      nothing to count here
 
 # With no effective skip index the profiled query condition cache key equals the bare one, so
 # filterPartsByQueryConditionCache consults one key per part instead of two. Counting the cache's
