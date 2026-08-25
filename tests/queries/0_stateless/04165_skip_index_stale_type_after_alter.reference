@@ -1,0 +1,31 @@
+-- 1. killed mutation, String -> Nullable(UInt64)
+4
+-- 2. killed mutation, String -> UInt64 (not Nullable-specific)
+1
+-- 3. JSON type hint, no mutation is ever created
+0
+1
+-- 4. expression index, representation-preserving column conversion
+0
+1
+-- 5. killed mutation, Int8 -> Enum8: must not prune away a value the read rejects
+-- 6. killed mutation, minmax index read without a canUseIndex guard
+1
+50
+0
+-- 7. control: a representation-preserving conversion keeps pruning
+1
+1
+-- 8. control: extending an enum keeps pruning
+32
+1
+-- 9. control: an unaltered table keeps pruning, including the top-k read
+1
+1
+1
+63
+50
+1
+-- 10. known gap: index name reuse after a killed DROP INDEX
+0
+1

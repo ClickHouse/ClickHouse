@@ -95,7 +95,7 @@ namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
-    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
@@ -1633,6 +1633,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -2923,7 +2927,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
         if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || alter->isFreezeAlter()
-            || alter->isUnlockSnapshot())
+            || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
         // Allowed ALTER operation on KeeperMap still should be replicated
@@ -3193,7 +3197,7 @@ The following settings are supported:
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
 |------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `max_broken_tables_ratio`                                                    | 1                              | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                           |
-| `max_replication_lag_to_enqueue`                                             | 50                             | Replica will throw exception on attempt to execute query if its replication lag greater                                                                                                                                                                                                                                               |
+| `max_replication_lag_to_enqueue`                                             | 50                             | Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than `0`; `0` is rejected with `BAD_ARGUMENTS` (minimum is `1`)                                                                                                                                                              |
 | `wait_entry_commited_timeout_sec`                                            | 3600                           | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet                                                                                                                                                                                                                                       |
 | `collection_name`                                                            |                                | A name of a collection defined in server's config where all info for cluster authentication is defined                                                                                                                                                                                                                                |
 | `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
