@@ -710,10 +710,15 @@ def test_stream_input_left_open_by_client():
         )
         # Block instead of returning: returning would send `WritesDone` and complete the
         # server-side read.
-        keep_open.wait(timeout=60)
+        keep_open.wait()
 
     try:
-        result = stub.ExecuteQueryWithStreamInput(send_query_info())
+        # The result must arrive while the request stream is still open: `keep_open` is set only
+        # after this assertion, so if the server waited for the client to half-close, the future
+        # would time out instead.
+        result = stub.ExecuteQueryWithStreamInput.future(send_query_info()).result(
+            timeout=10
+        )
         assert not result.HasField("exception")
         assert result.output == b"1\n"
     finally:
@@ -736,15 +741,72 @@ def test_stream_input_left_open_by_client_after_input_data():
             next_query_info=True,
         )
         yield clickhouse_grpc_pb2.QueryInfo(input_data=b"4\n5\n6\n")
-        keep_open.wait(timeout=60)
+        keep_open.wait()
 
     try:
-        result = stub.ExecuteQueryWithStreamInput(send_query_info())
+        result = stub.ExecuteQueryWithStreamInput.future(send_query_info()).result(
+            timeout=10
+        )
         assert not result.HasField("exception")
     finally:
         keep_open.set()
 
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
+
+
+def test_stream_io_left_open_by_client():
+    # Same contract for `ExecuteQueryWithStreamIO`, which goes through a different responder
+    # (`ServerAsyncReaderWriter`): the server must finish the response stream while the client's
+    # request stream is still open.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    keep_open = Event()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT 1", output_format="TabSeparated"
+        )
+        keep_open.wait()
+
+    try:
+        # The deadline makes the completion ordering observable: if the server waited for the
+        # client to half-close, iterating the response stream would fail with DEADLINE_EXCEEDED.
+        results = list(stub.ExecuteQueryWithStreamIO(send_query_info(), timeout=10))
+        assert len(results) >= 1
+        assert not results[-1].HasField("exception")
+        assert b"".join(r.output for r in results) == b"1\n"
+    finally:
+        keep_open.set()
+
+    assert query("SELECT 2") == "2\n"
+
+
+def test_stream_input_left_open_by_many_concurrent_clients():
+    # Many calls finishing at the same time keep the single completion-queue thread busy with the
+    # other calls' events, so each call's thread destroys the call while the completion of its
+    # speculative read is still queued - the interleaving needed for the use-after-free to fire.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    keep_open = Event()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT 1", output_format="TabSeparated"
+        )
+        keep_open.wait()
+
+    try:
+        for _ in range(10):
+            futures = [
+                stub.ExecuteQueryWithStreamInput.future(send_query_info())
+                for _ in range(16)
+            ]
+            for future in futures:
+                result = future.result(timeout=30)
+                assert not result.HasField("exception")
+                assert result.output == b"1\n"
+    finally:
+        keep_open.set()
+
+    assert query("SELECT 3") == "3\n"
 
 
 def test_cancel_while_generating_output():
