@@ -55,7 +55,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  يدعم ClickHouse حاليًا قراءة الإصدارين v1 وv2 من صيغة Iceberg عبر دوال الجداول `icebergS3` و`icebergAzure` و`icebergHDFS` و`icebergLocal`، ومحركات الجداول `IcebergS3` و`icebergAzure` و`IcebergHDFS` و`IcebergLocal`.
+  يدعم ClickHouse حاليًا قراءة الإصدارين v1 وv2 من صيغة Iceberg عبر دوال الجداول `icebergS3` و`icebergAzure` و`icebergHDFS` و`icebergLocal`، ومحركات الجداول `IcebergS3` و`icebergAzure` و`IcebergHDFS` و`IcebergLocal`. دعم الإصدار v3 جزئي؛ إذ لا تُدعم متجهات الحذف ودمج manifest.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -145,11 +145,10 @@ ENGINE = IcebergS3(
   ## معالجة الجداول ذات الصفوف المحذوفة
 </div>
 
-حاليًا، لا تُدعَم إلا جداول Iceberg التي تستخدم [الحذف حسب الموضع](https://iceberg.apache.org/spec/#position-delete-files).
+يدعم ClickHouse جداول Iceberg التي تستخدم [الحذف حسب الموضع](https://iceberg.apache.org/spec/#position-delete-files) و[الحذف بالمساواة](https://iceberg.apache.org/spec/#equality-delete-files). يُدعَم الحذف بالمساواة بدءًا من الإصدار v25.8.
 
-أساليب الحذف التالية **غير مدعومة**:
+أسلوب الحذف التالي **غير مدعوم**:
 
-* [الحذف بالمساواة](https://iceberg.apache.org/spec/#equality-delete-files)
 * [متجهات الحذف](https://iceberg.apache.org/spec/#deletion-vectors) (أُضيفت في v3)
 
 <div id="basic-usage">

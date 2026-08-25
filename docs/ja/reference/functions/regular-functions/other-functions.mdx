@@ -5652,6 +5652,10 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 サーバーに証明書がない場合は空のマップを返します。たとえば、証明書が ACME によってプロビジョニングされており、まだ発行されていない場合です。
 接続の検証に OpenSSL 証明書を使用するように ClickHouse を設定する方法について詳しくは、[TLS の設定](/ja/concepts/features/security/tls/configuring-tls) を参照してください。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す可能性があります。
+</Note>
+
 **構文**
 
 ```sql

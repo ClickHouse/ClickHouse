@@ -1763,6 +1763,8 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 이 함수가 적용된 컬럼의 값을 제외하면 다른 컬럼의 값은 모두 그대로 복사되며,
 해당 값은 대응하는 배열 값으로 대체됩니다.
 
+`unnest`(버전 26.5부터)는 함수 호출 형식(`SELECT unnest(arr)`)에서 `arrayJoin`의 대소문자를 구분하지 않는 별칭입니다. PostgreSQL 테이블 소스 구문은 지원되지 않습니다(`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, `LATERAL`). 이러한 쿼리에는 `ARRAY JOIN` 절을 사용하십시오.
+
 `unnest` 별칭을 통한 사용을 포함해 `arrayJoin`은 조인 중에 평가되는 `JOIN ON` 조건에서 사용할 수 없습니다. 이러한 조건은
 행 수를 유지해야 하기 때문입니다. 한쪽에만 적용되는 조건과 `arrayJoin`에 대한 동등 키는
 조인 전에 추출되므로 영향을 받지 않습니다. 논리합으로 분리되지 않은 `ALL INNER JOIN` 조건도 영향을 받지 않는데,

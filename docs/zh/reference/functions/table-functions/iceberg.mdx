@@ -54,7 +54,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  ClickHouse 当前支持通过 `icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal` 表函数，以及 `IcebergS3`、`icebergAzure`、`IcebergHDFS` 和 `IcebergLocal` 表引擎，读取 Iceberg 格式的 v1 和 v2 版本。
+  ClickHouse 支持通过 `icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal` 表函数，以及 `IcebergS3`、`IcebergAzure`、`IcebergHDFS` 和 `IcebergLocal` 表引擎，读取 Iceberg 格式的 v1 和 v2 版本。对 v3 的支持不完整；不支持删除向量和清单合并整理。
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -144,11 +144,10 @@ ClickHouse 支持 Iceberg 表的时间旅行功能，让您可以使用特定的
   ## 处理含已删除行的表
 </div>
 
-目前，仅支持带有[位置删除](https://iceberg.apache.org/spec/#position-delete-files)的 Iceberg 表。
+ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-delete-files)和[等值删除](https://iceberg.apache.org/spec/#equality-delete-files)的 Iceberg 表。自 v25.8 起支持等值删除。
 
 以下删除方法**暂不支持**：
 
-* [等值删除](https://iceberg.apache.org/spec/#equality-delete-files)
 * [删除向量](https://iceberg.apache.org/spec/#deletion-vectors) (在 v3 中引入)
 
 <div id="basic-usage">

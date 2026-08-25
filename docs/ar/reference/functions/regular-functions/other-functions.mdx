@@ -5654,6 +5654,10 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 تُعاد خريطة فارغة إذا لم تكن لدى الخادم شهادة، على سبيل المثال، عندما تُوفَّر الشهادة باستخدام ACME ولم تُصدر بعد.
 راجع [إعداد TLS](/ar/concepts/features/security/tls/configuring-tls) لمزيد من المعلومات حول كيفية إعداد ClickHouse لاستخدام شهادات OpenSSL للتحقق من الاتصالات.
 
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql

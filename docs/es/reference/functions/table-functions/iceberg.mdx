@@ -55,7 +55,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  Actualmente, ClickHouse permite leer las versiones v1 y v2 del formato Iceberg mediante las funciones de tabla `icebergS3`, `icebergAzure`, `icebergHDFS` y `icebergLocal`, y los motores de tabla `IcebergS3`, `icebergAzure`, `IcebergHDFS` e `IcebergLocal`.
+  ClickHouse permite leer las versiones v1 y v2 del formato Iceberg mediante las funciones de tabla `icebergS3`, `icebergAzure`, `icebergHDFS` y `icebergLocal`, y los motores de tabla `IcebergS3`, `icebergAzure`, `IcebergHDFS` e `IcebergLocal`. La compatibilidad con v3 es parcial; los vectores de eliminación y la compactación de manifiestos no son compatibles.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -145,11 +145,10 @@ ClickHouse admite el viaje en el tiempo en las tablas Iceberg, lo que permite co
   ## Procesamiento de tablas con filas eliminadas
 </div>
 
-Actualmente, solo se admiten las tablas Iceberg con [eliminaciones por posición](https://iceberg.apache.org/spec/#position-delete-files).
+ClickHouse admite tablas Iceberg con [eliminaciones por posición](https://iceberg.apache.org/spec/#position-delete-files) y [eliminaciones por igualdad](https://iceberg.apache.org/spec/#equality-delete-files). Las eliminaciones por igualdad se admiten a partir de la v25.8.
 
-No se admiten los siguientes métodos de eliminación:
+No se admite el siguiente método de eliminación:
 
-* [Eliminaciones por igualdad](https://iceberg.apache.org/spec/#equality-delete-files)
 * [Vectores de eliminación](https://iceberg.apache.org/spec/#deletion-vectors) (introducidos en v3)
 
 <div id="basic-usage">

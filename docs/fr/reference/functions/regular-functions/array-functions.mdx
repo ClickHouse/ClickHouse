@@ -1767,6 +1767,8 @@ et avec les fonctions d’agrégation, qui prennent un groupe de lignes et les &
 Toutes les valeurs des colonnes sont simplement copiées, à l’exception de celles de la colonne à laquelle cette fonction est appliquée ;
 celles-ci sont remplacées par la valeur correspondante du tableau.
 
+`unnest` (depuis la version 26.5) est un alias insensible à la casse de `arrayJoin` sous forme d’appel de fonction (`SELECT unnest(arr)`). La syntaxe PostgreSQL de source de table n’est pas prise en charge (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL`). Utilisez la clause `ARRAY JOIN` pour ces requêtes.
+
 `arrayJoin`, y compris via son alias `unnest`, ne peut pas être utilisé dans une condition `JOIN ON` évaluée lors de la jointure, car une telle condition doit
 préserver le nombre de lignes. Une condition qui ne porte que sur un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont
 extraites avant la jointure et ne sont pas affectées. Une condition `ALL INNER JOIN` sans disjonction n’est pas non plus affectée,

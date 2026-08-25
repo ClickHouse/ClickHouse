@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 버킷별 선택이 정확하다는 것을 증명할 수 있을 때, 각 2단계 버킷에서 상위 n개 그룹만 구체화하는 계획 최적화를 전환하는 새로운 설정입니다."}]}]} />
+
+최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 계획에서 버킷별 선택이 정확하다는 것을 증명할 수 있는 경우, 집계의 최종 변환 과정에서 각 2단계 버킷의 상위 n개 그룹만 해당 순서로 구체화하는 쿼리 계획 수준 최적화를 전환합니다. 결과는 정확합니다. 자체 버킷의 상위 n개 그룹에 속하지 않는 그룹은 전역적으로 적어도 n개의 그룹보다 뒤에 있으므로 전역 상위 n개에 포함될 수 없습니다.
+설정 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>

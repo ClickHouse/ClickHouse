@@ -55,7 +55,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  Atualmente, o ClickHouse oferece suporte à leitura das versões v1 e v2 do formato Iceberg por meio das funções de tabela `icebergS3`, `icebergAzure`, `icebergHDFS` e `icebergLocal` e dos motores de tabela `IcebergS3`, `icebergAzure`, `IcebergHDFS` e `IcebergLocal`.
+  Atualmente, o ClickHouse oferece suporte à leitura das versões v1 e v2 do formato Iceberg por meio das funções de tabela `icebergS3`, `icebergAzure`, `icebergHDFS` e `icebergLocal` e dos motores de tabela `IcebergS3`, `icebergAzure`, `IcebergHDFS` e `IcebergLocal`. O suporte à v3 é parcial; vetores de exclusão e compactação de manifest não são compatíveis.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -145,11 +145,10 @@ O ClickHouse oferece suporte ao recurso de viagem no tempo em tabelas Iceberg, p
   ## Processamento de tabelas com linhas excluídas
 </div>
 
-Atualmente, apenas tabelas Iceberg com [exclusões por posição](https://iceberg.apache.org/spec/#position-delete-files) são suportadas.
+O ClickHouse oferece suporte a tabelas Iceberg com [exclusões por posição](https://iceberg.apache.org/spec/#position-delete-files) e [exclusões por igualdade](https://iceberg.apache.org/spec/#equality-delete-files). As exclusões por igualdade são suportadas a partir da v25.8.
 
-Os seguintes métodos de exclusão **não são suportados**:
+O seguinte método de exclusão **não é suportado**:
 
-* [Exclusões por igualdade](https://iceberg.apache.org/spec/#equality-delete-files)
 * [Vetores de exclusão](https://iceberg.apache.org/spec/#deletion-vectors) (introduzidos na v3)
 
 <div id="basic-usage">

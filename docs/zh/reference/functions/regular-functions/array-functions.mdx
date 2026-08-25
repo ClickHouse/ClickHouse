@@ -1757,6 +1757,8 @@ Introduced in: v1.1.0
 各列中的所有值都会被直接复制，但应用此函数的那一列除外；
 该列中的值会被替换为对应的数组元素值。
 
+`unnest` (自 26.5 版本起) 是函数调用形式中 `arrayJoin` 的不区分大小写别名 (`SELECT unnest(arr)`) 。不支持 PostgreSQL 表源语法 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`) 。对于此类查询，请使用 `ARRAY JOIN` 子句。
+
 `arrayJoin` (包括通过其 `unnest` 别名) 不能用于在 join 期间求值的 `JOIN ON` 条件，因为此类条件必须
 保持行数不变。仅应用于一侧的条件，以及基于 `arrayJoin` 的相等键，会在 join 前被
 提取，因此不受影响。不含析取条件的 `ALL INNER JOIN` 条件也不受影响，

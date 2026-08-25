@@ -1767,6 +1767,8 @@ y con las funciones de agregación, que toman un grupo de filas y las &quot;comp
 Todos los valores de las columnas se copian sin más, excepto los valores de la columna a la que se aplica esta función;
 estos se sustituyen por el valor correspondiente del array.
 
+`unnest` (desde la versión 26.5) es un alias de `arrayJoin` que no distingue entre mayúsculas y minúsculas en forma de llamada a función (`SELECT unnest(arr)`). La sintaxis de PostgreSQL para fuentes de tabla no es compatible (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` y `LATERAL`). Use la cláusula `ARRAY JOIN` para esas consultas.
+
 `arrayJoin`, incluso mediante su alias `unnest`, no se puede usar en una condición `JOIN ON` que se evalúe durante la unión, ya que dicha condición debe
 preservar el número de filas. Una condición que se aplica solo a un lado y una clave de igualdad basada en `arrayJoin` se
 extraen antes de la unión y no se ven afectadas. Una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada,

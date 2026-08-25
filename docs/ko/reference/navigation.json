@@ -1140,6 +1140,7 @@
         "ko/reference/system-tables/settings_profile_elements",
         "ko/reference/system-tables/settings_profiles",
         "ko/reference/system-tables/stack_trace",
+        "ko/reference/system-tables/statements",
         "ko/reference/system-tables/stemmers",
         "ko/reference/system-tables/storage_policies",
         "ko/reference/system-tables/symbols",

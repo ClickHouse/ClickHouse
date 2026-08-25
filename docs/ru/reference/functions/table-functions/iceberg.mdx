@@ -55,7 +55,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  В настоящее время ClickHouse поддерживает чтение формата Iceberg версий v1 и v2 через табличные функции `icebergS3`, `icebergAzure`, `icebergHDFS` и `icebergLocal`, а также через движки таблиц `IcebergS3`, `icebergAzure`, `IcebergHDFS` и `IcebergLocal`.
+  ClickHouse поддерживает чтение формата Iceberg версий v1 и v2 через табличные функции `icebergS3`, `icebergAzure`, `icebergHDFS` и `icebergLocal`, а также через движки таблиц `IcebergS3`, `IcebergAzure`, `IcebergHDFS` и `IcebergLocal`. Поддержка v3 является частичной; векторы удаления и компактация манифестов не поддерживаются.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -145,11 +145,10 @@ ClickHouse поддерживает путешествие во времени �
   ## Обработка таблиц с удалёнными строками
 </div>
 
-В настоящее время поддерживаются только таблицы Iceberg с [position deletes](https://iceberg.apache.org/spec/#position-delete-files).
+ClickHouse поддерживает таблицы Iceberg с [position deletes](https://iceberg.apache.org/spec/#position-delete-files) и [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes поддерживаются начиная с v25.8.
 
-Следующие методы удаления **не поддерживаются**:
+Следующий метод удаления **не поддерживается**:
 
-* [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
 * [Векторы удаления](https://iceberg.apache.org/spec/#deletion-vectors) (появились в v3)
 
 <div id="basic-usage">

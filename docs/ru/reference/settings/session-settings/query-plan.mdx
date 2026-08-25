@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для включения и отключения оптимизации плана, при которой на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета, если финальная агрегация передаёт результаты в ORDER BY с LIMIT n, а выборка в каждом бакете гарантированно точна."}]}]} />
+
+Включает или отключает оптимизацию на уровне плана запроса: если финальная агрегация передаёт результаты в `ORDER BY` с `LIMIT n`, а план гарантирует точность выборки в каждом бакете, на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета в этом порядке. Результат точен: у группы, не входящей в n лучших групп своего бакета, есть как минимум n групп, опережающих её в глобальном порядке, поэтому она не может войти в глобальный top n.
+Действует только при значении 1 настройки [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations).
+
+Возможные значения:
+
+* 0 - Отключить
+* 1 - Включить
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>

@@ -1140,6 +1140,7 @@
         "zh/reference/system-tables/settings_profile_elements",
         "zh/reference/system-tables/settings_profiles",
         "zh/reference/system-tables/stack_trace",
+        "zh/reference/system-tables/statements",
         "zh/reference/system-tables/stemmers",
         "zh/reference/system-tables/storage_policies",
         "zh/reference/system-tables/symbols",

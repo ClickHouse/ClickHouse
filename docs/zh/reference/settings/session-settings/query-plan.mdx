@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
+
+切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终转换过程中，仅按此顺序物化每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+可能的值：
+
+* 0 - 禁用
+* 1 - 启用
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>

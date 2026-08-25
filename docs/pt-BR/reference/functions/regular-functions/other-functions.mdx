@@ -5654,6 +5654,10 @@ Exibe informações sobre o certificado Secure Sockets Layer (SSL) atual do serv
 Um map vazio é retornado se o servidor não tiver certificado, por exemplo, quando o certificado é provisionado com ACME e ainda não foi emitido.
 Consulte [Configurando TLS](/pt-BR/concepts/features/security/tls/configuring-tls) para mais informações sobre como configurar o ClickHouse para usar certificados OpenSSL para validar conexões.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql

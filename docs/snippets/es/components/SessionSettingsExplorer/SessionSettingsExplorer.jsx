@@ -2304,8 +2304,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 50,
+      count: 51,
       settings: [
+        { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
         { name: "query_plan_convert_any_join_to_semi_or_anti_join", path: "/query-plan#query_plan_convert_any_join_to_semi_or_anti_join", default: "1" },
         { name: "query_plan_convert_join_to_in", path: "/query-plan#query_plan_convert_join_to_in", default: "0" },

@@ -5654,6 +5654,10 @@ Muestra información sobre el certificado SSL actual del servidor, si se ha conf
 Se devuelve un mapa vacío si el servidor no tiene certificado; por ejemplo, cuando el certificado se aprovisiona con ACME y aún no se ha emitido.
 Consulta [Configuración de TLS](/es/concepts/features/security/tls/configuring-tls) para obtener más información sobre cómo configurar ClickHouse para usar certificados OpenSSL para validar las conexiones.
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql

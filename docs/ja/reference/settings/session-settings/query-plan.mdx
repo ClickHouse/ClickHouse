@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "最終集約の出力に LIMIT n 付きの ORDER BY を適用し、バケットごとの選択が正確であることを証明できる場合に、各二段階バケットの上位 n グループのみをマテリアライズするプラン最適化を切り替える新しい設定。"}]}]} />
+
+最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終変換時に各二段階バケットの上位 n グループのみをその順序でマテリアライズするクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効化
+* 1 - 有効化
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>

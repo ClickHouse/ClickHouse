@@ -5653,6 +5653,10 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 如果服务器没有证书，则返回空映射，例如证书通过 ACME 配置但尚未签发时。
 有关如何将 ClickHouse 配置为使用 OpenSSL 证书验证连接的更多信息，请参见 [配置 TLS](/zh/concepts/features/security/tls/configuring-tls)。
 
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql

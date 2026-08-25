@@ -576,6 +576,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+도입 버전: v26.8.0
+
+지정된 Prometheus 유형의 메트릭 계열에 대한 메트릭 이름 접미사를 반환합니다.
+
+**구문**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**인수**
+
+* `type` — Prometheus 메트릭 유형(`counter`, `gauge`, `histogram`, `summary` 등). [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+해당 유형의 메트릭 계열에 대한 접미사를 반환합니다. [`Array(String)`](/ko/reference/data-types/array)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -905,6 +941,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+도입 버전: v26.8.0
+
+`(tag_name, tag_value)` 쌍으로 구성된 배열과 별도의 태그 이름/값 인수를 하나의 맵으로 결합합니다.
+결과는 태그 이름을 기준으로 정렬되며, 중복된 태그 이름 및 빈 값을 가진 태그는 제거됩니다.
+
+**구문**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**인수**
+
+* `tags_array` — (tag&#95;name, tag&#95;value) 쌍의 배열. [`Array(Tuple(String, String))`](/ko/reference/data-types/array) 또는 [`Map(String, String)`](/ko/reference/data-types/map) 또는 [`NULL`](/ko/reference/syntax#null)
+* `tag_name_i` — 태그 이름. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
+* `tag_value_i` — 태그 값. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable)
+
+**반환 값**
+
+태그 이름을 기준으로 정렬된 태그 이름-값 맵을 반환합니다. 중복된 태그 이름과 비어 있는 태그 값은 제외됩니다.
+[`Map(String, String)`](/ko/reference/data-types/map)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

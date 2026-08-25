@@ -578,6 +578,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+Introducido en: v26.8.0
+
+Devuelve los sufijos de los nombres de métricas de una familia de métricas del tipo de Prometheus especificado.
+
+**Sintaxis**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**Argumentos**
+
+* `type`: tipo de métrica de Prometheus (`counter`, `gauge`, `histogram`, `summary`, ...). [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve los sufijos de una familia de ese tipo. [`Array(String)`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -907,6 +943,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+Introducido en: v26.8.0
+
+Combina un array de pares `(tag_name, tag_value)` con argumentos independientes de nombre/valor de etiqueta en un único mapa.
+El resultado se ordena por nombre de etiqueta y se eliminan los nombres de etiqueta duplicados y las etiquetas con valores vacíos.
+
+**Sintaxis**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**Argumentos**
+
+* `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/es/reference/data-types/array) o [`Map(String, String)`](/es/reference/data-types/map) o [`NULL`](/es/reference/syntax#null)
+* `tag_name_i` — El nombre de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
+* `tag_value_i` — El valor de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Nullable(String)`](/es/reference/data-types/nullable)
+
+**Valor devuelto**
+
+Devuelve un map de nombres de etiquetas a valores de etiquetas, ordenado por nombre de etiqueta y sin nombres de etiquetas duplicados ni valores de etiquetas vacíos.
+[`Map(String, String)`](/es/reference/data-types/map)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

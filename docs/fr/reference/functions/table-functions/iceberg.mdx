@@ -54,7 +54,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  ClickHouse prend actuellement en charge la lecture des versions v1 et v2 du format Iceberg via les fonctions de table `icebergS3`, `icebergAzure`, `icebergHDFS` et `icebergLocal`, ainsi que les moteurs de table `IcebergS3`, `icebergAzure`, `IcebergHDFS` et `IcebergLocal`.
+  ClickHouse prend actuellement en charge la lecture des versions v1 et v2 du format Iceberg via les fonctions de table `icebergS3`, `icebergAzure`, `icebergHDFS` et `icebergLocal`, ainsi que les moteurs de table `IcebergS3`, `icebergAzure`, `IcebergHDFS` et `IcebergLocal`. La prise en charge de v3 est partielle ; les vecteurs de suppression et la compaction des manifestes ne sont pas pris en charge.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -144,11 +144,10 @@ ClickHouse prend en charge le time travel pour les tables Iceberg, ce qui permet
   ## Traitement des tables contenant des lignes supprimées
 </div>
 
-Actuellement, seules les tables Iceberg avec des [suppressions par position](https://iceberg.apache.org/spec/#position-delete-files) sont prises en charge.
+ClickHouse prend en charge les tables Iceberg avec des [suppressions par position](https://iceberg.apache.org/spec/#position-delete-files) et des [suppressions par égalité](https://iceberg.apache.org/spec/#equality-delete-files). Les suppressions par égalité sont prises en charge à partir de la v25.8.
 
-Les méthodes de suppression suivantes ne sont **pas prises en charge** :
+La méthode de suppression suivante n’est **pas prise en charge** :
 
-* [Suppressions par égalité](https://iceberg.apache.org/spec/#equality-delete-files)
 * [Vecteurs de suppression](https://iceberg.apache.org/spec/#deletion-vectors) (à partir de la v3)
 
 <div id="basic-usage">

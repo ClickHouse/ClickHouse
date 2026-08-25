@@ -55,7 +55,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  ClickHouse는 현재 `icebergS3`, `icebergAzure`, `icebergHDFS` 및 `icebergLocal` 테이블 함수와 `IcebergS3`, `icebergAzure`, `IcebergHDFS` 및 `IcebergLocal` 테이블 엔진을 통해 Iceberg 포맷 v1 및 v2를 읽는 기능을 지원합니다.
+  ClickHouse는 `icebergS3`, `icebergAzure`, `icebergHDFS` 및 `icebergLocal` 테이블 함수와 `IcebergS3`, `IcebergAzure`, `IcebergHDFS` 및 `IcebergLocal` 테이블 엔진을 통해 Iceberg 형식 v1 및 v2를 읽는 기능을 지원합니다. v3는 부분적으로 지원되며, 삭제 벡터와 매니페스트 압축은 지원되지 않습니다.
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -145,11 +145,10 @@ ClickHouse는 Iceberg 테이블에서 time travel을 지원하므로, 특정 타
   ## 삭제된 행이 포함된 테이블 처리
 </div>
 
-현재는 [position deletes](https://iceberg.apache.org/spec/#position-delete-files)가 있는 Iceberg 테이블만 지원합니다.
+ClickHouse는 [position deletes](https://iceberg.apache.org/spec/#position-delete-files) 및 [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)가 있는 Iceberg 테이블을 지원합니다. Equality deletes는 v25.8부터 지원합니다.
 
 다음 삭제 방식은 **지원하지 않습니다**:
 
-* [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
 * [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (v3에 도입)
 
 <div id="basic-usage">

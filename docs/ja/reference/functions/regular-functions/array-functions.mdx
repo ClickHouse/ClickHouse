@@ -1764,6 +1764,8 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 この関数が適用されたカラムを除き、他のカラムの値はそのままコピーされます。
 適用されたカラムの値は、対応する Array の要素の値に置き換えられます。
 
+`unnest` (バージョン26.5以降) は、関数呼び出し形式 (`SELECT unnest(arr)`) における `arrayJoin` の大文字・小文字を区別しない別名です。PostgreSQL のテーブルソース構文 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL`) はサポートされていません。これらのクエリには `ARRAY JOIN` 句を使用してください。
+
 別名の `unnest` 経由を含め、`arrayJoin` は結合中に評価される `JOIN ON` 条件では使用できません。このような条件では、
 行数を維持する必要があるためです。一方の側にのみ適用される条件、および `arrayJoin` に対する等価キーは、
 結合前に抽出されるため、影響を受けません。非選言的な `ALL INNER JOIN` 条件も影響を受けません。

@@ -1140,6 +1140,7 @@
         "es/reference/system-tables/settings_profile_elements",
         "es/reference/system-tables/settings_profiles",
         "es/reference/system-tables/stack_trace",
+        "es/reference/system-tables/statements",
         "es/reference/system-tables/stemmers",
         "es/reference/system-tables/storage_policies",
         "es/reference/system-tables/symbols",

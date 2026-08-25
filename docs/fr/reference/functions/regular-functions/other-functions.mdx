@@ -5654,6 +5654,10 @@ Affiche des informations sur le certificat Secure Sockets Layer (SSL) du serveur
 Une map vide est renvoyée si le serveur ne possède aucun certificat, par exemple lorsque le certificat est provisionné avec ACME et n’a pas encore été émis.
 Consultez [Configuration de TLS](/fr/concepts/features/security/tls/configuring-tls) pour plus d’informations sur la façon de configurer ClickHouse pour utiliser des certificats OpenSSL afin de valider les connexions.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql

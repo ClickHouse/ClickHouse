@@ -54,7 +54,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-  ClickHouse は現在、`icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal` の各テーブル関数、および `IcebergS3`、`icebergAzure`、`IcebergHDFS`、`IcebergLocal` の各テーブルエンジンを通じて、Iceberg フォーマットの v1 と v2 の読み取りに対応しています。
+  ClickHouse は現在、`icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal` の各テーブル関数、および `IcebergS3`、`icebergAzure`、`IcebergHDFS`、`IcebergLocal` の各テーブルエンジンを通じて、Iceberg フォーマットの v1 と v2 の読み取りに対応しています。v3 のサポートは限定的であり、削除ベクターおよびマニフェストのコンパクションはサポートされていません。
 </Warning>
 
 <div id="defining-a-named-collection">
@@ -144,12 +144,11 @@ ClickHouse は Iceberg テーブルでのタイムトラベルをサポートし
   ## 削除された行を含むテーブルの処理
 </div>
 
-現在サポートされているのは、[position deletes](https://iceberg.apache.org/spec/#position-delete-files) を持つ Iceberg テーブルのみです。
+ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-delete-files) および [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) を持つ Iceberg テーブルをサポートしています。equality deletes は v25.8 からサポートされています。
 
 以下の削除方式は **サポートされていません**：
 
-* [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
-* [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
+* [削除ベクター](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
 
 <div id="basic-usage">
   ### 基本的な使い方

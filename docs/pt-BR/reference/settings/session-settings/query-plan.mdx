@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para ativar ou desativar a otimização do plano que materializa apenas os n melhores grupos de cada bucket de dois níveis quando uma agregação final alimenta ORDER BY com suas saídas usando LIMIT n e é possível comprovar que a seleção por bucket é exata."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, materializa apenas os n melhores grupos de cada bucket de dois níveis nessa ordem durante a conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.
+
+Valores possíveis:
+
+* 0 - Desativar
+* 1 - Ativar
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
