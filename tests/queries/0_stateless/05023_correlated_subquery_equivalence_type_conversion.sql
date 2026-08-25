@@ -416,3 +416,27 @@ SELECT format('plan: substituted={}',
               toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_29 AS o WHERE EXISTS (SELECT 1 FROM t_inner_29 AS i WHERE i.u = o.x AND intDiv(1, 2 - o.x) >= 0));
 SELECT x FROM t_outer_29 AS o WHERE EXISTS (SELECT 1 FROM t_inner_29 AS i WHERE i.u = o.x AND intDiv(1, 2 - o.x) >= 0) ORDER BY x;
+
+SELECT '-- Case 30: guarded, outer DateTime(''UTC'') vs inner DateTime(''Asia/Tokyo''); ->equals ignores the DateTime timezone, but the timezone changes meaning: a substituted Asia/Tokyo member would make toHour(o.ts) see hour 9 instead of UTC hour 0 and drop the row';
+CREATE TABLE t_outer_30 (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_30 (ts DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_30 VALUES (0);
+INSERT INTO t_inner_30 VALUES (0);
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT ts FROM t_outer_30 AS o WHERE EXISTS (SELECT 1 FROM t_inner_30 AS i WHERE i.ts = o.ts AND toHour(o.ts) = 0));
+SELECT ts FROM t_outer_30 AS o WHERE EXISTS (SELECT 1 FROM t_inner_30 AS i WHERE i.ts = o.ts AND toHour(o.ts) = 0) ORDER BY ts;
+
+SELECT '-- Case 31: outer DateTime(''UTC'') vs inner Nullable(DateTime(''UTC'')); attribute-identical non-numeric types remain substitutable: the name-based check admits DateTime(''UTC'') against Nullable(DateTime(''UTC'')); inner NULL never matches';
+CREATE TABLE t_outer_31 (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_31 (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_31 VALUES (0), (3600);
+INSERT INTO t_inner_31 VALUES (NULL), (0);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT ts FROM t_outer_31 AS o WHERE EXISTS (SELECT 1 FROM t_inner_31 AS i WHERE i.ts = o.ts));
+SELECT ts FROM t_outer_31 AS o WHERE EXISTS (SELECT 1 FROM t_inner_31 AS i WHERE i.ts = o.ts) ORDER BY ts;

@@ -217,10 +217,17 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     if (isBool(correlated_base) && !isBool(member_base))
         return std::nullopt;
 
-    if (member_type->equals(*correlated_type))
+    /// `IDataType::equals` compares the storage type and ignores semantically significant
+    /// attributes (`DateTime` timezones, custom names such as `Bool`), so the full type names are
+    /// compared instead: an aliased column keeps the member's attributes, and e.g. `toHour` over a
+    /// correlated `DateTime('UTC')` reconstructed from a `DateTime('Asia/Tokyo')` member would
+    /// change meaning. Attribute-mismatched pairs fall through to the cross-base branch, whose
+    /// `isNativeNumber` check rejects them (CROSS JOIN fallback — conservative; a lossless
+    /// timezone-reinterpreting `CAST` could be a future improvement).
+    if (member_type->getName() == correlated_type->getName())
         return conversion;
 
-    if (!member_base->equals(*correlated_base))
+    if (member_base->getName() != correlated_base->getName())
     {
         if (!isNativeNumber(member_base) || !isNativeNumber(correlated_base))
             return std::nullopt;
@@ -364,7 +371,7 @@ QueryPlan decorrelateQueryPlan(
                     else
                         substituted = &dag.addAlias(*substituted, renaming.correlated_name);
 
-                    chassert(substituted->result_type->equals(*renaming.correlated_type));
+                    chassert(substituted->result_type->getName() == renaming.correlated_type->getName());
                     outputs.push_back(substituted);
                 }
 
