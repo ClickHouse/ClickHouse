@@ -41,8 +41,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.9",
+        {
+            {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
+            {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+        });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
+            {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
             {"query_plan_push_down_volume_reducing_functions", false, true, "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."},
             {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
@@ -70,6 +77,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_distinct_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."},
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
+            {"allow_window_partitions_independently", false, true, "New setting to evaluate window functions per partition independently (skipping the hash scatter) when the partition expression is a deterministic function of the window `PARTITION BY` columns."},
+            {"force_window_partitions_independently", false, false, "New setting to force independent per-partition evaluation of window functions even when the cost heuristic would skip it."},
+            {"max_number_of_partitions_for_independent_window", 128, 128, "New setting: maximal number of partitions to apply independent per-partition evaluation of window functions."},
+            {"allow_creating_set_partitions_independently", false, true, "New setting to enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression is a deterministic function of the subquery output columns."},
+            {"force_creating_set_partitions_independently", false, false, "New setting to force per-partition pre-deduplication for `IN (subquery)` set building even when the partition-skew check would skip it."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"input_format_parquet_min_bytes_to_split", 0, 2ULL * 1024 * 1024 * 1024, "New setting: a single local Parquet file is only parallelized across multiple sources if the query reads at least this many compressed bytes, avoiding per-source overhead on short queries. The previous value `0` (no floor) reproduces the pre-26.8 behavior where the split was driven only by the row-group count, so `compatibility` set to an earlier version keeps parallelizing regardless of read size."},
             {"input_format_parquet_bytes_per_split_bucket", 0, 64 * 1024 * 1024, "New setting: target minimum compressed bytes per bucket when a single local Parquet file is parallelized across multiple sources. The previous value `0` (do not bound the number of buckets by size) reproduces the pre-26.8 behavior where the bucket count was driven only by the row-group count, so `compatibility` set to an earlier version keeps the old split fan-out."},
@@ -1411,6 +1423,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        {
+            {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},
@@ -1418,7 +1435,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
-            {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},

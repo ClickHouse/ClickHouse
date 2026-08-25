@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Common/Exception.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::ErrorCodes
