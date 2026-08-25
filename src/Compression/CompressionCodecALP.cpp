@@ -147,7 +147,6 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool isExperimental() const override { return true; }
     String getDescription() const override;
 
 private:
@@ -1515,7 +1514,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecALP>(float_width, variant);
     };
-    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder, "enable_alp_codec");
 }
 
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)

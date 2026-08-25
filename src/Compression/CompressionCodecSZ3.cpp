@@ -49,9 +49,7 @@ protected:
     bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
-    /// We mark it as experimental for now.
     bool isLossyCompression() const override { return true; }
-    bool isExperimental() const override { return true; }
     /// SZ3 must be applied to raw floating-point data, so it can not follow another (e.g. delta) codec;
     /// this flag makes the codec-stack validation reject such combinations (like ALP/Gorilla/FPC).
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
@@ -445,7 +443,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Codec SZ3 must have 0 or 3 arguments but {} arguments are given", arguments->children.size());
         }
     };
-    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder, "enable_sz3_codec");
 }
 
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size)

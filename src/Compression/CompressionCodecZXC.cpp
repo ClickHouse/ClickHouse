@@ -98,7 +98,7 @@ void registerCodecZXC(CompressionCodecFactory & factory)
                     zxc_min_level(), zxc_max_level(), level);
         }
         return std::make_shared<CompressionCodecZXC>(level);
-    });
+    }, "enable_zxc_codec");
 }
 
 }
