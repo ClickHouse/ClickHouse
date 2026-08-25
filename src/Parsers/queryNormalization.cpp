@@ -1,5 +1,4 @@
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
@@ -229,63 +228,35 @@ String normalizedText(const IAST & ast)
     return String(normalized.begin(), normalized.end());
 }
 
-/// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
-void sortList(IAST & list)
+void sortExpressionLists(IAST & ast)
 {
+    checkStackSize();
+
+    for (const auto & child : ast.children)
+        sortExpressionLists(*child);
+
+    if (!ast.as<ASTExpressionList>())
+        return;
+
+    /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
     std::vector<std::pair<String, ASTPtr>> sorted;
-    sorted.reserve(list.children.size());
-    for (const auto & element : list.children)
+    sorted.reserve(ast.children.size());
+    for (const auto & element : ast.children)
         sorted.emplace_back(normalizedText(*element), element);
 
     std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (size_t i = 0; i < sorted.size(); ++i)
-        list.children[i] = sorted[i].second;
+        ast.children[i] = sorted[i].second;
 }
 
-void sortCommutativeLists(IAST & ast)
+}
+
+UInt64 unorderedQueryHash(const IAST & ast)
 {
-    checkStackSize();
-
-    for (const auto & child : ast.children)
-        sortCommutativeLists(*child);
-
-    if (const auto * select = ast.as<ASTSelectQuery>())
-    {
-        if (ASTPtr select_list = select->select())
-            sortList(*select_list);
-
-        /// ROLLUP cares about the key order, CUBE and GROUPING SETS do not
-        ASTPtr group_by = select->groupBy();
-        if (group_by && !select->group_by_with_rollup)
-        {
-            /// every grouping set is a list of its own, canonical before the sets themselves are sorted
-            if (select->group_by_with_grouping_sets)
-                for (const auto & grouping_set : group_by->children)
-                    sortList(*grouping_set);
-
-            sortList(*group_by);
-        }
-    }
-    else if (const auto * function = ast.as<ASTFunction>())
-    {
-        if (function->arguments && (function->name == "and" || function->name == "or"))
-            sortList(*function->arguments);
-    }
-}
-
-}
-
-String normalizeQueryCanonical(const IAST & ast)
-{
-    ASTPtr canonical = ast.clone();
-    sortCommutativeLists(*canonical);
-    return normalizedText(*canonical);
-}
-
-UInt64 canonicalQueryHash(const IAST & ast)
-{
-    return normalizedQueryHash(normalizeQueryCanonical(ast), /*keep_names=*/ false);
+    ASTPtr sorted = ast.clone();
+    sortExpressionLists(*sorted);
+    return normalizedQueryHash(normalizedText(*sorted), /*keep_names=*/ false);
 }
 
 }

@@ -15,11 +15,8 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 /// looks generated: has whitespace, more than two digits, or is 36+ bytes long
 bool isComplexIdentifier(const char * begin, const char * end);
 
-/// like normalizeQuery, but first sorts the lists whose order does not change what the query does,
-/// so SELECT a, b and SELECT b, a give the same text - they are still not interchangeable queries
-String normalizeQueryCanonical(const IAST & ast);
-
-/// normalizedQueryHash of normalizeQueryCanonical
-UInt64 canonicalQueryHash(const IAST & ast);
+/// normalizedQueryHash that ignores the order inside every expression list, so SELECT a, b and SELECT b, a match
+/// deliberately lossy - it merges ORDER BY a, b with ORDER BY b, a too, so group a workload with it, do not compare queries
+UInt64 unorderedQueryHash(const IAST & ast);
 
 }
