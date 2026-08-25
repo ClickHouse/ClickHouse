@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "MergeTree 테이블 설정",
+  "group": "MergeTree tables settings",
   "pages": [
     "ko/reference/settings/merge-tree-settings/add-minmax",
     "ko/reference/settings/merge-tree-settings/allow",

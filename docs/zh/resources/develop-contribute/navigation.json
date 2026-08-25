@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "简介",
+      "group": "Introduction",
       "pages": [
         "zh/resources/develop-contribute/introduction/developer-instruction",
         "zh/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "构建",
+      "group": "Building",
       "pages": [
         "zh/resources/develop-contribute/build/build",
         "zh/resources/develop-contribute/build/build-osx",
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "group": "原生协议",
+      "group": "Native protocol",
       "pages": [
         "zh/resources/develop-contribute/native-protocol/basics",
         "zh/resources/develop-contribute/native-protocol/client",
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "参与贡献",
+      "group": "Contributing",
       "pages": [
         "zh/resources/develop-contribute/contribute/tests",
         "zh/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "group": "集成开发",
+      "group": "Integration development",
       "pages": [
         "zh/resources/develop-contribute/integrations/index",
         "zh/resources/develop-contribute/integrations/building-integrations",
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "group": "路线图",
+      "group": "Roadmap",
       "pages": [
         "zh/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "开发与贡献",
+  "item": "Development & contributing",
   "root": "zh/resources/develop-contribute/index"
 }
