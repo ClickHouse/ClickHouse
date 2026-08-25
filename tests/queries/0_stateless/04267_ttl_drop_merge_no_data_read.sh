@@ -442,7 +442,9 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT
+    -- Every merge over these parts must short-circuit, not just the newest one: restarting merges
+    -- before OPTIMIZE lets a background merge run too, and which of them is last is a race.
+    SELECT DISTINCT
         merge_reason,
         rows,
         read_rows
@@ -452,8 +454,7 @@ ${CLICKHOUSE_CLIENT} -q "
         AND table = 't_ttl_regular_fallback'
         AND event_type = 'MergeParts'
         AND length(merged_from) > 1
-    ORDER BY event_time DESC
-    LIMIT 1;
+    ORDER BY merge_reason, rows, read_rows;
 "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_regular_fallback;"
