@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionWatermarks.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/CalculatePartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -135,7 +135,7 @@ Pipe buildPartitionReadingPipeline(
     }
 
     /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
+    plan->addStep(std::make_unique<CalculatePartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
 
     /// Add watermark calculation step.
     if (stream_settings.watermark)

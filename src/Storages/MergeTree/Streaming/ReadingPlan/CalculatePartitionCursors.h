@@ -17,12 +17,12 @@ struct PartitionCursorInfo : public ChunkInfoCloneable<PartitionCursorInfo>
 };
 
 /// This step will calculate and set PartitionCursorInfo for each chunk.
-class StampPartitionCursorsStep : public ITransformingStep
+class CalculatePartitionCursorsStep : public ITransformingStep
 {
 public:
-    StampPartitionCursorsStep(SharedHeader input_header_, bool unordered_);
+    CalculatePartitionCursorsStep(SharedHeader input_header_, bool unordered_);
 
-    String getName() const override { return "StampPartitionCursors"; }
+    String getName() const override { return "CalculatePartitionCursors"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
