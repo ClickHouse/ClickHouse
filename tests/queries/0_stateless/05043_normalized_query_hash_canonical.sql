@@ -36,6 +36,9 @@ SELECT normalizedQueryHashCanonical('SELECT count() FROM t GROUP BY a, b WITH CU
 SELECT normalizedQueryHashCanonical('SELECT * FROM'); -- { serverError SYNTAX_ERROR }
 SELECT normalizedQueryHashCanonicalOrNull('SELECT * FROM');
 SELECT normalizeQueryCanonicalOrNull('SELECT * FROM');
+
+-- hitting a parser limit is unparseable too
+SELECT normalizeQueryCanonicalOrNull('SELECT ' || repeat('(', 60) || '1' || repeat(')', 60)) IS NULL SETTINGS max_parser_depth = 40;
 SELECT normalizedQueryHashCanonicalOrNull('SELECT a, b FROM t') = normalizedQueryHashCanonicalOrNull('SELECT b, a FROM t');
 
 -- over a column, not just constants

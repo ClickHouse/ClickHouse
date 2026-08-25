@@ -29,6 +29,9 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
 }
 
 namespace
@@ -39,6 +42,11 @@ enum class ErrorHandling : uint8_t
     Exception,
     Null
 };
+
+bool isParsingError(int code)
+{
+    return code == ErrorCodes::SYNTAX_ERROR || code == ErrorCodes::TOO_DEEP_RECURSION || code == ErrorCodes::TOO_SLOW_PARSING;
+}
 
 /// Parses every row and lets the derived function turn the AST into one result value.
 class FunctionOverParsedQuery : public IFunction
@@ -101,9 +109,10 @@ public:
             {
                 ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth, max_parser_backtracks);
             }
-            catch (...)
+            catch (const Exception & e)
             {
-                if (error_handling == ErrorHandling::Exception)
+                /// anything else, a memory limit for one, is not this row being unparseable
+                if (error_handling == ErrorHandling::Exception || !isParsingError(e.code()))
                     throw;
 
                 col_null_map->getData()[i] = 1;
