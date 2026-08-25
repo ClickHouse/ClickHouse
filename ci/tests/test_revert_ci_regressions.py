@@ -425,6 +425,25 @@ def test_a_harness_row_about_the_whole_script_is_not_investigated():
     assert [f.test_name for f in selected] == ["a_real_test"]
 
 
+def test_a_host_oom_row_is_not_investigated_and_does_not_count_as_a_run():
+    """A dmesg OOM row names the host running out of memory, not a test case, so
+    it has to be rejected on both sides of the guard. The selection must not
+    spend an investigation on it; and because the kernel killed the server
+    mid-run, that run must count as aborted rather than as having exercised the
+    check, or its silence would read as green evidence that the failure is gone."""
+    assert "OOM in dmesg" in job.SYNTHETIC_TEST_NAMES
+    cidb = FakeDryRunCIDB(
+        failures=[_failure_row("OOM in dmesg"), _failure_row("a_real_test")]
+    )
+    selected = job.select_failures(cidb, NOW, dry_run=True)
+    assert [f.test_name for f in selected] == ["a_real_test"]
+    # The second consumer builds the name into the `ran_tests` / `aborted` terms
+    # of the history query, which is what keeps an OOM-killed run out of the
+    # exercised-commit evidence.
+    query = job.commits_since_the_failure_query(make_failure())
+    assert query.count("'OOM in dmesg'") == 2
+
+
 def test_selection_skips_a_group_of_mixed_causes():
     row = _failure_row("mixed_test")
     row["occurrences"][0][4] = "Server is not responding"

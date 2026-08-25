@@ -98,6 +98,10 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Parse failure error",
         "Job error",
         "Timeout",
+        # The host ran out of memory and the kernel killed the server. The name
+        # records that a dmesg OOM line was present, not which test was running,
+        # so there is no test case behind it and nothing to attribute a revert to.
+        "OOM in dmesg",
     }
 )
 
