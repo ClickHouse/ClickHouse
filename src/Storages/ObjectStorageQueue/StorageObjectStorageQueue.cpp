@@ -167,7 +167,8 @@ namespace
 {
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
-        bool is_attach)
+        bool is_attach,
+        ObjectStorageType type)
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
@@ -187,6 +188,14 @@ namespace
                 "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        /// Only the S3 move path reads and restates tags, so accepting either value elsewhere would be a no-op.
+        if (type != ObjectStorageType::S3 && queue_settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags].changed)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                type);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -335,7 +344,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings_, is_attach);
+    validateSettings(*queue_settings_, is_attach, type);
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its

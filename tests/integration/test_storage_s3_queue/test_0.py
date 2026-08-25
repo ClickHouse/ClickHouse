@@ -795,6 +795,32 @@ def test_move_after_processing_preserve_tags_disabled(started_cluster):
     assert not moved_tags
 
 
+def test_move_after_processing_preserve_tags_is_s3_only(started_cluster):
+    """Only the S3 move path reads and restates tags, so an AzureQueue must refuse the setting
+    instead of accepting a value that changes nothing."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_tags_azure_{token}"
+    files_path = f"{table_name}_data"
+
+    for value in (0, 1):
+        error = create_table(
+            started_cluster,
+            node,
+            f"{table_name}_{value}",
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": f"/clickhouse/test_{table_name}_{value}",
+                "after_processing_move_preserve_tags": value,
+            },
+            engine_name="AzureQueue",
+            expect_error=True,
+        )
+        assert "after_processing_move_preserve_tags" in error
+        assert "only for S3" in error
+
+
 def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
     """Reprocessing the same key with identical bytes after Keeper eviction must not mistake the
     prior destination for its own retry.
