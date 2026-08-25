@@ -241,6 +241,7 @@ static struct InitFiu
     ONCE(backup_from_snapshot_fail_before_progress_cleanup) \
     ONCE(backup_fail_before_writing_metadata) \
     ONCE(backup_fail_lock_file_removal) \
+    ONCE(backup_fail_lock_file_write_after_commit) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \

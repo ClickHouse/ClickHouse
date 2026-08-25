@@ -55,6 +55,7 @@ namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
     extern const char backup_fail_lock_file_removal[];
+    extern const char backup_fail_lock_file_write_after_commit[];
     extern const char backup_pause_before_lock_file_creation[];
 }
 
@@ -934,6 +935,11 @@ void BackupImpl::createLockFile()
         auto out = writer->writeFileIfNotExists(lock_file_name);
         *out << lock_file_contents;
         out->finalize();
+        fiu_do_on(FailPoints::backup_fail_lock_file_write_after_commit,
+        {
+            throw Exception(
+                ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_lock_file_write_after_commit is triggered");
+        });
         created_own_lock_file = true;
     }
     catch (...)
@@ -958,18 +964,22 @@ void BackupImpl::createLockFile()
             /// checks below decide who owns the destination, and rethrow if they find nothing.
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
         }
-#if CLICKHOUSE_CLOUD
-        /// A resumable attempt whose own contents are already there falls through, so a later failure
-        /// lands inside `BackupResumer`'s inner try, which reports the lock and keeps its progress.
-        if (lock_contents_match && !params.resume)
-#else
         if (lock_contents_match)
-#endif
-            throw Exception(
-                ErrorCodes::BACKUP_ALREADY_EXISTS,
-                "A concurrent backup writing to the same destination {} detected",
+        {
+            /// The write reported a failure after it had committed: a conditional `PutObject` that times
+            /// out on the client can still have been applied, and its retry then fails `If-None-Match`
+            /// against the object the first attempt wrote. `lock_file_contents` belongs to this attempt
+            /// alone -- `open` picks a fresh backup UUID for every retry, and a resumed attempt continues
+            /// the very attempt that wrote them -- so finding them in the destination means the lock is
+            /// this backup's own. Reporting a concurrent backup here fails an uncontended destination.
+            LOG_INFO(
+                log,
+                "Lock file {} of backup {} already holds the contents of this attempt: the write that "
+                "reported a failure had committed",
+                lock_file_name,
                 backup_name_for_logging);
-        if (!lock_contents_match)
+        }
+        else
         {
             if (writer->fileExists(lock_file_name))
                 throw Exception(
