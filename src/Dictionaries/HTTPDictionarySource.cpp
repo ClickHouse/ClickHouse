@@ -96,8 +96,7 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
         : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
-    /// Sample block should not contain first row default values
-    auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block.cloneEmpty(), max_block_size);
+    auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));
 }

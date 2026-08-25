@@ -345,15 +345,17 @@ template <typename TExecutor = PullingPipelineExecutor>
 class SourceFromQueryPipeline : public ISource
 {
 public:
+    /// A dictionary source pipeline is headed by the source's sample block, which holds one row
+    /// per column. A port header must have no rows, so the rows are stripped here.
     explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
-        : ISource(pipeline_.getSharedHeader())
+        : ISource(std::make_shared<const Block>(pipeline_.getSharedHeader()->cloneEmpty()))
         , executor(pipeline_)
     {
         pipeline_.setConcurrencyControl(false);
     }
 
     explicit SourceFromQueryPipeline(BlockIO io)
-        : ISource(io.pipeline.getSharedHeader())
+        : ISource(std::make_shared<const Block>(io.pipeline.getSharedHeader()->cloneEmpty()))
         , io_holder(std::move(io))
         , executor(io_holder->pipeline)
     {

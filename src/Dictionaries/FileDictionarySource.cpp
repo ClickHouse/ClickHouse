@@ -58,8 +58,7 @@ BlockIO FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    /// Sample block should not contain first row default values
-    auto source = context->getInputFormat(format, *in_ptr, sample_block.cloneEmpty(), max_block_size);
+    auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 

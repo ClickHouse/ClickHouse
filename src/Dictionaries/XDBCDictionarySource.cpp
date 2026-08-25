@@ -235,8 +235,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
                    .withOutCallback(std::move(write_body_callback))
                    .create(credentials);
 
-    /// Sample block should not contain first row default values
-    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *buf, required_sample_block.cloneEmpty(), max_block_size);
+    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *buf, required_sample_block, max_block_size);
     format->addBuffer(std::move(buf));
 
     return QueryPipeline(std::move(format));
