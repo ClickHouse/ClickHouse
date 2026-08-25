@@ -42,3 +42,8 @@ SELECT 'wide integer carriers saturate like the narrow ones';
 SELECT toTime64(toUInt128(3600000), 6), toTime64(toInt128(3600000), 6), toTime64(toUInt256(3600000), 6), toTime64(toInt256(-3600000), 6);
 SELECT toDateTime64(toUInt128(300000000000), 9), toDateTime64(toInt128(300000000000), 9), toDateTime64(toInt256(-300000000000), 9);
 SELECT toTime64(toUInt128(3600000), 6) = toTime64(toUInt64(3600000), 6), toTime64(toUInt128(1), 6), toDateTime64(toUInt128(1), 9);
+
+SELECT 'a wide source beyond Int64 keeps its sign instead of narrowing first';
+SELECT toTime64(toInt128('9223372036854775808'), 6), toTime64(toInt128('-9223372036854775809'), 6);
+SELECT toTime64(toInt256('9223372036854775808'), 6), toTime64(toUInt128('9223372036854775808'), 6);
+SELECT toDateTime64(toInt128('9223372036854775808'), 9), toDateTime64(toInt128('-9223372036854775809'), 9);

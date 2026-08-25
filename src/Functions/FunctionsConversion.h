@@ -820,9 +820,10 @@ struct ToTime64TransformSigned
         /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
         /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        if (static_cast<Int64>(from) > MAX_TIME_TIMESTAMP)
+        /// Compare in the source type: narrowing a wide integer first would flip the sign of a huge value
+        if (from > MAX_TIME_TIMESTAMP)
             return maxTicksForTime64(scale_multiplier);
-        if (static_cast<Int64>(from) < -MAX_TIME_TIMESTAMP)
+        if (from < -MAX_TIME_TIMESTAMP)
             return minTicksForTime64(scale_multiplier);
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<Int64>(from), 0, scale_multiplier);
     }
