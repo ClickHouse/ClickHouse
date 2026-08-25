@@ -16,10 +16,11 @@ mkdir -p "$DIR"
 
 # Append an Avro block header (zigzag object count, zigzag byte count) plus the file's own sync
 # marker, so the appended block is well-framed and only its declared count is wrong.
+# The byte count defaults to zero, which is what an empty appended payload declares.
 avro_append_block() {
     python3 -c "
 import sys
-src, dst, count = sys.argv[1], sys.argv[2], int(sys.argv[3])
+src, dst, count, bytes_declared = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 def zigzag(n):
     n = ((n << 1) ^ (n >> 63)) if n < 0 else (n << 1)
     n &= (1 << 64) - 1
@@ -32,8 +33,8 @@ def zigzag(n):
             break
     return bytes(out)
 data = open(src, 'rb').read()
-open(dst, 'wb').write(data + zigzag(count) + zigzag(0) + data[-16:])
-" "$1" "$2" "$3"
+open(dst, 'wb').write(data + zigzag(count) + zigzag(bytes_declared) + data[-16:])
+" "$1" "$2" "$3" "${4-0}"
 }
 
 $CLICKHOUSE_LOCAL -q "
@@ -52,21 +53,38 @@ $CLICKHOUSE_LOCAL -q "
     INTO OUTFILE '$DIR/deflate.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'deflate'"
 
-# A negative declared object count: hasMore() tests != 0 and decr() only decrements.
-avro_append_block "$DIR/ok.avro" "$DIR/negative.avro" -5
-# A huge positive declared count: the loop terminates, but every row it reports past the payload is
-# invented, so the count came back as a successful wrong answer.
-avro_append_block "$DIR/ok.avro" "$DIR/huge.avro" 1000000000
+# A negative declared object count. Never reaches zero by decrementing, so the count call used to
+# spin here until the query deadline.
+avro_append_block "$DIR/ok.avro" "$DIR/negative.avro" -5 0
+# A negative declared byte count. Widens into an unbounded payload limit when cast unsigned.
+avro_append_block "$DIR/ok.avro" "$DIR/negbytes.avro" 10 -1
+# A positive declared count larger than the payload holds. The count must not be answered from the
+# header alone, or every row reported past the payload is invented and returned as a success.
+avro_append_block "$DIR/ok.avro" "$DIR/huge.avro" 1000000000 0
 
+# Assert on the error class, not on one message: a corrupted header is rejected either by the Avro
+# library at the block header or by the read path when the payload runs out.
 echo '--- a corrupted block header is rejected instead of counted'
 for setting in 1 0; do
     echo "optimize_count_from_files = $setting"
+    for f in negative.avro negbytes.avro huge.avro; do
+        $CLICKHOUSE_LOCAL -q "
+            SELECT count() FROM file('$DIR/$f', Avro)
+            $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
+    done
+done
+
+# A block whose declared count is corrupted is also a block that runs out of input, so the broad
+# assertion above cannot tell the header check from payload exhaustion. Name the header diagnostic
+# for both counts, which keeps these pinned to the header check itself.
+echo '--- a negative declared count is rejected at the header, not at the payload'
+for setting in 1 0; do
     $CLICKHOUSE_LOCAL -q "
         SELECT count() FROM file('$DIR/negative.avro', Avro)
-        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'EOF reached'
+        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'object count in block header'
     $CLICKHOUSE_LOCAL -q "
-        SELECT count() FROM file('$DIR/huge.avro', Avro)
-        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'EOF reached'
+        SELECT count() FROM file('$DIR/negbytes.avro', Avro)
+        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'byte count in block header'
 done
 
 echo '--- valid input still counts every row, including rows that occupy no payload bytes'
