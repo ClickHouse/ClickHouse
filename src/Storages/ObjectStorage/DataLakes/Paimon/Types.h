@@ -280,7 +280,7 @@ struct DataType
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported Paimon type: {}", real_type);
+                throw Exception();
             }
             /// ClickHouse forbids Nullable(Array) and Nullable(Map), so a nullable composite is kept
             /// unwrapped; the reader maps a NULL composite to an empty one.

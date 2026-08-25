@@ -1,7 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/checkAggregateStateCanBeFinalized.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -57,15 +56,12 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
-        const auto * column_aggregate_function = typeid_cast<const ColumnAggregateFunction *>(column.get());
-        if (!column_aggregate_function)
+        if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
-
-        checkAggregateStateCanBeFinalized(*column_aggregate_function, result_type, getName());
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
@@ -78,7 +74,7 @@ public:
 REGISTER_FUNCTION(FinalizeAggregation)
 {
     FunctionDocumentation::Description description = R"(
-Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](/reference/functions/aggregate-functions/combinators#-state) combinator).
+Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
 )";
     FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
     FunctionDocumentation::Arguments arguments = {
@@ -100,7 +96,6 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
     {
         "Combined with initializeAggregation",
         R"(
-SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,

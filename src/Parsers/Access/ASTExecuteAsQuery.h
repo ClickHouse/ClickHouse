@@ -5,6 +5,7 @@
 
 namespace DB
 {
+class ASTUserNameWithHost;
 
 /** EXECUTE AS <user>
   *   or
@@ -13,14 +14,11 @@ namespace DB
 class ASTExecuteAsQuery : public ASTQueryWithOutput
 {
 public:
-    /// Owning: these are also kept in `children`, and must own them (a non-owning pointer would
-    /// dangle if a child slot is replaced, e.g. by the AST fuzzer).
-    ASTPtr target_user;
-    ASTPtr subquery;
+    ASTUserNameWithHost * target_user{};
+    IAST * subquery = nullptr;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 

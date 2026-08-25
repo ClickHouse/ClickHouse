@@ -9,13 +9,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/Utils.h>
-#endif
-
 #include <Databases/IDatabase.h>
-
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -64,7 +58,7 @@ namespace HistogramMetrics
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event ReaderExecutorDeliveredBytes;
+    extern const Event ReaderExecutorRequestedBytes;
 }
 
 namespace DB
@@ -169,12 +163,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(
-        update_period_seconds,
-        protocol_server_metrics_func_,
-        update_jemalloc_epoch_,
-        update_rss_,
-        global_context_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -230,8 +219,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
-        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorDeliveredBytes]);
+        const UInt64 cost_us = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
+        const UInt64 req_bytes = static_cast<UInt64>(
+            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -242,7 +233,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
                 "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
                 " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
-                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorDeliveredBytes."
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
                 " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
                 " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
         }
@@ -255,10 +246,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
             "Current limit on the size of userspace page cache, in bytes." };
     }
-
-#if ENABLE_DISTRIBUTED_CACHE
-    DistributedCache::updateDistributedCacheMetrics(new_values);
-#endif
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
@@ -379,14 +366,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 }
             }
 #endif
-
-            if (auto object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk))
-            {
-                new_values[fmt::format("{}DeadBlobsQueueEstimate", name)] = { object_storage_disk->getDeadBlobsQueueEstimate(),
-                    "Estimated number of blobs enqueued for removal from the disk object storage (the blob manager dead queue). Disks without blob replication report 0." };
-                new_values[fmt::format("{}MissingBlobsQueueEstimate", name)] = { object_storage_disk->getMissingBlobsQueueEstimate(),
-                    "Estimated number of blobs awaiting replication to other locations of the disk (the blob manager missing queue). Disks without blob replication report 0." };
-            }
         }
     }
 
@@ -577,7 +556,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(false);
+        const auto user_info = getContext()->getProcessList().getUserInfo(true);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
@@ -952,7 +931,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  "Update heavy metrics. "
                  "Update period {} sec. "
                  "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {:.3f} sec.",
+                 "Heavy metrics calculation elapsed: {} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
                  watch.elapsedSeconds());

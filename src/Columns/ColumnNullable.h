@@ -129,7 +129,6 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -208,9 +207,6 @@ public:
     bool onlyNull() const override { return nested_column->isDummy(); }
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
-    void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
-
 
     /// Return the column that represents values.
     IColumn & getNestedColumn() { return *nested_column; }
@@ -261,10 +257,6 @@ private:
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map, size_t offset = 0);
-
-    /// Probe the nested column's comparable serialization once so unsupported nested
-    /// types are rejected even on all-NULL blocks. Shared by the single-row and batch paths.
-    void validateNestedComparable() const;
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 

@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS probe_tbl;
 DROP TABLE IF EXISTS set_tbl;
 CREATE TABLE probe_tbl (k1 UInt64, k2 UInt64, payload String) ENGINE = MergeTree ORDER BY k1
-SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SETTINGS auto_statistics_types = 'basic, uniq';
 CREATE TABLE set_tbl (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO probe_tbl SELECT number, number, repeat('x', 20) FROM numbers(20000);
 INSERT INTO probe_tbl SELECT number + 20000, number, repeat('x', 20) FROM numbers(20000);
@@ -91,7 +91,7 @@ echo '--- an unbuilt set is skipped rather than filled ---'
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS probe_unindexed;
 CREATE TABLE probe_unindexed (k1 UInt64, k2 UInt64, payload String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SETTINGS auto_statistics_types = 'basic, uniq';
 INSERT INTO probe_unindexed SELECT number, number, repeat('x', 20) FROM numbers(20000);
 INSERT INTO probe_unindexed SELECT number + 20000, number, repeat('x', 20) FROM numbers(20000);
 OPTIMIZE TABLE probe_unindexed FINAL;
