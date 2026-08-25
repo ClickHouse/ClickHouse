@@ -69,3 +69,10 @@ case51_index_new
 1
 case51_index_old
 0
+case52_data
+1	7	Nullable(UInt64)
+case53_merge
+1	0
+2	0
+case54_mutation
+2	0

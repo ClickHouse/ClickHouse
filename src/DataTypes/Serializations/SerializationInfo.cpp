@@ -464,8 +464,6 @@ ISerialization::KindStack SerializationInfoByName::getKindStack(const String & c
 
 MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 {
-    if (!missing_columns.empty())
-        return MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
     return settings.version;
 }
 
@@ -477,6 +475,13 @@ bool SerializationInfoByName::needsPersistence() const
 bool SerializationInfoByName::isMissingColumn(const String & name) const
 {
     return getMissingColumnInfo(name) != nullptr;
+}
+
+void SerializationInfoByName::setMissingColumns(MissingColumns columns)
+{
+    chassert(columns.empty() || settings.version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    std::sort(columns.begin(), columns.end());
+    missing_columns = std::move(columns);
 }
 
 const SerializationInfoByName::MissingColumnInfo * SerializationInfoByName::getMissingColumnInfo(const String & name) const
@@ -627,7 +632,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
         }
-        else if (key == KEY_MISSING_COLUMNS)
+        else if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && key == KEY_MISSING_COLUMNS)
         {
             missing_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
@@ -721,6 +726,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     if (missing_columns_array)
     {
+        MissingColumns missing_columns;
+        missing_columns.reserve(missing_columns_array->size());
         for (const auto & elem : *missing_columns_array)
         {
             const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
@@ -749,9 +756,9 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
                     "missing_columns entry for '{}' has unknown default kind '{}'",
                     mc.name, default_str);
             }
-            infos.missing_columns.push_back(std::move(mc));
+            missing_columns.push_back(std::move(mc));
         }
-        std::sort(infos.missing_columns.begin(), infos.missing_columns.end());
+        infos.setMissingColumns(std::move(missing_columns));
     }
 
     return infos;

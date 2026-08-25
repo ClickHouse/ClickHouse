@@ -894,12 +894,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    MergeTreeSerializationInfoVersion output_serialization_version
+        = (*merge_tree_settings)[MergeTreeSetting::serialization_info_version];
+    if (std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+        { return !part->getSerializationInfos().getMissingColumns().empty(); }))
+    {
+        output_serialization_version = std::max(
+            output_serialization_version,
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    }
+
     SerializationInfo::Settings info_settings
     {
         static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-        (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
+        output_serialization_version,
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
@@ -997,7 +1007,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         if (!merged_missing.empty())
         {
-            std::sort(merged_missing.begin(), merged_missing.end());
             infos.setMissingColumns(std::move(merged_missing));
         }
     }

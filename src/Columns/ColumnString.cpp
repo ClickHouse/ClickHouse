@@ -890,9 +890,7 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
 
 bool ColumnString::hasOnlyTypeDefaults() const
 {
-    if (offsets.empty())
-        return true;
-    return memoryIsZero(offsets.data(), 0, offsets.size() * sizeof(offsets[0]));
+    return chars.empty();
 }
 
 /// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].

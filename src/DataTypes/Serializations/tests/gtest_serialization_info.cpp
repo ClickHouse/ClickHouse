@@ -237,6 +237,48 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
 }
 
+TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
+{
+    SerializationInfoSettings settings;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+
+    SerializationInfoByName infos(settings);
+    infos.setMissingColumns({{
+        .name = "value",
+        .type_name = "UInt64",
+        .default_kind = SerializationInfoByName::MissingColumnInfo::DefaultKind::TypeDefault,
+        .expression = {},
+    }});
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    auto restored = SerializationInfoByName::readJSONFromString({}, out.str());
+
+    EXPECT_EQ(infos.getVersion(), settings.version);
+    EXPECT_EQ(restored.getVersion(), settings.version);
+    ASSERT_EQ(restored.getMissingColumns().size(), 1);
+    EXPECT_EQ(restored.getMissingColumns().front().name, "value");
+}
+
+TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
+{
+    const auto json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64","default":"type_default"}],"version":1})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
+{
+    SerializationInfoSettings with_types;
+    with_types.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_types.tryDowngradeToBasic();
+    EXPECT_EQ(with_types.version, MergeTreeSerializationInfoVersion::BASIC);
+
+    SerializationInfoSettings with_missing;
+    with_missing.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+    with_missing.tryDowngradeToBasic();
+    EXPECT_EQ(with_missing.version, MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+}
+
 /// Malformed kind tests.
 /// stringToKind throws LOGICAL_ERROR which aborts in debug builds
 /// but throws a catchable exception in release builds.

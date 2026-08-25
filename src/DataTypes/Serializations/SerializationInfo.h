@@ -162,7 +162,7 @@ public:
     using MissingColumns = std::vector<MissingColumnInfo>;
 
     const MissingColumns & getMissingColumns() const { return missing_columns; }
-    void setMissingColumns(MissingColumns columns) { missing_columns = std::move(columns); }
+    void setMissingColumns(MissingColumns columns);
 
     /// Convenience: check whether a column name is recorded as missing.
     bool isMissingColumn(const String & name) const;

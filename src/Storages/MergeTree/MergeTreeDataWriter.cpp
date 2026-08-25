@@ -687,24 +687,8 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
-/// When skip_empty_columns_on_insert is enabled, columns whose values are
-/// entirely type-defaults are not written to the part on disk. This saves
-/// disk space for sparse-update workloads where most columns in each INSERT
-/// are left at their type's default. Missing columns are filled with defaults
-/// on read — the same mechanism used by ALTER TABLE ADD COLUMN.
-/// Columns with DEFAULT/MATERIALIZED/ALIAS expressions are never skipped:
-/// the read path would evaluate the expression instead of returning the
-/// type-default that was explicitly inserted.
-/// Columns whose IDataType default does not coincide with the column's
-/// own default representation are never skipped either: on read a missing
-/// column is filled via IDataType::insertDefaultInto, so skipping would
-/// change the values. For example Enum8('neg' = -1, 'zero' = 0) stores an
-/// all-zero column for 'zero', but insertDefaultInto inserts the first
-/// declared value 'neg', so reading back the skipped column would return
-/// 'neg' instead of the inserted 'zero'.
-/// Patch parts are excluded — they require all columns for lightweight UPDATE.
-/// If every removable column is empty, the smallest one is kept so that the
-/// part still has at least one physical column.
+/// Omit columns that contain only their type default. The marker preserves the
+/// inserted value; expression columns and patch parts are not eligible.
 static void skipEmptyColumnsOnInsert(
     NamesAndTypesList & columns,
     const Block & block,
@@ -716,15 +700,7 @@ static void skipEmptyColumnsOnInsert(
     if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
         return;
 
-    /// The skipped-columns marker is recorded in serialization.json using the
-    /// WITH_MISSING_COLUMNS format version. Respect the configured
-    /// serialization_info_version: when it is lower than WITH_MISSING_COLUMNS
-    /// (e.g. pinned to 'basic' for a rolling upgrade so that older servers can
-    /// read freshly written parts), do not skip any columns. Otherwise
-    /// SerializationInfoByName::getVersion would silently upgrade the part to a
-    /// format those servers reject with CORRUPTED_DATA. The populating step is
-    /// authoritative about the version, so getVersion returning
-    /// WITH_MISSING_COLUMNS only happens when skipping is actually allowed.
+    /// Old replicas cannot read the marker format, so respect an explicitly pinned version.
     const MergeTreeSerializationInfoVersion serialization_version = (*data_settings)[MergeTreeSetting::serialization_info_version];
     if (serialization_version < MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS)
         return;
@@ -739,12 +715,8 @@ static void skipEmptyColumnsOnInsert(
         const auto & col_data = block.getByName(col_name);
         if (!col_data.column->hasOnlyTypeDefaults())
             continue;
-        /// Only skip when the read path can reconstruct the values exactly:
-        /// a missing column is filled via IDataType::createColumnConstWithDefaultValue
-        /// (which uses getDefault()), so the type-default must coincide with
-        /// the column's zero representation. This is NOT the case for:
-        /// - Enum types whose first declared value is not zero,
-        /// - Date32 whose getDefault() is 1900-01-01 (= -25567, not zero).
+        /// The frozen IDataType default must match the column's zero representation
+        /// (unlike some Enum and Date32 defaults).
         auto default_sample = type->createColumn();
         default_sample->insert(type->getDefault());
         if (!default_sample->isDefaultAt(0))
@@ -754,8 +726,7 @@ static void skipEmptyColumnsOnInsert(
     if (empty_columns.empty())
         return;
 
-    /// If removing empty columns would leave no columns at all, keep the
-    /// smallest one so the part remains valid.
+    /// A part must retain at least one physical column.
     auto filtered = columns.eraseNames(empty_columns);
     if (filtered.empty())
     {
@@ -778,7 +749,6 @@ static void skipEmptyColumnsOnInsert(
     for (const auto & name : empty_columns)
         infos.erase(name);
 
-    /// Build sorted MissingColumns from the removed names.
     SerializationInfoByName::MissingColumns mc;
     mc.reserve(empty_columns.size());
     for (const auto & name : empty_columns)
@@ -789,7 +759,6 @@ static void skipEmptyColumnsOnInsert(
         info.default_kind = SerializationInfoByName::MissingColumnInfo::DefaultKind::TypeDefault;
         mc.push_back(std::move(info));
     }
-    std::sort(mc.begin(), mc.end());
     infos.setMissingColumns(std::move(mc));
 }
 

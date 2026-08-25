@@ -271,7 +271,7 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
-    auto markerNameInPart = [&](String name)
+    auto nameInPart = [&](String name)
     {
         if (alter_conversions->isColumnRenamed(name))
             name = alter_conversions->getColumnOldName(name);
@@ -291,7 +291,7 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                auto marker_name = markerNameInPart(command.column_name);
+                auto marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     auto materialize_frozen = command;
@@ -314,13 +314,14 @@ static void splitAndModifyMutationCommands(
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
-                if (part_columns.has(command.column_name))
+                if (part_columns.has(nameInPart(command.column_name)))
                     for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::READ_COLUMN)
             {
-                bool has_column = part_columns.has(command.column_name) || part_columns.hasNested(command.column_name)
-                    || part->getSerializationInfos().isMissingColumn(markerNameInPart(command.column_name));
+                const auto name_in_part = nameInPart(command.column_name);
+                bool has_column = part_columns.has(name_in_part) || part_columns.hasNested(name_in_part)
+                    || part->getSerializationInfos().isMissingColumn(name_in_part);
                 if (has_column || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
@@ -442,9 +443,7 @@ static void splitAndModifyMutationCommands(
                 /// stale frozen default. The drop is recorded under the current
                 /// name, while the marker keeps the original physical name, so
                 /// resolve through the rename mapping before checking the marker.
-                String marker_name = command.column_name;
-                if (alter_conversions->isColumnRenamed(marker_name))
-                    marker_name = alter_conversions->getColumnOldName(marker_name);
+                String marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     if (command.clear)
@@ -637,7 +636,7 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                auto marker_name = markerNameInPart(command.column_name);
+                auto marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     auto materialize_frozen = command;
@@ -656,7 +655,7 @@ static void splitAndModifyMutationCommands(
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
-                if (part_columns.has(command.column_name))
+                if (part_columns.has(nameInPart(command.column_name)))
                     for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -687,8 +686,9 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
-                if (part_columns.has(command.column_name)
-                    || part->getSerializationInfos().isMissingColumn(markerNameInPart(command.column_name))
+                const auto name_in_part = nameInPart(command.column_name);
+                if (part_columns.has(name_in_part)
+                    || part->getSerializationInfos().isMissingColumn(name_in_part)
                     || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
@@ -712,9 +712,7 @@ static void splitAndModifyMutationCommands(
             {
                 /// A marker-only column has no files, but DROP and CLEAR still
                 /// remove its stored logical value from the resulting part.
-                String marker_name = command.column_name;
-                if (alter_conversions->isColumnRenamed(marker_name))
-                    marker_name = alter_conversions->getColumnOldName(marker_name);
+                String marker_name = nameInPart(command.column_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
                 {
                     if (command.clear)
@@ -931,6 +929,13 @@ getColumnsForNewDataPart(
     else
         settings = storage_serialization_settings;
 
+    if (!serialization_infos.getMissingColumns().empty())
+    {
+        settings.version = std::max(
+            settings.version,
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    }
+
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
@@ -1024,7 +1029,6 @@ getColumnsForNewDataPart(
         }
         if (!new_missing.empty())
         {
-            std::sort(new_missing.begin(), new_missing.end());
             new_serialization_infos.setMissingColumns(std::move(new_missing));
         }
     }

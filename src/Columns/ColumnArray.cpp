@@ -232,9 +232,7 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
 bool ColumnArray::hasOnlyTypeDefaults() const
 {
     const auto & offsets_data = getOffsets();
-    if (offsets_data.empty())
-        return true;
-    return memoryIsZero(offsets_data.data(), 0, offsets_data.size() * sizeof(offsets_data[0]));
+    return offsets_data.empty() || offsets_data.back() == 0;
 }
 
 void ColumnArray::insertData(const char * pos, size_t length)

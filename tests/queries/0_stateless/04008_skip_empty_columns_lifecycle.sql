@@ -692,3 +692,91 @@ SELECT 'case51_index_old';
 SELECT count() FROM t_skip_empty_case51 WHERE b = 0 SETTINGS force_data_skipping_indices = 'ix';
 
 DROP TABLE t_skip_empty_case51;
+
+-- ============================================================================
+-- CASE 52: Renamed physical columns use their part name during type changes.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case52;
+
+CREATE TABLE t_skip_empty_case52
+(
+    key UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case52 VALUES (1, 7);
+ALTER TABLE t_skip_empty_case52 RENAME COLUMN b TO c;
+ALTER TABLE t_skip_empty_case52 MODIFY COLUMN c Nullable(UInt64);
+
+SELECT 'case52_data';
+SELECT key, c, toTypeName(c) FROM t_skip_empty_case52 ORDER BY key;
+
+DROP TABLE t_skip_empty_case52;
+
+-- ============================================================================
+-- CASE 53: Existing markers survive a later format-version downgrade and merge.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case53;
+
+CREATE TABLE t_skip_empty_case53
+(
+    key UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case53 VALUES (1, 0);
+INSERT INTO t_skip_empty_case53 VALUES (2, 0);
+ALTER TABLE t_skip_empty_case53 MODIFY SETTING serialization_info_version = 'basic';
+ALTER TABLE t_skip_empty_case53 MODIFY COLUMN b UInt64 DEFAULT 999;
+OPTIMIZE TABLE t_skip_empty_case53 FINAL;
+DETACH TABLE t_skip_empty_case53;
+ATTACH TABLE t_skip_empty_case53;
+
+SELECT 'case53_merge';
+SELECT key, b FROM t_skip_empty_case53 ORDER BY key;
+
+DROP TABLE t_skip_empty_case53;
+
+-- ============================================================================
+-- CASE 54: Existing markers survive a downgraded full-rewrite mutation.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case54;
+
+CREATE TABLE t_skip_empty_case54
+(
+    key UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case54 VALUES (1, 0), (2, 0);
+ALTER TABLE t_skip_empty_case54 MODIFY SETTING serialization_info_version = 'basic';
+ALTER TABLE t_skip_empty_case54 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case54 DELETE WHERE key = 1;
+DETACH TABLE t_skip_empty_case54;
+ATTACH TABLE t_skip_empty_case54;
+
+SELECT 'case54_mutation';
+SELECT key, b FROM t_skip_empty_case54 ORDER BY key;
+
+DROP TABLE t_skip_empty_case54;
