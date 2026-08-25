@@ -1979,7 +1979,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "distributed_cache_read_alignment",
            "external_storage_max_read_bytes",
            "filesystem_cache_boundary_alignment",
-           "filesystem_cache_max_download_size",
+           "filesystem_cache_query_limit_bytes",
            "filesystem_prefetch_min_bytes_for_single_read_task",
            "filesystem_prefetch_step_bytes",
            "group_by_two_level_threshold_bytes",

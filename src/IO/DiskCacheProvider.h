@@ -105,7 +105,7 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// `query_id` enforces `filesystem_cache_max_download_size`. The provider keeps a
+    /// `query_id` enforces `filesystem_cache_query_limit_bytes`. The provider keeps a
     /// `QueryContextHolder` alive so `tryReserve` (inside `CacheWriter::write`) finds the per-query
     /// budget. An empty `query_id` means no per-query limit.
     DiskCacheProvider(

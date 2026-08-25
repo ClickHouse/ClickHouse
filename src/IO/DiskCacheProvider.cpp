@@ -516,7 +516,7 @@ DiskCacheProvider::DiskCacheProvider(
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
     /// Register a per-query context; null when no download budget is configured
-    /// (`filesystem_cache_max_download_size == 0` / no query limit), the unbounded path.
+    /// (`filesystem_cache_query_limit_bytes == 0` / no query limit), the unbounded path.
     query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
 }
 
