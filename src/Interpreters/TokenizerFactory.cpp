@@ -1,7 +1,12 @@
 #include <Interpreters/TokenizerFactory.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
+#if USE_MECAB
+#include <Interpreters/JapaneseTokenizer.h>
+#endif
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -190,18 +195,49 @@ static void registerTokenizers(TokenizerFactory & factory)
         auto array = castAs<Array>(args[0], "separators");
         std::vector<String> values;
         for (const auto & value : array)
-            values.emplace_back(castAs<String>(value, "separator"));
+        {
+            const auto & value_as_string = castAs<String>(value, "separator");
+            if (value_as_string.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Incorrect parameter of tokenizer '{}': the empty string cannot be used as a separator",
+                    SplitByStringTokenizer::getExternalName());
+            values.emplace_back(value_as_string);
+        }
 
         if (values.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Incorrect parameter of tokenizer '{}': separators cannot be empty",
+                "Incorrect parameter of tokenizer '{}': the separators argument cannot be empty",
                 SplitByStringTokenizer::getExternalName());
 
         return std::make_unique<SplitByStringTokenizer>(values);
     };
 
     factory.registerTokenizer(SplitByStringTokenizer::getName(), ITokenizer::Type::SplitByString, split_by_string_creator);
+
+    auto split_by_regexp_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = SplitByRegexpTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer requires a regular expression argument",
+                tokenizer_name);
+
+        auto regexp = castAs<String>(args[0], "regexp");
+        if (regexp.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
+                tokenizer_name);
+
+        return std::make_unique<SplitByRegexpTokenizer>(regexp);
+    };
+
+    factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);
 
     auto array_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
@@ -210,6 +246,7 @@ static void registerTokenizers(TokenizerFactory & factory)
     };
 
     factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
+    factory.registerTokenizer("keyword", ITokenizer::Type::Array, array_creator); /// compat with Elasticsearch, OpenSearch, Lucene, Solr
 
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
@@ -264,6 +301,80 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
     factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
+
+    auto ascii_cjk_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, AsciiCJKTokenizer::getExternalName());
+        return std::make_unique<AsciiCJKTokenizer>();
+    };
+
+    factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+#if USE_JIEBA
+    auto chinese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = ChineseTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
+        if (!args.empty())
+        {
+            auto granularity_str = castAs<String>(args[0], "granularity");
+            if (granularity_str == "fine_grained")
+                granularity = ChineseTokenizationGranularity::Fine;
+            else if (granularity_str == "coarse_grained")
+                granularity = ChineseTokenizationGranularity::Coarse;
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tokenizer '{}' supports only granularities 'coarse_grained' or 'fine_grained', got: '{}'",
+                    tokenizer_name,
+                    granularity_str);
+        }
+
+        return std::make_unique<ChineseTokenizer>(granularity);
+    };
+
+    factory.registerTokenizer(ChineseTokenizer::getName(), ITokenizer::Type::Chinese, chinese_creator);
+#endif
+
+#if USE_ICU
+    auto icu_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = IcuTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        /// The locale is mandatory; there is no default.
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer '{}' requires a mandatory locale argument, e.g. {}('en')",
+                tokenizer_name, tokenizer_name);
+
+        auto locale = castAs<String>(args[0], "locale");
+        if (locale.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the locale must not be empty",
+                tokenizer_name);
+
+        return std::make_unique<IcuTokenizer>(locale);
+    };
+
+    factory.registerTokenizer(IcuTokenizer::getName(), ITokenizer::Type::Icu, icu_creator);
+#endif
+
+#if USE_MECAB
+    auto japanese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, JapaneseTokenizer::getExternalName());
+        return std::make_unique<JapaneseTokenizer>();
+    };
+
+    factory.registerTokenizer(JapaneseTokenizer::getName(), ITokenizer::Type::Japanese, japanese_creator);
+#endif
 }
 
 }

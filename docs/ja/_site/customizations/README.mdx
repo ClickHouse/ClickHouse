@@ -1,0 +1,32 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # カスタマイズ
+</div>
+
+Mintlify サイトの見た目や動作をカスタマイズするためのカスタムスクリプトです。
+これらは `docs.json` の `scripts` 配列を介して読み込まれ、すべてのページで実行されます。
+
+詳しくは、Mintlify の[カスタムスクリプト](https://www.mintlify.com/docs/customize/custom-scripts)に関するドキュメントを参照してください。
+
+<div id="scripts">
+  ## スクリプト
+</div>
+
+* `ask-ai-button.js` — Ask-AI ボタンのスタイルや動作を調整します。
+* `custom-footer.js` — カスタムサイトフッター (`#ch-custom-footer`) を描画します。
+* `galaxy.js` — ClickHouse Galaxy analytics を初期化し、マーケティングウェブサイトと同じ、30 日間のラストタッチ、非 direct リファラー、UTM attribution モデルをすべてのイベントに適用し、Mintlify SPA ナビゲーション全体で docs とナレッジベースのページライフサイクルイベントを追跡し、正規の `https://clickhouse.com/docs` へのトラフィックは本番用 Galaxy API に、`.mintlify.app` のプレビュートラフィックは開発用 Galaxy API に送信し (localhost と不明な origin では無効) 、さらに正規の本番 docs でのみ保存済みのキャンペーンパラメーターと Galaxy visitor ID を ClickHouse Cloud リンクに追加します。
+* `inkeep-init.js` — Mintlify のネイティブ検索 (⌘K / ナビゲーションバーの検索バー) を Inkeep の検索モーダルに置き換えます。検索専用で、AI Chat は引き続き Kapa のままです。
+* `kapa-init.js` — Kapa.ai の RAG ウィジェットをブートストラップします。
+* `navbar-cta.js` — ナビゲーションバーに「Get started」CTA を追加します。
+* `nav-icon-preload.js` — ドキュメントの準備ができ次第、デスクトップのナビゲーションバーの小さな dropdown SVG を低優先度で先読みし、メニューが最初に開かれる前にアイコンを利用できるようにします。
+* `raise-issue-link.js` — Mintlify のデフォルトの「Raise issue」フィードバックリンクを、リポジトリの Documentation issue フォーム (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`) へ差し替え、現在のページパスを事前入力します。
+* `scroll-reset.js` — announcement バナーが設定されている場合に Next.js がスキップする、前方向の client-side ナビゲーション時のページ先頭へのスクロールを復元します。ブラウザーやルーターが前の位置を復元できるよう、戻る/進む (`popstate`) はそのままにし、ページをまたぐハッシュリンクではアンカーまでスクロールします。
+* `tab-nav.js` — デスクトップ上部ナビゲーションの tabs (Home / Database / Solutions / Integrations) を対応する URL に結び付け、アクティブなロケールとベースパス内でナビゲーションを維持します。
+* `clickhouse-sql-lexer-wasm.js` — ClickHouse の SQL lexer (`src/Parsers/Lexer.cpp` を WebAssembly にコンパイルしたもの) を base64 のグローバル変数として公開します。ClickHouse の `programs/server/play.html` から取得したスナップショットです。アップストリームの lexer / keyword list が変更された場合は再抽出してください。
+* `clickhouse-sql-highlight.js` — WASM lexer を使って `language="sql"` のコードブロックを再ハイライトし、Shiki の代わりに ClickHouse ネイティブの色 (play.html / clickhouse-client と一致) を適用します。`clickhouse-sql-lexer-wasm.js` の後に読み込む必要があります。その他の言語は、Shiki による描画結果をそのまま使用します。
+
+新しいスクリプトを組み込むには、`{ "src": "/_site/customizations/<name>.js" }`
+エントリを `docs.json` のトップレベルの `scripts` 配列に追加してください。

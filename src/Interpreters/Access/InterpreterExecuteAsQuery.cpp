@@ -29,11 +29,17 @@ namespace
         new_context->makeQueryContext();
         new_context->setCurrentQueryId({});
 
+        /// The wrapped statement is part of the same query the caller sent, so its query parameters
+        /// (`{name:Type}`) travel with it. Without this, any parameterized statement under `EXECUTE AS` -
+        /// including one stored in a SQL-defined HTTP handler, where the parameters were validated at
+        /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
+        new_context->setQueryParameters(context->getQueryParameters());
+
         const auto & database = context->getCurrentDatabase();
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
-        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
+        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
         new_context->setProgressCallback(context->getProgressCallback());
         new_context->setProcessListElement(context->getProcessListElement());
 
@@ -87,7 +93,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
     }
 
     const auto & query = query_ptr->as<const ASTExecuteAsQuery &>();
-    String target_user_name = query.target_user->toString();
+    String target_user_name = query.target_user->as<const ASTUserNameWithHost &>().toString();
     getContext()->checkAccess(AccessType::IMPERSONATE, target_user_name);
 
     if (query.subquery)
@@ -105,6 +111,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
 }
 
 
+void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

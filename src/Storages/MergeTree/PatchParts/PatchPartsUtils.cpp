@@ -68,13 +68,21 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
 {
     StorageInMemoryMetadata part_metadata;
 
+    /// Ensure patch part system columns are present.
+    /// They may be missing when creating empty coverage parts
+    /// (e.g. DROP PART for a patch part), because createEmptyPart
+    /// only includes data columns from table metadata.
+    for (const auto & col : getPatchPartSystemColumns())
+        if (!patch_part_desc.has(col.name))
+            patch_part_desc.add(ColumnDescription(col.name, col.type));
+
     /// Use hash of column names to put patch parts with different structure to different partitions.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
-    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
+    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
     const auto & key_columns = getPatchPartKeyColumns();
     auto order_by_expression = makeASTOperator("tuple");
@@ -89,8 +97,8 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, escape_index_filenames, local_context));
     secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, escape_index_filenames, local_context));
 
-    part_metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_expression, patch_part_desc, local_context, {});
-    part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, local_context);
+    part_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
+    part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, {}, local_context);
     part_metadata.primary_key.definition_ast = nullptr;
     part_metadata.setSecondaryIndices(std::move(secondary_indices));
     part_metadata.setColumns(std::move(patch_part_desc));
@@ -384,6 +392,57 @@ PatchInfosByPartition getPatchPartsByPartition(const std::vector<MergeTreePartIn
             res[partition_id].push_back(info);
     }
     return res;
+}
+
+static void sortDataVersions(DataVersionsByPartition & data_versions)
+{
+    for (auto & [_, versions] : data_versions)
+    {
+        std::sort(versions.begin(), versions.end());
+        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+    }
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & part : parts)
+    {
+        if (!part->info.isPatch())
+            res[part->info.getPartitionId()].push_back(part->info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & info : parts)
+    {
+        if (!info.isPatch())
+            res[info.getPartitionId()].push_back(info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data_versions, const String & partition_id, Int64 from, Int64 to)
+{
+    auto it = data_versions.find(partition_id);
+    if (it == data_versions.end())
+        return {};
+
+    const auto & versions = it->second;
+    const auto [lower_bound, upper_bound] = std::minmax(from, to);
+    auto version_it = std::lower_bound(versions.begin(), versions.end(), lower_bound);
+
+    if (version_it == versions.end() || *version_it >= upper_bound)
+        return {};
+
+    return *version_it;
 }
 
 }

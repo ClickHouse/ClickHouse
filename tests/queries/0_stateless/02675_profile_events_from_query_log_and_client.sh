@@ -2,6 +2,10 @@
 # Tags: no-fasttest, no-random-merge-tree-settings
 # Tag no-fasttest: needs s3
 
+# It is enabled by default. Setting randomisation for automatic parallel replicas sets `enable_parallel_replicas=1`,
+# i.e., essentially, it enforces distributed insert select. It is mostly fine, except it changes the profile events.
+CLICKHOUSE_CLIENT_OPT="--parallel_distributed_insert_select=0"
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -60,19 +64,19 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
 "
 
 echo "INSERT"
-$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
+$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 -q "
 INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "READ"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
-SELECT '1', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
+SELECT '1', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "INSERT and READ INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
 INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0;
-SELECT '2', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
+SELECT '2', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 

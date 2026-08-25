@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
@@ -53,6 +54,7 @@ public:
     void consume(Chunk & chunk) override;
     void onStart() override;
     void onFinish() override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
 protected:
     StorageMergeTree & storage;
@@ -60,8 +62,12 @@ protected:
     size_t max_parts_per_block;
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
+    /// The result of the "too many parts" check, evaluated on the query thread at sink
+    /// construction and thrown from onStart, when the sink starts executing.
+    std::exception_ptr too_many_parts_exception;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
+    bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 

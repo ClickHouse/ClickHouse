@@ -1,0 +1,46 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/redis
+title: 'Redis 字典源'
+sidebarTitle: 'Redis'
+description: '在 ClickHouse 中将 Redis 配置为字典源。'
+doc_type: 'reference'
+---
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(REDIS(
+        host 'localhost'
+        port 6379
+        storage_type 'simple'
+        db_index 0
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+        <redis>
+            <host>localhost</host>
+            <port>6379</port>
+            <storage_type>simple</storage_type>
+            <db_index>0</db_index>
+        </redis>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+设置字段：
+
+| Setting        | Description                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`         | Redis 主机地址。                                                                                                                                                                                      |
+| `port`         | Redis 服务器的端口。                                                                                                                                                                                    |
+| `storage_type` | 用于处理键的 Redis 内部存储结构。`simple` 使用扁平的键值映射，支持简单键布局以及单列复杂键布局 (如 `complex_key_cache` 和 `complex_key_direct`) 。`hash_map` 使用 Redis 哈希，复合复杂键必须使用该类型；它要求恰好有两个键列。键列必须是整数类型或字符串类型。不支持范围布局。默认值为 `simple`。可选。 |
+| `db_index`     | Redis 逻辑数据库的数字索引。默认值为 `0`。可选。                                                                                                                                                                    |

@@ -31,7 +31,7 @@ protected:
 
     bool processQueryText(const String & text, bool is_interactive);
 
-    std::vector<String> getCompletions(String prefix) const;
+    std::vector<String> getCompletions(const String & prefix) const;
 
     zkutil::ZooKeeperArgs zk_args;
 

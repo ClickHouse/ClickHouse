@@ -8,6 +8,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 #include <set>
@@ -21,7 +22,7 @@ namespace DB
         extern const int INCORRECT_DATA;
     }
 
-    class ExecutableFunctionRunningConcurrency : public IExecutableFunction
+    class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -55,7 +56,7 @@ namespace DB
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
-            std::multiset<typename ArgDataType::FieldType> ongoing_until;
+            MultiSetWithMemoryTracking<typename ArgDataType::FieldType> ongoing_until;
             auto begin_serializaion = arguments[0].type->getDefaultSerialization();
             auto end_serialization = arguments[1].type->getDefaultSerialization();
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -101,7 +102,7 @@ namespace DB
         }
     };
 
-    class FunctionBaseRunningConcurrency : public IFunctionBase
+    class FunctionBaseRunningConcurrency final : public IFunctionBase
     {
     public:
         explicit FunctionBaseRunningConcurrency(DataTypes argument_types_, DataTypePtr return_type_)
@@ -140,7 +141,7 @@ namespace DB
         DataTypePtr return_type;
     };
 
-    class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolver
+    class RunningConcurrencyOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = "runningConcurrency";
@@ -219,7 +220,7 @@ If events from different data blocks overlap then they can not be processed corr
 :::
 
 :::warning Deprecated
-It is advised to use [window functions](/sql-reference/window-functions) instead.
+It is advised to use [window functions](/reference/functions/window-functions) instead.
 :::
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";

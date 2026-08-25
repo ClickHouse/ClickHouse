@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationInterval.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -43,6 +45,19 @@ SerializationInterval::SerializationInterval(IntervalKind interval_kind_) : inte
 {
 }
 
+
+UInt128 SerializationInterval::getHash(IntervalKind kind_)
+{
+    SipHash hash;
+    hash.update("Interval");
+    hash.update(kind_.toString());
+    return hash.get128();
+}
+
+SerializationPtr SerializationInterval::create(IntervalKind kind_)
+{
+    return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
+}
 
 void SerializationInterval::serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -100,6 +115,11 @@ void SerializationInterval::serializeTextQuoted(const IColumn & column, size_t r
             ostr.write('\'');
             return;
     }
+}
+
+void SerializationInterval::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Interval is not supported by the HiveText output format");
 }
 
 }

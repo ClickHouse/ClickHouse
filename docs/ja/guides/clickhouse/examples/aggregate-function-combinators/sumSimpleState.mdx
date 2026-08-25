@@ -1,0 +1,115 @@
+---
+slug: '/examples/aggregate-function-combinators/sumSimpleState'
+title: 'sumSimpleState'
+description: 'sumSimpleStateコンビネータの使用例'
+keywords: ['sum', 'state', 'simple', 'combinator', 'examples', 'sumSimpleState']
+sidebarTitle: 'sumSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`SimpleState`](/ja/reference/functions/aggregate-functions/combinators#-simplestate) コンビネータは、[`sum`](/ja/reference/functions/aggregate-functions/sum)
+関数に適用して、すべての入力値の合計を返すことができます。結果は
+[`SimpleAggregateFunction`](/ja/reference/data-types/simpleaggregatefunction) 型で返されます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="tracking-post-votes">
+  ### 賛成票と反対票の追跡
+</div>
+
+投稿に対する投票を追跡するテーブルを使った、実用的な例を見てみましょう。
+各投稿について、賛成票、反対票、および
+全体のスコアの累積合計を維持したいとします。sum と組み合わせた `SimpleAggregateFunction` 型は、
+この用途に適しています。必要なのは集計の完全な状態
+ではなく、累積合計だけを保存することだからです。その結果、
+より高速になり、部分的な aggregate states のマージ
+も不要になります。
+
+まず、生データ用のテーブルを作成します:
+
+```sql title="Query"
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+次に、集計データを保存するターゲットテーブルを作成します。
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+次に、`SimpleAggregateFunction` 型のカラムを持つmaterialized viewを作成します。
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- sum状態の初期値（upvoteの場合は1、それ以外は0）
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- sum状態の初期値（downvoteの場合は1、それ以外は0）
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- sum状態の初期値（upvoteの場合は1、downvoteの場合は-1）
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+サンプルデータの挿入:
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+`SimpleState` コンビネータ を使用して materialized view に対してクエリを実行します:
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- ターゲットテーブルにクエリを実行する
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`sum`](/ja/reference/functions/aggregate-functions/sum)
+* [`SimpleState コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/ja/reference/data-types/simpleaggregatefunction)

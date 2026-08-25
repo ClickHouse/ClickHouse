@@ -20,7 +20,7 @@ namespace DB
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -104,7 +104,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay : public IFunctionBase
+    class FunctionBaseToModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -135,7 +135,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -145,6 +145,9 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -154,7 +157,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class ToModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -202,7 +205,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 

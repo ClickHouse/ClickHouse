@@ -1,0 +1,31 @@
+Verify destination type is String
+String
+String
+Verify output bytes are correct
+0102FF
+61626364
+4
+12
+4
+Trailing zero bytes are copied verbatim, not trimmed
+4
+0100
+4
+Round-trips through String preserve every element, including trailing zeros
+[1]
+[1,0]
+[1,0,2]
+The exact scenario from the issue (round-trips through String)
+[1.5,-2.25,3]
+Empty array reinterprets to an empty string
+0
+Array element type must be fixed length and contiguous
+LowCardinality nested element is stripped and works
+[1,2]
+61626364
+['ab','cd']
+['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002']
+A few rows read from a table
+1	0102
+2	0A141E
+3	

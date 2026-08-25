@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
@@ -12,6 +11,8 @@
 #include <Common/StringWithMemoryTracking.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
 
 #include <future>
 #include <variant>
@@ -19,7 +20,18 @@
 namespace DB
 {
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
 struct Settings;
+
+/// Statistics of a successfully flushed async insert entry,
+/// communicated back to the waiting client via the future.
+struct AsyncInsertProgress
+{
+    size_t rows = 0;
+    size_t bytes = 0;
+};
 
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
@@ -27,6 +39,7 @@ class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
+    using ResultProgress = AsyncInsertProgress;
 
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
@@ -42,7 +55,8 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future{};
+        /// On success, returns the number of rows/bytes actually written.
+        std::future<ResultProgress> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
@@ -74,15 +88,26 @@ public:
         String query_str;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
+        /// Client identity of the originating INSERT query (ClientInfo user names).
+        /// Restored on the flush context so currentUser()/user()/authenticatedUser() and
+        /// the materialized views triggered by the flush observe the inserting user instead
+        /// of an empty string. Part of the batching key so inserts from different identities
+        /// (e.g. impersonation, forwarded distributed queries) are never coalesced.
+        String current_user;
+        String initial_user;
+        String authenticated_user;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
-        UInt128 hash;
+        UInt128 hash{};
 
         InsertQuery(
             const ASTPtr & query_,
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
+            const String & current_user_,
+            const String & initial_user_,
+            const String & authenticated_user_,
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
@@ -92,7 +117,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -156,13 +181,14 @@ private:
                 MemoryTracker * user_memory_tracker_);
 
             void resetChunk();
-            void finish(std::exception_ptr exception_ = nullptr);
+            void finish(ResultProgress result = {});
+            void finish(std::exception_ptr exception_);
 
-            std::future<void> getFuture() { return promise.get_future(); }
+            std::future<ResultProgress> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
         private:
-            std::promise<void> promise;
+            std::promise<ResultProgress> promise;
             std::atomic_bool finished = false;
         };
 
@@ -210,7 +236,8 @@ private:
     /// Ordered container
     /// Key is a timestamp of the first insert into batch.
     /// Used to detect for how long the batch is active, so we can dump it by timer.
-    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    /// Must be a multimap: two queries with different keys may theoretically compute the same deadline.
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
@@ -221,11 +248,11 @@ private:
         mutable std::mutex mutex;
         mutable std::condition_variable are_tasks_available;
 
-        Queue queue;
-        QueueIteratorByKey iterators;
+        Queue queue TSA_GUARDED_BY(mutex);
+        QueueIteratorByKey iterators TSA_GUARDED_BY(mutex);
 
-        OptionalTimePoint last_insert_time;
-        std::chrono::milliseconds busy_timeout_ms;
+        OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
+        std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
     };
 
     /// Times of the two most recent queue flushes.
@@ -276,7 +303,7 @@ private:
         const Settings & settings,
         const QueueShard & shard,
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
-        std::chrono::steady_clock::time_point now) const;
+        std::chrono::steady_clock::time_point now) const TSA_REQUIRES(shard.mutex);
 
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
@@ -308,8 +335,10 @@ private:
 
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
+    void clear();
+
 public:
-    auto getQueueLocked(size_t shard_num) const
+    auto getQueueLocked(size_t shard_num) const TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);

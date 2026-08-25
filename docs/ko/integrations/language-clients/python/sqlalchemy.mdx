@@ -1,0 +1,392 @@
+---
+sidebarTitle: 'SQLAlchemy'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'alembic', 'integrate']
+description: 'ClickHouse SQLAlchemy 및 Alembic 지원'
+slug: /integrations/language-clients/python/sqlalchemy
+title: 'SQLAlchemy 지원'
+doc_type: 'reference'
+---
+
+ClickHouse Connect에는 핵심 드라이버를 기반으로 한 `clickhousedb` SQLAlchemy 방언이 포함되어 있습니다. 이 방언은 SQLAlchemy 1.4.40 이상(2.x 포함)을 지원하며, Core 쿼리, ClickHouse DDL, 리플렉션, 간단한 ORM 삽입에 중점을 둡니다.
+
+package extra를 사용하여 SQLAlchemy 의존성을 설치하십시오:
+
+```bash
+pip install "clickhouse-connect[sqlalchemy]"
+```
+
+<div id="sqlalchemy-connect">
+  ## SQLAlchemy로 연결
+</div>
+
+`clickhousedb://` 또는 `clickhousedb+connect://` URL 형식 중 하나를 사용해 엔진을 생성합니다:
+
+```python
+from sqlalchemy import create_engine, text
+
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb?compression=zstd"
+)
+
+with engine.connect() as conn:
+    version = conn.execute(text("SELECT version()")).scalar_one()
+    print(version)
+```
+
+URL 쿼리 매개변수에는 ClickHouse 설정, `compression`, `query_limit`, 타임아웃과 같은 ClickHouse Connect 클라이언트 옵션 또는 `ca_cert`와 같은 HTTP/TLS 옵션이 포함될 수 있습니다. 필요할 때는 ClickHouse 설정 앞에 `ch_`를 붙여 서버 설정으로 간주되도록 하십시오. 예를 들어 `ch_http_max_field_name_size=99999`와 같이 지정합니다.
+
+사용 가능한 클라이언트 옵션은 [연결 인수 및 설정](/ko/integrations/language-clients/python/driver-api#connection-arguments)을 참조하십시오.
+
+<div id="sqlalchemy-per-query-settings">
+  ### 쿼리별 설정
+</div>
+
+SQLAlchemy 실행 옵션을 통해 ClickHouse 설정을 전달할 수 있습니다. 설정은 engine, connection 또는 statement에 지정할 수 있습니다. 동일한 키가 있는 경우 statement 값이 connection 또는 engine 값보다 우선합니다.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT getSetting('max_threads')").execution_options(
+    settings={"max_threads": 2}
+)
+
+with engine.connect() as conn:
+    value = conn.execute(stmt).scalar_one()
+```
+
+<div id="sqlalchemy-per-query-read-formats">
+  ### 쿼리별 읽기 포맷
+</div>
+
+SQLAlchemy 실행 옵션에서 `query_formats`를 사용해 엔진, 연결 또는 statement에 ClickHouse 읽기 포맷을 설정합니다. statement 포맷이 먼저 적용되므로 일치하는 연결 또는 엔진 키와 와일드카드보다 우선합니다.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
+<div id="sqlalchemy-server-side-parameters">
+  ### 서버 측 매개변수
+</div>
+
+SQLAlchemy는 일반적으로 매개변수를 클라이언트 측에서 렌더링합니다. 엔진을 생성할 때 ClickHouse 서버 측 매개변수를 사용하도록 설정하십시오:
+
+```python
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb",
+    server_side_params=True,
+)
+```
+
+이 모드에서는 바인딩된 모든 값이 ClickHouse와 호환되는 SQLAlchemy 타입이어야 합니다. 지원되는 `IN` 목록은 타입이 지정된 ClickHouse `Array` 매개변수로 변환됩니다. 컴파일러는 호환되는 타입을 추론할 수 없거나 바인딩을 안전하게 처리할 수 없는 경우 `CompileError`를 발생시킵니다.
+
+<div id="sqlalchemy-core-queries">
+  ## 핵심 쿼리
+</div>
+
+이 방언은 조인, 필터, 정렬, LIMIT 및 OFFSET, `DISTINCT`를 포함한 SQLAlchemy Core `SELECT` 쿼리를 지원합니다.
+
+```python
+from sqlalchemy import MetaData, Table, select
+
+metadata = MetaData(schema="mydb")
+users = Table("users", metadata, autoload_with=engine)
+orders = Table("orders", metadata, autoload_with=engine)
+events = Table("events", metadata, autoload_with=engine)
+
+stmt = (
+    select(users.c.name, orders.c.product)
+    .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    .order_by(users.c.name)
+    .limit(10)
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
+명시적인 `WHERE` 절이 필요한 경량 `DELETE`를 지원합니다:
+
+```python
+from sqlalchemy import delete
+
+stmt = delete(users).where(users.c.name.like("%temporary%"))
+with engine.connect() as conn:
+    conn.execute(stmt)
+```
+
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON 서브컬럼
+</div>
+
+ClickHouse `JSON`으로 선언되었거나 반영된 컬럼에서 스토리지 기반 서브컬럼 경로의 세그먼트를 한 번에 하나씩 선택하려면 대괄호를 사용합니다:
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]`는 ClickHouse의 점 표기 식별자 구문으로 컴파일됩니다. 각 부분은 개별적으로 인용되며, 예를 들어 `` `events`.`payload`.`severity` ``와 같습니다. ClickHouse에 저장된 JSON 하위 컬럼을 읽으며 `getSubcolumn`은 호출하지 않습니다. 각 경로 세그먼트에 대해 `[]` 또는 `.subcolumn()`을 한 번씩 연결하십시오. 각 세그먼트는 비어 있지 않은 문자열이어야 합니다.
+
+`.subcolumn()`에 `type_`을 전달하면 점 표기 경로가 SQL `CAST`로 감싸지고 해당 타입이 SQLAlchemy 표현식에 할당됩니다. `type_`이 없으면 `.subcolumn("segment")`는 `["segment"]`와 동일하게 동작합니다.
+
+타입이 지정되지 않은 경로는 ClickHouse의 `Dynamic` 타입을 갖습니다. ClickHouse에서는 `Dynamic` 값을 `ORDER BY` 또는 `GROUP BY`에 직접 사용할 수 없습니다. 이러한 위치에서 하위 컬럼을 사용하려면 `type_`을 전달하십시오.
+
+정적으로 타입이 지정된 코드에서는 `clickhouse_connect.cc_sqlalchemy`에서 `json_subcolumn`을 가져오십시오. 이 도우미 함수도 한 번에 하나의 세그먼트를 받으며 `type_`의 Python 결과 타입을 유지합니다:
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+이 예시에서 타입 검사기는 `request_id`를 `ColumnElement[int]`로 봅니다.
+
+공백이나 백틱이 포함된 이름을 비롯해 각 세그먼트는 각각 따옴표로 묶습니다. 백틱을 사용해도 ClickHouse JSON 경로 처리에서 점이 리터럴로 해석되지는 않습니다. `json_type_escape_dots_in_keys`가 활성화된 경우 키의 리터럴 점에는 ClickHouse의 `%2E` 인코딩을 사용하십시오. `a.b`라는 키에는 `payload["a%2Eb"]`로 접근하고, `payload["a.b"]`는 사용하지 마십시오.
+
+<div id="sqlalchemy-query-extensions">
+  ### ClickHouse 쿼리 확장 기능
+</div>
+
+정적 타입 검사기가 타입이 지정된 ClickHouse 메서드를 인식할 수 있도록 `clickhouse_connect.cc_sqlalchemy`에서 `select`를 가져오십시오. 표준 `sqlalchemy.select`도 런타임에 이러한 메서드를 제공합니다.
+
+```python
+from clickhouse_connect.cc_sqlalchemy import select
+
+stmt = (
+    select(events.c.user_id, events.c.event_type)
+    .final()
+    .prewhere(events.c.event_date >= "2026-01-01")
+    .sample(0.1)
+    .limit_by([events.c.user_id], 3)
+)
+```
+
+ClickHouse `Select` 메서드는 다음과 같습니다:
+
+| 메서드                                      | SQL 기능                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `.final()`                               | 테이블에 적용되는 `FINAL`                                                     |
+| `.sample(value)`                         | 분수, 행 수 또는 표현식을 사용하는 `SAMPLE`                                         |
+| `.prewhere(expression)`                  | `PREWHERE`; 여러 번 호출하면 `AND`로 결합됩니다                                    |
+| `.limit_by(columns, limit, offset=None)` | `LIMIT ... BY`                                                        |
+| `.array_join(...)`                       | `ARRAY JOIN`                                                          |
+| `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                     |
+| `.ch_join(...)`                          | `strictness`, `distribution`, `using`, `cross` 옵션을 지원하는 ClickHouse 조인 |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                     |
+
+예를 들어, ClickHouse `GLOBAL ANY LEFT JOIN`은 사용자 정의 `FromClause`를 중첩하지 않고 체이닝할 수 있습니다:
+
+```python
+stmt = (
+    select(events.c.id, users.c.name)
+    .select_from(events)
+    .ch_join(
+        users,
+        events.c.user_id == users.c.id,
+        isouter=True,
+        strictness="ANY",
+        distribution="GLOBAL",
+    )
+)
+```
+
+ClickHouse 고차 함수에서는 명시적 `Lambda` 구문을 사용하십시오:
+
+```python
+from sqlalchemy import column, func
+
+from clickhouse_connect.cc_sqlalchemy import Lambda, select
+
+stmt = select(
+    func.arrayMap(
+        Lambda("x", column("x") * 2),
+        events.c.metrics,
+    ).label("doubled")
+)
+```
+
+표준 SQLAlchemy `values()` 구문은 공통 테이블 표현식(CTE)에서 사용할 때를 포함해 ClickHouse의 `VALUES` 테이블 함수 구문으로 컴파일됩니다. CTE 형식에는 `Values.cte()`가 추가된 SQLAlchemy 2.0.42 이상이 필요합니다.
+
+<div id="sqlalchemy-materialized-ctes">
+  ### 구체화된 CTE
+</div>
+
+기본적으로 ClickHouse는 공통 테이블 표현식(CTE)을 인라인하므로, CTE를 두 번 이상 참조하면 참조할 때마다 본문이 한 번씩 실행됩니다. `.cte()`에 `materialized=True`를 전달하면 `WITH <name> AS MATERIALIZED (...)`가 생성되어 본문을 한 번만 계산합니다:
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+서버는 키워드가 있고 `enable_materialized_cte=1`로 설정되어 있으며 분석기가 활성화된 경우에만 CTE를 구체화합니다. [쿼리별 설정](#sqlalchemy-per-query-settings)에 나온 대로 statement, connection 또는 engine에 `enable_materialized_cte`를 설정하십시오. 이 기능을 지원하는 모든 서버에서는 분석기가 기본적으로 활성화되므로 `enable_analyzer=1`을 명시적으로 설정하는 것은 방어적 조치입니다. `enable_materialized_cte`는 Experimental ClickHouse 설정입니다. `enable_materialized_cte=0` 또는 `enable_analyzer=0`이면 쿼리는 성공하고 동일한 행을 반환합니다. ClickHouse는 아무런 알림 없이 `MATERIALIZED`를 무시하고 CTE를 다시 인라인 처리하므로, 설정을 빠뜨리면 오류 없이 성능이 저하됩니다. Materialized CTE를 사용하려면 ClickHouse 26.3 이상이 필요합니다. 이전 서버에서는 해당 키워드를 구문 오류로 처리합니다.
+
+표준 `sqlalchemy.select`로 작성한 statement에는 모듈 수준의 `cte()`를 대신 사용하십시오. 이 함수는 첫 번째 인수로 statement를 받고, 그 외에는 `Select.cte()`와 동일하게 동작합니다:
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+이 키워드는 ClickHouse 방언에서만 렌더링되므로, 다른 backend와 공유되는 statement는 해당 backend에서 변경 없이 컴파일됩니다.
+
+ClickHouse는 재귀적 구체화된 CTE를 지원하지 않습니다. `recursive=True`와 `materialized=True`가 모두 설정되면 SQLAlchemy 헬퍼에서 `ValueError`를 발생시킵니다.
+
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL 및 리플렉션
+</div>
+
+ClickHouse Connect는 ClickHouse 데이터 타입, 테이블 엔진, 딕셔너리 구문, 데이터베이스 DDL 및 테이블 리플렉션을 제공합니다.
+
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import DateTime64, String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+
+with engine.connect() as conn:
+    conn.execute(CreateDatabase("example_db", exists_ok=True))
+
+    metadata = MetaData(schema="example_db")
+    events = db.Table(
+        "events",
+        metadata,
+        db.Column("id", UInt32, primary_key=True),
+        db.Column("user", String),
+        db.Column("created_at", DateTime64(3)),
+        MergeTree(order_by="id"),
+    )
+    events.create(conn)
+
+    reflected = db.Table("events", MetaData(schema="example_db"), autoload_with=conn)
+    assert reflected.engine is not None
+```
+
+리플렉션된 컬럼에는 `DEFAULT` 표현식용 `server_default`와, 있는 경우 `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized`, `clickhouse_alias` 같은 방언별 속성이 포함됩니다.
+
+`order_by`, `partition_by`, `primary_key`, `sample_by`, `ttl` 등의 MergeTree 키 인수는 일반 문자열은 물론 SQLAlchemy 컬럼과 SQL 표현식도 받을 수 있습니다.
+
+<div id="sqlalchemy-inserts">
+  ## 삽입 및 기본 ORM 사용
+</div>
+
+Core 삽입과 간단한 ORM 모델이 지원됩니다. 대량 데이터 처리에는 Core 삽입을 우선적으로 사용하십시오.
+
+```python
+with engine.connect() as conn:
+    conn.execute(
+        events.insert(),
+        [
+            {"id": 13, "user": "user_1"},
+            {"id": 79, "user": "user_2"},
+        ],
+    )
+```
+
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from sqlalchemy.orm import Session, declarative_base
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, UInt32
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+
+Base = declarative_base(metadata=MetaData(schema="example_db"))
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (MergeTree(order_by=["id"]),)
+
+    id = db.Column(UInt32, primary_key=True)
+    name = db.Column(String)
+
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    session.add(User(id=13, name="user_1"))
+    session.bulk_save_objects([User(id=79, name="user_2")])
+    session.commit()
+```
+
+<div id="sqlalchemy-alembic">
+  ## Alembic 마이그레이션
+</div>
+
+ClickHouse Connect에는 ClickHouse 스키마 마이그레이션을 위한 Alembic 통합 기능이 포함되어 있습니다. 다음과 같이 설치하십시오:
+
+```bash
+pip install "clickhouse-connect[alembic]"
+```
+
+방언 통합을 등록하려면 Alembic의 `env.py`에서 `clickhouse_connect.cc_sqlalchemy.alembic`을 import하십시오. 자동 생성은 테이블 생성 및 제거, 컬럼 추가/수정/삭제, 기본값, 주석을 포함한 일반적인 테이블 스키마 변경을 지원합니다. 테이블 및 컬럼 이름 변경은 수동 작업을 사용하십시오. 생성된 모든 migration은 적용하기 전에 반드시 검토하십시오.
+
+ClickHouse 전용 `op.*` 헬퍼는 다음을 지원합니다.
+
+* 추가, 구체화, 삭제 작업을 포함한 데이터 스키핑 인덱스
+* 추가, 구체화, 삭제 작업을 포함한 프로젝션
+* MergeTree 테이블 설정 수정 및 재설정
+* materialized view 생성 및 제거
+* 딕셔너리 생성, 제거 및 다시 로드
+
+ClickHouse 데이터 스키핑 인덱스는 SQLAlchemy 인덱스가 아닙니다. 부분적이거나 잘못된 DDL을 방지하기 위해 `Index`, `Column(index=True)`, `op.create_index`, `op.drop_index`는 허용되지 않습니다. `op.add_clickhouse_index`와 `op.drop_clickhouse_index`를 사용하십시오.
+
+전체 [Alembic 예시](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)는 여기에서 확인할 수 있습니다. `clickhouse-sqlalchemy`에서 마이그레이션하는 사용자는 [마이그레이션 가이드](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)도 읽어보시기 바랍니다.
+
+<div id="scope-and-limitations">
+  ## 범위 및 제한 사항
+</div>
+
+* ClickHouse는 이 HTTP 방언을 통해 전통적인 트랜잭션을 제공하지 않습니다. `engine.begin()` 및 `Session.commit()`은 Python 측 작업을 정리하지만, commit과 rollback은 서버에서는 실제로 아무 작업도 수행하지 않습니다.
+* `UPDATE`, 2단계 트랜잭션, 시퀀스, `RETURNING`, 고급 격리 수준은 이 방언에서 구현되지 않았습니다. 필요할 경우 서버 측 뮤테이션에는 명시적으로 ClickHouse SQL을 사용하십시오.
+* `Column(..., primary_key=True)`는 SQLAlchemy 객체 아이덴티티를 제공합니다. 하지만 서버 측 고유 제약을 생성하지는 않습니다. 정렬 및 선택적 프라이머리 키 표현식은 테이블 엔진을 통해 정의하십시오.
+* ClickHouse는 이러한 제약을 강제하지 않으므로 전통적인 외래 키, 고유 제약, 표준 인덱스 메타데이터는 사용할 수 없습니다.
+* ORM 릴레이션 관리, unit-of-work 방식의 업데이트, 캐스케이딩, eager 또는 lazy 릴레이션 loading은 지원되는 ORM 범위에 포함되지 않습니다.

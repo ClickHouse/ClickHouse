@@ -51,6 +51,7 @@ public:
     bool haveSubtypes() const override { return !elems.empty(); }
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
+    bool hasDynamicStructure() const override;
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
@@ -58,7 +59,8 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
@@ -76,7 +78,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
+    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
 };
 
 }

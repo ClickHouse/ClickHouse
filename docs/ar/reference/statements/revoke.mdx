@@ -1,0 +1,57 @@
+---
+description: 'توثيق تعليمة REVOKE'
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: 'تعليمة REVOKE'
+doc_type: 'مرجع'
+---
+
+يسحب الامتيازات من المستخدمين أو الأدوار.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+**سحب الامتيازات من المستخدمين**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**سحب الأدوار من المستخدمين**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## الوصف
+</div>
+
+لسحب امتياز معيّن، يمكنك استخدام امتياز ذي نطاق أوسع من الامتياز الذي تنوي سحبه. على سبيل المثال، إذا كان لدى مستخدم امتياز `SELECT (x,y)`، يمكن للمسؤول تنفيذ الاستعلام `REVOKE SELECT(x,y) ...` أو `REVOKE SELECT * ...` أو حتى `REVOKE ALL PRIVILEGES ...` لسحب هذا الامتياز.
+
+<div id="partial-revokes">
+  ### السحب الجزئي للامتيازات
+</div>
+
+يمكنك سحب جزء من امتياز. على سبيل المثال، إذا كان لدى مستخدم امتياز `SELECT *.*`، فيمكنك سحب امتياز قراءة البيانات منه لجدولٍ معيّن أو لقاعدة بيانات معيّنة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+امنح حساب المستخدم `john` امتيازًا لتنفيذ SELECT على جميع قواعد البيانات، باستثناء `accounts`:
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+امنح حساب المستخدم `mira` امتيازًا يتيح له الاختيار من جميع أعمدة الجدول `accounts.staff`، باستثناء العمود `wage`.
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[المقال الأصلي](/ar/reference/settings/session-settings)

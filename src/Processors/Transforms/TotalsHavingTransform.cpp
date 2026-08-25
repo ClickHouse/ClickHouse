@@ -82,11 +82,15 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
+    /// Use updateHeader (same method as transformHeader for the main output) to ensure
+    /// the totals port header has the same column constness as the main output port.
+    /// Previously this used ExpressionActions::execute which can produce different constness
+    /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
-        auto totals_header = finalized_header;
-        size_t num_rows = totals_header.rows();
-        expression->execute(totals_header, num_rows);
+        /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
+        /// because sets from subqueries may not be ready yet at this point.
+        auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);
@@ -249,7 +253,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
             auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            assert(totals_column.size() == 1);
+            chassert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
             /// the corresponding totals column.

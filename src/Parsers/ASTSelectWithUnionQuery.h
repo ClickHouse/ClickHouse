@@ -3,6 +3,8 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/SelectUnionMode.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 /** Single SELECT query or multiple SELECT queries with UNION
@@ -16,10 +18,12 @@ public:
     ASTPtr clone() const override;
 
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
-    SelectUnionMode union_mode;
+    SelectUnionMode union_mode{};
     SelectUnionModes list_of_modes;
     bool is_normalized = false;
 

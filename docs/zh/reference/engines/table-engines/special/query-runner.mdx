@@ -1,0 +1,120 @@
+---
+description: '`QueryRunner` 表中插入的记录表示由该引擎执行的查询，这些查询可以在本地或远程集群上以“发出即忘”模式执行。'
+sidebarTitle: 'QueryRunner'
+slug: /engines/table-engines/special/query-runner
+title: 'QueryRunner 表引擎'
+doc_type: 'reference'
+---
+
+插入到 `QueryRunner` 表中的记录表示由该引擎执行的查询。
+该引擎可用于异步执行查询、批量执行生成的查询、将查询定向到远程集群、进行基准测试、模糊测试，以及使用影子流量进行测试。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE runner
+(
+    query String,
+    database String,
+    settings Map(LowCardinality(String), String)
+)
+ENGINE = QueryRunner
+SETTINGS
+    cluster = 'cluster_name',
+    shard = '1',
+    mode = 'asynchronous',
+    threads = 4,
+    max_queue_size = 1000
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }];
+```
+
+该表必须使用允许的部分列来创建：`query`、`database`、`settings`。
+其中，`query` 列是必填项，其他列为可选项。
+
+| 列          | 类型                    | 含义                           |
+| ---------- | --------------------- | ---------------------------- |
+| `query`    | `String`              | 要执行的查询。                      |
+| `database` | `String`              | 该查询的默认数据库。如果为空，则使用服务器的默认数据库。 |
+| `settings` | `Map(String, String)` | 应用于该查询的设置。            |
+
+<div id="engine-settings">
+  ## 引擎设置
+</div>
+
+| 设置               | 默认值              | 含义                                                                                            |
+| ---------------- | ---------------- | --------------------------------------------------------------------------------------------- |
+| `cluster`        | `''`             | 要将查询发送到的集群名称。如果为空，则查询在本地执行。                                                                   |
+| `shard`          | `'1'`            | 要将查询发送到的集群分片的从 1 开始的索引；也可使用 `'random'` 为每个查询随机选择一个分片，或使用 `'all'` 在每个分片上执行每个查询。需要设置 `cluster`。 |
+| `mode`           | `'asynchronous'` | 在 `synchronous` 模式下，INSERT 会在已插入批次中的所有查询完成后才返回。在 `asynchronous` 模式下，INSERT 会在查询进入队列后立即返回。     |
+| `threads`        | `4`              | 执行查询的后台线程数。                                                                                   |
+| `max_queue_size` | `1000`           | 队列中允许排队的最大查询数。队列满时，后续插入的查询会被丢弃，并记录错误日志。                                                       |
+
+<div id="details">
+  ## 详细信息
+</div>
+
+该表只允许 `INSERT` 查询。
+这些查询以“发出即忘”模式执行：如果发生异常，不会重试，
+并且 SELECT 查询的结果会被丢弃 (保留结果的唯一方式是 `INSERT SELECT`) 。
+每个查询是否成功都可以在 `system.query_log` 表中检查，其中由
+此引擎发起的查询会在发起服务器上标记为 `is_internal = 1`。
+
+排队的查询保存在内存中，服务器重启后不会保留。在服务器关闭时
+ (或对该表执行 `DROP`/`DETACH`)  ，尚未开始的查询会被丢弃。对于
+已经在执行中的查询，已分发到集群的会被取消，而在本地运行的
+则会一直等待其执行完成。
+
+当要运行的查询本身就是 `INSERT` 时，其数据必须以内联方式提供——`INSERT ... VALUES (...)`、
+`INSERT ... SELECT ...`，或在查询文本中包含数据的 `INSERT ... FORMAT ...`。不支持
+那种需要从单独数据流获取数据的 `INSERT`。
+
+<div id="local-mode-and-sql-security">
+  ## 本地模式和 SQL SECURITY
+</div>
+
+如果未设置 `cluster`，查询会在本地 server 上执行。
+其运行时使用哪个用户身份由 `SQL SECURITY` 子句决定：
+
+* `INVOKER` (默认) ：查询以执行 `INSERT` 的用户身份运行。
+* `DEFINER`：查询以指定的 `DEFINER` 用户身份运行。由于插入的查询内容可以是任意的，因此，对此类表授予 `INSERT` 权限，就等于授予该 `DEFINER` 的全部特权。
+* `NONE`：查询在没有用户身份的情况下以完全访问权限运行。创建表时需要 `ALLOW_SQL_SECURITY_NONE` 特权。
+
+<div id="cluster-mode">
+  ## 集群模式
+</div>
+
+指定 `cluster` 设置后，查询将发送到指定的集群。
+
+目标分片由 `shard` 选择：固定的从 1 开始的索引 (默认为 `'1'`) 、`'random'` (为每个查询随机选择一个分片) ，或 `'all'` (在集群的每个分片上执行每个查询) 。分片内的副本则根据服务器的 `load_balancing` 设置来选择。
+
+`database` 列将与远程服务器连接的默认数据库设置为相应值。由于默认数据库在每个连接中只设置一次，因此每个不同的 `database` 值都会使用各自的连接池，该连接池会在首次使用时创建，并在表的整个生命周期内复用。
+
+`DEFINER` 和 `SQL SECURITY` 仅在本地模式下生效，将它们与 `cluster` 设置一起使用会导致错误。在远程服务器上，查询会使用集群配置中的凭据进行身份验证，并作为普通的初始查询运行：它们会记录到 `system.query_log` 中，带有 `is_initial_query = 1` 和各自的 `query_id` (不会与生成它们的 INSERT 关联) 。在发起服务器上，分发出去的查询会记录到 `system.query_log` 中，并带有 `is_internal = 1`。
+
+由于该引擎会丢弃查询结果，因此它始终以 `discard_query_data = 1` 运行分发的查询，所以 SELECT 查询的结果数据不会通过网络传输 (这会覆盖在 `settings` 列中设置的任何 `discard_query_data` 值) 。
+
+<div id="waiting-for-queries-to-finish">
+  ## 等待查询结束
+</div>
+
+在异步模式下，可以使用以下查询进行阻塞等待，直到目前为止提交到该表的所有查询都已结束：
+
+```sql
+SYSTEM WAIT QUERY RUNNER runner;
+```
+
+<div id="example">
+  ## 示例
+</div>
+
+回放查询日志中最近的 `SELECT` 查询：
+
+```sql
+INSERT INTO runner (query, database, settings)
+SELECT query, current_database, Settings
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND NOT is_internal AND query_kind = 'Select'
+  AND event_time > now() - INTERVAL 1 HOUR;
+```

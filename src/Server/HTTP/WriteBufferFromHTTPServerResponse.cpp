@@ -139,13 +139,14 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    const ProfileEvents::Event & write_event_)
-    : HTTPWriteBuffer(response_.getSocket(), write_event_)
+    const ProfileEvents::Event & write_event_,
+    size_t buf_size)
+    : HTTPWriteBuffer(response_.getSocket(), write_event_, buf_size)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
     if (response.getChunkedTransferEncoding())
-        setChunked();
+        setChunked(buf_size);
 
     exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }

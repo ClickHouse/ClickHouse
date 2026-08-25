@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -50,6 +51,7 @@ function run_query_with_pure_parallel_replicas () {
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --cluster_for_parallel_replicas "parallel_replicas" \
+        --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \

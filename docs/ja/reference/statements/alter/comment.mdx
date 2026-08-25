@@ -1,0 +1,92 @@
+---
+description: 'テーブルコメントの追加、変更、削除を行う ALTER TABLE ... MODIFY COMMENT のドキュメント'
+sidebarTitle: 'ALTER TABLE ... MODIFY COMMENT'
+slug: /sql-reference/statements/alter/comment
+title: 'ALTER TABLE ... MODIFY COMMENT'
+keywords: ['ALTER TABLE', 'MODIFY COMMENT']
+doc_type: 'reference'
+---
+
+事前に設定されているかどうかに関係なく、テーブルコメントを追加、変更、または削除します。コメントの変更は、[`system.tables`](/ja/reference/system-tables/tables) と `SHOW CREATE TABLE` クエリの両方に反映されます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+コメント付きのテーブルを作成するには:
+
+```sql title="Query"
+CREATE TABLE table_with_comment
+(
+    `k` UInt64,
+    `s` String
+)
+ENGINE = Memory()
+COMMENT 'The temporary table';
+```
+
+テーブルコメントを変更するには:
+
+```sql title="Query"
+ALTER TABLE table_with_comment 
+MODIFY COMMENT 'new comment on a table';
+```
+
+変更後のコメントを表示するには:
+
+```sql title="Query"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment────────────────┐
+│ new comment on a table │
+└────────────────────────┘
+```
+
+テーブルコメントを削除するには:
+
+```sql title="Query"
+ALTER TABLE table_with_comment MODIFY COMMENT '';
+```
+
+コメントが削除されていることを確認するには:
+
+```sql title="Query"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment─┐
+│         │
+└─────────┘
+```
+
+<div id="caveats">
+  ## 注意事項
+</div>
+
+レプリケートテーブルでは、コメントがレプリカごとに異なる場合があります。
+コメントの変更は、1 つのレプリカにのみ適用されます。
+
+この機能はバージョン 23.9 以降で利用できます。以前の
+ClickHouse バージョンでは動作しません。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [`COMMENT`](/ja/reference/statements/create/table#comment-clause) 句
+* [`ALTER DATABASE ... MODIFY COMMENT`](/ja/reference/statements/alter/database-comment)

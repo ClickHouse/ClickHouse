@@ -137,8 +137,8 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         (void)fs::remove(current_dir);
 }
 
-void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterFile::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);

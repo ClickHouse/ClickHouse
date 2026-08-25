@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
@@ -60,8 +61,19 @@ std::string determineDefaultTimeZone()
         if (*tz_env_var == ':')
             ++tz_env_var;
 
+        /// An empty TZ value (including a bare ":") means UTC, the same as in glibc.
+        /// Without this, the empty path resolves to the time zone database directory itself,
+        /// and reading it as a file fails with "Is a directory". See #68920.
+        if (*tz_env_var == '\0')
+            return "UTC";
+
         tz_file_path = tz_env_var;
-        tz_name = tz_env_var;
+
+        /// If TZ points to a file path (e.g. TZ=:/etc/localtime per POSIX),
+        /// don't use the path as the timezone name — let it be resolved from
+        /// the file's location relative to the timezone database. See #86495.
+        if (tz_env_var[0] != '/')
+            tz_name = tz_env_var;
     }
     else
     {
@@ -158,7 +170,7 @@ const DateLUTImpl & DateLUT::instance()
     std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+        const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
             timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
@@ -191,17 +203,33 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impls.emplace(time_zone, nullptr).first;
-    if (!it->second)
-        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+    auto [it, inserted] = impls.emplace(time_zone, nullptr);
+    if (inserted)
+    {
+        try
+        {
+            it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+        }
+        catch (...)
+        {
+            /// `DateLUTImpl` construction throws for an unknown time zone. Erase the just-inserted
+            /// empty slot; otherwise a stream of distinct invalid time zone names (which can come from
+            /// untrusted input, e.g. binary type decoding or `toDateTime(x, '<garbage>')`) would grow
+            /// this cache without bound, since entries are never evicted.
+            impls.erase(it);
+            throw;
+        }
+    }
 
     return *it->second;
 }
 
 DateLUT & DateLUT::getInstance()
 {
-    static DateLUT ret;
-    return ret;
+    /// Intentionally leaked: must outlive the asynchronous logger threads that may still
+    /// be formatting `LocalDateTime` values when other static destructors run.
+    static DateLUT * ret = new DateLUT;
+    return *ret;
 }
 
 ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)

@@ -19,10 +19,11 @@ struct AggregatedZooKeeperLogElement
     String parent_path;
     Int32 operation;
     StaticString component;
+    bool is_subrequest = false;
 
     /// Group statistics.
     UInt32 count;
-    std::unique_ptr<Coordination::ErrorCounter> errors;
+    Coordination::ErrorCounter errors;
     UInt64 total_latency_microseconds;
 
     static std::string name() { return "AggregatedZooKeeperLog"; }
@@ -45,7 +46,8 @@ public:
         const std::filesystem::path & path,
         UInt64 latency_microseconds,
         Coordination::Error error,
-        StaticString component);
+        StaticString component,
+        bool is_subrequest = false);
 
 private:
     struct EntryKey
@@ -54,6 +56,7 @@ private:
         Int32 operation;
         String parent_path;
         StaticString component;
+        bool is_subrequest = false;
 
         bool operator==(const EntryKey & other) const = default;
     };
@@ -65,7 +68,7 @@ private:
     {
         UInt32 count = 0;
         UInt64 total_latency_microseconds = 0;
-        std::unique_ptr<Coordination::ErrorCounter> errors = std::make_unique<Coordination::ErrorCounter>();
+        Coordination::ErrorCounter errors;
 
         void observe(UInt64 latency_microseconds, Coordination::Error error);
     };

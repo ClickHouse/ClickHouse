@@ -2,6 +2,7 @@
 -- no-fasttest: depends on s3 storage
 -- no-parallel: cache is system-wide and tests can affect each other in unexpected way
 -- no-parallel-replicas: profile events are not available on the second replica
+-- no-random-settings: we need to test the interaction of specific setting combinations
 
 /*
 Because the parquet metadata cache is system-wide, parallel runs of 

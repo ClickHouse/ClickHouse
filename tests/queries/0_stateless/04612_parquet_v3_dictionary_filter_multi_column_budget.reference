@@ -1,0 +1,8 @@
+generous budget: both columns' value sets fit, row group 1 is pruned, only 20000 rows are read
+{"result":[{"count()":2}],"rows_read":20000}
+tight budget shared across both columns: pruning is skipped, all 40000 rows are read
+{"result":[{"count()":2}],"rows_read":40000}
+extreme budget (1 byte): pruning is skipped, result is still correct
+{"result":[{"count()":2}],"rows_read":40000}
+results over two dictionary-filtered columns are identical regardless of the shared budget
+OK

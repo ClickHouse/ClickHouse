@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 
 #include <Columns/ColumnString.h>
@@ -8,8 +9,22 @@ namespace DB
 
 SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
     : version(version_)
-    , serialization_string(version)
+    , serialization_string(SerializationString::create(version))
 {
+}
+
+
+UInt128 SerializationStringSize::getHash(MergeTreeStringSerializationVersion version_)
+{
+    SipHash hash;
+    hash.update("StringSize");
+    hash.update(static_cast<int>(version_));
+    return hash.get128();
+}
+
+SerializationPtr SerializationStringSize::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
 }
 
 void SerializationStringSize::enumerateStreams(
@@ -122,7 +137,7 @@ void SerializationStringSize::deserializeWithStringData(
         double avg_value_size_hint
             = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
 
-        serialization_string.deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
+        serialization_string->deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
 
         num_read_rows = string_state.column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);
@@ -156,7 +171,7 @@ void SerializationStringSize::deserializeWithoutStringData(
     {
         for (size_t i = 0; unlikely(i < rows_offset); ++i)
         {
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
         }
@@ -171,7 +186,7 @@ void SerializationStringSize::deserializeWithoutStringData(
         {
             if (unlikely(stream->eof()))
                 break;
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
             mutable_column_data[prev_size + num_read_rows] = size;
@@ -203,7 +218,15 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
         /// Instead we need to insert data from the current range from it.
         if (rows_offset)
-            column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        {
+            /// `column` may alias `cached_column` (the substream can be read first with rows_offset == 0,
+            /// placing `column` itself into the cache, and then re-read in the same range with rows_offset > 0),
+            /// so clone it when shared — `IColumn::mutate` is a no-op when uniquely owned — before the append
+            /// and the in-place rows_offset compaction below.
+            MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+            column = std::move(mutable_column);
+        }
         else
             insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache, true);
     }
@@ -231,7 +254,9 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         }
     }
 
-    /// Apply rows_offset if needed.
+    /// Apply rows_offset if needed. `column` is uniquely owned here (it was cloned above on the cache path
+    /// when shared, and the fresh-read path caches a separate cut() copy), so this in-place compaction does
+    /// not touch storage referenced elsewhere.
     if (rows_offset)
     {
         auto mutable_column = column->assumeMutable();
@@ -244,6 +269,11 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
 
     settings.path.pop_back();
+}
+
+size_t SerializationStringSize::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

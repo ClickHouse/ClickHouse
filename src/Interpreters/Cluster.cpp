@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -133,6 +134,19 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
+    /// Optional per-node ports for the distributed-plan engine; zero means "not configured".
+    /// Range-checked before narrowing so an out-of-range value errors instead of wrapping.
+    auto read_optional_port = [&](const String & key)
+    {
+        Int64 value = config.getInt64(config_prefix + key, 0);
+        if (value < 0 || value > 65535)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "{}{} must be 0 or in range 1..65535, got {}", config_prefix, key, value);
+        return static_cast<UInt16>(value);
+    };
+    stateless_worker_port = read_optional_port(".stateless_worker_port");
+    streaming_exchange_port = read_optional_port(".streaming_exchange_port");
+
     is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.
@@ -178,7 +192,10 @@ Cluster::Address::Address(
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     bind_host = params.bind_host;
     priority = params.priority;
-    is_local = can_be_local && isLocal(params.clickhouse_port);
+    if (info.is_local.has_value())
+        is_local = *info.is_local;
+    else
+        is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
     cluster = params.cluster_name;
@@ -459,7 +476,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         if (!shard_with_replicas && !shard_without_replicas)
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
-        const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
+        const auto & prefix = config_prefix + key + (shard_with_replicas ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
         auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
         if (use_shards_names)
@@ -563,7 +580,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
 Cluster::Cluster(
     const Settings & settings,
-    const std::vector<std::vector<String>> & names,
+    const HostsByShard & names,
     const ClusterConnectionParameters & params)
 {
     UInt32 current_shard_num = 1;
@@ -578,7 +595,7 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", ""},
+                DatabaseReplicaInfo{replica, "", "", {}},
                 params,
                 current_shard_num,
                 current.size() + 1);
@@ -937,15 +954,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
-    {
-        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-        if (path.size() > NAME_MAX)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
-        }
-        return path;
-    }
+        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
 
     return paths.compact;
 }

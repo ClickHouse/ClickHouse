@@ -1,4 +1,6 @@
 SET enable_analyzer = 1;
+SET enable_vertical_final = 1;
+SET optimize_on_insert = 1;
 
 -- Test special columns handling in ReadFromMergeTree::removeUnusedColumns with FINAL and PREWHERE
 -- Similar to https://github.com/ClickHouse/ClickHouse/issues/45804
@@ -148,7 +150,8 @@ CREATE TABLE test_aggregating_mt(
   value Int64,
   agg_state AggregateFunction(sum, Int64)
 ) ENGINE = AggregatingMergeTree()
-ORDER BY key;
+ORDER BY key
+SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 INSERT INTO test_aggregating_mt
 SELECT

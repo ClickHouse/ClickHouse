@@ -46,7 +46,7 @@ namespace Setting
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
 {
@@ -159,8 +159,8 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     if (union_mode > SelectUnionMode::UNION_DISTINCT)
         return;
 
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
+    const auto & query_nodes = getQueries().getNodes();
+    for (const auto & query_node : query_nodes)
     {
         if (auto * query_node_typed = query_node->as<QueryNode>())
             query_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
@@ -193,6 +193,9 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
 
+    if (is_materialized)
+        buffer << ", is_materialized: " << is_materialized;
+
     if (is_recursive_cte)
         buffer << ", is_recursive_cte: " << is_recursive_cte;
 
@@ -224,14 +227,19 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
-    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte
-        && cte_name == rhs_typed.cte_name && union_mode == rhs_typed.union_mode;
+    return is_subquery == rhs_typed.is_subquery
+        && is_cte == rhs_typed.is_cte
+        && is_materialized == rhs_typed.is_materialized
+        && is_recursive_cte == rhs_typed.is_recursive_cte
+        && cte_name == rhs_typed.cte_name
+        && union_mode == rhs_typed.union_mode;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
     state.update(is_cte);
+    state.update(is_materialized);
     state.update(is_recursive_cte);
 
     if (recursive_cte_table)
@@ -253,6 +261,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
+    result_union_node->is_materialized = is_materialized;
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;

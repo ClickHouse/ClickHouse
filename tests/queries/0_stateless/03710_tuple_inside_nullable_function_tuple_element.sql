@@ -24,7 +24,7 @@ SELECT tupleElement([CAST(([1, 2, 3], 'a') AS Nullable(Tuple(Array(Int32), Strin
 SELECT toTypeName(tupleElement([CAST(([1, 2, 3], 'a') AS Nullable(Tuple(Array(Int32), String))), CAST(NULL AS Nullable(Tuple(Array(Int32), String))), NULL], 1));
 
 SELECT 'Error cases for Nullable(Tuple) element access';
-SELECT tupleElement(CAST(NULL AS Nullable(Tuple(Int8, String))), 3);-- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(CAST(NULL AS Nullable(Tuple(Int8, String))), 3);-- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT 'Array of Nullable(Tuple) element access - struct-like access';
 SELECT tupleElement(CAST([(1, 7), (3, 4), (2, 8)] AS Array(Nullable(Tuple(x Int8, y Int8)))), 'y');
@@ -68,7 +68,7 @@ SELECT tupleElement([[CAST((1, 'a') AS Nullable(Tuple(Int32, String))), NULL], [
 SELECT toTypeName(tupleElement([[CAST((1, 'a') AS Nullable(Tuple(Int32, String))), NULL], [NULL, CAST((2, 'b') AS Nullable(Tuple(Int32, String)))]], 1));
 
 SELECT 'Empty tuple';
-SELECT tupleElement(CAST(tuple() AS Nullable(Tuple())), 1); -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(CAST(tuple() AS Nullable(Tuple())), 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT 'All NULL elements in array';
 SELECT tupleElement([CAST(NULL AS Nullable(Tuple(Int32, String))), NULL, NULL], 1);

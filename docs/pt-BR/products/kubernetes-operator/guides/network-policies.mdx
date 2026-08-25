@@ -1,0 +1,145 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/network-policies
+title: Políticas de rede
+keywords: ['kubernetes', 'política de rede', 'segurança', 'métricas', 'webhook']
+description: 'Como o operator restringe o tráfego de entrada para o pod do controller manager com NetworkPolicies do Kubernetes para os endpoints de métricas e webhook, como habilitá-las e quais espaços de nomes de cliente você deve rotular.'
+doc_type: 'guide'
+---
+
+O operator fornece recursos opcionais de `NetworkPolicy` do Kubernetes que
+restringem quais tráfegos podem alcançar o **pod do controller manager** — o próprio
+processo do operator, não o servidor ClickHouse nem os pods do Keeper. Eles ficam
+desabilitados por padrão, então você só precisa ativá-los quando quiser isolar o tráfego de entrada do operator.
+
+As políticas abrangem as duas portas que o operator expõe a outros clientes: o endpoint de métricas
+e o admission webhook.
+
+<Note>
+  Uma `NetworkPolicy` só é aplicada quando o plugin de CNI do cluster a implementa
+  (por exemplo, Calico ou Cilium). Em uma CNI sem suporte à aplicação de NetworkPolicy, os
+  recursos são criados, mas não têm efeito, sem qualquer aviso — o Kubernetes não retorna
+  erro. Confirme que sua CNI aplica políticas antes de depender delas.
+</Note>
+
+<div id="what-the-helm-chart-creates">
+  ## O que o chart do Helm cria
+</div>
+
+Quando habilitado, o chart cria até duas políticas somente de entrada, ambas selecionando
+o pod do controller-manager:
+
+| Política                | Origem permitida                                 | Porta permitida                    |
+| ----------------------- | ------------------------------------------------ | ---------------------------------- |
+| `allow-metrics-traffic` | Espaços de nomes com o rótulo `metrics: enabled` | `metrics.port` (padrão `8080`/TCP) |
+| `allow-webhook-traffic` | Espaços de nomes com o rótulo `webhook: enabled` | `webhook.port` (padrão `9443`/TCP) |
+
+Ambas as políticas declaram apenas `policyTypes: [Ingress]`. Elas não restringem o tráfego de saída
+do operator e não afetam os pods do servidor ClickHouse nem do Keeper.
+
+<div id="default-deny">
+  ## Comportamento de bloqueio por padrão
+</div>
+
+Ao selecionar um pod do Kubernetes com uma `NetworkPolicy` de entrada, esse pod do Kubernetes passa a ter **bloqueio
+por padrão para tráfego de entrada**: assim que qualquer uma das políticas se aplica, todo tráfego de entrada para o
+pod do Kubernetes do controller manager que não seja explicitamente permitido é descartado. Depois de habilitadas,
+o único tráfego de entrada que chega ao operator é:
+
+* uma coleta de métricas de um espaço de nomes com o rótulo `metrics: enabled`, e
+* uma chamada de admission webhook de um espaço de nomes com o rótulo `webhook: enabled`.
+
+Todo o restante destinado ao pod do Kubernetes é bloqueado. Esse é o reforço de segurança pretendido, mas isso
+significa que um scraper ou chamador de webhook sem o rótulo deixa de funcionar no momento em que as
+políticas entram em vigor.
+
+<div id="enabling">
+  ## Habilitando as políticas
+</div>
+
+Com o Helm, defina o gate em seus values:
+
+```yaml
+# values.yaml
+networkPolicy:
+  enabled: true
+```
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+`allow-webhook-traffic` também requer `webhook.enabled: true` (o
+valor padrão), então desabilitar o webhook também remove a política dele.
+
+Com os `manifests` brutos do `kubectl`, descomente a seção `[NETWORK POLICY]` conforme
+descrito no [guia de instalação do kubectl](/pt-BR/products/kubernetes-operator/install/kubectl).
+Os manifests brutos incluem as mesmas duas políticas.
+
+<div id="labeling-namespaces">
+  ## Rotulando espaços de nomes de cliente
+</div>
+
+Como ambas as políticas correspondem à origem por meio de `namespaceSelector`, todo espaço de nomes
+que precisa se comunicar com o operator deve ter o rótulo correspondente. Uma coleta ou
+uma chamada de webhook de um espaço de nomes sem rótulo é descartado.
+
+```bash
+# Allow a Prometheus namespace to scrape the metrics endpoint
+kubectl label namespace <prometheus-namespace> metrics=enabled
+
+# Allow webhook callers from a given namespace
+kubectl label namespace <caller-namespace> webhook=enabled
+```
+
+Combine isso com o RBAC de métricas descrito em
+[Monitoring → Protegendo o endpoint de métricas](/pt-BR/products/kubernetes-operator/guides/monitoring#securing-the-metrics-endpoint):
+a `NetworkPolicy` controla o alcance, enquanto a vinculação da `Função de cluster` controla
+a autorização. Ambos precisam estar em vigor para que uma coleta protegida funcione.
+
+<Warning>
+  As solicitações do admission webhook se originam no Kubernetes API server, e não em um
+  pod do Kubernetes comum. Se esse tráfego está sujeito a uma `NetworkPolicy` e de
+  qual origem ele aparece dependem da topologia do seu plano de controle e da CNI —
+  em particular, planos de controle gerenciados podem alcançar o webhook a partir de um endereço que
+  nenhum `namespaceSelector` consegue corresponder. Se o tráfego do API server não estiver coberto por um
+  espaço de nomes com `webhook: enabled`, habilitar `allow-webhook-traffic` pode bloquear
+  a admissão e fazer com que as solicitações de criação e atualização de `ClickHouseCluster`/`KeeperCluster`
+  expirem por tempo limite. Teste a admissão em um cluster que não seja de produção após habilitar isso e adicione uma
+  regra de permissão explícita para o API server, se necessário.
+</Warning>
+
+<div id="verifying">
+  ## Verificação
+</div>
+
+```bash
+NS=clickhouse-operator-system
+
+# The policies exist
+kubectl -n $NS get networkpolicy
+
+# Inspect the selectors and allowed sources
+kubectl -n $NS describe networkpolicy
+```
+
+Após habilitar, confirme que:
+
+* O Prometheus ainda coleta o endpoint de métricas (seu espaço de nomes está rotulado com
+  `metrics: enabled` e associado à Função de cluster metrics-reader).
+* Criar ou atualizar um `ClickHouseCluster` ainda passa pela admissão (o webhook
+  está acessível).
+
+Se uma coleta não retornar dados ou a aplicação de um CR ficar travada, a causa mais provável é
+um espaço de nomes de origem sem rótulo ou a ressalva sobre a acessibilidade do servidor de API mencionada acima.
+
+<div id="related-guides">
+  ## Guias relacionados
+</div>
+
+* [Monitorando o operator](/pt-BR/products/kubernetes-operator/guides/monitoring) — o endpoint de métricas, seu RBAC e como proteger a coleta.
+* [Instalar com kubectl](/pt-BR/products/kubernetes-operator/install/kubectl) — onde descomentar a seção de política de rede.
+* [Instalar com Helm](/pt-BR/products/kubernetes-operator/install/helm) — os values do chart relevantes para o operator.

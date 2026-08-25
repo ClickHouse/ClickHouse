@@ -11,14 +11,14 @@ namespace DB
 /// Typed paths 'a.b' and 'b.c' are serialized in SerializationObjectTypedPath.
 class SerializationObjectDynamicPath final : public SerializationWrapper
 {
+private:
+    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+
 public:
-    SerializationObjectDynamicPath(
-        const SerializationPtr & nested_,
-        const String & path_,
-        const String & path_subcolumn_,
-        const DataTypePtr & dynamic_type_,
-        const SerializationPtr & dynamic_serialization_,
-        const DataTypePtr & subcolumn_type_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && dynamic_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

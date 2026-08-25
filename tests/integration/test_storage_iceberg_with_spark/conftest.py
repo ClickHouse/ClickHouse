@@ -1,3 +1,4 @@
+import os
 import os.path as p
 import random
 
@@ -31,7 +32,8 @@ def get_spark(log_dir=None):
         .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
+            "org.apache.sedona.spark.SedonaSparkSessionExtension",
         )
         .master("local")
     )
@@ -141,3 +143,5 @@ def started_cluster_iceberg_with_spark():
 
     finally:
         cluster.shutdown()
+        if p.exists(filesystem_cache_config_path):
+            os.remove(filesystem_cache_config_path)

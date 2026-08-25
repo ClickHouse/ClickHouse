@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/search
+title: 'ClickStackを使った検索'
+sidebarTitle: '検索'
+description: 'ClickStackを使った検索'
+doc_type: 'guide'
+keywords: ['ClickStack', '検索', 'ログ', 'オブザーバビリティ', '全文検索']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import Tagging from '/snippets/ja/_clickstack_tagging.mdx';
+
+ClickStack では、イベント (ログやトレース) に対して全文検索を行えます。検索を始めるには、イベントに含まれるキーワードを入力するだけです。たとえば、ログに &quot;Error&quot; が含まれていれば、検索バーに &quot;Error&quot; と入力するだけで見つけられます。
+
+この検索構文は、Dashboards や Charts でイベントを絞り込む場合にも
+使用されます。
+
+<div id="search-features">
+  ## Search 機能
+</div>
+
+<div id="natural-language-syntax">
+  ### 自然言語の検索構文
+</div>
+
+* 検索では大文字と小文字は区別されません
+* 検索はデフォルトで単語全体に一致します (例: `Error` は `Error here`
+  には一致しますが、`Errors here` には一致しません) 。単語をワイルドカードで囲むと部分
+  一致させることができます (例: `*Error*` は `AnyError` と `AnyErrors` に一致します)
+* 検索語の順序は問いません (例: `Hello World` は
+  `Hello World` と `World Hello` を含むログに一致します)
+* `NOT` または `-` を使ってキーワードを除外できます (例: `Error NOT Exception` または
+  `Error -Exception`)
+* `AND` と `OR` を使って複数のキーワードを組み合わせられます (例:
+  `Error OR Exception`)
+* 完全一致は二重引用符で指定できます (例: `"Error tests not found"`)
+
+<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="Search" size="md" />
+
+<div id="column-search">
+  #### カラム/プロパティ検索
+</div>
+
+* カラムや JSON/map のプロパティは、`column:value` を使って検索できます (例: `level:Error`,
+  `service:app`)
+* 比較演算子 (`>`, `<`,
+  `>=`, `<=`) を使うと、値の範囲を検索できます (例: `Duration:>1000`)
+* `property:*` を使うと、プロパティの有無を検索できます (例:
+  `duration:*`)
+
+<div id="time-input">
+  ### 時刻入力
+</div>
+
+* 時刻入力では、自然言語の入力を受け付けます (例: `1 hour ago`, `yesterday`,
+  `last week`)
+* 単一の時点を指定すると、その時点から現在までの範囲が検索対象になります。
+* 時間範囲は、時間クエリをデバッグしやすいように、検索時に常に解析後の時間範囲へ変換されます。
+* ヒストグラムのバーをハイライトして、特定の時間範囲にズームインすることもできます。
+
+<div id="sql-syntax">
+  ### SQL 検索構文
+</div>
+
+必要に応じて、検索入力を SQL モードに切り替えられます。すると、検索条件として有効な
+SQL の WHERE 句をそのまま使用できます。これは、Lucene 構文では表現できない複雑な
+クエリに便利です。
+
+<div id="select-statement">
+  ### SELECT ステートメント
+</div>
+
+検索結果に表示するカラムを指定するには、`SELECT`
+入力欄を使用できます。これは、Search ページで選択するカラムを指定するための SQL の SELECT 式です。
+現時点では別名はサポートされていません (例: `column as "alias"` は使用できません) 。
+
+<div id="saved-searches">
+  ## 保存済み検索
+</div>
+
+検索を保存しておくと、後ですばやくアクセスできます。保存した検索は `Saved Searches` ページに表示されるため、よく使う検索クエリを毎回組み直さなくても簡単に見直せます。
+
+<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="保存済み検索の一覧ページ" size="lg" />
+
+検索を保存するには、検索クエリを設定して保存ボタンをクリックするだけです。後で識別しやすいように、保存済み検索にはわかりやすい名前を付けられます。
+
+<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="検索を保存する" size="md" />
+
+<div id="alerts-on-saved-searches">
+  ### 保存済み検索にアラートを追加する
+</div>
+
+保存済み検索にはアラートを設定でき、特定の条件を満たしたときに通知を受け取れます。保存済み検索に一致するイベント数が指定したしきい値を上回った場合または下回った場合にトリガーされるよう、アラートを設定できます。
+
+アラートの設定と構成の詳細については、[Alerts ドキュメント](/ja/clickstack/features/alerts)を参照してください。
+
+<div id="tagging">
+  ### タグ付け
+</div>
+
+<Tagging />

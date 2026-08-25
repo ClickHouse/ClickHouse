@@ -36,7 +36,7 @@ private:
 
 struct ProjectionCandidate
 {
-    const ProjectionDescription * projection;
+    const ProjectionDescription * projection{};
 
     /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;
@@ -69,13 +69,18 @@ size_t filterPartsByProjection(
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
+/// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
+/// that the query condition cache consult inside the candidate analysis observes the same TopK
+/// gating and key salting as the read itself.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
+    const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & context);
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.

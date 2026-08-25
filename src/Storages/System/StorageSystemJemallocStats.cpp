@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemJemallocStats.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
@@ -31,7 +32,7 @@ void StorageSystemJemallocStats::fillData(
     };
 
     std::string stats;
-    malloc_stats_print(print_to_string, &stats, nullptr);
+    je_malloc_stats_print(print_to_string, &stats, nullptr);
 
     res_columns[0]->insert(stats);
 #else
@@ -40,3 +41,6 @@ void StorageSystemJemallocStats::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocStats) }
