@@ -101,18 +101,25 @@ def wait_for_query_finish(node, query_id, timeout=60):
 
 
 def wait_for_query_cancelled(node, query_id, timeout=30):
-    """Wait until a running query is marked as cancelled in `system.processes`.
+    """Wait until a running query is marked as cancelled in `system.processes`,
+    or has already left the process list.
 
     A replacement query sets `is_killed` on its victim before it parks on
     `query_finished`, so observing `is_cancelled = 1` on the still-running
-    victim proves the replacement has reached that wait.
+    victim proves the replacement has reached that wait. The cancelled victim
+    can exit within a second (`sleep` checks cancellation at 1-second chunk
+    boundaries), while each poll here goes through `docker exec` and takes a
+    substantial fraction of a second — so the `is_cancelled = 1` window is
+    easy to miss entirely. A victim that has disappeared is an equally valid
+    signal: the long-running victim only leaves the process list early because
+    the replacement cancelled it.
     """
     start = time.monotonic()
     while time.monotonic() - start < timeout:
         result = node.query(
             f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
         ).strip()
-        if result == "1":
+        if result == "1" or result == "":
             return
         time.sleep(0.05)
     raise RuntimeError(f"Query {query_id} was not cancelled within {timeout}s")
