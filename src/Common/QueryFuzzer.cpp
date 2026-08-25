@@ -4295,9 +4295,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto expression_3 = expression_1;
-                        expression_1 = expression_2;
-                        expression_2 = expression_3;
+                        std::swap(expression_1, expression_2);
                     }
                     /// Run mostly equality conditions
                     next_condition = makeASTFunction(
@@ -4425,9 +4423,7 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto exp3 = old_pred;
-                old_pred = new_pred;
-                new_pred = exp3;
+                std::swap(old_pred, new_pred);
             }
             res = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
         }
@@ -4655,9 +4651,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 if (fuzz_rand() % 3 == 0)
                 {
                     /// Swap sides
-                    auto expression_e = expression_1;
-                    expression_1 = expression_2;
-                    expression_2 = expression_e;
+                    std::swap(expression_1, expression_2);
                 }
                 /// Run mostly equi-joins
                 ASTPtr next_condition = makeASTFunction(
@@ -6041,6 +6035,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         /// fuzzColumnLikeExpressionList may remove arguments
         const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+
+        /// Reorder arguments/parameters of any function, valid or not for that particular one
+        if (nargs > 1 && fuzz_rand() % 40 == 0)
+            std::shuffle(fn->arguments->children.begin(), fn->arguments->children.end(), fuzz_rand);
+        if (fn->parameters && fn->parameters->children.size() > 1 && fuzz_rand() % 40 == 0)
+            std::shuffle(fn->parameters->children.begin(), fn->parameters->children.end(), fuzz_rand);
 
         if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
         {
