@@ -40,7 +40,10 @@ proc type_and_submit {text} {
 # `Ctrl-D` exits only from an empty prompt: sent together with the `Ctrl-C` that abandons the line
 # or cancels the running query, it is discarded on a loaded machine, and the client would then stay
 # open until the test times out. Wait for the prompt in between - unless the `Ctrl-C` itself ended
-# the client, which is what an empty input means to it.
+# the client, which is what an empty input means to it. The prompt of that wait must be the one the
+# `Ctrl-C` redraws: a wait for a bare prompt can be satisfied by one that was printed before the
+# `Ctrl-C` was even sent - the previous command redraws it too - and the `Ctrl-D` would then be sent
+# into the same read as the `Ctrl-C` after all. The echo of the `^C` is what separates the two.
 # The line editor draws the hints of every state that is typed through, and on a loaded machine a
 # whole `send` can be consumed one character at a time, so the hints of a bare `/` may still be on
 # their way when the rest of the input is already typed. Where the absence of a hint is asserted,
@@ -54,8 +57,16 @@ proc drain {} {
     }
 }
 
-proc clear_and_quit {} {
+proc interrupt {} {
     send -- "\3"
+    expect {
+        eof      { return 0 }
+        -ex "^C" { return 1 }
+    }
+}
+
+proc clear_and_quit {} {
+    if {![interrupt]} { return }
     expect {
         eof   { return }
         ":) " {}
@@ -176,7 +187,7 @@ expect {
     timeout   {}
 }
 
-send -- "\3"
+interrupt
 expect ":) "
 # After the name of a command, what is being typed is its argument.
 send -- "/man "
