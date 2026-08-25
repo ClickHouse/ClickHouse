@@ -12,8 +12,7 @@ LEGACY_ADMONITION_RE = re.compile(
     re.MULTILINE,
 )
 ESCAPED_ADMONITION_RE = re.compile(
-    r":{3,}(?:note|warning|tip|info|caution|danger|important)"
-    r"(?:[ \t\[][^\r\n\\]*)?\\n",
+    r":{3,}(?:note|warning|tip|info|caution|danger|important)(?:\\n|[ \t\[])",
 )
 SOURCE_EXTENSIONS = {".cpp", ".h", ".hpp", ".inc"}
 # This compatibility test intentionally exercises the legacy renderer syntax.
