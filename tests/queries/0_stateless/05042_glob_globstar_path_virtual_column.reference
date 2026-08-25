@@ -12,3 +12,5 @@ renamed beside the file that was read
 the lexical sibling was left alone
 1
 the file outside user_files kept its name
+42
+the symlinked directory is still renameable

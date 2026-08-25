@@ -108,3 +108,14 @@ SELECT count() FROM file('${DATA_DIR}/escw/{..,missing}/*.csv', 'CSV', 'id UInt6
 SETTINGS rename_files_after_processing = 'processed_%f%e';
 "
 [ -f "${OUTSIDE_DIR}/secret.csv" ] && echo "the file outside user_files kept its name"
+
+# A directory symlink leaving user_files stays readable and renameable, which is what the check
+# above must not take away: without a `..` the path is passed to it exactly as written.
+mkdir -p "${OUTSIDE_DIR}/plain"
+printf '42\n' > "${OUTSIDE_DIR}/plain/f.csv"
+ln -s "${OUTSIDE_DIR}/plain" "${DATA_DIR}/out"
+$CLICKHOUSE_CLIENT -q "
+SELECT id FROM file('${DATA_DIR}/out/*.csv', 'CSV', 'id UInt64')
+SETTINGS rename_files_after_processing = 'processed_%f%e';
+"
+[ -f "${OUTSIDE_DIR}/plain/processed_f.csv" ] && echo "the symlinked directory is still renameable"
