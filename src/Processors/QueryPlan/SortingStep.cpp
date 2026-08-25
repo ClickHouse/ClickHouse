@@ -15,6 +15,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/VirtualRowReadAheadTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
@@ -413,17 +414,30 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        /// Disable buffering when `read_in_order_use_virtual_row_per_block` is enabled, these optimizations are incompatible.
-        /// Buffering would need to flush virtual rows, otherwise virtual rows lose their purpose while reading from the stream.
-        /// But flushing a virtual row between every block effectively turns buffering into a no-op.
-        ///
-        /// Buffering combined with the initial virtual rows is fine: after `BufferChunksTransform`
-        /// delivers a virtual row it does not read ahead until the merge actually demands data
-        /// from that source, so buffering does not defeat the deferral of the sources behind
-        /// virtual rows (and the prefetch window below keeps its meaning). Once the merge
-        /// releases a source, buffering works for it as usual.
-        bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
-        if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
+        if (apply_virtual_row_conversions)
+        {
+            /// The streams announce their positions with virtual rows; this transform owns the
+            /// buffering and the read-ahead policy for the sources deferred behind them, so the
+            /// merge itself can consume the streams strictly on demand.
+            size_t read_ahead_window = sort_settings.virtual_row_prefetch_window < 0
+                ? pipeline.getNumThreads()
+                : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
+
+            /// Deferral needs only a one-chunk buffer per lane; deeper buffering is the
+            /// same optimization `BufferChunksTransform` provides and follows its setting.
+            bool deep_buffering = use_buffering && sort_settings.read_in_order_use_buffering;
+
+            pipeline.addTransform(std::make_shared<VirtualRowReadAheadTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                result_sort_desc,
+                apply_virtual_row_conversions,
+                limit_,
+                deep_buffering ? sort_settings.max_block_size : 1,
+                deep_buffering ? sort_settings.max_block_bytes : 1,
+                read_ahead_window));
+        }
+        else if (use_buffering && sort_settings.read_in_order_use_buffering)
         {
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -444,13 +458,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*out_row_sources_buf=*/ nullptr,
             /*filter_column_name=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
-            apply_virtual_row_conversions,
-            /// Allow this many sources deferred behind virtual rows to read ahead in
-            /// parallel, so that the merge does not serialize reads that previously
-            /// ran concurrently. Bounds the number of concurrently open readers.
-            /*virtual_row_prefetch_window=*/ sort_settings.virtual_row_prefetch_window < 0
-                ? pipeline.getNumThreads()
-                : static_cast<size_t>(sort_settings.virtual_row_prefetch_window));
+            apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
     }
