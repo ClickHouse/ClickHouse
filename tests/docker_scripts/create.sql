@@ -141,7 +141,7 @@ SAMPLE BY intHash32(UserID)
 SETTINGS
     table_disk = 1,
     disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
-    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/78e/78ebf6a1-d987-4579-b3ec-00c1a087b1f3/'));
+    disk = disk(type = web, endpoint = 'http://dockerhub-proxy.dockerhub-proxy-zone:6000/datasets-web/store/78e/78ebf6a1-d987-4579-b3ec-00c1a087b1f3/'));
 
 CREATE TABLE datasets.visits_v1
 (
@@ -334,4 +334,4 @@ SAMPLE BY intHash32(UserID)
 SETTINGS
     table_disk = 1,
     disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
-    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/513/5131f834-711f-4168-98a5-968b691a104b/'));
+    disk = disk(type = web, endpoint = 'http://dockerhub-proxy.dockerhub-proxy-zone:6000/datasets-web/store/513/5131f834-711f-4168-98a5-968b691a104b/'));
