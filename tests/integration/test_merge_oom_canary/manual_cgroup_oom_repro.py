@@ -393,7 +393,10 @@ def main():
         # for an invariant only this run's server can satisfy: its data path, which lives inside this
         # run's freshly created scratch directory. Anything else answering the port aborts the run
         # immediately instead of after the full retry budget - it is a hard error, not "not up yet".
-        expected_path = os.path.join(base, "data") + "/"
+        # The reported `path` value is not stable with respect to a trailing slash, so both sides are
+        # normalized through `realpath` (which also drops the trailing slash and resolves symlinks,
+        # e.g. a symlinked scratch root) before comparing.
+        expected_path = os.path.realpath(os.path.join(base, "data"))
         started = False
         for _ in range(40):
             try:
@@ -401,7 +404,7 @@ def main():
                     "-q", "SELECT value FROM system.server_settings WHERE name = 'path'"
                 )
                 if probe.returncode == 0 and probe.stdout.strip():
-                    answered_path = probe.stdout.strip()
+                    answered_path = os.path.realpath(probe.stdout.strip())
                     if answered_path != expected_path:
                         die(
                             f"the server listening on port {PORT} is NOT the one this run started "
