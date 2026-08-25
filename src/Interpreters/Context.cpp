@@ -3554,6 +3554,12 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
@@ -7998,6 +8004,11 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
 void Context::increaseDistributedDepth()
 {
     ++client_info.distributed_depth;
+}
+
+void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
+{
+    client_info.client_trace_context = trace_context;
 }
 
 
