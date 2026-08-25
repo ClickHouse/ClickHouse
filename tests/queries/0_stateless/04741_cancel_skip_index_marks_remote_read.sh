@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, zookeeper
+# Tags: no-parallel, no-fasttest, zookeeper, no-shared-merge-tree
 # no-parallel: uses failpoints that would intersect with concurrent tests
 # no-fasttest: needs the s3 disk (minio) for a remote read
 # zookeeper: the second stanza needs ReplicatedMergeTree for the broken-part callback
+# no-shared-merge-tree: the second stanza pins storage_policy='s3_cache' on a replicated table, and SharedMergeTree requires a keeper-metadata disk
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
