@@ -6430,8 +6430,8 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 
     /// A TopK-stamped read must never be shipped: the dynamic `__topKFilter` in its PREWHERE is not
     /// registered in `FunctionFactory` and its `TopKThresholdTracker` is process-local, and neither
-    /// `top_k_filter_info` nor the two query-condition-cache gates (`allow_query_condition_cache`,
-    /// `allow_top_k_prewhere_query_condition_cache`) are carried in the wire format. A worker would
+    /// `top_k_filter_info` nor the TopK query-condition-cache gate
+    /// (`allow_top_k_prewhere_query_condition_cache`) is carried in the wire format. A worker would
     /// therefore rebuild the read as an apparent plain read and lose the TopK/cache contract. Two
     /// upstream guards already keep such reads local -- `tryOptimizeTopK` bails out under
     /// `make_distributed_plan`, and `mergeTreeReadCanBeShipped` rejects
@@ -6478,6 +6478,14 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// coordinator callbacks + its replica number from its own context, so neither is serialized here.
     if (is_parallel_reading_from_replicas)
         flags |= 32;
+    /// The optimizer may have turned the query-condition cache off for correctness rather than
+    /// performance (e.g. lazy FINAL or vector-search reads call `disableQueryConditionCache`), so the
+    /// worker's rebuilt read must not silently re-enable it. Carried as a bare flag bit with no extra
+    /// payload: a peer that predates this bit just ignores it without misreading the stream.
+    /// (`allow_top_k_prewhere_query_condition_cache` needs no bit: it only matters together with
+    /// `top_k_filter_info`, and a TopK-stamped read is rejected above.)
+    if (!allow_query_condition_cache)
+        flags |= 64;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
@@ -6546,6 +6554,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const bool has_row_level_filter = flags & 8;
     const bool has_prewhere_info = flags & 16;
     const bool enable_parallel_reading = flags & 32;
+    const bool query_condition_cache_disabled = flags & 64;
 
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
@@ -6619,13 +6628,19 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         enable_parallel_reading,
         /*extension*/ nullptr);
 
-    if (distributed_read_bucket_count)
+    if (distributed_read_bucket_count || query_condition_cache_disabled)
     {
         auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
-        read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
-        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
+        if (distributed_read_bucket_count)
+        {
+            read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+            read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
+        }
+        /// Restore the optimizer's correctness decision from the coordinator (see `serialize`).
+        if (query_condition_cache_disabled)
+            read_from_merge_tree_step->disableQueryConditionCache();
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
