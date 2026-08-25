@@ -53,6 +53,15 @@ CREATE TABLE ddl_in_table (c0 Int, CONSTRAINT c0 CHECK c0 IN ddl_in_set_src) ENG
 CREATE TABLE ddl_in_column (c0 Int, c1 Array(Int), CONSTRAINT c0 CHECK c0 IN c1) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE ddl_alter ADD CONSTRAINT c2 CHECK c0 IN ddl_in_set_src; -- { serverError BAD_ARGUMENTS }
 
+-- The same rule applies when the `IN` operator is hidden inside a SQL user-defined function body:
+-- UDF expansion happens after `AddDefaultDatabaseVisitor`, so the expanded constraint carries a bare
+-- (unqualified) set-side identifier. Such a constraint never worked: released versions persist it and
+-- then fail every insert with `UNKNOWN_IDENTIFIER`, so it is rejected on the DDL path as well.
+DROP FUNCTION IF EXISTS udf_in_carrier_04646;
+CREATE FUNCTION udf_in_carrier_04646 AS (x, arr) -> x IN arr;
+CREATE TABLE ddl_udf_in (c0 Int, c1 Array(Int), CONSTRAINT c0 CHECK udf_in_carrier_04646(c0, c1)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+DROP FUNCTION udf_in_carrier_04646;
+
 -- Membership in an array column is expressed with `has`, which is a plain function and is allowed.
 CREATE TABLE ddl_has_column (c0 Int, c1 Array(Int), CONSTRAINT c0 CHECK has(c1, c0)) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO ddl_has_column VALUES (1, [1, 2]);
