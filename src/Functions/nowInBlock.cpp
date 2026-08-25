@@ -23,7 +23,7 @@ namespace
 /** Returns current time at calculation of every block.
   * In contrast to 'now' function, it's not a constant expression and is not a subject of constant folding.
   */
-class FunctionNowInBlock final : public IFunction
+class FunctionNowInBlock : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock";
@@ -102,7 +102,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock>(documentation);
 }

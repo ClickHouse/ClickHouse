@@ -1,0 +1,31 @@
+<clickhouse>
+    <logger>
+        <level>test</level>
+    </logger>
+
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <!-- Use custom S3 endpoint -->
+                <endpoint>http://resolver:8080/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
+                <skip_access_check>true</skip_access_check>
+                <!-- Avoid extra retries to speed up tests -->
+                <retry_attempts>0</retry_attempts>
+            </s3>
+        </disks>
+
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

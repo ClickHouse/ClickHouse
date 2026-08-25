@@ -1,6 +1,0 @@
-Less, LHS - plan
-SELECT\n    __table1.color_id AS color_id,\n    __table1.payload AS payload\nFROM default.t AS __table1\nWHERE less(dictGetString(\'default.colors\', \'name\', __table1.color_id), \'red\')\nORDER BY\n    __table1.color_id ASC,\n    __table1.payload ASC
-Less, LHS
-2	b
-4	d
-5	R

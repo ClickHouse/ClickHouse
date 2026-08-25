@@ -1,7 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Settings.h>
@@ -18,7 +17,7 @@ namespace
 {
 
 /// Return true if the column is nullable.
-class FunctionIsNullable final : public IFunction
+class FunctionIsNullable : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";
@@ -115,7 +114,7 @@ SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNullable>(documentation);
 }

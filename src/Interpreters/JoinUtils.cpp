@@ -2,32 +2,25 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/NullableUtils.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/MemoryTracker.h>
-#include <Common/typeid_cast.h>
+#include <Common/WeakHash.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
-#include <algorithm>
 #include <ranges>
-#include <unordered_map>
 
 namespace DB
 {
@@ -94,7 +87,7 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
     if (col->lowCardinality())
     {
         /// Currently only `LowCardinality(Nullable(T))` is possible, but not `Nullable(LowCardinality(T))`
-        chassert(!col->canBeInsideNullable());
+        assert(!col->canBeInsideNullable());
         const auto * col_as_lc = assert_cast<const ColumnLowCardinality *>(col.get());
         return {true, col_as_lc->nestedIsNullable()};
     }
@@ -105,64 +98,6 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 
 namespace JoinCommon
 {
-
-Int64 getCurrentQueryMemoryUsage()
-{
-    /// Use query-level memory tracker.
-    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
-            return memory_tracker->get();
-    return 0;
-}
-
-Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
-{
-    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
-    for (auto & column : block)
-        block_index[column.name].push_back(&column);
-
-    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
-    {
-        for (auto * column_ptr : block_index[sample_column.name])
-        {
-            auto & column = *column_ptr;
-
-            /// There's no optimization for right side const columns. Remove constness if any.
-            column.column = column.column->convertToFullColumnIfConst();
-            auto actual_column = column.column;
-
-            /// We support replicated columns on the right side.
-            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
-            /// Keep an owning reference: `column.column` is reassigned below, which can drop the last
-            /// reference to this `ColumnReplicated` and free the indexes it owns.
-            ColumnPtr replicated_indexes;
-            if (replicated_column)
-            {
-                replicated_indexes = replicated_column->getIndexesColumn();
-                actual_column = replicated_column->getNestedColumn();
-            }
-
-            /// Sparse columns are not supported on the right side.
-            actual_column = recursiveRemoveSparse(actual_column);
-
-            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
-            {
-                actual_column = actual_column->convertToFullColumnIfLowCardinality();
-                column.type = removeLowCardinality(column.type);
-            }
-
-            column.column = actual_column;
-
-            if (sample_column.column->isNullable())
-                JoinCommon::convertColumnToNullable(column);
-
-            if (replicated_indexes)
-                column.column = ColumnReplicated::create(column.column, replicated_indexes);
-        }
-    }
-
-    return block;
-}
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
 {
@@ -212,7 +147,8 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    col = removeSpecialRepresentations(col);
+    if (col->isSparse())
+        col = recursiveRemoveSparse(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -298,7 +234,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+            column.column = column.column->convertToFullIfNeeded();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {
@@ -362,9 +298,9 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-static ColumnPtr materializeColumn(const ColumnPtr & column)
+ColumnPtr materializeColumn(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
@@ -396,31 +332,6 @@ Columns materializeColumns(const Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         materialized.emplace_back(materializeColumn(block, column_name));
-    }
-
-    return materialized;
-}
-
-Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names)
-{
-    Columns materialized;
-    materialized.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        const auto & column = block.getByName(column_name).column;
-        ColumnPtr prepared = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-
-
-        /// Keep the dictionary only for non-nullable LowCardinality. A LowCardinality(Nullable(T))
-        /// key must be materialized so the join extracts its null map and skips NULL keys:
-        /// extractNestedColumnsAndNullMap does not look inside LowCardinality, and the
-        /// dictionary-aware key getter has no null-key path (a NULL must never join).
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(prepared.get());
-            low_cardinality && low_cardinality->nestedIsNullable())
-            prepared = prepared->convertToFullColumnIfLowCardinality();
-
-        materialized.emplace_back(std::move(prepared));
     }
 
     return materialized;
@@ -512,9 +423,9 @@ void checkTypesOfMasks(const Block & block_left, const String & condition_name_l
         if (col_name.empty())
             return;
 
-        DataTypePtr dtype = block.getByName(col_name).type;
+        DataTypePtr dtype = removeNullable(recursiveRemoveLowCardinality(block.getByName(col_name).type));
 
-        if (!dtype->canBeUsedInBooleanContext())
+        if (!dtype->equals(DataTypeUInt8{}))
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                             "Expected logical expression in JOIN ON section, got unexpected column '{}' of type '{}'",
                             col_name, dtype->getName());
@@ -569,19 +480,6 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-static ColumnPtr castToBoolColumn(ColumnPtr column)
-{
-    if (!typeid_cast<const ColumnUInt8 *>(column.get()))
-    {
-        auto casted_column = ColumnUInt8::create(column->size());
-        if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());
-        return casted_column;
-    }
-    return column;
-}
-
 JoinMask getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
@@ -604,18 +502,16 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
             return JoinMask(false, block.rows());
 
-        auto nested_column = castToBoolColumn(nullable_col->getNestedColumnPtr());
         /// Return nested column with NULL set to false
-        const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
+        const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
         const auto & null_map = nullable_col->getNullMapColumn();
 
-        auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
+        auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
     }
-
-    return JoinMask(castToBoolColumn(join_condition_col));
+    return JoinMask(std::move(join_condition_col));
 }
 
 
@@ -636,16 +532,29 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 }
 
 template <Fn<size_t(size_t)> Sharder>
+static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+{
+    const auto & hashes = hash.getData();
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
+
+template <Fn<size_t(size_t)> Sharder>
 static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
+    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
+    WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
-        key_col->computeHashInto(0, num_rows, hash.data(), false);
+        hash.update(key_col->getWeakHash32());
     }
     auto selector = hashToSelector(hash, sharder);
 
@@ -659,7 +568,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     for (size_t i = 0; i < num_cols; ++i)
     {
         auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        chassert(result.size() == dispatched_columns.size());
+        assert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
             result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
@@ -676,9 +585,7 @@ static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
-        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
@@ -724,7 +631,8 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
-    return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
+    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
+        && isRightOrFull(table_join.kind());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

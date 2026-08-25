@@ -19,14 +19,9 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cloud_mode;
-}
 
 namespace ErrorCodes
 {
@@ -108,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-BlockIO ExecutableDictionarySource::loadAll()
+QueryPipeline ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -119,12 +114,10 @@ BlockIO ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -156,29 +149,23 @@ BlockIO ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
-BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
 QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
@@ -227,7 +214,6 @@ std::string ExecutableDictionarySource::toString() const
     return "Executable: " + configuration.command;
 }
 
-void registerDictionarySourceExecutable(DictionarySourceFactory & factory);
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -239,9 +225,6 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (global_context->getSettingsRef()[Setting::cloud_mode])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` is disabled");
-
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` does not support attribute expressions");
 
@@ -259,7 +242,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         bool execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false);
         std::string command_value = config.getString(settings_config_prefix + ".command");
-        VectorWithMemoryTracking<String> command_arguments;
+        std::vector<String> command_arguments;
 
         if (execute_direct)
         {
@@ -295,58 +278,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
-    factory.registerSource("executable", create_table_source, Documentation{
-        .description = R"DOCS_MD(
-# Executable File dictionary source
-
-Working with executable files depends on [how the dictionary is stored in memory](/reference/statements/create/dictionary/layouts/overview). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(EXECUTABLE(
-    command 'cat /opt/dictionaries/os.tsv'
-    format 'TabSeparated'
-    implicit_key false
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-    <executable>
-        <command>cat /opt/dictionaries/os.tsv</command>
-        <format>TabSeparated</format>
-        <implicit_key>false</implicit_key>
-    </executable>
-</source>
-```
-
-</Tab>
-</Tabs>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `command` | The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`). |
-| `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-| `command_termination_timeout` | The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. Specified in seconds. Default value is `10`. Optional. |
-| `command_read_timeout` | Timeout for reading data from command stdout in milliseconds. Default value `10000`. Optional. |
-| `command_write_timeout` | Timeout for writing data to command stdin in milliseconds. Default value `10000`. Optional. |
-| `implicit_key` | The executable source file can return only values, and the correspondence to the requested keys is determined implicitly by the order of rows in the result. Default value is `false`. |
-| `execute_direct` | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional. |
-| `send_chunk_header` | Controls whether to send row count before sending a chunk of data to process. Default value is `false`. Optional. |
-
-That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
-)DOCS_MD",
-        .syntax = "SOURCE(EXECUTABLE(command 'script.sh' format 'TabSeparated'))",
-        .related = {"executable_pool", "file"}});
+    factory.registerSource("executable", create_table_source);
 }
 
 }

@@ -2,16 +2,12 @@
 
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
-#include <Common/MemoryWorker.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <limits>
-#include <map>
-#include <source_location>
 #include <string>
 #include <vector>
 #include <optional>
@@ -28,38 +24,15 @@ namespace DB
 
 class ReadBuffer;
 
-/// Per-entity values of a "key-value" metric: one value per CPU core, block device, network interface, etc.
-/// Ordered by key for deterministic output.
-using AsynchronousMetricKeyValues = std::map<String, double>;
-
 struct AsynchronousMetricValue
 {
-    /// The value of a scalar metric. For key-value metrics it is NaN: an aggregate across entities
-    /// (sum, average, ...) is not meaningful for every metric, so none is provided.
-    double value = 0;
-    /// The values of a key-value metric (exposed as `Map(String, Float64)` in `system.asynchronous_metrics`).
-    /// Empty for scalar metrics.
-    AsynchronousMetricKeyValues key_values;
-    /// For key-value metrics: what the key means, e.g. "cpu", "device", "disk". It is used as the label name
-    /// for the Prometheus endpoint. Non-null if and only if the metric is a key-value metric.
-    const char * key_label = nullptr;
-    const char * documentation = nullptr;
-    /// The source file where this metric and its documentation are produced. Asynchronous metrics are defined across
-    /// several files (`AsynchronousMetrics.cpp`, `ServerAsynchronousMetrics.cpp`, `KeeperAsynchronousMetrics.cpp`, ...),
-    /// so it is captured per metric at the construction site via the constructor's default argument. Used by
-    /// `system.documentation`. May be `nullptr` for a default-constructed value (before it is assigned).
-    const char * source = nullptr;
+    double value;
+    const char * documentation;
 
     template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_, std::source_location source_ = std::source_location::current())
-        : value(static_cast<double>(value_)), documentation(documentation_), source(source_.file_name()) {}
-    AsynchronousMetricValue(const char * key_label_, AsynchronousMetricKeyValues key_values_, const char * documentation_,
-        std::source_location source_ = std::source_location::current())
-        : value(std::numeric_limits<double>::quiet_NaN()), key_values(std::move(key_values_)), key_label(key_label_)
-        , documentation(documentation_), source(source_.file_name()) {}
+    AsynchronousMetricValue(T value_, const char * documentation_)
+        : value(static_cast<double>(value_)), documentation(documentation_) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
-
-    bool isMap() const { return key_label != nullptr; }
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
@@ -119,15 +92,8 @@ protected:
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
-    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
     void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
-
-    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
-    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
-
-    using Clock = std::chrono::steady_clock;
-    mutable std::optional<Clock::time_point> mem_overload_started;
-    mutable std::optional<Clock::time_point> cpu_overload_started;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -176,7 +142,7 @@ private:
     std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::shared_ptr<ICgroupsReader> cgroupmem_reader;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
@@ -185,7 +151,6 @@ private:
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> process_status TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 
@@ -216,22 +181,6 @@ private:
 
         void read(ReadBuffer & in);
         ProcStatValuesCPU operator-(const ProcStatValuesCPU & other) const;
-    };
-
-    /// Accumulators for the per-CPU-core breakdown of the `/proc/stat` metrics,
-    /// published as key-value metrics (`OSUserTimeCPU` and friends) keyed by the CPU core number.
-    struct ProcStatPerCPUMaps
-    {
-        AsynchronousMetricKeyValues user;
-        AsynchronousMetricKeyValues nice;
-        AsynchronousMetricKeyValues system;
-        AsynchronousMetricKeyValues idle;
-        AsynchronousMetricKeyValues iowait;
-        AsynchronousMetricKeyValues irq;
-        AsynchronousMetricKeyValues softirq;
-        AsynchronousMetricKeyValues steal;
-        AsynchronousMetricKeyValues guest;
-        AsynchronousMetricKeyValues guest_nice;
     };
 
     struct ProcStatValuesOther
@@ -309,9 +258,7 @@ private:
         double multiplier);
 
     void applyCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
-
-    void applyPerCPUMetricsUpdate(AsynchronousMetricValues & new_values, ProcStatPerCPUMaps && per_cpu_maps);
+        AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
     void applyNormalizedCPUMetricsUpdate(
         AsynchronousMetricValues & new_values,

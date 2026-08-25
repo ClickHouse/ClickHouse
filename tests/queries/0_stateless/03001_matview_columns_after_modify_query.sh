@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog, no-parallel
+# Tags: no-replicated-database, no-shared-catalog
 # Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
 # Tag no-shared-catalog -- same
 
@@ -60,10 +60,7 @@ show_mv_and_inner
 echo $'\nTest 3. MODIFY QUERY can even fix wrong columns.' # We need that because of https://github.com/ClickHouse/ClickHouse/issues/60369
 
 mv_metadata_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE table='mv' AND database=currentDatabase()")
-# Rewriting the metadata of a still-attached table corrupts a Replicated database's digest,
-# so a refused DETACH must fail the test rather than let the rewrite below run.
-detach_out=$(${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv" 2>&1) \
-    || { echo "FAIL: DETACH TABLE mv failed: $detach_out"; exit 1; }
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv"
 
 data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
 
@@ -75,13 +72,10 @@ if [ -e "$data_path$mv_metadata_path" ]; then
     #cat $mv_metadata_path
 else
     # Using a remote DB disk
-    config="${CURDIR}/03001_matview_columns_after_modify_query.xml"
-    mv_metadata=$(clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "read $mv_metadata_path")
+    config="03001_matview_columns_after_modify_query.xml"
+    mv_metadata=$(clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "read $mv_metadata_path") 
     mv_metadata_updated=$(echo $mv_metadata | sed -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g')
     echo $mv_metadata_updated | clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "write --path-to $mv_metadata_path"
-
-    # We need to reload disk_db_remote if it is a plain-rewritable disk to be able to see the changes
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP DISK METADATA CACHE 'disk_db_remote'"
 fi
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE mv"

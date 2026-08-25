@@ -42,13 +42,11 @@ public:
 
     struct Node
     {
-        CompileType type{};
+        CompileType type;
         DataTypePtr result_type;
 
         /// For CONSTANT
-        ColumnConstPtr column;
-        bool skip_compile
-            = false; // Some constant node should be skipped during compilation. e.g. in CAST(input, type), the second argument should be skipped during compilation.
+        ColumnPtr column;
 
         /// For FUNCTION
         FunctionBasePtr function;

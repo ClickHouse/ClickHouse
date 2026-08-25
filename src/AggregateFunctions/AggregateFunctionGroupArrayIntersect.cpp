@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -33,14 +34,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 struct Settings;
-
-/// Guard against allocation bombs in deserialize(): a crafted state can declare
-/// a huge element count and make set.reserve allocate gigabytes before any key
-/// is read. The constant is arbitrary (matches windowFunnel).
-static constexpr size_t MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE = 100'000'000;
 
 
 template <typename T>
@@ -104,7 +99,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & set = this->data(place).value;
         const auto & rhs_set = this->data(rhs).value;
@@ -154,16 +149,13 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        size_t size = 0;
+        size_t size;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size ({}) in groupArrayIntersect deserialization", size);
         set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
-            T key{};
+            T key;
             readIntBinary(key, buf);
             set.insert(key);
         }
@@ -191,7 +183,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<std::string_view>;
+    using Set = HashSet<StringRef>;
 
     Set value;
     UInt64 version = 0;
@@ -205,7 +197,7 @@ class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr input_data_type;
+    const DataTypePtr & input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -226,8 +218,8 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        bool inserted = false;
-        State::Set::LookupResult it = nullptr;
+        bool inserted;
+        State::Set::LookupResult it;
 
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
@@ -246,7 +238,7 @@ public:
                     const char * begin = nullptr;
                     auto settings = IColumn::SerializationSettings::createForAggregationState();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -267,7 +259,7 @@ public:
                     const char * begin = nullptr;
                     auto settings = IColumn::SerializationSettings::createForAggregationState();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -278,7 +270,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         const auto & rhs_value = this->data(rhs).value;
@@ -289,8 +281,8 @@ public:
         UInt64 version = this->data(place).version++;
         if (version == 0)
         {
-            bool inserted = false;
-            State::Set::LookupResult it = nullptr;
+            bool inserted;
+            State::Set::LookupResult it;
             for (auto & rhs_elem : rhs_value)
             {
                 set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
@@ -329,12 +321,9 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        size_t size = 0;
+        size_t size;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size ({}) in groupArrayIntersect deserialization", size);
         set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -443,49 +432,11 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 }
 
-void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Return an intersection of given arrays (Return all items of arrays, that are in all given arrays).
-    )";
-    FunctionDocumentation::Syntax syntax = "groupArrayIntersect(x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "Argument (column name or expression).", {"Any"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array that contains elements that are in all arrays.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-        {
-            "Usage example",
-            R"(
--- Create table with Memory engine
-CREATE TABLE numbers (
-    a Array(Int32)
-) ENGINE = Memory;
-
--- Insert sample data
-INSERT INTO numbers VALUES
-    ([1,2,4]),
-    ([1,5,2,8,-1,0]),
-    ([1,5,7,5,8,2]);
-
-SELECT groupArrayIntersect(a) AS intersection FROM numbers;
-            )",
-            R"(
-┌─intersection──────┐
-│ [1, 2]            │
-└───────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", {createAggregateFunctionGroupArrayIntersect, documentation, properties});
+    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties });
 }
 
 }

@@ -31,10 +31,6 @@ public:
         Graphite::Params params_,
         time_t time_of_merge_);
 
-    /// Reset merged_data before params is destroyed, because GraphiteRollupMergedData
-    /// holds raw pointers into params.patterns and its destructor accesses them.
-    ~GraphiteRollupSortedAlgorithm() override;
-
     const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
 
@@ -42,10 +38,10 @@ public:
 
     struct ColumnsDefinition
     {
-        size_t path_column_num{};
-        size_t time_column_num{};
-        size_t value_column_num{};
-        size_t version_column_num{};
+        size_t path_column_num;
+        size_t time_column_num;
+        size_t value_column_num;
+        size_t version_column_num;
 
         DataTypePtr time_column_type;
 

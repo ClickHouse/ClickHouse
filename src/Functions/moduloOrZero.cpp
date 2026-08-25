@@ -13,8 +13,6 @@ struct ModuloOrZeroImpl
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
-    /// See the comment in ModuloImpl.
-    static constexpr bool no_vectorize = !is_floating_point<ResultType>;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
@@ -58,8 +56,8 @@ exception with the modulo function.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the remainder of a % b, or `0` when the divisor is `0`."};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT moduloOrZero(5, 0)", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionModuloOrZero>(documentation);
 }
