@@ -1,5 +1,4 @@
--- The converting `ExpressionStep` of `tryOptimizeTopK` used to hide `ReadFromMergeTree` from the
--- direct-read rewrite, so the whole text column was read instead of the index. The trigger is the
+-- The whole text column was read instead of the index. The trigger is the
 -- column order of the read header: `SELECT id, v ... ORDER BY v` regressed, `SELECT v, id` did not.
 
 SET query_plan_direct_read_from_text_index = 1;
