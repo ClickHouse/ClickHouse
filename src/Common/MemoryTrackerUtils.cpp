@@ -76,6 +76,38 @@ void setCurrentQueryMemoryDriftExpected()
 }
 
 
+std::unique_ptr<MemoryTracker> handOverCurrentQueryMemoryToItsUser(Int64 size)
+{
+    auto * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Thread)
+        query_memory_tracker = query_memory_tracker->getParent();
+
+    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
+        return nullptr;
+
+    auto * user_memory_tracker = query_memory_tracker->getParent();
+    while (user_memory_tracker && user_memory_tracker->level != VariableContext::User)
+        user_memory_tracker = user_memory_tracker->getParent();
+
+    if (!user_memory_tracker)
+        return nullptr;
+
+    query_memory_tracker->transferUpTo(VariableContext::User, size);
+
+    auto handed_over = std::make_unique<MemoryTracker>(
+        user_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false);
+
+    /// Settling against the user on destruction is the point of this tracker, not a leak to report.
+    handed_over->setDriftExpected();
+
+    /// Only records who holds the bytes now; the user is already charged for them. Stopping at the user leaves
+    /// this tracker the one this raises.
+    handed_over->transferUpTo(VariableContext::User, -size);
+
+    return handed_over;
+}
+
+
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
 {
     auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();

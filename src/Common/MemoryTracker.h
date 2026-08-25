@@ -205,9 +205,11 @@ public:
     /// zero for that query. Warns in debug builds when the amount is large enough to be a real bug.
     void settleDriftOnQueryEnd();
 
-    /// Moves `size` bytes off this tracker chain onto the global tracker: stays allocated and counted globally,
-    /// just no longer charged to the query/user. Not alloc/free (that would also change the total).
-    void transferToGlobal(Int64 size);
+    /// Moves `size` bytes off this chain, up to but excluding the first tracker at `up_to_level`: still
+    /// allocated and counted there, just no longer charged below it. Not alloc/free, which would change the total.
+    void transferUpTo(VariableContext up_to_level, Int64 size);
+
+    void transferToGlobal(Int64 size) { transferUpTo(VariableContext::Global, size); }
 
     Int64 getPeak() const
     {

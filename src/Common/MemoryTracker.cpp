@@ -688,9 +688,9 @@ Int64 MemoryTracker::subtractAtMostWhatIsThere(Int64 size)
 }
 
 
-void MemoryTracker::transferToGlobal(Int64 size)
+void MemoryTracker::transferUpTo(VariableContext up_to_level, Int64 size)
 {
-    for (auto * tracker = this; tracker && tracker->level != VariableContext::Global;
+    for (auto * tracker = this; tracker && tracker->level != up_to_level;
          tracker = tracker->parent.load(std::memory_order_relaxed))
     {
         Int64 new_amount = tracker->amount.fetch_sub(size, std::memory_order_relaxed) - size;

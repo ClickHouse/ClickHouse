@@ -237,23 +237,23 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
     String && query_id_,
     const String & async_dedup_token_,
     const String & format_,
-    ThreadGroupPtr pushing_thread_group_)
+    std::unique_ptr<MemoryTracker> queued_data_tracker_)
     : chunk(std::move(chunk_))
     , query_id(std::move(query_id_))
     , async_dedup_token(async_dedup_token_)
     , format(format_)
-    , pushing_thread_group(std::move(pushing_thread_group_))
+    , queued_data_tracker(std::move(queued_data_tracker_))
     , create_time(std::chrono::system_clock::now())
 {
 }
 
 void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
 {
-    /// Freed against the group that pushed the data, still alive via this entry, not the flush: crediting the
-    /// flush would leave the pushing user charged for data that is already gone.
-    if (pushing_thread_group)
+    /// Released against the user that pushed the data, never the flush, whose user is whoever's insert it
+    /// happens to be flushing.
+    if (queued_data_tracker)
     {
-        MemoryTrackerSwitcher switcher(&pushing_thread_group->memory_tracker);
+        MemoryTrackerSwitcher switcher(queued_data_tracker.get());
         chunk = {};
         return;
     }
@@ -579,12 +579,15 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
+    /// The data outlives this query and is freed by a flush thread, which cannot uncharge it here. Handing it to
+    /// the user keeps it counting against their limit while it waits, and leaves the query holding none of it.
+    auto queued_data_tracker = handOverCurrentQueryMemoryToItsUser(chunk.byteSize());
     auto entry = std::make_shared<InsertData::Entry>(
         std::move(chunk),
         query_context->getCurrentQueryId(),
         settings[Setting::insert_deduplication_token],
         insert_query.format,
-        CurrentThread::getGroup());
+        std::move(queued_data_tracker));
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
@@ -710,10 +713,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         shard.last_insert_time = now;
         shard.busy_timeout_ms = timeout_ms;
-
-        /// The data stays in the queue after this query ends, charged to it until then, so what is settled at
-        /// the end is expected rather than unaccounted memory.
-        setCurrentQueryMemoryDriftExpected();
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
