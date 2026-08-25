@@ -26,7 +26,6 @@ public:
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl,
-        std::optional<KeeperDigest> digest,
         int64_t log_idx) override;
     KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,

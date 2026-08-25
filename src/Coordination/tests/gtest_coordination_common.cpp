@@ -66,11 +66,12 @@ void assertFileDeleted(std::string path)
 }
 
 nuraft::ptr<nuraft::log_entry>
-getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
+getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t /*zxid*/, const Coordination::ZooKeeperRequestPtr & request)
 {
+    /// (zxid is unused: getZooKeeperLogEntry writes a placeholder zxid, like the dispatchers do;
+    ///  the real zxid is patched in by the leader or defaulted to the log idx on commit.)
     DB::KeeperRequestForSession request_for_session;
     request_for_session.session_id = session_id;
-    request_for_session.zxid = zxid;
     request_for_session.request = request;
     auto buffer = DB::KeeperStateMachine::getZooKeeperLogEntry(request_for_session);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);

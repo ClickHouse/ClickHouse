@@ -80,9 +80,6 @@ struct KeeperRequestForSession
     int64_t session_id{};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
-    int64_t zxid{0};
-    std::optional<KeeperDigest> digest {};
-    int64_t log_idx{0};
     bool use_xid_64{false};
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
@@ -104,11 +101,17 @@ struct KeeperRequestBatch
     ///       entry, take committed_log_idx from it, preprocess+commit entries up to it, preprocess
     ///       entries after it.
     int64_t committed_log_idx{0};
+    /// Zxid of the first request; request i has zxid `first_zxid + i`. 0 means the leader hasn't
+    /// assigned zxids to this batch yet. (Requests that don't create storage transactions, like
+    /// `SessionID`, still occupy a zxid slot in the batch; those zxids are simply unused.)
+    int64_t first_zxid{0};
+    /// Digest of the storage state after preprocessing the whole batch. Assigned by the leader
+    /// together with `first_zxid`. nullopt only for legacy entries that predate digests.
+    std::optional<KeeperDigest> digest{};
+    /// Index of the log entry containing this batch. 0 if not known (yet).
+    int64_t log_idx{0};
 
-    //TODO(keeper-batch): Move `digest`, `log_idx`, and `zxid` fields out of individual requests into the batch struct.
-    ///       (`zxid` would become `start_zxid` with assumption that request zxids are sequential inside a batch.)
-    int64_t getLogIdx() const { return requests.front().log_idx; }
-    std::optional<KeeperDigest> getDigest() const { return requests.back().digest; }
+    int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
 };
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";

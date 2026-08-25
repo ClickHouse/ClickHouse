@@ -592,6 +592,29 @@ uint64_t KeeperStorage::getLastUncommittedLogIdx() const
     return uncommitted_transactions.empty() ? 0 : uncommitted_transactions.back().log_idx;
 }
 
+bool KeeperStorage::tryMatchPreprocessedBatch(int64_t last_transaction_zxid, size_t transaction_count, const KeeperDigest & digest, int64_t log_idx)
+{
+    chassert(transaction_count != 0);
+
+    std::lock_guard lock(transaction_mutex);
+    if (uncommitted_transactions.size() < transaction_count)
+        return false;
+
+    const auto & last_transaction = uncommitted_transactions.back();
+    if (last_transaction.zxid != last_transaction_zxid || !checkDigest(digest, last_transaction.nodes_digest))
+        return false;
+
+    /// The transactions were created by the PreAppendLogLeader callback, before the log idx was
+    /// known; stamp it now.
+    auto it = uncommitted_transactions.end();
+    for (size_t i = 0; i < transaction_count; ++i)
+    {
+        --it;
+        it->log_idx = log_idx;
+    }
+    return true;
+}
+
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
 {
     using NodeAction = Coordination::Storage::NodeAction;

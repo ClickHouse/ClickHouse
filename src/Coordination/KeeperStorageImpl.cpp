@@ -1651,7 +1651,6 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    std::optional<KeeperDigest> digest,
     int64_t log_idx)
 {
     Stopwatch watch;
@@ -1696,25 +1695,11 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         }
         else
         {
-            //TODO(keeper-batch) This back()-based double-preprocess detection breaks for batches: pre_commit would re-preprocess starting from the batch's *first* request while back() is the batch's *last* transaction, hitting the LOGICAL_ERROR below; move the dedup to batch level in pre_commit (skip the whole already-preprocessed batch), and consider taking transaction_mutex once per batch.
-            /// On leader, preprocessRequest is called for each log entry twice:
-            ///  1. In PreAppendLogLeader callback, before the entry is written to changelog.
-            ///     (At this point we're allowed to reject the entry. We could do that for failed
-            ///      requests to avoid the cost of sending them through raft.
-            ///      But currently we don't, all non-read requests go through raft.)
-            ///  2. In pre_commit, after the entry is written to changelog, and there's no way back.
-            /// Here we detect the second call to avoid preprocessing request twice.
-            if (last_zxid == new_last_zxid && digest && checkDigest(*digest, current_digest))
-            {
-                auto & last_transaction = uncommitted_transactions.back();
-                // we found the preprocessed request with the same ZXID, we can get log_idx and skip preprocessing it
-                chassert(last_transaction.zxid == new_last_zxid && log_idx != 0);
-                /// initially leader preprocessed without knowing the log idx
-                /// on the second call we have that information and can set the log idx for the correct transaction
-                last_transaction.log_idx = log_idx;
-                return current_digest;
-            }
-
+            /// On leader, each log entry is preprocessed twice: in the PreAppendLogLeader
+            /// callback (before the entry is written to changelog) and in pre_commit (after,
+            /// when there's no way back). KeeperStateMachine::preprocessBatch detects the second
+            /// call at batch level (see tryMatchPreprocessedBatch) before calling here, so at
+            /// this point the zxid must be new.
             if (new_last_zxid <= last_zxid)
                 throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,

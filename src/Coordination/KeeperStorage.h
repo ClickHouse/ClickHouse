@@ -261,6 +261,13 @@ public:
     /// 0 if no uncommitted requests.
     uint64_t getLastUncommittedLogIdx() const;
 
+    /// If the tail of the uncommitted transaction list is exactly the given batch (the last
+    /// transaction has zxid `last_transaction_zxid` and a matching digest), stamp `log_idx` on
+    /// the batch's `transaction_count` transactions and return true. Used to detect that a log
+    /// entry's batch was already preprocessed on the leader in the PreAppendLogLeader callback
+    /// (before the log idx was known) when it is preprocessed again in pre_commit.
+    bool tryMatchPreprocessedBatch(int64_t last_transaction_zxid, size_t transaction_count, const KeeperDigest & digest, int64_t log_idx);
+
     Coordination::Error commit(DeltaRange deltas);
 
     /// Used internally by `preprocess` and `processLocal` implementations.
@@ -298,7 +305,6 @@ public:
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl,
-        std::optional<KeeperDigest> digest,
         int64_t log_idx) = 0;
     /// Commit a previously preprocessed request. Apply the changes to the committed state.
     /// Produce response for the request + triggered watch notifications.
