@@ -956,26 +956,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
-    /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. Every
-    /// recomputable column belongs here, not just the closure of the cleared ones: a
-    /// metadata-only `MODIFY COLUMN ... MATERIALIZED` schedules no mutation, so the clear is what
-    /// refreshes its stored values. A column reading an EPHEMERAL one is not recomputable outside
-    /// INSERT and must be left out, or the recompute stage fails to resolve the EPHEMERAL name.
+    /// MATERIALIZED columns a CLEAR COLUMN recomputes: the dependency closure of the cleared
+    /// columns, the same rule UPDATE and APPLY PATCHES use. A column reading an EPHEMERAL one is
+    /// absent from that graph, because it cannot be recomputed outside INSERT, so the closure
+    /// cannot ask the recompute stage to resolve a name no part holds.
     NameSet clear_affected_materialized;
-    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
-    {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
-                continue;
-
-            /// Same node the recompute stage below asks for, so the set stays equal to what it writes.
-            const auto * materialized = materialized_dependencies.findNode(column.name);
-            if (materialized && !materialized->reads_ephemeral)
-                clear_affected_materialized.insert(column.name);
-        }
-    }
+    if (!clear_column_names.empty())
+        clear_affected_materialized = affected_materialized_closure(clear_column_names);
 
     /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
     /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis

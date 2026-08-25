@@ -21,9 +21,9 @@ ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple();
 INSERT INTO t_clear_ephemeral (x, y, e) VALUES (1, 0, 7);
 SELECT x, me, me2, mk FROM t_clear_ephemeral;
 
--- `mk` is recomputed from the cleared `x`. `me` reads the EPHEMERAL `e`, so it must be left alone
--- and keeps its stored value; `me2` reads `me`, so it is recomputable and recomputing it from the
--- stored `me` reproduces the same value.
+-- `mk` is recomputed from the cleared `x`. `me` reads the EPHEMERAL `e`, so it is absent from the
+-- dependency graph the closure walks and keeps its stored value. `me2` reads only `me`, so the
+-- closure starting at `x` never reaches it either -- it is not recomputed, and keeps its value too.
 ALTER TABLE t_clear_ephemeral CLEAR COLUMN x IN PARTITION tuple();
 SELECT x, me, me2, mk FROM t_clear_ephemeral;
 
