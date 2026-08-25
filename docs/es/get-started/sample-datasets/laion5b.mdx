@@ -1,5 +1,5 @@
 ---
-description: 'Dataset que contiene 100 millones de vectores del conjunto de datos LAION 5B'
+description: 'Dataset que contiene 10 millones de vectores del conjunto de datos LAION 5B'
 sidebarTitle: 'conjunto de datos LAION 5B'
 slug: /getting-started/example-datasets/laion-5b-dataset
 title: 'conjunto de datos LAION 5B'
@@ -23,8 +23,8 @@ Este conjunto de datos puede utilizarse para modelar aspectos de diseño, dimens
 
 El conjunto de datos completo puede descargarse con [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
-ClickHouse ha puesto a disposición un subconjunto de 100 millones de vectores en un bucket de `S3`.
-El bucket de `S3` contiene 10 archivos `Parquet`; cada archivo `Parquet` contiene 10 millones de filas.
+ClickHouse ha puesto a disposición un subconjunto de 10 millones de vectores en un bucket público de `S3`.
+El subconjunto se almacena en un archivo `Parquet`.
 
 Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamiento para estimar los requisitos de almacenamiento y memoria de este conjunto de datos, consultando la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
 
@@ -34,10 +34,10 @@ Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamient
 
 <Steps>
   <Step title="Crear tabla" id="create-table">
-    Cree la tabla `laion_5b_100m` para almacenar los embeddings y sus atributos asociados:
+    Cree la tabla `laion_5b_10m` para almacenar los embeddings y sus atributos asociados:
 
     ```sql
-    CREATE TABLE laion_5b_100m
+    CREATE TABLE laion_5b_10m
     (
         id UInt32,
         image_path String,
@@ -58,112 +58,77 @@ Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamient
     ) ENGINE = MergeTree ORDER BY (id)
     ```
 
-    El `id` es simplemente un entero incremental. Los atributos adicionales pueden usarse en predicados para entender
-    la búsqueda por similitud vectorial combinada con el posfiltrado/prefiltrado, como se explica en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes)
+    El `id` es simplemente un entero incremental. Los atributos adicionales pueden usarse en predicados para comprender
+    la búsqueda de similitud vectorial combinada con posfiltrado/prefiltrado, como se explica en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
   <Step title="Cargar datos" id="load-table">
-    Para cargar el conjunto de datos de todos los archivos `Parquet`, ejecute la siguiente instrucción SQL:
+    Para cargar el conjunto de datos, ejecute la siguiente sentencia SQL:
 
     ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+    INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
     ```
 
-    La carga de 100 millones de filas en la tabla tardará unos minutos.
-
-    Como alternativa, se pueden ejecutar sentencias SQL individuales para cargar un número determinado de archivos / filas.
-
-    ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
-    ⋮
-    ```
+    La carga de 10 millones de filas en la tabla tardará unos minutos.
   </Step>
 
-  <Step title="Realiza una búsqueda de similitud vectorial por fuerza bruta" id="run-a-brute-force-vector-similarity-search">
-    La búsqueda KNN (k - Nearest Neighbours) o búsqueda por fuerza bruta consiste en calcular la distancia de cada vector del conjunto de datos
-    al vector de embedding de búsqueda y luego ordenar las distancias para obtener los vecinos más cercanos. Podemos utilizar uno de los vectores
+  <Step title="Ejecute una búsqueda de similitud vectorial de fuerza bruta" id="run-a-brute-force-vector-similarity-search">
+    La búsqueda KNN (k - vecinos más próximos) o la búsqueda por fuerza bruta consiste en calcular la distancia entre cada vector del conjunto de datos
+    y el vector de embedding de búsqueda, y luego ordenar las distancias para obtener los vecinos más próximos. Podemos usar uno de los vectores
     del propio conjunto de datos como vector de búsqueda. Por ejemplo:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
     ```
 
-    ```response title="Response" highlight={24}
-        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-     1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
-     2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
-     3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
-     4. │ 51559839 │ https://img1.mashed.com/img/gallery/how-rich-is-the-mcalisters-deli-ceo-and-whats-the-average-pay-of-its-employees/intro-1619793841.jpg                                                                                           │
-     5. │ 22104014 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/04/Largest-McAlisters-Deli-Franchisee-to-Expand-into-Nebraska.jpg                                                                                                      │
-     6. │ 54337236 │ http://www.restaurantnews.com/wp-content/uploads/2015/11/McAlisters-Deli-Giving-Away-Gift-Cards-With-Win-One-Gift-One-Holiday-Promotion.jpg                                                                                       │
-     7. │ 20770867 │ http://www.restaurantnews.com/wp-content/uploads/2016/04/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Florida-as-Chain-Enters-New-Markets.jpg                                                                               │
-     8. │ 22493966 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/06/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Columbus-Ohio-as-Chain-Expands-feature.jpg                                                                       │
-     9. │  2224351 │ https://holttribe.com/wp-content/uploads/2019/10/60880046-879A-49E4-8E13-1EE75FB24980-900x675.jpeg                                                                                                                                │
-    10. │ 30779663 │ https://www.gannett-cdn.com/presto/2018/10/29/PMUR/685f3e50-cce5-46fb-9a66-acb93f6ea5e5-IMG_6587.jpg?crop=2166,2166,x663,y0&amp;width=80&amp;height=80&amp;fit=bounds                                                             │
-    11. │ 54939148 │ https://www.priceedwards.com/sites/default/files/styles/staff_property_listing_block/public/for-lease/images/IMG_9674%20%28Custom%29_1.jpg?itok=sa8hrVBT                                                                          │
-    12. │ 95371605 │ http://www.restaurantmagazine.com/wp-content/uploads/2015/08/McAlisters-Deli-Signs-Development-Agreement-with-Kingdom-Foods-to-Grow-in-Southern-Mississippi.jpg                                                                   │
-    13. │ 79564563 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/05/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Denver-as-Chain-Expands.jpg                                                                                      │
-    14. │ 76429939 │ http://www.restaurantnews.com/wp-content/uploads/2016/08/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Pennsylvania-as-Chain-Expands.jpg                                                                                     │
-    15. │ 96680635 │ https://img.claz.org/tc/400x320/9w3hll-UQNHGB9WFlhSGAVCWhheBQkeWh5SBAkUWh9SBgsJFxRcBUMNSR4cAQENXhJARwgNTRYcBAtDWh5WRQEJXR5SR1xcFkYKR1tYFkYGR1pVFiVyP0ImaTA                                                                        │
-    16. │ 48716846 │ http://tse2.mm.bing.net/th?id=OIP.nN2qJqGUJs_fVNdTiFyGnQHaEc                                                                                                                                                                      │
-    17. │  4472333 │ https://sgi.offerscdn.net/i/zdcs-merchants/05lG0FpXPIvsfiHnT3N8FQE.h200.w220.flpad.v22.bffffff.png                                                                                                                                │
-    18. │ 82667887 │ https://irs2.4sqi.net/img/general/200x200/11154479_OEGbrkgWB5fEGrrTkktYvCj1gcdyhZn7TSQSAqN2Yqw.jpg                                                                                                                                │
-    19. │ 57525607 │ https://knoji.com/images/logo/mcalistersdelicom.jpg                                                                                                                                                                               │
-    20. │ 15785896 │ https://www.groupnimb.com/mimg/merimg/mcalister-s-deli_1446088739.jpg                                                                                                                                                             │
-        └──────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-    20 rows in set. Elapsed: 3.968 sec. Processed 100.38 million rows, 320.81 GB (25.30 million rows/s., 80.84 GB/s.)
-    ```
-
-    Tome nota de la latencia de la consulta para poder compararla con la latencia de la consulta de ANN (usando un índice vectorial).
-    Con 100 millones de filas, la consulta anterior sin un índice vectorial podría tardar varios segundos o minutos en completarse.
+    Anota la latencia de la consulta para compararla con la de una consulta ANN (mediante un índice vectorial).
+    Con 10 millones de filas, la consulta anterior sin un índice vectorial podría tardar desde unos segundos hasta varios minutos en completarse.
   </Step>
 
   <Step title="Crear un índice de similitud vectorial" id="build-vector-similarity-index">
-    Ejecute el siguiente SQL para definir y crear un índice de similitud vectorial sobre la columna `vector` de la tabla `laion_5b_100m`:
+    Ejecute el siguiente SQL para definir y crear un índice de similitud vectorial en la columna `vector` de la tabla `laion_5b_10m`:
 
     ```sql
-    ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+    ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
 
-    ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
     ```
 
-    Los parámetros y las consideraciones de rendimiento para la creación de índices y la búsqueda se describen en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
-    La sentencia anterior utiliza los valores 64 y 512, respectivamente, para los hiperparámetros HNSW `M` y `ef_construction`.
-    Debe seleccionar cuidadosamente los valores óptimos de estos parámetros evaluando el tiempo de construcción del índice y la calidad de los resultados de búsqueda
+    Los parámetros y las consideraciones de rendimiento para la creación y búsqueda de índices se describen en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
+    La instrucción anterior utiliza los valores 64 y 512, respectivamente, para los hiperparámetros de HNSW `M` y `ef_construction`.
+    Debe seleccionar cuidadosamente los valores óptimos de estos parámetros evaluando el tiempo de creación del índice y la calidad de los resultados de búsqueda
     correspondientes a los valores seleccionados.
 
-    La creación y el guardado del índice podrían tardar incluso varias horas para el conjunto de datos completo de 100 millones, según la cantidad de núcleos de CPU disponibles y el ancho de banda del almacenamiento.
+    La creación y el guardado del índice pueden llevar un tiempo considerable para el subconjunto de 10 millones de filas, en función del número de núcleos de CPU disponibles y del ancho de banda de almacenamiento.
   </Step>
 
-  <Step title="Realizar una búsqueda ANN" id="perform-ann-search">
+  <Step title="Realice una búsqueda ANN" id="perform-ann-search">
     Una vez creado el índice de similitud vectorial, las consultas de búsqueda vectorial usarán automáticamente el índice:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     ```
 
-    La carga inicial del índice vectorial en memoria podría tardar unos segundos o minutos.
+    La primera carga del índice vectorial en memoria podría tardar unos segundos o minutos.
   </Step>
 
   <Step title="Generar embeddings para la consulta de búsqueda" id="generating-embeddings-for-search-query">
-    Los vectores de embeddings del conjunto de datos `LAION 5b` se generaron con el modelo `OpenAI CLIP` `ViT-L/14`.
+    Los vectores de embedding del conjunto de datos `LAION 5b` se generaron con el modelo `OpenAI CLIP` `ViT-L/14`.
 
-    A continuación, se proporciona un script de ejemplo en Python para mostrar cómo generar mediante programación
-    vectores de embeddings con las API de `CLIP`. El vector de embeddings de búsqueda
-    se pasa después como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT`.
+    A continuación, se incluye un script de Python de ejemplo que muestra cómo generar mediante programación
+    vectores de embedding mediante las API de `CLIP`. A continuación, el vector de embedding de búsqueda
+    se pasa como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT`.
 
-    Para instalar el paquete `clip`, consulta el [repositorio de GitHub de OpenAI](https://github.com/openai/clip).
+    Para instalar el paquete `clip`, consulte el [repositorio de GitHub de OpenAI](https://github.com/openai/clip).
 
     ```python
     import torch
@@ -186,7 +151,7 @@ Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamient
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
-        result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+        result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
         # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
@@ -198,6 +163,6 @@ Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamient
 
     El resultado de la búsqueda anterior se muestra a continuación:
 
-    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Resultados de la búsqueda de similitud vectorial" size="md" />
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Resultados de la búsqueda por similitud vectorial" size="md" />
   </Step>
 </Steps>

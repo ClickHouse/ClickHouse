@@ -1,0 +1,89 @@
+---
+title: '架构'
+sidebarTitle: '架构'
+description: 'ClickHouse 连接器的组件、连接、证书生命周期和数据流'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="components">
+  ## 组件
+</div>
+
+ClickHouse 连接器运行两个守护进程，均内置于 `clicklink` 二进制文件中：
+
+* **抓取器**按固定时间间隔读取 ClickHouse 系统表允许列表，在本地缓冲结果，并将结果连同基础设施元数据和运行状况发送到您的连接器端点。
+* **故障排查器**与您的连接器端点保持出站命令通道，并在活跃的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间执行只读诊断。会话之外不会执行任何操作。
+
+在 Kubernetes 上，两者均作为工作负载运行，由 `clicklink-connector` Helm 图表部署在您选择的命名空间中 (默认为 `clicklink`) 。在 Linux VM 上，它们以非特权 `clicklink` 系统用户身份运行，分别对应 `clicklink-scraper` 和 `clicklink-troubleshooter` 两个 systemd 单元。
+
+<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse 连接器架构" />
+
+<div id="connections">
+  ## 连接
+</div>
+
+连接器发起的所有连接均为出站连接。完整列表如下：
+
+| 目标端                                         | 方向        | 协议                 | 身份验证                                                        | 用途                                                                     |
+| ------------------------------------------- | --------- | ------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 您的连接器端点 (API)                               | 出站        | HTTPS              | mTLS 客户端证书和 HMAC 签名请求                                       | 发送指标、连接器自身指标和状态；同步实例、基础设施和备份元数据；续订客户端证书                                |
+| 您的连接器端点 (命令通道)                              | 出站        | 基于 TLS 的 WebSocket | mTLS 客户端证书和 HMAC 签名握手                                       | 故障排查器命令通道；仅在支持会话处于活动状态时传输命令                                            |
+| 您的注册端点                                      | 出站        | HTTPS              | 一次性注册标记 (兑换) 或 HMAC (首次证书签名) ；不使用 mTLS                      | 设置期间兑换标记并首次签发证书                                                        |
+| 您的 ClickHouse 集群                            | 出站，在您的环境内 | ClickHouse 原生协议    | 专用只读用户 `pcm_scraper` 和 `pcm_troubleshooter`，以 bcrypt 哈希形式存储 | 读取系统表以进行抓取和会话诊断，并刷新抓取器的日志表                                             |
+| Kubernetes API server (每个已预配的部署，适用于两个安装目标)  | 出站，在您的环境内 | HTTPS              | 绑定到命名空间范围 Roles 的 ServiceAccounts                           | 供故障排查器查看工作负载的只读视图；在 Kubernetes 安装中，两个守护进程还会将自动续订的客户端证书持久化回 mTLS Secret |
+| 您的身份提供商的 JWKS 端点 (仅在网关启用时)                  | 出站        | HTTPS              | 无 (公开签名密钥)                                                  | 验证提交给会话网关的 OIDC ID 标记                                                  |
+
+每个 API 请求都会携带 `Authorization` 请求头，其中包含基于方法、路径、时间戳和正文哈希计算的 HMAC-SHA256 签名。因此，即使在 TLS 通道内，请求也无法被重放或在传输过程中篡改。
+
+对于入站连接，连接器仅暴露本地健康检查和指标端口，以及[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)页面中所述的可选会话网关。ClickHouse 的控制平面绝不会连接其中任何一个。
+
+<div id="certificate-lifecycle">
+  ## 证书生命周期
+</div>
+
+连接器使用其自行获取和维护的客户端证书向您的端点进行身份验证：
+
+* **注册。** `clicklink clctl init` 会在本地生成私钥和证书签名请求，其中组织 ID 用作通用名称，端点主机名用作唯一的 DNS SAN。私钥绝不会离开您的环境。
+* **首次签发。** CSR 会提交到 `/v1/pcm/cert/sign` 注册签名端点，并通过 HMAC 进行身份验证。如果您的组织已存在未过期的证书，该端点将以 409 拒绝请求，命令行客户端会输出如何使用现有证书完成操作，或如何通过 `--force` 明确将其替换。
+* **自动续订。** 每个守护进程每 12 小时检查一次证书有效期，并在剩余 10 天时通过 `/v1/pcm/cert/renew` (mTLS 加 HMAC) 申请续订一张有效期为 30 天的证书。在 Kubernetes 上，每个守护进程都会通过仅限精确名称的 RBAC 授权，将续订后的证书写回 `clicklink-mtls` Secret；在 VM 上，守护进程用户对 TLS 目录拥有写入权限。续订无需人工操作。
+
+连接器会使用系统信任库验证端点的服务器证书；如果端点使用私有 CA，则使用注册时提供的 CA bundle 进行验证。
+
+<div id="data-flow">
+  ## 数据流
+</div>
+
+<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse 连接器数据流" />
+
+<div id="what-leaves">
+  ### 哪些内容会离开您的环境
+</div>
+
+* **来自允许列表中系统表的指标。** 抓取器默认抓取 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。允许列表由显式配置指定；抓取器不会读取列表之外的任何内容。
+* **基础设施元数据。** 通过 API 同步的实例、基础设施和备份清单。
+* **健康状况和自身指标。** 组件状态以及连接器自身的运行指标。
+* **支持会话输出。** 在您启用的会话期间执行的只读诊断结果，经过脱敏处理。
+
+<div id="what-never-leaves">
+  ### 默认不会离开的内容
+</div>
+
+* **抓取路径中的原始查询文本。** 默认抓取集特意排除了 `system.query_log`，因为其查询列可能包含字面值，从而携带 PII 或密钥；是否重新添加该表，由您在充分知情的前提下针对每个部署自行决定。支持会话期间，默认表允许列表包含 `system.processes`，其中会显示正在执行的查询文本；有关如何将其裁剪，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+* **凭据。** 配置文件不包含凭据，ClickHouse 仅存储连接器用户密码的 bcrypt 哈希值，密钥则保存在 Kubernetes Secrets 或主机上仅 root 可读的文件中。抓取和同步路径均不会传输这些信息。
+* **未脱敏的 故障排查器 输出。** 故障排查器 返回的所有内容在离开前都会经过脱敏模式 (内置模式和您自定义的模式) 处理。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+
+<div id="trust-boundaries">
+  ## 信任边界
+</div>
+
+* **您的环境就是边界。** ClickHouse Cloud 仅接收抓取器发送的数据，以及活跃支持会话返回的数据。它绝不会主动向您的环境发起连接。
+* **会话网关由您控制。** 除非您选择通过入口将其暴露，否则只能在您的环境内访问它 (在 Kubernetes 上通过 `kubectl port-forward`，或在 VM 本地访问) 。ClickHouse 的控制平面绝不会连接到它。
+* **ClickHouse 访问权限为只读。** `pcm_scraper` 和 `pcm_troubleshooter` 用户拥有按表授予的 `SELECT` 权限，此外还有一项仅供抓取器使用的系统权限，用于将日志表刷写到磁盘；除此之外没有其他权限。不存在 `INSERT`、DDL 或用户管理权限。完整列表请参阅[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。
+* **Kubernetes 访问权限限定在命名空间范围内。** 所有 RBAC 均通过连接器和实例命名空间中的 Role 授予：对工作负载资源仅有只读操作权限，并且只能按确切名称访问连接器自身的 Secret。不存在 `exec`、`delete` 或 `patch` 权限。
+* **网络策略。** 在 Kubernetes 上，chart 可以渲染 NetworkPolicy，拒绝除您列出的 CIDR 以外的所有连接器出口流量。策略是否生效取决于集群是否运行了强制执行策略的 CNI；如果没有，策略不会生效。请参阅[配置](/zh/products/bring-your-own-cloud/connector/configuration)。
+* **VM 上的主机加固。** 这些单元以不可登录的系统用户身份运行，并启用 `ProtectSystem=strict`、`NoNewPrivileges`、只读配置路径和 FIPS 模式。
+
+有关连接器的完整授权和 RBAC 规则，请参阅[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)参考文档。如果集群改由 ClickHouse 为您运营，信任模型会有所不同；请参阅 [BYOC 架构](/zh/products/bring-your-own-cloud/overview/architecture)和 [BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege)页面。

@@ -200,21 +200,102 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
 각 타일에는 값이 표시되는 방식을 제어하는 옵션이 있는 **Display Settings** 드로어가 있습니다. 타일 편집기에서 **Display Settings**를 클릭해 여십시오. 사용 가능한 옵션은 시각화 유형에 따라 달라집니다.
 
-Number 타일은 **Background chart**를 표시할 수 있습니다. 값 뒤에 추세 스파크라인이 그려져, 선택한 시간 범위 동안의 변화를 한눈에 파악할 수 있습니다. 현재 값만큼이나 값의 추세가 중요한 SLO 및 오류 예산 타일에서 특히 유용합니다.
+<div id="number-tile-color">
+  #### 숫자 타일 색상
+</div>
 
-Number 타일을 선택한 상태에서 **Display Settings**를 열고 **Background chart**를 **Line** 또는 **Area**로 설정하십시오(끄려면 **None** 선택). 스파크라인은 타일 쿼리의 시간 버킷 기준 버전에서 파생되므로 추가 구성은 필요하지 않습니다. 기본적으로 타일 색상을 그대로 사용하며, 특정 팔레트 색상으로 재정의하려면 **Background color**를 설정하십시오.
+숫자 타일에서는 미리 정의된 차트 팔레트에서 정적 **색상**을 선택할 수 있습니다. 숫자 타일을 선택한 상태에서 **표시 설정**을 열고 **색상** 컨트롤(접근성을 위해 **숫자 타일 색상**으로 레이블 지정됨)에서 색상 견본을 선택하거나 선택을 해제하여 기본 텍스트 색상을 사용하십시오.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Number 타일의 Display Settings 드로어에서 Background chart가 Area로 설정된 상태" size="lg" />
+색상은 원시 hex 값이 아닌 팔레트 토큰으로 저장되므로 동일한 타일이 밝은 테마, 어두운 테마, IDE 테마에서 올바르게 표시됩니다.
 
-Background chart는 query-builder Number 타일에 적용됩니다. Raw SQL Number 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
+**범주형 토큰**(다중 series 색조):
+
+| 토큰                 | 레이블   |
+| ------------------ | ----- |
+| `chart-blue`       | 파랑    |
+| `chart-orange`     | 주황    |
+| `chart-red`        | 빨강    |
+| `chart-cyan`       | 청록    |
+| `chart-green`      | 녹색    |
+| `chart-pink`       | 분홍    |
+| `chart-purple`     | 보라    |
+| `chart-light-blue` | 연한 파랑 |
+| `chart-brown`      | 갈색    |
+| `chart-gray`       | 회색    |
+
+**의미론적 토큰**(상태 기반):
+
+| 토큰              | 레이블 |
+| --------------- | --- |
+| `chart-success` | 성공  |
+| `chart-warning` | 경고  |
+| `chart-error`   | 오류  |
+
+숫자가 상태를 나타낼 때는 의미론적 토큰을 사용하십시오(예: 오류 수에는 `chart-error`, 정상 비율에는 `chart-success`). 상태를 암시하지 않으면서 관련 KPI 타일을 시각적으로 구분하려면 범주형 토큰을 사용하십시오.
+
+이전 구성에는 legacy 숫자 토큰(`chart-1`부터 `chart-10`)이 저장되어 있을 수 있습니다. ClickStack은 대시보드를 로드할 때 이를 위의 색조 이름 토큰에 매핑합니다.
+
+같은 팔레트는 동일한 드로어의 선택적 **색상 규칙**에도 사용됩니다. 색상 규칙은 표시된 값을 기준으로 순서대로 평가되는 조건이며, 마지막으로 일치한 규칙이 적용됩니다. 일치하는 규칙이 없으면 정적 색상이 적용되고, 그다음 기본 텍스트 색상이 적용됩니다.
+
+<div id="number-tile-background-chart">
+  #### 숫자 타일 배경 차트
+</div>
+
+숫자 타일은 **Background chart**를 표시할 수 있습니다. 값 뒤에 추세 스파크라인이 그려져, 선택한 시간 범위 동안의 변화를 한눈에 파악할 수 있습니다. 현재 값만큼이나 값의 추세가 중요한 SLO 및 오류 예산 타일에서 특히 유용합니다.
+
+숫자 타일을 선택한 상태에서 **표시 설정**를 열고 **Background chart**를 **Line** 또는 **Area**로 설정하십시오(끄려면 **None** 선택). 스파크라인은 타일 쿼리의 시간 버킷 기준 버전에서 파생되므로 추가 구성은 필요하지 않습니다. 기본적으로 타일 색상을 그대로 사용하며, 특정 팔레트 색상으로 재정의하려면 **Background color**를 설정하십시오.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="숫자 타일의 표시 설정 드로어에서 Background chart가 Area로 설정된 상태" size="lg" />
+
+Background chart는 query-builder 숫자 타일에 적용됩니다. Raw SQL 숫자 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
 
 Table 타일에서는 **Alternate Row Background**를 사용해 행에 줄무늬를 적용할 수 있습니다. 한 행씩 번갈아 배경색을 넣어 컬럼 수가 많은 테이블도 더 쉽게 훑어볼 수 있습니다. 기본적으로는 꺼져 있습니다.
 
-Table 타일을 선택한 상태에서 **Display Settings**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
+Table 타일을 선택한 상태에서 **표시 설정**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 Display Settings 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 표시 설정 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
 
 Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분선도 유지하므로 컬럼 헤더를 계속 뚜렷하게 구분할 수 있습니다.
+
+<div id="api-number-tile-color">
+  #### Dashboards API: 숫자 타일 색상
+</div>
+
+외부 API(`POST` / `PUT` `/api/v2/dashboards`)를 통해 대시보드를 생성하거나 업데이트할 때는 builder 숫자 타일 구성의 `color`를 팔레트 토큰으로 설정하십시오. 원시 hex 값은 허용되지 않습니다.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color`에는 위의 categorical 및 semantic 목록에 있는 모든 토큰(예: `chart-blue` 또는 `chart-success`)을 사용할 수 있습니다. 선택 사항인 `backgroundChart.color`는 동일한 토큰 enum을 사용하여 스파크라인 색상을 재정의합니다. authentication 및 기준 URL은 [ClickStack API 참조](/ko/use-cases/observability/clickstack/api-reference)를 참조하십시오.
 
 <div id="dashboard-listing-search">
   ## 대시보드 - 목록 및 검색

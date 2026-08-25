@@ -578,6 +578,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+أُضيف في: v26.8.0
+
+يعيد لواحق أسماء المقاييس لعائلة مقاييس من نوع Prometheus معيّن.
+
+**بنية**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**وسيطات**
+
+* `type` — نوع مقياس Prometheus (`counter`، `gauge`، `histogram`، `summary`، ...). [`String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تعيد لواحق عائلة من هذا النوع. [`Array(String)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes──────────────────────┐
+│ ['_bucket','_count','_sum']   │
+└───────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -907,6 +943,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ┌─group1─┬─group2─┬─empty_group─┬─same_group2─┬─throwIf(notEquals(same_group2, group2))─┬─timeSeriesGroupToTags(group2)──┐
 │      1 │      2 │           0 │           2 │                                       0 │ [('__name__','http_failures')] │
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
+```
+
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+أُضيف في: v26.8.0
+
+يدمج مصفوفة من أزواج `(tag_name, tag_value)` مع وسيطات منفصلة لأسماء العلامات وقيمها في خريطة واحدة.
+تُفرَز النتيجة حسب اسم العلامة، وتُزال أسماء العلامات المكررة والعلامات ذات القيم الفارغة.
+
+**البنية**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**الوسيطات**
+
+* `tags_array` — مصفوفة من الأزواج (tag&#95;name، tag&#95;value). [`Array(Tuple(String, String))`](/ar/reference/data-types/array) أو [`Map(String, String)`](/ar/reference/data-types/map) أو [`NULL`](/ar/reference/syntax#null)
+* `tag_name_i` — اسم وسم. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
+* `tag_value_i` — قيمة وسم. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable)
+
+**القيمة المُعادة**
+
+تُرجع خريطة تربط أسماء الوسوم بقيمها، مرتبة حسب اسم الوسم، من دون أسماء وسوم مكررة أو قيم وسوم فارغة.
+[`Map(String, String)`](/ar/reference/data-types/map)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags───────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'}    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesThrowDuplicateSeriesIf">

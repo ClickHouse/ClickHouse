@@ -49,6 +49,18 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Включает `DISTINCT` в подзапросах `IN`. Это компромиссная настройка: при включении она может значительно уменьшить размер временных таблиц, передаваемых для распределённых подзапросов `IN`, и существенно ускорить передачу данных между сегментами, поскольку отправляются только уникальные значения.
 Однако включение этой настройки требует дополнительных затрат на слияние на каждом узле, так как необходимо выполнять дедупликацию (`DISTINCT`). Используйте эту настройку, если передача данных по сети является узким местом, а дополнительные затраты на слияние допустимы.
 
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка, позволяющая отдельно включить экспериментальный кодек сжатия `ALP` без `allow_experimental_codecs`."}]}]} />
+
+Разрешает использовать экспериментальный кодек сжатия `ALP`.
+
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
 </div>
@@ -127,6 +139,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Если установлено значение true, разрешает использование текстового индекса.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "новая настройка"}]}]} />
+
+Включает раннюю свёртку констант с коротким замыканием для `and` и `or` на этапе анализа запроса.
+Если параметр включен, подходящие недостижимые ветви со скалярными подзапросами анализируются для сохранения их типов и проверки семантики запроса, но не выполняются. Если требуются скалярная мощность или значения времени выполнения, оптимизация переключается на обычный анализ.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,27 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "По умолчанию распространяет операторы WITH на запросы UNION и все подзапросы"}]}]} />
 
 Распространяет операторы WITH на запросы UNION и все подзапросы
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для управления оптимизацией фильтрации TopK при агрегации в запросах `GROUP BY key ORDER BY key LIMIT N`."}]}]} />
+
+Включает оптимизацию фильтрации TopK при агрегации в запросах `GROUP BY keys ORDER BY <prefix of keys> LIMIT K`, а также в запросах `GROUP BY keys LIMIT K` без `ORDER BY` (в этом случае допустим любой набор из `K` групп, поэтому синтезируется сортировка по всем ключам).
+
+Когда параметр включен, агрегатор поддерживает ограниченную кучу из `K` лучших ключей, найденных к текущему моменту, и не вставляет новые строки в хеш-таблицу, если их ключ группировки не может попасть в итоговый результат. Это позволяет избежать агрегации строк, которые будут отброшены последующим `ORDER BY ... LIMIT`. Если куча ранжирует полный ключ `GROUP BY`, она также удаляет вытесненные группы из промежуточной хеш-таблицы, ограничивая ее размер значением `LIMIT`, а не числом различных ключей. Если `ORDER BY` охватывает только собственный префикс ключей `GROUP BY`, ранжирование не позволяет определить полную группу, поэтому применяется только пропуск строк: хеш-таблица хранит все допущенные группы и все еще может расти с увеличением мощности оставшихся столбцов ключа.
+
+Оптимизация отключается, если запрошенный `LIMIT` превышает [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ru/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) или жесткий предел `100000`, поскольку потребление памяти и CPU кучей растет с увеличением запрошенного `LIMIT`.
+
+Оптимизация не применяется к формам запросов, в которых удаление групп может изменить результат, включая `WITH TOTALS`, `HAVING`, `QUALIFY`, оконные функции, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `COLLATE` для любого из сопоставленных ключей `GROUP BY` (`COLLATE` для более позднего столбца `ORDER BY` после полного префикса ключа не влияет на то, какие группы попадут в результат, поэтому не отключает оптимизацию), `ORDER BY` по агрегату или по чему-либо, что не является начальным префиксом ключей `GROUP BY`, а также запросы, в которых задан `max_rows_to_group_by` или `exact_rows_before_limit`.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +375,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 Это может повысить производительность при неравномерном распределении размеров бакетов, так как реплика может отправлять инициатору бакеты с более высокими идентификаторами, пока ещё обрабатывает тяжёлые бакеты с более низкими идентификаторами.
 Недостаток — потенциально более высокое использование памяти.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для отдельного включения экспериментального кодека сжатия `Quantized` без `allow_experimental_codecs`."}]}]} />
+
+Разрешает использовать экспериментальный кодек сжатия `Quantized`.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -446,6 +502,18 @@ WHERE (_part, _part_offset) IN (
 возможности стриминг-запросов; дополнительные возможности могут управляться
 собственными настройками.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для отдельного включения экспериментального кодека сжатия `SZ3` без включения `allow_experimental_codecs`."}]}]} />
+
+Разрешает использовать экспериментальный кодек сжатия `SZ3`.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -500,5 +568,17 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - Отключено
 * 1 - Включено
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для отдельного включения экспериментального кодека сжатия `ZXC` без `allow_experimental_codecs`."}]}]} />
+
+Разрешает использовать экспериментальный кодек сжатия `ZXC`.
 
 {/*AUTOGENERATED_END*/}

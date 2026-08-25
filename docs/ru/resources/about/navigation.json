@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "О ClickHouse",
+      "group": "About ClickHouse",
       "pages": [
         "ru/resources/about/index",
         "ru/resources/about/adopters",
@@ -10,5 +10,5 @@
     }
   ],
   "icon": "/images/icons/icon-about.svg",
-  "item": "О проекте"
+  "item": "About"
 }

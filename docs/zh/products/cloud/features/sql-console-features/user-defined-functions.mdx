@@ -16,7 +16,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 1. 使用 SQL
 2. 使用 UI 和你自己的代码 (Public Beta)
 3. 使用 [Cloud API](#manage-udfs-with-the-cloud-api) (Beta)
-4. 使用 [Terraform](#manage-udfs-with-terraform) (alpha)
+4. 使用 [Terraform](#manage-udfs-with-terraform) (Beta)
 
 <div id="sql-udfs">
   ## SQL 用户自定义函数
@@ -231,13 +231,15 @@ UDF 端点可让您通过脚本管理 UDF 的完整生命周期：上传源代�
   ## 使用 Terraform 管理 UDF
 </div>
 
+<BetaBadge />
+
 官方 [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 提供了两个资源，可用于以基础设施即代码的方式管理 UDF：
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) 用于管理函数本身。它接收包含函数源代码的 ZIP 归档文件，并在归档文件的哈希发生变化时发布新版本，同时等待构建完成。
-* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) 用于将 UDF 版本关联到服务。一个服务在同一时间最多只能使用一个函数版本。您可以固定指定版本号，也可以引用 `clickhouse_udf.<name>.version`，以自动将服务升级到最新版本。
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) 用于将 UDF 版本附加到服务。一个服务在同一时间最多只能使用一个函数版本。您可以固定指定版本号，也可以引用 `clickhouse_udf.<name>.version`，以自动将服务升级到最新版本。
 
 <Note>
-  这些资源适用于 provider 3.24.0 及更高版本。它们目前处于 alpha 阶段，行为可能会在未来的 provider 版本中发生变化。
+  这些资源适用于 provider 3.24.0 及更高版本。它们目前处于 Beta 阶段，行为可能会在未来的 provider 版本中发生变化。
 </Note>
 
 例如，要使用 Terraform 部署前文示例中的 `isBusinessHours` UDF：

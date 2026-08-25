@@ -47,6 +47,10 @@ Para habilitar esta função de introspecção:
 * Instale o pacote `clickhouse-common-static-dbg`.
 * Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -72,7 +76,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 
 ```response title=Response
 -- The `trace` field contains the stack trace at the moment of sampling.
-Linha 1:
+Row 1:
 ──────
 event_date:              2019-11-19
 event_time:              2019-11-19 18:57:23
@@ -91,7 +95,7 @@ SELECT addressToLine(94784076370703) \G;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
@@ -110,7 +114,7 @@ LIMIT 1
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
@@ -135,6 +139,10 @@ Para habilitar esta função de introspecção:
 
 * Instale o pacote `clickhouse-common-static-dbg`.
 * Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -232,6 +240,10 @@ Introduzido em: v20.1.0
 
 Converte um endereço de memória virtual no processo do servidor ClickHouse em um símbolo dos arquivos-objeto do ClickHouse.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -256,7 +268,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- O campo `trace` contém o stack trace no momento da amostragem.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -286,8 +298,8 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- A função arrayMap permite processar cada elemento individual do array trace pela função addressToSymbols.
--- O resultado desse processamento é exibido na coluna trace_symbols da saída.
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols

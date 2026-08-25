@@ -913,15 +913,15 @@ ORDER BY (ServiceName, Timestamp)
   ### 正規表現Dictionaryの使用 (ユーザーエージェントのパース)
 </div>
 
-[ユーザーエージェント文字列](https://en.wikipedia.org/wiki/User_agent)のパースは、正規表現の典型的な用途であり、ログやトレースベースのデータセットでよく求められます。ClickHouse では、Regular Expression Tree Dictionaries を使用してユーザーエージェントを効率的にパースできます。
+[ユーザーエージェント文字列](https://en.wikipedia.org/wiki/User_agent)のパースは、正規表現の典型的な用途であり、ログやトレースベースのデータセットでよく求められます。ClickHouse では、正規表現ツリーDictionary を使用してユーザーエージェントを効率的にパースできます。
 
-正規表現ツリーDictionaryは、正規表現ツリーを含む YAML ファイルへのパスを指定する YAMLRegExpTree 辞書ソース型を使って、ClickHouse オープンソース版で定義します。独自の正規表現辞書を用意したい場合は、必要な構造の詳細を[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)で確認できます。以下では、[uap-core](https://github.com/ua-parser/uap-core) を使ったユーザーエージェントのパースに焦点を当て、サポートされている CSV フォーマット向けの辞書をロードします。この方法は OSS と ClickHouse Cloud の両方に対応しています。
+正規表現ツリーDictionaryは、正規表現ツリーを含む YAML ファイルへのパスを指定する YAMLRegExpTree Dictionaryソース型を使って、ClickHouse オープンソース版で定義します。独自の正規表現Dictionaryを用意したい場合は、必要な構造の詳細を[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)で確認できます。以下では、[uap-core](https://github.com/ua-parser/uap-core) を使ったユーザーエージェントのパースに焦点を当て、サポートされている CSV フォーマット向けのDictionaryをロードします。この方法は OSS と ClickHouse Cloud の両方に対応しています。
 
 <Note>
   以下の例では、2024 年 6 月時点の uap-core の最新のユーザーエージェント解析用正規表現のスナップショットを使用します。最新版のファイルは随時更新されており、[こちら](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)から入手できます。以下で使用する CSV ファイルにロードするには、[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)の手順に従ってください。
 </Note>
 
-次の Memory テーブルを作成します。これらのテーブルには、デバイス、ブラウザ、オペレーティングシステムをパースするための正規表現を格納します。
+次の Memory テーブルを作成します。これらのテーブルには、デバイス、ブラウザー、オペレーティングシステムをパースするための正規表現を格納します。
 
 ```sql
 CREATE TABLE regexp_os
@@ -955,14 +955,14 @@ CREATE TABLE regexp_device
 これらのテーブルには、urlテーブル関数を使用して、以下の公開されているCSVファイルからデータを取り込むことができます。
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
-メモリテーブルへのデータ投入が完了したら、正規表現Dictionaryを読み込めます。キーの値はカラムとして指定する必要がある点に注意してください。これらが、user agent から抽出できる属性になります。
+メモリテーブルへのデータ投入が完了したら、正規表現Dictionaryを読み込めます。キーの値はカラムとして指定する必要がある点に注意してください。これらが、ユーザーエージェントから抽出できる属性になります。
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1004,7 +1004,7 @@ LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
 
-これらのDictionaryを読み込めば、サンプルのユーザーエージェントを使って、新しい辞書抽出機能をテストできます：
+これらのDictionaryを読み込めば、サンプルのユーザーエージェントを使って、新しいDictionary抽出機能をテストできます：
 
 ```sql
 WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent

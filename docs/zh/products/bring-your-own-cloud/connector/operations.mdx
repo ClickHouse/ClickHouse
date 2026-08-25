@@ -1,0 +1,226 @@
+---
+title: '运维操作'
+sidebarTitle: '运维操作'
+description: 'ClickHouse 连接器的 Day-2 运维：升级、运行状况、证书、凭据轮换、恢复和卸载'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', '运维操作']
+doc_type: 'guide'
+---
+
+本页介绍 ClickHouse 连接器在两种安装目标上的 Day-2 运维。有关安装和引导配置，请参阅[入门](/zh/products/bring-your-own-cloud/connector/onboarding)。
+
+<div id="upgrades">
+  ## 升级
+</div>
+
+<div id="upgrades-kubernetes">
+  ### Kubernetes
+</div>
+
+<Note>
+  日常 Kubernetes 运维操作需在工作站上使用 `helm` 命令行客户端。只有 `init` 内置 Helm 客户端，因此请在首次升级前安装 `helm`。
+</Note>
+
+从公网 chart 仓库升级 release，并复用 `init` 暂存的配置值覆盖层：
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+helm upgrade --install clicklink-connector clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version <version> \
+  -n "${CONNECTOR_NAMESPACE}" \
+  -f clicklink-values.yaml
+```
+
+Chart 版本即不含前导 `v` 的发布标签 (chart `0.9.0` 对应标签 `v0.9.0`) 。已发布的 chart 已指向公网容器镜像，因此常规安装和升级无需指定镜像配置值；如需查看 chart 的默认配置，请运行 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`。
+
+通过直接 chart 引用 (`oci://`、URL、本地归档文件或目录) 安装时，没有可用于解析的 repository：请在新版本中改为重新运行 `helm upgrade clicklink-connector <same-chart-reference>`。使用较新版本的命令行客户端重新运行 `init` 也能达到一致状态，但 `init` 始终需要其入口点之一：如果保留了支持包，则使用 `--handoff`；或者在按文档完成清理后，使用新的注册标记并添加 `--force`。上述 `helm upgrade` 是常规做法 (请参阅[重新运行和恢复](#re-runs-and-recovery)) 。
+
+<div id="upgrades-linux-vm">
+  ### Linux VM
+</div>
+
+在主机上重新运行安装程序；它会像[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)时一样下载并验证新版本，备份原有二进制文件，并保留正在使用的脱敏规则和环境文件。然后重启守护进程：
+
+```bash
+curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
+sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+```
+
+若要升级到指定版本而非最新版本，请在安装命令后加上 `--version vX.Y.Z`。
+
+<div id="health">
+  ## 健康状况
+</div>
+
+每个守护进程都会在其健康检查端口提供 `/livez` 端点。响应正文中的 JSON `status` 字段才是健康状态信号，而非 HTTP 状态码，因此应检查响应正文，不要仅凭 `200` 判断。每个组件都会在其指标端口提供 Prometheus 指标。两个目标的默认端口如下：
+
+| 组件    | 健康检查端口 | 指标端口 |
+| ----- | ------ | ---- |
+| 全局默认值 | 8080   | 9090 |
+| 抓取器   | 8082   | 9092 |
+| 故障排查器 | 8084   | 9094 |
+
+启用支持会话后，gateway 还会监听 8443 端口：在 VM 上使用自签名 TLS；在 Kubernetes 上，可通过 `kubectl port-forward` 使用 pod (容器组) 本地 HTTP，或使用 TLS 终止入口。
+
+在 VM 上，您可以随时运行完整的检查套件：
+
+```bash
+sudo clicklink clctl preflight
+```
+
+它会检查配置、文件、端口冲突、网络可达性 (包括 API 端点和每个 ClickHouse 实例) 、ClickHouse 连通性、systemd 单元状态、各组件的访问权限、磁盘以及脱敏模式；如果任一检查失败，则以退出码 `2` 退出。
+
+<div id="certificates">
+  ## 证书
+</div>
+
+connector 会自动续订其客户端证书：每个守护进程每 12 小时检查一次叶证书，并在剩余 10 天有效期时进行续订，通过现有的 mTLS 和 HMAC 身份验证通道获取有效期为 30 天的叶证书。无需 operator 执行任何操作。在 Kubernetes 上，续订后的叶证书会写回 `clicklink-mtls` Secret；在 VM 上，则会写入 `/etc/clicklink/tls/` 目录。
+
+要查看当前的到期时间：
+
+```bash
+# Linux VM
+sudo openssl x509 -in /etc/clicklink/tls/client.crt -noout -enddate
+
+# Kubernetes
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.data.tls\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+```
+
+<div id="credential-rotation">
+  ## 凭据轮换
+</div>
+
+<div id="rotate-api-credentials">
+  ### API (HMAC) 凭据
+</div>
+
+向您的 ClickHouse 客户团队申请新的注册令牌，然后使用 `--enroll` 和 `--force` 重新运行原来的 `init` 命令。保留首次安装时使用的所有目标专用标志 (`--target-namespace`、`--values` 以及任何 `--chart`、`--chart-repo` 或 `--chart-version` mirror 标志) ，因为 `--force` 会重新暂存已保留的配置。对于默认安装：
+
+```bash
+# Kubernetes, from your workstation
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --force
+
+# Linux VM, on the host
+sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force
+```
+
+<Note>
+  对于 SQL 配置需要密码的无人值守轮换，stdin 会依次传入两个密钥：第一行是标记，第二行是密码。读取标记时会恰好读取一行。
+
+  ```bash
+  printf '%s\n' "$ENROLLMENT_TOKEN" "$CH_ADMIN_PASSWORD" | \
+    clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force --ch-admin-password-stdin
+  ```
+</Note>
+
+<div id="rotate-clickhouse-users">
+  ### ClickHouse 用户
+</div>
+
+为每个实例重新配置 connector 的只读用户。在 Kubernetes 上，请从您的工作站执行；`--apply-ch-grants` 会在 pod (容器组) 内重新应用新生成的授权，以便将新凭据同步到 ClickHouse (如果 admin 用户设置了密码，请添加 `--ch-admin-password-stdin` 并通过管道传入) ：
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+clicklink clctl scraper access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+clicklink clctl troubleshoot access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+```
+
+在虚拟机的主机上：
+
+```bash
+sudo clicklink clctl scraper access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+sudo clicklink clctl troubleshoot access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+```
+
+对于由 operator 管理的实例，请在任一命令形式中添加 `--ch-user-via cr` 和 pod (容器组) 选择标志；请参阅 [命令行客户端参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。
+
+<div id="rotate-client-certificate">
+  ### 客户端证书
+</div>
+
+证书会自动续订 (参见[证书](#certificates)) 。如需立即替换尚未过期的证书，请使用 `--force` 重新运行 `init`。
+
+<div id="re-runs-and-recovery">
+  ## 重复运行与恢复
+</div>
+
+`init` 支持幂等重复运行，因此遇到问题时，首先应再次运行相同的命令。未使用 `--force` 时，会保留现有的 `/etc/clicklink/config.yaml` (VM) 或 `clicklink-values.yaml` 覆盖文件 (Kubernetes) ，并复用现有的客户端密钥；凭据和 CA 链则会以原子方式覆盖。CLI 在部分失败后输出的恢复命令可以安全地重复执行。
+
+`--force` 会覆盖已保留的配置或覆盖文件，重新生成客户端密钥，并替换尚未过期的客户端证书。它绝不会生成新的集群 UUID：即使使用 `--force`，connector 的身份也会保留。
+
+如果暂存后证书签名失败，或者因已存在尚未过期的证书而导致签名端点返回 `409`，则无需新标记或再次签发。请使用磁盘上已有的已签名材料完成安装：
+
+```bash
+sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
+```
+
+这是 VM 形式 (root 会改写 `/etc/clicklink` 并管理相关服务) 。在 Kubernetes 上，命令行客户端会输出完整形式，包括 `--target helm`、`--target-namespace` 和 `--values`；请按原样使用输出的命令。
+
+<div id="uninstall">
+  ## 卸载
+</div>
+
+<div id="upgrades-linux-vm">
+  ### Linux VM
+</div>
+
+`uninstall.sh` 包含在发布 tarball 中。如果主机上没有保留已解压的 tarball，请按照[手动下载和验证](/zh/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)中的说明拉取并解压一个，然后在解压后的目录中运行它：
+
+```bash
+sudo ./uninstall.sh
+```
+
+这会停止并禁用服务，移除 systemd 单元和二进制文件，但会保留 `/etc/clicklink`、`/var/lib/clicklink`、`/var/log/clicklink` 以及 `clicklink` 用户，以便后续重新安装时沿用现有配置。若还要移除这些内容：
+
+```bash
+sudo ./uninstall.sh --purge
+```
+
+<div id="upgrades-kubernetes">
+  ### Kubernetes
+</div>
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
+```
+
+`init` 创建的 Secret 不属于 chart，因此卸载后仍会保留。请显式删除这些 Secret，包括为每个已配置实例创建的实例级访问 Secret：
+
+```bash
+kubectl delete secret clicklink-hmac clicklink-mtls -n "${CONNECTOR_NAMESPACE}"
+kubectl delete secret -n "${CONNECTOR_NAMESPACE}" \
+  clicklink-connector-scraper-access-<instance> \
+  clicklink-connector-troubleshooter-access-<instance>
+kubectl delete serviceaccount -n "${CONNECTOR_NAMESPACE}" \
+  pcm-scraper-<instance> pcm-troubleshooter-<instance>
+# Repeat for every ClickHouse namespace that holds a provisioned instance.
+for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
+  kubectl delete serviceaccount,role,rolebinding -n "${ns}" \
+    pcm-scraper pcm-troubleshooter
+done
+```
+
+<div id="rotate-clickhouse-users">
+  ### ClickHouse 用户
+</div>
+
+无论卸载任一目标端，已预配的只读用户都会保留。请以管理员身份在每个实例上删除这些用户 (如果设置了 `--ch-user-suffix`，请将其附加到名称后) ：
+
+```sql
+DROP USER IF EXISTS pcm_scraper, pcm_troubleshooter;
+```

@@ -15,10 +15,10 @@ doc_type: '참고'
 </Info>
 
 <div id="using-string">
-  ## String 타입 사용하기
+  ## String 유형 사용하기
 </div>
 
-객체가 매우 동적이고, 예측 가능한 구조가 없으며, 임의로 중첩된 객체를 포함한다면 String 타입을 사용해야 합니다. 값은 아래에서 보이듯 JSON 함수를 사용해 쿼리 시점에 추출할 수 있습니다.
+객체가 매우 동적이고, 예측 가능한 구조가 없으며, 임의로 중첩된 객체를 포함한다면 String 유형을 사용해야 합니다. 값은 아래에서 보이듯 JSON 함수를 사용해 쿼리 시점에 추출할 수 있습니다.
 
 위에서 설명한 구조화된 접근 방식으로 데이터를 처리하는 방법은 동적 JSON을 다루는 사용자에게는 대개 적합하지 않습니다. 동적 JSON은 변경될 수 있거나 스키마(schema)가 충분히 파악되지 않은 경우가 많기 때문입니다. 완전한 유연성이 필요하다면 JSON을 `String`로 그대로 저장한 뒤, 필요에 따라 함수를 사용해 필드를 추출하면 됩니다. 이는 JSON을 구조화된 객체로 처리하는 방식의 정반대에 있는 극단적인 접근입니다. 하지만 이러한 유연성에는 비용이 따르며, 특히 쿼리 구문이 더 복잡해지고 성능이 저하된다는 단점이 있습니다.
 
@@ -94,7 +94,7 @@ ENGINE = MergeTree ORDER BY ()
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
@@ -582,7 +582,7 @@ SELECT clientip, status, size, `request.method` FROM http WHERE has(request.meth
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -600,7 +600,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 ```response
-1 행 in set. Elapsed: 0.312 sec.
+1 row in set. Elapsed: 0.312 sec.
 ```
 
 JSON의 제약 조건과 입력 형식을 고려하여, 다음 쿼리를 사용해 이 샘플 데이터셋을 삽입합니다. 여기서는 `flatten_nested=0`으로 설정합니다.
@@ -610,7 +610,7 @@ JSON의 제약 조건과 입력 형식을 고려하여, 다음 쿼리를 사용�
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
 'JSONEachRow');
 ```
 
@@ -657,7 +657,7 @@ ENGINE = MergeTree  ORDER BY tuple();
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -678,14 +678,14 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
 0 rows in set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
 ```
 
-이 구조를 쿼리하려면 필요한 key의 인덱스를 찾기 위해 [`indexOf`](/ko/reference/functions/regular-functions/array-functions#indexOf) 함수를 사용해야 합니다(이 인덱스는 값의 순서와 일치해야 합니다). 이를 통해 values 배열 컬럼, 즉 `values[indexOf(keys, 'status')]`에 접근할 수 있습니다. 또한 request 컬럼에는 여전히 JSON 파싱 메서드가 필요하며, 여기서는 `simpleJSONExtractString`을 사용합니다.
+이 구조를 쿼리하려면 필요한 키의 인덱스를 찾기 위해 [`indexOf`](/ko/reference/functions/regular-functions/array-functions#indexOf) 함수를 사용해야 합니다(이 인덱스는 값의 순서와 일치해야 합니다). 이를 통해 values 배열 컬럼, 즉 `values[indexOf(keys, 'status')]`에 접근할 수 있습니다. 또한 request 컬럼에는 여전히 JSON 파싱 메서드가 필요하며, 여기서는 `simpleJSONExtractString`을 사용합니다.
 
 ```sql
 SELECT toUInt16(values[indexOf(keys, 'status')])                           AS status,

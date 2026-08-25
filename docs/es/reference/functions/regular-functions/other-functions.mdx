@@ -4938,6 +4938,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+Introducida en: v26.8.0
+
+Función de compatibilidad con el protocolo wire de PostgreSQL, equivalente a `pg_catalog.pg_get_userbyid`.
+Los clientes de PostgreSQL (por ejemplo, el comando `\d` de `psql`) la utilizan para mostrar el propietario de una tabla.
+ClickHouse no realiza un seguimiento de la propiedad de las tablas, por lo que la función ignora el argumento y devuelve el nombre del usuario actual.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
+
+**Sintaxis**
+
+```sql
+pgGetUserById(oid)
+```
+
+**Alias**: `pg_get_userbyid`
+
+**Argumentos**
+
+* `oid` — Identificador de objeto del rol. El valor se ignora. [`UInt32`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Devuelve el nombre del usuario actual. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+Introducida en: v26.8.0
+
+Función de compatibilidad para el protocolo wire de PostgreSQL, análoga a `pg_catalog.pg_table_is_visible`.
+Los clientes de PostgreSQL (por ejemplo, el comando `\d` de `psql`) la utilizan para filtrar las tablas visibles en la ruta de búsqueda.
+Dado que la vista `pg_class` emulada por ClickHouse solo expone las tablas de la base de datos actual, que son todas visibles, la función siempre devuelve `1`.
+
+**Sintaxis**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**Alias**: `pg_table_is_visible`
+
+**Argumentos**
+
+* `oid` — Identificador de objeto de la tabla, tal como se expone en la vista `pg_class` emulada. El valor se ignora. [`UInt32`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Siempre devuelve `1`. [`UInt8`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pgTableIsVisible(0)─┐
+│                   1 │
+└─────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -5567,7 +5651,12 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 Introducido en: v22.6.0
 
 Muestra información sobre el certificado SSL actual del servidor, si se ha configurado.
+Se devuelve un mapa vacío si el servidor no tiene certificado; por ejemplo, cuando el certificado se aprovisiona con ACME y aún no se ha emitido.
 Consulta [Configuración de TLS](/es/concepts/features/security/tls/configuring-tls) para obtener más información sobre cómo configurar ClickHouse para usar certificados OpenSSL para validar las conexiones.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 

@@ -24,24 +24,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 20.4 亿
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
-1 行，耗时：32.726 秒。处理了 20.4 亿行，170.05 KB（6234 万行/秒，5.20 KB/秒）
-峰值内存占用：239.50 MiB。
+1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
+Peak memory usage: 239.50 MiB.
 ```
 
 此存储桶的完整数据集包含超过 320 GB 的 Parquet 文件。在下面的示例中，我们特意使用 glob 模式 来选取其中的子集。
 
-我们假设用户正在消费此日期之后的这部分数据流，例如来自 Kafka 或对象存储。该数据的 schema 如下所示：
+我们假设用户正在消费此日期之后的这部分 stream，例如来自 Kafka 或对象存储。该数据的 schema 如下所示：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -127,12 +127,12 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 15.702 sec. Processed 41.23 million rows, 3.94 GB (2.63 million rows/s., 251.01 MB/s.)
-峰值内存占用: 977.49 MiB.
+Peak memory usage: 977.49 MiB.
 ```
 
 ```sql
@@ -141,7 +141,7 @@ SELECT count() FROM pypi
 
 ```response
 ┌──count()─┐
-│ 20612750 │ -- 2061万
+│ 20612750 │ -- 20.61 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -154,7 +154,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 2061万
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
@@ -163,7 +163,7 @@ Peak memory usage: 682.38 KiB.
 
 假设我们希望加载另一个子集 `{101..200}`。虽然可以直接向 `pypi` 插入数据，但我们也可以通过创建副本表来隔离执行此次回填操作。
 
-如果回填失败，主表不会受到任何影响，只需对副本表执行 [truncate](/zh/concepts/features/operations/delete/truncate) 操作并重新执行即可。
+如果回填失败，主表不会受到任何影响，只需对副本表执行 [清空](/zh/concepts/features/operations/delete/truncate) 操作并重新执行即可。
 
 要创建这些视图的新副本，可以使用带有后缀 `_v2` 的 `CREATE TABLE AS` 子句：
 
@@ -184,12 +184,12 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 17.545 sec. Processed 40.80 million rows, 3.90 GB (2.33 million rows/s., 222.29 MB/s.)
-峰值内存占用：991.50 MiB。
+Peak memory usage: 991.50 MiB.
 ```
 
 ```sql
@@ -199,7 +199,7 @@ FROM pypi_v2
 
 ```response
 ┌──count()─┐
-│ 20400020 │ -- 2040万
+│ 20400020 │ -- 20.40 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -212,11 +212,11 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 2040 万
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
-峰值内存占用: 688.77 KiB.
+Peak memory usage: 688.77 KiB.
 ```
 
 如果在第二次加载过程中的任何时候发生故障，我们只需[清空](/zh/concepts/features/operations/delete/truncate) `pypi_v2` 和 `pypi_downloads_v2`，然后重新加载数据即可。
@@ -254,7 +254,7 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 约 4101 万
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
 1 row in set. Elapsed: 0.003 sec.
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 4101.2770 万
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,12 +288,12 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---持续执行直到所有文件加载完毕，或调用 MOVE PARTITION
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
@@ -304,7 +304,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
   ## 场景 1：在现有数据持续摄取时回填数据
 </div>
 
-在此场景中，我们假设需要回填的数据不在独立的 bucket 中，因此需要进行过滤。数据已经在持续插入，并且可以识别出某个时间戳或单调递增的列，以此确定需要回填的历史数据范围。
+在此场景中，我们假设需要回填的数据不在独立的存储桶中，因此需要进行过滤。数据已经在持续插入，并且可以识别出某个时间戳或单调递增的列，以此确定需要回填的历史数据范围。
 
 该过程包括以下步骤：
 
@@ -327,10 +327,10 @@ FROM pypi
 └─────────────────────┘
 
 1 row in set. Elapsed: 0.163 sec. Processed 1.34 billion rows, 5.37 GB (8.24 billion rows/s., 32.96 GB/s.)
-峰值内存占用: 227.84 MiB.
+Peak memory usage: 227.84 MiB.
 ```
 
-根据上述内容，我们知道需要加载 `2024-12-17 09:00:00` 之前的数据。按照前面介绍的流程，我们创建副本表和视图，并通过基于 timestamp 的过滤器加载这部分子集数据。
+根据上述内容，我们知道需要加载 `2024-12-17 09:00:00` 之前的数据。按照前面介绍的流程，我们创建副本表和视图，并通过基于时间戳的过滤器加载这部分子集数据。
 
 ```sql
 CREATE TABLE pypi_v2 AS pypi
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -352,7 +352,7 @@ WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
 <Note>
-  对 Parquet 中的 timestamp 列进行过滤通常非常高效。ClickHouse 只需读取 timestamp 列即可确定需要加载的完整数据范围，从而尽可能减少网络流量。ClickHouse 查询引擎还可以利用 Parquet 索引，例如最小值-最大值索引。
+  对 Parquet 中的时间戳列进行过滤通常非常高效。ClickHouse 只需读取时间戳列即可确定需要加载的完整数据范围，从而尽可能减少网络流量。ClickHouse 查询引擎还可以利用 Parquet 索引，例如最小值-最大值索引。
 </Note>
 
 此次插入完成后，我们就可以移动相关分区。
@@ -529,7 +529,7 @@ Peak memory usage: 639.47 MiB.
 上述场景中的性能和资源消耗受多种因素影响。在尝试调优之前，建议读者先了解 [Optimizing for S3 Insert and Read Performance guide](/zh/integrations/connectors/data-ingestion/AWS/performance) 中 [Using Threads for Reads](/zh/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 部分详细介绍的插入机制。概括如下：
 
 * **读取并行度** - 用于读取操作的线程数。通过 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 控制。在 ClickHouse Cloud 中，该值由实例规格决定，默认等于 vCPU 数量。提高该值可能会提升读取性能，但代价是更高的内存使用量。
-* **插入并行度** - 用于执行插入操作的线程数。通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 控制。**注意**：该值受 `max_threads` 限制，因此实际插入并行度为 `min(max_insert_threads, max_threads)`。在 ClickHouse Cloud 中，该值由实例大小决定 (介于 2 到 4 之间) ，而在 OSS 中固定为 1。增大该值可能会提升性能，但代价是更高的内存使用量。
+* **插入并行度** - 用于执行插入操作的线程数。通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 控制。对于正值，实际插入并行度为 `min(max_insert_threads, max_threads)`。值为 `0` 时会自动解析为 CPU 核心数，并且可在内存压力下通过 [`max_insert_threads_min_free_memory_per_thread`](/zh/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread) 降低。在 ClickHouse Cloud 中，默认值由实例大小决定：内存为 8 GiB 的节点为 `1`，内存为 16 GiB 的节点为 `2`，更大的节点为 `4`。自 26.8 起，在 OSS 中默认值为 `0`。增大该值可能会提升性能，但代价是更高的内存使用量。
 * **插入块大小** - 数据会在一个循环中处理：先被拉取、解析，再根据[分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)组成为内存中的插入块。这些块随后会被排序、优化、压缩，并作为新的[数据分区片段](/zh/concepts/core-concepts/parts)写入存储。插入块的大小由设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (未压缩) 控制，会影响内存占用和磁盘 I/O。较大的块会占用更多内存，但会生成更少的 parts，从而减少 I/O 和后台合并。这些设置表示最小阈值 (哪个先达到，就会先触发一次刷盘) 。
 * **materialized view 的块大小** - 除了上述适用于主插入的机制外，在插入到 materialized views 之前，块也会先合并，以提升处理效率。这些块的大小由设置 [`min_insert_block_size_bytes_for_materialized_views`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) 和 [`min_insert_block_size_rows_for_materialized_views`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views) 决定。块越大，处理效率通常越高，但代价是内存占用也会增加。默认情况下，这些设置会分别回退到源表设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) 的值。
 

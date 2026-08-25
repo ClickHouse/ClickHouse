@@ -86,6 +86,14 @@ Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un ro
   Los roles asignados manualmente en la base de datos mediante la [convención de nomenclatura `sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) tienen prioridad sobre los roles asignados mediante la consola.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### Requisitos previos
+</div>
+
+Los roles personalizados de base de datos en un servicio dependen de la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) y no se aplican mientras esté deshabilitada. Antes de añadir permisos de datos a un rol, vaya al servicio, abra `Settings` y busque la tarjeta `JWT authentication` en la sección `Security`. Asegúrese de que el interruptor `SQL Console` esté habilitado.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Tarjeta de autenticación con JWT con el interruptor SQL Console habilitado" size="lg" force />
+
 <Steps>
   <Step title="Añadir permisos de datos a un rol" id="add-data-permissions">
     [Cree un rol personalizado](#create-custom-role) o edite uno existente. En el cuadro de diálogo del rol, haga clic en el botón `Allow permissions` y seleccione `Data`.

@@ -1,0 +1,53 @@
+---
+title: '常见问题'
+sidebarTitle: '常见问题'
+description: '有关 ClickHouse 连接器的常见问题'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'FAQ']
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## 常见问题
+</div>
+
+<div id="what-data-leaves-my-environment">
+  ### 哪些数据会离开我的环境？
+</div>
+
+有两种途径会向外发送数据，二者均通过连接器自行建立的出站连接：持续传输运行元数据的抓取路径，以及由您启用并返回诊断信息的支持会话。
+
+抓取器会发送一组固定系统表 (默认包括 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings`) 的结果、运行状况和状态心跳、实例和备份状态，以及连接器自身的指标。默认抓取集特意不包含 `system.query_log`，因此原始 SQL 文本及其中的任何字面量或个人数据，除非您显式添加，否则不会通过抓取路径离开环境。在会话期间，默认表允许列表包含 `system.processes`，该表会显示实时查询文本；如果这些内容必须保持隐藏，请将其从允许列表中移除。
+
+在活跃的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间，故障排查工具还会返回命令输出；其范围仅限于允许列表中的 ClickHouse 表和只读 Kubernetes 视图 (包括 pod (容器组) 日志) ，并会在发送前经过脱敏处理 (使用针对 IP 地址、凭据、标记和密钥的内置模式，以及您自定义的模式) 。您的表数据、备份和查询历史 (`system.query_log`、`system.text_log`) 始终保留在您的环境中。文档中说明的例外情况包括：每次抓取都会传输允许列表中指标历史表 (`system.metric_log`、`system.asynchronous_metric_log`) 的行；除非您将其从允许列表中移除，否则可在会话中通过 `system.processes` 查看实时查询文本；以及在 Kubernetes 支持会话期间读取的 pod (容器组) 日志会在脱敏后离开环境。完整的出站连接列表请参阅[权限模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
+
+<div id="how-do-i-revoke-access">
+  ### 如何撤销 ClickHouse 的访问权限？
+</div>
+
+按措施强度递增的顺序：
+
+1. **终止交互式访问。** 禁用会话：在 VM 主机上运行 `sudo clicklink clctl troubleshoot session disable`，或在 Kubernetes 中通过端口转发运行同一命令并添加 `--gateway-url` (具体命令请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)页面) 。没有活动会话时，即使仍处于连接状态，故障排查工具 也会拒绝执行所有命令。
+2. **阻止后续会话。** 清空 操作员 允许列表 (空允许列表会关闭 网关) ，或禁用 网关；在 VM 上，主机的 root 用户仍可进行本地会话管理。请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
+3. **切断与 ClickHouse Cloud 的连接。** 在网络层阻止到连接器端点的出站流量，或在实施网络策略的 CNI 中清空 `networkPolicy.allowEgressCIDRs`；连接器仅发起出站连接，因此 ClickHouse Cloud 没有可用于恢复连接的入站路径。对 ClickHouse 的本地读取仍会继续，直到停止或卸载工作负载；这才是彻底停止。
+4. **撤销凭据。** 删除 `pcm_scraper` 和 `pcm_troubleshooter` 这两个 ClickHouse 用户，并删除连接器的 Secrets (Kubernetes) 或 `/etc/clicklink` 下的文件 (VM) 。
+5. **完全移除连接器。** 请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
+
+<div id="air-gapped-and-mirrors">
+  ### 我可以在隔离网络环境中运行，或使用自己的镜像吗？
+</div>
+
+可以。所有安装时所需的制品都可以来自安全边界内部：从 `releases.clicklink.clickhouse.com` 和公网 registry 镜像 命令行客户端 tarball 和容器镜像，将 `image.repository` 指向你的镜像仓库，并通过 `--chart` 传入 `oci://` 引用、URL 或本地归档文件 (同时指定 `--chart-version`；默认使用命令行客户端自身的版本) 。如果你的 连接器 API 端点位于安全边界内部，并使用私有 CA 提供服务，`--api-private-ca` (Kubernetes) 或 `api.tls.ca_file` (VM) 会根据注册包中的证书链对其进行验证。对于无法直接连接时的注册，`init --handoff` 会使用通过带外方式获取的包；`--no-auto-sign` 配合 `init --signed-cert` 可通过带外方式完成证书签名。请参阅[私有镜像](/zh/products/bring-your-own-cloud/connector/configuration)和[onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)中的隔离网络部分。请注意，连接器 在运行时仍需要一条通往你的 org 的 连接器 API 端点的路由；否则，ClickHouse Cloud 将不会收到任何 遥测数据。
+
+<div id="connector-down">
+  ### 如果连接器宕机，会发生什么？
+</div>
+
+您的 ClickHouse 服务不会受到影响：连接器仅从中读取数据，不位于任何数据路径上。影响在于可观测性丢失，因此 ClickHouse Cloud 将停止接收遥测数据，支持会话也会在其恢复前不可用。在 VM 上，只要 API 端点不可达，抓取器就会将抓取的数据暂存到 `/var/lib/clicklink/buffer` (默认最多保留 168 小时或 1024 MB) ，并在重新连接后发送，因此端点中断不会导致遥测数据丢失；崩溃的守护进程会由 systemd 重启，在 Kubernetes 上则由 kubelet 节点代理重启。要进行诊断，请检查每个组件的 `/livez` 端点 (以 JSON `status` 字段为准，而非 HTTP 状态码) ，并运行 `clicklink clctl preflight` (在 VM 主机上使用 `sudo`) 。该命令会一次性检查配置、连接性、ClickHouse 可达性、访问权限和磁盘。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)；如果连接器持续处于不健康状态，请联系 ClickHouse 支持团队。
+
+<div id="support-session-auditing">
+  ### 如何审计支持会话？
+</div>
+
+每次网关调用和每条故障排查命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log` 审计日志，并逐条记录归属信息：网关调用记录由令牌验证的操作员邮箱地址 (绝不采用自行申报的姓名) ；VM 本地会话变更记录发起调用的主机用户；会话期间执行的命令则记录已通过身份验证的通道中的 org 身份。会话本身设有时限 (默认 4 小时，最长 24 小时) ，每次启用都会记录启用者、到期时间及可选原因，`clicklink clctl troubleshoot session status` 会显示这些信息。
+
+使用 `clicklink clctl troubleshoot audit tail` 读取日志；在 Kubernetes 上，该命令是受支持的读取方式 (运行时镜像不包含 shell) 。在默认设置 `persistence.enabled: true` 下，日志存储在 故障排查工具 的持久卷中，因此即使 pod (容器组) 被重新调度，审计记录仍会保留。禁用持久化后，审计日志和会话状态的生命周期将与 pod (容器组) 一致，chart 本身也将此配置标记为仅适用于本地开发。默认情况下，日志轮转会保留 5 个文件，每个文件最大 128 MB，保留 168 小时；如需调整，请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)；有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。

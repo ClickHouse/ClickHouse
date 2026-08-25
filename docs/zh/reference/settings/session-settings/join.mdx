@@ -17,9 +17,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "已弃用 'default'，改为显式指定 join 算法，同时现在优先使用 parallel_hash 而不是 hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "将 `ie_join` 追加到默认列表，因此 `ON` 部分仅包含不等式条件的连接将使用 IEJoin 执行，而非使用带过滤器的 `CROSS JOIN`。由于它位于最后，仅在其他算法不适用时才会使用。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "已弃用 'default'，改为显式指定 join 算法，同时现在优先使用 parallel_hash 而不是 hash"}]}]} />
 
 指定使用哪种 [JOIN](/zh/reference/statements/select/join) 算法。
 
@@ -60,7 +60,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 `RIGHT JOIN` 和 `FULL JOIN` 仅在 `ALL` 严格性 下受支持 (不支持 `SEMI`、`ANTI`、`ANY` 和 `ASOF`) 。
 
-使用 `partial_merge` 算法时，ClickHouse 会对数据进行排序并将其写入磁盘。ClickHouse 中的 `partial_merge` 算法与经典实现略有不同。首先，ClickHouse 会按连接键对右表分块排序，并为已排序的块创建 min-max 索引。然后，它会按 `join key` 对左表的各个部分进行排序，并与右表执行连接。min-max 索引也会用于跳过不需要读取的右表块。
+使用 `partial_merge` 算法时，ClickHouse 会对数据进行排序并将其转储到磁盘。ClickHouse 中的 `partial_merge` 算法与经典实现略有不同。首先，ClickHouse 会按连接键对右表数据进行分块排序，并为已排序的块创建 min-max 索引。然后，它会按 `join key` 对左表的分片进行排序，并将其与右表连接。min-max 索引还用于跳过不需要的右表块。
 
 * direct
 
@@ -83,7 +83,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 基于排序的 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 算法，适用于其 `ON` 部分包含两个参与连接表表达式之间不等比较 (`<`、`<=`、`>`、`>=`) 的 `JOIN`。支持 `ALL INNER/LEFT/RIGHT/FULL JOIN` 和 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`。
 
-在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
+在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等式条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
 
 连接前，两个输入都会累积到内存中：[`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) 和 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 会限制两侧合计的累积输入 (而不只是右侧)，溢出时的操作由 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 设置；operator 在累积输入之上构建的排序索引不计入该限制。连接 operator 本身在单个线程中运行；只有输入在连接前的排序会并行执行。
 

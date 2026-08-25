@@ -61,17 +61,17 @@ ClickHouse предоставляет широкий набор инструме
 
 Мы используем реальный пример, чтобы показать, как подходим к оптимизации производительности запросов. 
 
-Возьмём датасет NYC Taxi, содержащий данные о поездках на такси в Нью-Йорке. Сначала загрузим датасет NYC Taxi без какой-либо оптимизации.
+Возьмём набор данных NYC Taxi, содержащий данные о поездках на такси в Нью-Йорке. Сначала загрузим набор данных NYC Taxi без какой-либо оптимизации.
 
 Ниже приведена команда для создания таблицы и вставки данных из S3 бакета. Обратите внимание, что здесь мы намеренно определяем схему автоматически по данным, то есть без оптимизации.
 
 ```sql
--- Создание таблицы с автоматически определённой схемой
+-- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
--- Вставка данных в таблицу с автоматически определённой схемой
+-- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
 SELECT *
 FROM s3Cluster
@@ -81,7 +81,7 @@ FROM s3Cluster
 Давайте посмотрим на схему таблицы, автоматически определённую на основе данных.
 
 ```sql
---- Показать автоматически выведенную схему таблицы
+--- Display inferred table schema
 SHOW CREATE TABLE trips_small_inferred
 ```
 

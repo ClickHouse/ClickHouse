@@ -454,9 +454,9 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   ## hasAllTokens
 </div>
 
-Добавленный в: v25.10.0
+Добавлено в: v25.10.0
 
-Аналогично [`hasAnyTokens`](#hasAnyTokens), но возвращает 1, если все токены строки или массива `needle` совпадают со строкой `input`, и 0 в противном случае. Если `input` является столбцом, возвращает все строки, удовлетворяющие этому условию.
+Аналогично [`hasAnyTokens`](#hasAnyTokens), но возвращает 1, если все токены в строке или массиве `needle` совпадают со строкой `input`, и 0 в противном случае. Если `input` — столбец, возвращаются все строки, удовлетворяющие этому условию.
 
 <Note>
   Для столбца `input` должен быть определён [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для достижения оптимальной производительности.
@@ -485,24 +485,24 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **Синтаксис**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Псевдонимы**: `hasAllToken`
 
 **Аргументы**
 
-* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array)
+* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array) или [`Array(Nullable(String))`](/ru/reference/data-types/array) или [`Array(Nullable(FixedString))`](/ru/reference/data-types/array)
 * `needles` — Искомые токены. [`String`](/ru/reference/data-types/string) или [`Array(String)`](/ru/reference/data-types/array)
-* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если он явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
+* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если он явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Возвращает 1, если все токены найдены, иначе 0. [`UInt8`](/ru/reference/data-types/int-uint)
+Возвращает 1, если все искомые элементы совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
-**Базовое использование со строковым токеном**
+**Базовое использование со строковым значением**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **Синтаксис**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Псевдонимы**: `hasAnyToken`
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array) или [`Array(Nullable(String))`](/ru/reference/data-types/array) или [`Array(Nullable(FixedString))`](/ru/reference/data-types/array)
 * `needles` — Искомые токены. [`String`](/ru/reference/data-types/string) или [`Array(String)`](/ru/reference/data-types/array)
-* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
+* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите токены в массиве как есть, без токенизации (AS-IS)**
+**Укажите искомые токены в массиве AS-IS (без токенизации)**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -913,7 +913,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 Перед поиском функция токенизирует аргументы `input` и `phrase` с помощью токенизатора, указанного для текстового индекса.
 Если для столбца не определен текстовый индекс, вместо него используется токенизатор `splitByNonAlpha` — если только токенизатор не передан как необязательный третий аргумент.
-Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` или `icu`.
+Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` или `icu`.
+Обратите внимание, что `splitByRegexp` не поддерживается для `hasPhrase`, когда текстовый индекс также определяет постпроцессор.
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
@@ -1538,7 +1539,7 @@ SELECT locate('ca', 'abcabc')
 
 Если вам нужно просто искать подстроки, вместо этой функции можно использовать [`like`](#like) или [`position`](#position) — они работают значительно быстрее.
 
-Альтернативный синтаксис оператора: `haystack REGEXP pattern`.
+Альтернативный синтаксис оператора: `haystack REGEXP pattern` или `haystack ~ pattern` (в стиле PostgreSQL).
 
 **Синтаксис**
 
@@ -1593,6 +1594,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
 │                      1 │                        0 │
 └────────────────────────┴──────────────────────────┘
+```
+
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+Добавленный в: v26.8.0
+
+Аналогична [`match`](#match), но выполняет сопоставление без учёта регистра.
+
+Эта функция использует библиотеку регулярных выражений RE2. Поддерживаемый синтаксис см. в [re2](https://github.com/google/re2/wiki/Syntax).
+
+Альтернативный синтаксис оператора: `haystack ~* pattern` (в стиле PostgreSQL).
+
+**Синтаксис**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**Аргументы**
+
+* `haystack` — Строка, в которой ищется шаблон. [`String`](/ru/reference/data-types/string)
+* `pattern` — Шаблон регулярного выражения. Может быть константой или поступать из столбца. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает `1`, если найдено регистронезависимое совпадение с шаблоном, иначе — `0`. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseIns⋯ 'hello.*')─┬─'Hello World' ~* 'HELLO.*'─┐
+│                        1 │                          1 │
+└──────────────────────────┴────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAllIndices">
@@ -2892,6 +2935,90 @@ SELECT notLike('ClickHouse', '%SQL%');
 ┌─notLike('Cli⋯', '%SQL%')─┐
 │                        1 │
 └──────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+Добавленный в: v26.8.0
+
+Аналогична [`match`](#match), но инвертирует результат: проверяет, что строка не соответствует шаблону регулярного выражения.
+
+Эта функция использует библиотеку регулярных выражений RE2. Поддерживаемый синтаксис см. в [re2](https://github.com/google/re2/wiki/Syntax).
+
+Альтернативный синтаксис оператора: `haystack !~ pattern` (в стиле PostgreSQL).
+
+**Синтаксис**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**Аргументы**
+
+* `haystack` — Строка, в которой ищется шаблон. [`String`](/ru/reference/data-types/string)
+* `pattern` — Шаблон регулярного выражения. Может быть константой или поступать из столбца. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает `0`, если найдено совпадение с шаблоном, иначе — `1`. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+Добавленный в: v26.8.0
+
+Аналогична [`matchCaseInsensitive`](#matchCaseInsensitive), но инвертирует результат: проверяет, что строка регистронезависимо не соответствует шаблону регулярного выражения.
+
+Эта функция использует библиотеку регулярных выражений RE2. Поддерживаемый синтаксис см. в [re2](https://github.com/google/re2/wiki/Syntax).
+
+Альтернативный синтаксис оператора: `haystack !~* pattern` (в стиле PostgreSQL).
+
+**Синтаксис**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**Аргументы**
+
+* `haystack` — Строка, в которой ищется шаблон. [`String`](/ru/reference/data-types/string)
+* `pattern` — Шаблон регулярного выражения. Может быть константой или поступать из столбца. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает `0`, если найдено регистронезависимое совпадение с шаблоном, иначе — `1`. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
 ```
 
 <div id="position">
