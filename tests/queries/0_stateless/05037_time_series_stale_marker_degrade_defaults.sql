@@ -224,3 +224,53 @@ DROP TABLE ts;
 DROP TABLE ts_tags;
 DROP TABLE ts_samples;
 DROP TABLE ts_recent;
+
+SELECT '-- a marker older than the recent window keeps its flag while a newer one in the window degrades';
+
+-- The degrade must be per row, not per query: the recent table can only serve rows inside its TTL
+-- window, so only those can read differently through the two paths. Degrading the whole range
+-- instead cast the 90-minute-old marker to an ordinary NaN sample just because the range also
+-- reached into the window.
+CREATE TABLE ts_tags
+(
+    id UInt64,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time DateTime64(3),
+    max_time DateTime64(3)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE ts_samples
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64,
+    is_stale_marker UInt8
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+CREATE TABLE ts_recent
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
+    (303, 'm', map(), now64(3) - INTERVAL 90 MINUTE, now64(3) - INTERVAL 10 MINUTE);
+INSERT INTO ts_samples (id, timestamp, value, is_stale_marker) VALUES
+    (303, now64(3) - INTERVAL 90 MINUTE, nan, 1),
+    (303, now64(3) - INTERVAL 10 MINUTE, nan, 1);
+
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 3600 SAMPLES ts_samples TAGS ts_tags RECENT SAMPLES ts_recent;
+
+-- Reaches past the window: the old marker keeps its flag, the one inside the window does not.
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 2 HOUR, now())
+SETTINGS time_series_prefer_recent_samples_table = 0;
+-- Wholly inside the window: only the newer row matches, and it degrades.
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 30 MINUTE, now())
+SETTINGS time_series_prefer_recent_samples_table = 0;
+
+DROP TABLE ts;
+DROP TABLE ts_tags;
+DROP TABLE ts_samples;
+DROP TABLE ts_recent;

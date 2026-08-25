@@ -13,3 +13,6 @@
 -- a range crossing the recent TTL boundary degrades like one wholly inside it
 2	0
 2	0
+-- a marker older than the recent window keeps its flag while a newer one in the window degrades
+2	1
+1	0

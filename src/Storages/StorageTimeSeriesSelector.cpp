@@ -470,7 +470,7 @@ namespace
                            const DataTypePtr & id_data_type,
                            const DataTypePtr & timestamp_data_type,
                            const DataTypePtr & scalar_data_type,
-                           bool has_stale_marker_column)
+                           ASTPtr is_stale_marker_expression)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -500,8 +500,7 @@ namespace
             /// such tables behaved before the column existed.
             select_list.push_back(makeASTFunction(
                 "_CAST",
-                has_stale_marker_column ? static_cast<ASTPtr>(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker))
-                                        : static_cast<ASTPtr>(make_intrusive<ASTLiteral>(UInt64{0})),
+                std::move(is_stale_marker_expression),
                 make_intrusive<ASTLiteral>(std::make_shared<DataTypeUInt8>()->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::IsStaleMarker);
 
@@ -837,11 +836,9 @@ void StorageTimeSeriesSelector::readImpl(
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
-    bool range_fits_recent_window = false;
-    /// Whether any part of the range is also covered by the recent samples table. The degrade below keys
-    /// off this, not off the stricter "fits": a row inside the window must read the same way whether or
-    /// not the query happens to start before the boundary.
-    bool range_overlaps_recent_window = false;
+    /// The oldest timestamp the recent samples table is still guaranteed to hold, when it has a TTL.
+    /// Rows below it exist only in the main samples table.
+    std::optional<Int64> recent_window_start;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
     if (recent_samples_ttl_seconds)
     {
@@ -849,11 +846,11 @@ void StorageTimeSeriesSelector::readImpl(
         static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
         Int64 now_seconds = std::time(nullptr);
-        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
+        recent_window_start = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
             * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
-        range_fits_recent_window = config.min_time.value >= min_guaranteed_time;
-        range_overlaps_recent_window = config.max_time.value >= min_guaranteed_time;
     }
+    const bool range_fits_recent_window = recent_window_start && config.min_time.value >= *recent_window_start;
+    const bool range_overlaps_recent_window = recent_window_start && config.max_time.value >= *recent_window_start;
     if (range_fits_recent_window && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table]
         && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
     {
@@ -890,11 +887,13 @@ void StorageTimeSeriesSelector::readImpl(
     /// cannot represent that flag; such tables keep their pre-column behavior - every row reads as an
     /// ordinary non-stale sample - so an upgrade does not break existing tables.
     const bool read_table_has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
-    bool has_stale_marker_column = read_table_has_stale_marker_column;
-    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) whenever the sibling also covers part of
-    /// this range - only there can the read paths diverge, and keying off the whole range instead would make
-    /// one and the same row read as stale or not depending on where the query starts.
-    if (has_stale_marker_column)
+    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) only for the rows the sibling table
+    /// could serve too - just those can read differently through the two paths. Reading `samples`, that is
+    /// the recent window alone, so a marker older than the window keeps its flag; reading `recent_samples`
+    /// the whole range is inside the window, and `samples` covers all of it, so every row degrades.
+    bool degrade_whole_range = false;
+    std::optional<Int64> degrade_from_timestamp;
+    if (read_table_has_stale_marker_column)
     {
         const auto sibling_kind = (samples_table_kind == ViewTarget::Samples) ? ViewTarget::RecentSamples : ViewTarget::Samples;
         const bool sibling_can_serve_range = (sibling_kind == ViewTarget::Samples) || range_overlaps_recent_window;
@@ -902,9 +901,16 @@ void StorageTimeSeriesSelector::readImpl(
         {
             auto sibling_metadata = time_series_storage->getTargetTable(sibling_kind, context)->getInMemoryMetadataPtr(context, false);
             if (!sibling_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
-                has_stale_marker_column = false;
+            {
+                if (sibling_kind == ViewTarget::Samples || range_fits_recent_window)
+                    degrade_whole_range = true;
+                else
+                    degrade_from_timestamp = recent_window_start;
+            }
         }
     }
+    /// The inner query reads the column whenever the expression below still refers to it.
+    const bool has_stale_marker_column = read_table_has_stale_marker_column && !degrade_whole_range;
     /// Informational, not a warning: a samples table without the column is a supported configuration
     /// that keeps its previous behavior. It would otherwise be reported on *every* query against such a
     /// table, which also puts it on the client's stderr at the default send_logs_level.
@@ -965,12 +971,27 @@ void StorageTimeSeriesSelector::readImpl(
         std::move(whole_metric_id_range_conditions),
         has_stale_marker_column);
 
+    ASTPtr is_stale_marker_expression = make_intrusive<ASTLiteral>(UInt64{0});
+    if (has_stale_marker_column)
+    {
+        is_stale_marker_expression = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker);
+        if (degrade_from_timestamp)
+            is_stale_marker_expression = makeASTFunction(
+                "if",
+                makeASTFunction(
+                    "greaterOrEquals",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    timeSeriesTimestampToAST(DateTime64{*degrade_from_timestamp}, config.timestamp_data_type)),
+                make_intrusive<ASTLiteral>(UInt64{0}),
+                std::move(is_stale_marker_expression));
+    }
+
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type,
-        has_stale_marker_column);
+        std::move(is_stale_marker_expression));
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
