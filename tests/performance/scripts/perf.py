@@ -283,6 +283,14 @@ parser.add_argument(
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
 )
+parser.add_argument(
+    "--pr-number",
+    type=int,
+    default=0,
+    help="Number of the pull request under test. A setup query marked "
+    'do_not_check_in_pr="<this number>" is allowed to fail on the reference '
+    "server. With the default 0 no failure is tolerated.",
+)
 args = parser.parse_args()
 
 if args.min_runs is not None:
@@ -573,29 +581,39 @@ if has_shell_queries and (args.user != "default" or args.password != "" or args.
         "Remove these options, or run this test without shell-script queries."
     )
 
-# Setup queries (create_query/fill_query) paired with their check_reference flag value.
-# If `check_reference="0"`, the query is not checked on the reference server. Useful for newly added features.
-# findall("./*") + tag filter, not one findall per tag, to keep the document order of the queries.
-create_query_templates = []
-for e in root.findall("./*"):
-    if e.tag not in ("create_query", "fill_query"):
-        continue
-    check_reference = e.get("check_reference", "1")
-    if check_reference not in ("0", "1"):
+# Setup queries, in document order. The do_not_check_in_pr attribute is honoured only on these elements.
+setup_query_elements = [e for e in root.findall("./*") if e.tag in ("create_query", "fill_query")]
+
+for e in root.iter():
+    if "do_not_check_in_pr" in e.attrib and e not in setup_query_elements:
         raise Exception(
-            f'Invalid check_reference="{check_reference}" on <{e.tag}> '
-            'in the test file: must be "0" or "1"'
+            "do_not_check_in_pr is only allowed on top-level <create_query> "
+            f"and <fill_query> elements, but was found on <{e.tag}>"
         )
-    create_query_templates.append((e.text, check_reference == "1"))
 
-# Statements extracted from <query file=...> have no element to carry the attribute.
-create_query_templates += [(template, True) for template in extra_create_queries]
-
-if has_shell_queries and any(not checked for _, checked in create_query_templates):
+if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_query_elements):
     raise Exception(
-        'check_reference="0" is not compatible with shell queries: a shell '
+        "do_not_check_in_pr is not compatible with shell queries: a shell "
         "performance test must run on every server to be comparable"
     )
+
+# Setup queries paired with a flag. Tolerate query's failure on the reference server
+# only when do_not_check_in_pr matches --pr-number.
+create_query_templates = []
+for e in setup_query_elements:
+    attr = e.get("do_not_check_in_pr")
+    if attr is not None and not re.fullmatch("[1-9][0-9]*", attr):
+        raise Exception(
+            f'Invalid do_not_check_in_pr="{attr}" on <{e.tag}> in the test '
+            "file: must be the number of the pull request that introduces "
+            "the test (a positive integer)"
+        )
+    create_query_templates.append(
+        (e.text, attr is not None and int(attr) == args.pr_number)
+    )
+
+# <query file=...> have no element to carry the attribute. We can add support for it later if needed.
+create_query_templates += [(template, False) for template in extra_create_queries]
 
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
@@ -748,15 +766,15 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# One-line summary per connection whose check_reference="0" setup query failed there (the traceback goes to stderr).
+# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
 setup_error_on_connection = [None] * len(all_connections)
 
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both servers, to save time.
     create_queries = []
-    for template, check_reference in create_query_templates:
+    for template, tolerate_on_reference in create_query_templates:
         create_queries += [
-            (q, check_reference) for q in substitute_parameters([template])
+            (q, tolerate_on_reference) for q in substitute_parameters([template])
         ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
@@ -768,17 +786,18 @@ if not args.use_existing_tables:
             sys.exit(1)
 
     def do_create(connection, index, queries):
-        for q, check_reference in queries:
+        for q, tolerate_on_reference in queries:
             try:
                 connection.execute(q)
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
-                if index != 0 or check_reference:
+                if index != 0 or not tolerate_on_reference:
                     raise
 
                 message = (
-                    'setup query failed on the reference server (check_reference="0"), '
+                    "setup query failed on the reference server and is tolerated "
+                    f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
                     f"running the test on the new server only: {tsv_escape(q)[:200]}"
                 )
                 print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
@@ -859,9 +878,9 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    # A connection whose check_reference="0" setup query failed starts out
-    # already failed for every query, so the partial ("backward-incompatible")
-    # machinery excludes it from the comparison.
+    # A connection whose tolerated (do_not_check_in_pr) setup query failed
+    # starts out already failed for every query, so the partial
+    # ("backward-incompatible") machinery excludes it from the comparison.
     query_error_on_connection = list(setup_error_on_connection)
     for conn_index, c in enumerate(all_connections):
         if query_error_on_connection[conn_index]:

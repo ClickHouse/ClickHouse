@@ -57,13 +57,13 @@ If your test takes more than 10 minutes, please, add tag `long` to have an oppor
 
 ### Setup queries that cannot run on the reference server
 
-A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `check_reference="0"`:
+A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `do_not_check_in_pr="<number of your PR>"`:
 
 ```xml
-<create_query check_reference="0">CREATE TABLE tab (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS new_setting = 1</create_query>
+<create_query do_not_check_in_pr="12345">CREATE TABLE tab (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS new_setting = 1</create_query>
 ```
 
-When such a query fails on the reference server, the remaining setup queries are skipped there, the whole test runs on the new server only, and its queries are reported under "Backward-incompatible queries" instead of failing the check. Failures of a setup query on the new server, and failures of setup queries without the attribute, still fail the test. The attribute is not compatible with `<query type="shell">` in the same test, because shell queries must run on every server to be comparable. Remove the attribute in a follow-up PR after the feature reaches master, so the test goes back to comparing both servers.
+When such a query fails on the reference server, the remaining setup queries are skipped there, the whole test runs on the new server only, and its queries are reported under "Backward-incompatible queries" instead of failing the check. The attribute is only allowed on top-level `create_query`/`fill_query` elements, is validated in every run, and is not compatible with `<query type="shell">` in the same test.
 
 ### Shell-script queries
 
