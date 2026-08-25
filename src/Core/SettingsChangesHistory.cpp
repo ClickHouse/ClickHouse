@@ -1424,7 +1424,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_unreserved_disk_space_for_merge", 0, 0, "New setting to keep some unreserved disk space out of reach of background merges, so that they cannot starve inserts."},
-        });
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
         });
 
