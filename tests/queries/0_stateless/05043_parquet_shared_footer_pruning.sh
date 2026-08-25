@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 # Regression: when the Parquet footer is served from the shared metadata
 # cache, the bloom-filter and dictionary pruning paths must not read the
 # by-value file_metadata member that the cached flow never populates.
@@ -30,7 +31,7 @@ $CLICKHOUSE_CLIENT -q "$BF_QUERY SETTINGS $BF_SETTINGS" --query_id="${QID_PREFIX
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 diff "$WORKING_DIR/bf1.tsv" "$WORKING_DIR/bf2.tsv"
-$CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}bf2' AND type='QueryFinish'"
+$CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}bf2' AND type='QueryFinish' AND current_database = currentDatabase()"
 
 # --- dictionary path: file with a dictionary-encoded column ---
 DICT_FILE="${WORKING_DIR}/dict.parquet"
@@ -45,4 +46,4 @@ $CLICKHOUSE_CLIENT -q "$DICT_QUERY" --query_id="${QID_PREFIX}dict2" > "$WORKING_
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 diff "$WORKING_DIR/dict1.tsv" "$WORKING_DIR/dict2.tsv"
-$CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}dict2' AND type='QueryFinish'"
+$CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ParquetMetadataCacheHits'] > 0 FROM system.query_log WHERE query_id='${QID_PREFIX}dict2' AND type='QueryFinish' AND current_database = currentDatabase()"
