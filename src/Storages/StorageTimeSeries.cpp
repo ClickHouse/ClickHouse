@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,7 +22,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
@@ -369,6 +373,8 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 }
 
 
+/// TODO: Return the row count of the inner "tags" table instead of the sum over all the inner tables:
+/// it matches `SELECT count()` without FINAL, allowing the trivial count optimization.
 std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     if (!hasInnerTables())
@@ -646,16 +652,27 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals()
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Run the generated read query on a child context with a few settings pinned so its results
+    /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = Context::createCopy(local_context);
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(query_info.isFinal()));
+
+    NameSet requested_columns{column_names.begin(), column_names.end()};
+    auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, /* subquery_depth_ = */ 0, /* is_subquery_ = */ false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 

@@ -35,6 +35,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -350,9 +351,12 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 

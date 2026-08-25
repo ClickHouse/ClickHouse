@@ -219,6 +219,13 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
+size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// `ReadFromMemoryStorageStep::makePipe` clamps the stream count by the number of blocks
+    /// and produces a single source for an empty table or a delayed global-subquery read.
+    return std::min(num_streams, std::max(1uz, data.get()->size()));
+}
+
 void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -334,12 +341,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
     const auto final_status = executor.getExecutionStatus();
     const bool cancelled
-        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+        = final_status == PipelineExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutionStatus::CancelledByUser;
 
     auto throw_on_cancellation = [&]
     {
-        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+        if (final_status == PipelineExecutionStatus::CancelledByTimeout)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
     };

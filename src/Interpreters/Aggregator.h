@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -169,6 +170,20 @@ public:
         bool enable_parallel_single_level_merge = false;
 
         bool serialize_string_with_zero_byte = false;
+
+        struct TopKParams
+        {
+            /// LIMIT values above this never get the optimization; keeps the heap
+            /// arithmetic and preallocation trivially safe.
+            static constexpr size_t max_k = 100000;
+
+            size_t k = 0;                           /// the query's LIMIT K (heap capacity)
+            std::vector<int> directions;            /// per-column ORDER BY directions
+            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
+            UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
+        };
+        std::optional<TopKParams> top_k;
 
         /// Use the `PackedStringRef`-based hash table for a single non-nullable `String` key
         /// (`key_packed_string`); if false, fall back to the legacy `StringHashTable`-based method
@@ -584,6 +599,7 @@ private:
     void executeImpl(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -606,11 +622,12 @@ private:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     requires MapAggregationState<State>
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -620,12 +637,22 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
+    struct DestroyedState
+    {
+        AggregateDataPtr slot;
+        size_t row;
+    };
+
+    template <typename Method>
+    void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
+
     /// A set method has no aggregate states: the batch only registers the keys.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     requires SetAggregationState<State>
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -637,9 +664,15 @@ private:
 
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k, typename Method, typename State>
     void executeImplBatchNoAggregates(
-        Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const;
+        Method & method,
+        State & state,
+        const ColumnRawPtrs & key_columns,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool all_keys_are_const) const;
 
     void initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const;
 

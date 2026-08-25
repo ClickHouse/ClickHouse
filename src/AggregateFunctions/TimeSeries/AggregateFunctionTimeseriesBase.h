@@ -64,8 +64,6 @@ class AggregateFunctionTimeseriesBase :
     public IAggregateFunctionHelper<AggregateFunctionTimeseriesBase<FunctionImpl, Traits>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
-
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeseriesBase<FunctionImpl, Traits>>;
 
     using TimestampType = typename Traits::TimestampType;
@@ -398,7 +396,7 @@ protected:
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
-        auto aggregator = derived().createAggregator(buckets.size());
+        auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(buckets.size()));
 
         /// Visit the populated buckets in ascending index order, feeding each into the sliding window when its
         /// grid point's window reaches it. When most bucket slots are populated (`use_range_scan`) looking each
@@ -509,7 +507,9 @@ private:
     /// the sparse path uses `::sort` (pdqsort).
     static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.35;
 
-    static constexpr UInt16 FORMAT_VERSION = FunctionImpl::FORMAT_VERSION;
+    /// The serialized state is the set of buckets, so the format version is defined by the traits
+    /// (which define the bucket type).
+    static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
 
     /// Validates and normalizes the grid step. For a single-point grid (`start == end`) the step is irrelevant, so it
     /// is normalized to 0 (making each window a single bucket); otherwise it must be positive.
@@ -950,6 +950,32 @@ private:
             : ((bucket_index % 2 != 0) ? odd_bucket_width : even_bucket_width));
         /// `end - (width - 1)` is the bucket's start, which is always representable (`width >= 1`), so the arithmetic can't overflow.
         return {static_cast<TimestampType>(toInt64(end_time) - (bucket_width - 1)), end_time};
+    }
+
+    /// Chooses the two-stacks queue size for a sliding aggregator that combines per-bucket `Traits::Summary`
+    /// values with a non-invertible `SlidingSum`; the result is passed to the derived class's `createAggregator`.
+    /// Traits opt into the two-stacks strategy by defining the thresholds; otherwise the stack size is unused and 0 is returned.
+    /// The enable threshold is compared to the average number of populated buckets per window (not the dense
+    /// maximum), so sparse data stays on the cheaper recompute path; the hard cap still forces two-stacks
+    /// for large windows, where a low average can hide a locally dense window.
+    size_t getStackSizeForTwoStacks(size_t num_populated_buckets) const
+    {
+        if constexpr (requires { Traits::AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS; Traits::BPW_TO_FORCE_TWO_STACKS; })
+        {
+            const size_t avg_buckets_in_window = bucket_count
+                ? static_cast<size_t>(static_cast<double>(buckets_per_window) * static_cast<double>(num_populated_buckets)
+                    / static_cast<double>(bucket_count))
+                : 0;
+            const bool use_two_stacks = avg_buckets_in_window >= Traits::AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
+                || buckets_per_window >= Traits::BPW_TO_FORCE_TWO_STACKS;
+            /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
+            /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
+            return use_two_stacks ? std::min(buckets_per_window, num_populated_buckets) : 0;
+        }
+        else
+        {
+            return 0;
+        }
     }
 
     static const State * data(ConstAggregateDataPtr __restrict place)

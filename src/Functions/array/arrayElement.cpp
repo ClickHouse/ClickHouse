@@ -10,6 +10,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,6 +24,7 @@
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -2102,20 +2104,28 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     const auto & values_data = col_map->getNestedData().getColumn(1);
     const auto & offsets = nested_column.getOffsets();
 
+    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
+
+    /// A map with Enum keys can be indexed by the name of an enum value, e.g. `m['name']`.
+    /// Cast the index to the key type, so it is matched by the numeric value of the enum.
+    ColumnPtr index_column = arguments[1].column;
+    if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(arguments[1].type)))
+        index_column = castColumn(arguments[1], type_map.getKeyType());
+
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
 
     bool executed = false;
-    if (!isColumnConst(*arguments[1].column))
+    if (!isColumnConst(*index_column))
     {
-        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data)
-            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data);
+        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *index_column, indices_data)
+            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *index_column, indices_data);
     }
     else
     {
-        Field index = (*arguments[1].column)[0];
+        Field index = (*index_column)[0];
         executed = matchKeyToIndexNumberConst(keys_data, offsets, index, indices_data)
             || matchKeyToIndexStringConst(keys_data, offsets, index, indices_data);
     }
@@ -2131,8 +2141,6 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     ColumnPtr values_array = ColumnArray::create(values_data.getPtr(), nested_column.getOffsetsPtr());
     if (col_const_map)
         values_array = ColumnConst::create(values_array, input_rows_count);
-
-    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
 
     /// Prepare arguments to call arrayElement for array with values and calculated indices at previous step.
     ColumnsWithTypeAndName new_arguments

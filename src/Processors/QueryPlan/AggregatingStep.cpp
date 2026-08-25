@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
@@ -126,6 +127,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     return false;
 }
 
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;
@@ -210,6 +222,11 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
+{
+    params.top_k = std::move(top_k);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -866,6 +883,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+
+    if (params.bucket_top_k)
+        settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
+                     << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -873,6 +894,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (params.bucket_top_k)
+    {
+        auto bucket_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        bucket_top_k_map->add("Limit", params.bucket_top_k);
+        bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
+        map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
     map.add("Skip merging", skip_merging);
 }
 

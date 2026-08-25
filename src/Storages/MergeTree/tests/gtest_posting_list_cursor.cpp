@@ -44,10 +44,7 @@ TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
     TokenPostingsInfo info;
     info.cardinality = static_cast<UInt32>(doc_ids.size());
 
-    auto bitmap = std::make_shared<roaring::Roaring>();
-    for (auto id : doc_ids)
-        bitmap->add(id);
-    info.embedded_postings = bitmap;
+    info.embedded_postings.assign(doc_ids.begin(), doc_ids.end());
 
     if (!doc_ids.empty())
     {
@@ -74,8 +71,7 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
     auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
-    if (info.embedded_postings)
-        info.embedded_postings->toUint32Array(flat->data());
+    std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
     return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
