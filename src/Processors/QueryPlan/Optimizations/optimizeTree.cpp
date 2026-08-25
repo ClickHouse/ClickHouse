@@ -104,6 +104,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
         optimization_settings.short_circuit_function_evaluation_disabled,
+        optimization_settings.lower_array_join_function,
+        optimization_settings.enable_lazy_columns_replication,
     };
 
     while (!stack.empty())

@@ -1,0 +1,32 @@
+-- Lower an `arrayJoin` function into a real ARRAY JOIN step. Must never change results, so each case
+-- compares query_plan_lower_array_join_function on vs off and expects equality (1).
+
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS t_laj;
+CREATE TABLE t_laj (id UInt64, a Array(String), b Array(String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_laj VALUES (1, ['x', 'y'], ['p', 'q']), (2, [], ['z']), (3, ['m'], []);
+
+-- single arrayJoin
+SELECT (SELECT groupArray(e) FROM (SELECT arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray(e) FROM (SELECT arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 0);
+
+-- two independent arrayJoins compose as a cross product
+SELECT (SELECT count() FROM (SELECT arrayJoin(a) AS x, arrayJoin(b) AS y FROM t_laj) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT count() FROM (SELECT arrayJoin(a) AS x, arrayJoin(b) AS y FROM t_laj) SETTINGS query_plan_lower_array_join_function = 0);
+
+-- empty arrays produce zero rows (inner semantics), preserved
+SELECT (SELECT groupArray((id, x)) FROM (SELECT id, arrayJoin(a) AS x FROM t_laj ORDER BY id, x) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray((id, x)) FROM (SELECT id, arrayJoin(a) AS x FROM t_laj ORDER BY id, x) SETTINGS query_plan_lower_array_join_function = 0);
+
+-- WHERE on the arrayJoined column
+SELECT (SELECT groupArray(x) FROM (SELECT arrayJoin(a) AS x FROM t_laj WHERE x = 'x' ORDER BY x) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray(x) FROM (SELECT arrayJoin(a) AS x FROM t_laj WHERE x = 'x' ORDER BY x) SETTINGS query_plan_lower_array_join_function = 0);
+
+-- with the setting on the function form becomes a real ArrayJoin step
+SELECT countIf(explain LIKE '%ArrayJoin%') > 0 FROM (EXPLAIN SELECT arrayJoin(a) AS x FROM t_laj SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
+
+-- and the step 1 filter fusion then applies to the lowered step
+SELECT countIf(explain LIKE '%Element filter%') > 0 FROM (EXPLAIN actions = 1 SELECT arrayJoin(a) AS x FROM t_laj WHERE x = 'x' SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
+
+DROP TABLE t_laj;
