@@ -67,6 +67,21 @@ bool hasUnknownQuotingSemantics(const DataTypePtr & type)
     return which.isDynamic() || which.isVariant() || which.isObject();
 }
 
+/// Whether the type's rendering as a tuple element (via `serializeTextQuoted`) can differ from its rendering
+/// by a standalone `toString`/`CAST(..., 'String')` call on the same value, depending on the `date_time_output_format`
+/// setting. `SerializationDateTime`/`SerializationDateTime64` honor that setting, while `FormatImpl<DataTypeDateTime>`/
+/// `FormatImpl<DataTypeDateTime64>` (used by the scalar conversion) always render the fixed `YYYY-MM-DD hh:mm:ss` form.
+/// `Date`/`Date32`/`Time`/`Time64` are unaffected: their serialization does not branch on this setting.
+bool hasSettingDependentCompositeRendering(const DataTypePtr & type)
+{
+    DataTypePtr unwrapped = removeLowCardinality(type);
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped.get()))
+        unwrapped = nullable->getNestedType();
+
+    WhichDataType which(unwrapped);
+    return which.isDateTimeOrDateTime64();
+}
+
 /** Compute the set of characters that may appear in the text representation (`toString` / `CAST(..., 'String')`)
   * of values of the given type. Returns std::nullopt if the type permits arbitrary characters (e.g. String, Enum)
   * or its representation is not analyzed (e.g. Bool, whose representation is configurable by settings).
@@ -519,9 +534,12 @@ private:
         /// NULL elements would change the result of the whole disjunction from false to NULL.
         /// Dynamic/Variant/JSON elements are excluded because we cannot tell in advance whether a needle can only
         /// match their quoted-and-escaped rendering inside the tuple and not their runtime value (see
-        /// `hasUnknownQuotingSemantics`).
+        /// `hasUnknownQuotingSemantics`). DateTime/DateTime64 elements are excluded because the rewritten predicate
+        /// wraps them in a scalar `toString`, which renders differently from their rendering inside the tuple
+        /// whenever `date_time_output_format` is not `simple` (see `hasSettingDependentCompositeRendering`).
         for (const auto & element_type : tuple_type->getElements())
-            if (removeLowCardinality(element_type)->isNullable() || hasUnknownQuotingSemantics(element_type))
+            if (removeLowCardinality(element_type)->isNullable() || hasUnknownQuotingSemantics(element_type)
+                || hasSettingDependentCompositeRendering(element_type))
                 return;
 
         auto needle = tryExtractEnclosedNeedle(pattern);
