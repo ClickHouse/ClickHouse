@@ -528,7 +528,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         }
     }
 
-    if (sample_block)
+    if (sample_block || serialize_states)
     {
         for (size_t i = 0; i < cols.size(); ++i)
         {
@@ -536,12 +536,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// uncompressed figure; serializing them whole here would write every state a second time. But
             /// the leaves' sample says nothing about the rest of such a column - the carriers' own payload
             /// and any non-state siblings, which `plain_bytes` counts - so those parts get a compression
-            /// sample of their own instead of inheriting the leaf-only ratio.
+            /// sample of their own instead of inheriting the leaf-only ratio. A block whose states are
+            /// serialized only because no sampled block has committed a state value yet (`serialize_states`
+            /// without `sample_block`) samples them too: its states enter `sample_bytes`/`compressed_bytes`
+            /// and its wrapper payload enters `plain_bytes`, so skipping the wrapper's sample here would
+            /// derive the compression ratio from a different population of bytes than the total it divides.
             if (col_has_states[i])
             {
                 sampleNonStatePartsCompression(cols[i].column, cols[i].type, 1, sample_bytes, compressed_bytes);
                 continue;
             }
+            if (!sample_block)
+                continue;
             auto [sample, compressed] = estimateCompressedColumnSize(cols[i]);
             sample_bytes += sample;
             compressed_bytes += compressed;

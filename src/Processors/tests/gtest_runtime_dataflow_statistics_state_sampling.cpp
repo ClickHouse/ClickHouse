@@ -416,6 +416,96 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithoutSampledStateValuesDoe
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
+/// Blocks racing with the first sampled one serialize their states before a per-state-value figure exists
+/// (`serialize_states` without `sample_block`), and their states enter `sample_bytes`/`compressed_bytes`
+/// while their wrapper payload enters the byte total. Such a block must sample its carriers' non-state
+/// payload too, or the compression ratio is derived from a different population of bytes than the total it
+/// divides: a compressible string alternative dominating the forced block keeps the states' ratio of ~1 and
+/// overstates `output_bytes` several-fold. The first, sampled block below carries no state values - the
+/// deterministic equivalent of the concurrent startup race - so the second, unsampled block with an
+/// incompressible state and dominant compressible strings takes exactly the forced path.
+TEST(RuntimeDataflowStatisticsStateSampling, ForcedStateSerializationSamplesNonStatePayloadCompression)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t first_block_rows = 16;
+    constexpr size_t state_rows = 256;
+    constexpr size_t giant_state_row = 255;
+    constexpr size_t elements_in_giant_state = 50000;
+    /// Uncompressed the strings of the second block dwarf its states by far more than the 2x margin
+    /// asserted below, and compressed they vanish, so counting them as incompressible lands several-fold
+    /// above the upper bound.
+    constexpr size_t string_rows = 256;
+    constexpr size_t string_size = 10240;
+
+    auto states_arena = std::make_shared<Arena>();
+    AggregateFunctionPtr function;
+    auto states = createSkewedGroupArrayColumn(state_rows, giant_state_row, elements_in_giant_state, function, states_arena.get());
+    states->addArena(states_arena);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+
+    /// The state alternative is empty, so this block establishes no per-state-value figure.
+    const auto make_first_block = [&]
+    {
+        auto empty_states = ColumnAggregateFunction::create(function);
+        auto strings = ColumnString::create();
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < first_block_rows; ++row)
+        {
+            strings->insertData("sample", 6);
+            discriminators->insertValue(1);
+            offsets->insertValue(row);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(empty_states));
+        alternatives.emplace_back(std::move(strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives);
+    };
+    /// The first `state_rows` rows hold the states, the rest the compressible strings.
+    const auto make_forced_block = [&]
+    {
+        auto strings = ColumnString::create();
+        const std::string value(string_size, 'a');
+        for (size_t row = 0; row < string_rows; ++row)
+            strings->insertData(value.data(), value.size());
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < state_rows + string_rows; ++row)
+        {
+            discriminators->insertValue(row < state_rows ? 0 : 1);
+            offsets->insertValue(row < state_rows ? row : row - state_rows);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(states));
+        alternatives.emplace_back(std::move(strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives);
+    };
+
+    const size_t cache_key = 0x111985 + 14;
+    size_t exact_compressed_bytes = 0;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, first_block_rows + state_rows + string_rows);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state_or_string"});
+
+        auto first_block = make_first_block();
+        exact_compressed_bytes += compressedColumnSize({first_block, variant_type, "variant_state_or_string"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(first_block)}, first_block_rows), header);
+
+        auto forced_block = make_forced_block();
+        exact_compressed_bytes += compressedColumnSize({forced_block, variant_type, "variant_state_or_string"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(forced_block)}, state_rows + string_rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
 /// Materializing a constant sparse state column repeats its non-default values, not the implicit default
 /// that `ColumnSparse` retains at `values[0]`. The repeated aggregate-state sample must use the same
 /// skipped-row offset as the one-copy sample, or it measures the default state instead of the payload.
