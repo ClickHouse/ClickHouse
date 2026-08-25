@@ -405,7 +405,7 @@ MutableColumnPtr DataTypeObject::createColumn(const ISerialization & serializati
     }
     else
     {
-        const auto * object_serialization = typeid_cast<const SerializationObject *>(current_serialization);
+        const auto * object_serialization = dynamic_cast<const SerializationObject *>(current_serialization);
         if (!object_serialization)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Object");
         typed_path_serializations = &object_serialization->getTypedPathsSerializations();

@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfoNamed.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 

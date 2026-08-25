@@ -855,11 +855,11 @@ getColumnsForNewDataPart(
             if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
             {
                 const auto & storage_type = storage_column->type;
-                if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*storage_type))
+                if (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*storage_type))
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
-                if (old_info->structureEquals(*rebuilt_info))
+                if (old_info->structureEquals(*rebuilt_info) || (isObject(source_type) && isObject(storage_type)))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
