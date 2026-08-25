@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -14,6 +13,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -71,7 +71,7 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         first = false;
 
 
-        settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+        settings.out << column;
     }
     settings.out << '\n';
 }
@@ -87,7 +87,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
@@ -99,11 +99,6 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (is_unaligned)
         flags |= 2;
-    /// Carried here rather than through serializeSettings: a step's settings object only ever holds
-    /// the names that same step writes, and readers that predate this bit ignore it and keep doing
-    /// eager replication, which is the correct fallback for a performance-only flag.
-    if (enable_lazy_columns_replication)
-        flags |= 4;
 
     writeIntBinary(flags, ctx.out);
 
@@ -112,21 +107,15 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr ArrayJoinStep::clone() const
-{
-    return std::make_unique<ArrayJoinStep>(*this);
-}
-
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
-    bool enable_lazy_columns_replication = bool(flags & 4);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
@@ -141,10 +130,9 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         std::move(array_join),
         is_unaligned,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        enable_lazy_columns_replication);
+        ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
-void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);

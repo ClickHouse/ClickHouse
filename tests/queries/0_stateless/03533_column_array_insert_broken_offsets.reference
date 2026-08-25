@@ -1,4 +1,1 @@
 Arrays offsets are not monotonically increasing (starting at 0, value 2): (in file/uri (fd = 0)): While executing Native: data for INSERT was parsed from stdin. (INCORRECT_DATA
-Cannot read all array values: read just 1 of 2: (in file/uri (fd = 0)): While executing Native: data for INSERT was parsed from stdin. (CANNOT_READ_ALL_DATA
-Cannot read array values: elements column is empty while the last offset is 2: (in file/uri (fd = 0)): While executing Native: data for INSERT was parsed from stdin. (INCORRECT_DATA
-0

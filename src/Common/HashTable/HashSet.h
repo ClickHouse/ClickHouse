@@ -3,10 +3,10 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
-#include <Common/HashTable/Prefetching.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 namespace DB
@@ -29,9 +29,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
-/// Not `final`: `AggregationDataWithNullKey` derives from it for nullable set-mode GROUP BY (mirrors how
-/// the non-final `HashMapTable` is wrapped by `HashTableWithNullKey`).
-class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
+class HashSetTable final : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashSetTable;
@@ -68,73 +66,6 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i]);
     }
-
-    /// Call func(const Key &) for each set element. `HashMapTable::forEachValue` passes the mapped value
-    /// too; a set has none, so a caller that works over both takes it as a parameter pack.
-    template <typename Func>
-    void forEachValue(Func && func)
-    {
-        for (auto & cell : *this)
-            func(cell.getKey());
-    }
-
-    /// A set has no mapped values, so this visits nothing and `func` is never called. "Iterate the mapped
-    /// values" over a table that has none is an empty loop whatever the caller is doing, which is why this
-    /// one is safe to answer generically - the other mapped-value operations are not, and the methods that
-    /// need them are specialized on `SetAggregationMethod` instead.
-    template <typename Func>
-    void forEachMapped(Func &&)
-    {
-    }
-
-    /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
-    /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
-    /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
-    /// HashMapTable::mergeToViaEmplace (there is simply no mapped value to combine).
-    template <bool prefetch = false>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that)
-    {
-        DB::PrefetchingHelper prefetching;
-        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
-
-        size_t i = 0;
-        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
-
-        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
-        {
-            if constexpr (prefetch)
-            {
-                if (i == DB::PrefetchingHelper::iterationsToMeasure())
-                {
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
-                }
-
-                if (prefetch_it != end)
-                {
-                    that.prefetchByHash(prefetch_it.getHash());
-                    ++prefetch_it;
-                }
-            }
-
-            typename Self::LookupResult res_it;
-            bool inserted = false;
-            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
-        }
-    }
-
-private:
-    using Iterator = typename Base::iterator;
-    Iterator advanceIterator(Iterator it, size_t n)
-    {
-        size_t i = 0;
-        while (i < n && it != this->end())
-        {
-            ++i;
-            ++it;
-        }
-        return it;
-    }
 };
 
 
@@ -144,7 +75,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator>
-class TwoLevelHashSetTable
+class TwoLevelHashSetTable final
     : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:
@@ -167,12 +98,6 @@ public:
 
         for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
             this->impls[i].merge(rhs.impls[i]);
-    }
-
-    /// A set has no mapped values - see `HashSetTable::forEachMapped`.
-    template <typename Func>
-    void forEachMapped(Func &&)
-    {
     }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
@@ -208,8 +133,8 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 
     size_t saved_hash;
 
-    HashSetCellWithSavedHash() : Base() {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
-    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the default constructor above
+    HashSetCellWithSavedHash() : Base() {}
+    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {}
 
     bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }

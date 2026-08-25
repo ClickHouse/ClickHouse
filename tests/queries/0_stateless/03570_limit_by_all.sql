@@ -194,7 +194,7 @@ LIMIT -2 OFFSET -1;
 SELECT id, category, value
 FROM test_limit_by_all
 ORDER BY id, category, value
-LIMIT -1 BY id;
+LIMIT -1 BY id; -- { serverError NOT_IMPLEMENTED }
 
 -- Should give no result
 SELECT id, category, value

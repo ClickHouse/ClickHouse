@@ -4,8 +4,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -29,12 +27,10 @@ public:
     bool dry_run = false;
     /// List of part names for DRY RUN (ASTExpressionList of ASTLiteral strings)
     ASTPtr parts_list;
-    /// Compact manifests only (for Iceberg tables)
-    bool manifest = false;
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "") + (manifest ? "_manifest" : "");
+        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "");
     }
 
     ASTPtr clone() const override
@@ -60,15 +56,10 @@ public:
             res->children.push_back(res->parts_list);
         }
 
-        cloneOutputOptions(*res);
-        cloneTableOptions(*res);
-
         return res;
     }
 
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
