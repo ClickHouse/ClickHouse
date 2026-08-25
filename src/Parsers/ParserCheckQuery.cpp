@@ -102,6 +102,7 @@ void registerStatementCheck(StatementFactory & factory)
 {
     factory.registerStatement("CHECK TABLE",
     {
+        .title = "CHECK TABLE Statement",
         .description = R"DOCS_MD(
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
 
@@ -272,6 +273,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 
     factory.registerStatement("CHECK DATABASE",
     {
+        .title = "CHECK DATABASE Statement",
         .description = R"DOCS_MD(
 The `CHECK DATABASE` query verifies the health of a database.
 

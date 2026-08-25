@@ -1142,6 +1142,7 @@ void registerStatementSystem(StatementFactory & factory)
 {
     factory.registerStatement("SYSTEM",
     {
+        .title = "SYSTEM Statements",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 

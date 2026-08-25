@@ -238,6 +238,7 @@ void registerStatementMaskingPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE MASKING POLICY",
     {
+        .title = "CREATE MASKING POLICY",
         .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
@@ -336,6 +337,7 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
 
     factory.registerStatement("ALTER MASKING POLICY",
     {
+        .title = "ALTER MASKING POLICY",
         .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 

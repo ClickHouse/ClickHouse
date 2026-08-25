@@ -846,6 +846,7 @@ void registerStatementUser(StatementFactory & factory)
 {
     factory.registerStatement("CREATE USER",
     {
+        .title = "CREATE USER",
         .description = R"DOCS_MD(
 Creates [user accounts](/concepts/features/security/access-rights#user-account-management).
 
@@ -1133,6 +1134,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
     factory.registerStatement("ALTER USER",
     {
+        .title = "ALTER USER",
         .description = R"DOCS_MD(
 Changes ClickHouse user accounts.
 

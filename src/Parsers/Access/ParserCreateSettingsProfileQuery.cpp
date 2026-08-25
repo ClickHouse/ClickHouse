@@ -199,6 +199,7 @@ void registerStatementSettingsProfile(StatementFactory & factory)
 {
     factory.registerStatement("CREATE SETTINGS PROFILE",
     {
+        .title = "CREATE SETTINGS PROFILE",
         .description = R"DOCS_MD(
 Creates [settings profiles](/concepts/features/security/access-rights#settings-profiles-management) that can be assigned to a user or a role.
 
@@ -242,6 +243,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
     factory.registerStatement("ALTER SETTINGS PROFILE",
     {
+        .title = "ALTER SETTINGS PROFILE",
         .description = R"DOCS_MD(
 Changes settings profiles.
 

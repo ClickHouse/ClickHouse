@@ -54,6 +54,7 @@ void registerStatementUnion(StatementFactory & factory)
 {
     factory.registerStatement("UNION",
     {
+        .title = "UNION Clause",
         .description = R"DOCS_MD(
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
@@ -135,6 +136,7 @@ SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 
     factory.registerStatement("INTERSECT",
     {
+        .title = "INTERSECT Clause",
         .description = R"DOCS_MD(
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 
@@ -290,6 +292,7 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 
     factory.registerStatement("EXCEPT",
     {
+        .title = "EXCEPT clause",
         .description = R"DOCS_MD(
 > The `EXCEPT` clause returns only those rows that result from the first query without the second.
 

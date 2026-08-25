@@ -2813,6 +2813,7 @@ void registerStatementColumnsTransformers(StatementFactory & factory)
 {
     factory.registerStatement("APPLY modifier",
     {
+        .title = "APPLY modifier",
         .description = R"DOCS_MD(
 > Allows you to invoke some function for each row returned by an outer table expression of a query.
 
@@ -2845,6 +2846,7 @@ SELECT <expr> APPLY(<func>) FROM [db.]table_name
 
     factory.registerStatement("EXCEPT modifier",
     {
+        .title = "EXCEPT modifier",
         .description = R"DOCS_MD(
 > Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
@@ -2876,6 +2878,7 @@ SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_n
 
     factory.registerStatement("REPLACE modifier",
     {
+        .title = "Replace modifier",
         .description = R"DOCS_MD(
 > Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
 

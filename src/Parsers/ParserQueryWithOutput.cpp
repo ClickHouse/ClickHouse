@@ -271,6 +271,7 @@ void registerStatementQueryWithOutput(StatementFactory & factory)
 {
     factory.registerStatement("FORMAT",
     {
+        .title = "FORMAT Clause",
         .description = R"DOCS_MD(
 ClickHouse supports a wide range of [serialization formats](/reference/formats/index) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
 
@@ -293,6 +294,7 @@ SELECT ... FORMAT format
 
     factory.registerStatement("INTO OUTFILE",
     {
+        .title = "INTO OUTFILE Clause",
         .description = R"DOCS_MD(
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 

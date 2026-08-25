@@ -396,6 +396,7 @@ void registerStatementCreateFunction(StatementFactory & factory)
 {
     factory.registerStatement("CREATE FUNCTION",
     {
+        .title = "CREATE FUNCTION -user defined function (UDF)",
         .description = R"DOCS_MD(
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 

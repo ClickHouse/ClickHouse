@@ -171,6 +171,7 @@ void registerStatementRole(StatementFactory & factory)
 {
     factory.registerStatement("CREATE ROLE",
     {
+        .title = "CREATE ROLE",
         .description = R"DOCS_MD(
 Creates new [roles](/concepts/features/security/access-rights#role-management). Role is a set of [privileges](/reference/statements/grant#granting-privilege-syntax). A [user](/reference/statements/create/user) assigned a role gets all the privileges of this role.
 
@@ -225,6 +226,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
     factory.registerStatement("ALTER ROLE",
     {
+        .title = "ALTER ROLE",
         .description = R"DOCS_MD(
 Changes roles.
 

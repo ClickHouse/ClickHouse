@@ -70,6 +70,7 @@ void registerStatementKillQuery(StatementFactory & factory)
 {
     factory.registerStatement("KILL",
     {
+        .title = "KILL Statements",
         .description = R"DOCS_MD(
 There are two kinds of kill statements: to kill a query and to kill a mutation
 

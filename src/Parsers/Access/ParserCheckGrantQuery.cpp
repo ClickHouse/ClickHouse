@@ -38,6 +38,7 @@ void registerStatementCheckGrant(StatementFactory & factory)
 {
     factory.registerStatement("CHECK GRANT",
     {
+        .title = "CHECK GRANT Statement",
         .description = R"DOCS_MD(
 The `CHECK GRANT` query is used to check whether the current user/role has been granted a specific privilege.
 

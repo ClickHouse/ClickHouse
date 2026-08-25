@@ -218,6 +218,7 @@ void registerStatementGrant(StatementFactory & factory)
 {
     factory.registerStatement("GRANT",
     {
+        .title = "GRANT Statement",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
@@ -1031,6 +1032,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 
     factory.registerStatement("REVOKE",
     {
+        .title = "REVOKE Statement",
         .description = R"DOCS_MD(
 Revokes privileges from users or roles.
 

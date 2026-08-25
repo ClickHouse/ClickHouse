@@ -86,6 +86,7 @@ void registerStatementExecuteAs(StatementFactory & factory)
 {
     factory.registerStatement("EXECUTE AS",
     {
+        .title = "EXECUTE AS Statement",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 

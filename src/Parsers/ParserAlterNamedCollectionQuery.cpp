@@ -107,6 +107,7 @@ void registerStatementAlterNamedCollection(StatementFactory & factory)
 {
     factory.registerStatement("ALTER NAMED COLLECTION",
     {
+        .title = "ALTER NAMED COLLECTION",
         .description = R"DOCS_MD(
 This query intends to modify already existing named collections.
 

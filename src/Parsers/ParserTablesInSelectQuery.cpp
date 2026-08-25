@@ -401,6 +401,7 @@ void registerStatementTablesInSelect(StatementFactory & factory)
 {
     factory.registerStatement("FROM",
     {
+        .title = "FROM Clause",
         .description = R"DOCS_MD(
 The `FROM` clause specifies the source to read data from:
 
@@ -521,6 +522,7 @@ FROM [db.]table SELECT ...
 
     factory.registerStatement("JOIN",
     {
+        .title = "JOIN Clause",
         .description = R"DOCS_MD(
 The `JOIN` clause produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as a "self-join".
 
@@ -1063,6 +1065,7 @@ FROM <left_table>
 
     factory.registerStatement("ARRAY JOIN",
     {
+        .title = "ARRAY JOIN Clause",
         .description = R"DOCS_MD(
 It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
@@ -1461,6 +1464,7 @@ FROM <left_subquery>
 
     factory.registerStatement("SAMPLE",
     {
+        .title = "SAMPLE Clause",
         .description = R"DOCS_MD(
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
 

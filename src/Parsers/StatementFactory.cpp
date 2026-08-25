@@ -19,6 +19,8 @@ StatementFactory & StatementFactory::instance()
 
 void StatementFactory::registerStatement(const String & name, Documentation documentation)
 {
+    if (documentation.title.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement {} has no documentation title", name);
     if (!statements.emplace(name, std::move(documentation)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement name {} is not unique", name);
 }

@@ -211,6 +211,7 @@ void registerStatementDrop(StatementFactory & factory)
 {
     factory.registerStatement("DROP",
     {
+        .title = "DROP Statements",
         .description = R"DOCS_MD(
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
 
@@ -376,6 +377,7 @@ DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 
     factory.registerStatement("DETACH",
     {
+        .title = "DETACH Statement",
         .description = R"DOCS_MD(
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
 
@@ -451,6 +453,7 @@ DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
     factory.registerStatement("TRUNCATE",
     {
+        .title = "TRUNCATE Statements",
         .description = R"DOCS_MD(
 The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a table or database while preserving their structure.
 

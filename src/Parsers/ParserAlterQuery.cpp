@@ -1275,6 +1275,7 @@ void registerStatementAlter(StatementFactory & factory)
 {
     factory.registerStatement("ALTER",
     {
+        .title = "ALTER",
         .description = R"DOCS_MD(
 Most `ALTER TABLE` queries modify table settings or data:
 
@@ -1384,6 +1385,7 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 
     factory.registerStatement("ALTER TABLE ... COLUMN",
     {
+        .title = "Column Manipulations",
         .description = R"DOCS_MD(
 A set of queries that allow changing the table structure.
 
@@ -1781,6 +1783,7 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
 
     factory.registerStatement("ALTER TABLE ... PARTITION",
     {
+        .title = "Manipulating Partitions and Parts",
         .description = R"DOCS_MD(
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
 
@@ -2182,6 +2185,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 
     factory.registerStatement("ALTER TABLE ... DELETE",
     {
+        .title = "ALTER TABLE ... DELETE Statement",
         .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
@@ -2220,6 +2224,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 
     factory.registerStatement("ALTER TABLE ... UPDATE",
     {
+        .title = "ALTER TABLE ... UPDATE Statements",
         .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
@@ -2297,6 +2302,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
     factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
     {
+        .title = "Manipulating Key Expressions",
         .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
@@ -2319,6 +2325,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 
     factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
     {
+        .title = "Manipulating Sampling-Key Expressions",
         .description = R"DOCS_MD(
 The following operations are available:
 
@@ -2354,6 +2361,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 
     factory.registerStatement("ALTER TABLE ... MODIFY TTL",
     {
+        .title = "Manipulations with Table TTL",
         .description = R"DOCS_MD(
 <Note>
 If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/concepts/features/operations/delete/ttl) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
@@ -2448,6 +2456,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 
     factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
     {
+        .title = "Table Settings Manipulations",
         .description = R"DOCS_MD(
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
 If a setting with the specified name does not exist, then the query raises an exception.
@@ -2513,6 +2522,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 
     factory.registerStatement("ALTER TABLE ... CONSTRAINT",
     {
+        .title = "Manipulating Constraints",
         .description = R"DOCS_MD(
 Constraints could be added, modified or deleted using following syntax:
 
@@ -2547,6 +2557,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 
     factory.registerStatement("ALTER TABLE ... INDEX",
     {
+        .title = "Manipulating Data Skipping Indices",
         .description = R"DOCS_MD(
 The following operations are available:
 
@@ -2594,6 +2605,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 
     factory.registerStatement("ALTER TABLE ... PROJECTION",
     {
+        .title = "Projections",
         .description = R"DOCS_MD(
 This page discusses what projections are, how you can use them and various options for manipulating projections.
 
@@ -3053,6 +3065,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 
     factory.registerStatement("ALTER TABLE ... STATISTICS",
     {
+        .title = "Manipulating Column Statistics",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
@@ -3099,6 +3112,7 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 
     factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
     {
+        .title = "ALTER TABLE ... MODIFY COMMENT",
         .description = R"DOCS_MD(
 Adds, modifies, or removes a table comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.tables`](/reference/system-tables/tables)
@@ -3187,6 +3201,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
     factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
     {
+        .title = "ALTER DATABASE ... MODIFY COMMENT Statements",
         .description = R"DOCS_MD(
 Adds, modifies, or removes a database comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.databases`](/reference/system-tables/databases)
@@ -3262,6 +3277,7 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
     factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
     {
+        .title = "ALTER TABLE ... MODIFY QUERY Statement",
         .description = R"DOCS_MD(
 You can modify `SELECT` query that was specified when a [materialized view](/reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
@@ -3495,6 +3511,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 
     factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
     {
+        .title = "Apply mask of deleted rows",
         .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
@@ -3520,6 +3537,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
 
     factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
     {
+        .title = "Apply patches from lightweight updates",
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 

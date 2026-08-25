@@ -417,6 +417,7 @@ void registerStatementQuota(StatementFactory & factory)
 {
     factory.registerStatement("CREATE QUOTA",
     {
+        .title = "CREATE QUOTA",
         .description = R"DOCS_MD(
 Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
 
@@ -490,6 +491,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
     factory.registerStatement("ALTER QUOTA",
     {
+        .title = "ALTER QUOTA",
         .description = R"DOCS_MD(
 Changes quotas.
 

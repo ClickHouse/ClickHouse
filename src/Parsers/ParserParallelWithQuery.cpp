@@ -54,6 +54,7 @@ void registerStatementParallelWith(StatementFactory & factory)
 {
     factory.registerStatement("PARALLEL WITH",
     {
+        .title = "PARALLEL WITH Clause",
         .description = R"DOCS_MD(
 Allows to execute multiple statements in parallel.
 

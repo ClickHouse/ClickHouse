@@ -174,6 +174,7 @@ void registerStatementDescribeTable(StatementFactory & factory)
 {
     factory.registerStatement("DESCRIBE TABLE",
     {
+        .title = "DESCRIBE TABLE",
         .description = R"DOCS_MD(
 Returns information about table columns.
 

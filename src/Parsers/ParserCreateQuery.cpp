@@ -2093,6 +2093,7 @@ void registerStatementCreate(StatementFactory & factory)
 {
     factory.registerStatement("CREATE",
     {
+        .title = "CREATE Queries",
         .description = R"DOCS_MD(
 CREATE queries create (for example) new [databases](/reference/statements/create/database), [tables](/reference/statements/create/table) and [views](/reference/statements/create/view).
 )DOCS_MD",
@@ -2110,6 +2111,7 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 
     factory.registerStatement("CREATE DATABASE",
     {
+        .title = "CREATE DATABASE",
         .description = R"DOCS_MD(
 Creates a new database.
 
@@ -2200,6 +2202,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
     factory.registerStatement("CREATE TABLE",
     {
+        .title = "CREATE TABLE",
         .description = R"DOCS_MD(
 Creates a new table. By default, tables are created only on the current server.
 Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](/reference/statements/distributed-ddl).
@@ -2658,6 +2661,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
 
     factory.registerStatement("CREATE TEMPORARY TABLE",
     {
+        .title = "CREATE TEMPORARY TABLE",
         .description = R"DOCS_MD(
 ## Temporary table support {#temporary-table-support}
 
@@ -2704,6 +2708,7 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 
     factory.registerStatement("REPLACE TABLE",
     {
+        .title = "REPLACE TABLE",
         .description = R"DOCS_MD(
 ## Overview {#overview}
 
@@ -2881,6 +2886,7 @@ SELECT * FROM base.t1;
 
     factory.registerStatement("CODEC",
     {
+        .title = "Column compression codecs",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
@@ -3162,6 +3168,7 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
 
     factory.registerStatement("CREATE VIEW",
     {
+        .title = "CREATE VIEW",
         .description = R"DOCS_MD(
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
@@ -3872,6 +3879,7 @@ AS SELECT ...
 
     factory.registerStatement("CREATE DICTIONARY",
     {
+        .title = "CREATE DICTIONARY",
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { CloudSupportedBadge } from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
@@ -3979,6 +3987,7 @@ COMMENT 'Comment'
 
     factory.registerStatement("CREATE NAMED COLLECTION",
     {
+        .title = "CREATE NAMED COLLECTION",
         .description = R"DOCS_MD(
 Creates a new named collection.
 
@@ -4021,6 +4030,7 @@ AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT]
 
     factory.registerStatement("ATTACH",
     {
+        .title = "ATTACH Statement",
         .description = R"DOCS_MD(
 Attaches a table or a dictionary, for example, when moving a database to another server.
 

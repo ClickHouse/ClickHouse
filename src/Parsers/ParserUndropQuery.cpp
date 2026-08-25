@@ -89,6 +89,7 @@ void registerStatementUndrop(StatementFactory & factory)
 {
     factory.registerStatement("UNDROP",
     {
+        .title = "UNDROP TABLE",
         .description = R"DOCS_MD(
 Cancels the dropping of the table.
 
