@@ -81,30 +81,29 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// index/bloom only issue async reads -> fixed small shares. Two knobs re-balance the data stages:
     /// prefetch_memory_fraction splits the 0.75 data-memory budget prefetch/decode; decode_thread_fraction
     /// is decode's thread share (issuers split the rest). Defaults preserve the old hard-coded fractions.
-    const auto & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources->opaque.get());
-    const double mem_frac = ext.prefetch_memory_fraction;
-    const double dec_thr = ext.decode_thread_fraction;
-    if (!(mem_frac >= 0 && mem_frac <= 1))
+    const double prefetch_memory_fraction = reader.options.format.parquet.prefetch_memory_fraction;
+    const double decode_thread_fraction = reader.options.format.parquet.decode_thread_fraction;
+    if (!(prefetch_memory_fraction >= 0 && prefetch_memory_fraction <= 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "input_format_parquet_prefetch_memory_fraction must be in [0, 1], got {}", mem_frac);
-    if (!(dec_thr >= 0 && dec_thr <= 1))
+            "input_format_parquet_prefetch_memory_fraction must be in [0, 1], got {}", prefetch_memory_fraction);
+    if (!(decode_thread_fraction >= 0 && decode_thread_fraction <= 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "input_format_parquet_decode_thread_fraction must be in [0, 1], got {}", dec_thr);
+            "input_format_parquet_decode_thread_fraction must be in [0, 1], got {}", decode_thread_fraction);
 
     auto set_fractions = [&](ReadStage s, double memory_fraction, double thread_fraction)
     {
         stages[size_t(s)].memory_target_fraction = memory_fraction;
         stages[size_t(s)].thread_target_fraction = thread_fraction;
     };
-    const double data_mem = 0.75;                        // index/bloom take the remaining 0.25
-    const double issuer_thr = (1.0 - dec_thr) / 5.0;     // five read-issuing stages split the rest
+    const double data_memory_fraction = 0.75;                                        // index/bloom take the remaining 0.25
+    const double issuer_thread_fraction = (1.0 - decode_thread_fraction) / 5.0;      // five read-issuing stages split the rest
     set_fractions(ReadStage::NotStarted, 0, 0);
-    set_fractions(ReadStage::BloomFilterHeader, 0.05, issuer_thr);
-    set_fractions(ReadStage::BloomFilterBlocksOrDictionary, 0.10, issuer_thr);
-    set_fractions(ReadStage::ColumnIndexAndOffsetIndex, 0.05, issuer_thr);
-    set_fractions(ReadStage::OffsetIndex, 0.05, issuer_thr);
-    set_fractions(ReadStage::ColumnDataPrefetch, data_mem * mem_frac, issuer_thr);
-    set_fractions(ReadStage::ColumnData, data_mem * (1.0 - mem_frac), dec_thr);
+    set_fractions(ReadStage::BloomFilterHeader, 0.05, issuer_thread_fraction);
+    set_fractions(ReadStage::BloomFilterBlocksOrDictionary, 0.10, issuer_thread_fraction);
+    set_fractions(ReadStage::ColumnIndexAndOffsetIndex, 0.05, issuer_thread_fraction);
+    set_fractions(ReadStage::OffsetIndex, 0.05, issuer_thread_fraction);
+    set_fractions(ReadStage::ColumnDataPrefetch, data_memory_fraction * prefetch_memory_fraction, issuer_thread_fraction);
+    set_fractions(ReadStage::ColumnData, data_memory_fraction * (1.0 - prefetch_memory_fraction), decode_thread_fraction);
     set_fractions(ReadStage::Deliver, 0, 0);
 
     /// Normalize (defensive: the fractions already sum to 1 within each resource).

@@ -42,10 +42,6 @@ struct SharedResourcesExt
 {
     size_t total_memory_low_watermark = 0;
     size_t total_memory_high_watermark = 0;
-    /// Reader scheduler knobs applied in ReadManager::init. See
-    /// input_format_parquet_prefetch_memory_fraction / input_format_parquet_decode_thread_fraction.
-    double prefetch_memory_fraction = 0.6;
-    double decode_thread_fraction = 0.375;
 
     struct Limits
     {
