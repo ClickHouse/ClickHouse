@@ -346,11 +346,11 @@ class PocoHttpPayload : public HttpPayload {
   // The session goes back to the pool only when this response was read to the
   // end and both sides agreed to keep the connection: a socket with unread body
   // bytes still buffered would desynchronise whichever request picked it up next.
-  // A response abandoned just short of its end is worth finishing off first --
-  // see DrainShortRemainder.
+  // Whether that holds is not always known by the time the body is dropped --
+  // see FinishForReuse.
   ~PocoHttpPayload() override {
     if (!session_) return;
-    if (!failed_ && !finished_) DrainShortRemainder();
+    if (!failed_ && !finished_) FinishForReuse();
     if (!finished_ || failed_) return;
     if (!response_ || !response_->getKeepAlive()) return;
     SessionPool::Instance().Release(session_key_, std::move(session_));
@@ -378,16 +378,27 @@ class PocoHttpPayload : public HttpPayload {
   }
 
  private:
-  // A caller that stops reading early -- a ranged read abandoned because the reader seeked
-  // elsewhere -- leaves unread bytes on the socket, so the session cannot be pooled as is. Reading
-  // the tail out makes it reusable, and while the tail is short that costs less than the DNS
+  // Decide whether this session can still be pooled, for the two recoverable cases where the body
+  // was dropped without `Read` having marked the payload finished. Both need a known
+  // `Content-Length`: a chunked or unknown-length response cannot be reasoned about and is left
+  // alone, and knowing the length up front means the cost below is known rather than discovered by
+  // blocking on the network.
+  //
+  // The first case is a body consumed exactly to its end. `Read` only sets `finished_` once the
+  // stream reports `eof`, which takes one read past the last byte, and a bounded reader never
+  // issues it: `ReadBufferFromGCS::nextImpl` returns as soon as it holds the bytes up to
+  // `read_until_position`. Nothing is left unread on the socket, so the session is reusable as is.
+  // This is the ordinary shape of a `MergeTree` read, and it is what decides whether connections
+  // get reused at all -- treating it as unreusable closes a connection per ranged read.
+  //
+  // The second is a read the caller abandoned partway because it seeked elsewhere. Reading the
+  // tail out makes the session reusable, and while the tail is short that costs less than the DNS
   // lookup, TCP connect and TLS handshake a replacement connection would pay. The budget keeps
   // that trade honest: a long tail is not worth transferring, so the socket is closed instead.
   //
-  // Only a known `Content-Length` is acted on, so the cost is known up front rather than
-  // discovered by blocking on the network. Anything unexpected leaves `finished_` false, which
-  // means "do not reuse" -- the conservative direction.
-  void DrainShortRemainder() {
+  // Anything unexpected leaves `finished_` false, which means "do not reuse" -- the conservative
+  // direction.
+  void FinishForReuse() {
     // Roughly the transfer time of a TLS handshake's round trip on an intra-region link. Above
     // this, reconnecting is the cheaper of the two.
     static constexpr std::uint64_t kMaxDrainBytes = 128 * 1024;
@@ -396,7 +407,12 @@ class PocoHttpPayload : public HttpPayload {
     auto const content_length = response_->getContentLength();
     if (content_length == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH) return;
     auto const total = static_cast<std::uint64_t>(content_length);
-    if (bytes_read_ >= total) return;
+
+    if (bytes_read_ >= total) {
+      finished_ = true;
+      return;
+    }
+
     auto remaining = total - bytes_read_;
     if (remaining > kMaxDrainBytes) return;
 
