@@ -1234,6 +1234,12 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         impl->children.erase(impl->children.begin() + fuzz_rand() % impl->children.size());
     }
 
+    // Rarely, remove all elements at once, valid or not for this particular list
+    if (!impl->children.empty() && fuzz_rand() % 200 == 0)
+    {
+        impl->children.clear();
+    }
+
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
@@ -6068,14 +6074,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        /// fuzzColumnLikeExpressionList may remove arguments
-        const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+        /// Swap the whole arguments/parameters lists, e.g. turning quantile(0.9)(x) into quantile(x)(0.9)
+        if (fn->arguments && fn->parameters && fuzz_rand() % 100 == 0)
+            std::swap(fn->arguments, fn->parameters);
 
-        /// Reorder arguments/parameters of any function, valid or not for that particular one
-        if (nargs > 1 && fuzz_rand() % 40 == 0)
-            std::shuffle(fn->arguments->children.begin(), fn->arguments->children.end(), fuzz_rand);
-        if (fn->parameters && fn->parameters->children.size() > 1 && fuzz_rand() % 40 == 0)
-            std::shuffle(fn->parameters->children.begin(), fn->parameters->children.end(), fuzz_rand);
+        /// fuzzColumnLikeExpressionList may add or remove arguments
+        const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
 
         if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
         {
