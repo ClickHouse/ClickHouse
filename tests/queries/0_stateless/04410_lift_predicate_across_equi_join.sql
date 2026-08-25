@@ -15,6 +15,8 @@ CREATE TABLE lift_mem      (orderkey UInt64) ENGINE = Memory;
 
 INSERT INTO lift_orders   SELECT number, number % 1000, toString(number) FROM numbers(1000000);
 INSERT INTO lift_lineitem SELECT number, number % 1000, toString(number) FROM numbers(1000000);
+-- Keys present only on the left side, for the unmatched-rows case below
+INSERT INTO lift_orders   SELECT number, number % 1000, toString(number) FROM numbers(1000000, 10);
 INSERT INTO lift_mem      SELECT number FROM numbers(1000);
 
 -- Counting occurrences of the predicate in filter steps: 1 = source side only, 2 = lifted to target too
@@ -120,13 +122,19 @@ SELECT 'result match',
         INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
--- Correctness on LEFT JOIN with non-matching keys
-SELECT 'left correctness',
-       (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 999990 AND 999999) AS o
-        LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey)
-     - (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 999990 AND 999999) AS o
-        LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
-        SETTINGS query_plan_lift_predicate_across_join = 0);
+-- Correctness on LEFT JOIN over a key range the target only partly contains: 10 of the 15 left rows
+-- have no match. With `join_use_nulls = 0` an unmatched row carries `l.orderkey = 0`, so compare the
+-- joined values too - a lifted predicate that wrongly dropped matching target rows would keep the
+-- row count unchanged and only lower the sum
+WITH
+    (SELECT (count(), countIf(l.orderkey = 0), sum(l.orderkey))
+     FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 999995 AND 1000009) AS o
+     LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey) AS with_lift,
+    (SELECT (count(), countIf(l.orderkey = 0), sum(l.orderkey))
+     FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 999995 AND 1000009) AS o
+     LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+     SETTINGS query_plan_lift_predicate_across_join = 0) AS without_lift
+SELECT 'left unmatched keys', with_lift, with_lift = without_lift;
 
 -- Computed equi-key (rhs is `l.orderkey + 1`, not a raw column of the target). Lift must bail,
 -- otherwise the inserted FilterStep references a column missing from the target child's header

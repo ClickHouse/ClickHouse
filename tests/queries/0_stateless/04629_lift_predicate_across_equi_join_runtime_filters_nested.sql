@@ -40,20 +40,41 @@ SELECT 'runtime filters on correctness',
         SETTINGS enable_join_runtime_filters = 1, query_plan_lift_predicate_across_join = 0);
 
 -- Nested join: the source predicate is written on an inner-child key (`c.custkey`), which is only
--- transitively equivalent to the outer join key (`o.custkey = l.custkey`, `l.custkey = c.custkey`)
+-- transitively equivalent to the outer join key (`o.custkey = l.custkey`, `l.custkey = c.custkey`).
+-- Inner-join filter pushdown already puts `custkey = 42` on the inner side on its own, so compare
+-- against the same plan with the lift disabled: only the lift can add one more occurrence, and the
+-- only side it can add it to is the outer `lift_rf_orders` scan (`ORDER BY custkey`).
 SELECT 'nested join transitive key',
-       countIf(explain LIKE '%ilter column:%custkey = 42%') >= 2
-FROM (
-    EXPLAIN PLAN actions=1
-    SELECT count()
-    FROM lift_rf_orders AS o
-    INNER JOIN (
-        SELECT l.orderkey AS orderkey, c.custkey AS ck
-        FROM lift_rf_lineitem AS l
-        INNER JOIN lift_rf_customer AS c ON l.custkey = c.custkey
-        WHERE c.custkey = 42
-    ) AS rhs ON o.custkey = rhs.ck
-);
+       (
+           SELECT countIf(explain LIKE '%ilter column:%custkey = 42%')
+           FROM (
+               EXPLAIN PLAN actions=1
+               SELECT count()
+               FROM lift_rf_orders AS o
+               INNER JOIN (
+                   SELECT l.orderkey AS orderkey, c.custkey AS ck
+                   FROM lift_rf_lineitem AS l
+                   INNER JOIN lift_rf_customer AS c ON l.custkey = c.custkey
+                   WHERE c.custkey = 42
+               ) AS rhs ON o.custkey = rhs.ck
+           )
+       )
+       >
+       (
+           SELECT countIf(explain LIKE '%ilter column:%custkey = 42%')
+           FROM (
+               EXPLAIN PLAN actions=1
+               SELECT count()
+               FROM lift_rf_orders AS o
+               INNER JOIN (
+                   SELECT l.orderkey AS orderkey, c.custkey AS ck
+                   FROM lift_rf_lineitem AS l
+                   INNER JOIN lift_rf_customer AS c ON l.custkey = c.custkey
+                   WHERE c.custkey = 42
+               ) AS rhs ON o.custkey = rhs.ck
+               SETTINGS query_plan_lift_predicate_across_join = 0
+           )
+       );
 
 SELECT 'nested join correctness',
        (SELECT count()

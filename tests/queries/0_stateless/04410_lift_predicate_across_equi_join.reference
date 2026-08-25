@@ -8,6 +8,6 @@ non-indexed target	1
 left, filter on rhs	1
 non-deterministic	1
 result match	0
-left correctness	0
+left unmatched keys	(15,10,4999985)	1
 computed key	1
 computed key correctness	0
