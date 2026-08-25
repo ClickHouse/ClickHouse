@@ -125,7 +125,7 @@ there is an option to use the structure from the insertion table instead of extr
 It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has an optimized schema, so
 no conversions between types will be performed.
 
-There is a special setting [use_structure_from_insertion_table_in_table_functions](/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
+There is a special setting [use_structure_from_insertion_table_in_table_functions](/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
@@ -246,7 +246,7 @@ that allows cleaning the schema cache for all sources, or for a specific source.
 Let's try to infer the structure of a sample dataset from s3 `github-2022.ndjson.gz` and see how the schema inference cache works:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 ```response
 ┌─name───────┬─type─────────────────────────────────────────┐
@@ -286,7 +286,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 5 rows in set. Elapsed: 0.601 sec.
 ```
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 ```response
 ┌─name───────┬─type─────────────────────────────────────────┐
@@ -332,7 +332,7 @@ As you can see, the second query succeeded almost instantly.
 Let's try to change some settings that can affect inferred schema:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1627,7 +1627,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/reference/settings/formats#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format)
 
 #### input_format_try_infer_dates {#input-format-try-infer-dates}
 
@@ -1800,7 +1800,7 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 | `string (uuid)` \*                 | [UUID](/reference/data-types/uuid)                                    |
 | `binary (decimal)` \*              | [Decimal(P, S)](/reference/data-types/decimal)                         |
 
-\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+\* [Avro logical types](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Other Avro types are not supported.
 
@@ -1880,6 +1880,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `List`                               | [Array](/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/reference/data-types/tuple)           |
 | `Map`                                | [Map](/reference/data-types/map)               |
+| `Union`                              | [Variant](/reference/data-types/variant)       |
 
 Other ORC types are not supported.
 

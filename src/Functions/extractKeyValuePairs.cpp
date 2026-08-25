@@ -176,15 +176,15 @@ A key-value pair consists of a key followed by a `key_value_delimiter` and a val
 
 **Syntax**
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
-- `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: `invalid`, `accept` and `promote`. Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character. The default value is `INVALID`
+- `data` - String to extract key-value pairs from. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
+- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
+- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
+- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring).
+- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: `invalid`, `accept` and `promote`. Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character. The default value is `PROMOTE`
 
 **Returned values**
 - The extracted key-value pairs in a Map(String, String).
@@ -299,7 +299,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
 ```)",
-            .syntax = "extractKeyValuePairs(input)",
+            .syntax = "extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])",
             .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
@@ -332,7 +332,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 │ {'age':'a\n\n\0'} │
 └───────────────────┘
 ```)",
-            .syntax = "extractKeyValuePairsWithEscaping(input)",
+            .syntax = "extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])",
             .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }

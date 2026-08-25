@@ -67,12 +67,11 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     settings[Setting::distributed_replica_max_ignored_errors] = 0;
     settings[Setting::fallback_to_stale_replicas_for_distributed_queries] = true;
 
-    return get(timeouts, settings, /* force_connected= */ true);
+    return get(timeouts, settings);
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts,
-                                                       const Settings & settings,
-                                                       bool /*force_connected*/)
+                                                       const Settings & settings)
 {
     if (nested_pools.empty())
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
@@ -91,6 +90,11 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     const bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries];
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
+}
+
+IConnectionPool::Entry ConnectionPoolWithFailover::getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings)
+{
+    return get(timeouts, settings);
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -132,9 +136,8 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
-    bool force_connected = skip_unavailable_endpoints.value_or(false);
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
-    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback, force_connected); };
+    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback); };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 
@@ -248,8 +251,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         std::string & fail_message,
         const Settings & settings,
         const QualifiedTableName * table_to_check,
-        [[maybe_unused]] AsyncCallback async_callback,
-        bool force_connected)
+        [[maybe_unused]] AsyncCallback async_callback)
 {
 #if defined(OS_LINUX)
     if (async_callback)
@@ -257,7 +259,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);
         while (true)
         {
-            connection_establisher_async.resumeConnectionWithForceOption(force_connected);
+            connection_establisher_async.resume();
 
             if (connection_establisher_async.isFinished())
                 break;
@@ -277,7 +279,7 @@ ConnectionPoolWithFailover::tryGetEntry(
 
     ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, table_to_check);
     TryResult result;
-    connection_establisher.run(result, fail_message, force_connected);
+    connection_establisher.run(result, fail_message);
     return result;
 }
 

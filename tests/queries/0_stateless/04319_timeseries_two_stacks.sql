@@ -68,7 +68,7 @@ DROP TABLE ts_two_stacks;
 -- Two-stacks selected via the AVERAGE-density path, not the hard cap: step=1, window=15 -> buckets_per_window=15
 -- (below BPW_TO_FORCE_TWO_STACKS=20), but a sample in every bucket makes the average populated buckets per window
 -- (~15) >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS=10, so the regression functions pick two-stacks through the
--- average condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.4)
+-- average condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35)
 -- also drives the range-scan bucket iteration. Quadratic values make the per-window slope vary, so a faulty moment
 -- merge would diverge from the fresh recompute.
 DROP TABLE IF EXISTS ts_dense;

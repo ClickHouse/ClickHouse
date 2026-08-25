@@ -1,0 +1,19 @@
+	a
+42	b
+LowCardinality(String)	def	a
+LowCardinality(String)	7	b
+[]	a
+[1,2,3]	b
+[]	a
+[1,2,3]	b
+1	a
+2	b
+(0,0)	a
+(1,2)	b
+d	a
+5	b
+d	c
+	a
+9	b
+{}	a
+{'a':1}	b

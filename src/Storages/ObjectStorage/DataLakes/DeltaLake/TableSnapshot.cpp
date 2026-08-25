@@ -214,9 +214,9 @@ public:
             return false;
         const auto & msg = e.message();
         const bool stale_credentials_error =
-            msg.find("ExpiredToken") != std::string::npos
-            || msg.find("InvalidToken") != std::string::npos
-            || msg.find("TokenRefreshRequired") != std::string::npos;
+            msg.contains("ExpiredToken")
+            || msg.contains("InvalidToken")
+            || msg.contains("TokenRefreshRequired");
         if (!stale_credentials_error)
             return false;
 
@@ -864,9 +864,9 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
         return false;
     const auto & msg = e.message();
     const bool stale_credentials_error =
-        msg.find("ExpiredToken") != std::string::npos
-        || msg.find("InvalidToken") != std::string::npos
-        || msg.find("TokenRefreshRequired") != std::string::npos;
+        msg.contains("ExpiredToken")
+        || msg.contains("InvalidToken")
+        || msg.contains("TokenRefreshRequired");
     if (!stale_credentials_error)
         return false;
 
@@ -1015,6 +1015,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
 
         auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
+
+        /// Both names are logical here; the rename to physical names happens later, on copies.
+        for (const auto & column_name : partition_columns)
+            if (!table_schema.tryGetByName(column_name))
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Partition column {} is not present in the table schema", column_name);
 
         LOG_TRACE(
             log, "Table logical schema: {}, read schema: {}, "

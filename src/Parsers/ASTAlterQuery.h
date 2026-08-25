@@ -6,6 +6,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -34,6 +35,7 @@ public:
         MATERIALIZE_COLUMN,
 
         MODIFY_ORDER_BY,
+        MODIFY_PROJECTION,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         REWRITE_PARTS,
@@ -134,11 +136,11 @@ public:
     */
     IAST * constraint = nullptr;
 
-    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
+    /** The ADD/MODIFY PROJECTION query stores the ProjectionDeclaration there.
      */
     IAST * projection_decl = nullptr;
 
-    /** The ADD PROJECTION query stores the name of the projection following AFTER.
+    /** The ADD/MODIFY PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
@@ -239,6 +241,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -278,15 +282,15 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-
-    /// Every command modifies settings or comments: any mix of MODIFY SETTING /
-    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN.
-    /// The single-type isSettingsAlter / isCommentAlter miss such mixed batches.
     bool isSettingsOrCommentAlter() const;
+
+    bool isReplacePartitionAlter() const;
 
     String getID(char) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {

@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 Para usar `ALTER USER`, debe contar con el privilegio [ALTER USER](/es/reference/statements/grant#access-management).
+
+`SET variable = value` es un alias de `MODIFY SETTING variable = value`: modifica una sola configuración sin afectar el resto. Se prefiere (o `MODIFY SETTING`) a la cláusula `SETTINGS` simple, que reemplaza toda la lista de settings y además elimina todos los perfiles heredados (padre).
 
 <div id="grantees-clause">
   ## Cláusula GRANTEES

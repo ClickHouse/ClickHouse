@@ -19,7 +19,7 @@ ClickHouse هو محرك أصيل لـ SQL، صُمِّم من البداية ل
 
 لاستكشاف السجلات والتتبعات البسيطة، توفّر واجهة ClickStack UI ‏(HyperDX) [صياغة بأسلوب Lucene](/ar/clickstack/features/search) لتصفية نصية سهلة وبديهية لاستعلامات الحقل-القيمة، والنطاقات، وأحرف البدل، وغير ذلك. وهذا مماثل لـ [صياغة Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) في Elasticsearch وبعض عناصر [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
-<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Search" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="البحث" size="lg" />
 
 تدعم واجهة البحث هذه الصياغة المألوفة، لكنها تترجمها في الخلفية إلى عبارات SQL `WHERE` فعّالة، مما يجعل التجربة مألوفة لمستخدمي Kibana مع إتاحة الاستفادة من قوة SQL عند الحاجة. ويتيح لك ذلك الاستفادة من المجموعة الكاملة من [دوال البحث في السلاسل النصية](/ar/reference/functions/regular-functions/string-search-functions) و[دوال التشابه](/ar/reference/functions/regular-functions/string-functions#stringJaccardIndex) و[دوال التاريخ والوقت](/ar/reference/functions/regular-functions/date-time-functions) في ClickHouse.
 

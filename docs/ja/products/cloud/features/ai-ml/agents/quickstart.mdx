@@ -7,7 +7,7 @@ keywords: ['AI', 'ClickHouse Cloud', 'エージェント', 'クイックスタ�
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
@@ -26,17 +26,13 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
 </div>
 
 <Steps>
-  <Step>
-    ### ClickHouse Agents を起動する
-
+  <Step title="ClickHouse Agents を起動する" id="launch-agents">
     Cloud サービスで、左側のサイドバーにある **ClickHouse agents** をクリックして、エージェントのランチパッドを開きます。次に **Launch ClickHouse agents** をクリックして、エージェントビルダーを開きます。
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="ClickHouse agents（ベータ）が選択された Cloud サービスのナビゲーションと、Launch ClickHouse agents ボタンが表示されたランチパッド" size="lg" />
   </Step>
 
-  <Step>
-    ### エージェントを作成する
-
+  <Step title="エージェントを作成する" id="create-the-agent">
     エージェントビルダーで、左側パネル上部の **Create New Agent** をクリックします。次の主要フィールドを入力します。
 
     * **Name** - エージェントの短い識別名です。
@@ -48,9 +44,7 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Create New Agent ドロップダウン、フォームフィールド（Name、Description、Category、Instructions、Model）、および Capabilities セクションが表示されたエージェントビルダーパネル" size="lg" />
   </Step>
 
-  <Step>
-    ### 機能とツールを追加する
-
+  <Step title="機能とツールを追加する" id="attach-tools">
     エージェントの機能とツールは 2 か所で設定します。
 
     メインパネルの **Capabilities** — [Run Code](/ja/products/cloud/features/ai-ml/agents/builder/code-interpreter)、[ウェブ検索](/ja/products/cloud/features/ai-ml/agents/builder/web-search)、File Context、Artifacts、[MCPサーバー](/ja/products/cloud/features/ai-ml/agents/builder/mcp-servers)、[スキル](/ja/products/cloud/features/ai-ml/agents/builder/skills) などのファーストパーティ機能です。エージェントに必要なものを有効にします。
@@ -70,9 +64,7 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
     追加した機能やツールはいつでも変更できます。
   </Step>
 
-  <Step>
-    ### クエリを実行する
-
+  <Step title="クエリを実行する" id="run-a-query">
     エージェントを保存し、新しい会話を開いて、エージェントピッカーから対象のエージェントを選択します。たとえば *&quot;What are my top 10 tables by row count this week?&quot;* のような質問を入力すると、エージェントが手順を計画し、必要に応じてツールを呼び出して、回答を返します。
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="「What are my top 10 tables by row count this week?」という質問と、それに対するエージェントの応答を示すチャット。行数でサービス全体の上位 10 テーブルを順位付けした Markdown テーブルと、その下に Key Observations が表示されている" size="lg" />
@@ -83,5 +75,5 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
   ## 次のステップ
 </div>
 
-* [エージェントを共有](/ja/products/cloud/features/ai-ml/agents/sharing-and-access)し、チームメイトが利用できるようにします。
-* エージェントが安定版になったら、[マーケットプレイス](/ja/products/cloud/features/ai-ml/agents/marketplace)で公開します。
+* チームメイトと[エージェントを共有](/ja/products/cloud/features/ai-ml/agents/sharing-and-access)します。
+* エージェントが安定版になったら、[マーケットプレイス](/ja/products/cloud/features/ai-ml/agents/marketplace)に公開します。

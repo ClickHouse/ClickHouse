@@ -70,9 +70,23 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!read_from_merge_tree)
         return;
 
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
+    /// QCC write for the WHERE filter of a TopK read: such reads can drop granules during execution
+    /// depending on the running `__topKFilter` threshold, so the WHERE filter's "matches no rows"
+    /// result no longer holds for every granule of the part.
+    if (!optimization_settings.use_query_condition_cache_for_top_k
+        && read_from_merge_tree->isSelectedForTopKFilterOptimization())
+        return;
+
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())
+        return;
+
+    /// The read step neither consults nor populates the cache for such filters (see the comment at
+    /// the declaration), so don't tag the filter step either.
+    if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
         return;
 
     const auto & outputs = filter_actions_dag->getOutputs();
@@ -93,6 +107,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
+            /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`.
+            const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+                return;
+
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
             size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();

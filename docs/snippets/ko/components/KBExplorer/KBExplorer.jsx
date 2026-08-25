@@ -121,20 +121,20 @@ export const KBExplorer = ({ index, featured = [] }) => {
     window.location.assign(withBase(href))
   }
 
-  // Featured articles, in the order listed in `featured`. Each keeps its banner
-  // image; the href falls back to the conventional KB path if the index hasn't
-  // loaded yet so the cards are clickable immediately.
+  // `featured`에 나열된 순서대로 주요 문서를 표시합니다. 배너 이미지는
+  // 제목을 기반으로 코드에서 생성되므로(아래 참조) 로케일별 이미지가 필요하지 않습니다.
+  // 인덱스가 아직 로드되지 않은 경우 href는 기본 KB 경로로 폴백되어
+  // 카드를 즉시 클릭할 수 있습니다.
   const featuredArticles = featured
     .map((f) => {
       const article = data.articles.find((a) => a.id === f.id)
       return {
         id: f.id,
-        image: f.image,
         href: (article && article.href) || `/ko/resources/support-center/knowledge-base/${f.id}`,
         title: (article && article.title) || ""
       }
     })
-    .filter((f) => f.image)
+    .filter((f) => f.title)
 
   // Expandable filter component
   const Expandable = ({ label, options, selectedOptions, onToggle, isOpen, setIsOpen }) => {
@@ -190,7 +190,7 @@ export const KBExplorer = ({ index, featured = [] }) => {
     <>
       <div style={{ maxWidth: "1312px", marginLeft: "max(0px, calc((100vw - 1312px) / 2 - 19rem))", marginRight: "auto", paddingLeft: "1.75rem", paddingRight: "1.75rem" }}>
         <div className="my-8">
-          {/* 주요 문서 section - full width banner image cards */}
+          {/* Featured articles section - full width banner image cards */}
           {featuredArticles.length > 0 && (
             <div className="mb-12">
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">주요 문서</h2>
@@ -202,14 +202,15 @@ export const KBExplorer = ({ index, featured = [] }) => {
                     onClick={(e) => handleCardClick(e, article.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
-                    {/* Rendered as a background image (not <img>) so Mintlify's
-                        click-to-zoom doesn't hijack the link navigation. */}
-                    <div
-                      role="img"
-                      aria-label={article.title}
-                      className="w-full aspect-[3/1] lg:aspect-[16/9] bg-cover bg-center transition-transform duration-200 group-hover:scale-[1.02]"
-                      style={{ backgroundImage: `url(${withBase(article.image)})` }}
-                    />
+                    {/* Banner art is drawn in code from the title so it
+                        translates automatically — no per-locale PNG needed. */}
+                    <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
+                      <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{article.title}</span>
+                      <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
+                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <span className="text-sm font-medium text-black">인기</span>
+                      </div>
+                    </div>
                   </a>
                 ))}
               </div>

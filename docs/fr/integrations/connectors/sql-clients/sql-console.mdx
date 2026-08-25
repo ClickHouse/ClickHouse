@@ -10,7 +10,7 @@ integration:
    - category: 'sql_client'
 ---
 
-import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 La SQL Console est le moyen le plus rapide et le plus simple d’explorer et d’interroger vos bases de données dans ClickHouse Cloud. Vous pouvez utiliser la SQL Console pour :
@@ -314,7 +314,7 @@ Gardez à l’esprit que GenAI est une fonctionnalité expérimentale. Soyez pru
   ### Rechercher dans le résultat de la requête
 </div>
 
-Après l’exécution d’une requête, vous pouvez rapidement rechercher dans le résultat de la requête renvoyé à l’aide du champ de recherche du volet des résultats. Cette fonctionnalité permet de prévisualiser le résultat d’une clause `WHERE` supplémentaire, ou simplement de vérifier que certaines données sont bien incluses dans le résultat de la requête. Après avoir saisi une valeur dans le champ de recherche, le volet des résultats se met à jour et renvoie les enregistrements contenant un champ correspondant à la valeur saisie. Dans cet exemple, nous allons rechercher toutes les occurrences de `breakfast` dans la table `hackernews` pour les commentaires contenant `ClickHouse` (sans tenir compte de la casse) :
+Après l’exécution d’une requête, vous pouvez rapidement rechercher dans l’ensemble de résultats renvoyé à l’aide du champ de recherche du volet des résultats. Cette fonctionnalité permet de prévisualiser le résultat d’une clause `WHERE` supplémentaire, ou simplement de vérifier que certaines données sont bien incluses dans l’ensemble de résultats. Après avoir saisi une valeur dans le champ de recherche, le volet des résultats se met à jour et renvoie les enregistrements contenant un champ correspondant à la valeur saisie. Dans cet exemple, nous allons rechercher toutes les occurrences de `breakfast` dans la table `hackernews` pour les commentaires contenant `ClickHouse` (sans tenir compte de la casse) :
 
 <Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Recherche dans les données Hacker News" />
 
@@ -338,7 +338,7 @@ La sélection d’une taille de page applique immédiatement la pagination à l�
   ### Exportation des données du résultat de la requête
 </div>
 
-Les résultats de requête peuvent être facilement exportés au format CSV directement depuis la SQL Console. Pour ce faire, ouvrez le menu `•••` à droite de la barre d’outils du volet des résultats, puis sélectionnez &#39;Télécharger au format CSV&#39;.
+Les ensembles de résultats de requête peuvent être facilement exportés au format CSV directement depuis la SQL Console. Pour ce faire, ouvrez le menu `•••` à droite de la barre d’outils du volet des résultats, puis sélectionnez &#39;Télécharger au format CSV&#39;.
 
 <Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="lg" border alt="Télécharger au format CSV" />
 

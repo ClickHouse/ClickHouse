@@ -34,20 +34,20 @@ quantileExactWeighted(level)(expr, weight)
 
 **パラメータ**
 
-* `level` — 省略可能。分位数のレベルです。0 から 1 までの定数の浮動小数点数です。`level` には `[0.01, 0.99]` の範囲の値を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は中央値を計算します。[`Float*`](/ja/reference/data-types/float)
+* `level` — 省略可能。分位点のレベルです。0 から 1 までの定数の浮動小数点数です。`level` には `[0.01, 0.99]` の範囲の値を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は中央値を計算します。[`Float*`](/ja/reference/data-types/float)
 
 **引数**
 
-* `expr` — カラム値に対する式です。結果の型は数値データ型、Date、または DateTime です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式です。結果の型は数値データ型、`Date`、`DateTime`、または `DateTime64` です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `weight` — 数列の要素の重みを格納するカラムです。重みは値の出現回数を表します。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-指定したレベルの分位数です。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの分位点です。数値データ型の場合、出力フォーマットは入力フォーマットと一致します。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 
-**厳密な重み付き分位数を計算する**
+**厳密な重み付き分位点を計算する**
 
 ```sql title=Query
 CREATE TABLE t (
@@ -55,7 +55,7 @@ CREATE TABLE t (
     val Int32
 ) ENGINE = Memory;
 
--- サンプルデータを挿入する
+-- Insert the sample data
 INSERT INTO t VALUES
 (0, 3),
 (1, 2),

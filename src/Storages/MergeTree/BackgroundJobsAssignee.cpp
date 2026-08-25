@@ -122,10 +122,10 @@ void BackgroundJobsAssignee::start()
         {
         case Type::DataProcessing:
         case Type::Moving:
-            holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+            holder = getContext()->getSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
             break;
         case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+            holder = getContext()->getStreamingSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
             break;
         }
     }

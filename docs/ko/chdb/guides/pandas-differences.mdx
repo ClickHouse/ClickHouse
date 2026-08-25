@@ -1,0 +1,456 @@
+---
+title: 'pandas와의 주요 차이점'
+sidebarTitle: '주요 차이점'
+slug: /chdb/guides/pandas-differences
+description: 'DataStore와 pandas의 주요 차이점'
+keywords: ['chdb', 'datastore', 'pandas', 'differences', 'behavior']
+doc_type: 'guide'
+---
+
+DataStore는 pandas와 매우 높은 호환성을 제공하지만, 알아두어야 할 중요한 차이점이 있습니다.
+
+<div id="summary">
+  ## 요약 표
+</div>
+
+| 항목          | pandas           | DataStore                                                         |
+| ----------- | ---------------- | ----------------------------------------------------------------- |
+| **실행 방식**   | Eager (즉시 실행)    | Lazy (지연 실행)                                                      |
+| **반환 타입**   | DataFrame/Series | DataStore/ColumnExpr                                              |
+| **행 순서**    | 유지됨              | 유지됨(자동); [성능 모드](/ko/chdb/configuration/performance-mode)에서는 보장되지 않음 |
+| **inplace** | 지원됨              | 지원되지 않음                                                           |
+| **인덱스**     | 완전 지원            | 단순화됨                                                              |
+| **메모리**     | 모든 데이터가 메모리에 있음  | 데이터는 소스에 있음                                                       |
+
+***
+
+<div id="lazy-execution">
+  ## 1. 지연 실행과 즉시 실행
+</div>
+
+<div id="pandas-eager">
+  ### pandas (즉시 실행)
+</div>
+
+연산이 즉시 실행됩니다:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("data.csv")  # Loads entire file NOW
+result = df[df['age'] > 25]   # Filters NOW
+grouped = result.groupby('city')['salary'].mean()  # Aggregates NOW
+```
+
+<div id="datastore-lazy">
+  ### DataStore (지연 실행)
+</div>
+
+결과가 필요할 때까지 연산은 실행되지 않습니다:
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")  # Just records the source
+result = ds[ds['age'] > 25]   # Just records the filter
+grouped = result.groupby('city')['salary'].mean()  # Just records
+
+# Execution happens here:
+print(grouped)        # Executes when displaying
+df = grouped.to_df()  # Or when converting to pandas
+```
+
+<div id="why-lazy">
+  ### 중요한 이유
+</div>
+
+지연 실행은 다음을 가능하게 합니다:
+
+* **쿼리 최적화**: 여러 작업을 하나의 SQL 쿼리로 컴파일합니다
+* **컬럼 프루닝**: 필요한 컬럼만 읽습니다
+* **필터 푸시다운**: 필터를 원본 데이터 소스에서 적용합니다
+* **메모리 효율성**: 필요하지 않은 데이터는 로드하지 않습니다
+
+***
+
+<div id="return-types">
+  ## 2. 반환 타입
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df['col']           # Returns pd.Series
+df[['a', 'b']]      # Returns pd.DataFrame
+df[df['x'] > 10]    # Returns pd.DataFrame
+df.groupby('x')     # Returns DataFrameGroupBy
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+```python
+ds['col']           # Returns ColumnExpr (lazy)
+ds[['a', 'b']]      # Returns DataStore (lazy)
+ds[ds['x'] > 10]    # Returns DataStore (lazy)
+ds.groupby('x')     # Returns LazyGroupBy
+```
+
+<div id="converting-to-pandas-types">
+  ### pandas 타입으로 변환하기
+</div>
+
+```python
+# Get pandas DataFrame
+df = ds.to_df()
+df = ds.to_pandas()
+
+# Get pandas Series from column
+series = ds['col'].to_pandas()
+
+# Or trigger execution
+print(ds)  # Automatically converts for display
+```
+
+***
+
+<div id="triggers">
+  ## 3. 실행 트리거
+</div>
+
+실제 값이 필요한 경우 DataStore가 실행됩니다:
+
+| 트리거                  | 예시                 | 비고               |
+| -------------------- | ------------------ | ---------------- |
+| `print()` / `repr()` | `print(ds)`        | 표시하려면 데이터가 필요합니다 |
+| `len()`              | `len(ds)`          | 행 수가 필요합니다       |
+| `.columns`           | `ds.columns`       | 컬럼 이름이 필요합니다     |
+| `.dtypes`            | `ds.dtypes`        | 타입 정보가 필요합니다     |
+| `.shape`             | `ds.shape`         | 차원 정보가 필요합니다     |
+| `.values`            | `ds.values`        | 실제 데이터가 필요합니다    |
+| `.index`             | `ds.index`         | 인덱스가 필요합니다       |
+| `to_df()`            | `ds.to_df()`       | 명시적으로 변환합니다      |
+| 반복                   | `for row in ds`    | 반복 처리가 필요합니다     |
+| `equals()`           | `ds.equals(other)` | 비교가 필요합니다        |
+
+<div id="stay-lazy">
+  ### 지연 실행으로 유지되는 연산
+</div>
+
+| 연산               | 반환값         |
+| ---------------- | ----------- |
+| `filter()`       | DataStore   |
+| `select()`       | DataStore   |
+| `sort()`         | DataStore   |
+| `groupby()`      | LazyGroupBy |
+| `join()`         | DataStore   |
+| `ds['col']`      | ColumnExpr  |
+| `ds[['a', 'b']]` | DataStore   |
+| `ds[condition]`  | DataStore   |
+
+***
+
+<div id="row-order">
+  ## 4. 행 순서
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+행의 순서는 항상 유지됩니다:
+
+```python
+df = pd.read_csv("data.csv")
+print(df.head())  # Always same order as file
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+대부분의 연산에서 행 순서는 **자동으로 유지됩니다**:
+
+```python
+ds = pd.read_csv("data.csv")
+print(ds.head())  # Matches file order
+
+# Filter preserves order
+ds_filtered = ds[ds['age'] > 25]  # Same order as pandas
+```
+
+DataStore는 pandas와의 순서 일관성을 보장하기 위해 내부적으로 원래 행 위치를 자동으로 추적합니다(`rowNumberInAllBlocks()`를 사용).
+
+<div id="order-preserved">
+  ### 순서가 유지되는 경우
+</div>
+
+* 파일 소스(CSV, Parquet, JSON 등)
+* pandas DataFrame 소스
+* 필터링 작업
+* 컬럼 선택
+* `sort()` 또는 `sort_values()`를 명시적으로 적용한 후
+* 순서를 결정하는 작업(`nlargest()`, `nsmallest()`, `head()`, `tail()`)
+
+<div id="order-may-differ">
+  ### 순서가 달라질 수 있는 경우
+</div>
+
+* `groupby()` 집계 후(일관된 순서를 보장하려면 `sort_values()`를 사용)
+* 특정 JOIN 유형의 `merge()` / `join()` 후
+* **성능 모드**(`config.use_performance_mode()`)에서는 어떤 작업에서도 행 순서가 보장되지 않습니다. [성능 모드](/ko/chdb/configuration/performance-mode)를 참조하십시오.
+
+***
+
+<div id="no-inplace">
+  ## 5. inplace 매개변수 없음
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df.drop(columns=['col'], inplace=True)  # Modifies df
+df.fillna(0, inplace=True)              # Modifies df
+df.rename(columns={'old': 'new'}, inplace=True)
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+`inplace=True`는 지원되지 않습니다. 항상 결과를 변수에 할당하십시오:
+
+```python
+ds = ds.drop(columns=['col'])           # Returns new DataStore
+ds = ds.fillna(0)                       # Returns new DataStore
+ds = ds.rename(columns={'old': 'new'})  # Returns new DataStore
+```
+
+<div id="why-no-inplace">
+  ### 왜 inplace가 없나요?
+</div>
+
+DataStore는 다음을 가능하게 하기 위해 불변 연산을 사용합니다.
+
+* 쿼리 구성(지연 실행)
+* 스레드 안전성
+* 디버깅 용이성
+* 더 깔끔한 코드
+
+***
+
+<div id="index">
+  ## 6. 인덱스 지원
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+전체 인덱스 지원:
+
+```python
+df = df.set_index('id')
+df.loc['user123']           # Label-based access
+df.loc['a':'z']             # Label-based slicing
+df.reset_index()
+df.index.name = 'user_id'
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+간편한 인덱스 지원:
+
+```python
+# Basic operations work
+ds.loc[0:10]               # Integer position
+ds.iloc[0:10]              # Same as loc for DataStore
+
+# For pandas-style index operations, convert first
+df = ds.to_df()
+df = df.set_index('id')
+df.loc['user123']
+```
+
+<div id="datastore-source-matters">
+  ### DataStore 소스에 따라 달라집니다
+</div>
+
+* **DataFrame 소스**: pandas 인덱스를 유지합니다
+* **File 소스**: 단순한 정수 인덱스를 사용합니다
+
+***
+
+<div id="comparison">
+  ## 7. 비교 동작 방식
+</div>
+
+<div id="comparing-with-pandas">
+  ### pandas와 비교
+</div>
+
+pandas는 DataStore 객체를 인식하지 못합니다:
+
+```python
+import pandas as pd
+from chdb import datastore as ds
+
+pdf = pd.DataFrame({'a': [1, 2, 3]})
+dsf = ds.DataFrame({'a': [1, 2, 3]})
+
+# This doesn't work as expected
+pdf == dsf  # pandas doesn't know DataStore
+
+# Solution: convert DataStore to pandas
+pdf.equals(dsf.to_pandas())  # True
+```
+
+<div id="using-equals">
+  ### equals() 사용하기
+</div>
+
+```python
+# DataStore.equals() also works
+dsf.equals(pdf)  # Compares with pandas DataFrame
+```
+
+***
+
+<div id="types">
+  ## 8. 타입 추론
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+numpy/pandas의 타입을 사용합니다:
+
+```python
+df['col'].dtype  # int64, float64, object, datetime64, etc.
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+ClickHouse 타입을 사용할 수 있습니다:
+
+```python
+ds['col'].dtype  # Int64, Float64, String, DateTime, etc.
+
+# Types are converted when going to pandas
+df = ds.to_df()
+df['col'].dtype  # Now pandas type
+```
+
+<div id="explicit-casting">
+  ### 명시적 형변환
+</div>
+
+```python
+# Force specific type
+ds['col'] = ds['col'].astype('int64')
+```
+
+***
+
+<div id="memory">
+  ## 9. 메모리 모델
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+모든 데이터는 메모리에 저장됩니다:
+
+```python
+df = pd.read_csv("huge.csv")  # 10GB in memory!
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+데이터는 필요해질 때까지 원본 소스에 그대로 유지됩니다:
+
+```python
+ds = pd.read_csv("huge.csv")  # Just metadata
+ds = ds.filter(ds['year'] == 2024)  # Still just metadata
+
+# Only filtered result is loaded
+df = ds.to_df()  # Maybe only 1GB now
+```
+
+***
+
+<div id="errors">
+  ## 10. 오류 메시지
+</div>
+
+<div id="different-error-sources">
+  ### 서로 다른 오류 발생 원인
+</div>
+
+* **pandas errors**: pandas 라이브러리에서 발생
+* **DataStore errors**: chDB 또는 ClickHouse에서 발생
+
+```python
+# May see ClickHouse-style errors
+# "Code: 62. DB::Exception: Syntax error..."
+```
+
+<div id="debugging-tips">
+  ### 디버깅 팁
+</div>
+
+```python
+# View the SQL to debug
+print(ds.to_sql())
+
+# See execution plan
+ds.explain()
+
+# Enable debug logging
+from chdb.datastore.config import config
+config.enable_debug()
+```
+
+***
+
+<div id="checklist">
+  ## 마이그레이션 체크리스트
+</div>
+
+pandas에서 마이그레이션할 때:
+
+* [ ] import 문 변경
+* [ ] `inplace=True` 매개변수 제거
+* [ ] pandas DataFrame이 필요한 경우 `to_df()`를 명시적으로 추가
+* [ ] 행 순서가 중요하다면 정렬 추가
+* [ ] 비교 테스트에는 `to_pandas()` 사용
+* [ ] 대표적인 데이터 크기로 테스트
+
+***
+
+<div id="quick-ref">
+  ## 빠른 참고
+</div>
+
+| pandas                  | DataStore                      |
+| ----------------------- | ------------------------------ |
+| `df[condition]`         | 동일함(DataStore 반환)              |
+| `df.groupby()`          | 동일함(LazyGroupBy 반환)            |
+| `df.drop(inplace=True)` | `ds = ds.drop()`               |
+| `df.equals(other)`      | `ds.to_pandas().equals(other)` |
+| `df.loc['label']`       | `ds.to_df().loc['label']`      |
+| `print(df)`             | 동일함(실행 트리거)                    |
+| `len(df)`               | 동일함(실행 트리거)                    |

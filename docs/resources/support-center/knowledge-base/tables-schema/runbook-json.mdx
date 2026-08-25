@@ -71,7 +71,7 @@ SELECT service, level, duration_ms FROM events WHERE service = 'api'
 
 **Watch out for**
 
-- If you insert JSON data with `JSONEachRow` and the JSON contains fields not in the schema, ClickHouse drops them silently by default. Set [`input_format_skip_unknown_fields`](/reference/settings/formats#input_format_skip_unknown_fields) to `0` if you want errors instead.
+- If you insert JSON data with `JSONEachRow` and the JSON contains fields not in the schema, ClickHouse drops them silently by default. Set [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) to `0` if you want errors instead.
 
 </Accordion>
 

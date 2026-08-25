@@ -245,7 +245,7 @@ void selectWithinPartsRange(
     /// Enable heuristic for lowering selected merge ranges. This can increase number of
     /// concurrently running merges and thus increase the merge speed.
     size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
+    if (settings.max_parts_to_merge_at_once && settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
     {
         chassert(settings.partitions_stats);
         chassert(range_it->size() > 1);
@@ -269,6 +269,8 @@ void selectWithinPartsRange(
                 (static_cast<double>(max_parts_to_merge_at_once) - settings.base) * (1.0 - std::pow((static_cast<double>(partition_stats.part_count) - settings.base) / (static_cast<double>(settings.parts_to_throw_insert) - settings.base), exponent))
             );
         }
+
+        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)

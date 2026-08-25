@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-بدءًا من ClickHouse 25.7، يتضمن كلٌّ من [ClickHouse Client](/ar/concepts/features/interfaces/cli) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) [وظائف مدعومة بالذكاء الاصطناعي](/ar/concepts/features/interfaces/cli#ai-sql-generation) تحوّل الأوصاف المكتوبة باللغة الطبيعية إلى استعلامات SQL. تتيح لك هذه الميزة وصف متطلباتك المتعلقة بالبيانات بنص عادي، ثم يترجم النظام ذلك إلى عبارات SQL المقابلة.
+بدءًا من ClickHouse 25.7، يتضمن كلٌّ من [ClickHouse Client](/ar/concepts/features/interfaces/cli) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) [وظائف مدعومة بالذكاء الاصطناعي](/ar/concepts/features/interfaces/client#ai-sql-generation) تحوّل الأوصاف المكتوبة باللغة الطبيعية إلى استعلامات SQL. تتيح لك هذه الميزة وصف متطلباتك المتعلقة بالبيانات بنص عادي، ثم يترجم النظام ذلك إلى عبارات SQL المقابلة.
 
 تكون هذه الإمكانية مفيدة بشكل خاص إذا لم تكن على دراية ببنية SQL المعقدة أو كنت بحاجة إلى توليد استعلامات بسرعة لأغراض تحليل البيانات الاستكشافي. تعمل هذه الميزة مع جداول ClickHouse القياسية وتدعم أنماط الاستعلامات الشائعة، بما في ذلك التصفية والتجميع وعمليات JOIN.
 
@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=your_api_key
 export OPENAI_API_KEY=your_api_key
 ```
 
-بدلًا من ذلك، يمكنك [تقديم ملف إعدادات](/ar/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+بدلًا من ذلك، يمكنك [تقديم ملف إعدادات](/ar/concepts/features/interfaces/client#ai-sql-generation-configuration).
 
 <div id="connecting-to-the-clickhouse-sql-playground">
   ## الاتصال بـ ClickHouse SQL playground

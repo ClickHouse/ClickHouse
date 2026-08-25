@@ -78,6 +78,15 @@ struct SerializedStateProductQuantization : public ISerialization::SerializeBina
 struct DeserializedStateProductQuantization : public ISerialization::DeserializeBinaryBulkState
 {
     ColumnPtr codebook; /// a one-row column, or null until the first granule reads it
+
+    /// The result column is a `ColumnConst` wrapping this same one-row codebook, so the state and the result share
+    /// the column. Expose it so `ColumnsOwnershipValidator` accounts for the state-side reference too; otherwise the
+    /// validator would only see the result-side edge and could miss an under-counted state-held reference.
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (codebook)
+            callback(codebook);
+    }
 };
 
 /// Read serialization for the codebook subcolumn. The codebook is stored as a SINGLE value per part (written
@@ -130,11 +139,16 @@ public:
         const size_t prev_size = column ? column->size() : 0;
 
         /// Read the part's single codebook value exactly once (the stream holds one value for the whole part); every
-        /// granule reuses it. The first granule of a read range is positioned at the codebook's start by its mark.
+        /// granule reuses it.
         if (!state_pq->codebook)
         {
             settings.path.push_back(Substream::Regular);
             ReadBuffer * stream = settings.getter(settings.path);
+            /// Seek the codebook stream to the current granule's mark explicitly. The wide reader's getter seeks only
+            /// conditionally (skipped on prefetch / continue_reading), so this single-value stream may otherwise be
+            /// left at a sibling substream's offset, yielding a short read. Done after the getter so the stream exists.
+            if (stream && settings.seek_stream_to_current_mark_callback)
+                settings.seek_stream_to_current_mark_callback(settings.path);
             settings.path.pop_back();
             if (!stream)
                 return;
@@ -175,6 +189,11 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
             SerializationProductQuantizationCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             product_quantization_subcolumn_name, ISerialization::Substream::ProductQuantizationCodebook);
     }
+}
+
+String SerializationQuantizedVector::getCustomSerializationIdentity() const
+{
+    return fmt::format("QuantizedVector({},{},{},{})", params.method, params.dimensions, params.bits, params.m);
 }
 
 void SerializationQuantizedVector::enumerateStreams(

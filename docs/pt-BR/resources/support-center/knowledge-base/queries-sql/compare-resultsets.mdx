@@ -24,7 +24,7 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- sua consulta 1 aqui
+            -- your query 1 here
             -- SELECT ...
         )
     ) AS q1_resultset_hash,
@@ -32,14 +32,14 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- sua consulta 2 aqui
+            -- your query 2 here
             -- SELECT ...
         )
     ) AS q2_resultset_hash
 SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
 ```
 
-O exemplo usa uma [CTE](/pt-BR/reference/statements/select/with) para calcular a soma dos valores de [cityHash](/pt-BR/reference/functions/regular-functions/hash-functions#cityhash64) de cada linha nessas duas consultas e retornará `1` se os dois conjuntos de resultados forem idênticos.
+O exemplo usa uma [CTE](/pt-BR/reference/statements/select/with) para calcular a soma dos valores de [cityHash](/pt-BR/reference/functions/regular-functions/hash-functions#cityHash64) de cada linha nessas duas consultas e retornará `1` se os dois conjuntos de resultados forem idênticos.
 
 Usando alguns dados de sequência de inteiros e formatação Pretty:
 
