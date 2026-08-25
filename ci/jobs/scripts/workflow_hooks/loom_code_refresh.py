@@ -81,17 +81,19 @@ def refresh():
         with urllib.request.urlopen(req, timeout=10) as r:
             print(f"loom code.refresh[{branch}]: HTTP {r.status}")
     except urllib.error.HTTPError as e:
-        if e.code == 403 and branch == "master":
-            # The token must always cover master's namespace, so this is
-            # auth drift (expired/revoked token, ACL change), not an
-            # unindexed branch. Surface it; the index silently going stale
-            # is exactly what this hook exists to prevent.
-            info.add_workflow_warning(
-                "loom code.refresh: HTTP 403 for master - CI token expired,"
-                " revoked, or no longer covers the namespace"
-            )
-            return
         if e.code in (403, 404):
+            if branch == "master":
+                # master's namespace must always exist and be covered by
+                # the token, so this is drift - an expired/revoked token or
+                # ACL change (403), or a bad loom URL, deleted namespace,
+                # or route change (404) - not an unindexed branch. Surface
+                # it; the index silently going stale is exactly what this
+                # hook exists to prevent.
+                info.add_workflow_warning(
+                    f"loom code.refresh: HTTP {e.code} for master - loom"
+                    " URL, namespace, or CI token misconfigured"
+                )
+                return
             # loom doesn't index this branch (404), or the token doesn't
             # cover its namespace (403). Expected for most release
             # branches - not a warning.
