@@ -239,7 +239,16 @@ bool VirtualRowReadAheadTransform::processLane(size_t lane_num)
             if (isVirtualRow(chunk))
             {
                 lane.boundary = extractBoundary(chunk);
-                lane.buffer.push(std::move(chunk));
+
+                /// An unconsumed boundary announcement is obsoleted by a newer one (a virtual
+                /// row promises "my next output starts at or after this key", and a later one
+                /// only tightens that), so keep at most one trailing virtual row: this bounds
+                /// the buffer while the lane scans through filtered-out groups and spares the
+                /// merge a cursor round trip per obsolete boundary.
+                if (!lane.buffer.empty() && isVirtualRow(lane.buffer.back()))
+                    lane.buffer.back() = std::move(chunk);
+                else
+                    lane.buffer.push(std::move(chunk));
 
                 if (lane.rows_in_current_group == 0)
                     ++lane.dataless_groups;

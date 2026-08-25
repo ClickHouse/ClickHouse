@@ -68,12 +68,16 @@ private:
         Columns boundary;
 
         /// Granted read-ahead groups; a group is consumed by the next virtual row. Kept at
-        /// most 1 deliberately: one group is the per-lane speculation depth, so when a limit
-        /// finishes the merge early, the waste is bounded by one group per lane in the window
-        /// (the window bounds how many lanes read at once, the credit bounds how deep each
-        /// goes). A demand-paced lane re-earns its credit at every delivery, so a busy lane
-        /// is not throttled by this. A lane that never produces virtual rows keeps its credit
-        /// and streams like a plain bounded buffer.
+        /// most 1 deliberately, but note what that bounds: the window bounds how many lanes
+        /// read at once, and the buffer caps bound how much *real data* a lane holds ahead of
+        /// the merge. A lane whose groups are entirely filtered out keeps re-earning credit
+        /// (via `topUpReadAhead` while it stays among the nearest boundaries, or the free-run
+        /// below) and scans on: crossing those groups is work the merge would demand anyway,
+        /// and vr0/vr1 read them just as eagerly; obsolete boundary announcements are
+        /// collapsed in the buffer, so this costs one buffered virtual row, not an unbounded
+        /// queue. A demand-paced lane re-earns its credit at every delivery, so a busy lane
+        /// is not throttled. A lane that never produces virtual rows keeps its credit and
+        /// streams like a plain bounded buffer.
         size_t credit = 0;
 
         /// Real rows seen since the last virtual row, and how many consecutive groups ended
