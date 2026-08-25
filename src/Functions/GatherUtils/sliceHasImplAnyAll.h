@@ -559,30 +559,10 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
-/// AArch64/NEON counterpart of the x86 specialisations above.
-///
-/// The x86 code compares a whole vector of `second` against a whole vector of
-/// `first` and rotates one of them through every lane offset, which amortises
-/// the horizontal "have all lanes been found" test over LANES*LANES element
-/// compares. That shape is deliberately NOT copied here: it can only leave the
-/// inner scan once EVERY lane of the current `second` block has been found
-/// somewhere in `first`, i.e. at the maximum over LANES search depths instead of
-/// at each individual one, and for the array shapes this function actually sees
-/// the generic loop's per-element early exit (sliceHasImplAnyAllGenericImpl
-/// below, inner break included) is worth more than the amortisation. So the NEON
-/// path keeps the scalar loop's control flow - one needle at a time, leaving the
-/// moment it is found - and vectorises only the haystack scan, which is where
-/// all the work is.
-///
-/// Two cases deliberately stay on the scalar path:
-///  - null maps: a null slot in `first` holds an arbitrary value and must not
-///    match, which would need the null map widened to lane width;
-///  - short haystacks: one horizontal reduction costs several element
-///    compares, so a vector scan only pays for itself once the haystack is
-///    long enough to amortise it.
-/// Both delegate to hasAllIntegralLoopRemainder, the same scalar loop the x86
-/// specialisations use for their own remainders, so their behaviour is
-/// bit-for-bit what it was before this block existed.
+/// The x86 lane-rotation shape is deliberately not used here: it can only leave
+/// the inner scan once every lane of the current `second` block has been found,
+/// i.e. at the maximum over LANES search depths rather than at each one, so it
+/// gives up the per-needle early exit that dominates for these array shapes.
 
 template <typename IntType>
 inline ALWAYS_INLINE uint8x16_t neonEqualMask(const IntType * haystack, IntType needle)
@@ -621,6 +601,9 @@ NO_INLINE bool sliceHasImplAnyAllImplNeon(
     static constexpr size_t lanes = 16 / sizeof(IntType);
     static constexpr size_t min_vector_haystack = lanes * 4 < 32 ? 32 : lanes * 4;
 
+    /// A null slot in `first` holds an arbitrary value that must not match, which would
+    /// need the null map widened to lane width; and one horizontal reduction costs several
+    /// element compares, so a vector scan only pays off once the haystack is long enough.
     if (first_null_map != nullptr || second_null_map != nullptr || first.size < min_vector_haystack)
         return hasAllIntegralLoopRemainder(0, first, second, first_null_map, second_null_map);
 
