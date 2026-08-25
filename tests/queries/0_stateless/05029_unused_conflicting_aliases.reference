@@ -8,6 +8,10 @@ Colliding column names of conflicting constant expressions are disambiguated
 (x)_1	Tuple(UInt8)					
 The same argument named differently in different tuples produces different tuples
 (1)	(1)	Tuple(\n    x UInt8)	Tuple(\n    y UInt8)
+A tuple element name can shadow the name of the source column
+(1)	(2)
+(a)	Tuple(\n    a UInt8)					
+(a)_1	Tuple(\n    a UInt8)					
 Unused conflicting aliases of nested expressions are allowed
 (2)
 3

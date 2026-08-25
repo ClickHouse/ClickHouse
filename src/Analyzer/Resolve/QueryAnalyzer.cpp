@@ -1269,6 +1269,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
             {
+                scope.used_alias_names.insert(identifier_bind_part);
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
             return {};
@@ -1283,6 +1284,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
+
+    /// Record that some identifier was actually resolved through this alias
+    /// (used by the check for multiple expressions with the same alias, see resolveQuery).
+    /// Tentative lookups that fall back to another resolution path return earlier and are not recorded.
+    if (alias_node)
+        scope.used_alias_names.insert(identifier_bind_part);
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
@@ -6672,7 +6679,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * If the alias is used, the check below is preserved: whichever expression a reference
           * resolved to, conflicting definitions make the reference ambiguous.
           */
-        if (!scope.aliases.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
+        if (!scope.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
         {
             has_unused_duplicated_aliases = true;
             continue;
@@ -6823,9 +6830,24 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 const auto * first_constant = projection_nodes[it->second]->as<ConstantNode>();
                 const auto * current_constant = projection_nodes[i]->as<ConstantNode>();
 
-                bool need_rename = first_constant && current_constant
-                    && (!projection_columns[i].type->equals(*first_column.type)
-                        || first_constant->getValue() != current_constant->getValue());
+                bool need_rename = false;
+                if (first_constant && current_constant)
+                {
+                    need_rename = !projection_columns[i].type->equals(*first_column.type)
+                        || first_constant->getValue() != current_constant->getValue();
+                }
+                else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
+                    || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
+                {
+                    /// Unequal non-constant expressions can also collide on the column name when the name
+                    /// is built from repeated element names, e.g. SELECT tuple(a AS x), tuple(b AS x).
+                    /// They can become constants of different values during planning (e.g. when the source
+                    /// columns are constant), and columns with identical names must have identical structure
+                    /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
+                    /// tables) keep the historical behavior and are not renamed.
+                    need_rename = !projection_nodes[it->second]->isEqual(
+                        *projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
+                }
 
                 if (!need_rename)
                     continue;

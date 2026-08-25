@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_set>
-
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -22,14 +20,6 @@ struct ScopeAliases
 
     /// Nodes with duplicated aliases
     QueryTreeNodes nodes_with_duplicated_aliases;
-
-    /// Alias names that were looked up during identifier resolution in this scope.
-    /// Multiple expressions with the same alias are an error only if the alias is actually used:
-    /// unused conflicting aliases are allowed, because aliases also give names to expressions
-    /// without being referenced, e.g. to tuple elements in SELECT tuple(1 AS x), tuple(2 AS x)
-    /// (see the setting enable_named_columns_in_function_tuple).
-    /// Mutable because lookups are recorded through the const find overload as well.
-    mutable std::unordered_set<std::string> used_alias_names;
 
     /// Cloned resolved expressions with aliases that must be removed
     QueryTreeNodes node_to_remove_aliases;
@@ -71,7 +61,6 @@ struct ScopeAliases
         if (it == alias_map.end())
             return {};
 
-        used_alias_names.insert(*key);
         return &it->second;
     }
 
