@@ -432,13 +432,14 @@ struct HashMethodSerialized
     /// is done in one chunk instead, which only applies where the chunk is a reused buffer.
     static constexpr size_t region_chunk_bytes = 128 * 1024;
     static constexpr size_t chunk_whole_block_below = 4 * 1024 * 1024;
-    /// A region is carved from the arena and managed here, so nothing has to be given back to the
-    /// arena - which would not be possible anyway once the aggregate states of the new keys are
-    /// allocated from it between one chunk and the next.
+    /// A region is carved from the arena in one piece and handed out to the chunks that follow, so
+    /// that a chunk which inserts nothing costs no allocation of its own.
     static constexpr size_t region_bytes = 1024 * 1024;
     char * region_free = nullptr;   /// first byte no inserted key owns
     VectorWithMemoryTracking<char *> chunk_memories;
     char * region_end = nullptr;
+    /// The arena the region was taken from, so that its unused tail can be given back.
+    Arena * region_pool = nullptr;
     size_t chunk_begin = 0;
     size_t chunk_end = 0;
 
@@ -544,6 +545,13 @@ struct HashMethodSerialized
             prefetch_enabled = hash_serialized_context->settings.enable_prefetch;
             min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
         }
+    }
+
+    /// The block is done with: give back what the last chunk did not need. Declaring this also
+    /// stops the state from being moved - moving it would leave two owners of the same tail.
+    ~HashMethodSerialized()
+    {
+        releaseUnusedRegionTail();
     }
 
     /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
@@ -689,6 +697,28 @@ struct HashMethodSerialized
     /// region is carved from the arena in one go and managed here: the keys kept so far sit at its
     /// front, the chunk is laid out after them, and the rows that turn out to be duplicates are
     /// written over by the rows that follow.
+    /// Only the rows that turn out to be new keys keep their bytes; the rest of the region is
+    /// untouched, and a block of nothing but duplicates leaves nearly all of it that way. Give the
+    /// tail back rather than let a block's worth of arena go with every block - what a set map
+    /// holds should follow the keys, not the number of blocks that went past it.
+    ///
+    /// The arena hands memory out by bumping a pointer, so the tail can only go back while it is
+    /// still the last thing handed out. Nothing else takes from this arena today - a region is only
+    /// used where the cells hold no aggregate state - but the arena's own pointer says so, and that
+    /// stays true whatever else starts sharing it.
+    void releaseUnusedRegionTail()
+    {
+        if (!region_pool || region_free == region_end)
+            return;
+
+        if (region_pool->position() == region_end)
+            region_pool->rollback(static_cast<size_t>(region_end - region_free));
+
+        region_pool = nullptr;
+        region_free = nullptr;
+        region_end = nullptr;
+    }
+
     void NO_INLINE prepareKeyChunk(size_t first_row, Arena & pool)
     {
         const size_t rows = row_sizes.size();
@@ -718,9 +748,14 @@ struct HashMethodSerialized
         /// zero it looks like, so the first chunk asks the question the other way round.
         else if (!region_free || static_cast<size_t>(region_end - region_free) < bytes)
         {
+            /// What is left of the old region is too small for this chunk, so it is over: give back
+            /// whatever no key took before asking for the next one.
+            releaseUnusedRegionTail();
+
             const size_t size = std::max(region_bytes, bytes);
             region_free = pool.alloc(size);
             region_end = region_free + size;
+            region_pool = &pool;
         }
 
         serialized_keys.resize(rows);
