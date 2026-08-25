@@ -1759,6 +1759,8 @@ ReturnType readDateTimeTextFallback(
                 return false;
         }
 
+        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
+
     }
 
     return ReturnType(true);

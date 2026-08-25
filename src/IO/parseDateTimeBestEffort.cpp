@@ -325,7 +325,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     /// Fractional part is not allowed.
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
                 }
-                return ReturnType(true);
+                return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
             if (num_digits == 16 && !year && !has_time)
             {
@@ -341,7 +341,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     /// Fractional part is not allowed.
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
                 }
-                return ReturnType(true);
+                return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
             if (num_digits == 19 && !year && !has_time)
             {
@@ -357,7 +357,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     /// Fractional part is not allowed.
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
                 }
-                return ReturnType(true);
+                return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
             if (num_digits == 10 && !year && !has_time)
             {
@@ -376,7 +376,7 @@ ReturnType parseDateTimeBestEffortImpl(
                         readDigits(digits, sizeof(digits), in)));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
-                return ReturnType(true);
+                return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
             if (num_digits == 9 && !year && !has_time)
             {
@@ -395,7 +395,7 @@ ReturnType parseDateTimeBestEffortImpl(
                         readDigits(digits, sizeof(digits), in)));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
-                return ReturnType(true);
+                return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
             if (num_digits == 14 && !year && !has_time)
             {

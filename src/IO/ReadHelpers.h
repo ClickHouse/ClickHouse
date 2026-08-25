@@ -858,6 +858,23 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
 template <typename ReturnType = void, bool dt64_mode = false>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true);
 
+/// A digit-only timestamp is read as a plain integer, so its range has to be checked separately
+template <typename ReturnType, bool dt64_mode>
+inline ReturnType checkParsedDateTimeRange(time_t datetime [[maybe_unused]], bool saturate_on_overflow [[maybe_unused]])
+{
+    if constexpr (!dt64_mode)
+    {
+        if (!saturate_on_overflow && (datetime < 0 || datetime > static_cast<Int64>(UINT32_MAX)))
+        {
+            if constexpr (std::is_same_v<ReturnType, void>)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", datetime);
+            else
+                return false;
+        }
+    }
+    return ReturnType(true);
+}
+
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
 
@@ -973,7 +990,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             return ReturnType(true);
         }
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        if constexpr (throw_exception)
+            readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        else if (!readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf))
+            return false;
+
+        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
     }
     return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
 }

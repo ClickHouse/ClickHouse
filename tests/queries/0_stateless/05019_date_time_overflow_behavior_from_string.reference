@@ -16,3 +16,5 @@ throw, input formats
 throw, tentative parsers must not accept a clamped value
 2150-12-31	\N	2150-12-31
 2149-06-06
+throw, a digit-only timestamp is text too
+2106-02-07 06:28:15	2023-11-14 22:13:20	\N	1970-01-01 00:00:00

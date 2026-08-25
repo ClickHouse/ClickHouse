@@ -46,3 +46,11 @@ SELECT 'throw, tentative parsers must not accept a clamped value';
 SELECT v, variantElement(v, 'Date') AS d, variantElement(v, 'String') AS s
 FROM format(CSV, 'v Variant(Date, String)', '2150-12-31') SETTINGS allow_experimental_variant_type = 1;
 SELECT v FROM format(CSV, 'v Variant(Date, String)', '2149-06-06') SETTINGS allow_experimental_variant_type = 1;
+
+SELECT 'throw, a digit-only timestamp is text too';
+SELECT toDateTime('4294967296'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST('4294967296' AS DateTime); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(materialize('4294967296') AS DateTime); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":"4294967296"}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(Values, 'v DateTime', '(\'4294967296\')'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime('4294967295'), toDateTime('1700000000'), toDateTimeOrNull('4294967296'), toDateTimeOrZero('4294967296');
