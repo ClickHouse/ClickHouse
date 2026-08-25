@@ -467,7 +467,7 @@ DROP TABLE IF EXISTS t_cache_mixed_parts;
 
 CREATE TABLE t_cache_mixed_parts (id UInt64, value String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 1000, index_granularity = 1000;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 1000, index_granularity = 1000;
 
 -- Keep both parts alive until the assertions below have run.
 SYSTEM STOP MERGES t_cache_mixed_parts;
