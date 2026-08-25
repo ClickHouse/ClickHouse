@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
 
 namespace DB::ErrorCodes
@@ -53,7 +54,13 @@ struct TextIndexReadInfo
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
     bool is_fully_materialized;
+    /// False for an index granule analysis did not select: it has no read tasks, so it can only supply the
+    /// tokenizer for the row-level rewrite (createReadTasksForTextIndex rejects an unanalyzed index).
+    bool can_direct_read = true;
 };
+
+/// Keeps conditions synthesized by collectTextIndexInjectInfos alive while TextIndexReadInfos points at them.
+using OwnedTextIndexConditions = std::vector<std::shared_ptr<MergeTreeIndexWithCondition>>;
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
 
@@ -276,7 +283,69 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialized = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size(),
+            .can_direct_read = true,
+        };
+    }
+}
+
+/// Whether `metadata_snapshot` defines any text index, regardless of what granule analysis selected.
+bool hasTextIndex(const ReadFromMergeTree & read_from_merge_tree_step)
+{
+    auto metadata_snapshot = read_from_merge_tree_step.getStorageMetadata();
+    auto settings = read_from_merge_tree_step.getMergeTreeData().getSettings();
+
+    return std::ranges::any_of(metadata_snapshot->getSecondaryIndices(), [&](const auto & index_description)
+    {
+        return MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *settings)->isTextIndex();
+    });
+}
+
+/// Adds the text indexes granule analysis did not select. It only selects an index the predicate reaching the
+/// scan constrains, but a predicate above the scan needs the tokenizer of its index all the same -- otherwise
+/// it falls back to `splitByNonAlpha` and answers a different question than the index does.
+void collectTextIndexInjectInfos(
+    const ReadFromMergeTree & read_from_merge_tree_step,
+    const ActionsDAG::Node * predicate,
+    TextIndexReadInfos & text_index_read_infos,
+    OwnedTextIndexConditions & owned_conditions)
+{
+    if (!predicate)
+        return;
+
+    auto metadata_snapshot = read_from_merge_tree_step.getStorageMetadata();
+    auto context = read_from_merge_tree_step.getContext();
+    auto settings = read_from_merge_tree_step.getMergeTreeData().getSettings();
+
+    for (const auto & index_description : metadata_snapshot->getSecondaryIndices())
+    {
+        if (text_index_read_infos.contains(index_description.name))
+            continue;
+
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *settings);
+        if (!index_helper->isTextIndex())
+            continue;
+
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory =
+            [index_helper, context](const ActionsDAG *, const ActionsDAG::Node * node) -> MergeTreeIndexConditionPtr
+            {
+                return node ? index_helper->createIndexCondition(node, context) : nullptr;
+            };
+
+        auto dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate, context, /*boolean_context=*/ true);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(
+            std::move(dag), std::move(factory), metadata_snapshot, context, /*skip_folding=*/ true);
+
+        if (!condition_template->generateUnsubstituted())
+            continue;
+
+        owned_conditions.push_back(std::make_shared<MergeTreeIndexWithCondition>(std::move(index_helper), std::move(condition_template)));
+        text_index_read_infos[index_description.name] =
+        {
+            .index = owned_conditions.back().get(),
+            .is_materialized = false,
+            .is_fully_materialized = false,
+            .can_direct_read = false,
         };
     }
 }
@@ -547,7 +616,7 @@ private:
 
             /// Also skip replaceToVirtualColumn (registers/reserves the virtual column) when this replacer isn't
             /// allowed to use direct read: the same predicate may be analyzed again elsewhere for injection only.
-            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None || !direct_read_from_text_index)
+            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None || !direct_read_from_text_index || !info.can_direct_read)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -990,10 +1059,14 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (!read_from_merge_tree_step)
         return;
 
+    if (!hasTextIndex(*read_from_merge_tree_step))
+        return;
+
+    /// Conditions granule analysis selected. Only these can be read directly; the walk below adds the
+    /// remaining text indexes per filter, for the tokenizer rewrite alone.
     TextIndexReadInfos text_index_read_infos;
     collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos);
-    if (text_index_read_infos.empty())
-        return;
+    OwnedTextIndexConditions owned_conditions;
 
     /// This step can be visited by the pass more than once, because a Merge child plan is optimized
     /// again after ReadFromMerge pushes a filter down into it (StorageMerge), and because the same
@@ -1071,8 +1144,17 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
         bool is_adjacent_to_scan = (it == stack.rbegin() + 1);
         ActionsDAG & filter_dag = filter_step->getExpression();
+
+        /// Built per filter: the synthesized conditions describe this filter's own predicate.
+        TextIndexReadInfos filter_index_infos = text_index_read_infos;
+        collectTextIndexInjectInfos(
+            *read_from_merge_tree_step, &filter_dag.findInOutputs(filter_step->getFilterColumnName()), filter_index_infos, owned_conditions);
+
+        if (filter_index_infos.empty())
+            continue;
+
         const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-            *read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), allow_direct_read, tracked_columns);
+            *read_from_merge_tree_step, filter_dag, filter_index_infos, filter_step->getFilterColumnName(), allow_direct_read, tracked_columns);
         allow_direct_read = false;
         tracked_columns = trackColumnsThroughDAG(filter_dag, tracked_columns);
 
