@@ -3,6 +3,10 @@
 -- Aliases that only give names to nested expressions (e.g. to the elements of named tuples) can repeat.
 -- https://github.com/ClickHouse/ClickHouse/issues/89201
 
+-- The relaxation is implemented only in the new analyzer; the old analyzer still rejects
+-- every repeated alias with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
+SET enable_analyzer = 1;
+
 SELECT 'Aliases of tuple elements can repeat in different tuples';
 SELECT tuple(1 AS x, 2 AS y, 3 AS z) AS t1, tuple(4 AS x, 5 AS y, 6 AS z) AS t2, toTypeName(t1), toTypeName(t2) SETTINGS enable_named_columns_in_function_tuple = 1;
 SELECT tuple(1 AS x, 2 AS y), tuple(3 AS x, 4 AS y);
@@ -13,6 +17,12 @@ DESCRIBE (SELECT tuple(1 AS x), tuple(2 AS x));
 
 SELECT 'The same argument named differently in different tuples produces different tuples';
 SELECT tuple(a AS x) AS t1, tuple(a AS y) AS t2, toTypeName(t1), toTypeName(t2) FROM (SELECT 1 AS a) SETTINGS enable_named_columns_in_function_tuple = 1;
+
+SELECT 'A tuple element name can shadow the name of the source column';
+-- Resolving the inner `a` of `a AS a` probes the alias `a`, hits the cycle guard, and falls back
+-- to the source column. The probe must not mark the alias as used.
+SELECT tuple(a AS a), tuple(b AS a) FROM (SELECT 1 AS a, 2 AS b) SETTINGS enable_named_columns_in_function_tuple = 1;
+DESCRIBE (SELECT tuple(a AS a), tuple(b AS a) FROM (SELECT 1 AS a, 2 AS b)) SETTINGS enable_named_columns_in_function_tuple = 1;
 
 SELECT 'Unused conflicting aliases of nested expressions are allowed';
 WITH 1 AS x SELECT tuple(2 AS x) SETTINGS enable_named_columns_in_function_tuple = 1;
