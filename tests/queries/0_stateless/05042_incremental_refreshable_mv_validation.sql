@@ -4,6 +4,7 @@
 
 DROP TABLE IF EXISTS val_src;
 DROP TABLE IF EXISTS val_src_noblock;
+DROP TABLE IF EXISTS val_src_repl;
 DROP TABLE IF EXISTS val_dim;
 DROP TABLE IF EXISTS val_mem;
 DROP TABLE IF EXISTS val_tgt;
@@ -62,6 +63,20 @@ CREATE MATERIALIZED VIEW val_mv_noblock
     TO val_tgt EMPTY
     AS SELECT k, v FROM val_src_noblock; -- { serverError BAD_ARGUMENTS }
 
+-- FINAL cannot be re-applied across already-consumed rows, so it is rejected.
+CREATE MATERIALIZED VIEW val_mv_final
+    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+    TO val_tgt EMPTY
+    AS SELECT k, v FROM val_src FINAL; -- { serverError NOT_IMPLEMENTED }
+
+-- A merging engine (ReplacingMergeTree) rewrites historical rows on merge, so it is rejected.
+CREATE TABLE val_src_repl (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+CREATE MATERIALIZED VIEW val_mv_repl
+    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+    TO val_tgt EMPTY
+    AS SELECT k, v FROM val_src_repl; -- { serverError NOT_IMPLEMENTED }
+
 -- MODIFY QUERY is not supported for an incremental MV: it would leave the cursor stale.
 ALTER TABLE val_mv MODIFY QUERY SELECT k, v FROM val_src WHERE k > 0; -- { serverError NOT_IMPLEMENTED }
 
@@ -70,4 +85,5 @@ DROP TABLE val_tgt;
 DROP TABLE val_mem;
 DROP TABLE val_dim;
 DROP TABLE val_src_noblock;
+DROP TABLE val_src_repl;
 DROP TABLE val_src;

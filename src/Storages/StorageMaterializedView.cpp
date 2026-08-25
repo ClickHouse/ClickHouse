@@ -163,6 +163,11 @@ namespace
     {
         auto & source_table_expr = getIncrementalSourceTableExpression(select_with_union);
 
+        if (source_table_expr.final)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh does not support FINAL on the source: the cursor only reads new blocks and cannot "
+                "re-apply FINAL across already-consumed rows");
+
         /// The cursor advances only on the source, so any other table (a JOIN or a subquery) would silently diverge from a full refresh.
         if (countTableExpressions(*select_with_union) != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -185,6 +190,11 @@ namespace
         const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source.get());
         if (merge_tree)
         {
+            if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Incremental refresh source table {} uses a merging engine that rewrites historical rows on merge; only plain MergeTree is supported",
+                    source->getStorageID().getNameForLogs());
+
             const auto settings = merge_tree->getSettings();
             if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
