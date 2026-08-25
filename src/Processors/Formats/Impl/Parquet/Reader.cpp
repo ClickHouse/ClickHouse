@@ -1478,7 +1478,8 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
+            column_info.string_value_filter != nullptr);
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }

@@ -47,6 +47,10 @@ struct Dictionary
     /// the string filter from PREWHERE; `index` materializes empty strings for non-matching entries.
     /// Filled by `buildStringValueFilterMask`, only for `StringPlain` mode.
     PaddedPODArray<UInt8> string_value_filter_mask;
+    /// The filter the mask was built from (shared by all readers of the column within the query).
+    /// `index` reports its statistics to it and stops applying the mask when the filter disables
+    /// itself, same as the non-dictionary decoding paths.
+    const StringValueFilter * string_value_filter = nullptr;
 
     /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
     std::span<const char> data;
@@ -75,10 +79,12 @@ struct Dictionary
     /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
     /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
     /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// Must be kept in sync with `decode()`.
+    /// `has_string_value_filter` says whether `buildStringValueFilterMask` will be called after
+    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode).
+    /// Must be kept in sync with `decode()` and `buildStringValueFilterMask()`.
     static size_t decodedFootprintUpperBound(
         parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type);
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter);
 };
 
 struct PageDecoder

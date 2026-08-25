@@ -3,20 +3,12 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
-#include <Common/ProfileEvents.h>
 #include <Common/StringValueFilter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
 #include <arrow/util/byte_stream_split_internal.h>
-
-namespace ProfileEvents
-{
-    extern const Event StringValueFilterValuesChecked;
-    extern const Event StringValueFilterValuesReplaced;
-    extern const Event StringValueFilterBytesSkipped;
-}
 
 namespace DB::ErrorCodes
 {
@@ -750,15 +742,18 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
     {
         if (num_values > offsets.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
+        /// The result of `isTrivial` is saved into a variable (instead of calling it twice) so that the
+        /// static analyzer can see that `filter` is non-null in the non-trivial branch below.
+        const bool trivial_converter = converter->isTrivial();
         const StringValueFilter * active_value_filter
-            = value_filter && value_filter->isEnabled() && converter->isTrivial() ? value_filter : nullptr;
+            = value_filter && value_filter->isEnabled() && trivial_converter ? value_filter : nullptr;
         if (!filter && !active_value_filter)
         {
             converter->convertColumn(std::span(data, end - data), offsets.data() + idx, /*separator_bytes*/ 0, num_values, col);
             idx += num_values;
             return;
         }
-        if (converter->isTrivial())
+        if (trivial_converter)
         {
             auto & col_str = assert_cast<ColumnString &>(col);
             const UInt64 * off = offsets.data() + idx;
@@ -1242,6 +1237,7 @@ void Dictionary::reset()
     decompressed_buf.shrink_to_fit();
     string_value_filter_mask.clear();
     string_value_filter_mask.shrink_to_fit();
+    string_value_filter = nullptr;
 }
 
 bool Dictionary::isInitialized() const
@@ -1349,6 +1345,7 @@ void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter)
     if (mode != Mode::StringPlain)
         return;
 
+    string_value_filter = &filter;
     string_value_filter_mask.resize(count);
     for (size_t i = 0; i < count; ++i)
     {
@@ -1360,7 +1357,7 @@ void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter)
 
 size_t Dictionary::decodedFootprintUpperBound(
     parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type)
+    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter)
 {
     /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
     /// held for a compressed column chunk; on top of it the trivial fast paths add either nothing
@@ -1405,6 +1402,10 @@ size_t Dictionary::decodedFootprintUpperBound(
     {
         /// Mode::StringPlain: a UInt32 offset per value.
         logical = sat_add(logical, sat_mul(num_values, sizeof(UInt32)));
+        /// The string filter from PREWHERE adds a UInt8 mask per entry (`buildStringValueFilterMask`,
+        /// called only in this mode) while the pruning stage still holds the buffers above.
+        if (has_string_value_filter)
+            logical = sat_add(logical, num_values);
     }
     else
     {
@@ -1484,7 +1485,7 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
         {
             auto & c = assert_cast<ColumnString &>(out);
             c.reserve(c.size() + indexes.size());
-            if (!string_value_filter_mask.empty())
+            if (!string_value_filter_mask.empty() && string_value_filter->isEnabled())
             {
                 /// Rows referencing dictionary entries that do not match the string filter from
                 /// PREWHERE are materialized as empty strings without copying the data.
@@ -1505,9 +1506,9 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
                         bytes_skipped += len;
                     }
                 }
-                ProfileEvents::increment(ProfileEvents::StringValueFilterValuesChecked, indexes.size());
-                ProfileEvents::increment(ProfileEvents::StringValueFilterValuesReplaced, values_replaced);
-                ProfileEvents::increment(ProfileEvents::StringValueFilterBytesSkipped, bytes_skipped);
+                /// Report the observed selectivity to the shared filter, so that a non-selective
+                /// filter disables itself for all readers, same as in the non-dictionary paths.
+                string_value_filter->updateStats(indexes.size(), values_replaced, bytes_skipped);
                 break;
             }
             for (UInt32 idx : indexes)
