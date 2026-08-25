@@ -2341,7 +2341,6 @@ void registerStorageDistributed(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 <Warning title="Distributed engine in Cloud">
-
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 </Warning>

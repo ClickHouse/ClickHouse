@@ -163,7 +163,6 @@ If the rounding number is halfway between two numbers, the function uses a metho
 - If `N = 0`, the function rounds to the next integer
 
 <Info title="Notes">
-
 - When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position.
 For example: `3.5` rounds up to `4`, `2.5` rounds down to `2`.
 - The `round` function performs the same rounding for floating point numbers.
@@ -172,7 +171,6 @@ For example: `3.5` rounds up to `4`, `2.5` rounds down to `2`.
 </Info>
 
 <Tip title="Use banker's rounding for summation or subtraction of numbers">
-
 Using banker's rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:

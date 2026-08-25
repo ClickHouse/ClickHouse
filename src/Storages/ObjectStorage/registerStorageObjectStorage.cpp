@@ -528,10 +528,9 @@ For more information about virtual columns see [here](/reference/engines/table-e
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
-<Info title="Zero-copy replication is not ready for production">
-
+<Note title="Zero-copy replication is not ready for production">
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-</Info>
+</Note>
 
 ## Wildcards in path {#wildcards-in-path}
 
@@ -874,10 +873,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
-<Info title="Zero-copy replication is not ready for production">
-
+<Note title="Zero-copy replication is not ready for production">
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-</Info>
+</Note>
 
 **Globs in path**
 
@@ -1830,15 +1828,14 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info title="`use_paimon_metadata_files_cache` lifecycle">
-
+<Note title="`use_paimon_metadata_files_cache` lifecycle">
 How `use_paimon_metadata_files_cache` is applied depends on how the Paimon table is accessed:
 
 - **Table functions** (e.g. `SELECT ... FROM paimonS3(...)`): the cache decision is evaluated per query, so you can pass `SETTINGS use_paimon_metadata_files_cache = 1` directly in the `SELECT`.
 - **Persistent table engines** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal`, and the `Paimon` alias): the cache decision is latched once when the table's metadata is initialized and is stored in immutable persistent components; the metadata update path deliberately does not re-read the setting. Therefore, passing `SETTINGS use_paimon_metadata_files_cache = 1` in a `SELECT` against an already-initialized persistent table has no effect — the previously latched decision keeps being used. To change it, set `use_paimon_metadata_files_cache` before the table's metadata is initialized, or `DROP` and re-`CREATE` the table with the desired value.
 
 The server-level cache capacity (`paimon_metadata_files_cache_size`) is *not* latched: it is a runtime setting that can be changed via `SYSTEM RELOAD CONFIG` and takes effect immediately even for already-initialized tables.
-</Info>
+</Note>
 
 ## Incremental read examples {#incremental-read-examples}
 
@@ -2288,10 +2285,9 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-<Info title="Unsupported gsutil URI">
-
+<Note title="Unsupported gsutil URI">
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
-</Info>
+</Note>
 
 **Arguments**
 

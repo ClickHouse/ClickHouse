@@ -251,14 +251,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-<Info title="Setting Names (24.7+)">
-
+<Note title="Setting Names (24.7+)">
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-</Info>
+</Note>
 
 ### Mode {#mode}
 

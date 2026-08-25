@@ -1655,15 +1655,13 @@ The following data types are supported:
 - `UUID`
 - `Map`
 
-<Info title="Map data type: specifying index creation with keys or values">
-
+<Note title="Map data type: specifying index creation with keys or values">
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [`mapValues`](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions.
-</Info>
+</Note>
 
-<Info title="JSON data type: indexing JSON paths">
-
+<Note title="JSON data type: indexing JSON paths">
 For the [`JSON`](/reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/reference/data-types/newjson#data-skipping-indexes-for-json) for details.
-</Info>
+</Note>
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 
@@ -1910,7 +1908,6 @@ The `TTL` clause can be set for the whole table and for each individual column. 
 Expressions must evaluate to [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime) or [DateTime64](/reference/data-types/datetime64) data type.
 
 <Tip title="Avoid non-deterministic functions in TTL expressions">
-
 TTL is evaluated during background merges, and not at insert time.
 Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
 ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
@@ -2420,10 +2417,9 @@ When using `use_environment_credentials` for S3 authentication, the environment 
 
 It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info title="cache configuration">
-
+<Note title="cache configuration">
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/concepts/features/configuration/server-config/storing-data#using-local-cache) if you are using one of those versions.
-</Info>
+</Note>
 
 ## Virtual columns {#virtual-columns}
 
@@ -3202,10 +3198,9 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
 
     factory.registerStorage("CoalescingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-<Info title="Available from version 25.6">
-
+<Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
-</Info>
+</Note>
 
 This engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row that contains the latest non-NULL values for each column.
 

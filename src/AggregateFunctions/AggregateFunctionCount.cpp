@@ -294,7 +294,6 @@ With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/re
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
 
 <Tip title="Improving COUNT(DISTINCT expr) performance">
-
 If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
 You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
 </Tip>

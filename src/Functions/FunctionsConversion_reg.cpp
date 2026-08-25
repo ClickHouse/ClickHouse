@@ -1162,8 +1162,7 @@ Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
-<Info title="Legacy `toTime`">
-
+<Note title="Legacy `toTime`">
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
 time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -1171,7 +1170,7 @@ Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_t
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
-</Info>
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
