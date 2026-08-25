@@ -168,21 +168,7 @@ public:
         return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
     }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// `is_partial_top_n` is load-bearing: `TwoStageTopN` builds its partial stage by cloning a sort
-    /// and flipping only this flag, so an identity blind to it would let memo-wide deduplication
-    /// fold the partial stage back into its source group and create a self-cycle.
-    /// `threshold_tracker` is excluded: it has no stable value to encode, and a starved tracker only
-    /// means less top-N pruning, never wrong rows.
-    /// `use_buffering` is on the wire exactly where it is read: `serialize` writes it for
-    /// `FinishSorting`, and its only reader is `mergingSorted`, which the `Full` branch never calls
-    /// (`enableBuffering` can set it on a `Full` sort, where it is inert).
-    ///
-    /// `serializeSettings` can throw where `isSerializable()` does not cover it: the
-    /// `Settings(size_t)` constructor leaves `temporary_files_buffer_size` at 0, the plan setting of
-    /// that name is a `NonZeroUInt64`, and `optimizeGroupByTopK` builds exactly such a sort.
-    bool supportsCascadesIdentity() const override { return isSerializable() && sort_settings.temporary_files_buffer_size != 0; }
+    bool supportsCascadesIdentity() const override;
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);

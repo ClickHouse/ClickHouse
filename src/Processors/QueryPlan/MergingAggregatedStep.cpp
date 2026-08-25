@@ -309,6 +309,8 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 namespace
 {
 /// Cascades identity extras tags for `MergingAggregatedStep`. Unique within the step; never reused.
+/// `params.only_merge` needs no tag: every construction site forces it to `true`.
+/// Re-audit this step when the eager-aggregation feature branch merges: it adds new state here.
 enum MergingAggregatedStepIdentityTag : UInt64
 {
     MAX_THREADS_TAG = 1,

@@ -59,12 +59,6 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// Non-wire extras: `prevent_input_removal` (as in `ExpressionStep`) and `condition`, which
-    /// makes `transformPipeline` wire `FilterTransform` to a `QueryConditionCache` keyed by its
-    /// hash and text - encoded as two optional tags, so set-vs-unset is distinguishable.
-    /// Correlated DAGs are predicate-gated (`actions_dag.serialize` throws on a `PLACEHOLDER`).
     bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

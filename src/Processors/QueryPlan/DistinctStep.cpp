@@ -156,6 +156,7 @@ void DistinctStep::serialize(Serialization & ctx) const
 namespace
 {
 /// Cascades identity extras tags for `DistinctStep`. Unique within the step; never reused.
+/// `pre_distinct` needs no tag: it selects `getSerializationName()`, which the encoding writes first.
 enum DistinctStepIdentityTag : UInt64
 {
     LIMIT_HINT_TAG = 1,
@@ -174,7 +175,8 @@ void DistinctStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras)
     /// and it is what `getSortDescription` reports to the optimizer.
     extras.addSortDescription(DISTINCT_SORT_DESC_TAG, distinct_sort_desc);
 
-    /// Lets the final DISTINCT skip the resize to a single stream.
+    /// Lets the final DISTINCT skip the resize to a single stream - an assumption that the streams
+    /// are already disjoint, so setting it changes which rows survive.
     extras.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
 }
 

@@ -531,24 +531,6 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
-    /// Cascades cross-group identity. A wrong cross-group merge here returns wrong rows, so every
-    /// uncertainty is resolved fail-closed. Audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// The pushed-down filter has two separate carriers, both extras:
-    /// `SourceStepWithFilter::filter_actions_dag` and `query_info.filter_actions_dag` - `applyFilters`
-    /// copies the first into the second only when the first is non-null, and index analysis reads the
-    /// second, so neither covers the other. `join_runtime_filters_for_index_analysis` is a third,
-    /// deliberately unserialized carrier that still prunes granules locally.
-    /// Analysis state with no serialization is witnessed by owned-pointer address; `indexes` and
-    /// `analyzed_result_ptr` are `mutable` and populate while the step is costed, so this step's
-    /// encoding changes over its lifetime - see the value-stability contract in
-    /// `Processors/QueryPlan/StepIdentity.h`. Nothing copies `Indexes`, `analyzed_result_ptr` or
-    /// `prepared_parts` between steps, so two already-analyzed reads are unconditionally unequal and
-    /// only pre-analysis reads sharing the part, mutation and metadata snapshots merge - a low merge
-    /// count for reads is the intended trade-off, not a defect.
-    /// Predicate-gated for lack of encodable state: STREAM reads, bucketed distributed reads,
-    /// parallel replicas, filters not yet folded in, text-index and per-projection read tasks, and
-    /// correlated DAGs in any of the six slots the encoding writes.
     bool supportsCascadesIdentity() const override;
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

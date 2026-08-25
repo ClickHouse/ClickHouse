@@ -42,11 +42,6 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// `is_shard_limit` is the only non-wire field here (see the tag enum in the .cpp);
-    /// `always_read_till_end`, `with_ties` and the tie `description` are on the wire, the last one
-    /// written exactly when `with_ties` makes it readable.
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

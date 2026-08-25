@@ -1244,6 +1244,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 namespace
 {
 /// Cascades identity extras tags for `AggregatingStep`. Unique within the step; never reused.
+/// `final` and `params.stats_collecting_params.key` need no tag: both are gated on `for_cache_key`,
+/// which the identity encoding never sets, so both are on the wire.
 enum AggregatingStepIdentityTag : UInt64
 {
     MERGE_THREADS_TAG = 1,

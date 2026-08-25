@@ -6530,8 +6530,8 @@ void writePointerWitness(WriteBuffer & out, const void * ptr)
     writeVarUInt(static_cast<UInt64>(reinterpret_cast<uintptr_t>(ptr)), out);
 }
 
-/// See the provenance-witness paragraph in the audit comment: an owning `shared_ptr` keeps the
-/// address unique for as long as either compared step is alive.
+/// See "Provenance witnesses" in Optimizations/Cascades/ARCHITECTURE.md: an owning `shared_ptr`
+/// keeps the address unique for as long as either compared step is alive.
 void addPointerWitness(CascadesIdentityExtras & extras, UInt64 tag, const void * ptr)
 {
     if (!ptr)

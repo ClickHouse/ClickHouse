@@ -2249,7 +2249,10 @@ void JoinStepLogical::appendCascadesIdentityExtras(CascadesIdentityExtras & extr
     extras.addBool(DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG, disjunctions_optimization_applied);
 
     /// Read by the Cascades `StatisticsDerivation` (in preference to its own derivation) and reused by
-    /// `optimizeJoin` as the statistics of an already-optimized sub-join.
+    /// `optimizeJoin` as the statistics of an already-optimized sub-join. Included even though they
+    /// are cost-only; revisit once a join-rebuild path that clears estimates lands (the eager-
+    /// aggregation branch's `rebuildJoinWithNewInput`), or a rebuilt join never merges with an
+    /// ingested one.
     addOptionalRows(extras, RESULT_ROWS_ESTIMATION_TAG, result_rows_estimation);
     extras.addBool(IMPRECISE_ESTIMATE_TAG, imprecise_estimate);
     extras.addString(RESULT_COLUMN_STATS_TAG, encodeColumnStats(result_column_stats));

@@ -788,6 +788,11 @@ void SortingStep::serialize(Serialization & ctx) const
 namespace
 {
 /// Cascades identity extras tags for `SortingStep`. Unique within the step; never reused.
+/// `threshold_tracker` needs no tag: it has no stable value to encode, and a starved tracker only
+/// means less top-N pruning, never wrong rows.
+/// `use_buffering` needs no tag either: `serialize` writes it exactly where it is read, for
+/// `FinishSorting`; `enableBuffering` can also set it on a `Full` sort, where its only reader
+/// (`mergingSorted`) is never called, so it is inert there.
 enum SortingStepIdentityTag : UInt64
 {
     SKIP_SCATTER_BY_PARTITION_TAG = 1,
@@ -802,6 +807,14 @@ enum SortingStepIdentityTag : UInt64
 };
 }
 
+bool SortingStep::supportsCascadesIdentity() const
+{
+    /// `serializeSettings` throws where `isSerializable()` does not: the `Settings(size_t)` constructor
+    /// leaves `temporary_files_buffer_size` at 0, its plan setting is a `NonZeroUInt64`, and
+    /// `optimizeGroupByTopK` builds exactly such a sort.
+    return isSerializable() && sort_settings.temporary_files_buffer_size != 0;
+}
+
 void SortingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
 {
     /// `scatterByPartitionIfNeeded` returns immediately when set, so a partitioned full sort either
@@ -809,8 +822,9 @@ void SortingStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) 
     extras.addBool(SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
 
     /// Both flags only tell the optimizer what the sort is for, but that is what decides whether other
-    /// passes may reshard or reparallelize it, and `TwoStageTopN` builds its partial stage by flipping
-    /// only `is_partial_top_n` - the two stages must not be judged equal.
+    /// passes may reshard or reparallelize it, and `TwoStageTopN` builds its partial stage by cloning
+    /// the sort and flipping only `is_partial_top_n` - an identity blind to it would let memo-wide
+    /// deduplication fold the partial stage back into its source group and create a self-cycle.
     extras.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
     extras.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
 

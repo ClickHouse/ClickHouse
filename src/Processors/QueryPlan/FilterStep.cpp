@@ -433,8 +433,11 @@ enum FilterStepIdentityTag : UInt64
 
 void FilterStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
 {
+    /// Blocks the input pruning a `FINAL` child depends on.
     extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 
+    /// `transformPipeline` wires `FilterTransform` to a `QueryConditionCache` keyed by this hash and
+    /// text; two tags, so set-vs-unset stays distinguishable.
     if (condition)
     {
         extras.addVarUInt(CONDITION_HASH_TAG, condition->first);

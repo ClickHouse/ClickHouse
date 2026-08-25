@@ -107,18 +107,6 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// `optimized` is an extra: it pins the join layout that correlated-subquery decorrelation
-    /// depends on (see the comment in `clone`).
-    /// `serializeSettings` runs `sorting_settings.updatePlanSettings` after the join's, and the two
-    /// overlap in three plan-setting names, so those three `join_settings` members never reach the
-    /// wire and are extras. One of them is still validated on assignment, which is why the predicate
-    /// checks the `NonZeroUInt64` settings for zero.
-    /// `result_rows_estimation`, `result_column_stats` and `imprecise_estimate` are cost-only and
-    /// are in the extras fail-closed; revisit them once a join-rebuild path that clears estimates
-    /// lands (the feature branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), otherwise a
-    /// rebuilt join will never deduplicate against an ingested one.
     bool supportsCascadesIdentity() const override;
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

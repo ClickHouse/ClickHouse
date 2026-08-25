@@ -35,11 +35,6 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// `prevent_input_removal` is the one non-wire field that constrains execution: it blocks the
-    /// input pruning a `FINAL` child depends on, so it is an extra. Correlated DAGs are
-    /// predicate-gated (`actions_dag.serialize` throws on a `PLACEHOLDER` node).
     bool supportsCascadesIdentity() const override { return isSerializable() && !hasCorrelatedExpressions(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

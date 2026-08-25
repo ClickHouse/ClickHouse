@@ -135,6 +135,7 @@ enum ExpressionStepIdentityTag : UInt64
 
 void ExpressionStep::appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const
 {
+    /// Blocks the input pruning a `FINAL` child depends on.
     extras.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
 }
 

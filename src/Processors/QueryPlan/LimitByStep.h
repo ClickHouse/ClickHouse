@@ -23,10 +23,6 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// Non-wire extras: `sorted_columns_descr` and `skip_stream_merging`, which together decide
-    /// whether each input stream is processed independently.
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 

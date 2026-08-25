@@ -127,12 +127,6 @@ public:
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
 
-    /// Cascades cross-group identity; audit rules in
-    /// Optimizations/Cascades/ARCHITECTURE.md, "Cross-Group Expression Identity".
-    /// The identity encoding always serializes with `for_cache_key = false`, so `final` and the
-    /// hash-table statistics key are on the wire and need no tag. `supportsCascadesIdentity()`
-    /// implies `isSerializable()`, i.e. no aggregation-in-order branch. The non-wire extras
-    /// (`skip_merging`, `limit_hint`, ...) are in the tag enum in the .cpp.
     bool supportsCascadesIdentity() const override { return isSerializable(); }
     void appendCascadesIdentityExtras(CascadesIdentityExtras & extras) const override;
 
