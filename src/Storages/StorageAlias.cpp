@@ -16,6 +16,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
@@ -58,6 +59,18 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    if (!query_context)
+        return false;
+
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, target_database, target_table);
+
+    return access->isGranted(access_type, target_database, target_table, column_name);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -412,6 +425,46 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
+bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    if (!storage_snapshot)
+        return false;
+
+    bool has_select_access = false;
+    for (const auto & column : storage_snapshot->metadata->getColumns())
+    {
+        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+        {
+            has_select_access = true;
+            break;
+        }
+    }
+
+    if (!has_select_access)
+        return false;
+
+    auto target = tryGetTargetTable();
+    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+}
+
+std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
+{
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
+}
+
+std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
+{
+    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
+}
+
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
 {
     // Only rename the alias itself, not the target table
@@ -494,10 +547,15 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
+        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
+
         /// The restrictions below read the catalog, so their answer depends on what exists right now
         /// and they may only judge freshly supplied input. A definition that was already accepted
         /// (startup, short `ATTACH`, `SECONDARY_CREATE`) must stay loadable: a rejection while
         /// loading metadata fails the whole load, not the one table.
+        /// They run after the access check above so that a caller without access to the target
+        /// cannot learn from the error message whether it exists and what engine it has.
         bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         if (fresh_user_definition)
