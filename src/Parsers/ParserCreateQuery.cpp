@@ -4181,6 +4181,7 @@ ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER clus
         .syntax = R"(
 ATTACH TABLE|VIEW|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name
 ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ATTACH TABLE [db.]name AS [NOT] REPLICATED

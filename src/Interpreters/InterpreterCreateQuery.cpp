@@ -208,6 +208,21 @@ bool isShortAttach(const ASTCreateQuery & create)
     return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
 }
 
+/// A short ATTACH is authorized only once the stored definition has been read, which happens on the
+/// node that executes the query. A distributed route enqueues before that read, and the worker
+/// replaying the entry runs with no user, hence full access.
+void rejectShortAttachViewOutsideOneNode(const ASTCreateQuery & create)
+{
+    if (!create.isView() || !isShortAttach(create))
+        return;
+
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "The short ATTACH {0} is not supported for ON CLUSTER queries and Replicated "
+        "databases, because the stored definition is read on the node that executes the "
+        "query. Replace {0} with TABLE, keeping the rest of the query.",
+        create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
+}
+
 }
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -1767,6 +1782,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
+            /// The database is resolved again here, so it can be Replicated even when it was not at
+            /// the earlier check.
+            rejectShortAttachViewOutsideOneNode(create);
+
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
             create.setDatabase(database_name);
             guard->releaseTableLock();
@@ -1774,7 +1793,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
 
         if (!create.cluster.empty())
+        {
+            rejectShortAttachViewOutsideOneNode(create);
             return executeQueryOnCluster(create);
+        }
 
         if (!database)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -3480,10 +3502,8 @@ BlockIO InterpreterCreateQuery::execute()
 
     bool is_create_database = create.database && !create.table;
 
-    /// A short ATTACH carries no definition, so the grants it needs are known only after the stored
-    /// metadata is read on the node that executes it. Every distributed route enqueues before that
-    /// read, and the worker replaying the entry has no user, so it has full access. Keep the view
-    /// spellings local: `ATTACH TABLE` re-attaches a view and demands `CREATE TABLE` up front.
+    /// Rejected here as well, so the error names the cluster the user wrote before
+    /// `maybeRemoveOnCluster` below can drop it.
     if (!is_create_database && create.isView() && isShortAttach(create))
     {
         auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
@@ -3491,11 +3511,7 @@ BlockIO InterpreterCreateQuery::execute()
 
         if (!create.cluster.empty()
             || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "The short ATTACH {0} is not supported for ON CLUSTER queries and Replicated "
-                "databases, because the stored definition is read on the node that executes the "
-                "query. Replace {0} with TABLE, keeping the rest of the query.",
-                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
+            rejectShortAttachViewOutsideOneNode(create);
     }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
