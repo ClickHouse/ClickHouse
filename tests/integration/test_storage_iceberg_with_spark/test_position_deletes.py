@@ -45,22 +45,19 @@ def create_spark_v3_table_without_deletion_vectors(started_cluster_iceberg_with_
 def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
     spark = started_cluster_iceberg_with_spark.spark_session
 
-    try:
-        spark.sql(
-            f"""
-            CREATE TABLE {table_name} (id bigint, data string) USING iceberg
-            TBLPROPERTIES (
-                'format-version' = '3',
-                'write.delete.mode' = 'merge-on-read',
-                'write.update.mode' = 'merge-on-read',
-                'write.merge.mode' = 'merge-on-read'
-            )
-            """
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
         )
-        spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
-        spark.sql(f"DELETE FROM {table_name} WHERE id < 10 OR id >= 90")
-    except Exception as e:
-        pytest.skip(f"Spark Iceberg runtime cannot create v3 deletion vectors: {e}")
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 10 OR id >= 90")
 
     verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
@@ -69,26 +66,23 @@ def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, ta
 def create_spark_v3_deletion_vector_multi_data_file_table(started_cluster_iceberg_with_spark, table_name: str):
     spark = started_cluster_iceberg_with_spark.spark_session
 
-    try:
-        spark.sql(
-            f"""
-            CREATE TABLE {table_name} (id bigint, partition_id int, data string) USING iceberg
-            PARTITIONED BY (partition_id)
-            TBLPROPERTIES (
-                'format-version' = '3',
-                'write.delete.mode' = 'merge-on-read',
-                'write.update.mode' = 'merge-on-read',
-                'write.merge.mode' = 'merge-on-read'
-            )
-            """
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, partition_id int, data string) USING iceberg
+        PARTITIONED BY (partition_id)
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
         )
-        spark.sql(
-            f"INSERT INTO {table_name} "
-            "SELECT id, CAST(id / 100 AS INT), char(id + ascii('a')) FROM range(0, 200)"
-        )
-        spark.sql(f"DELETE FROM {table_name} WHERE partition_id = 0 AND id < 10")
-    except Exception as e:
-        pytest.skip(f"Spark Iceberg runtime cannot create v3 deletion vectors: {e}")
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {table_name} "
+        "SELECT id, CAST(id / 100 AS INT), char(id + ascii('a')) FROM range(0, 200)"
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE partition_id = 0 AND id < 10")
 
     verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
@@ -97,33 +91,30 @@ def create_spark_v3_deletion_vector_multi_data_file_table(started_cluster_iceber
 def create_spark_mixed_v2_position_delete_and_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
     spark = started_cluster_iceberg_with_spark.spark_session
 
-    try:
-        spark.sql(
-            f"""
-            CREATE TABLE {table_name} (id bigint, data string) USING iceberg
-            TBLPROPERTIES (
-                'format-version' = '2',
-                'write.delete.mode' = 'merge-on-read',
-                'write.update.mode' = 'merge-on-read',
-                'write.merge.mode' = 'merge-on-read'
-            )
-            """
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
         )
-        spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
-        spark.sql(f"DELETE FROM {table_name} WHERE id < 10")
-        spark.sql(
-            f"""
-            ALTER TABLE {table_name} SET TBLPROPERTIES (
-                'format-version' = '3',
-                'write.delete.mode' = 'merge-on-read',
-                'write.update.mode' = 'merge-on-read',
-                'write.merge.mode' = 'merge-on-read'
-            )
-            """
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 10")
+    spark.sql(
+        f"""
+        ALTER TABLE {table_name} SET TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
         )
-        spark.sql(f"DELETE FROM {table_name} WHERE id >= 90")
-    except Exception as e:
-        pytest.skip(f"Spark Iceberg runtime cannot create mixed v2/v3 delete table: {e}")
+        """
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE id >= 90")
 
     verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files after v3 upgrade")
