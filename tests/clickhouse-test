@@ -1877,7 +1877,6 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
-        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -1938,6 +1937,15 @@ class MergeTreeSettingsRandomizer:
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
+
+            # `countmin` is unavailable when ClickHouse is built without DataSketches.
+            if setting == "auto_statistics_types" and "use_datasketches" not in args.build_flags:
+                value = ",".join(
+                    statistic_type
+                    for statistic_type in value.split(",")
+                    if statistic_type != "countmin"
+                )
+
             if type(value) == str and value == "":
                 continue
 
@@ -2210,8 +2218,6 @@ class TestCase:
         name = removesuffix(name, ".gen")
 
         file_extentions = [".reference", ".gen.reference"]
-        if is_old_analyzer_used(args):
-            file_extentions = [".oldanalyzer.reference", *file_extentions]
 
         for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
@@ -3472,12 +3478,9 @@ class TestCase:
                 import shutil
                 # Use the same logic as get_reference_file to determine the correct path
                 name = removesuffix(self.name, ".gen")
-                # Determine the appropriate extension based on analyzer mode
-                if is_old_analyzer_used(self.testcase_args):
-                    ext = ".oldanalyzer.reference"
-                else:
-                    ext = ".reference"
-                self.reference_file = os.path.join(self.suite.suite_path, name) + ext
+                self.reference_file = (
+                    os.path.join(self.suite.suite_path, name) + ".reference"
+                )
                 shutil.copy2(self.stdout_file, self.reference_file)
                 description += "\tReference file created\n"
                 return TestResult(
