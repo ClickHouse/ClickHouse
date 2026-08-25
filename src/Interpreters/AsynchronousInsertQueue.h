@@ -171,7 +171,11 @@ private:
             const String async_dedup_token;
             const String format;
             /// The group of the query that pushed this data, held so the entry stays charged to it (and its
-            /// user) while queued, and is released against that same tracker.
+            /// user) while queued, and is released against that same tracker. The group must be kept alive for
+            /// that: the flush may free the chunk while the pushing query is still waiting for it, and freeing
+            /// against a different tracker would credit the flush for bytes it never allocated. Once the pushing
+            /// query ends, `settleDriftOnQueryEnd` takes whatever is still charged to it, including the group's
+            /// own logging strings, off the user, so nothing here drifts towards `max_memory_usage_for_user`.
             const ThreadGroupPtr pushing_thread_group;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;

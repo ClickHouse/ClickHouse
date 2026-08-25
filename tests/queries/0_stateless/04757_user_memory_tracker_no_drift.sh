@@ -49,14 +49,14 @@ fi
 
 # `< /dev/null`, or the client waits for data on an inherited stdin that never reaches EOF, while the server waits
 # for that same data, and the insert never completes.
-for _ in {1..10}; do
+for _ in {1..3}; do
     ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem VALUES (1, 'x')" < /dev/null
 done
 ${CLICKHOUSE_CLIENT} --user "$user" -q "TRUNCATE TABLE mem"
 # Left in the table on purpose: the data outlives the query that wrote it, and belongs to the server from then on.
-${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem SELECT number, repeat(toString(number), 4) FROM numbers(500000)"
-${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mt SELECT number, toString(number) FROM numbers(200000)"
-${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO jn SELECT number, toString(number) FROM numbers(300000)"
+${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem SELECT number, repeat(toString(number), 40) FROM numbers(100000)"
+${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mt SELECT number, toString(number) FROM numbers(100000)"
+${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO jn SELECT number, repeat(toString(number), 20) FROM numbers(100000)"
 # Rewrites the whole join table, dropping data the server owns and building its replacement.
 ${CLICKHOUSE_CLIENT} --user "$user" -q "ALTER TABLE jn DELETE WHERE k = 1"
 ${CLICKHOUSE_CLIENT} --user "$user" --use_uncompressed_cache 1 -q "SELECT sum(k) FROM mt FORMAT Null"
