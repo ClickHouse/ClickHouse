@@ -1215,7 +1215,7 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const ObjectStorageQueueMetadata & metadata,
+    ObjectStorageQueueMetadata & metadata,
     time_t transaction_start_time,
     const std::string & exception_message,
     int error_code) const
@@ -1242,7 +1242,7 @@ void StorageObjectStorageQueue::commit(
     else
         chassert(last_processed_file_per_partition.empty());
 
-    const auto mode = getTableMetadata().getMode();
+    const auto mode = metadata.getTableMetadata().getMode();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty())
     {
@@ -1261,7 +1261,7 @@ void StorageObjectStorageQueue::commit(
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
         // Nothing is changed in zookeeper.
-        commitExclusive(successful_objects, processed_objects, sources, transaction_start_time);
+        commitExclusive(metadata, successful_objects, processed_objects, sources, transaction_start_time);
     }
     else
     {
@@ -1379,7 +1379,7 @@ void StorageObjectStorageQueue::commit(
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
         for (const auto & object : successful_objects)
-            files_metadata->releaseExclusiveProcessing(object.remote_path);
+            metadata.releaseExclusiveProcessing(object.remote_path);
     }
 
     if (finalize_exception)
@@ -1413,12 +1413,13 @@ std::vector<String> StorageObjectStorageQueue::getFailedPaths(
 }
 
 void StorageObjectStorageQueue::commitExclusive(
+    ObjectStorageQueueMetadata & metadata,
     const StoredObjects& successful_objects,
     const StoredObjects& processed_objects,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     time_t transaction_start_time) const
 {
-    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::KEEP)
+    if (metadata.getTableMetadata().after_processing == ObjectStorageQueueAction::KEEP)
     {
         return;
     }
@@ -1442,7 +1443,7 @@ void StorageObjectStorageQueue::commitExclusive(
         for (const auto & object : successful_objects)
         {
             if (std::ranges::find(failed_to_delete_paths, object.remote_path) == failed_to_delete_paths.end())
-                files_metadata->releaseExclusiveProcessing(object.remote_path);
+                metadata.releaseExclusiveProcessing(object.remote_path);
         }
 
         throw Exception(

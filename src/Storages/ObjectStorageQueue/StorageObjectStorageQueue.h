@@ -227,12 +227,13 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const ObjectStorageQueueMetadata & metadata,
+        ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
     /// Commit processed files for EXCLUSIVE mode
     void commitExclusive(
+        ObjectStorageQueueMetadata & metadata,
         const StoredObjects& successful_objects,
         const StoredObjects& processed_objects,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
