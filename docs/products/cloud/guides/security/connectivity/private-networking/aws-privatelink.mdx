@@ -20,9 +20,10 @@ AWS PrivateLink supports only connections initiated from your AWS VPC to ClickHo
 To restrict access to your ClickHouse Cloud services exclusively through AWS PrivateLink addresses, follow the instructions provided by ClickHouse Cloud [IP Access Lists](/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 <Note>
-ClickHouse Cloud supports [cross-region PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) from the following regions:
+ClickHouse Cloud supports [cross-region PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) when your interface VPC endpoint is created in one of the following consumer regions:
 - sa-east-1
 - il-central-1
+- me-central-1
 - me-south-1
 - mx-central-1
 - eu-central-2
@@ -41,7 +42,6 @@ ClickHouse Cloud supports [cross-region PrivateLink](https://aws.amazon.com/abou
 - ap-northeast-2
 - ap-northeast-3
 - ap-south-1
-- ap-southeast-5
 - ap-southeast-4
 - ap-southeast-3
 - ap-south-2
@@ -52,6 +52,10 @@ ClickHouse Cloud supports [cross-region PrivateLink](https://aws.amazon.com/abou
 - us-east-2
 - us-east-1
 </Note>
+
+<Warning>
+Cross-region PrivateLink isn't supported for ClickHouse Cloud services hosted in `ap-east-2` or `mx-central-1`. To connect to a service in either region using PrivateLink, create the interface VPC endpoint in the same AWS region as the service.
+</Warning>
 
 <Note>
 AWS charges for cross-region data transfer. See [AWS PrivateLink pricing](https://aws.amazon.com/privatelink/pricing/) for details.
