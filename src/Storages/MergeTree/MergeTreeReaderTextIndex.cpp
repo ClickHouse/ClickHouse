@@ -94,7 +94,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     {
         .version = index_format.version,
         .condition = condition_text.get(),
-        .part = *data_part,
+        .part_info = *data_part_info_for_read,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = false,
@@ -864,8 +864,10 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
 {
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
     {
-        chassert(token_info.embedded_postings);
-        return *token_info.embedded_postings;
+        /// Embedded postings are stored as a flat sorted array in the dictionary.
+        PostingList result;
+        result.addMany(token_info.embedded_postings.size(), token_info.embedded_postings.data());
+        return result;
     }
 
     if (!postings_serialization.has_value())
