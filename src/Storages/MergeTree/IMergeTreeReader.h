@@ -127,7 +127,7 @@ protected:
     ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
 
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 

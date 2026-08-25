@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationArrayOffsets.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -49,6 +50,15 @@ SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
 bool SerializationArray::isArraySizesSubcolumn(const SubstreamPath & path)
 {
     return !path.empty() && path.back().type == Substream::ArraySizes;
+}
+
+bool SerializationArray::isTopLevelArraySizesSubcolumn(const NameAndTypePair & column)
+{
+    if (column.getSubcolumnName() != "size0")
+        return false;
+
+    auto info = column.getTypeInStorage()->tryGetSubcolumnInfo(column.getSubcolumnName());
+    return info && isArraySizesSubcolumn(info->substreams_path);
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;

@@ -125,6 +125,8 @@ public:
         const String &,
         const SubstreamData &)>;
 
+    /// Emits every subcolumn the type exposes, one entry per name. Which substream a name resolves to
+    /// is decided the same way as in getSubcolumnInfo, so a listing cannot contradict a read.
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
         const SubstreamData & data);
@@ -343,6 +345,16 @@ public:
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnInfo can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
 
+    /// Whether the type would resolve this name from the data as a dynamic subcolumn, answered without building anything.
+    virtual bool canResolveDynamicSubcolumn(std::string_view /*subcolumn_name*/) const { return false; }
+
+    /// Resolves a subcolumn the data provides rather than the type, e.g. a path of a JSON column.
+    virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null) const;
+
     /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
     virtual bool hasDynamicStructure() const { return false; }
 
@@ -372,11 +384,7 @@ protected:
         size_t initial_array_level,
         bool throw_if_null);
 
-    virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
-        std::string_view subcolumn_name,
-        const SubstreamData & data,
-        size_t initial_array_level,
-        bool throw_if_null) const;
+
 };
 
 
