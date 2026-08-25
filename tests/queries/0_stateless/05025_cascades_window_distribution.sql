@@ -56,7 +56,7 @@ EXPLAIN SELECT k, sum(v) OVER (PARTITION BY k) FROM t_wfloat;
 SELECT '-- 5. negative and positive zero form one partition, as in the single-node plan';
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_wfloat) ORDER BY c;
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_wfloat) ORDER BY c
-SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0, max_threads = 1;
 
 -- The per-node window runs without the stream fan-out, so its output keeps the sort order
 -- and a matching ORDER BY above needs no new sort, only the order-keeping gather.
