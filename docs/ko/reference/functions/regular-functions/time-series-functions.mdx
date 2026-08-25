@@ -458,7 +458,7 @@ timeSeriesIdToGroup(id)
 
 **인수**
 
-* `id` — 시계열 식별자입니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`UUID`](/ko/reference/data-types/uuid) 또는 [`FixedString(16)`](/ko/reference/data-types/fixedstring)
+* `id` — 시계열 식별자입니다. [timeSeriesStoreTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)를 호출할 때 사용한 타입과 동일해야 합니다. [`Any`](/ko/reference/data-types/index)
 
 **반환 값**
 
@@ -488,7 +488,7 @@ SELECT 8374283493092 AS id,
 
 도입 버전: v25.8.0
 
-지정한 시계열(시계열) 식별자에 연결된 태그를 반환합니다.
+지정한 시계열 식별자에 연결된 태그를 반환합니다.
 관련 항목: 함수 [timeSeriesStoreTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
 <Note>
@@ -503,7 +503,7 @@ timeSeriesIdToTags(id)
 
 **인수**
 
-* `id` — 시계열의 식별자입니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`UUID`](/ko/reference/data-types/uuid) 또는 [`FixedString(16)`](/ko/reference/data-types/fixedstring)
+* `id` — 시계열의 식별자입니다. [timeSeriesStoreTags()](/ko/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)를 호출할 때 사용한 것과 동일한 타입이어야 합니다. [`Any`](/ko/reference/data-types/index)
 
 **반환 값**
 
@@ -830,7 +830,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **인수**
 
-* `id` — 시계열 식별자입니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`UUID`](/ko/reference/data-types/uuid) 또는 [`FixedString(16)`](/ko/reference/data-types/fixedstring)
+* `id` — 시계열 식별자입니다. 비교 가능한 모든 타입이 될 수 있습니다. NULL 식별자가 있는 행은 건너뜁니다. [`Any`](/ko/reference/data-types/index)
 * `tags_array` — (tag&#95;name, tag&#95;value) 쌍으로 이루어진 배열입니다. [`Array(Tuple(String, String))`](/ko/reference/data-types/array) 또는 [`NULL`](/ko/reference/syntax#null)
 * `separate_tag_name_i` — 태그 이름입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
 * `separate_tag_value_i` — 태그 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable)

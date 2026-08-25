@@ -377,6 +377,8 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -464,6 +466,12 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
+
+IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
     ErrorCodes::BAD_ARGUMENTS,
     {{"any", SearchOrphanedPartsDisks::ANY},
@@ -475,6 +483,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
      {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeTextIndexSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
+     {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,

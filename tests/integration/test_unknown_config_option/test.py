@@ -1614,15 +1614,16 @@ def test_top_level_include_dotted_imported_key_accepted(
         node_include_from_external.query("SYSTEM RELOAD CONFIG")
 
 
-def test_metrika_default_include_source_top_level_include_accepted(
+def test_metrika_xml_does_not_exempt_unknown_key(
     start_include_from_external_cluster,
 ):
-    # When the server config declares no explicit `<include_from>`, `ConfigProcessor` falls back to
-    # the default substitution source `/etc/metrika.xml` if it exists. A top-level `<include
-    # incl="X"/>` then imports `<X>`'s children from that default source into the root, so they
-    # become top-level keys. The validator must seed the same default and exempt those imported keys
-    # — otherwise a configuration that was valid before this check existed (relying on the metrika
-    # default) now fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    # `/etc/metrika.xml` is no longer an implicit substitution source: when the config declares no
+    # explicit `<include_from>`, `ConfigProcessor` does not read it, so the validator must not
+    # consult it either. A literal unknown top-level key must be rejected even when the config also
+    # carries a top-level `<include incl="X"/>` and `/etc/metrika.xml` defines `<X>` with a child of
+    # the same name — otherwise a file outside the config directory would still decide whether an
+    # unknown top-level section is accepted, even though it contributes nothing to the merged
+    # config anymore.
     metrika_path = "/etc/metrika.xml"
     metrika_source = (
         "<clickhouse>"
@@ -1631,21 +1632,23 @@ def test_metrika_default_include_source_top_level_include_accepted(
         "</metrika_imported_group>"
         "</clickhouse>"
     )
-    # Deliberately NO `<include_from>` here: the metrika default must be used to resolve the `incl`
-    # reference and to exempt the imported `<my_metrika_section>`.
+    # Deliberately NO `<include_from>` here: the `incl` reference stays unresolved (the processor
+    # drops it with a warning), and the literal `<my_metrika_section>` is an unknown top-level key
+    # that only the ignored `/etc/metrika.xml` defines.
     include_config_path = "/etc/clickhouse-server/config.d/metrika_default_include.xml"
     include_config = (
         "<clickhouse>"
         '<include incl="metrika_imported_group"/>'
+        "<my_metrika_section>literal value</my_metrika_section>"
         "</clickhouse>"
     )
     try:
         node_include_from_external.replace_config(metrika_path, metrika_source)
         node_include_from_external.replace_config(include_config_path, include_config)
-        # Reload must succeed: `my_metrika_section` is exempted as a child imported from the default
-        # `/etc/metrika.xml` source by the top-level `<include incl="metrika_imported_group"/>`.
-        node_include_from_external.query("SYSTEM RELOAD CONFIG")
-        assert node_include_from_external.query("SELECT 1").strip() == "1"
+        assert (
+            "UNKNOWN_ELEMENT_IN_CONFIG"
+            in node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        )
     finally:
         node_include_from_external.exec_in_container(
             ["bash", "-c", f"rm -f {include_config_path} {metrika_path}"]

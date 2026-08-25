@@ -725,8 +725,14 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 索引が配列の範囲外の場合は、デフォルト値 (数値であれば 0、文字列であれば空文字列など) を返します。
 ただし、非定数の配列引数に対して定数索引 0 を指定した場合は例外で、この場合は `Array indices are 1-based` というエラーになります。
 
+`n` が整数の配列の場合、指定した位置にある要素の配列を返します (ギャザー操作) 。
+これは `arrayMap(i -> arr[i], n)` と同等ですが、より効率的な別実装が使用されます。
+範囲外の位置では、スカラー索引の場合と同様にデフォルト値が返されます。
+索引の要素は Nullable にできます。要素型を `Nullable` でラップできる場合、`NULL` 索引は `NULL` を返し (結果の要素型も Nullable になります) 、
+`Nullable` 内に含められない要素型 (`Array`、`Map` など) では、`NULL` 索引は代わりにデフォルト値を返します。これはスカラーの `NULL` 索引と同じ動作です。
+
 <Note>
-  ClickHouse の配列は 1 始まりです。
+  ClickHouse の Array は 1 始まりです。
 </Note>
 
 負の索引もサポートされています。この場合、末尾から数えた対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
@@ -741,11 +747,11 @@ arrayElement(arr, n)
 
 **引数**
 
-* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array). - `n` — 取得する要素の位置。[`(U)Int*`](/ja/reference/data-types/int-uint).
+* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
 
 **戻り値**
 
-指定された配列引数を結合した 1 つの配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+`n` がスカラーの場合、型 `T` の要素を返します。`n` が配列の場合、索引の要素が Nullable であり、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))` を返し、それ以外の場合は `Array(T)` を返します。[`Any`](/ja/reference/data-types/index) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -789,6 +795,16 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
+**索引の配列**
+
+```sql title=Query
+SELECT [10, 20, 30, 40][[2, 4, 1]]
+```
+
+```response title=Response
+[20,40,10]
+```
+
 <div id="arrayElementOrNull">
   ## arrayElementOrNull
 </div>
@@ -796,7 +812,12 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 導入バージョン: v1.1.0
 
 指定された配列の索引 `n` にある要素を取得します。`n` には任意の整数型を指定できます。
-索引が配列の範囲外の場合は、デフォルト値ではなく `NULL` が返されます。
+索引が配列の範囲外の場合、結果の型を Nullable にできる限り、デフォルト値ではなく `NULL` が返されます。
+すでに Nullable ではなく、`Nullable` 内に配置できない要素型 (`Array`、`Map` など) の場合は、代わりに要素型のデフォルト値が返されます。
+
+`n` が整数の配列である場合、指定された位置にある要素の配列を返します。
+これは `arrayMap(i -> arrayElementOrNull(arr, i), n)` と同等ですが、より効率的な個別の実装が使用されます。
+範囲外の位置および `NULL` 索引は、スカラー索引の場合と同じ規則に従い、結果の配列内で `NULL` 値になります。
 
 <Note>
   ClickHouse の Array は 1 始まりの配列です。
@@ -807,16 +828,16 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 **構文**
 
 ```sql
-arrayElementOrNull(arrays)
+arrayElementOrNull(arr, n)
 ```
 
 **引数**
 
-* `arrays` — 任意の数の配列引数。[`Array`](/ja/reference/data-types/array)
+* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array)。- `n` — 取得する要素の位置、または位置の配列。位置には `NULL` を指定できます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array)。
 
 **戻り値**
 
-指定された配列引数を結合した 1 つの配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+`n` がスカラー値の場合、`T` を `Nullable` でラップできる場合は `Nullable(T)`、それ以外の場合は `T` を返します。`n` が配列の場合、`T` を `Nullable` でラップできる場合は `Array(Nullable(T))`、それ以外の場合は `Array(T)` を返します。[`Any`](/ja/reference/data-types/index) または [`Nullable(T)`](/ja/reference/data-types/nullable) または [`Array(T)`](/ja/reference/data-types/array) または [`Array(Nullable(T))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -840,7 +861,7 @@ SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
 3
 ```
 
-**配列の添字が範囲外**
+**配列の索引が範囲外**
 
 ```sql title=Query
 SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
@@ -848,6 +869,16 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
+```
+
+**索引の配列**
+
+```sql title=Query
+SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
+```
+
+```response title=Response
+[10,NULL,20]
 ```
 
 <div id="arrayEnumerate">
@@ -1730,6 +1761,12 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 
 この関数が適用されたカラムを除き、他のカラムの値はそのままコピーされます。
 適用されたカラムの値は、対応する Array の要素の値に置き換えられます。
+
+別名の `unnest` 経由を含め、`arrayJoin` は結合中に評価される `JOIN ON` 条件では使用できません。このような条件では、
+行数を維持する必要があるためです。一方の側にのみ適用される条件、および `arrayJoin` に対する等価キーは、
+結合前に抽出されるため、影響を受けません。非選言的な `ALL INNER JOIN` 条件も影響を受けません。
+この場合、条件は代わりに結合後に適用されるためです。
+展開が一方の側のみに依存する場合は、結合前のサブクエリ内の `ARRAY JOIN` に移動してください。`arrayJoin` の引数が両側のカラムを参照する条件は、再構成する必要があります。
 
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
@@ -4243,7 +4280,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 配列に要素が1つも含まれていない場合、その配列は空と見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
+  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -5132,6 +5169,11 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 
 `NULL` に設定された要素も通常の値として扱われます。
 
+`NaN` 要素には、上記の `NULL` ルールは適用されません。
+2 つの `NaN` 値のスカラー比較 (`NaN = NaN`) は `0` ですが、`indexOf` では `NaN` 要素が見つかったものとして報告される場合があります。
+その動作は実装の詳細です。特定の動作に依存しないでください。
+`NaN` 要素を見つけるには、次のようにテストします。`arrayFirstIndex(x -> isNaN(x), arr)` はその位置を返し、`arrayExists(x -> isNaN(x), arr)` はフラグを返します。
+
 **構文**
 
 ```sql
@@ -5149,7 +5191,7 @@ indexOf(arr, x)
 
 **例**
 
-**基本的な例**
+**基本例**
 
 ```sql title=Query
 SELECT indexOf([5, 4, 1, 3], 3)
@@ -5330,7 +5372,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 Array は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
+  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -5359,6 +5401,71 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="notHas">
+  ## notHas
+</div>
+
+導入バージョン: v26.8.0
+
+配列に指定した要素が含まれていない、マップに指定したキーが含まれていない、または JSON オブジェクトに指定したパスが存在しないかどうかを返します。`has` の否定です。
+
+**構文**
+
+```sql
+notHas(haystack, needle)
+```
+
+**引数**
+
+* `haystack` — ソース配列、Map、またはJSON。[`Array`](/ja/reference/data-types/array)、[`Map`](/ja/reference/data-types/map)、または[`JSON`](/ja/reference/data-types/newjson)
+* `needle` — 検索する値 (配列内の要素、Map内のキー、またはJSON内のパス文字列) 。
+
+**戻り値**
+
+haystackに指定したneedleが含まれない場合は`1`、含まれる場合は`0`を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**Arrayの基本的な使い方**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 2)
+```
+
+```response title=Response
+0
+```
+
+**Array が見つかりません**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 4)
+```
+
+```response title=Response
+1
+```
+
+**Map の基本的な使い方**
+
+```sql title=Query
+SELECT notHas(map('a', 1, 'b', 2), 'c')
+```
+
+```response title=Response
+1
+```
+
+**JSONの基本的な使い方**
+
+```sql title=Query
+SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
+```
+
+```response title=Response
+0
 ```
 
 <div id="randomHadamardTransform">
@@ -5392,7 +5499,8 @@ SELECT notEmpty([1,2]);
 サポートされている長さを使用するか、`output_dims` を渡して任意長の切り詰め射影を計算してください
 (下記参照) 。
 
-結果の要素型は入力と同じです。空の入力配列を渡すと、空の配列が返されます。
+結果の要素型は入力と同じです。空の入力配列を渡すと、空の配列が返されます
+(`output_dims` はこれには適用されません)。
 
 * `seed` (省略可、デフォルト `0`) : 符号パターンを選択します。同じ seed では常に同じ
   変換が得られます。
@@ -5478,7 +5586,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * すべての引数 `start`、`end`、`step` は、上記のサポート対象の型のいずれかである必要があります。返される配列の要素型は、引数の共通の上位型になります。
 
-* 関数が、設定 [`function_range_max_elements_in_block`](/ja/reference/settings/session-settings#function_range_max_elements_in_block) で指定された要素数を超える合計長の配列を返す場合、例外が発生します。
+* 関数が、設定 [`function_range_max_elements_in_block`](/ja/reference/settings/session-settings/function#function_range_max_elements_in_block) で指定された要素数を超える合計長の配列を返す場合、例外が発生します。
 
 * いずれかの引数の型が Nullable(nothing) の場合は `NULL` を返します。いずれかの引数の値が `NULL` (Nullable(T) 型) の場合は、例外が発生します。
 
