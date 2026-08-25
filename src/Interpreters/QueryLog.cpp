@@ -397,7 +397,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.getClientHostName().data(), client_info.getClientHostName().size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_agent.data(), client_info.client_agent.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);

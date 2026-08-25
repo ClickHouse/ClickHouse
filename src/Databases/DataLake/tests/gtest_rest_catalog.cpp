@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -133,6 +134,14 @@ public:
 
         if (path == "/v1/oauth/tokens")
         {
+            const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            ++token_requests;
+            /// Horizon secret-only credentials omit client_id; standard REST includes it.
+            if (request_body.contains("client_secret=") && !request_body.contains("client_id="))
+            {
+                writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-horizon-secret-only-token"})");
+                return;
+            }
             writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-access-token"})");
             return;
         }
@@ -580,6 +589,50 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
+TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// A pre-obtained bearer token becomes the `Authorization: Bearer <token>` header, so it must
+    /// pass the same validation as a user-supplied `auth_header`: a token with an embedded newline
+    /// would smuggle a second header into the request. The constructor validates the synthetic
+    /// header up front and must reject such a token before any request is issued.
+    expectThrowsCode(
+        [&]
+        {
+            OneLakeCatalog catalog(
+                "warehouse",
+                "http://127.0.0.1:1",
+                /* onelake_tenant_id */ "tenant",
+                /* onelake_client_id */ "",
+                /* onelake_client_secret */ "",
+                /* bearer_token */ "token\r\nX-Injected: evil",
+                /* refresh_token */ "",
+                /* auth_scope */ "",
+                /* oauth_server_uri */ "",
+                /* oauth_server_use_request_body */ false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ValidateBearerTokenRejectsMalformedHeader)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// Every bearer-token catalog path (Unity, and Paimon via HTTPBasedCatalogUtils) runs this
+    /// shared check before the token becomes an `Authorization: Bearer <token>` header, matching
+    /// the explicit validation OneLake performs. A token with an embedded CR/LF would otherwise
+    /// smuggle a second header into the request.
+    expectThrowsCode([&] { validateBearerToken(context, "token\r\nX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// A well-formed token is accepted; an empty token sends no header and is a no-op.
+    EXPECT_NO_THROW(validateBearerToken(context, "good-token"));
+    EXPECT_NO_THROW(validateBearerToken(context, ""));
+}
+
 TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
 {
     /// expires_in = 0: every issued access token is immediately expired, so every
@@ -691,6 +744,104 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     expired.emplace_back("onelake_refresh_token", "expired-refresh");
     expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
     EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+}
+
+TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
+{
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("my-pat-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "my-pat-token");
+    }
+    {
+        /// Snowflake PATs may contain `:`; Horizon must not split them into client_id/client_secret.
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("ver:1-hint:abc:rest-of-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "ver:1-hint:abc:rest-of-token");
+    }
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_TRUE(client_secret.empty());
+    }
+}
+
+TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"horizon-pat-without-colon",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        context);
+
+    EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "horizon-pat-without-colon");
+    EXPECT_FALSE(catalog.empty());
+
+    TableMetadata metadata;
+    metadata.withLocation();
+    catalog.getTableMetadata("namespace", "table_a", metadata);
+    EXPECT_TRUE(metadata.hasLocation());
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
+}
+
+TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    expectThrowsCode(
+        [&]
+        {
+            HorizonCatalog catalog(
+                "ICEBERG_TEST_DB",
+                server.getUrl(),
+                /* catalog_credential */"",
+                /* auth_scope */"session:role:DATA_ENGINEER",
+                /* auth_header */"",
+                /* oauth_server_uri */"",
+                /* oauth_server_use_request_body */true,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"pat-one",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "pat-two");
+    catalog.applySettingsChanges(changes);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "pat-two");
+
+    /// Mode is fixed: cannot switch to auth_header on a credential catalog.
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 #endif
