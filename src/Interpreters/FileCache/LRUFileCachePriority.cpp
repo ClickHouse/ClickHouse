@@ -762,9 +762,9 @@ void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     invalidateImpl();
 
-    /// Only the `Main` priority drains `invalidated_refs` via the background cleanup task.
-    if (cache_priority->getQueueType() == QueueType::Main)
-        cache_priority->addInvalidatedRef(entry, iterator);
+    /// `Main` drains `invalidated_refs` via the background cleanup task, a per-query queue on the
+    /// next reservation of its query (`FileCacheQueryLimit::QueryContext::removeInvalidatedEntries`).
+    cache_priority->addInvalidatedRef(entry, iterator);
 }
 
 void LRUFileCachePriority::LRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept

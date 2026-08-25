@@ -3882,6 +3882,38 @@ TEST_F(FileCacheTest, QueryLimitUnchargesEvictedSegments)
     ASSERT_TRUE(fixture.reserveAndDownload(300, 10, 10, cache_base_path));
 }
 
+TEST_F(FileCacheTest, QueryLimitUnchargesSegmentsDroppedFromCache)
+{
+    /// Eviction is not the only way a segment leaves the cache: dropping the cache or removing a key
+    /// takes segments out too, and the query which cached them must stop being charged for them all
+    /// the same, otherwise it never writes into the cache again.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string query_id = "query_id_dropped_segments";
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    const std::string cache_path = caches_dir / "cache_query_limit_dropped" / "";
+    QueryLimitFixture fixture(
+        "query_limit_dropped", cache_path, query_id,
+        /* query_limit_bytes */20, /* reserve_granularity */0);
+    ASSERT_TRUE(fixture.holder != nullptr);
+
+    ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_path));
+    ASSERT_TRUE(fixture.reserveAndDownload(100, 10, 10, cache_path));
+    /// The whole budget is used up by the two segments above.
+    ASSERT_FALSE(fixture.reserveAndDownload(200, 10, 10, cache_path));
+
+    fixture.cache->removeAllReleasable(FileCache::getCommonOrigin().user_id);
+
+    /// Nothing of this query is cached anymore, so its whole budget is available again.
+    ASSERT_TRUE(fixture.reserveAndDownload(300, 10, 10, cache_path));
+    ASSERT_TRUE(fixture.reserveAndDownload(400, 10, 10, cache_path));
+}
+
 TEST_F(FileCacheTest, QueryLimitSurplusGoesBackToTheQueryWhichReservedIt)
 {
     /// A file segment is completed by whoever holds it last, which after a hand-over of the download
@@ -4040,8 +4072,7 @@ TEST_F(FileCacheTest, QueryLimitUnchargeDoesNotUnderflow)
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path3));
 
     /// A surplus larger than the 10 bytes this query is charged for the segment.
-    fixture.cache->unchargeQueryLimitSurplus(
-        query_id, DB::FileCacheKey::fromPath("query_limit_key"), 0, 1000);
+    fixture.holder->context->tryDecrementSize(DB::FileCacheKey::fromPath("query_limit_key"), 0, 1000);
 
     /// The budget is intact (not wrapped around), so 10 more bytes still fit into the limit.
     ASSERT_TRUE(fixture.reserveAndDownload(100, 10, 10, cache_base_path3));
@@ -4116,11 +4147,12 @@ TEST_F(FileCacheTest, QueryLimitSurvivesReadBufferLifetime)
     ASSERT_FALSE(fixture.reserveAndDownload(100, 10, 10, cache_base_path2));
 }
 
-TEST_F(FileCacheTest, QueryLimitUnchargeKeepsRecordsUsable)
+TEST_F(FileCacheTest, QueryLimitUnchargeKeepsInFlightReservationsUsable)
 {
-    /// Uncharging a segment evicted by another query must not remove the record: a thread which is
-    /// reserving holds that record's queue entry between the two cache locks, and removing it made
-    /// the reservation fail on an invalid iterator.
+    /// A segment can leave the cache while another thread is reserving for it: that thread holds
+    /// the record's queue entry between the two cache locks. Uncharging must release the charge and
+    /// drop the record without invalidating the entry that thread holds, which made the reservation
+    /// fail on an invalid iterator before.
     ServerUUID::setRandomForUnitTests();
 
     const std::string cache_path = caches_dir / "test_query_limit_uncharge";
@@ -4142,16 +4174,21 @@ TEST_F(FileCacheTest, QueryLimitUnchargeKeepsRecordsUsable)
     auto it = context.add(key_metadata, /* offset */0, /* size */0, cache_guard.writeLock());
     ASSERT_TRUE(it != nullptr);
 
-    /// Another query evicts that segment meanwhile.
-    context.unchargeEvicted(key, /* offset */0);
+    /// The segment leaves the cache meanwhile (evicted or dropped by anyone).
+    context.unchargeRemoved(key, /* offset */0);
 
-    /// The reservation still completes and is accounted.
+    /// The record is gone, so a new reservation starts a new one instead of reusing a dead entry.
+    ASSERT_TRUE(context.tryGet(key, /* offset */0, cache_guard.writeLock()) == nullptr);
+
+    /// The reservation which was already in flight still completes on the entry it holds.
     it->incrementSize(10, state_guard.lock());
     ASSERT_EQ(context.getPriority().getSize(state_guard.lock()), 10u);
 
-    /// Evicting it now takes the accounted bytes back.
-    context.unchargeEvicted(key, /* offset */0);
+    /// The next reservation of this query takes the invalidated entry out of the queue, which gives
+    /// those bytes back and keeps the queue from growing with every segment the query has cached.
+    context.removeInvalidatedEntries(/* max_batch */10, cache_guard);
     ASSERT_EQ(context.getPriority().getSize(state_guard.lock()), 0u);
+    ASSERT_EQ(context.getPriority().getElementsCount(state_guard.lock()), 0u);
 }
 
 TEST_F(FileCacheTest, QueryLimitChargesReservationsWithoutAQuery)

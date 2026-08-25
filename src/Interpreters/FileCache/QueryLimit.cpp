@@ -56,16 +56,6 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
 }
 
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContextById(const String & query_id)
-{
-    if (query_id.empty() || !hasQueryContexts())
-        return nullptr;
-
-    std::lock_guard lock(query_map_mutex);
-    auto query_iter = query_map.find(query_id);
-    return query_iter == query_map.end() ? nullptr : query_iter->second;
-}
-
 std::vector<FileCacheQueryLimit::QueryContextPtr>
 FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
 {
@@ -112,40 +102,20 @@ void FileCacheQueryLimit::sweepDroppableContextsUnlocked(
     live_contexts.store(query_map.size(), std::memory_order_release);
 }
 
-void FileCacheQueryLimit::unchargeEvictedSegment(const FileCacheKey & key, size_t offset)
+void FileCacheQueryLimit::unchargeRemovedSegment(const FileCacheKey & key, size_t offset)
 {
     if (!hasQueryContexts())
         return;
 
     std::lock_guard map_lock(query_map_mutex);
     for (auto & [_, context] : query_map)
-        context->unchargeEvicted(key, offset);
+        context->unchargeRemoved(key, offset);
 }
 
-bool FileCacheQueryLimit::fitsIntoQueryLimit(const String & query_id, size_t size)
+bool FileCacheQueryLimit::QueryContext::fits(size_t size) const
 {
-    auto query_context = tryGetQueryContextById(query_id);
-    if (!query_context)
-        return true;
-
-    /// Approximate values are enough: this only decides whether to start writing more.
-    const auto & priority = query_context->getPriority();
     const size_t limit = priority.getSizeLimitApprox();
     return limit == 0 || priority.getSizeApprox() + size <= limit;
-}
-
-void FileCacheQueryLimit::unchargeSurplus(
-    const String & query_id, const FileCacheKey & key, size_t offset, size_t size)
-{
-    if (query_id.empty() || !size || !hasQueryContexts())
-        return;
-
-    std::lock_guard map_lock(query_map_mutex);
-    /// Deliberately not skipping a finished query: its context can still be charged (holders are
-    /// released after the query ends), and the bytes have to be given back to it all the same.
-    auto query_iter = query_map.find(query_id);
-    if (query_iter != query_map.end())
-        query_iter->second->tryDecrementSize(key, offset, size);
 }
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
@@ -235,15 +205,23 @@ bool FileCacheQueryLimit::QueryContext::tryRemove(
     return true;
 }
 
-void FileCacheQueryLimit::QueryContext::unchargeEvicted(const Key & key, size_t offset)
+void FileCacheQueryLimit::QueryContext::unchargeRemoved(const Key & key, size_t offset)
 {
     std::lock_guard records_lock(records_mutex);
     auto record = records.find({key, offset});
     if (record == records.end())
         return;
 
-    if (const size_t charged = record->second->getEntry()->size)
-        record->second->decrementSize(charged);
+    /// Releases the charge of the entry (sets its size to zero) without touching the queue, which
+    /// is what makes this callable while a segment is being removed, without the write lock. The
+    /// entry itself is taken out of the queue by `removeInvalidatedEntries`.
+    record->second->invalidate();
+    records.erase(record);
+}
+
+void FileCacheQueryLimit::QueryContext::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
+{
+    getPriority().removeInvalidatedEntries(max_batch, cache_guard);
 }
 
 void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t offset, size_t size)

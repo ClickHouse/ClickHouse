@@ -227,9 +227,9 @@ public:
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
-    /// `charged_query_id`, if given, receives the query charged for the reservation in its per-query
-    /// limit, or an empty string when it is charged to no query. `owner_query_id` is charged when
-    /// the reserving thread belongs to no query itself, as a background download does.
+    /// `charged_query_context`, if given, receives the query charged for the reservation in its
+    /// per-query limit, or null when it is charged to no query. `owner_query_context` is charged
+    /// when the reserving thread belongs to no query itself, as a background download does.
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -237,8 +237,8 @@ public:
         const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        String * charged_query_id = nullptr,
-        const String & owner_query_id = {});
+        FileCacheQueryLimit::QueryContextPtr * charged_query_context = nullptr,
+        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context = {});
 
     bool tryIncreasePriority(FileSegment & file_segment);
 
@@ -262,15 +262,14 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
-    /// Give back `size` bytes reserved for `key`:`offset` but never written to `query_id`.
-    void unchargeQueryLimitSurplus(const String & query_id, const Key & key, size_t offset, size_t size);
+    /// `key`:`offset` left the cache (evicted, dropped or removed): stop counting its bytes against
+    /// every query which cached it. Called from `FileSegment::detach`, the single point where a
+    /// segment leaves the cache.
+    void unchargeQueryLimitForRemovedSegment(const Key & key, size_t offset);
 
     /// Whether any query currently writes into this cache under a per-query limit. False both when
     /// the cache does not permit the limit and while no query enables it, which is the default.
     bool isQueryLimitInUse() const { return query_limit && query_limit->hasQueryContexts(); }
-
-    /// Whether `size` more bytes fit into what `query_id` has left to write into this cache.
-    bool fitsIntoQueryLimit(const String & query_id, size_t size) const;
 
     /// Number of queries currently limited in this cache. For tests and introspection.
     size_t getQueryLimitContextsCount() const { return query_limit ? query_limit->getQueryContextsCount() : 0; }
@@ -473,8 +472,8 @@ private:
         const OriginInfo & origin_info,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        String * charged_query_id,
-        const String & owner_query_id);
+        FileCacheQueryLimit::QueryContextPtr * charged_query_context,
+        const FileCacheQueryLimit::QueryContextWeakPtr & owner_query_context);
 
     bool doEviction(
         EvictionInfo & main_eviction_info,
@@ -486,7 +485,6 @@ private:
         EvictionCandidates & eviction_candidates,
         IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
-        std::vector<FileCacheKeyAndOffset> & evicted_entries,
         std::string & failure_reason);
 
     /// How much still needs to be evicted to reach the desired free-space ratio, given the live

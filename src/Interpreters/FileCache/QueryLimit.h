@@ -15,6 +15,9 @@ class FileCacheQueryLimit
 public:
     class QueryContext;
     using QueryContextPtr = std::shared_ptr<QueryContext>;
+    /// A handle to a query context which does not keep it alive and, unlike a `query_id` (which is
+    /// reusable), never resolves to a different query than the one it was taken from.
+    using QueryContextWeakPtr = std::weak_ptr<QueryContext>;
 
     QueryContextPtr tryGetQueryContext();
 
@@ -23,11 +26,6 @@ public:
     bool hasQueryContexts() const { return live_contexts.load(std::memory_order_acquire) != 0; }
 
     size_t getQueryContextsCount() const { return live_contexts.load(std::memory_order_acquire); }
-
-    /// The context of `query_id`, whether or not its query has finished: a background download
-    /// continues after the query which started it, and its bytes belong to that query's budget as
-    /// long as the context is there. Once it is swept, such a download is charged to no one.
-    QueryContextPtr tryGetQueryContextById(const String & query_id);
 
     /// Whether the calling thread belongs to a query, no matter whether that query is limited.
     static bool isCurrentThreadInQuery();
@@ -43,18 +41,9 @@ public:
     /// a new budget for the same query.
     std::vector<QueryContextPtr> removeQueryContext(QueryContextPtr & context);
 
-    /// Uncharge an evicted segment from every live query: it may have been cached by a query other
-    /// than the one which evicted it (or by several queries at once).
-    void unchargeEvictedSegment(const FileCacheKey & key, size_t offset);
-
-    /// Whether `size` more bytes fit into what `query_id` has left. True when it is not limited or
-    /// its context is gone: then nothing is charged for those bytes anyway.
-    bool fitsIntoQueryLimit(const String & query_id, size_t size);
-
-    /// Give back the reserve-ahead surplus of a file segment to `query_id`, which reserved it.
-    /// A no-op for an empty `query_id`: the reservation was charged to no query (a background
-    /// download), so there is nothing to give back.
-    void unchargeSurplus(const String & query_id, const FileCacheKey & key, size_t offset, size_t size);
+    /// Uncharge a segment which left the cache from every live query: it may have been cached by
+    /// a query other than the one removing it here (or by several queries at once).
+    void unchargeRemovedSegment(const FileCacheKey & key, size_t offset);
 
     class QueryContext
     {
@@ -68,6 +57,10 @@ public:
         const Priority & getPriority() const { return priority; }
 
         bool recacheOnFileCacheQueryLimitExceeded() const { return recache_on_query_limit_exceeded; }
+
+        /// Whether `size` more bytes fit into what this query has left. Approximate values are
+        /// enough: this only decides whether to start writing more.
+        bool fits(size_t size) const;
 
         /// The query this context belongs to has finished, so the context must not be handed
         /// out anymore: `query_id` is reusable and a new query must start with a fresh budget.
@@ -99,10 +92,15 @@ public:
             size_t offset,
             const CachePriorityGuard::WriteLock &);
 
-        /// The segment is gone from the cache: stop counting its bytes. The record and its queue
-        /// entry stay, both because another thread may hold that entry while reserving and because
-        /// a segment re-created at the same `key`:`offset` reuses the record. No-op without one.
-        void unchargeEvicted(const Key & key, size_t offset);
+        /// The segment is gone from the cache: release its charge and drop the record. Only the
+        /// charge is released here, while the queue entry is merely invalidated: taking it out of
+        /// the queue needs the cache priority write lock, which no removal path holds.
+        void unchargeRemoved(const Key & key, size_t offset);
+
+        /// Takes the entries invalidated by `unchargeRemoved` out of the per-query queue, so that
+        /// neither the queue nor the eviction walk over it grows with every segment this query has
+        /// ever cached. Lock free while there is nothing to remove, which is the common case.
+        void removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard);
 
         /// Give back space which was reserved but not written, at most what is charged for
         /// `key`:`offset`. No-op without a record.

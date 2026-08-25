@@ -14,6 +14,7 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 
 
 namespace Poco { class Logger; }
@@ -321,9 +322,10 @@ private:
     {
         DownloaderId downloader_id; /// The one who prepares the download.
         /// The query which reserved `reserved_size - downloaded_size` last, so that this
-        /// reserve-ahead is given back to it and not to whoever completes the segment.
-        /// Empty when the reservation was charged to no query, e.g. a background download.
-        String query_limit_owner;
+        /// reserve-ahead is given back to it and not to whoever completes the segment. Empty when
+        /// the reservation was charged to no query, and expired once that query is gone, so that a
+        /// new query which happens to reuse its `query_id` is never charged for this segment.
+        FileCacheQueryLimit::QueryContextWeakPtr query_limit_owner;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
