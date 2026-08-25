@@ -6481,11 +6481,23 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// The optimizer may have turned the query-condition cache off for correctness rather than
     /// performance (e.g. lazy FINAL or vector-search reads call `disableQueryConditionCache`), so the
     /// worker's rebuilt read must not silently re-enable it. Carried as a bare flag bit with no extra
-    /// payload: a peer that predates this bit just ignores it without misreading the stream.
+    /// payload, so the stream layout is the same at every version -- but a peer below
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG` ignores the bit and
+    /// would rebuild the read with the cache enabled, which is exactly the contract the optimizer
+    /// rejected. Fail closed for such a peer instead of shipping a read it cannot honour.
     /// (`allow_top_k_prewhere_query_condition_cache` needs no bit: it only matters together with
     /// `top_k_filter_info`, and a TopK-stamped read is rejected above.)
     if (!allow_query_condition_cache)
+    {
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "A ReadFromMergeTree step with the query condition cache disabled requires query plan "
+                "serialization version >= {}, but the peer only supports version {}; all nodes must be "
+                "upgraded",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG, ctx.version);
+
         flags |= 64;
+    }
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
