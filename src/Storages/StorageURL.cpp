@@ -971,60 +971,41 @@ namespace
         Data next() override
         {
             bool is_first = (current_index == 0);
-            if (is_first)
-            {
-                /// If format is unknown we iterate through all url options on first iteration and
-                /// try to determine format by file name.
-                if (!format)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        for (const auto & url : options)
-                        {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
-                            {
-                                format = format_from_file_name;
-                                break;
-                            }
-                        }
-                    }
-                }
 
-                /// For default mode check cached columns for all urls on first iteration.
-                if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        if (auto cached_columns = tryGetColumnsFromCache(options))
-                            return {nullptr, cached_columns, format};
-                    }
-                }
-            }
+            /// The addresses of the first batch are examined before anything is read, and the
+            /// batches `produceMoreURLs` appends later must get the same pass, as the materializing
+            /// iterator gave it to every address at once.
+            if (auto cached_columns = scanNewURLOptions())
+                return {nullptr, cached_columns, format};
 
             std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
             do
             {
-                if (current_index == url_options_to_check.size() && !produceMoreURLs())
+                if (current_index == url_options_to_check.size())
                 {
-                    if (is_first)
+                    if (!produceMoreURLs())
                     {
-                        if (format)
+                        if (is_first)
+                        {
+                            if (format)
+                                throw Exception(
+                                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                    "The table structure cannot be extracted from a {} format file, because all files are empty. "
+                                    "You can specify table structure manually",
+                                    *format);
+
                             throw Exception(
                                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                "The table structure cannot be extracted from a {} format file, because all files are empty. "
-                                "You can specify table structure manually",
-                                *format);
+                                "The data format cannot be detected by the contents of the files, because there are no files with provided path "
+                                "You can specify the format manually");
 
-                        throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "The data format cannot be detected by the contents of the files, because there are no files with provided path "
-                            "You can specify the format manually");
+                        }
 
+                        return {nullptr, std::nullopt, format};
                     }
 
-                    return {nullptr, std::nullopt, format};
+                    if (auto cached_columns = scanNewURLOptions())
+                        return {nullptr, cached_columns, format};
                 }
 
                 if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
@@ -1131,6 +1112,39 @@ namespace
             return url_options_to_check.size() != size_before;
         }
 
+        /// Examines the addresses appended since the previous scan: when the format is unknown it is
+        /// looked for in the file names, and in `DEFAULT` mode the schema cache is consulted, in
+        /// which case the cached columns are returned. Reading only starts once this found neither.
+        std::optional<ColumnsDescription> scanNewURLOptions()
+        {
+            if (!format)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size(); ++i)
+                {
+                    for (const auto & url : url_options_to_check[i])
+                    {
+                        auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                        {
+                            format = format_from_file_name;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            std::optional<ColumnsDescription> cached_columns;
+            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size() && !cached_columns; ++i)
+                    cached_columns = tryGetColumnsFromCache(url_options_to_check[i]);
+            }
+
+            scanned_options = url_options_to_check.size();
+            return cached_columns;
+        }
+
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
         {
             auto context = getContext();
@@ -1180,6 +1194,7 @@ namespace
         URLProducer url_producer;
         std::vector<std::vector<String>> url_options_to_check;
         size_t current_index = 0;
+        size_t scanned_options = 0;
         String current_url_option;
         std::optional<String> format;
         const CompressionMethod & compression_method;
