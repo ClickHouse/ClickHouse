@@ -1344,7 +1344,12 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 1; i < params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                    if (!param_identifier || !lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                        continue;
+                    /// Same member-qualified substitution the generic branch below makes: a body that only
+                    /// reads `x.doc` donates `arr.doc`, not the whole `arr`, which would then be refused as
+                    /// a tuple source and lose the element's own rules.
+                    if (!tryAddMemberQualifiedLambdaSource(param_identifier->name(), body_names, *args[i], names, masked_names))
                         collectValueCarryingIdentifierNames(*args[i], names, masked_names);
                 }
                 collectValueCarryingIdentifierNames(*args.back(), names, masked_names);
