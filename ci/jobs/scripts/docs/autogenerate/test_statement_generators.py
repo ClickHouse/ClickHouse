@@ -3,12 +3,16 @@
 
 import importlib.util
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 
 HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[4]
+REGISTERED_STATEMENT_PATTERN = re.compile(
+    r'\.registerStatement\(\s*"([^"]+)"')
 
 
 def load_module():
@@ -28,10 +32,31 @@ def marked_page(body="old body"):
     )
 
 
+def registered_statement_names():
+    names = []
+    for source in sorted((REPO_ROOT / "src/Parsers").rglob("*.cpp")):
+        names.extend(REGISTERED_STATEMENT_PATTERN.findall(
+            source.read_text(encoding="utf-8")))
+
+    assert names, "no registered statements found in source"
+    assert len(names) == len(set(names)), (
+        "duplicate statement registrations found")
+    return set(names)
+
+
 def main():
     mod = load_module()
-    assert len(mod.STATEMENT_PAGE_NAMES) == 99
-    assert len(set(mod.STATEMENT_PAGE_NAMES.values())) == 99
+    manifest_names = list(mod.STATEMENT_PAGE_NAMES.values())
+    assert len(manifest_names) == len(set(manifest_names)), (
+        "duplicate statement names found in manifest")
+
+    expected_names = registered_statement_names()
+    actual_names = set(manifest_names)
+    assert actual_names == expected_names, (
+        "statement page manifest differs from source registrations: "
+        f"missing={sorted(expected_names - actual_names)}, "
+        f"extra={sorted(actual_names - expected_names)}"
+    )
 
     with tempfile.TemporaryDirectory() as root:
         docs = Path(root) / "docs"
