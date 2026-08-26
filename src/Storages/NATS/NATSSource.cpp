@@ -181,15 +181,20 @@ Chunk NATSSource::generateImpl()
         /// starts holding nothing: no rows in the current output block, whose ACK handles
         /// `StorageNATS` needs until it has inserted them, and nothing left in the local queue,
         /// which the cycles before this one insert and acknowledge.
-        /// Those two checks are only a snapshot - `onMsg` runs on the NATS client thread and the
+        /// Those checks are only a snapshot - `onMsg` runs on the NATS client thread and the
         /// drain inside `unsubscribe` delivers whatever the subscription still has - so what the
         /// consumer does turn out to hold is returned to the broker instead of being destroyed,
         /// while the subscription it arrived on is still alive.
+        /// Emitting no rows is not the same as having consumed nothing: `consume` takes a message
+        /// before it is parsed, and `nats_skip_broken_messages` turns a message that yields no rows
+        /// into an ordinary outcome. Returning such a message to the broker would undo the skip and
+        /// show the same malformed input again, so the recovery waits for a cycle that starts with
+        /// nothing consumed either.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
         /// consuming where this one left off. Only a consumer this source subscribed from an
         /// unsubscribed state (the direct `SELECT` case above) is unsubscribed on destroy.
-        if (total_rows == 0 && consumer->queueEmpty() && consumer->needsResubscribe())
+        if (total_rows == 0 && !consumer->hasConsumedMessages() && consumer->queueEmpty() && consumer->needsResubscribe())
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
             consumer->finishAndReturnUnprocessed();

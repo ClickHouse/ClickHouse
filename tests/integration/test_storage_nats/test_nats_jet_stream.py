@@ -148,6 +148,26 @@ async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
     await nc.close()
 
 
+async def get_num_ack_pending(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
+    js = nc.jetstream()
+
+    consumer_info = await js.consumer_info(stream_name, consumer_name)
+
+    await nc.close()
+    return consumer_info.num_ack_pending
+
+
+async def get_delivered_consumer_seq(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
+    js = nc.jetstream()
+
+    consumer_info = await js.consumer_info(stream_name, consumer_name)
+
+    await nc.close()
+    return consumer_info.delivered.consumer_seq
+
+
 async def get_num_waiting(cluster_inst, stream_name, consumer_name):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     js = nc.jetstream()
@@ -1277,9 +1297,13 @@ def test_nats_jet_stream_direct_select_resumes_after_broker_hard_kill(nats_clust
         """
     )
 
+    # The query has to still be waiting when the message is published, and the whole broker restart
+    # happens inside that wait, so the limit is generous rather than tight: it is a deadline for the
+    # restart, not a measurement. The source returns as soon as it has the single row it is asked
+    # for, so nothing here is spent waiting when the recovery works.
     select = instance.get_query_request(
-        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 20000",
-        timeout=30,
+        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 120000",
+        timeout=180,
     )
     _wait_for_parked_pull_request()
     _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
@@ -1354,6 +1378,95 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
     # More rows than one output block: the first block ends the recovering source's cycle, and the
     # rest waits in the local queue for the cycles after it.
     _publish_and_expect("test_subject", range(0, 25), 25)
+
+
+def _wait_for_ack_pending(expected, consumer_name = "test_consumer", time_limit_sec = 60):
+    # Waits until the broker counts exactly `expected` messages as delivered and awaiting an
+    # acknowledgement, which is how a message the streaming cycle is holding reads from outside.
+    deadline = time.monotonic() + time_limit_sec
+    num_ack_pending = 0
+    while time.monotonic() < deadline:
+        num_ack_pending = asyncio.run(get_num_ack_pending(cluster, "test_stream", consumer_name))
+        if num_ack_pending == expected:
+            return
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "consumer {} holds {} unacknowledged messages, expected {}".format(
+            consumer_name, num_ack_pending, expected))
+
+
+def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconnect(nats_cluster):
+    # A cycle that has emitted no rows is not a cycle that has consumed nothing:
+    # `nats_skip_broken_messages` makes a message that yields no rows an ordinary outcome, and
+    # `consume` takes the message before it is parsed. Reconnect recovery hands back to the broker
+    # everything the consumer has consumed but not acknowledged, so recovering on a zero-row cycle
+    # would undo the skip - the malformed message is delivered again and parsed again, and a
+    # reconnect in front of the first good row can keep the table reprocessing the same bad input.
+    #
+    # The broker's own delivery counter is the oracle: the consumer sequence counts every delivery,
+    # redeliveries included, so it stays at one per message exactly when nothing was handed back.
+    # The ACK deadline is far beyond every wait below, so a redelivery cannot come from anywhere
+    # else, and the run holds the flush interval open so the reconnect lands inside a cycle.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    # Anchored before the table exists, so the first streaming cycle counts however quickly it
+    # starts - the cycles here are longer than the wait itself.
+    created = nats_helpers.log_line_count(instance)
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_skip_broken_messages = 1000,
+                     nats_flush_interval_ms = 30000,
+                     nats_wait_for_flush_interval = 1;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume", anchor = created)
+
+    # Values the format cannot parse into the column types. The cycle skips the message and keeps
+    # waiting for the rest of the flush interval, which is the state under test: an unacknowledged
+    # message held by a source that has emitted nothing.
+    asyncio.run(publish_messages(
+        cluster, "test_stream", "test_subject", [json.dumps({"key": "not a number", "value": "neither"})]))
+    _wait_for_ack_pending(1)
+
+    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+    # The restart has to land inside the same cycle, while the skipped message is still held: once
+    # the cycle ends the message is acknowledged and recovery has nothing left to hand back. The
+    # flush interval is far longer than the restart takes, so this reads a state, it does not wait
+    # for one.
+    assert asyncio.run(get_num_ack_pending(cluster, "test_stream", "test_consumer")) == 1, \
+        "the streaming cycle ended before the restart, the skipped message is no longer held"
+
+    # A stale subscription consumes nothing, so the view holding this row also means the recovery
+    # did happen - deferred to a cycle that holds nothing rather than skipped altogether. It waits
+    # out the rest of the current cycle and then a whole cycle of its own.
+    messages = [json.dumps({"key": 42, "value": 42})]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+    result = instance.query_with_retry(
+        "SELECT count() FROM test.view",
+        retry_count = 120,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == 1)
+    assert int(result) == 1, "consumption did not resume, view holds {} rows".format(result)
+
+    consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
+    assert consumer_seq == 2, (
+        "the skipped message was handed back to the broker and delivered again: "
+        "{} deliveries for two messages".format(consumer_seq))
 
 
 def test_nats_jet_stream_keeps_buffered_backlog_across_broker_restart(nats_cluster):

@@ -66,6 +66,13 @@ public:
 
     void ackConsumed();
     void dropConsumed();
+
+    /// True while this consumer holds messages it has handed out but nothing has acknowledged yet.
+    /// A message enters this set as soon as `consume` returns it, before it is parsed, so it stays
+    /// true for a message that produced no rows - which `nats_skip_broken_messages` makes an
+    /// ordinary outcome rather than an error.
+    bool hasConsumedMessages() const { return !consumed_messages.empty(); }
+
     /// Throw away leftovers of a subscription that is already gone, which is all that can be done
     /// with them: acknowledging or returning a message needs the subscription it arrived on.
     void dropBuffered();
