@@ -3187,7 +3187,7 @@ SELECT * FROM file_engine_table
 
 ## Usage in ClickHouse-local {#usage-in-clickhouse-local}
 
-In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension (`gz`, `br` or `xz`).
+In [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`. It is possible to read and write compressed files based on an additional engine parameter or file extension. The supported compression methods are `gz`, `deflate`, `br`, `xz`, `zst`, `lz4`, `bz2` and `snappy`.
 
 **Example:**
 
