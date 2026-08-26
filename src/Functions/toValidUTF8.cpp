@@ -177,10 +177,7 @@ When multiple consecutive invalid characters are found, they are collapsed into 
     {
         "Usage example",
         R"(SELECT toValidUTF8('\\x61\\xF0\\x80\\x80\\x80b'))",
-        R"(c
-┌─toValidUTF8('a����b')─┐
-│ a�b                   │
-└───────────────────────┘
+        R"(\\x61\\xF0\\x80\\x80\\x80b
         )"
     }
     };
