@@ -1116,11 +1116,12 @@ def backfill_skipped_statuses(
 
     skipped_jobs = []
     for job in workflow_result["results"]:
-        if job["status"] == "skipped" and len(job["links"]) > 0:
+        status = job["status"].lower()
+        if status == "skipped" and len(job["links"]) > 0:
             skipped_jobs.append(
                 {
                     "job_name": job["name"],
-                    "job_status": job["status"],
+                    "job_status": status,
                     "message": job["info"],
                     "results_link": job["links"][0],
                 }
