@@ -48,7 +48,7 @@ REGISTER_FUNCTION(IsInfinite)
         {"x", "Number to check for infiniteness.", {"Float*","BFloat16"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"`1` if x is infinite, otherwise `0` (including for `NaN`)."};
-    FunctionDocumentation::Examples examples = {{"Test if a number is infinite", "SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))", "1 0 0"}};
+    FunctionDocumentation::Examples examples = {{"Test if a number is infinite", "SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)", "1\t0\t0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

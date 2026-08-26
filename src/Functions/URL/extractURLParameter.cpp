@@ -103,9 +103,9 @@ The function assumes that the parameter in the `url` parameter is encoded in the
 SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'param1');
         )",
         R"(
-┌─extractURLPa⋯, 'param1')─┐
-│ value1                   │
-└──────────────────────────┘
+┌─extractURLParameter('http://example.com/?param1=value1&param2=value2', 'param1')─┐
+│ value1                                                                           │
+└──────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
