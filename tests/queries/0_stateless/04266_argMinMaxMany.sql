@@ -136,3 +136,29 @@ SELECT argMaxMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), 
 SELECT argMinMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT argMaxMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT argMinMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- NaN nested inside a composite val type follows the same rule as a top-level NaN: it is the worst
+-- candidate, so it is evicted in favor of any real value and sorts last in the output. Field's own
+-- ordering puts NaN after every real number, which used to make a nested NaN outrank real values.
+SELECT argMaxMany(1)(arg, tuple(val, 0)) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(1)(arg, tuple(val, 0)) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMaxMany(3)(arg, tuple(val, 0)) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(3)(arg, tuple(val, 0)) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMaxMany(1)(arg, [val]) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(1)(arg, [val]) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMaxMany(1)(arg, tuple([val])) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(1)(arg, tuple([val])) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+
+-- The same on the merge path, where the nested NaN arrives from another partial state.
+SELECT argMaxManyMerge(1)(s) FROM
+(
+    SELECT argMaxManyState(1)(arg, val) AS s FROM (SELECT 'a' AS arg, tuple(nan, 0) AS val)
+    UNION ALL
+    SELECT argMaxManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, tuple(toFloat64(1), 0) AS val)
+);
+SELECT argMinManyMerge(1)(s) FROM
+(
+    SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'a' AS arg, tuple(nan, 0) AS val)
+    UNION ALL
+    SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, tuple(toFloat64(1), 0) AS val)
+);
