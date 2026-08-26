@@ -1380,6 +1380,10 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
+            /// Typed DateTime64 leaves inside JSON (Object) constants must be serialized as text strings
+            /// rather than bare numbers. The receiving parser on remote shards is JSONExtractTree, which
+            /// parses unquoted fractional numbers as Float64 (losing sub-second precision for scales 7-9)
+            /// and unquoted integers as raw ticks under read_datetime_number_as_raw_value.
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
