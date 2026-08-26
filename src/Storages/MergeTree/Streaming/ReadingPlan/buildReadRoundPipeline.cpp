@@ -20,6 +20,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
 
+#include <Processors/QueryPlan/Streaming/CalculateWatermarksStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -137,6 +138,19 @@ QueryPlanPtr buildPartitionCommitOrderReadPlan(
     return plan;
 }
 
+QueryPlanPtr alignStreams(QueryPlanPtr data_plan, QueryPlanPtr metadata_plan)
+{
+    auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), data_plan->getCurrentHeader());
+
+    std::vector<QueryPlanPtr> plans;
+    plans.push_back(std::move(metadata_plan));
+    plans.push_back(std::move(data_plan));
+
+    auto plan = std::make_unique<QueryPlan>();
+    plan->unitePlans(std::move(align_step), std::move(plans));
+    return plan;
+}
+
 Pipe buildPartitionReadingPipeline(
     const ReadRoundContext & reading_context,
     const ReadState & state,
@@ -182,18 +196,10 @@ Pipe buildPartitionReadingPipeline(
     {
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
-        chassert(metadata_plan);
+        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context));
 
-        metadata_plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context, partition_id));
-
-        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader());
-
-        std::vector<QueryPlanPtr> plans;
-        plans.push_back(std::move(metadata_plan));
-        plans.push_back(std::move(plan));
-
-        plan = std::make_unique<QueryPlan>();
-        plan->unitePlans(std::move(align_step), std::move(plans));
+        plan = alignStreams(std::move(plan), std::move(metadata_plan));
+        plan->addStep(std::make_unique<CalculatePartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
     }
 
     /// Add cursor calculation step.
