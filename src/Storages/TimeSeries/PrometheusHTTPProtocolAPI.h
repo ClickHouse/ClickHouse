@@ -74,6 +74,11 @@ public:
         const String & end_param);
 
 private:
+    /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints
+    /// and makes a UNION ALL query selecting the ids (`series_id`) of the series matched by any of the selectors,
+    /// with their tags registered for timeSeriesIdToTags.
+    ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
+
     /// Writes the result of a prometheus query as a JSON.
     void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
 

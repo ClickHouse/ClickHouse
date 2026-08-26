@@ -8,6 +8,14 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -70,6 +78,42 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_sc
         ++timestamp_ticks;
 
     return Decimal64{timestamp_ticks};
+}
+
+/// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
+ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, std::optional<UInt64> limit)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    select_query->distinct = distinct;
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    select_list_exp->children = std::move(select_list);
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+
+    /// FROM (<subquery>)
+    auto subquery_ast = make_intrusive<ASTSubquery>(std::move(subquery));
+    auto table_exp = make_intrusive<ASTTableExpression>();
+    table_exp->subquery = subquery_ast;
+    table_exp->children.push_back(std::move(subquery_ast));
+
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    table->table_expression = table_exp;
+    table->children.push_back(std::move(table_exp));
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(table));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    if (limit)
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+
+    /// Wrap the select query into ASTSelectWithUnionQuery, the form produced by the parser.
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(std::move(list_of_selects));
+    select_with_union_query->list_of_selects = select_with_union_query->children.back();
+    return select_with_union_query;
 }
 }
 
@@ -398,20 +442,11 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 }
 
 
-void PrometheusHTTPProtocolAPI::getSeries(
-    WriteBuffer & response,
+ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const Strings & match_params,
     const String & start_param,
-    const String & end_param,
-    UInt64 limit,
-    QueryFinishCallback query_finish_callback)
+    const String & end_param)
 {
-    /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
-    if (match_params.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The Prometheus /api/v1/series endpoint requires at least one 'match[]' series selector");
-
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -438,7 +473,10 @@ void PrometheusHTTPProtocolAPI::getSeries(
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
-    String inner_query;
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_ALL;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+
     for (const auto & match_param : match_params)
     {
         PrometheusQueryTree selector;
@@ -457,24 +495,51 @@ void PrometheusHTTPProtocolAPI::getSeries(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter must contain at least one matcher",
                             quoteString(match_param));
 
-        if (!inner_query.empty())
-            inner_query += " UNION ALL ";
-        inner_query += StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type)->formatWithSecretsOneLine();
+        auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
+            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type);
+        const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
+        list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }
 
-    /// timeSeriesIdToTags() returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
-    String sql_query = fmt::format(
-        "SELECT DISTINCT timeSeriesIdToTags(series_id) AS {} FROM ({})", TimeSeriesColumnNames::Tags, inner_query);
-    if (limit)
-        sql_query += fmt::format(" LIMIT {}", limit + 1);
+    union_query->children.push_back(std::move(list_of_selects));
+    union_query->list_of_selects = union_query->children.back();
+    return union_query;
+}
 
-    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
+
+void PrometheusHTTPProtocolAPI::getSeries(
+    WriteBuffer & response,
+    const Strings & match_params,
+    const String & start_param,
+    const String & end_param,
+    UInt64 limit,
+    QueryFinishCallback query_finish_callback)
+{
+    /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
+    if (match_params.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Prometheus /api/v1/series endpoint requires at least one 'match[]' series selector");
+
+    auto series_ids_query = makeSeriesIDsQuery(match_params, start_param, end_param);
+
+    /// SELECT DISTINCT timeSeriesIdToTags(series_id) AS tags FROM (<series_ids_query>) [LIMIT <limit> + 1]
+    /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
+    auto tags_expression = makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id"));
+    tags_expression->setAlias(TimeSeriesColumnNames::Tags);
+
+    std::optional<UInt64> sql_limit;
+    if (limit)
+        sql_limit = limit + 1;
+
+    auto sql_query = makeSelectFromSubquery({std::move(tags_expression)}, std::move(series_ids_query), /* distinct = */ true, sql_limit);
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
     /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
     getContext()->setSetting("allow_experimental_analyzer", true);
 
-    auto [ast, io] = executeQuery(sql_query, getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try
     {
