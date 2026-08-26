@@ -371,7 +371,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
          .maximum_scale = 9},
     };
 
-    auto schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
+    const auto & schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
     arrow::MemoryPool * pool = arrow::default_memory_pool();
 
     arrow::StringBuilder type_name_builder(pool);
