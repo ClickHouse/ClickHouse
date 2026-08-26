@@ -161,14 +161,15 @@ ClickHouse 可以使用 [`DataLakeCatalog`](/zh/reference/engines/database-engin
 
 当前支持以下目录。有关完整的设置说明，请参阅各目录的参考指南。
 
-| 目录                                                                           | 格式             |       读取       |   创建表  | INSERT | 参考指南                                                                           |
-| ---------------------------------------------------------------------------- | -------------- | :------------: | :----: | :----: | ------------------------------------------------------------------------------ |
-| [AWS Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Glue 目录 指南](/zh/guides/use-cases/data-warehousing/glue-catalog)             |
-| [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [BigLake Metastore 指南](/zh/guides/use-cases/data-warehousing/biglake-catalog)     |
-| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg |     ✅ Beta     | ✅ Beta | ✅ Beta | [Unity Catalog 指南](/zh/guides/use-cases/data-warehousing/unity-catalog)           |
-| [Iceberg REST](/zh/guides/use-cases/data-warehousing/rest-catalog)              | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [REST 目录 指南](/zh/guides/use-cases/data-warehousing/rest-catalog)             |
-| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Lakekeeper 目录 指南](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog) |
-| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ Experimental |    ❌   |    ❌   | [Nessie 目录 指南](/zh/guides/use-cases/data-warehousing/nessie-catalog)         |
-| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        |     ✅ Beta     | ✅ Beta | ✅ Beta | [OneLake 目录 指南](/zh/guides/use-cases/data-warehousing/onelake-catalog)       |
+| 目录                                                                           | 格式             |       读取       |   创建表  | INSERT | 参考指南                                                                       |
+| ---------------------------------------------------------------------------- | -------------- | :------------: | :----: | :----: | -------------------------------------------------------------------------- |
+| [AWS Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Glue 目录 指南](/zh/guides/use-cases/data-warehousing/glue-catalog)              |
+| [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [BigLake Metastore 指南](/zh/guides/use-cases/data-warehousing/biglake-catalog) |
+| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg |     ✅ Beta     | ✅ Beta | ✅ Beta | [Unity Catalog 指南](/zh/guides/use-cases/data-warehousing/unity-catalog)       |
+| [Iceberg REST](/zh/guides/use-cases/data-warehousing/rest-catalog)              | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [REST 目录 指南](/zh/guides/use-cases/data-warehousing/rest-catalog)              |
+| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Lakekeeper 目录 指南](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)  |
+| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ Experimental |    ❌   |    ❌   | [Nessie 目录 指南](/zh/guides/use-cases/data-warehousing/nessie-catalog)          |
+| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        |     ✅ Beta     | ✅ Beta | ✅ Beta | [OneLake 目录 指南](/zh/guides/use-cases/data-warehousing/onelake-catalog)        |
+| [SeaweedFS](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)            | Iceberg        |     ✅ Beta     | ✅ Beta | ✅ Beta | [SeaweedFS 目录 指南](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)    |
 
-目前所有目录集成都需要启用 Experimental 或 Beta 设置。除 Microsoft OneLake 和 Databricks Unity Catalog 外，所有目录都仅提供 **read-only** 访问——可以查询表，但不能通过目录连接创建表或写入数据。若要将目录中的数据加载到 ClickHouse 以加快分析速度，请使用[加速分析指南](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)中所述的 `INSERT INTO SELECT`。若要将数据写回开放表格式，请按[写入数据指南](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)中的说明创建独立的 Iceberg 表。
+目前所有目录集成都需要启用 Experimental 或 Beta 设置。除 Microsoft OneLake、Databricks Unity Catalog 和 SeaweedFS 外，所有目录都仅提供 **read-only** 访问——可以查询表，但不能通过目录连接创建表或写入数据。若要将目录中的数据加载到 ClickHouse 以加快分析速度，请使用[加速分析指南](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)中所述的 `INSERT INTO SELECT`。若要将数据写回开放表格式，请按[写入数据指南](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)中的说明创建独立的 Iceberg 表。

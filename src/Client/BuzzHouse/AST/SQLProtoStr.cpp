@@ -544,14 +544,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
-            ret += "'1900-01-01'";
+            ret += "'0000-01-01'";
             if (val.paren())
             {
                 ret += "::Date32";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
-            ret += "'2299-12-31'";
+            ret += "'9999-12-31'";
             if (val.paren())
             {
                 ret += "::Date32";
@@ -600,14 +600,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
-            ret += "'1900-01-01 00:00:00'";
+            ret += "'0001-01-01 00:00:00'";
             if (val.paren())
             {
                 ret += "::DateTime64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME64:
-            ret += "'2299-12-31 23:59:59.99999999'";
+            ret += "'9999-12-31 23:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::DateTime64";
