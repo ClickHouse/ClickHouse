@@ -71,6 +71,10 @@ struct DatabaseDataLakeSettings
 
     SettingsChanges allChanged() const;
 
+    /// True if `name` is a known DataLakeCatalog database setting. Used by the table-engine
+    /// settings path to detect catalog settings that were mistakenly placed on a bare table.
+    static bool hasBuiltin(std::string_view name);
+
     /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
     /// so catalog code can match `SettingsChanges` entries without magic strings.
     static const String & getSettingName(DatabaseDataLakeSettingsString setting);

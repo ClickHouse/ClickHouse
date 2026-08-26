@@ -79,6 +79,11 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
+{
+    return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
+}
+
 void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
 {
     if (storage_def.settings)

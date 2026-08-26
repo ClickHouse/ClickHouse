@@ -51,25 +51,6 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-namespace DataLakeStorageSetting
-{
-    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
-    extern DataLakeStorageSettingsString object_storage_endpoint;
-    extern DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern DataLakeStorageSettingsString storage_aws_secret_access_key;
-    extern DataLakeStorageSettingsString storage_region;
-    extern DataLakeStorageSettingsString storage_aws_role_arn;
-    extern DataLakeStorageSettingsString storage_aws_role_session_name;
-    extern DataLakeStorageSettingsString storage_catalog_url;
-    extern DataLakeStorageSettingsString storage_warehouse;
-    extern DataLakeStorageSettingsString storage_catalog_credential;
-
-    extern DataLakeStorageSettingsString storage_auth_scope;
-    extern DataLakeStorageSettingsString storage_auth_header;
-    extern DataLakeStorageSettingsString storage_oauth_server_uri;
-    extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
-}
-
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
@@ -360,14 +341,14 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+        if (const auto deprecated_catalog_settings = settings->getChangedDeprecatedCatalogSettings();
+            !deprecated_catalog_settings.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Settings storage_catalog_type, storage_catalog_url and storage_aws_access_key_id are no longer "
-                "supported on Iceberg/DeltaLake table engines. Use the DataLakeCatalog database engine instead "
-                "(https://clickhouse.com/docs/engines/database-engines/datalakecatalog)");
+                "Settings {} are catalog configuration settings and are no longer supported on Iceberg/DeltaLake "
+                "table engines. Use the DataLakeCatalog database engine instead "
+                "(https://clickhouse.com/docs/engines/database-engines/datalakecatalog)",
+                fmt::join(deprecated_catalog_settings, ", "));
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
         /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
         /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
