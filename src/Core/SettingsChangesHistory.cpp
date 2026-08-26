@@ -47,7 +47,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"input_format_try_infer_ipv4", false, false, "New setting to infer IPv4 type from string fields during schema inference for text formats."},
             {"input_format_try_infer_ipv6", false, false, "New setting to infer IPv6 type from string fields during schema inference for text formats."},
-            {"query_plan_read_in_order_through_spilling_join", false, true, "New setting that lets reading in order propagate through a hash join with an automatic spill threshold, by pinning that join in memory so the order it promised is preserved. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing conservative behavior, where such a join is never used for reading in order but is always free to spill."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
