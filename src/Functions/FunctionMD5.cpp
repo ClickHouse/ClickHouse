@@ -24,7 +24,9 @@
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+/// Not tied to USE_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
+/// AVX2, which is independent of whether multi-target dispatch is on.
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #endif
 
