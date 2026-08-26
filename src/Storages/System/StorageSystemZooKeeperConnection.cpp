@@ -110,7 +110,20 @@ This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_
     .get_columns = StorageSystemZooKeeperConnection::getColumnsDescription,
     .examples = R"DOCS_MD(
 ```sql
-SELECT * FROM system.zookeeper_connection;
+SELECT
+    name,
+    host,
+    port,
+    index,
+    connected_time,
+    session_uptime_elapsed_seconds,
+    is_expired,
+    keeper_api_version,
+    client_id,
+    xid,
+    enabled_feature_flags,
+    availability_zone
+FROM system.zookeeper_connection;
 ```
 
 ```text
