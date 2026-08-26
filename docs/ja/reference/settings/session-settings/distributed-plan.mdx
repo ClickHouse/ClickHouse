@@ -25,6 +25,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "新しい実験的な設定"}]}]} />
 
 分散クエリで並列読み取りを行う際のデフォルトのタスク数です。タスクはレプリカ間に分散されます。
+ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいて読み取りのファンアウトを選択するため、この設定は使用しません。
 
 <div id="distributed_plan_default_shuffle_join_bucket_count">
   ## distributed_plan_default_shuffle_join_bucket_count
@@ -37,6 +38,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "新しい実験的な設定"}]}]} />
 
 分散 shuffle-hash-join のデフォルトのバケット数。
+ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいてファンアウトを選択するため、この設定は使用しません。
 
 <div id="distributed_plan_execute_locally">
   ## distributed_plan_execute_locally
@@ -89,6 +91,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "新しい実験的な設定"}]}]} />
 
 分散クエリプランで、shuffle join の代わりに broadcast join を使用する際の最大行数。
+ルールベースの分散プランナーにおけるヒューリスティックです。コストベースのオプティマイザが有効な場合、broadcast と shuffle の選択は推定コストに基づいて行われるため、この設定は効果がありません。
 
 <div id="distributed_plan_optimize_exchanges">
   ## distributed_plan_optimize_exchanges
