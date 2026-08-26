@@ -165,4 +165,33 @@ SELECT "min(a)", min(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT "min(a)", min(a), max(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT "min(a)", min(a), max(a) FROM test_col_stats_agg GROUP BY p AS "min(a)" ORDER BY 1;
 
+-- ==================================================
+-- Index-forcing settings and read limits
+-- ==================================================
+
+-- The shortcut fully replaces the read and must not bypass the normal
+-- read-analysis contract: index-forcing settings and read limits are still
+-- enforced by the regular read path.
+
+-- force_primary_key: no primary-key lookup, must still throw.
+SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+
+-- force_index_by_date: no partition/minmax index used, must still throw.
+SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
+
+-- force_data_skipping_indices: the forced index is never used, must still throw.
+SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS force_data_skipping_indices = 'no_such_index'; -- { serverError INDEX_NOT_USED }
+
+-- max_partitions_to_read below the table's partition count (3) must still throw.
+SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS max_partitions_to_read = 1; -- { serverError TOO_MANY_PARTITIONS }
+
+-- At the partition count the shortcut still applies.
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS max_partitions_to_read = 3) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(value), max(value) FROM test_col_stats_agg SETTINGS max_partitions_to_read = 3;
+
+-- A partition filter prunes down to the limit in the regular read; the shortcut
+-- declines conservatively on the pre-filter partition count.
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), max(value) FROM test_col_stats_agg WHERE p = 1 SETTINGS max_partitions_to_read = 1) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT min(value), max(value) FROM test_col_stats_agg WHERE p = 1 SETTINGS max_partitions_to_read = 1;
+
 DROP TABLE test_col_stats_agg;

@@ -39,7 +39,10 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
+
+#include <set>
 
 namespace DB
 {
@@ -48,6 +51,16 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
+    extern const SettingsBool force_primary_key;
+    extern const SettingsBool force_index_by_date;
+    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsInt64 max_partitions_to_read;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
 }
 
 namespace FailPoints
@@ -768,6 +781,42 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             /// Masking policies rewrite values at read time; raw statistics must not bypass them.
             if (all_min_max && reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
                 all_min_max = false;
+
+            /// The shortcut fully replaces the read and never runs `selectRangesToRead` /
+            /// `AnalysisResult::checkLimits`. Decline it when index-forcing settings or read
+            /// limits apply, so the normal read path keeps enforcing them (same guards as
+            /// the text-index count shortcut).
+            if (all_min_max)
+            {
+                const auto & query_settings = context->getSettingsRef();
+                const auto & data_settings = *reading.getMergeTreeData().getSettings();
+
+                if (query_settings[Setting::force_primary_key]
+                    || query_settings[Setting::force_index_by_date]
+                    || query_settings[Setting::force_data_skipping_indices].changed
+                    || data_settings[MergeTreeSetting::max_concurrent_queries] > 0)
+                    all_min_max = false;
+
+                if (all_min_max)
+                {
+                    const Int64 max_partitions_to_read = query_settings[Setting::max_partitions_to_read].changed
+                        ? query_settings[Setting::max_partitions_to_read]
+                        : data_settings[MergeTreeSetting::max_partitions_to_read];
+                    if (max_partitions_to_read > 0)
+                    {
+                        std::set<String> partitions;
+                        for (const auto & part_with_ranges : reading.getParts())
+                        {
+                            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
+                            if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
+                            {
+                                all_min_max = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (all_min_max)
