@@ -1414,7 +1414,8 @@ private:
 /// including the references inside subqueries.
 ///
 /// `replaceColumns` deliberately stops at `QUERY`/`UNION` boundaries, so a correlated reference to
-/// a Merge virtual column - e.g. `WHERE EXISTS (SELECT 1 WHERE _table = 't')` - would keep its
+/// a Merge virtual column - which has to be qualified, e.g.
+/// `WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m._table = 'child')` - would keep its
 /// `ColumnNode` and be evaluated by the child itself. A delegating child evaluates it against the
 /// storage that eventually reads the rows, which is exactly the name the Merge virtual columns must
 /// not report.
