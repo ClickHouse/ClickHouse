@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <cstring>
@@ -135,6 +136,23 @@ inline bool isWhitespaceASCIIOneLine(char c)
 {
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
+
+/// Remove the leading and trailing ASCII whitespace.
+inline std::string_view trimWhitespace(std::string_view str)
+{
+    while (!str.empty() && isWhitespaceASCII(str.front()))
+        str.remove_prefix(1);
+    while (!str.empty() && isWhitespaceASCII(str.back()))
+        str.remove_suffix(1);
+    return str;
+}
+
+/// A range adaptor that applies `trimWhitespace` to every element,
+/// e.g. `std::views::split(list, ',') | trimWhitespaceTransform`.
+inline constexpr auto trimWhitespaceTransform = std::views::transform([](auto && token)
+{
+    return trimWhitespace(std::string_view(token.begin(), token.end()));
+});
 
 inline bool isControlASCII(char c)
 {

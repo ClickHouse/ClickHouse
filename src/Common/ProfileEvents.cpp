@@ -12,11 +12,9 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/iter_find.hpp>
-
 #include <cfloat>
 #include <random>
+#include <ranges>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -1955,23 +1953,20 @@ void Counters::setTraceProfileEvent(Event event)
 
 void Counters::setTraceProfileEvents(const String & events_list)
 {
-    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
-        it != decltype(it)();
-        ++it)
+    /// The list is written by a human, so allow spaces around the names and a trailing comma.
+    bool has_any = false;
+    for (const auto name : std::views::split(std::string_view(events_list), ',') | trimWhitespaceTransform)
     {
-        std::string_view name(*it);
-
-        /// The list is written by a human, so allow spaces around the names and a trailing comma.
-        while (!name.empty() && isWhitespaceASCII(name.front()))
-            name.remove_prefix(1);
-        while (!name.empty() && isWhitespaceASCII(name.back()))
-            name.remove_suffix(1);
-
         if (name.empty())
             continue;
 
         setTraceProfileEvent(getByName(name));
+        has_any = true;
     }
+
+    /// An empty list means "trace everything" - keep this behaviour when the list contains only separators and spaces.
+    if (!has_any)
+        setTraceAllProfileEvents();
 }
 
 
