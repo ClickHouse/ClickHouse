@@ -64,9 +64,6 @@ struct DeterministicKeyTransformDag
 /// through `compareAt`'s total order, in which a NaN has a defined position and is not anomalous.
 bool typeMayHideNaN(const DataTypePtr & type);
 
-/// The same question for a constant. `Field::isNaN` only inspects a top-level `Float64`, so a
-/// `Tuple` holding a NaN element answers false there.
-bool fieldMayContainNaN(const Field & field);
 
 /** Condition on the index.
   *

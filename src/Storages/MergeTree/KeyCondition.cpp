@@ -594,31 +594,15 @@ bool typeMayHideNaN(const DataTypePtr & type)
     return false;
 }
 
-bool fieldMayContainNaN(const Field & field)
-{
-    if (field.isNaN())
-        return true;
-
-    if (field.getType() == Field::Types::Tuple)
-    {
-        for (const auto & element : field.safeGet<Tuple>())
-            if (fieldMayContainNaN(element))
-                return true;
-    }
-
-    return false;
-}
-
 /// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN.
 /// A NaN operand makes each of `<`, `>`, `<=`, `>=` evaluate to `false`, so an ordering op and its
 /// candidate inverse are both `false` instead of complementary: `not(NaN > c) = true` while
 /// `NaN <= c = false`. `=` / `!=` do stay complements under NaN; they are covered too, to keep one
 /// rule for every comparison.
 ///
-/// Only a NaN-hiding column or a constant that holds a NaN blocks the rewrite; a finite float constant
-/// is safe, so plain literal comparisons like `c <= 5.5` (Int column vs Float literal) still get
-/// inverted. A `Tuple` operand is NaN-hiding in either role, because tuple comparison is built from
-/// its elements' scalar comparisons.
+/// Only a NaN-hiding column or a NaN constant blocks the rewrite; a finite float constant is safe, so
+/// plain literal comparisons like `c <= 5.5` (Int column vs Float literal) still get
+/// inverted.
 static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
 {
     if (name != "equals" && name != "notEquals"
@@ -635,9 +619,9 @@ static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawCons
         if (child->type != ActionsDAG::ActionType::COLUMN || !child->column || !isColumnConst(*child->column))
             return true;
 
-        /// Constant: only a NaN inside it blocks the rewrite.
+        /// Constant: only a NaN blocks the rewrite.
         const Field field = (*child->column)[0];
-        if (fieldMayContainNaN(field))
+        if (field.isNaN())
             return true;
     }
     return false;
@@ -1622,6 +1606,22 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
+/// `Field::isNaN` only inspects a top-level `Float64`, so a `Tuple` element needs a walk.
+static bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
 /// Whether any element of an already-materialized set column is a NaN.
 static bool columnContainsNaN(const IColumn & column)
 {
@@ -1629,7 +1629,7 @@ static bool columnContainsNaN(const IColumn & column)
     for (size_t i = 0, size = column.size(); i < size; ++i)
     {
         column.get(i, field);
-        if (fieldMayContainNaN(field))
+        if (fieldContainsNaN(field))
             return true;
     }
     return false;

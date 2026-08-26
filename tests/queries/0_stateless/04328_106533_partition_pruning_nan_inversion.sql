@@ -119,20 +119,22 @@ SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT cou
 DROP TABLE t_106533_sparse;
 
 -- A column that is both a primary-key column and a partition-minmax column: mark-range analysis can be
--- given the part's minmax bound as that column's universe. A bound that hides a NaN is not a universe,
--- so such a column has to fall back to the whole one. Only
--- use_partition_minmax_for_primary_key_pruning reaches this path; use_skip_indexes does not.
+-- given the part's minmax bound as that column's universe for the key columns after the mark's own
+-- prefix. A bound that hides a NaN is not a universe, so such a column has to fall back to the whole
+-- one. Only use_partition_minmax_for_primary_key_pruning reaches this path, and only when the trailing
+-- key column is the NaN-hiding one, so `val` is second in ORDER BY and a granule holds two ids.
 
 DROP TABLE IF EXISTS t_106533_pk_minmax;
 
-CREATE TABLE t_106533_pk_minmax (val Float64)
-ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY val
-SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_106533_pk_minmax (id UInt64, val Float64)
+ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY (id, val)
+SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_106533_pk_minmax VALUES (1.0), (nan), (2.0), (3.0);
+INSERT INTO t_106533_pk_minmax VALUES (1, 1.0), (1, nan), (2, 2.0), (2, 3.0), (3, 1.5), (3, 2.5);
 
-SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
-SETTINGS use_skip_indexes = 0, use_partition_minmax_for_primary_key_pruning = 0;
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_partition_minmax_for_primary_key_pruning = 0;
 
 DROP TABLE t_106533_pk_minmax;
