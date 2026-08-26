@@ -182,6 +182,7 @@ bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
     }
     catch (...)
     {
+        /// Ok. Preserve the existing behavior: unknown exceptions should report the part as broken.
         return true;
     }
 }
