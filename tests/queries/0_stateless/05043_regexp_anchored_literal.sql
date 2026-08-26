@@ -61,12 +61,16 @@ SELECT splitByRegexp('b$', 'abab');
 
 SELECT 'Vectorized match and like';
 
-SELECT match(s, '^abc') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
-SELECT match(s, 'abc$') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
-SELECT match(s, '^abc$') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
-SELECT s LIKE 'abc%' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
-SELECT s LIKE '%abc' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
-SELECT s LIKE 'abc' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^abc') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+SELECT match(s, 'abc$') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+SELECT match(s, '^abc$') FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+SELECT s LIKE 'abc%' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+SELECT s LIKE '%abc' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+SELECT s LIKE 'abc' FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s) ORDER BY s;
+
+SELECT match(f, '^abc') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s)) ORDER BY f;
+SELECT match(f, 'abc$') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s)) ORDER BY f;
+SELECT match(f, '^abc$') FROM (SELECT toFixedString(s, 8) AS f FROM (SELECT arrayJoin(['abc', 'xabc', 'abcx', 'ab', '', 'abcabc', 'xabcabc', 'abcabcx']) AS s)) ORDER BY f;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
