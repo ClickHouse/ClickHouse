@@ -13,15 +13,20 @@ SELECT tokens('a', 'splitByRegexp', ['c']); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT tokens('a', 'splitByRegexp', materialize('c')); -- { serverError ILLEGAL_COLUMN }
 -- and must not be empty
 SELECT tokens('a', 'splitByRegexp', ''); -- { serverError BAD_ARGUMENTS }
--- `extract` must be a const Bool or integer (see positive tests below); other types are rejected
+-- `extract` must be a const Bool or an unsigned integer (see positive tests below)
 SELECT tokens('a', 'splitByRegexp', 'a', 'x'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByRegexp', 'a', materialize(true)); -- { serverError ILLEGAL_COLUMN }
+-- A signed integer is rejected too, not silently misrouted into the Array(String) branch
+SELECT tokens('a', 'splitByRegexp', 'a', toInt8(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Too many arguments
 SELECT tokens('a', 'splitByRegexp', 'a', 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- { echoOn }
 -- Simple literal separator
 SELECT tokens('a,b,c', 'splitByRegexp', ',');
+-- A capture group in the separator is inert in the default mode (captures are tracked internally
+-- regardless of mode, but only read when extract = true)
+SELECT tokens('a,b,c', 'splitByRegexp', '(,)');
 -- Leading, trailing and consecutive separators do not produce empty tokens
 SELECT tokens(',a,,b,', 'splitByRegexp', ',');
 -- No match: the whole string is a single token

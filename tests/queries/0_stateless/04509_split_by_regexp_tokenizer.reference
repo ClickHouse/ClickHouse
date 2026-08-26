@@ -3,6 +3,10 @@ Negative tests
 -- Simple literal separator
 SELECT tokens('a,b,c', 'splitByRegexp', ',');
 ['a','b','c']
+-- A capture group in the separator is inert in the default mode (captures are tracked internally
+-- regardless of mode, but only read when extract = true)
+SELECT tokens('a,b,c', 'splitByRegexp', '(,)');
+['a','b','c']
 -- Leading, trailing and consecutive separators do not produce empty tokens
 SELECT tokens(',a,,b,', 'splitByRegexp', ',');
 ['a','b']
