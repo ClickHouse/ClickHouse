@@ -36,7 +36,8 @@ description: 'One or two sentences shown on the explorer card.'
 
 Individual quickstart pages are intentionally omitted from the sidebar, so
 `searchable: true` is required to keep them discoverable through docs search.
-The quickstart check enforces this for every new page.
+The quickstart generator propagates this flag to every localized quickstart,
+and the quickstart check enforces it across all locale trees.
 
 ### `useCases` — one or more of: {#usecases-values}
 
