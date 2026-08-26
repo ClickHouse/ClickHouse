@@ -28,6 +28,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTFunction;
+class ASTIdentifier;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
