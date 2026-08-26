@@ -90,3 +90,33 @@ def test_max_bytes_ratio_before_external_sort(node):
     settings["max_bytes_ratio_before_external_sort"] = 0
     with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        pytest.param(node_server, id="server"),
+        pytest.param(node_user, id="user"),
+    ],
+)
+def test_max_bytes_ratio_before_external_distinct(node):
+    if node.is_built_with_thread_sanitizer():
+        pytest.skip("TSan build is skipped due to memory overhead")
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
+
+    # Peak memory usage: ~14GiB (the DISTINCT hash set of 100M unique ~85-byte strings)
+    query = """
+    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
+    """
+
+    settings = {
+        "max_memory_usage": "0",
+        "max_bytes_before_external_distinct": 0,
+        "max_bytes_ratio_before_external_distinct": 0.3,
+    }
+    node.query(query, settings=settings)
+
+    settings["max_bytes_ratio_before_external_distinct"] = 0
+    with pytest.raises(QueryRuntimeException):
+        node.query(query, settings=settings)
