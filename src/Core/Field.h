@@ -345,6 +345,7 @@ public:
             case Types::Bool:
             case Types::IPv4:
             case Types::IPv6:
+            case Types::Version:
                 return true;
             case Types::Array:
             case Types::Tuple:
