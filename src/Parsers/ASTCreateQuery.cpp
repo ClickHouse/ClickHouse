@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
 ASTPtr ASTStorage::clone() const
 {
     auto res = make_intrusive<ASTStorage>(*this);

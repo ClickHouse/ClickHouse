@@ -3151,27 +3151,23 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
         in node.query_and_get_error(
             f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'wildcard')
     PARTITION BY (b, c)
-    """,
-            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+    """
         )
     )
 
     # `compatibility` older than `26.6` resolves
-    # `file_like_engine_default_partition_strategy` to `wildcard` via
-    # `SettingsChangesHistory`, so the same path must raise the same error
-    # without an explicit setting override.
-    assert (
-        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
-        in node.query_and_get_error(
-            f"""
+    # `file_like_engine_default_partition_strategy` to `wildcard`. Without an
+    # explicit strategy, preserve the old read-only behavior instead of failing.
+    node.query(
+        f"""
     CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-            settings={"compatibility": "26.5"},
-        )
+        settings={"compatibility": "26.5"},
     )
+    node.query(f"DROP TABLE {table_name}")
 
     # From `26.6` onwards the default flips to `hive`, so the same statement
     # under `compatibility = '26.6'` must succeed.
@@ -3760,4 +3756,3 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     assert hits_third == 0, f"Expected no stale cache hit after overwrite, got {hits_third}"
 
     instance.query(f"DROP TABLE {table_name}")
-

@@ -322,6 +322,27 @@ cat > "$SERVER_DIR/config.d/zz_ci_log_level.xml" <<XML
 </clickhouse>
 XML
 
+# Several oracles read through a cluster named `default` (`cluster('default', ...)`
+# and `ENGINE = Distributed('default', ...)`), which the embedded config does not
+# define -- it carries no `remote_servers` at all, so those reads fail with
+# `CLUSTER_DOESNT_EXIST`. 127.0.0.1 is treated as local, unlike 127.0.0.{2..255},
+# so the shard is served in process rather than over a loopback connection.
+cat > "$SERVER_DIR/config.d/zz_ci_default_cluster.xml" <<'XML'
+<clickhouse>
+    <remote_servers>
+        <default>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>
+XML
+
 echo "=== Starting ClickHouse server ==="
 ( cd "$SERVER_DIR" && exec "$CLICKHOUSE_BIN" server -P "$PID_FILE" ) 1>"$OUTPUT_PATH/clickhouse-server.log" 2>"$OUTPUT_PATH/clickhouse-server.log.err" &
 for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then break ; else sleep 1; fi ; done

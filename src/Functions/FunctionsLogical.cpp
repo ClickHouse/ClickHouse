@@ -52,7 +52,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
-            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "\\N"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -83,7 +83,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
-            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
+            {"With NULL", "SELECT or(0, NULL);", "\\N"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;

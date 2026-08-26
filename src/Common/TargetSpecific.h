@@ -91,6 +91,7 @@ enum class TargetArch : UInt32
     x86_64_icelake = (1 << 3),
     x86_64_sapphirerapids = (1 << 4),
     GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
+    x86_64_vaes = (1 << 6),           /// v3 + VAES. Not a microarchitecture level: VAES appears on Zen 3, which has no AVX-512 at all, and on Intel only from Ice Lake, so neither v4 nor icelake describes the set of CPUs that have it.
 };
 
 /// Runtime detection.
@@ -134,6 +135,10 @@ String toString(TargetArch arch);
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
 #define X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=icelake-server,no-prefer-256-bit")))
 #define X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=sapphirerapids,no-prefer-256-bit")))
+/// A single feature on top of the baseline rather than a level, for the reason given on TargetArch::x86_64_vaes.
+#define X86_64_VAES_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3,vaes")))
+/// VAES on 512-bit registers. arch=x86-64-v4 supplies the avx512f that the _mm512_aes* intrinsics require.
+#define X86_64_VAES512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,vaes")))
 
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
