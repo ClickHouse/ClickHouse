@@ -501,6 +501,22 @@ Valeurs possibles :
 
 Conserve la lecture dans l’ordre depuis la table de gauche lors des opérations JOIN, afin qu’elle puisse être utilisée par les étapes suivantes.
 
+<div id="query_plan_read_in_order_through_spilling_join">
+  ## query_plan_read_in_order_through_spilling_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de propager la lecture dans l'ordre à travers une hash join avec un seuil de déversement automatique, en maintenant cette jointure en mémoire afin de préserver l'ordre promis. previous_value=false afin que `compatibility` avec les versions antérieures à 26.8 rétablisse le comportement conservateur préexistant, dans lequel une telle jointure n'est jamais utilisée pour la lecture dans l'ordre, mais peut toujours déverser des données sur disque."}]}]} />
+
+Permet à [`query_plan_read_in_order_through_join`](/fr/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) de s&#39;appliquer également à une hash join pour laquelle un seuil de déversement automatique sur disque est configuré avec [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+
+Une telle jointure ne peut garantir la préservation de l&#39;ordre de la table de gauche que si elle ne déverse jamais de données sur disque, car ce déversement répartit les lignes dans des compartiments selon leur hachage. Lorsque l&#39;optimisation s&#39;applique, la jointure est donc maintenue en mémoire et le seuil de déversement ne se déclenche plus : la table de droite est alors limitée par le traqueur de mémoire, comme si aucun déversement automatique n&#39;était configuré.
+
+Définissez ce paramètre sur `0` pour conserver le comportement conservateur consistant à ne jamais propager la lecture dans l&#39;ordre à travers une jointure susceptible de déverser des données sur disque. Les requêtes qui s&#39;appuient sur ce déversement pour respecter la limite de mémoire et qui, sans cela, deviendraient éligibles à l&#39;optimisation continuent de fonctionner comme auparavant.
+
+L&#39;optimisation distincte `ORDER BY ... LIMIT` via `JOIN`, qui pousse un `Sort` et un `Limit` vers le côté préservé de la jointure, ne dépend jamais de la préservation de l&#39;ordre par la jointure et reste disponible pour les jointures pouvant déverser des données sur disque, indépendamment de ce paramètre. Elle s&#39;efface toutefois au profit de la lecture dans l&#39;ordre lorsque celle-ci est possible : ainsi, lorsque ce paramètre est activé, un `ORDER BY ... LIMIT` sur une jointure pouvant déverser des données sur disque, dont le côté préservé peut produire les lignes dans l&#39;ordre demandé, utilise le plan de lecture dans l&#39;ordre plutôt qu&#39;un `Sort` et un `Limit` poussés vers le bas. Ce basculement conserve ses conditions préexistantes, notamment que [`query_plan_join_swap_table`](/fr/reference/settings/session-settings/query-plan#query_plan_join_swap_table) soit explicitement défini sur `false` : avec la valeur par défaut `auto`, une optimisation ultérieure peut échanger les côtés de la jointure et invalider le plan de lecture dans l&#39;ordre ; le basculement n&#39;est donc jamais effectué et ces requêtes conservent le `Sort` et le `Limit` poussés vers le bas.
+
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct
 </div>
