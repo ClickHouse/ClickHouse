@@ -1672,11 +1672,8 @@ StorageURLWithFailover::StorageURLWithFailover(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const ContextPtr & context_,
-    const String & compression_method_,
-    const HTTPHeaderEntries & headers_,
-    const String & http_method_)
-    : StorageURL(
-        "", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_, headers_, http_method_)
+    const String & compression_method_)
+    : StorageURL("", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
 {
     for (const auto & uri_option : uri_options_)
     {
