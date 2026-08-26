@@ -8,6 +8,17 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.t_push_facts)
         Expression (Change column names to column identifiers)
           ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 1b. same query under compatibility = 26.8: classic shape (behavioral compatibility contract)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 2. same with INNER JOIN
 Expression ((Project names + Projection))
   MergingAggregated

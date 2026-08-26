@@ -52,6 +52,14 @@ SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 10
 SELECT '-- 1. huge left side, few distinct keys: partial aggregation is pushed below the LEFT JOIN';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 
+-- asserts the behavioral compatibility contract end-to-end (settings-changes history ->
+-- `QueryPlanOptimizationSettings` -> rule registration): the otherwise-pushable query above
+-- reverts to the classic shape under `compatibility = '26.8'`, complementing the exposed-setting
+-- value check in `05043_cascades_aggregation_pushdown_compatibility`.
+SELECT '-- 1b. same query under compatibility = 26.8: classic shape (behavioral compatibility contract)';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key
+SETTINGS compatibility = '26.8';
+
 SELECT '-- 2. same with INNER JOIN';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 

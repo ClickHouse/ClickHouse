@@ -321,14 +321,20 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
     if (allow_input_without_aggregated_chunk_info)
         flags |= 64;
 
-    /// The flag exists only since query plan serialization version 9. Throw rather than send a
+    /// The flag exists only since query plan serialization version 10. Throw rather than send a
     /// bit the other side would ignore, failing at runtime instead (deserialize checks the same).
+    /// Distributed task fragments are always serialized at the current version
+    /// (`DistributedPlanExecutor::serializeQueryPlan`), so this gate cannot fire there - an older
+    /// worker instead rejects the stream's leading version before reaching this step. The
+    /// client-to-server transport negotiates `min(peer, current)` (`Connection::sendQueryPlan` ->
+    /// `QueryPlan::serialize`), so an older server IS reachable through this gate.
     if ((flags & 64) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Merging aggregated data produced by a non-aggregating operator requires query plan "
-            "serialization version >= {}; all nodes must run the same version, or set "
-            "`cascades_aggregation_pushdown = 0` to avoid this plan shape entirely",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO);
+            "serialization version >= {}, but the plan is serialized at version {}; "
+            "`cascades_aggregation_pushdown = 0` avoids producing this plan shape (on a mixed-version "
+            "distributed cluster the plan version itself must also be supported by all workers)",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO, ctx.version);
 
     writeIntBinary(flags, ctx.out);
 
@@ -372,7 +378,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
     const bool allow_input_without_aggregated_chunk_info = bool(flags & 64);
 
-    /// The flag exists only since query plan serialization version 9; on an older stream the bit
+    /// The flag exists only since query plan serialization version 10; on an older stream the bit
     /// is garbage, so reject it (serialize checks the same).
     if (allow_input_without_aggregated_chunk_info
         && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
