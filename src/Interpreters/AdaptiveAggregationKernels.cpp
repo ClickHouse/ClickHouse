@@ -1476,6 +1476,18 @@ void Aggregator::spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared,
 {
     if (shared.cancelled.load(std::memory_order_relaxed))
         return;
+
+    /// A detached table is a drain table taken out of service to be written to disk as one
+    /// external-aggregation part: a batch of staged records was emplaced into it, so it holds
+    /// deduplicated staged keys with their partial states. A spilled query merges through the
+    /// external machinery, which never runs the merge-time group accounting, so
+    /// `max_rows_to_group_by` is checked against each detached table here, best-effort: the
+    /// deduplicated size is a lower bound on the final group count, so a throw-mode crossing
+    /// is definite, but tables that individually stay under the limit can still merge into a
+    /// result above it, just as they can under the baseline's per-table checks between spills.
+    bool no_more_keys = false;
+    checkLimits(table.size(), no_more_keys);
+
     LOG_TRACE(log, "Adaptive aggregation: writing a detached drain table ({} keys) to disk", table.size());
     consumeToTemporaryFile(table);
 }
@@ -1496,10 +1508,23 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
                 shared.backlog.undrainedRecords());
     };
 
+    /// The routing table (`early_drain_variants`) is the session's shared two-level table into
+    /// which the drains aggregate staged records that leave the backlogs early. This check
+    /// holds `max_rows_to_group_by` against its group count. The portions that crossed the
+    /// spill floor were already checked in `spillDetachedAdaptiveTable`; like there, the deduplicated
+    /// size is a lower bound on the final group count. The check runs on both exits, because earlier
+    /// pressure sweeps may have left an over-limit residue behind with nothing more to drain.
+    const auto check_group_limit = [&]
+    {
+        bool no_more_keys = false;
+        checkLimits(shared.early_drain_variants->size(), no_more_keys);
+    };
+
     auto chunks = shared.backlog.takeAllForPressureDrain();
     if (chunks.empty())
     {
         check_nothing_left();
+        check_group_limit();
         return;
     }
 
@@ -1549,6 +1574,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
     LOG_TRACE(log, "Adaptive aggregation: finish drain converted {} staged records", drained_records);
 
     check_nothing_left();
+    check_group_limit();
 }
 
 void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
