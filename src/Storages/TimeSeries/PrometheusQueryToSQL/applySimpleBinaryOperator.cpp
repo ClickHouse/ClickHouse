@@ -75,9 +75,7 @@ namespace
         /// If one of the arguments is empty then the result is also empty.
         if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
         {
-            SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
-            res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
-            return res;
+            return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
         }
 
         String sides[2];

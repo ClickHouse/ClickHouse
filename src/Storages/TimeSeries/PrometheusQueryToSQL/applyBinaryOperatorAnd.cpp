@@ -24,9 +24,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
     /// If one of the arguments is empty then the result is also empty.
     if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
     {
-        SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        res.value_data_type = left_argument.value_data_type;
-        return res;
+        return SQLQueryPiece{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
@@ -120,7 +118,6 @@ SQLQueryPiece applyBinaryOperatorAnd(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
-    res.value_data_type = left_argument.value_data_type;
 
     return res;
 }
