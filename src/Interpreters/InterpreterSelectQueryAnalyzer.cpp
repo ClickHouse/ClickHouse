@@ -407,13 +407,11 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     planner.buildQueryPlanIfNeeded();
     return std::move(planner).extractQueryPlan();
 }
-// Seems like main call site which optimizes query plan
+
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
-
-
 
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
