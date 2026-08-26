@@ -654,8 +654,8 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
 
 /// `memory_eviction_score` controls eviction order under memory pressure: the reservation with the highest
 /// `memory_eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
-/// `big` but has a higher `memory_eviction_score`, so it is evicted although the pre-`memory_eviction_score` policy (largest
-/// first) would have evicted `big`.
+/// `big` but has a higher score, so `small_hi` is the victim even though the largest-first tie-break alone
+/// would pick `big`.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
 {
     SpaceSharedTest t;
@@ -687,8 +687,8 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
 }
 
 
-/// Regression guard: with a uniform `memory_eviction_score` (the default) the eviction order is unchanged - the
-/// largest reservation is still evicted first.
+/// Regression guard: with a uniform `memory_eviction_score` (the default), the largest reservation is evicted
+/// first.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
 {
     SpaceSharedTest t;

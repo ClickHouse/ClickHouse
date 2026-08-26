@@ -309,8 +309,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // per-query `memory_eviction_score` (0 by default) is the primary key, so a higher-scored reservation
     // is evicted first, and equal scores fall back to the largest `fair_key`. With the default score
     // everywhere the victim is simply the reservation with the largest `fair_key`.
-    // running_allocations is non-empty here, so begin() is a valid seed (and keeps the result provably
-    // non-null for the static analyzer).
+    // running_allocations is non-empty here (checked above), so the first element is a valid initial victim.
     ResourceAllocation * victim_ptr = &*running_allocations.begin();
     for (ResourceAllocation & candidate : running_allocations)
     {
