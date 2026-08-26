@@ -9,6 +9,7 @@ namespace ProfileEvents
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
     extern const Event TextIndexUsedEmbeddedPostings;
+    extern const Event TextIndexDiscardPatternQueryLowSelectivity;
 }
 
 namespace DB
@@ -429,6 +430,54 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
 
             for (const auto & [query_token, _] : query_builder.tokens)
                 queries_by_token[query_token].erase(hash);
+        }
+    }
+}
+
+double TextIndexAnalyzer::estimatePatternQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
+{
+    /// Union estimate over scan-discovered tokens (pattern queries declare none at parse time).
+    const double n = static_cast<double>(total_rows);
+    double not_in_any = query_builder.postings
+        ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
+        : 1.0;
+
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        if (hasReadPostings(token))
+            continue;
+        not_in_any *= (1.0 - static_cast<double>(token_info->cardinality) / n);
+    }
+
+    return n * (1.0 - not_in_any);
+}
+
+void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(double selectivity_threshold, size_t total_rows)
+{
+    if (total_rows == 0)
+        return;
+
+    const double cardinality_threshold = static_cast<double>(total_rows) * selectivity_threshold;
+
+    for (auto & [query_hash, query_builder] : query_builders)
+    {
+        if (query_builder.is_failed || query_builder.is_bypassed)
+            continue;
+
+        const auto & query = *query_builder.query;
+        if (query.getPatterns().empty() || !query.getTokens().empty())
+            continue;
+
+        /// Empty token set: scan was already cut short and the query bypassed by the budget.
+        if (query_builder.tokens.empty())
+            continue;
+
+        if (estimatePatternQueryCardinality(query_builder, total_rows) > cardinality_threshold)
+        {
+            /// Union covers too many rows to be selective; bypass before reading its postings.
+            query_builder.markBypassed();
+            detachQueryFromTokens(query_hash, query_builder);
+            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternQueryLowSelectivity);
         }
     }
 }

@@ -83,6 +83,9 @@ public:
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
+    /// Bypasses pattern queries whose scan-discovered token union is not selective, before any
+    /// posting lists are read for them.
+    void analyzeCardinalitiesAndBypassPatterns(double selectivity_threshold, size_t total_rows);
     size_t memoryUsageBytes() const;
 
 private:
@@ -101,6 +104,8 @@ private:
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
     double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
+    /// Union estimate over a pattern query's scan-discovered tokens (`query->getTokens` is empty for those).
+    double estimatePatternQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 

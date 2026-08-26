@@ -8843,6 +8843,13 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
+    DECLARE(UInt64, text_index_like_max_postings_rows_to_read, 1000000, R"(
+Maximum total number of posting rows to read when text index LIKE evaluation by the dictionary scan is enabled.
+
+Bounds the actual read work: a matched token with a large (non-embedded) posting list costs its cardinality in rows, so a single very common token can exhaust this budget. When either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan is cut short and LIKE evaluation falls back to brute force on the column data.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
