@@ -93,9 +93,6 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (function_name != "in" && function_name != "globalIn")
         return false;
 
-    if (node->children.size() != 2)
-        return false;
-
     const IColumn * set_column = node->children[1]->column.get();
     if (!set_column)
         return false;
