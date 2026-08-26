@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfResult.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
+void WhatIfResult::format(WriteBuffer & out) const
 {
     writeCString("Baseline (after PK + partition + existing indexes):\n", out);
     writeString(fmt::format("  table:       {}.{}\n", database, table), out);
@@ -18,14 +18,14 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         writeString(fmt::format("  est_bytes:   {}\n", ReadableSize(baseline_est_bytes)), out);
     writeCString("\n", out);
 
-    for (const auto & idx : index_results)
+    for (const auto & idx : candidates)
     {
-        if (!idx.index_type.empty())
-            writeString(fmt::format("With {} ({}, hypothetical):\n", idx.index_name, idx.index_type), out);
+        if (!idx.type.empty())
+            writeString(fmt::format("With {} ({}, hypothetical):\n", idx.name, idx.type), out);
         else
-            writeString(fmt::format("{}:\n", idx.index_name), out);
+            writeString(fmt::format("{}:\n", idx.name), out);
 
-        if (idx.status == IndexResult::NotApplicable)
+        if (idx.status == WhatIfCandidateResult::NotApplicable)
         {
             writeCString("  status:       not_applicable\n", out);
             writeString(fmt::format("  reason:       {}\n", idx.not_applicable_reason), out);
@@ -51,22 +51,22 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         String estimate_source_str;
         switch (idx.estimate_source)
         {
-            case IndexResult::Empirical: estimate_source_str = "empirical"; break;
-            case IndexResult::Statistical: estimate_source_str = "statistical"; break;
-            case IndexResult::ApplicabilityOnly: estimate_source_str = "applicability_only"; break;
+            case WhatIfCandidateResult::Empirical: estimate_source_str = "empirical"; break;
+            case WhatIfCandidateResult::Statistical: estimate_source_str = "statistical"; break;
+            case WhatIfCandidateResult::ApplicabilityOnly: estimate_source_str = "applicability_only"; break;
         }
         writeString(fmt::format("  source:           {}\n", estimate_source_str), out);
 
         String empirical_status_str;
         switch (idx.empirical_status)
         {
-            case IndexResult::Ok: empirical_status_str = "ok"; break;
-            case IndexResult::Unsupported: empirical_status_str = "unsupported"; break;
-            case IndexResult::Disabled: empirical_status_str = "disabled"; break;
+            case WhatIfCandidateResult::Ok: empirical_status_str = "ok"; break;
+            case WhatIfCandidateResult::Unsupported: empirical_status_str = "unsupported"; break;
+            case WhatIfCandidateResult::Disabled: empirical_status_str = "disabled"; break;
         }
         writeString(fmt::format("  empirical_status: {}\n", empirical_status_str), out);
 
-        if (idx.empirical_status == IndexResult::Unsupported)
+        if (idx.empirical_status == WhatIfCandidateResult::Unsupported)
         {
             String reason = idx.empirical_unsupported_reason;
             if (reason.empty())
@@ -74,7 +74,7 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
             writeString(fmt::format("  empirical_reason: {}\n", reason), out);
         }
 
-        if (idx.empirical_status == IndexResult::Ok)
+        if (idx.empirical_status == WhatIfCandidateResult::Ok)
         {
             writeString(fmt::format("  sampled_parts:    {} / {}\n", idx.sampled_parts, idx.total_parts), out);
             writeString(fmt::format("  sampled_marks:    {} / {}\n", idx.sampled_marks, idx.total_marks), out);

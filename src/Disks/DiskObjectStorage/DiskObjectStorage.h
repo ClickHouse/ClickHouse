@@ -211,8 +211,8 @@ public:
     bool isPlain() const override;
 
     /// Is object write-once?
-    /// For example: S3PlainObjectStorage is write once, this means that it
-    /// does support BACKUP to this disk, but does not support INSERT into
+    /// For example: S3ObjectStorage with MetadataStorageFromPlainObjectStorage is write once, this
+    /// means that it does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
@@ -258,10 +258,9 @@ private:
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    String getReadResourceName() const;
-    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
+    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;

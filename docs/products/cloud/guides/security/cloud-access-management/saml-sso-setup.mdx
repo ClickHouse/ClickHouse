@@ -335,7 +335,13 @@ No — only service-provider-initiated flows. Users navigate to `https://console
 
 <Accordion title="How do I use SAML SSO with multiple organizations?">
 
-ClickHouse Cloud supports multi-organization SSO with a separate connection per organization. Use the direct link (`https://console.clickhouse.cloud/?connection={organizationid}`) to log in to each one, and log out of one organization before logging into another. If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
+ClickHouse Cloud supports multi-organization SSO with a separate connection per organization.
+
+Your first login to each organization must use its direct link (`https://console.clickhouse.cloud/?connection={organizationId}`). This first login provisions your account in that organization. If your organization has SCIM enabled, you can skip this step because your account will already be provisioned.
+
+For subsequent sign-ins, log in to any of your SAML organizations. Your other SAML organizations are available in the organization switcher in the console sidebar, and selecting one signs you into that organization through its SSO.
+
+If you don't want users on your domain routed to an organization automatically when they enter their email at `https://console.clickhouse.cloud`, open a support ticket to remove that behavior.
 
 </Accordion>
 
