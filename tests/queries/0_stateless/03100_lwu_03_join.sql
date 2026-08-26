@@ -1,6 +1,7 @@
 -- Tags: no-parallel-replicas, no-replicated-database, long
 -- no-parallel-replicas: profile events may differ with parallel replicas.
 -- no-replicated-database: fails due to additional shard.
+-- patch_parts_version is pinned because the set of patch-apply profile events differs between versions.
 
 SET insert_keeper_fault_injection_probability = 0.0;
 SET enable_lightweight_update = 1;
@@ -13,13 +14,14 @@ ORDER BY id
 SETTINGS
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
-    apply_patches_on_merge = 0;
+    apply_patches_on_merge = 0,
+    patch_parts_version = 'v2';
 
 INSERT INTO t_shared VALUES (1, 2) (3, 4);
 
 UPDATE t_shared SET c1 = 100 WHERE id = 1;
 
-SELECT name, rows from system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id;
 
@@ -27,13 +29,13 @@ INSERT INTO t_shared VALUES (5, 6);
 
 UPDATE t_shared SET c1 = 200 WHERE id = 5;
 
-SELECT name, rows from system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id;
 
 OPTIMIZE TABLE t_shared PARTITION ID 'all' FINAL;
 
-SELECT name, rows from system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id;
 

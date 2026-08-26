@@ -16,6 +16,10 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule);
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
 
+/// True when a CSV-escaped `Tuple` occupies one field per element, so a null field belongs to the
+/// first element and not to the whole column.
+bool isCSVSeparateColumnsTuple(const DataTypePtr & type, const FormatSettings & format_settings);
+
 bool deserializeFieldByEscapingRule(
     const DataTypePtr & type,
     const SerializationPtr & serialization,

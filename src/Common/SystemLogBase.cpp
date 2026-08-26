@@ -4,6 +4,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>

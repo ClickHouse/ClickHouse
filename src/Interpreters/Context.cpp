@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -106,6 +107,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -117,7 +119,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -239,6 +241,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric IcebergSchedulePoolTask;
     extern const Metric IcebergSchedulePoolSize;
+    extern const Metric BackgroundQueryThreads;
+    extern const Metric BackgroundQueryThreadsActive;
+    extern const Metric BackgroundQueryThreadsScheduled;
     extern const Metric BackgroundStreamingSchedulePoolTask;
     extern const Metric BackgroundStreamingSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
@@ -292,6 +297,10 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -299,8 +308,9 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
-    extern const SettingsBool read_through_distributed_cache;
-    extern const SettingsBool write_through_distributed_cache;
+    extern const SettingsString default_format;
+    extern const SettingsBoolAuto force_read_through_distributed_cache;
+    extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -417,8 +427,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsBool enable_read_through_distributed_cache;
+    extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -467,6 +480,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
+
+/// Per-query deviations from the server-level distributed cache switches. The background and buffer
+/// contexts are built once at startup, so a value coming from their profile would pin them for the
+/// lifetime of the server - which is exactly what makes the switch unobservable for merges,
+/// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
+/// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
+/// it is already shared with running threads when profiles are applied, so a reset would race there.
+static const std::vector<String> distributed_cache_force_setting_names
+    = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
 {                                                       \
@@ -570,6 +592,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
+
+    mutable OnceFlag background_query_pool_initialized;
+    mutable std::unique_ptr<ThreadPool> background_query_pool;
 
     /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
     String default_profile_name;                                /// Default profile name used for default values.
@@ -791,10 +816,14 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
-    Context::ConfigReloadCallback config_reload_callback;
+    std::mutex config_reload_callback_mutex;
+    Context::ConfigReloadCallback config_reload_callback TSA_GUARDED_BY(config_reload_callback_mutex);
+
+    /// No lock required for start_servers_callback, stop_servers_callback,
+    /// stop_introspection_servers_callback modified only during initialization
     Context::StartStopServersCallback start_servers_callback;
     Context::StartStopServersCallback stop_servers_callback;
+    Context::StopIntrospectionServersCallback stop_introspection_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
@@ -960,6 +989,21 @@ struct ContextSharedPart : boost::noncopyable
         return ConfigurationPtr(&Poco::Util::Application::instance().config(), /* shared= */ true);
     }
 
+    void stopIntrospectionServers() const
+    {
+        if (!stop_introspection_servers_callback)
+            return;
+
+        try
+        {
+            stop_introspection_servers_callback();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to stop introspection servers");
+        }
+    }
+
     /** Perform a complex job of destroying objects in advance.
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -1008,12 +1052,50 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
 
-        /// Stop all MergeTree background executors before shutting down databases.
-        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
-        /// are running when storage objects are shut down or destroyed.
-        /// Without this, a background task could be accessing a storage's data_parts_indexes
-        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
+        /// Stop all MergeTree background executors and cancel the in-flight merges,
+        /// mutations and fetches, in this order:
+        ///
+        /// 1. Flip every executor into shutdown mode without joining it. From this point on
+        ///    no new task can be scheduled (`trySchedule` rejects them) and no pending task
+        ///    can start (worker threads exit at the next step boundary), so the set of
+        ///    running tasks cannot grow.
+        /// 2. Cancel everything that is currently running. `cancelAll` also marks entries
+        ///    inserted later as cancelled, so a task that is inside its first step and has
+        ///    not registered itself in the list yet cannot escape the cancellation.
+        /// 3. Join the executors.
+        ///
+        /// The executors' `wait` (step 3) does not interrupt already running tasks, and the
+        /// per-storage cancellation (`merges_blocker`, `fetcher.blocker`) happens only later,
+        /// in `DatabaseCatalog::shutdown`. Without step 2, `wait` would block until the
+        /// current task step completes, and a single slow step (e.g. a merge applying huge
+        /// patch parts, which can spend minutes inside one block under sanitizers, or a
+        /// fetch of a large part) would delay shutdown beyond any timeout. The results of
+        /// these merges and fetches are discarded after the restart anyway, so finishing
+        /// them is pure waste. Without step 1, the cancellation would be racy: a task
+        /// scheduled after step 2 would be invisible to `cancelAll` and block `wait` again.
+        ///
+        /// Merge and mutate tasks check `MergeListElement::is_cancelled` on every block
+        /// through `MergeProgressCallback` and abort with the `ABORTED` exception; fetches
+        /// check `ReplicatedFetchListElement::is_cancelled` on every buffer refill.
+        ///
+        /// Waiting for the executors before shutting down databases also ensures no
+        /// background task is accessing a storage's data (e.g. data_parts_indexes) while
+        /// `DatabaseCatalog::shutdown` destroys that storage, which used to cause a SIGBUS.
         /// See https://github.com/ClickHouse/ClickHouse/issues/85433
+        LOG_TRACE(log, "Stopping background executors from starting new tasks");
+        if (merge_mutate_executor)
+            merge_mutate_executor->requestShutdown();
+        if (fetch_executor)
+            fetch_executor->requestShutdown();
+        if (moves_executor)
+            moves_executor->requestShutdown();
+        if (common_executor)
+            common_executor->requestShutdown();
+
+        LOG_TRACE(log, "Cancelling merges, mutations and fetches");
+        merge_list.cancelAll();
+        replicated_fetch_list.cancelAll();
+
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
@@ -1034,10 +1116,19 @@ struct ContextSharedPart : boost::noncopyable
             SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
         });
 
+        stopIntrospectionServers();
+
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
+
+        std::unique_ptr<ThreadPool> delete_background_query_pool;
+        {
+            std::lock_guard lock(mutex);
+            delete_background_query_pool = std::move(background_query_pool);
+        }
+        delete_background_query_pool.reset();
 
         delete_async_insert_queue.reset();
 
@@ -1324,6 +1415,9 @@ ContextData::ContextData(const ContextData &o) :
     input_blocks_reader(o.input_blocks_reader),
     user_id(o.user_id),
     current_roles(o.current_roles),
+    external_roles(o.external_roles),
+    authentication_grants(o.authentication_grants),
+    authentication_valid_until(o.authentication_valid_until),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -1339,6 +1433,7 @@ ContextData::ContextData(const ContextData &o) :
     is_distributed(o.is_distributed),
     default_format(o.default_format),
     insert_format(o.insert_format),
+    http_combined_filter(o.http_combined_filter),
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
     special_scalars(o.special_scalars),
@@ -1366,6 +1461,7 @@ ContextData::ContextData(const ContextData &o) :
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
+    is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
@@ -2112,7 +2208,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2125,6 +2221,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
+    if (!database.empty())
+        DatabaseCatalog::instance().assertDatabaseExists(database);
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -2137,6 +2235,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
+    setAuthenticationGrantsWithLock(authentication_grants_, lock);
+    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -2182,15 +2282,54 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
-    if (!new_external_roles.empty())
-    {
-        if (external_roles)
-            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
-        else
-            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
-        need_recalculate_access = true;
-    }
+    // External roles are roles received from another node; current roles is a collection of roles that were assigned locally.
+    // Replace them unconditionally (rather than append) so that switching the principal via `setUser` clears any external
+    // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor now
+    // preserves `external_roles`, so without this reset a context authenticated with pushed roles would keep them after
+    // `setUser(target_user)` (e.g. `EXECUTE AS target_user` via `impersonateSessionContext`), silently widening the
+    // target's privileges. This mirrors how `setAuthenticationGrants` and `setCurrentRoles` overwrite their state.
+    if (new_external_roles.empty())
+        external_roles = nullptr;
+    else
+        external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)
+{
+    authentication_grants = authentication_grants_;
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_)
+{
+    std::lock_guard lock(mutex);
+    setAuthenticationGrantsWithLock(authentication_grants_, lock);
+}
+
+std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() const
+{
+    SharedLockGuard lock(mutex);
+    return authentication_grants;
+}
+
+void Context::setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> &)
+{
+    /// This does not affect the access-rights calculation (unlike the grant limit), so there is no
+    /// need to invalidate the access cache: it is metadata for the deferred-execution expiry check.
+    authentication_valid_until = authentication_valid_until_;
+}
+
+void Context::setAuthenticationValidUntil(time_t authentication_valid_until_)
+{
+    std::lock_guard lock(mutex);
+    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
+}
+
+time_t Context::getAuthenticationValidUntil() const
+{
+    SharedLockGuard lock(mutex);
+    return authentication_valid_until;
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
@@ -2249,6 +2388,14 @@ void Context::setCurrentRolesDefault()
 std::vector<UUID> Context::getCurrentRoles() const
 {
     return getRolesInfo()->getCurrentRoles();
+}
+
+std::vector<UUID> Context::getExternalRoles() const
+{
+    SharedLockGuard lock(mutex);
+    if (external_roles)
+        return *external_roles;
+    return {};
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
@@ -2311,7 +2458,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -2749,16 +2896,16 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
-HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
+HypotheticalObjectStore & Context::getHypotheticalObjectStore() const
 {
     /// in session context so the store persists across queries
     if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
-        return session_ctx->getHypotheticalIndexStore();
+        return session_ctx->getHypotheticalObjectStore();
 
     std::lock_guard lock(mutex);
-    if (!hypothetical_index_store)
-        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
-    return *hypothetical_index_store;
+    if (!hypothetical_object_store)
+        hypothetical_object_store = std::make_shared<HypotheticalObjectStore>();
+    return *hypothetical_object_store;
 }
 
 
@@ -3104,7 +3251,28 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         column.name = identifier->name();
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
+
+                        /** The same column of the table function can be selected more than once,
+                          * as in `INSERT INTO t (x, y) SELECT c, c FROM file(...)`.
+                          * A source column has a single type, so the hint is usable only if all the
+                          * insert table columns that it is mapped to agree on the type.
+                          */
+                        if (const auto * already_hinted = structure_hint.tryGet(column.name))
+                        {
+                            if (!already_hinted->type->equals(*column.type))
+                            {
+                                if (use_structure_from_insertion_table_in_table_functions == 1)
+                                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                        "Column {} is selected more than once in INSERT SELECT query, "
+                                        "but the corresponding columns of the insert table have different types: {} and {}.",
+                                        backQuote(column.name), already_hinted->type->getName(), column.type->getName());
+
+                                use_columns_from_insert_query = false;
+                                break;
+                            }
+                        }
+                        else
+                            structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
@@ -3490,6 +3658,12 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+{
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
@@ -3529,6 +3703,12 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
+void Context::setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles)
+{
+    std::lock_guard lock(mutex);
+    settings_constraints_and_current_profiles = std::move(constraints_and_profiles);
+}
+
 String Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
@@ -3559,18 +3739,22 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
+/// Existence is checked by the callers before they take `mutex`: the check resolves typo hints,
+/// which read this same `mutex`.
 void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
 }
 
 void Context::setCurrentDatabase(const String & name)
 {
+    DatabaseCatalog::instance().assertDatabaseExists(name);
+
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(name, lock);
 }
@@ -3582,7 +3766,22 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
+}
+
+void Context::mirrorCurrentDatabaseIntoSetting(const String & name)
+{
+    /// Keep the `database` setting in sync with a current database chosen out-of-band (a protocol's
+    /// connect-time database, MySQL `COM_INIT_DB`, `USE`, the user's `DEFAULT DATABASE`, internal
+    /// DDL / recovery / job contexts, …). `executeQuery` applies a non-empty `database` setting as
+    /// the documented equivalent of `USE`; without the mirror, a stale value inherited from a
+    /// profile or an earlier `SET database = …` would win back just before analysis and silently
+    /// override the database this context explicitly selected. The global context is exempt: the
+    /// server-wide default database is not an explicitly chosen setting and must not be marked as
+    /// changed for every session that inherits the global settings.
+    if (!isGlobalContext())
+        settings->set("database", name);
 }
 
 void Context::setCurrentQueryId(const String & query_id)
@@ -3656,7 +3855,15 @@ void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> col
 
 String Context::getDefaultFormat() const
 {
-    return default_format.empty() ? "TabSeparated" : default_format;
+    if (!default_format.empty())
+        return default_format;
+
+    const auto & settings_ref = getSettingsRef();
+    const String & default_format_setting = settings_ref[Setting::default_format];
+    if (!default_format_setting.empty())
+        return default_format_setting;
+
+    return "TabSeparated";
 }
 
 void Context::setDefaultFormat(const String & name)
@@ -3672,6 +3879,16 @@ String Context::getInsertFormat() const
 void Context::setInsertFormat(const String & name)
 {
     insert_format = name;
+}
+
+const String & Context::getHTTPCombinedFilter() const
+{
+    return http_combined_filter;
+}
+
+void Context::setHTTPCombinedFilter(const String & filter)
+{
+    http_combined_filter = filter;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const
@@ -3820,6 +4037,7 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
     ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
     background_context_ptr->setCurrentProfile(shared->background_profile_name);
     background_context_ptr->is_background_operation = true;
+    background_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
 
     background_context_instance = background_context_ptr;
     background_context = background_context_ptr;
@@ -4138,6 +4356,20 @@ WasmModuleManager * Context::initWasmModuleManager()
         return nullptr;
 
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
+    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
+    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
+    WasmModuleManager::validateEngineName(engine_name);
+
+#if !USE_WASMTIME
+    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
+    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
+    /// not loaded at startup (loading them would compile the modules and abort the server startup).
+    LOG_WARNING(
+        shared->log,
+        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
+        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
+    return nullptr;
+#else
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -4145,6 +4377,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
+#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4157,7 +4390,15 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
+    {
+#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
+#endif
+    }
     return *shared->wasm_module_manager;
 }
 
@@ -4194,6 +4435,22 @@ BackupsWorker & Context::getBackupsWorker() const
     });
 
     return *shared->backups_worker;
+}
+
+ThreadPool & Context::getBackgroundQueryPool() const
+{
+    callOnce(shared->background_query_pool_initialized, [&] {
+        shared->background_query_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::BackgroundQueryThreads,
+            CurrentMetrics::BackgroundQueryThreadsActive,
+            CurrentMetrics::BackgroundQueryThreadsScheduled,
+            shared->server_settings[ServerSetting::max_thread_pool_size],
+            /*max_free_threads_=*/ 0,
+            /*queue_size_=*/ 0,
+            /*shutdown_on_exception_=*/ false);
+    });
+
+    return *shared->background_query_pool;
 }
 
 void Context::waitAllBackupsAndRestores() const
@@ -6421,13 +6678,46 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
+    return shared->server_settings[ServerSetting::message_queue_disable_insertion]
+        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
-void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const
+bool Context::getReadThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::enable_read_through_distributed_cache];
+}
+
+void Context::setReadThroughDistributedCache(bool read_through_distributed_cache) const
 {
     std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("message_queue_disable_insertion", message_queue_disable_insertion);
+    shared->server_settings.set("enable_read_through_distributed_cache", read_through_distributed_cache);
+}
+
+bool Context::getWriteThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::enable_write_through_distributed_cache];
+}
+
+void Context::setWriteThroughDistributedCache(bool write_through_distributed_cache) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("enable_write_through_distributed_cache", write_through_distributed_cache);
+}
+
+bool Context::resolveReadThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getReadThroughDistributedCache();
+    return getSettingsRef()[Setting::force_read_through_distributed_cache].valueOr(getReadThroughDistributedCache());
+}
+
+bool Context::resolveWriteThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getWriteThroughDistributedCache();
+    return getSettingsRef()[Setting::force_write_through_distributed_cache].valueOr(getWriteThroughDistributedCache());
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
@@ -7452,13 +7742,13 @@ double Context::getUptimeSeconds() const
 
 void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
 {
-    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    std::lock_guard lock(shared->config_reload_callback_mutex);
     shared->config_reload_callback = std::move(callback);
 }
 
 void Context::reloadConfig() const
 {
-    /// Use mutex if callback may be changed after startup.
+    std::lock_guard lock(shared->config_reload_callback_mutex);
     if (!shared->config_reload_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
 
@@ -7475,6 +7765,12 @@ void Context::setStopServersCallback(StartStopServersCallback && callback)
 {
     /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
     shared->stop_servers_callback = std::move(callback);
+}
+
+void Context::setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required.
+    shared->stop_introspection_servers_callback = std::move(callback);
 }
 
 void Context::startServers(const ServerType & server_type) const
@@ -7574,8 +7870,11 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setCurrentProfile(shared->buffer_profile_name);
+    /// Settle the settings before publishing the context, so that a reader never sees them being changed.
+    ContextMutablePtr buffer_context_ptr = Context::createCopy(shared_from_this());
+    buffer_context_ptr->setCurrentProfile(shared->buffer_profile_name);
+    buffer_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
+    buffer_context = buffer_context_ptr;
 }
 
 String Context::getDefaultProfileName() const
@@ -7877,6 +8176,11 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
 void Context::increaseDistributedDepth()
 {
     ++client_info.distributed_depth;
+}
+
+void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
+{
+    client_info.client_trace_context = trace_context;
 }
 
 
@@ -8521,7 +8825,7 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
-    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
+    res.read_through_distributed_cache = resolveReadThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
     res.distributed_cache_settings.validate();
@@ -8547,7 +8851,7 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
 
-    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
+    res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif
@@ -8671,6 +8975,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
     return *query_context->reverse_lookup_cache;
 }
 
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
+}
+
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
 {
     runtime_filter_lookup = filter_lookup;
@@ -8721,7 +9043,7 @@ const ServerSettings & Context::getServerSettings() const
 ServerSettings Context::getServerSettingsCopy() const
 {
     /// Synchronize with the runtime writers of `shared->server_settings`
-    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    /// (e.g. `setS3QueueDisableStreaming`), which write under `shared->mutex`.
     SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
 }

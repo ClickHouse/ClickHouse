@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <Columns/ColumnLowCardinality.h>
+#include <random>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
@@ -23,8 +24,14 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
         auto data_col = mockColumn(type_array->getNestedType(), rows);
         auto offset_col = ColumnArray::ColumnOffsets::create(rows);
         auto & offsets = offset_col->getData();
-        for (size_t i = 0; i < data_col->size(); ++i)
-            offsets[i] = offsets[i - 1] + (rand() % 10);
+        std::mt19937_64 random_engine(std::random_device{}());
+        std::uniform_int_distribution<size_t> random_length(0, 9);
+        size_t offset = 0;
+        for (auto & current_offset : offsets)
+        {
+            offset += random_length(random_engine);
+            current_offset = offset;
+        }
         auto new_data_col = data_col->replicate(offsets);
 
         return ColumnArray::create(new_data_col, std::move(offset_col));
@@ -180,7 +187,7 @@ static void BM_insertManyFrom(benchmark::State & state)
     auto type = DataTypeFactory::instance().get(str_type);
     auto src = mockColumn(type, ROWS);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();

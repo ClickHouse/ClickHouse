@@ -65,12 +65,13 @@ SNIPPET_IMPORTS_CHECK = (
     "Check snippet imports",
     "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
 )
-CHANGELOGS_CHECK = (
-    "Check changelogs",
-    "python3 ../ci/jobs/scripts/docs/changelogs_check.py .",
+NAVIGATION_CHECK = (
+    "Check navigation completeness",
+    "python3 ../ci/jobs/scripts/docs/navigation_check.py .",
 )
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
+    NAVIGATION_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
@@ -85,7 +86,11 @@ DEFAULT_CHECKS = [
 # full validator. The internal-links check proves the client's own links and
 # anchors resolve. Redirects, external links, and locale checks are
 # aggregator-global concerns a client cannot fix.
-CLIENT_CHECKS = [SNIPPET_IMPORTS_CHECK, VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
+CLIENT_CHECKS = [
+    SNIPPET_IMPORTS_CHECK,
+    VALIDATE_CHECK,
+    INTERNAL_LINKS_CHECK,
+]
 
 
 # Swaps the full `mint validate` (which MDX-parses the whole site, ~13 minutes)

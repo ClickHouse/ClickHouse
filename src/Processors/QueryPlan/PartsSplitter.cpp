@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <list>
+
 #include <boost/functional/hash.hpp>
 
 #include <fmt/ranges.h>
@@ -1107,18 +1109,15 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     return result_final_ranges;
 }
 
+/// Rewrites `dag` so that it returns the filter column followed by every column of `header`, in order.
+/// A header may hold several columns with the same name, so each header position gets its own input
+/// node: `ActionsDAG::updateHeader` consumes one input per name occurrence, and a shared node would
+/// leave the extra occurrences unconsumed and appended to the result, changing the stream header.
 static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
 {
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_map;
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_map;
     for (const auto * input : dag.getInputs())
-        inputs_map[input->result_name] = input;
-
-    for (const auto & col : header)
-    {
-        auto & input = inputs_map[col.name];
-        if (!input)
-            input = &dag.addInput(col);
-    }
+        inputs_map[input->result_name].push_back(input);
 
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(header.columns() + 1);
@@ -1126,8 +1125,16 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     new_outputs.push_back(&dag.findInOutputs(filter_column));
     for (const auto & col : header)
     {
-        auto & input = inputs_map[col.name];
-        new_outputs.push_back(input);
+        auto & inputs_list = inputs_map[col.name];
+        if (inputs_list.empty())
+        {
+            new_outputs.push_back(&dag.addInput(col));
+        }
+        else
+        {
+            new_outputs.push_back(inputs_list.front());
+            inputs_list.pop_front();
+        }
     }
 
     dag.getOutputs() = std::move(new_outputs);
