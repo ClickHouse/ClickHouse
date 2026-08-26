@@ -205,6 +205,56 @@ TEST(TwoLevelHashTableBuckets, BucketHashDecorrelatesFromIdentityCellHash)
     ASSERT_EQ(map.find(num_keys + 1), nullptr);
 }
 
+TEST(TwoLevelHashTableBuckets, EraseUsesBucketRoutingHash)
+{
+    /// Identity placement hash puts keys 1..4096 in bucket 0 (`hash >> 24`). `erase` must still
+    /// visit the routed bucket `find`/`emplace` used, or deletions silently miss.
+    constexpr UInt64 num_keys = 4096;
+
+    RoutedMap map;
+    for (UInt64 key = 1; key <= num_keys; ++key)
+        insertKeyValue(map, key, key);
+
+    ASSERT_EQ(map.size(), num_keys);
+
+    size_t disagreed = 0;
+    for (UInt64 key = 1; key <= num_keys; ++key)
+    {
+        disagreed += map.getBucketFromHash(map.hash(key)) != routedBucket(map, key);
+        ASSERT_TRUE(map.erase(key)) << "erase missed key " << key;
+        ASSERT_EQ(map.find(key), nullptr) << "key " << key << " still present after erase";
+    }
+    ASSERT_GT(disagreed, 2000u) << "placement hash and BucketHash did not diverge enough to test routing";
+    ASSERT_EQ(map.size(), 0u);
+    ASSERT_FALSE(map.erase(1));
+}
+
+TEST(TwoLevelHashTableBuckets, ConvertingConstructorUsesBucketRoutingHash)
+{
+    /// Single-level -> two-level copy must route with `BucketHash`, not the placement hash.
+    /// Otherwise every key lands in bucket 0 and later `find` looks elsewhere.
+    constexpr UInt64 num_keys = 4096;
+
+    IdentityImpl src;
+    for (UInt64 key = 1; key <= num_keys; ++key)
+        insertKeyValue(src, key, key * 7);
+
+    RoutedMap map(src);
+    ASSERT_EQ(map.size(), num_keys);
+
+    size_t non_empty_buckets = 0;
+    for (UInt32 i = 0; i < map.numBuckets(); ++i)
+        non_empty_buckets += !map.impls[i].empty();
+    ASSERT_GT(non_empty_buckets, 200u);
+
+    for (UInt64 key = 1; key <= num_keys; ++key)
+    {
+        auto * it = map.find(key);
+        ASSERT_NE(it, nullptr) << "key " << key << " missing after conversion";
+        ASSERT_EQ(it->getMapped(), key * 7);
+    }
+}
+
 TEST(TwoLevelHashTableBuckets, IsEmptyCellIsSoundUnderBucketHash)
 {
     /// `isEmptyCell` answering true means "no match" without a `find()`, so under a non-void

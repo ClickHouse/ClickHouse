@@ -253,7 +253,7 @@ public:
         {
             const Cell * cell = it.getPtr();
             size_t hash_value = cell->getHash(src);
-            size_t buck = getBucketFromHash(hash_value);
+            size_t buck = bucketFor(cell->getKey(), hash_value);
             impls[buck].insertUniqueNonZero(cell, hash_value);
         }
     }
@@ -533,8 +533,7 @@ public:
 
     bool ALWAYS_INLINE erase(Key x, size_t hash_value)
     {
-        size_t buck = getBucketFromHash(hash_value);
-        return impls[buck].erase(x, hash_value);
+        return impls[bucketFor(x, hash_value)].erase(x, hash_value);
     }
 
     bool ALWAYS_INLINE erase(Key x) { return erase(x, hash(x)); }
