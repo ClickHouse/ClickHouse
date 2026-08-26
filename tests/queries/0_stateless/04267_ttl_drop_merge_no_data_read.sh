@@ -459,3 +459,54 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_regular_fallback;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_regular_fallback;"
+
+# -------------------------------------------------------------------
+# Case 9: a pending patch part disables the short-circuit
+#
+# The proof of expiry comes from each source part's own ttl_infos, which were
+# written before any lightweight update. A patch that moves the rows-TTL column
+# into the future keeps rows alive, so skipping the read pipeline here would
+# finalize an empty part and lose them. Patches are applied by the merge itself
+# (apply_patches_on_merge, on by default), so the shortcut must stand down
+# whenever the merge carries any.
+# -------------------------------------------------------------------
+echo "-- Case 9: pending patch part disables the short-circuit"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patched
+    (
+        id UInt64,
+        event_time DateTime
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patched;
+
+    -- Every row is expired when the part is written, so its ttl_infos say 'fully expired'.
+    INSERT INTO t_ttl_patched SELECT number, now() - INTERVAL 2 DAY FROM numbers(100);
+
+    -- A lightweight update leaves a patch part that un-expires 10 of them.
+    UPDATE t_ttl_patched SET event_time = now() + INTERVAL 2 DAY WHERE id < 10
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patched;
+
+    OPTIMIZE TABLE t_ttl_patched FINAL;
+"
+
+# With ttl_only_drop_parts the part is dropped only when every row is expired, so once the
+# patch is applied nothing is removed and all 100 rows must survive. A short-circuited merge
+# would report 0 here instead.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched;"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patched WHERE event_time > now();"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patched;"
