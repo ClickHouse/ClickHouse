@@ -345,6 +345,23 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return seconds_to_date32(time64_to_seconds());
     }
+    if (which_type.isDateTime() && which_from_type.isTime())
+    {
+        /// Scale-zero sibling of the `Time64` case below. Without it a `Time` constant is the one
+        /// `Time` / `Time64` -> whole-second combination with no `Field` path, so `DateTime IN
+        /// (CAST(... AS Time))` reports `TYPE_MISMATCH` while every sibling conversion works.
+        const Int64 seconds = time_to_seconds();
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<UInt64>(static_cast<UInt32>(seconds));
+
+        if (seconds < 0 || seconds >= MAX_DATETIME_TIMESTAMP)
+        {
+            if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                return seconds < 0 ? UInt64(0) : static_cast<UInt64>(std::numeric_limits<UInt32>::max());
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", seconds);
+        }
+        return static_cast<UInt64>(seconds);
+    }
     if (which_type.isDateTime() && which_from_type.isTime64())
     {
         /// Mirror `ToDateTimeImpl::execute(Int64)` - the column path used by `CAST` and

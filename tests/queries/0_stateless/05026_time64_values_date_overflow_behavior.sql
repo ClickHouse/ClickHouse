@@ -1,9 +1,13 @@
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+
 -- The `VALUES` carrier converts a `Time` / `Time64` constant to `Date` through `convertFieldToType`,
 -- which must honor `date_time_overflow_behavior` exactly like the column path used by `CAST` and
 -- `INSERT SELECT`.
 
--- With asynchronous inserts the inline `VALUES` data is parsed on the server, otherwise on the
--- client; pin the setting so the expected error kind below is deterministic.
+-- Two separate things hand inline `VALUES` parsing to the server, which would turn the expected
+-- `clientError` below into a server one: asynchronous inserts, and
+-- `send_table_structure_on_insert_with_inline_data = 0`. Pin both - the latter through the random
+-- settings limit above, since it is a client-side decision the client makes before the session.
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_time64_date_overflow;
