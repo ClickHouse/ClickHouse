@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/IndicesDescription.h>
@@ -10,7 +11,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/KeyDescription.h>
 #include <base/range.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -25,7 +32,17 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
     if (!patch_part->info.isPatch())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch part, got: {}", patch_part->name);
 
-    return patch_part->getSourcePartsSet().getPatchParts(source_part, patch_part);
+    std::shared_ptr<const KeyDescription> sorting_key;
+    NameSet stored_sorting_key_columns;
+    const auto & patch_part_index = patch_part->getPatchPartIndex();
+
+    if (patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V2)
+    {
+        sorting_key = patch_part->storage.getPatchPartSortingKey(*patch_part);
+        stored_sorting_key_columns = getSortingKeyColumnsInPatch(patch_part->getMetadataSnapshot());
+    }
+
+    return patch_part_index.getPatchParts(source_part, patch_part, std::move(sorting_key), std::move(stored_sorting_key_columns));
 }
 
 static String getColumnsHash(Names column_names)
@@ -33,10 +50,30 @@ static String getColumnsHash(Names column_names)
     std::sort(column_names.begin(), column_names.end());
 
     SipHash hash;
+    hash.update(column_names.size());
+
     for (const auto & name : column_names)
-        hash.update(name);
+    {
+        hash.update(name.size());
+        hash.update(name.data(), name.size());
+    }
 
     return getSipHash128AsHexString(hash);
+}
+
+static Names getColumnNamesWithTypes(const ColumnsDescription & columns_desc)
+{
+    Names names_with_types;
+
+    for (const auto & column : columns_desc.getAllPhysical())
+        names_with_types.emplace_back(column.name + ' ' + column.type->getName());
+
+    return names_with_types;
+}
+
+String getColumnsHashWithTypes(const ColumnsDescription & columns_desc)
+{
+    return getColumnsHash(getColumnNamesWithTypes(columns_desc));
 }
 
 static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
@@ -52,29 +89,28 @@ static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
         column_desc.codec = BlockOffsetColumn::codec;
     });
 
-    columns_desc.modify("_part_offset", [&](auto & column_desc)
+    if (columns_desc.has("_part_offset"))
     {
-        column_desc.codec = BlockOffsetColumn::codec;
-    });
+        columns_desc.modify("_part_offset", [&](auto & column_desc)
+        {
+            column_desc.codec = BlockOffsetColumn::codec;
+        });
+    }
 }
 
-StorageMetadataPtr getPatchPartMetadata(Block sample_block, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
-    return getPatchPartMetadata(std::move(columns_desc), local_context);
+    return getPatchPartMetadataV1(std::move(columns_desc), local_context);
 }
 
-StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context)
 {
     StorageInMemoryMetadata part_metadata;
 
     /// Ensure patch part system columns are present.
-    /// They may be missing when creating empty coverage parts
-    /// (e.g. DROP PART for a patch part), because createEmptyPart
-    /// only includes data columns from table metadata.
-    for (const auto & col : getPatchPartSystemColumns())
-        if (!patch_part_desc.has(col.name))
-            patch_part_desc.add(ColumnDescription(col.name, col.type));
+    for (const auto & col : getPatchPartSystemColumnsV1())
+        patch_part_desc.addIfNotExists(ColumnDescription(col.name, col.type));
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
@@ -84,10 +120,10 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
-    const auto & key_columns = getPatchPartKeyColumns();
+    const auto & key_column_names = {"_part", "_part_offset"};
     auto order_by_expression = makeASTOperator("tuple");
 
-    for (const auto & [key_column_name, _] : key_columns)
+    for (const auto & key_column_name : key_column_names)
         order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
@@ -106,39 +142,169 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
 }
 
-const NamesAndTypesList & getPatchPartKeyColumns()
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context)
 {
-    static const NamesAndTypesList key_columns
+    StorageInMemoryMetadata part_metadata;
+
+    /// Keep `_part` column — it's an argument of the partition expression and the sink's header must
+    /// match the mutation pipeline, which always emits it. Ensure identity + version columns are present.
+    patch_part_desc.addIfNotExists(ColumnDescription("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    patch_part_desc.addIfNotExists(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
+    patch_part_desc.addIfNotExists(ColumnDescription(BlockOffsetColumn::name, BlockOffsetColumn::type));
+    patch_part_desc.addIfNotExists(ColumnDescription(PartDataVersionColumn::name, PartDataVersionColumn::type));
+
+    /// Partition id: `__patchPartitionID(_part, hash(...))`.
+    auto part_identifier = make_intrusive<ASTIdentifier>("_part");
+    const auto sorting_key_expr_list = sorting_key.getOriginalExpressionList();
+
+    /// Include column types so that patches with the same column names but different
+    /// types go to different partitions: one patch partition must have one schema.
+    auto names_for_hash = getColumnNamesWithTypes(patch_part_desc);
+    names_for_hash.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
+    auto columns_hash = getColumnsHash(std::move(names_for_hash));
+    auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
+
+    auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
+    part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
+
+    /// Sorting key: (<sorting_key>, _block_number, _block_offset).
+    auto order_by_expression = makeASTFunction("tuple");
+
+    if (sorting_key_expr_list)
+    {
+        for (const auto & child : sorting_key_expr_list->children)
+            order_by_expression->arguments->children.push_back(child->clone());
+    }
+
+    /// `_block_number` and `_block_offset` are part of the sorting key and are appended to the key
+    /// by `getKeyFromAST` itself, from the `additional_columns` passed below. Do not append them here explicitly.
+
+    addCodecsForPatchSystemColumns(patch_part_desc);
+
+    part_metadata.sorting_key = KeyDescription::getKeyFromAST(
+        order_by_expression,
+        patch_part_desc,
+        /*virtuals=*/ {},
+        local_context,
+        /*additional_columns=*/ {{BlockNumberColumn::name, BlockNumberColumn::type}, {BlockOffsetColumn::name, BlockOffsetColumn::type}});
+
+    part_metadata.primary_key = part_metadata.sorting_key;
+    part_metadata.primary_key.definition_ast = nullptr;
+
+    part_metadata.setColumns(std::move(patch_part_desc));
+    return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
+}
+
+StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context)
+{
+    ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
+    return getPatchPartMetadataV2(std::move(columns_desc), sorting_key, local_context);
+}
+
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context)
+{
+    auto sorting_key = KeyDescription::parse(sorting_key_str, patch_part_desc, /*virtuals=*/ {}, local_context, /*allow_order=*/ true);
+    return getPatchPartMetadataV2(std::move(patch_part_desc), sorting_key, local_context);
+}
+
+size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
+{
+    auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
+    {
+        return lhs->formatWithSecretsOneLine() == rhs->formatWithSecretsOneLine();
+    };
+
+    const auto storage_expr_list = storage_metadata->getSortingKey().getOriginalExpressionList();
+    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
+
+    if (!patch_expr_list || patch_expr_list->children.size() < 2)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid patch sorting key expression list: {}",
+            patch_expr_list ? patch_expr_list->formatForErrorMessage() : "null");
+    }
+
+    /// Without the trailing `_block_number`, `_block_offset` columns of the patch's key.
+    const size_t patch_key_size = patch_expr_list->children.size() - 2;
+    const size_t storage_key_size = storage_expr_list ? storage_expr_list->children.size() : 0;
+    const size_t max_prefix_key_size = std::min(patch_key_size, storage_key_size);
+
+    size_t prefix_key_size = 0;
+
+    while (prefix_key_size < max_prefix_key_size && ast_equals(patch_expr_list->children[prefix_key_size], storage_expr_list->children[prefix_key_size]))
+        ++prefix_key_size;
+
+    return prefix_key_size;
+}
+
+std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(size_t effective_key_size, const StorageMetadataPtr & storage_metadata)
+{
+    const auto & storage_sorting_key = storage_metadata->getSortingKey();
+    const auto storage_expr_list = storage_sorting_key.getOriginalExpressionList();
+    const size_t storage_key_size = storage_expr_list ? storage_expr_list->children.size() : 0;
+    chassert(effective_key_size <= storage_key_size);
+
+    if (effective_key_size == storage_key_size)
+        return std::make_shared<const KeyDescription>(storage_sorting_key);
+
+    auto order_by_expression = makeASTFunction("tuple");
+    order_by_expression->arguments = make_intrusive<ASTExpressionList>();
+
+    for (size_t i = 0; i < effective_key_size; ++i)
+        order_by_expression->arguments->children.push_back(storage_expr_list->children[i]->clone());
+
+    return std::make_shared<const KeyDescription>(KeyDescription::getKeyFromAST(
+        order_by_expression,
+        storage_metadata->getColumns(),
+        storage_metadata->virtuals,
+        Context::getGlobalContextInstance()));
+}
+
+const NamesAndTypesList & getPatchPartSystemColumnsV1()
+{
+    static const NamesAndTypesList system_columns_v1
     {
         {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_part_offset", std::make_shared<DataTypeUInt64>()},
-    };
-
-    return key_columns;
-}
-
-const NamesAndTypesList & getPatchPartSystemColumns()
-{
-    static const NamesAndTypesList other_columns
-    {
         {BlockNumberColumn::name, BlockNumberColumn::type},
         {BlockOffsetColumn::name, BlockOffsetColumn::type},
         {PartDataVersionColumn::name, PartDataVersionColumn::type},
     };
 
-    static const NamesAndTypesList all_columns = []
-    {
-        auto columns = getPatchPartKeyColumns();
-        columns.insert(columns.end(), other_columns.begin(), other_columns.end());
-        return columns;
-    }();
+    return system_columns_v1;
+}
 
-    return all_columns;
+const NamesAndTypesList & getPatchPartSystemColumnsV2()
+{
+    static const NamesAndTypesList system_columns_v2
+    {
+        {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {BlockNumberColumn::name, BlockNumberColumn::type},
+        {BlockOffsetColumn::name, BlockOffsetColumn::type},
+        {PartDataVersionColumn::name, PartDataVersionColumn::type},
+    };
+
+    return system_columns_v2;
+}
+
+const NamesAndTypesList & getAllPatchPartSystemColumns()
+{
+    static const NamesAndTypesList all_system_columns
+    {
+        {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_part_offset", std::make_shared<DataTypeUInt64>()},
+        {BlockNumberColumn::name, BlockNumberColumn::type},
+        {BlockOffsetColumn::name, BlockOffsetColumn::type},
+        {PartDataVersionColumn::name, PartDataVersionColumn::type},
+    };
+
+    return all_system_columns;
 }
 
 bool isPatchPartSystemColumn(const String & column_name)
 {
-    static const NameSet system_columns_set = getPatchPartSystemColumns().getNameSet();
+
+    static const NameSet system_columns_set = getAllPatchPartSystemColumns().getNameSet();
     return system_columns_set.contains(column_name);
 }
 
@@ -199,7 +365,7 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
     return {begin, end};
 }
 
-Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
+Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch)
 {
     Names columns;
     switch (patch.mode)
@@ -210,10 +376,27 @@ Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
         case PatchMode::Join:
             columns = {BlockNumberColumn::name, BlockOffsetColumn::name};
             break;
+        case PatchMode::MergeOnKey:
+            if (patch.sorting_key && patch.sorting_key->expression)
+                columns = patch.sorting_key->expression->getRequiredColumns();
+
+            columns.emplace_back(BlockNumberColumn::name);
+            columns.emplace_back(BlockOffsetColumn::name);
+            break;
     }
 
     columns.push_back(PartDataVersionColumn::name);
     return columns;
+}
+
+NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)
+{
+    const auto & sorting_key = patch_metadata->getSortingKey();
+    if (!sorting_key.expression)
+        return {};
+
+    auto required_columns = sorting_key.expression->getRequiredColumns();
+    return NameSet(required_columns.begin(), required_columns.end());
 }
 
 bool isPatchPartitionId(const String & partition_id)
@@ -242,6 +425,14 @@ String getOriginalPartitionIdOfPatch(const String & partition_id)
 {
     assertValidPartitionIdOfPatch(partition_id);
     return partition_id.substr(MergeTreePartInfo::PATCH_PART_PREFIX_SIZE);
+}
+
+String getStructureHashOfPatch(const String & partition_id)
+{
+    assertValidPartitionIdOfPatch(partition_id);
+    static constexpr size_t hash_offset = MergeTreePartInfo::PATCH_PART_PREFIX.size();
+    static constexpr size_t hash_size = MergeTreePartInfo::PATCH_PART_PREFIX_SIZE - hash_offset - 1;
+    return partition_id.substr(hash_offset, hash_size);
 }
 
 String getPartitionIdForPatch(const MergeTreePartition & partition)
@@ -274,8 +465,8 @@ static bool patchHasHigherDataVersion(const String & part_name, Int64 min_patch_
 
 bool patchHasHigherDataVersion(const IMergeTreeDataPart & patch, Int64 max_data_version)
 {
-    Int64 min_patch_version = patch.getSourcePartsSet().getMinDataVersion();
-    Int64 max_patch_version = patch.getSourcePartsSet().getMaxDataVersion();
+    Int64 min_patch_version = patch.getPatchPartIndex().getMinDataVersion();
+    Int64 max_patch_version = patch.getPatchPartIndex().getMaxDataVersion();
 
     return patchHasHigherDataVersion(patch.name, min_patch_version, max_patch_version, max_data_version);
 }
