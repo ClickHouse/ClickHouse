@@ -19,11 +19,8 @@ enum class StatisticsFileVersion : UInt16
     V0 = 0,
     V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
     V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
-    V3 = 3, /// reserved — never write this value again. PR #102356 added the `NullCount` statistic and
-            /// wrote V3; it was reverted, so only builds of `master` between the two commits produced
-            /// such files (no stable release did). V3 is still readable: its layout is V4 without the
-            /// `stored_type_name` field, and the only conflict is bit 4 of `stat_types_mask`, which
-            /// meant the reverted `NullCount` in V3 and means `Basic` now — the deserializer skips it.
+    V3 = 3, /// PR #102356 added the `NullCount` statistic and wrote V3; it was reverted, so only
+            /// builds of `master` between the two commits produced such files (no stable release did).
     V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
             /// so unknown statistics types can be skipped on deserialize.
             /// Also stores the column type name (`stored_type_name: String`) immediately after
