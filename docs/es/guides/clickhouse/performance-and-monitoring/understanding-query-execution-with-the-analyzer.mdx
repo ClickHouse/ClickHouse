@@ -40,7 +40,7 @@ Veamos cada elemento en acción durante la ejecución de la consulta. Vamos a to
 El objetivo de un analizador sintáctico es transformar el texto de la consulta en un AST (árbol de sintaxis abstracta). Este paso se puede visualizar con `EXPLAIN AST`:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 La salida es un árbol de sintaxis abstracta que puede visualizarse como se muestra a continuación:
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="Salida del AST" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 Cada nodo tiene sus nodos hijo correspondientes, y el árbol en su conjunto representa la estructura general de tu consulta. Se trata de una estructura lógica que ayuda a procesar una consulta. Desde el punto de vista del usuario final (salvo que le interese la ejecución de consultas), no resulta especialmente útil; esta herramienta está pensada principalmente para desarrolladores.
 
 <div id="analyzer">
