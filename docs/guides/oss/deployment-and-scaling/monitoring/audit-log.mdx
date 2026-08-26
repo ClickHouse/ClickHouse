@@ -49,12 +49,20 @@ synchronously so they are not lost if asynchronous logging queues are full.
 | `USER`   | Successful logins, failed logins, and logouts                                                 |
 | `DDL`    | Schema statements: `CREATE`, `DROP`, `ALTER`, `RENAME`, ...                                   |
 | `DML`    | Data statements: `SELECT`, `INSERT`, `DELETE`, `UPDATE`, `TRUNCATE`, `OPTIMIZE`, `SHOW`, `EXPLAIN`, ... |
-| `DCL`    | Access control: `GRANT`, `REVOKE`, `CREATE USER`, `SET ROLE`, `CHECK GRANT`, ...              |
+| `DCL`    | Access control: `GRANT`, `REVOKE`, `CREATE USER`, `SET ROLE`, `CHECK GRANT`, `EXECUTE AS`, ...  |
 | `MISC`   | Everything else, including statements that failed to parse                                    |
 | `ALL`    | All of the above                                                                              |
 
 An unknown category makes the server reject the configuration with the `UNEXPECTED_AUDIT_TYPE`
 error.
+
+### Composite statements {#composite-statements}
+
+`EXECUTE AS <user> <statement>` and `statement1 PARALLEL WITH statement2 ...` are wrappers: the
+statements they contain are what actually runs. The audit log looks through the wrapper and writes
+one record per executed statement, each classified and given `OBJECT_NAMES` of its own, so a node
+that audits only `DML` still sees the `SELECT` inside an `EXECUTE AS`, and a node that audits only
+`DDL` still sees every `DROP` of a `PARALLEL WITH`. Impersonation itself is recorded as `DCL`.
 
 ## Changing the configuration at runtime {#changing-the-configuration-at-runtime}
 

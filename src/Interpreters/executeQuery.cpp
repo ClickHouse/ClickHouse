@@ -57,7 +57,6 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -98,6 +97,8 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -1226,7 +1227,7 @@ static String extractObjectNamesFromAST(const IAST & ast, const String & current
 /// These statements manage privileges and access control, so the audit log must classify them
 /// as DCL together with `GRANT` / `REVOKE` — otherwise an operator who enables only the `DCL`
 /// audit type would miss user and role administration events.
-static bool isAccessControlQuery(const ASTPtr & ast)
+static bool isAccessControlQuery(const IAST * ast)
 {
     return ast
         && (ast->as<ASTCreateUserQuery>()
@@ -1239,17 +1240,49 @@ static bool isAccessControlQuery(const ASTPtr & ast)
             || ast->as<ASTSetRoleQuery>());
 }
 
-void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
+/// `EXECUTE AS <user> <statement>` and `statement1 PARALLEL WITH statement2 ...` are composite
+/// wrappers whose own `QueryKind` says nothing about what actually runs: both
+/// `InterpreterExecuteAsQuery::execute` and `InterpreterParallelWithQuery::executeSubquery` run the
+/// wrapped statements through `executeQuery(..., QueryFlags{ .internal = true })`, so those
+/// statements never produce an audit record of their own. Look through the wrappers here (the same
+/// way `collectExecutedStatements` in `SQLDefinedHandlerFromAST.cpp` does) and audit every statement
+/// that really executes, so that `EXECUTE AS alice SELECT ...` is still visible on a `DML`-only node
+/// and `DROP TABLE a PARALLEL WITH DROP TABLE b` is still visible on a `DDL`-only one.
+static void collectAuditedStatements(const IAST & query, std::vector<const IAST *> & result)
 {
-    auto * audit_log = DB::getAuditLog();
-    if (!audit_log)
+    if (const auto * parallel_with = query.as<ASTParallelWithQuery>())
+    {
+        /// The wrapper itself only groups the statements; it performs no operation of its own.
+        for (const auto & child : parallel_with->children)
+            if (child)
+                collectAuditedStatements(*child, result);
         return;
+    }
 
-    /// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
-    /// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
-    /// not silently hidden under `MISC` and excluded by common audit filters.
+    if (const auto * execute_as = query.as<ASTExecuteAsQuery>(); execute_as && execute_as->subquery)
+    {
+        /// Impersonation is an access-control event in its own right, so the wrapper is audited
+        /// in addition to the statement it wraps.
+        result.push_back(&query);
+        collectAuditedStatements(*execute_as->subquery, result);
+        return;
+    }
+
+    result.push_back(&query);
+}
+
+/// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
+/// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
+/// not silently hidden under `MISC` and excluded by common audit filters.
+static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, const IAST * ast)
+{
+    /// `EXECUTE AS <user>` impersonates another user. That is an access-control (`DCL`) operation
+    /// regardless of what it wraps, and it reports the unhelpful `QueryKind::None`.
+    if (ast && ast->as<ASTExecuteAsQuery>())
+        return Context::AuditLogTypes::DCL;
+
     Context::AuditLogTypes audit_type = Context::AuditLogTypes::MISC;
-    switch (elem.query_kind)
+    switch (query_kind)
     {
         /// Statements that query or modify data (and read-only schema/data inspection).
         case IAST::QueryKind::Select:
@@ -1328,12 +1361,35 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             break;
     }
 
+    return audit_type;
+}
+
+/// Emit one audit record for a single executed statement. `ast` is the statement itself: for a
+/// plain query it is the whole query AST, for a composite wrapper it is one of the statements the
+/// wrapper runs (see `collectAuditedStatements`). `is_wrapped` tells the two apart, because
+/// `elem.query_tables` / `elem.query_views` / `elem.query_databases` describe the query as a whole
+/// and must not be attributed to an individual statement of a composite one.
+static void auditLogStatement(
+    AuditLog * audit_log,
+    const QueryLogElement & elem,
+    ContextPtr context,
+    IAST::QueryKind query_kind,
+    const IAST * ast,
+    bool is_wrapped)
+{
+    const Context::AuditLogTypes audit_type = classifyAuditType(query_kind, ast);
+
     /// Check if audit type enabled for logging
     if (!context->isEnabledAuditType(audit_type))
         return;
 
     String object_names; /// tables / views / databases
-    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
+    if (is_wrapped)
+    {
+        if ((audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML) && ast)
+            object_names = extractObjectNamesFromAST(*ast, context ? context->getCurrentDatabase() : String{});
+    }
+    else if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
     {
         for (const auto & table : elem.query_tables)
         {
@@ -1382,8 +1438,35 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
 
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
-            audit_type, elem.query_kind, elem.exception_code, safe_user,
+            audit_type, query_kind, elem.exception_code, safe_user,
             host, safe_object_names, safe_query);
+}
+
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
+{
+    auto * audit_log = DB::getAuditLog();
+    if (!audit_log)
+        return;
+
+    if (!ast)
+    {
+        auditLogStatement(audit_log, elem, context, elem.query_kind, nullptr, /*is_wrapped=*/ false);
+        return;
+    }
+
+    std::vector<const IAST *> statements;
+    collectAuditedStatements(*ast, statements);
+
+    /// A plain (non-composite) query yields exactly the query AST back; keep using `elem.query_kind`
+    /// and the object names collected during execution for it.
+    if (statements.size() == 1 && statements.front() == ast.get())
+    {
+        auditLogStatement(audit_log, elem, context, elem.query_kind, ast.get(), /*is_wrapped=*/ false);
+        return;
+    }
+
+    for (const auto * statement : statements)
+        auditLogStatement(audit_log, elem, context, statement->getQueryKind(), statement, /*is_wrapped=*/ true);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

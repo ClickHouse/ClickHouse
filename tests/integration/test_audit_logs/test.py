@@ -802,3 +802,101 @@ def test_audit_log_access_control_statements_are_dcl(start_cluster):
     assert not node_user_dcl.contains_in_log(
         "audit_dcl_table", from_host=True, filename="clickhouse-server.audit.log"
     ), "table DDL must not be audited on a node with only USER and DCL audit types"
+
+
+def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
+    """`EXECUTE AS <user> <statement>` runs the wrapped statement through
+    `executeQuery(..., internal = true)`, so it produces no audit record of its own. The audit log
+    must look through the wrapper: node_dml_misc enables DML (and MISC, but not DCL), so the
+    wrapped SELECT must be recorded as DML."""
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_execute_as_table")
+    node_dml_misc.query("CREATE TABLE audit_execute_as_table (a int) ENGINE = Memory")
+    node_dml_misc.query("DROP USER IF EXISTS audit_execute_as_user")
+    node_dml_misc.query("CREATE USER audit_execute_as_user")
+    node_dml_misc.query("GRANT SELECT ON default.audit_execute_as_table TO audit_execute_as_user")
+
+    node_dml_misc.query(
+        "EXECUTE AS audit_execute_as_user SELECT count() FROM default.audit_execute_as_table"
+    )
+
+    assert_audit_log_contain_with_retry(node_dml_misc, "audit_execute_as_table")
+    log_content = node_dml_misc.grep_in_log(
+        "audit_execute_as_user SELECT", from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert lines, "the statement wrapped by EXECUTE AS must produce an audit record"
+
+    select_lines = []
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] != "MISC", (
+            f"the wrapped SELECT must not fall back to the generic MISC bucket: {line}"
+        )
+        if fields[1] == "Select":
+            select_lines.append(fields)
+
+    assert select_lines, "the wrapped SELECT must be audited with its own COMMAND"
+    for fields in select_lines:
+        assert fields[0] == "DML", f"the wrapped SELECT must be classified as DML: {fields}"
+        assert "audit_execute_as_table" in fields[5], (
+            f"the wrapped SELECT must record its own OBJECT_NAMES: {fields}"
+        )
+
+    node_dml_misc.query("DROP USER IF EXISTS audit_execute_as_user")
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_execute_as_table")
+
+
+def test_audit_log_bare_execute_as_is_dcl(start_cluster):
+    """A bare `EXECUTE AS <user>` impersonates another user for the rest of the session. That is
+    an access-control operation, so it must be audited as DCL instead of landing in MISC
+    (its own QueryKind is None). node_user_dcl enables only USER and DCL."""
+    node_user_dcl.query("DROP USER IF EXISTS audit_impersonate_user")
+    node_user_dcl.query("CREATE USER audit_impersonate_user")
+
+    node_user_dcl.query("EXECUTE AS audit_impersonate_user")
+
+    assert_audit_log_contain_with_retry(node_user_dcl, "EXECUTE AS audit_impersonate_user")
+    log_content = node_user_dcl.grep_in_log(
+        "EXECUTE AS audit_impersonate_user", from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert lines, "a bare EXECUTE AS must produce an audit record"
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DCL", f"a bare EXECUTE AS must be classified as DCL: {line}"
+
+    node_user_dcl.query("DROP USER IF EXISTS audit_impersonate_user")
+
+
+def test_audit_log_parallel_with_statements_are_audited(start_cluster):
+    """`statement1 PARALLEL WITH statement2` executes both statements internally, so the wrapper
+    alone would be audited as MISC and a DDL-only deployment would see neither drop. Each wrapped
+    statement must get its own DDL record with its own OBJECT_NAMES. node_ddl enables only DDL."""
+    node_ddl.query("DROP TABLE IF EXISTS audit_parallel_left")
+    node_ddl.query("DROP TABLE IF EXISTS audit_parallel_right")
+    node_ddl.query("CREATE TABLE audit_parallel_left (a int) ENGINE = Memory")
+    node_ddl.query("CREATE TABLE audit_parallel_right (a int) ENGINE = Memory")
+
+    node_ddl.query(
+        "DROP TABLE audit_parallel_left PARALLEL WITH DROP TABLE audit_parallel_right"
+    )
+
+    assert_audit_log_contain_with_retry(node_ddl, "PARALLEL WITH")
+    log_content = node_ddl.grep_in_log(
+        "PARALLEL WITH", from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert len(lines) >= 2, (
+        f"each statement of a PARALLEL WITH query must be audited separately, got: {lines}"
+    )
+
+    dropped_objects = set()
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DDL", f"each wrapped DROP must be classified as DDL: {line}"
+        assert fields[1] == "Drop", f"each wrapped statement must report its own COMMAND: {line}"
+        # Each wrapped DROP targets exactly one table, so OBJECT_NAMES holds a single name.
+        dropped_objects.add(fields[5])
+
+    assert "`default`.`audit_parallel_left`" in dropped_objects, dropped_objects
+    assert "`default`.`audit_parallel_right`" in dropped_objects, dropped_objects
