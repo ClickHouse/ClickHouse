@@ -138,18 +138,68 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
-    auto update_function = [tid](VersionInfo & info)
+    auto update_function = [this, tid](VersionInfo & info)
     {
         if (info.removal_tid == tid)
             return false;
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
+
+        if (tid.isNonTransactional())
+            checkNonTransactionalRemovalIsPossible(info);
+
         info.removal_tid = tid;
         if (tid.isNonTransactional())
             info.removal_csn = Tx::NonTransactionalCSN;
         return true;
     };
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
+}
+
+void VersionMetadata::checkNonTransactionalRemovalIsPossible()
+{
+    checkNonTransactionalRemovalIsPossible(getInfo());
+}
+
+void VersionMetadata::checkNonTransactionalRemovalIsPossible(const VersionInfo & info)
+{
+    /// A non-transactional removal covers all active parts ignoring MVCC visibility, so it can
+    /// meet a part whose creating transaction is still running (e.g. a non-transactional
+    /// DROP PARTITION over a part inserted by a concurrent uncommitted transaction).
+    /// Removing such a part would persist removal_csn before creation_csn and silently discard
+    /// the uncommitted data on commit, so fail instead.
+    if (!info.creation_csn && tryGetCSN(info.creation_tid) == Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot remove data object {}: it was created by transaction {} which is not committed yet. "
+            "Wait for the transaction to commit or roll back, and retry",
+            getObjectName(),
+            info.creation_tid);
+}
+
+void VersionMetadata::checkCreationIsCommitted()
+{
+    auto info = getInfo();
+    /// A rollback sets the in-memory creation_csn to RolledBackCSN before removing the part from
+    /// the working set, so a rolled-back part can still be active here for a short while.
+    CSN creation_csn = info.creation_csn;
+    if (!creation_csn)
+        creation_csn = tryGetCSN(info.creation_tid);
+
+    if (creation_csn == Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot use data object {}: it was created by transaction {} which is not committed yet. "
+            "Wait for the transaction to commit or roll back, and retry",
+            getObjectName(),
+            info.creation_tid);
+
+    if (creation_csn == Tx::RolledBackCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot use data object {}: it was created by transaction {} which was rolled back",
+            getObjectName(),
+            info.creation_tid);
 }
 
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)

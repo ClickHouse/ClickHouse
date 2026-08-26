@@ -106,6 +106,17 @@ public:
     /// Returns immediately if the part is already removed.
     virtual void setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context) = 0;
 
+    /// Throws SERIALIZATION_ERROR if a non-transactional removal cannot proceed because the part's
+    /// creating transaction has not been committed yet. Callers removing several parts at once
+    /// check all of them first, so a failed removal does not leave some parts locked.
+    void checkNonTransactionalRemovalIsPossible();
+
+    /// Throws SERIALIZATION_ERROR unless the object's creating transaction is committed (rejects
+    /// both still-running and rolled-back creators). Used before publishing the object's data
+    /// elsewhere (e.g. MOVE PARTITION TO TABLE): a commit is irreversible, so once this check
+    /// passes under the parts lock, the data cannot retroactively become rolled-back.
+    void checkCreationIsCommitted();
+
     /// Checks if the data part can be safely removed from storage.
     /// Returns true if no running transaction can see this part anymore.
     /// Logic:
@@ -204,6 +215,9 @@ protected:
     /// The CSN is re-checked after the running-transaction lookup to close the race window between the two queries.
     /// Returns 0 if the transaction is still in progress with no committed CSN yet.
     CSN tryGetCSN(TransactionID tid);
+
+    /// Implementation of the public overload, applied to the given (possibly freshly reloaded) info.
+    void checkNonTransactionalRemovalIsPossible(const VersionInfo & info);
 
     /// Static validation of `VersionInfo` fields. Throws on invalid state.
     static void validateInfo(const String & object_name, const VersionInfo & info);
