@@ -16,6 +16,8 @@ Endpoints:
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message.
+      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
+        `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
   POST /v1/embeddings                — returns one deterministic embedding per input.
@@ -25,6 +27,28 @@ Endpoints:
       element, exercising the duplicate-index rejection path.
   POST /v1/embeddings_wrong_count    — returns one fewer entry than requested, exercising the
       cardinality mismatch path.
+  POST /v1/chat/truncated            — returns HTTP 200 with a valid body but `finish_reason="length"`
+      (model hit max_tokens). Exercises the truncated-response rejection path.
+  POST /v1/chat/content_filter       — HTTP 200 with `finish_reason="content_filter"` (content
+      withheld). Exercises the incomplete-response rejection path.
+  POST /v1/chat/unknown_reason       — HTTP 200 with an unrecognized `finish_reason`; must be
+      accepted as complete, not misclassified as truncation.
+  POST /v1/chat/tool_calls           — HTTP 200 with `finish_reason="tool_calls"`: the model wants
+      the caller to run a tool, so this is not a final answer and must be rejected.
+  POST /v1/chat/refusal              — HTTP 200 structured-output safety refusal: `message.refusal`
+      is populated, `content` is null and `finish_reason` stays "stop". Exercises the refusal
+      rejection path, which a `finish_reason`-only check would accept as a complete empty answer.
+  POST /v1/anthropic/stop_sequence   — Anthropic-shaped HTTP 200 with `stop_reason="stop_sequence"`,
+      a complete answer that must NOT be rejected as truncated.
+  POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
+      a truncated answer that must be rejected.
+  POST /v1/anthropic/pause_turn      — Anthropic-shaped HTTP 200 with `stop_reason="pause_turn"`: a
+      paused multi-turn generation, also not a final answer and must be rejected.
+  POST /v1/anthropic/context_window  — Anthropic-shaped HTTP 200 with
+      `stop_reason="model_context_window_exceeded"`, also a truncated answer, but one whose remedy is
+      the opposite of the `max_tokens` case.
+  POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
+      successful structured-output (forced tool call) response that must NOT be rejected.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -34,12 +58,15 @@ Endpoints:
 
 import http.server
 import json
+import threading
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
-# Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
+# The server is threaded (see `ThreadingHTTPServer` below) so it can serve the concurrent AI calls a
+# multi-threaded query issues. `_LOCK` guards the shared mutable state against those concurrent handlers.
+_LOCK = threading.Lock()
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 
 # Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
@@ -55,6 +82,28 @@ def extract_user_message(body):
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
+
+
+def extract_system_prompt(body):
+    data = json.loads(body)
+    messages = data.get("messages", [])
+    for msg in messages:
+        if msg.get("role") == "system":
+            return msg.get("content", "")
+    return ""
+
+
+def is_filter_request(body):
+    """Detect `aiFilter` requests from the fixed boolean-filter system prompt."""
+    return "boolean text filter" in extract_system_prompt(body).lower()
+
+
+def filter_match_response(user_message):
+    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
+    lowered = user_message.lower()
+    if any(token in lowered for token in ("false", "no match", "does not match")):
+        return "false"
+    return "true"
 
 
 def extract_response_format(body):
@@ -82,18 +131,48 @@ def build_structured_response(json_schema, user_message):
     return json.dumps(result)
 
 
-def make_success_response(content, prompt_tokens=10, completion_tokens=5):
+def make_success_response(content, prompt_tokens=10, completion_tokens=5, finish_reason="stop"):
     return {
         "choices": [
             {
                 "message": {"content": content},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
         },
+    }
+
+
+def make_anthropic_response(content, stop_reason="end_turn", input_tokens=10, output_tokens=5):
+    """Anthropic-shaped success body. Used to test the Anthropic `stop_reason` normalization,
+    notably that `stop_sequence` is a complete answer, not a truncation."""
+    return {
+        "content": [{"type": "text", "text": content}],
+        "stop_reason": stop_reason,
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+    }
+
+
+def make_anthropic_tool_use_response(body, input_tokens=10, output_tokens=5):
+    """Anthropic-shaped structured-output success: a forced `tool_use` block with
+    `stop_reason="tool_use"`. This is a completed response (`AnthropicProvider` parses the tool
+    input into the result), not a truncation — used to guard against rejecting it as incomplete.
+
+    The tool input is derived from the request's `tools[0].input_schema`, mirroring
+    `build_structured_response` so `aiClassify`/`aiExtract` post-processing produces a stable value.
+    """
+    data = json.loads(body)
+    tools = data.get("tools", [])
+    input_schema = tools[0].get("input_schema", {}) if tools else {}
+    user_msg = extract_user_message(body)
+    tool_input = json.loads(build_structured_response({"schema": input_schema}, user_msg))
+    return {
+        "content": [{"type": "tool_use", "name": "structured_output", "input": tool_input}],
+        "stop_reason": "tool_use",
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
     }
 
 
@@ -153,12 +232,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/last-request":
-            self._send_json(200, LAST_REQUEST)
+            with _LOCK:
+                snapshot = dict(LAST_REQUEST)
+            self._send_json(200, snapshot)
             return
 
         if parsed.path == "/set-flaky":
             qs = parse_qs(parsed.query)
-            FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
+            with _LOCK:
+                FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
@@ -173,13 +255,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
 
-        LAST_REQUEST["path"] = parsed.path
-        LAST_REQUEST["body"] = body
-        LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+        with _LOCK:
+            LAST_REQUEST["path"] = parsed.path
+            LAST_REQUEST["body"] = body
+            LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
-            if FLAKY["fails_remaining"] > 0:
-                FLAKY["fails_remaining"] -= 1
+            with _LOCK:
+                should_fail = FLAKY["fails_remaining"] > 0
+                if should_fail:
+                    FLAKY["fails_remaining"] -= 1
+            if should_fail:
                 # Simulate a transient network failure: close the connection without sending any
                 # response, so the client sees EOF — a Poco network exception — rather than an HTTP
                 # error status. This exercises the network-error retry path, distinct from the HTTP
@@ -198,10 +284,109 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
+            elif is_filter_request(body):
+                content = filter_match_response(user_msg)
             else:
                 content = user_msg
 
             self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/no_choices":
+            # A `200` the provider bills for, whose body then fails validation.
+            self._send_json(200, {
+                "id": "chatcmpl-no-choices",
+                "object": "chat.completion",
+                "choices": [],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
+            })
+            return
+
+        if parsed.path == "/v1/anthropic/no_content":
+            # A `200` the provider bills for, whose body then fails validation. Anthropic reports usage
+            # under different keys than OpenAI.
+            self._send_json(200, {
+                "id": "msg-no-content",
+                "type": "message",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 9, "output_tokens": 0},
+            })
+            return
+
+        if parsed.path == "/v1/chat/truncated":
+            # A well-formed HTTP 200 response whose body is valid but reports that the model hit the
+            # max_tokens limit (`finish_reason="length"`). The returned text is therefore truncated
+            # and the AI functions must reject it rather than silently return the partial content.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="length"))
+            return
+
+        if parsed.path == "/v1/chat/content_filter":
+            # HTTP 200 with `finish_reason="content_filter"`: the provider withheld content, so the
+            # answer is incomplete and must be rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="content_filter"))
+            return
+
+        if parsed.path == "/v1/chat/tool_calls":
+            # HTTP 200 with `finish_reason="tool_calls"`: the model is asking the caller to run a
+            # tool, so there is no final answer here. Must be rejected rather than returned empty.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="tool_calls"))
+            return
+
+        if parsed.path == "/v1/chat/refusal":
+            # Structured-output safety refusal: OpenAI returns the explanation in `message.refusal`
+            # with a null `content`, and leaves `finish_reason` as "stop" because the generation
+            # itself ended normally. Must be rejected rather than returned as an empty answer.
+            response = make_success_response(None, finish_reason="stop")
+            response["choices"][0]["message"]["refusal"] = "I cannot help with that request."
+            self._send_json(200, response)
+            return
+
+        if parsed.path == "/v1/chat/unknown_reason":
+            # HTTP 200 with an unrecognized `finish_reason`. Must be accepted (treated as complete)
+            # rather than misclassified as truncation.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="some_future_reason"))
+            return
+
+        if parsed.path == "/v1/anthropic/stop_sequence":
+            # Anthropic-shaped 200 with `stop_reason="stop_sequence"`: a complete answer produced by
+            # hitting a caller stop sequence. Must NOT be rejected as truncated.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="stop_sequence"))
+            return
+
+        if parsed.path == "/v1/anthropic/max_tokens":
+            # Anthropic-shaped 200 with `stop_reason="max_tokens"`: a truncated answer that must be
+            # rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="max_tokens"))
+            return
+
+        if parsed.path == "/v1/anthropic/pause_turn":
+            # Anthropic-shaped 200 with `stop_reason="pause_turn"`: the generation is paused mid
+            # multi-turn exchange, so it is not a completed answer and must be rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="pause_turn"))
+            return
+
+        if parsed.path == "/v1/anthropic/context_window":
+            # Anthropic-shaped 200 with `stop_reason="model_context_window_exceeded"`: also truncated,
+            # but raising max_tokens would make it worse, so the hint must differ from the max_tokens
+            # case.
+            user_msg = extract_user_message(body)
+            self._send_json(
+                200,
+                make_anthropic_response(user_msg, stop_reason="model_context_window_exceeded"),
+            )
+            return
+
+        if parsed.path == "/v1/anthropic/tool_use":
+            # Anthropic-shaped 200 with `stop_reason="tool_use"`: a successful structured-output
+            # response (forced tool call). Must NOT be rejected as incomplete.
+            self._send_json(200, make_anthropic_tool_use_response(body))
             return
 
         if parsed.path == "/v1/error":
@@ -269,8 +454,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # suppress request logs
 
 
+class MockServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    # Absorb a burst of simultaneous connections from a multi-threaded query. The default backlog of
+    # 5 overflows when several pipeline threads each open a connection at once, dropping SYNs and
+    # making the client's connect time out.
+    request_queue_size = 128
+
+
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("0.0.0.0", MOCK_PORT), Handler)
+    server = MockServer(("0.0.0.0", MOCK_PORT), Handler)
     try:
         server.serve_forever()
     finally:

@@ -76,11 +76,11 @@ REGISTER_FUNCTION(TimeSeriesIdToTags)
 {
     FunctionDocumentation::Description description = R"(
 Returns tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
+See also function [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToTags(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
+        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         R"(
@@ -99,9 +99,9 @@ SELECT 8374283493092 AS id,
        timeSeriesIdToTags(same_id)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

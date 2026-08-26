@@ -605,7 +605,7 @@ SELECT quantileGK(100, 0.25)(number + 1) FROM numbers(1000);
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
 
-This function works similarly with [`quantileGK`](/sql-reference/aggregate-functions/reference/quantileGK) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function works similarly with [`quantileGK`](/reference/functions/aggregate-functions/quantileGK) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner.
 It was introduced by Michael Greenwald and Sanjeev Khanna in 2001.
@@ -631,7 +631,7 @@ SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
         )",
         R"(
 ┌─quantilesGK(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [1, 1, 1]                                        │
+│ [1,1,1]                                          │
 └──────────────────────────────────────────────────┘
         )"
     },
@@ -642,7 +642,7 @@ SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
         )",
         R"(
 ┌─quantilesGK(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [251, 498, 741]                                    │
+│ [251,498,741]                                      │
 └────────────────────────────────────────────────────┘
         )"
     }

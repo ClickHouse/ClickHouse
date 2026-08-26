@@ -1,0 +1,181 @@
+-- A query can start with FROM, and SELECT is optional
+alice	100
+alice	250
+alice	250	0
+charlie	300	0
+charlie	300	0
+-- Table aliases without AS are allowed when SELECT is written explicitly
+alice	100
+alice	250
+alice
+bob
+charlie
+-- Table aliases without AS are also allowed when SELECT is omitted
+alice	250	0
+charlie	300	0
+bob
+bob
+alice	250	0
+charlie	300	0
+alice
+alice	250	0
+charlie	300	0
+1
+1
+2
+2	2
+1
+1
+2
+1	1
+0
+-- WHERE
+alice	100	0
+alice	250	0
+charlie	300	0
+-- SELECT
+alice	200
+alice	500
+-- SELECT DISTINCT and DISTINCT
+0
+1
+0
+1
+-- EXTEND
+bob	50	1	500	3
+bob	75	0	750	3
+-- SET
+bob	1050	1
+bob	1075	0
+-- DROP
+charlie	300
+-- AGGREGATE with GROUP BY: grouping columns come first
+alice	2	350
+bob	1	75
+charlie	1	300
+-- AGGREGATE with an alias in GROUP BY
+0	725
+1	50
+-- AGGREGATE of the whole table
+5	300
+-- WHERE after AGGREGATE works as HAVING
+alice	350
+bob	125
+charlie	300
+-- ORDER BY, LIMIT, OFFSET
+charlie	300	0
+alice	250	0
+alice	250	0
+alice	100	0
+bob	75	0
+bob	50	1
+-- WITH: query-scoped aliases and CTEs stay visible in the following operators
+3
+alice	1
+alice	1
+bob	0
+bob	0
+charlie	1
+alice
+charlie
+2
+-- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns
+charlie	300
+-- ARRAY JOIN
+alice	100	1
+alice	100	2
+alice	250	1
+alice	250	2
+charlie	1	3
+charlie	2	4
+charlie	1
+1
+-- Set operations
+alice
+bob
+bob
+alice
+charlie
+2
+-- A pipe operator continues after a set operation only if the last operand is parenthesized
+6
+3
+-- Pipe operators after a regular SELECT query
+4
+-- Pipe operators in a subquery
+4
+-- INSERT from a pipe query
+alice	250
+charlie	300
+-- An INSERT-scoped WITH stays visible in the pipe operators
+alice	100
+alice	250
+-- Without enable_global_with_statement, an INSERT-scoped WITH does not reach the pipe stages, same as a hand-written nested subquery
+-- The ORDER BY operator supports the full clause syntax: ORDER BY ALL, WITH FILL, INTERPOLATE
+alice	100
+alice	250
+bob	50
+bob	75
+charlie	300
+charlie
+bob
+alice
+1	10
+2	0
+3	0
+1	10
+2	11
+3	12
+-- SAMPLE with OFFSET requires an explicit SELECT in the FROM-first form
+8
+9
+0
+1
+9
+0
+1
+0
+0
+0
+-- A trailing comma is allowed in the select-list-like operators, as in an ordinary SELECT clause
+alice	100
+alice	250
+alice	250
+charlie	300
+alice	250	0	500
+charlie	300	0	600
+5	775
+alice
+bob
+charlie
+charlie	300
+-- A pipe operator can end with a SETTINGS clause, attached to the generated wrapper query
+alice	250	0
+charlie	300	0
+charlie	300	0
+4
+2
+alice
+charlie
+1	10
+2	11
+3	12
+-- The resulting AST is the same as with nested subqueries
+SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
+SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)
+SELECT * FROM (SELECT * FROM (SELECT * FROM orders) ORDER BY amount DESC) LIMIT 1, 2
+WITH 100 AS threshold SELECT count() AS c FROM (WITH 100 AS threshold SELECT * FROM (WITH 100 AS threshold SELECT * FROM orders) WHERE greaterOrEquals(amount, threshold))
+-- WITH RECURSIVE stays visible across pipe operators (requires the analyzer)
+6
+-- A column alias list can follow the tables in the FROM-first form, before the SELECT clause (requires the analyzer)
+alice	250
+charlie	300
+alice
+charlie
+-- A CTE column alias list stays intact across pipe operators (requires the analyzer)
+1
+-- Ordinary settings of the query before the first pipe operator keep working (requires the analyzer)
+0
+1
+-- An analyzer setting before the first pipe operator becomes a subquery override, exactly as in the hand-written nested form (requires the analyzer)
+-- Errors

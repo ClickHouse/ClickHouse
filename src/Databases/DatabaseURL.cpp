@@ -1,6 +1,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseURL.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -67,6 +69,19 @@ struct URLTableDelegate
     TableFunctionPtr table_function;
     StoragePtr storage;
 };
+
+/// Whether the user is allowed to read local files, i.e. whether the resolution of a `file://`
+/// table would pass the read source access check of its `file` delegate. The decision is derived
+/// directly from the grants, without constructing the delegate: already the parsing of the
+/// arguments of the `file` table function observes the filesystem (`StorageFile::FileSource::parse`
+/// enumerates the matching paths), which must not happen before the grant is confirmed. The `file`
+/// delegate reports an empty URI for source-access filtering (see
+/// `TableFunctionURL::parseArgumentsImpl`), so a filtered grant applies iff its regexp matches the
+/// empty string — replicated here by filtering against the empty string as well.
+bool isFileReadGranted(ContextPtr context)
+{
+    return context->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+}
 
 /// Resolve a table of a `URL` database into the delegate storage of the `url` table function.
 ///
@@ -284,6 +299,15 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
+    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
+    /// answers what it answers for a remote URL, which is not probed either.
+    if (!isFileReadGranted(context_))
+        return true;
+
     if (!fs::exists(path))
     {
         if (throw_on_error)
@@ -314,6 +338,14 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
 
     if (!checkFileURLExists(url, context_, throw_on_error))
         return {};
+
+    /// The delegate of a `file://` table must not be constructed without the read source grant
+    /// either: already the parsing of the arguments of the `file` table function observes the
+    /// filesystem (see `isFileReadGranted`), and the errors of that parsing (e.g. that the path is
+    /// outside of `user_files`) are reported before the source access check of the delegate runs.
+    /// Fail here with the same access error that check would have produced after the parsing.
+    if (classifyURLScheme(url) == URLSchemeTarget::File)
+        context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
 
     auto delegate = makeURLTableDelegate(url, name, context_, /* is_insert_query */ false);
     if (!delegate.storage)
@@ -422,13 +454,25 @@ void registerDatabaseURL(DatabaseFactory & factory)
                        "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
                        "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
                        "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL.",
+                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL. "
+                       "A base URL scopes the database to a location: after "
+                       "`CREATE DATABASE web ENGINE = URL('https://example.com/data/')`, the query "
+                       "``SELECT * FROM web.`daily.csv` `` reads `https://example.com/data/daily.csv`.",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
-            "Usage",
-            "CREATE DATABASE web ENGINE = URL('https://example.com/data/');\n"
-            "SELECT * FROM web.`daily.csv`; -- reads https://example.com/data/daily.csv",
-            ""
+            "Reading files of the user_files directory through a database with a `file://` base URL",
+            R"(
+INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('2024-01-01', 100), ('2024-01-02', 150);
+CREATE DATABASE web ENGINE = URL('file://web/');
+SELECT * FROM web.`daily.csv`;
+DROP DATABASE web;
+            )",
+            R"(
+┌────────day─┬─visits─┐
+│ 2024-01-01 │    100 │
+│ 2024-01-02 │    150 │
+└────────────┴────────┘
+            )"
         }},
         .introduced_in = {26, 8},
         .related = {"Filesystem", "S3", "HDFS"}});

@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -75,6 +76,12 @@ public:
 
     virtual const TableJoin & getTableJoin() const = 0;
 
+    /// The `join_any_take_last_row` setting: for `ANY` joins it selects the last matching right-side
+    /// row instead of the first one. It is not part of `TableJoin`, it is baked into the concrete
+    /// algorithm, so algorithms that honor it expose it here. Algorithms for which the setting is
+    /// meaningless keep the default.
+    virtual bool anyTakeLastRow() const { return false; }
+
     /// Returns true if clone is supported
     virtual bool isCloneSupported() const
     {
@@ -131,6 +138,7 @@ public:
     /// Number of rows/bytes stored in memory
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
+    virtual StepAnalysisReport getAnalysisReport() const = 0;
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
