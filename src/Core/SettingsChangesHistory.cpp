@@ -59,6 +59,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
+            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -118,10 +122,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_allow_insecure_endpoint", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."},
             {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
-            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
-            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
-            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
-            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
             {"read_in_order_use_virtual_row", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."},
             {"page", 0., 0., "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
             {"limit", 0., 0., "Type widened from UInt64 to Float to support negative and fractional values, passed through to ClickHouse's native negative/fractional `LIMIT` support."},
