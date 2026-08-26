@@ -142,8 +142,7 @@ bool isJSONPathFilterSafe(
             throw;
         return false;
     }
-    /// A null means no conversion happened, so the comparison below would be meaningless.
-    if (converted.isNull() || converted == key_expression_type->getDefault())
+    if (converted == key_expression_type->getDefault())
         return false;
 
     return true;
