@@ -647,6 +647,15 @@ SourceColumnNames getSourceColumnNames(
     const StorageID & source_storage_id)
 {
     NameSet source_table_names{source_storage_id.table_name, source_storage_id.getFullNameNotQuoted()};
+
+    /// Collect the qualifiers under which this storage can be referenced in the query: the table name, the
+    /// fully qualified name and the alias given in `FROM`. A qualifier is only usable when the query joins
+    /// this storage exactly once - a self-join such as `ext AS a JOIN ext AS b` reaches this function twice
+    /// with the same `StorageID`, and there is no way to tell which of the two instances is being read. In
+    /// that case every qualified reference has to stay unrecognized, so that a predicate of the other side
+    /// is dropped as foreign (and re-applied locally) instead of being pushed down to the wrong instance.
+    std::vector<String> qualifiers;
+    size_t source_table_expressions = 0;
     if (const auto & tables_ast = select.tables())
     {
         if (const auto * tables = tables_ast->as<ASTTablesInSelectQuery>())
@@ -662,12 +671,18 @@ SourceColumnNames getSourceColumnNames(
                     : nullptr;
                 if (table_identifier && source_table_names.contains(table_identifier->name()))
                 {
-                    source_table_names.insert(table_identifier->tryGetAlias());
-                    source_table_names.insert(table_identifier->shortName());
+                    ++source_table_expressions;
+                    qualifiers.push_back(table_identifier->tryGetAlias());
+                    qualifiers.push_back(table_identifier->shortName());
                 }
             }
         }
     }
+
+    if (source_table_expressions > 1)
+        source_table_names.clear();
+    else
+        source_table_names.insert(qualifiers.begin(), qualifiers.end());
 
     SourceColumnNames source_columns;
     for (const auto & col : available_columns)
