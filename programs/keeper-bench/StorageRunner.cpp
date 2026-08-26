@@ -10,6 +10,7 @@
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Core/ServerUUID.h>
 #include <IO/Operators.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
@@ -177,9 +178,13 @@ namespace
 
 void StorageRunner::setupStorage()
 {
+    DB::UUID some_uuid(1337);
+    DB::ServerUUID::set(some_uuid);
     auto settings = std::make_shared<DB::CoordinationSettings>();
     settings->loadFromConfig("storage.coordination_settings", *config_ptr);
     keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper=*/true, settings);
+    keeper_context->initializeDiskSelector(*config_ptr);
+    keeper_context->initializeDataDisk("storage", *config_ptr);
     keeper_context->setLocalLogsPreprocessed();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
