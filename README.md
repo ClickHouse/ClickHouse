@@ -49,7 +49,7 @@ You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-even
 
 Upcoming meetups
 * [Boston Trivia](https://luma.com/clickh-nw1d)- August 31t, 2026
-* [Bangkok Meetup](https://luma.com/clickh-ct1j) - Sep 1, 2026
+* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 * [The Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
 * [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d)- August 31t, 2026
 * [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
