@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 -- A `WHERE` equality on a `Dynamic` column is not merged into the JOIN condition
 -- unless `allow_dynamic_type_in_join_keys` is enabled.
 
@@ -8,9 +10,9 @@ SET enable_parallel_replicas = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_join_swap_table = 'false';
 SET enable_join_runtime_filters = 0;
+-- CI randomizes this to 0, which leaves `ON 1` reported as `inner` instead of `cross`.
+SET query_plan_optimize_join_order_limit = 10;
 
-DROP TABLE IF EXISTS t_int;
-DROP TABLE IF EXISTS t_dyn;
 CREATE TABLE t_int (a Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_dyn (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
 
@@ -39,6 +41,13 @@ FROM (
     EXPLAIN SELECT * FROM (SELECT * FROM t_int INNER JOIN t_dyn ON 1) WHERE a = d
     SETTINGS allow_dynamic_type_in_join_keys = 1
 );
+
+-- Merging a `Dynamic` key drops the matches: comparing a `Dynamic` against
+-- another type is what the setting's default of false exists to prevent.
+SELECT count() FROM (SELECT * FROM t_int INNER JOIN t_dyn ON 1) WHERE a = d
+SETTINGS allow_dynamic_type_in_join_keys = 0;
+SELECT count() FROM (SELECT * FROM t_int INNER JOIN t_dyn ON 1) WHERE a = d
+SETTINGS allow_dynamic_type_in_join_keys = 1;
 
 DROP TABLE t_int;
 DROP TABLE t_dyn;
