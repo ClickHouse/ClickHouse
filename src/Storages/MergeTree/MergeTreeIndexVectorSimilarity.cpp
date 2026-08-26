@@ -715,7 +715,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
 #endif
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
+void vectorSimilarityIndexValidator(const IndexDescription & index, [[maybe_unused]] bool attach, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
 
@@ -787,7 +787,8 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Vector similarity index with method 'scann' can only be created on columns of type Array(Float32) or Array(Float64)");
 
-        checkScannCPUSupport();
+        if (!attach)
+            checkScannCPUSupport();
         return;
     }
 #endif
