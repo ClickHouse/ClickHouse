@@ -218,7 +218,7 @@ xargs < "$STYLE_TMPDIR/nobase_headers_excluded" awk 'FNR==1 && !/^#pragma once$/
 
 # 06a: Too many exclamation marks
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!!!' | grep . && echo "Too many exclamation marks (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!!!' | $FILTER_DOCS && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
 xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!",' | $FILTER_DOCS && echo "^ No need for an exclamation mark (looks dirty, unconfident)."
