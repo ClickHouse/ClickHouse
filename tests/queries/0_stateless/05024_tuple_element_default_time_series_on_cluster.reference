@@ -1,3 +1,4 @@
+recentsamples	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
 samples	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
 tags	Tuple(b Int64)	DEFAULT	tuple(-1)
 1	0
