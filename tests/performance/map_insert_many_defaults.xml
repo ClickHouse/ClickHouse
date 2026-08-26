@@ -1,6 +1,6 @@
 <test>
     <!--
-        Feed JSONColumns blocks that omit the Map column. The input format
+        Feed a JSONColumns object that omits the Map column. The input format
         calls insertManyDefaults for the missing column, and the wide value
         type makes the old generic implementation allocate nested storage
         even though every Map is empty.
@@ -11,7 +11,7 @@
             FROM numbers(1048576)
             FORMAT JSONColumns
         " |
-        $CLICKHOUSE_LOCAL --max_block_size=65536 \
+        $CLICKHOUSE_LOCAL --max_block_size=65536 --async_insert=0 \
             --allow_experimental_map_type=1 \
             --input_format_defaults_for_omitted_fields=1 \
             --query "
