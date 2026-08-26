@@ -404,6 +404,11 @@ DataTypes FutureSetFromSubquery::getTypes() const
 
 bool FutureSetFromSubquery::hasExternalTable() const
 {
+    /// Deliberately does not consult `set_and_key->external_table_expected`: this predicate feeds the
+    /// distributed-plan validation, which must reject only sets already entangled with an external
+    /// table. An expected-but-unattached table could only be attached later by a classic remote read,
+    /// and a distributed plan has no such read: the set stays plain, is built once on the initiator and
+    /// its values are shipped with the worker tasks, which matches the `GLOBAL IN` semantics.
     return external_table_set != nullptr || (set_and_key && set_and_key->external_table != nullptr);
 }
 

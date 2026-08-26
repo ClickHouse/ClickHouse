@@ -9,7 +9,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -98,6 +97,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -811,20 +811,6 @@ BlockIO InterpreterSystemQuery::execute()
             ExternalDictionariesLoader::resetAll();
             break;
         }
-        case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
-            bridge_helper->removeModel();
-            break;
-        }
-        case Type::RELOAD_MODELS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
-            bridge_helper->removeAllModels();
-            break;
-        }
         case Type::RELOAD_FUNCTION:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
@@ -1461,6 +1447,11 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     table->is_being_restarted = true;
     table->flushAndShutdown();
 
+    /// The definition re-attached below was read back from this server's own metadata, so it must be
+    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
+    auto attach_context = Context::createCopy(system_context);
+    attach_context->setRecoveryFromStoredMetadata(true);
+
     /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
     /// The table is removed from the in-memory tables map between detach and attach, making it
     /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
@@ -1520,7 +1511,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
                 new_table = StorageFactory::instance().get(create,
                     data_path,
-                    system_context,
+                    attach_context,
                     system_context->getGlobalContext(),
                     columns,
                     constraints,
@@ -1895,6 +1886,10 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
         query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
+
+        /// The CREATE queries below come from metadata a Replicated database stored in Keeper, so they
+        /// must be accepted as they are: they re-derive tables that exist elsewhere.
+        query_context->setRecoveryFromStoredMetadata(true);
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
@@ -2353,11 +2348,20 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
-    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
-    const auto deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(timeout);
-    while (std::chrono::steady_clock::now() < deadline)
+    const auto start = std::chrono::steady_clock::now();
+    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+    /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
+    /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
+    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
+    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
+    /// time the command out long before the configured limit.
+    while (true)
     {
+        if (max_execution_time_us != 0
+            && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count()
+                >= max_execution_time_us)
+            break;
+
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
@@ -2866,12 +2870,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARIES: {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        case Type::RELOAD_MODELS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_FUNCTION:

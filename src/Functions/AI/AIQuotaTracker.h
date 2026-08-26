@@ -41,8 +41,8 @@ public:
     /// throws when `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
     bool recordApiCall();
 
-    /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
-    /// so this is kept separate and called only after the response is parsed.
+    /// Record token usage reported by a response, including one whose body was rejected as malformed: the
+    /// provider billed for it either way. Kept separate from `recordApiCall`, which counts the request itself.
     void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
 
 
