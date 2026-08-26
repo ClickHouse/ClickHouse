@@ -3,7 +3,7 @@
 -- Test for ByteStreamSplit codec — type compatibility, explicit width parameter,
 -- codec chaining, unaligned input sizes, and invalid parameter rejection.
 
-SET allow_experimental_codecs = 1;
+SET enable_bytestreamsplit_codec = 1;
 
 DROP TABLE IF EXISTS tab;
 

@@ -5,7 +5,7 @@
 -- elements (W bytes each → W interleaved streams of N bytes).
 -- It must exactly preserve every bit of every value.
 
-SET allow_experimental_codecs = 1;
+SET enable_bytestreamsplit_codec = 1;
 
 DROP TABLE IF EXISTS codecTest;
 

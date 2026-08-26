@@ -8749,6 +8749,9 @@ If it is set to true, allow to specify any experimental compression codec.
     DECLARE(Bool, enable_alp_codec, false, R"(
 Allows using the experimental `ALP` compression codec.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_bytestreamsplit_codec, false, R"(
+Allows using the experimental `ByteStreamSplit` compression codec.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
 Allows using the experimental `Quantized` compression codec.
 )", EXPERIMENTAL) \
