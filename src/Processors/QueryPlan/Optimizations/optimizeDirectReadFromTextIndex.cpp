@@ -270,11 +270,6 @@ bool injectTextIndexTokenizers(
         if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
             continue;
 
-        const auto * haystack_dbg = removeAliases(node->children.front());
-        LOG_DEBUG(getLogger("TEMPfold"), "TEMP candidate {} haystack='{}' type={} tracked={}",
-            function_name, haystack_dbg->result_name, static_cast<int>(haystack_dbg->type),
-            tracked_columns.contains(haystack_dbg->result_name));
-
         const String * column_name = getTrackedHaystackColumn(*node, tracked_columns);
         if (!column_name)
             continue;
@@ -1275,14 +1270,11 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     std::optional<std::unordered_map<String, String>> tokenizers;
     bool crossed_join = false;
 
-    LOG_DEBUG(getLogger("TEMPfold"), "TEMP walk start, stack size {}", stack.size());
-
     /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a
     /// projection above a sort) and stop where the column set changes (aggregation). A JOIN is crossed too,
     /// but beyond it only the tokenizer is supplied.
     for (auto it = walk_begin; it != stack.rend(); ++it)
     {
-        LOG_DEBUG(getLogger("TEMPfold"), "TEMP visiting '{}' crossed_join={}", it->node->step->getName(), crossed_join);
         QueryPlan::Node * node = it->node;
         IQueryPlanStep * step = node->step.get();
 
@@ -1301,7 +1293,6 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             if (typeid_cast<const JoinStep *>(step) || typeid_cast<const JoinStepLogical *>(step))
             {
                 crossed_join = true;
-                LOG_DEBUG(getLogger("TEMPfold"), "TEMP crossing JOIN '{}'", step->getName());
                 continue;
             }
 
@@ -1314,27 +1305,13 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
         if (crossed_join)
         {
-            {
-                String t; for (const auto & [k,v] : tracked_columns) { if (!t.empty()) t += ","; t += k + "->" + v; }
-                LOG_DEBUG(getLogger("TEMPfold"), "TEMP crossed_join step='{}' tracked=[{}]", step->getName(), t);
-            }
             /// Nothing above reads this scan's columns under a name we can still vouch for.
             if (tracked_columns.empty())
                 break;
 
             if (!tokenizers)
-            {
                 tokenizers = collectTextIndexTokenizers(*read_from_merge_tree_step);
-                String t; for (const auto & [k,v] : *tokenizers) { if (!t.empty()) t += ","; t += k + "=" + v; }
-                LOG_DEBUG(getLogger("TEMPfold"), "TEMP tokenizers=[{}]", t);
-            }
 
-            {
-                String fns; for (const auto * n : step_dag.getNodesPointers())
-                    if (n->type == ActionsDAG::ActionType::FUNCTION && n->function_base)
-                        { if (!fns.empty()) fns += ","; fns += n->function_base->getName() + "/" + std::to_string(n->children.size()); }
-                LOG_DEBUG(getLogger("TEMPfold"), "TEMP dag functions=[{}]", fns);
-            }
             /// Read before the step is replaced: that destroys the step owning `step_dag`.
             auto tracked_columns_above = trackColumnsThroughDAG(step_dag, tracked_columns);
             injectTextIndexTokenizersInStep(*read_from_merge_tree_step, *node, step_dag, tracked_columns, *tokenizers);
