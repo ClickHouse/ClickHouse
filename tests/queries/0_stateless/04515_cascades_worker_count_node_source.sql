@@ -43,22 +43,10 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
--- Only a dispatched fragment reports its own counters: it gets its own process-list entry, while
--- a `distributed_plan_execute_locally` fragment reports the initiator's. A fragment carries the
--- initiator's `query_id` as its `initial_query_id`, which is unique per query, so that key selects
--- one query's fragments whatever else the server is running concurrently.
--- A fragment bounded to one thread acquires exactly one CPU slot, competing or not; which of the
--- two counters carries it depends on which allocator the server picked, so the assertion sums
--- them. Every arbitrating allocator reports an acquisition, so a non-zero sum means the slot was
--- arbitrated; the sum also tracks the fragment's thread request, so it exceeds one when the limit
--- did not reach it. The probe runs with `make_distributed_plan = 0` so it spawns no fragments of
--- its own, and the marker is query-local so no other statement of this test can win the lookup.
--- One arrangement reports no acquisition at all: a CPU-thread resource exists, so slots are the
--- workload scheduler's to grant, but this query's workload has no node on it, leaving it unlimited
--- and unmetered. That arrangement is server-wide, so it silences the initiator too, while nothing
--- a fragment does to its own pipeline can. The initiator's own zero therefore marks the state where
--- the counters cannot tell a bounded fragment from an unbounded one, and the assertion stands aside
--- instead of reading that silence as either answer.
+-- No `distributed_plan_execute_locally` here: only a dispatched fragment gets its own
+-- process-list entry, and so its own counters. Either counter can carry the slot depending on
+-- the allocator, so the assertion sums them. A zero on the initiator means slots went unmetered
+-- server-wide, which no fragment can cause, so the assertion stands aside instead of guessing.
 SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread limit';
 -- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment` and would
 -- win the lookup against `system.query_log` below.
