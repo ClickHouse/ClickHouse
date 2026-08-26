@@ -155,7 +155,7 @@ Legacy Plans: For customers on legacy plans, default daily backups retained for 
 
 Backup and restore durations vary significantly with data size, schema complexity, and the number of tables. The figures below are observations from internal testing and are not performance commitments.
 
-In our testing, a backup of roughly 1 TB has taken about 10 to 15 minutes, and 20 TB about an hour. Larger datasets take proportionally longer, and backups of several hundred TB or more can take many hours, although theer are economies of scale that help at larger sizes.
+In our testing, a backup of roughly 1 TB has taken about 10 to 15 minutes, and 20 TB about an hour. Larger datasets take proportionally longer, and backups of several hundred TB or more can take many hours, although there are economies of scale that help at larger sizes.
 
 Restores are typically slower than the equivalent backup, particularly when the restore includes a long chain of incremental backups, since the full backup and all subsequent incremental backups in the chain must be applied. Restoring a very large service can take longer than a day.
 
