@@ -30,10 +30,10 @@
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
-#include <base/sort.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
 #endif
+#include <base/sort.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
@@ -1380,6 +1380,8 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, a write goes through the cache inline (on the calling thread) instead of on a background thread, so it neither blocks waiting for a slot nor creates an unbounded number of threads.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
+    DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
+    DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
 
@@ -2237,6 +2239,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "stateless_worker_server",
         "stateless_worker_discovery_service",
         "_functional_tests_helper_shared_catalog",
+        /// Shared-catalog analog of `_functional_tests_helper_database_replicated_replace_args_macros`,
+        /// injected into the server config by the private SharedCatalog functional-test setup
+        /// (`tests/config/config.d/shared_catalog.xml`).
+        "_functional_tests_helper_shared_catalog_replace_args_macros",
         "server_uuid_from_replica_name",
         "cloud",
         "default_user_for_system_dictionaries",
@@ -3565,6 +3571,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
             {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
+            {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
+            {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
+
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
