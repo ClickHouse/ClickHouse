@@ -1,3 +1,5 @@
+#include <Columns/ColumnBLOB.h>
+#include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,14 +25,16 @@ using namespace DB;
 TEST(DataTypeTupleCreateColumn, HandlesSerializationDetached)
 {
     auto int32_type = std::make_shared<DataTypeInt32>();
-    auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int32_type, int32_type});
+    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int32_type, int32_type});
 
     auto default_serialization = tuple_type->getDefaultSerialization();
     auto detached_serialization = SerializationDetached::create(default_serialization);
 
     /// Before the fix this threw LOGICAL_ERROR (abort in debug/ASan builds).
-    /// After the fix it calls createColumn(*nested) and returns a valid Tuple column.
+    /// After the fix it builds the inner Tuple column and wraps it in a ColumnBLOB, which
+    /// SerializationDetached fills during deserialization.
     MutableColumnPtr column;
     EXPECT_NO_THROW(column = tuple_type->createColumn(*detached_serialization));
     EXPECT_NE(column, nullptr);
+    EXPECT_NE(typeid_cast<const ColumnBLOB *>(column.get()), nullptr);
 }

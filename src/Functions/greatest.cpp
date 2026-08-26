@@ -73,7 +73,7 @@ Returns the greatest value among the arguments.
 - For `DateTime` types, the result type is promoted to the largest type (e.g., `DateTime64` if mixed with `DateTime32`).
 
 :::note Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior
-Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
+Version [24.12](/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
 To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
 :::
     )";
@@ -113,9 +113,9 @@ SELECT greatest(['hello'], ['there'], ['world']);
 SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
         )",
         R"(
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
-└──────────────────────────┘
+┌─greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                   2025-01-02 12:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

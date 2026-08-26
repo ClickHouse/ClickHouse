@@ -388,13 +388,15 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
   ### `use_persistent_processing_nodes`
 </div>
 
-默认情况下，S3Queue 表始终使用临时处理节点。如果 ZooKeeper 会话在 S3Queue 将已处理文件提交到 ZooKeeper 之前过期，而它又已经开始处理这些文件，就可能导致数据重复。此设置会强制 server 在 Keeper 会话过期时消除出现重复数据的可能性。
+持久化处理节点可避免在处理已开始、但 S3Queue 尚未提交已处理文件时 Keeper 会话过期所导致的重复处理。早期版本使用临时处理中节点，在这种情况下可能会产生重复项。
+
+此设置已弃用，其值会被忽略：始终使用持久化处理节点。即使使用 `use_persistent_processing_nodes = 0` 创建表，仍会使用持久化处理节点；设置内部信息 (包括 `SHOW CREATE TABLE`) 也会始终报告 `1`，无论提供的值为何。
 
 <div id="persistent_processing_node_ttl_seconds">
   ### `persistent_processing_node_ttl_seconds`
 </div>
 
-如果服务器发生非正常终止，并且启用了 `use_persistent_processing_nodes`，则可能会遗留未被移除的处理中节点。此设置定义了一个时间段，超过该时间后，可以安全地清理这些处理中节点。同样的生存时间 (TTL) 也用于 `Ordered` 模式下的存储桶锁，而该锁的持有时间可能会长于单个处理中节点，因此设置该值时也应将这一点考虑在内。
+如果服务器发生非正常终止，则可能会遗留未被移除的处理中节点。此设置定义了一个时间段，超过该时间后，可以安全地清理这些处理中节点。同样的生存时间 (TTL) 也用于 `Ordered` 模式下的存储桶锁，而该锁的持有时间可能会长于单个处理中节点，因此设置该值时也应将这一点考虑在内。
 
 默认值：`21600` (6 小时) 。
 
@@ -513,17 +515,23 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 * 在文件处理过程中，解析在中途发生异常，且已通过 `s3queue_loading_retries` 启用重试；
 
-* `S3Queue` 配置在多个服务器上，并指向 zookeeper 中的同一路径，而某台服务器尚未来得及提交已处理文件时，keeper 会话就已过期，这可能导致另一台服务器接手处理该文件，而该文件可能已经被第一台服务器部分或全部处理；不过，如果设置了 `use_persistent_processing_nodes = 1`，则从 25.8 版本起不再存在这一问题。
+* `S3Queue` 配置在多个服务器上，并指向 zookeeper 中的同一路径，而某台服务器尚未来得及提交已处理文件时，keeper 会话就已过期，这可能导致另一台服务器接手处理该文件，而该文件可能已经被第一台服务器部分或全部处理；不过，持久化处理节点可防止这一问题，该功能自 25.8 版本起可用，现已始终启用 (参见 [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)) 。
 
 * 服务器异常终止。
 
 2. 如果 `S3Queue` 配置在多个服务器上并指向 zookeeper 中的同一路径，同时使用了 `Ordered` 模式，则 `s3queue_loading_retries` 将不起作用。该问题很快会得到修复。
 
+3. ClickHouse 节点发生设备级断电时可能会丢失行。文件一旦完成插入，就会在 Keeper 中记录为已处理 (当 `after_processing = 'delete'` 时，其源对象也会被删除) ，但插入的行只有在目标分片执行 fsync 后才会持久化，而默认情况下这不会同步发生 (`fsync_after_insert = 0`) 。Keeper 会被强制同步，并且通常运行在单独的节点上，因此能够在该节点断电后继续存活。如果节点在文件提交为已处理后、目标分片 fsync 前断电，重启时不会重新读取该文件，其行将丢失 (使用 `after_processing = 'delete'` 时无法恢复) 。普通的进程 kill 不会暴露此问题，因为页缓存仍会保留。对于推荐的 materialized view 消费路径 (仅在整个插入管道完成后才提交文件) ，在目标 `MergeTree` 表上设置 `fsync_after_insert = 1` (以及 `fsync_part_directory = 1`) 可确保在文件提交为已处理前插入的分片已持久化，从而大幅缩小这一时间窗口。这不适用于设置了 `commit_on_select = 1` 的直接 `INSERT ... SELECT`，在这种情况下，文件会在读取结束时提交，而目标 sink 尚未完成其最后一个分片。
+
 <div id="introspection">
   ## 内部信息
 </div>
 
-如需查看内部信息，可使用无状态表 `system.s3queue_metadata_cache` 和持久化表 `system.s3queue_log`。
+如需查看内部信息，可使用无状态表 `system.s3queue_metadata_cache` 和 `system.s3_queue_metadata`，以及持久化表 `system.s3queue_log`。
+
+* 使用 `system.s3queue_metadata_cache` 查看本地服务器上按文件记录的处理状态内存缓存 (哪些文件当前正在处理、已处理或处理失败) 。
+* 使用 `system.s3_queue_metadata` 直接查看存储在 Keeper 中的状态：每个元数据对象的 `processed`、`processing` 和 `failed` 节点数量，以及按需查看其内容。当内存缓存尚未反映 Keeper 中的状态时，或需要查看整个集群中的共享状态时，此功能非常有用。
+* 使用 `system.s3queue_log` 查看 `processed` 和 `failed` 文件的持久化历史记录。
 
 1. `system.s3queue_metadata_cache`。此表不是持久化的，用于显示 `S3Queue` 的内存状态：当前正在处理哪些文件，以及哪些文件已处理或处理失败。
 
@@ -565,7 +573,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`。持久化表。包含与 `system.s3queue_metadata_cache` 相同的信息，但针对 `processed` 和 `failed` 文件。
+2. `system.s3_queue_metadata`。此表不是持久化的，直接从 Keeper 读取状态：每个元数据对象中 `processed`、`processing` 和 `failed` 节点的数量，以及按需读取这些节点的内容。
+
+`processed_nodes`、`processing_nodes`、`failed_nodes` 和 `processed_path` 列会发出 Keeper 请求，并且仅在选取相应列时才会拉取，因此仅选取 `*_nodes_count` 计数器可避免额外的 Keeper 流量。
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+有关完整的列列表，请参阅 `system.s3_queue_metadata` 参考页面。
+
+3. `system.s3queue_log`。持久化表。包含与 `system.s3queue_metadata_cache` 相同的信息，但针对 `processed` 和 `failed` 文件。
 
 该表的结构如下：
 
