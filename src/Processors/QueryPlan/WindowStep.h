@@ -78,6 +78,9 @@ public:
 
     bool isStreamingMode() const { return streaming_mode_; }
 
+    /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
+    bool hasStreamsFanOut() const { return streams_fan_out; }
+
     QueryPlanStepPtr clone() const override;
 
 private:
