@@ -19,4 +19,10 @@ DPJoinEntryPtr solveDPSizeJoinOrder(
     QueryStatusPtr query_status,
     std::function<bool()> interactive_cancel_callback);
 
+DPJoinEntryPtr solveDPHypJoinOrder(
+    QueryGraph & query_graph,
+    UInt64 max_searched_plans,
+    QueryStatusPtr query_status,
+    std::function<bool()> interactive_cancel_callback);
+
 }
