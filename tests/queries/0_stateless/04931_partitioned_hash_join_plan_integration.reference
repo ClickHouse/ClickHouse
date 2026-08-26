@@ -32,3 +32,7 @@
 -- and gives the same rows as the join
 50000	8749975000
 50000	8749975000
+-- with automatic external join the partitioned algorithm stays selected
+1
+-- listing both algorithms still does not demote to parallel_hash when spilling is configured
+1

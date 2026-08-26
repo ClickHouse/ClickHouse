@@ -4,6 +4,7 @@
 #include <Columns/ColumnsScatter.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/TableJoin.h>
@@ -18,8 +19,10 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
+#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -81,11 +84,13 @@ PartitionedHashJoin::PartitionedHashJoin(
     SharedHeader right_sample_block_,
     size_t num_threads_,
     bool any_take_last_row_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    size_t max_bytes_before_external_join_)
     : table_join(std::move(table_join_))
     , right_sample_block(std::move(right_sample_block_))
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
+    , max_bytes_before_external_join(max_bytes_before_external_join_)
     , leaf_join(std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row))
     , delegate_mode(!table_join->oneDisjunct())
     , maps_variant_index(leaf_join->data->maps.empty() ? 1 : leaf_join->data->maps.front().index())
@@ -112,64 +117,14 @@ PartitionedHashJoin::PartitionedHashJoin(
         cached_stats = getHashTablesStatistics<PartitionedHashJoinEntry>().getSizeHint(stats_collecting_params);
 }
 
-PartitionedHashJoin::~PartitionedHashJoin()
-{
-    /// Explicit, because members are otherwise destroyed after the body and outside the timer.
-    /// Order matters: leaf cells point into the arenas and the row store, so the maps go first.
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinTeardownMicroseconds);
-
-    /// The leaf maps are the bulk of the teardown - one buffer each, and there can be tens of
-    /// thousands - so they are destroyed in parallel, for the same reason `ConcurrentHashJoin` does
-    /// it. `post_build_pool` is gone by now, torn down as soon as the post-build finished, hence a
-    /// fresh pool. A destructor must not throw, so a scheduling failure just leaves the rest to the
-    /// serial clear below.
-    if (!delegate_mode && leaf_maps.size() >= 64)
-    {
-        try
-        {
-            const size_t workers = std::min<size_t>(num_threads, leaf_maps.size());
-            ThreadPool teardown_pool(
-                CurrentMetrics::PartitionedHashJoinPoolThreads,
-                CurrentMetrics::PartitionedHashJoinPoolThreadsActive,
-                CurrentMetrics::PartitionedHashJoinPoolThreadsScheduled,
-                /*max_threads_*/ workers,
-                /*max_free_threads_*/ 0,
-                /*queue_size_*/ workers);
-            std::atomic<size_t> claim{0};
-            for (size_t w = 0; w < workers; ++w)
-                teardown_pool.scheduleOrThrow(
-                    [this, &claim, thread_group = CurrentThread::getGroup()]
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
-                        while (true)
-                        {
-                            const size_t leaf = claim.fetch_add(1, std::memory_order_relaxed);
-                            if (leaf >= leaf_maps.size())
-                                break;
-                            leaf_maps[leaf] = PartitionedJoinMaps(maps_variant_index);
-                        }
-                    });
-            teardown_pool.wait();
-        }
-        catch (...) /// NOLINT(bugprone-empty-catch): fall through to the serial teardown below
-        {
-        }
-    }
-    leaf_maps.clear();
-    build_arenas.clear();
-    leaf_join.reset();
-    probe_scratch_pool.clear();
-    for (auto & slot : probe_scratch_slots)
-        delete slot.load(std::memory_order_acquire);
-}
-
 bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 {
     /// Everything the single-level `HashJoin` machinery serves: INNER/LEFT/RIGHT/FULL crossed with
     /// ALL/ANY/RightAny/SEMI/ANTI plus ASOF, null maps, per-clause ON filters, USING, and any number
     /// of disjuncts. What stays out: special storages, the Cross/Comma/Paste and ON-constant shapes
-    /// (routed before the algorithm loop), spilling contexts, and mixed non-equi ON conditions -
-    /// `parallel_hash` serves the last better than a delegated single-threaded build would.
+    /// (routed before the algorithm loop), and mixed non-equi ON conditions - `parallel_hash` serves
+    /// the last better than a delegated single-threaded build would. Spilling is handled by wrapping
+    /// this join in `SpillingHashJoin`, not by rejecting the shape here.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
 
@@ -258,7 +213,7 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
 
-    if (build_phase_finished)
+    if (build_phase_finished || stored_blocks_released)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: addBlockToJoin called after the build phase finished");
 
     if (delegate_mode)
@@ -318,7 +273,12 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
         if (cached_stats)
             computeJoinRoutesForFill(equi_columns, rows, fill.routes.data());
         else
+        {
+            /// Exclusive merge of the sketches must not race `add` on a live lane: a torn register
+            /// would persist into the barrier's `hll_estimate`, which the post-build gate then uses.
+            std::shared_lock hll_lock(fill_mutex);
             computeJoinRoutesForFill(equi_columns, rows, fill.skipData(), fill.routes.data(), lane.hll);
+        }
     }
     else if (cached_stats)
     {
@@ -327,6 +287,7 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
     }
     else
     {
+        std::shared_lock hll_lock(fill_mutex);
         computeJoinRoutesForFill(fill.key_columns, rows, fill.skipData(), fill.routes.data(), lane.hll);
     }
 
@@ -484,26 +445,30 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     /// Run once by the last fill thread, and deliberately cheap: concatenate the lanes, number the
     /// row-store blocks, merge the sketches, pick the plan. The scatter, allocation and leaf builds
-    /// are `runPostBuildPhase`'s work.
+    /// are `runPostBuildPhase`'s work. Exclusive so this merge cannot race a still-running fill
+    /// `add` the same way `liveDistinctEstimate` cannot.
     DenseHyperLogLog merged;
     size_t total_blocks = 0;
-    for (const auto & lane : lanes)
-        total_blocks += lane.blocks.size();
-    build_blocks.reserve(total_blocks);
-    for (auto & lane : lanes)
     {
-        merged.merge(lane.hll);
-        for (auto & block : lane.blocks)
-            build_blocks.push_back(std::move(block));
-        lane.blocks.clear();
+        std::lock_guard lock(fill_mutex);
+        for (const auto & lane : lanes)
+            total_blocks += lane.blocks.size();
+        build_blocks.reserve(total_blocks);
+        for (auto & lane : lanes)
+        {
+            merged.merge(lane.hll);
+            for (auto & block : lane.blocks)
+                build_blocks.push_back(std::move(block));
+            lane.blocks.clear();
+        }
+        lanes.clear();
+        lane_by_thread.clear();
     }
-    lanes.clear();
-    lane_by_thread.clear();
 
     if (cached_stats)
     {
         /// The sketches were never fed, so the cached total drives the partition count and
-        /// `planHashTables` consumes the per-partition breakdown. Both are clamped per leaf by the
+        /// `sizeLeafHashTables` consumes the per-partition breakdown. Both are clamped per leaf by the
         /// exact row counts, so a stale value cannot inflate a leaf past its own rows.
         hll_estimate = static_cast<double>(std::max<size_t>(1, cached_stats->total_distinct));
         stats.distinct_estimate_reused = true;
@@ -579,6 +544,49 @@ size_t PartitionedHashJoin::getTotalByteCount() const
     for (const auto & arena : build_arenas)
         res += arena.allocatedBytes();
     return res;
+}
+
+size_t PartitionedHashJoin::liveDistinctEstimate() const
+{
+    /// A previous run published the counts, so the sketches were never fed.
+    if (cached_stats)
+        return std::min(accumulated_rows.load(std::memory_order_relaxed), cached_stats->total_distinct);
+
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t last_rows = distinct_estimate_at_rows.load(std::memory_order_acquire);
+    const size_t cached = cached_distinct_estimate.load(std::memory_order_relaxed);
+
+    if (cached != 0 && rows <= last_rows + last_rows / 16)
+        return cached;
+
+    std::lock_guard lock(fill_mutex);
+    const size_t last_rows_locked = distinct_estimate_at_rows.load(std::memory_order_relaxed);
+    const size_t cached_locked = cached_distinct_estimate.load(std::memory_order_relaxed);
+    if (cached_locked != 0 && rows <= last_rows_locked + last_rows_locked / 16)
+        return cached_locked;
+
+    DenseHyperLogLog merged;
+    for (const auto & lane : lanes)
+        merged.merge(lane.hll);
+
+    /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
+    /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an
+    /// early small-sample HyperLogLog can overshoot, and locking that in would charge list-arena
+    /// bytes for keys that do not exist.
+    const size_t estimate = std::max(static_cast<size_t>(std::llround(merged.estimate())), 1uz);
+    cached_distinct_estimate.store(estimate, std::memory_order_relaxed);
+    distinct_estimate_at_rows.store(rows, std::memory_order_release);
+    return estimate;
+}
+
+size_t PartitionedHashJoin::predictedResidentBytes() const
+{
+    if (delegate_mode)
+        return leaf_join->getTotalByteCount();
+
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t bytes = accumulated_bytes.load(std::memory_order_relaxed);
+    return bytes + predictedTableAndArenaBytes(rows, liveDistinctEstimate());
 }
 
 StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
@@ -673,7 +681,8 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
     if (!isSupported(*table_join_))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: attempt to clone with a join shape the algorithm does not support");
-    return std::make_shared<PartitionedHashJoin>(table_join_, right_sample_block_, num_threads, any_take_last_row, stats_collecting_params);
+    return std::make_shared<PartitionedHashJoin>(
+        table_join_, right_sample_block_, num_threads, any_take_last_row, stats_collecting_params, max_bytes_before_external_join);
 }
 
 std::shared_ptr<IJoin>
@@ -685,6 +694,89 @@ PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_jo
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     leaf_join->setEnableLazyColumnsIndexing(value);
+}
+
+size_t PartitionedHashJoin::getNumFillLanes() const
+{
+    return lanes.size();
+}
+
+void PartitionedHashJoin::dropFillAuxiliary()
+{
+    auto drop_one = [this](FillBlock & fill)
+    {
+        const size_t route_bytes = fill.routes.allocated_bytes();
+        fill.keys_holder.clear();
+        fill.key_columns.clear();
+        fill.null_map_holder.reset();
+        fill.null_map = nullptr;
+        fill.join_mask = JoinCommon::JoinMask();
+        fill.skip_bytes = {};
+        fill.routes = {};
+        if (route_bytes)
+            accumulated_bytes.fetch_sub(route_bytes, std::memory_order_relaxed);
+    };
+
+    for (auto & lane : lanes)
+        for (auto & fill : lane.blocks)
+            drop_one(fill);
+    for (auto & fill : build_blocks)
+        drop_one(fill);
+}
+
+Block PartitionedHashJoin::releaseNextFillLaneBlock(size_t lane)
+{
+    chassert(lane < lanes.size());
+    auto & blocks = lanes[lane].blocks;
+    if (blocks.empty())
+        return {};
+
+    FillBlock fill = std::move(blocks.back());
+    blocks.pop_back();
+    if (blocks.empty())
+        blocks.shrink_to_fit();
+
+    const size_t freed = fill.stored.allocatedBytes() + fill.routes.allocated_bytes();
+    accumulated_bytes.fetch_sub(freed, std::memory_order_relaxed);
+    return std::move(fill.stored);
+}
+
+void PartitionedHashJoin::beginStoredBlockDrain()
+{
+    stored_blocks_released = true;
+    build_blocks.clear();
+    build_blocks.shrink_to_fit();
+    post_build_ctx.reset();
+    post_build_pool.reset();
+    build_arenas.clear();
+}
+
+Block PartitionedHashJoin::releaseNextStoredBlock()
+{
+    if (!leaf_join->data || leaf_join->data->columns.empty())
+    {
+        if (leaf_join->data)
+            leaf_join->data.reset();
+        return {};
+    }
+
+    auto & data = *leaf_join->data;
+    StoredBlock stored = std::move(data.columns.front());
+    data.columns.pop_front();
+    const size_t stored_bytes = stored.allocatedBytes();
+    if (data.allocated_size >= stored_bytes)
+        data.allocated_size -= stored_bytes;
+    else
+        data.allocated_size = 0;
+
+    Block block = data.sample_block.cloneWithColumns(stored.columns);
+    ScatteredBlock scattered(std::move(block), std::move(stored.selector));
+    scattered.filterBySelector();
+    Block out = std::move(scattered.getSourceBlock());
+
+    if (data.columns.empty())
+        leaf_join->data.reset();
+    return out;
 }
 
 }

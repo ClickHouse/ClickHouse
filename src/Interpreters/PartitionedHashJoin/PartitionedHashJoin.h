@@ -11,6 +11,7 @@
 #include <Common/Arena.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 
 #include <atomic>
@@ -76,7 +77,8 @@ public:
         SharedHeader right_sample_block_,
         size_t num_threads_,
         bool any_take_last_row_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const StatsCollectingParams & stats_collecting_params_ = {},
+        size_t max_bytes_before_external_join_ = 0);
 
     ~PartitionedHashJoin() override;
 
@@ -100,6 +102,13 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    /// The peak this build is heading for if every accumulated row ends up in leaf tables: the row
+    /// store and route words that are already allocated, plus the tables and arena that are not yet.
+    /// `SpillingHashJoin` compares this against the external-join threshold. Not `getTotalByteCount`,
+    /// which is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
+    size_t predictedResidentBytes() const;
+
     StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
@@ -163,6 +172,9 @@ public:
         bool distinct_estimate_reused = false;
         /// Empty when the join shape tracks no right-side used flags.
         std::vector<UInt64> flag_base;
+        /// Contiguous build-block ranges the post-build scatter was split into. 1 means the whole
+        /// build was scattered at once.
+        size_t scatter_groups = 1;
     };
 
     BuildStats getBuildStats() const;
@@ -176,6 +188,28 @@ public:
     /// Lowers the per-pass fanout ceiling, so the refine passes can be tested without a 500M-key
     /// build.
     void setMaxFanoutPerPassForTests(size_t value) { max_fanout_per_pass = value; }
+
+    /// The post-build memory verdict, taken once at the barrier from numbers that already exist.
+    enum class PostBuildPlan
+    {
+        Fits, /// ungrouped scatter
+        Grouped, /// in-memory scatter over block ranges
+        MustSpill, /// even the resident data does not fit; the caller must switch to grace
+    };
+    PostBuildPlan planPostBuild();
+
+    size_t getNumFillLanes() const;
+    /// Drops per-block fill transients that GraceHashJoin re-derives from the stored block. Call
+    /// once the switch is decided, before the drain, so they are not still allocated while grace
+    /// is also allocating.
+    void dropFillAuxiliary();
+    /// Pops one stored block from `lane`. An empty Block means the lane is exhausted.
+    Block releaseNextFillLaneBlock(size_t lane);
+    /// Clears barrier transients so `releaseNextStoredBlock` can drain the row store one block at a
+    /// time. After this the instance is only a source of stored blocks.
+    void beginStoredBlockDrain();
+    /// Pops one row-store block. An empty Block means the row store is gone.
+    Block releaseNextStoredBlock();
 
 private:
     friend class NotJoinedPartitioned;
@@ -219,6 +253,12 @@ private:
 
     /// Shared across the post-build stages: histogram, allocate, scatter, leaf builds.
     struct PostBuildContext;
+    /// Out-of-line so `unique_ptr<PostBuildContext>` can be destroyed from TUs that only see the
+    /// forward declaration (the constructor of this class lives in `PartitionedHashJoin.cpp`).
+    struct PostBuildContextDeleter
+    {
+        void operator()(PostBuildContext * ctx) const;
+    };
 
     FillLane & getFillLane();
     FillLane & getFillLane(size_t build_lane);
@@ -229,6 +269,22 @@ private:
     /// Both return whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuildPartitioned();
     bool postBuildSingleLeaf();
+    void preparePostBuildContext();
+    void runGroupStages(size_t block_begin, size_t block_end);
+    size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
+
+    /// Bytes the leaf tables and the duplicate-list arena will need for `rows` build rows holding
+    /// `distinct` distinct keys. The post-build gate evaluates this with exact counts; the fill
+    /// evaluates it with the running sketch estimate.
+    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct) const;
+    size_t predictedArenaBytes(size_t insertable_rows) const;
+
+    size_t liveDistinctEstimate() const;
+
+    void measureGenericKeyBytes();
+    void sizeLeafHashTables();
+    void reduceWorkerHistogram();
+    void resetWorkerHistogram(PostBuildContext & ctx);
     void histogramWorker(PostBuildContext & ctx, size_t worker) const;
     void allocateWorker(PostBuildContext & ctx, size_t worker) const;
     void scatterWorker(PostBuildContext & ctx, size_t worker);
@@ -238,7 +294,6 @@ private:
     /// is `route >> (16 - bits)` - the same leaf a single-pass plan would give it, and the one the
     /// probe derives.
     void refinePassWave(PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us);
-    void planHashTables(PostBuildContext & ctx);
     void leafBuildWorker(PostBuildContext & ctx, size_t worker);
     void finishBuildPhase(bool all_values_unique);
 
@@ -300,6 +355,8 @@ private:
     SharedHeader right_sample_block;
     const bool any_take_last_row;
     const size_t num_threads;
+    /// Zero disables the gate; post-build is the ungrouped scatter.
+    const size_t max_bytes_before_external_join;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
     /// shared row store, the used flags, the output samples. Its own map stays empty and the leaf
@@ -320,12 +377,21 @@ private:
     /// pipeline-carried lane index without a lock: one mutexed emplace on a lane's first block, then
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
     /// Lane-less callers keep the thread-id map.
-    std::mutex fill_mutex;
+    /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
+    /// cached distinct estimate under this lock. Shared with the per-lane sketch `add`, exclusive
+    /// for the merge: a torn register would persist into the barrier's estimate.
+    mutable SharedMutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
+
+    /// Fill-phase distinct estimate for `predictedResidentBytes`. Merging every lane on every block
+    /// would cost `lanes * 8 KiB`, so the value is reused until the row count has grown by a
+    /// sixteenth. A slightly stale value only delays the switch by one refresh interval.
+    mutable std::atomic<size_t> cached_distinct_estimate{0};
+    mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     size_t bits = 0;
     size_t partitions = 1;
@@ -361,6 +427,19 @@ private:
     size_t ht_total_bytes = 0; /// total predicted hash-table bytes (drives the prefetch heuristics)
 
     std::unique_ptr<ThreadPool> post_build_pool;
+    std::unique_ptr<PostBuildContext, PostBuildContextDeleter> post_build_ctx;
+    /// Exact per-leaf insertable row counts from the full-build histogram, used to size reserves.
+    std::vector<UInt64> total_bucket_rows;
+    /// Prepared key-column bytes across the whole build, measured once at the gate. Zero unless
+    /// the keys are variable-length, which is when they are copied into the arena.
+    size_t generic_key_bytes = 0;
+    PostBuildPlan post_build_plan = PostBuildPlan::Fits;
+    /// After `beginStoredBlockDrain` the row store is being drained and this instance must not be
+    /// used except for `releaseNextStoredBlock`.
+    bool stored_blocks_released = false;
+    /// Set by `preparePostBuildContext` when the histogram already covers the whole build at the
+    /// pass-1 width, so the ungrouped path does not scan the routes twice.
+    bool histogram_covers_full_build = false;
 
     bool build_phase_finished = false;
 

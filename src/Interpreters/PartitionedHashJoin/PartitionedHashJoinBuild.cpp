@@ -12,11 +12,14 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
 #include <algorithm>
+#include <cmath>
+#include <deque>
 
 namespace ProfileEvents
 {
@@ -28,6 +31,8 @@ extern const Event PartitionedHashJoinLeafRows;
 extern const Event PartitionedHashJoinHashTableBytes;
 extern const Event PartitionedHashJoinHashTableGrowths;
 extern const Event PartitionedHashJoinAmacRingGrowths;
+extern const Event PartitionedHashJoinScatterGroups;
+extern const Event PartitionedHashJoinTeardownMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -422,9 +427,24 @@ struct PartitionedHashJoin::PostBuildContext
     std::vector<UInt32> leaf_order; /// largest first
     std::atomic<UInt32> leaf_claim{0};
 
-    std::pair<size_t, size_t> blockStripe(size_t worker, size_t num_blocks) const
+    /// Set for the range currently being scattered. `blockStripe` divides this span among workers.
+    size_t block_begin = 0;
+    size_t block_end = 0;
+
+    /// Empty clones of the prepared key columns, taken before any range is scattered. The chunk
+    /// allocation only needs each column's type and width, and a consumed range has already
+    /// dropped its own key columns.
+    Columns key_samples;
+
+    /// Created on the first range that claims the leaf, with the full-build reserve.
+    std::vector<UInt8> leaf_map_created;
+    std::vector<size_t> leaf_created_bytes;
+    std::vector<UInt8> leaf_growth_counted;
+
+    std::pair<size_t, size_t> blockStripe(size_t worker) const
     {
-        return {worker * num_blocks / workers, (worker + 1) * num_blocks / workers};
+        const size_t n = block_end - block_begin;
+        return {block_begin + worker * n / workers, block_begin + (worker + 1) * n / workers};
     }
 };
 
@@ -447,6 +467,55 @@ void deriveBucketIds(const PaddedPODArray<UInt16> & routes, const UInt8 * skip_b
         for (size_t i = 0; i < rows; ++i)
             bucket_ids[i] = static_cast<UInt16>(routes[i] >> shift);
     }
+}
+
+/// Matches `RowRefList::Batch`: unique keys stay inline in the cell word, 2..7 rows occupy
+/// one 64-byte node, and further rows chain overflow nodes of 6 slots.
+size_t arenaBytesPerKey(double m)
+{
+    if (m <= 1.0)
+        return 0;
+    if (m <= 7.0)
+        return 64;
+    return 64 * (1 + static_cast<size_t>(std::ceil((m - 6.0) / 6.0)));
+}
+
+template <typename Stage>
+void runPostBuildWave(ThreadPool & pool, size_t workers, Stage && stage, std::atomic<UInt64> & stage_thread_us)
+{
+    try
+    {
+        for (size_t w = 0; w < workers; ++w)
+            pool.scheduleOrThrow(
+                [&stage, &stage_thread_us, w, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+                    Stopwatch stage_watch;
+                    stage(w);
+                    stage_thread_us.fetch_add(stage_watch.elapsedMicroseconds(), std::memory_order_relaxed);
+                });
+        pool.wait();
+    }
+    catch (...)
+    {
+        pool.wait();
+        throw;
+    }
+}
+
+void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
+{
+    /// Below 1 MiB the default 4 KiB doubling is cheaper than a first chunk a small worker would
+    /// not fill. Above that, the first allocation should cover the prediction so Arena does not
+    /// leave a last exponential chunk about as large as the list nodes themselves.
+    constexpr size_t min_sized = 1uz << 20;
+    if (predicted_bytes < min_sized)
+    {
+        arenas.emplace_back();
+        return;
+    }
+    arenas.emplace_back(predicted_bytes, /*growth_factor_=*/2, predicted_bytes);
 }
 
 }
@@ -573,6 +642,8 @@ void PartitionedHashJoin::runPostBuildPhase()
     }
     else
     {
+        if (!post_build_ctx)
+            preparePostBuildContext();
         all_values_unique = postBuildPartitioned();
     }
 
@@ -691,7 +762,8 @@ bool PartitionedHashJoin::postBuildSingleLeaf()
     decideAmacEngagement();
 
     leaf_maps.assign(1, PartitionedJoinMaps(maps_variant_index));
-    build_arenas.emplace_back();
+    measureGenericKeyBytes();
+    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(insertable_rows));
 
     leaf_maps[0].create(type, reserve);
     const size_t created_bytes = leaf_maps[0].getBufferSizeInBytes(type);
@@ -727,15 +799,213 @@ bool PartitionedHashJoin::postBuildSingleLeaf()
     return all_values_unique;
 }
 
-bool PartitionedHashJoin::postBuildPartitioned()
+size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct) const
 {
-    PostBuildContext ctx;
+    const size_t distinct_keys = std::max(distinct, 1uz);
+    /// Same clamp the post-build single-leaf reserve uses: the sketch can exceed the row count, and
+    /// a table cannot hold more keys than rows. Evaluating the buffers as one table is the right
+    /// estimate for the total - splitting the same key count across leaves leaves the summed
+    /// power-of-two buffers essentially unchanged.
+    const auto reserve = std::clamp<size_t>(
+        static_cast<size_t>(std::ceil(static_cast<double>(distinct_keys) * reserve_safety)),
+        1,
+        std::max(rows, 1uz));
+    size_t bytes = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
+
+    /// `maps_variant_index == 1` is `MapsAll` (`RowRefList`). Unique keys stay inline in the cell
+    /// word; only this shape keeps duplicate-list nodes in the arena. `preferUseMapsAll` is still
+    /// false at the gate - the ALL-to-RightAny promotion has not run - so the variant index is what
+    /// actually keeps the lists. LEFT/INNER Any/Semi/Anti use `MapsOne` and hold no list.
+    ///
+    /// Multiplicity inside `reserve_safety` is treated as unique for the arena term. A fill-phase
+    /// distinct estimate that lags the row count by a sixteenth, or a HyperLogLog that undershoots
+    /// by a percent, would otherwise look like `m > 1` and charge a 64-byte node per key - several
+    /// GiB of list arena that do not exist, which is enough to spill a unique build that fits.
+    /// Real duplicate builds (m=5, m=8) sit far above the band. The factor already covers sketch
+    /// error for the table reserve; reusing it here keeps the unique/duplicate decision on the
+    /// same inputs.
+    if (maps_variant_index == 1)
+    {
+        const double multiplicity = static_cast<double>(rows) / static_cast<double>(distinct_keys);
+        if (multiplicity > reserve_safety)
+        {
+            bytes += static_cast<size_t>(
+                std::ceil(static_cast<double>(distinct_keys) * static_cast<double>(arenaBytesPerKey(multiplicity))));
+        }
+    }
+    return bytes;
+}
+
+size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows) const
+{
+    /// List-arena bytes come from the shared helper so the fill-phase prediction and the gate cannot
+    /// drift. Variable-length keys are copied into the arena as `StringRef`s; that total is measured
+    /// once before the first range is scattered, because a consumed range has dropped its key columns.
+    const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
+    const size_t tables_and_list = predictedTableAndArenaBytes(insertable_rows, distinct);
+    const auto reserve = std::clamp<size_t>(
+        static_cast<size_t>(std::ceil(static_cast<double>(distinct) * reserve_safety)),
+        1,
+        std::max(insertable_rows, 1uz));
+    const size_t tables = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
+    chassert(tables_and_list >= tables);
+    return tables_and_list - tables + generic_key_bytes;
+}
+
+/// Total bytes of the prepared key columns across the whole build. Measured while every block still
+/// holds its keys, so the gate and the group-boundary re-checks agree on the arena term.
+void PartitionedHashJoin::measureGenericKeyBytes()
+{
+    generic_key_bytes = 0;
+    if (build_blocks.empty())
+        return;
+    for (const auto * column : build_blocks.front().key_columns)
+        if (!column->isFixedAndContiguous())
+        {
+            for (const auto & fill : build_blocks)
+                for (const auto * key_column : fill.key_columns)
+                    generic_key_bytes += key_column->byteSize();
+            return;
+        }
+}
+
+size_t PartitionedHashJoin::chunkBytesForBlockRange(size_t b0, size_t b1) const
+{
+    chassert(post_build_ctx);
+    const auto & ctx = *post_build_ctx;
+    const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
+    size_t bytes = 0;
+    for (size_t b = b0; b < b1; ++b)
+    {
+        const FillBlock & fill = build_blocks[b];
+        if (ctx.generic_mode)
+        {
+            size_t key_bytes = 0;
+            for (const auto * column : fill.key_columns)
+                key_bytes += column->byteSize();
+            bytes += key_bytes + fill.rows * (sizeof(UInt64) * ctx.num_key_columns + locator_width);
+        }
+        else
+        {
+            size_t key_width = 0;
+            for (size_t w : ctx.fixed_widths)
+                key_width += w;
+            bytes += fill.rows * (key_width + locator_width);
+        }
+        if (pass_bits.size() > 1)
+            bytes += fill.rows * sizeof(UInt16);
+    }
+    return bytes;
+}
+
+void PartitionedHashJoin::reduceWorkerHistogram()
+{
+    auto & ctx = *post_build_ctx;
+    ctx.bucket_rows.assign(ctx.fanout, 0);
+    for (size_t w = 0; w < ctx.workers; ++w)
+        for (size_t p = 0; p < ctx.fanout; ++p)
+            ctx.bucket_rows[p] += ctx.worker_hist[w * ctx.fanout + p];
+}
+
+void PartitionedHashJoin::resetWorkerHistogram(PostBuildContext & ctx)
+{
+    /// `resize_fill` only fills what it grows, so a reused same-sized array would histogram
+    /// on top of the previous range's counts.
+    ctx.worker_hist.clear();
+    ctx.worker_hist.resize_fill(ctx.workers * ctx.fanout, 0);
+}
+
+void PartitionedHashJoin::sizeLeafHashTables()
+{
+    auto & ctx = *post_build_ctx;
+    stats.leaf_row_counts = total_bucket_rows;
+
+    const HashJoin::Type type = leaf_join->data->type;
+
+    /// A previous run's per-partition breakdown is folded or split to this build's partition count -
+    /// the two leaf ranges always nest, both being MSB-first partitions of the same route space, so a
+    /// coarser cache sums and a finer one splits uniformly. Without one, the single estimate is
+    /// rescaled uniformly. Either way the clamp just below bounds each leaf by its exact row count,
+    /// so a stale estimate can only mis-size a reserve.
+    std::vector<UInt64> per_leaf_distinct;
+    if (cached_stats && !cached_stats->per_partition.empty())
+    {
+        const size_t cached_bits = cached_stats->bits;
+        chassert(cached_stats->per_partition.size() == (1uz << cached_bits));
+        per_leaf_distinct.assign(partitions, 0);
+        if (cached_bits == bits)
+        {
+            for (size_t leaf = 0; leaf < partitions; ++leaf)
+                per_leaf_distinct[leaf] = cached_stats->per_partition[leaf];
+        }
+        else if (cached_bits > bits)
+        {
+            const size_t group = 1uz << (cached_bits - bits);
+            for (size_t i = 0; i < cached_stats->per_partition.size(); ++i)
+                per_leaf_distinct[i / group] += cached_stats->per_partition[i];
+        }
+        else
+        {
+            const size_t group = 1uz << (bits - cached_bits);
+            for (size_t j = 0; j < cached_stats->per_partition.size(); ++j)
+            {
+                const UInt64 split = cached_stats->per_partition[j] / group;
+                for (size_t k = 0; k < group; ++k)
+                    per_leaf_distinct[j * group + k] = split;
+            }
+        }
+    }
+
+    const auto per_leaf_estimate
+        = std::max<UInt64>(1, static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety / static_cast<double>(partitions))));
+
+    ctx.leaf_reserve.resize(partitions);
+    ctx.leaf_bytes.resize(partitions);
+    UInt64 running = 0;
+    for (size_t leaf = 0; leaf < partitions; ++leaf)
+    {
+        const UInt64 leaf_hint = per_leaf_distinct.empty()
+            ? per_leaf_estimate
+            : std::max<UInt64>(1, static_cast<UInt64>(std::ceil(static_cast<double>(per_leaf_distinct[leaf]) * reserve_safety)));
+        /// An estimate may shrink a leaf below its row count but never inflate it past the exact
+        /// full-build histogram, not a per-range count.
+        ctx.leaf_reserve[leaf] = std::clamp<UInt64>(leaf_hint, 1, std::max<UInt64>(total_bucket_rows[leaf], 1));
+        ctx.leaf_bytes[leaf] = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, type, ctx.leaf_reserve[leaf]);
+        running += ctx.leaf_bytes[leaf];
+    }
+
+    /// Nothing is allocated here; the worker that claims a leaf allocates its buffer.
+    ht_total_bytes = running;
+    decideAmacEngagement();
+
+    leaf_maps.assign(partitions, PartitionedJoinMaps(maps_variant_index));
+    ctx.leaf_map_created.assign(partitions, 0);
+    ctx.leaf_created_bytes.assign(partitions, 0);
+    ctx.leaf_growth_counted.assign(partitions, 0);
+    ctx.leaf_order.resize(partitions);
+    for (size_t leaf = 0; leaf < partitions; ++leaf)
+        ctx.leaf_order[leaf] = static_cast<UInt32>(leaf);
+    std::sort(
+        ctx.leaf_order.begin(), ctx.leaf_order.end(), [&](UInt32 a, UInt32 b) { return total_bucket_rows[a] > total_bucket_rows[b]; });
+}
+
+void PartitionedHashJoin::preparePostBuildContext()
+{
+    if (post_build_ctx)
+        return;
+
+    post_build_ctx.reset(new PostBuildContext);
+    auto & ctx = *post_build_ctx;
     ctx.workers = std::max<size_t>(1, std::min(num_threads, build_blocks.size()));
     chassert(!pass_bits.empty());
     ctx.multi_pass = pass_bits.size() > 1;
     ctx.route_bits = pass_bits.front();
     ctx.fanout = (1uz << ctx.route_bits) + 1;
     ctx.num_key_columns = build_blocks.front().key_columns.size();
+
+    ctx.key_samples.reserve(ctx.num_key_columns);
+    for (const auto * column : build_blocks.front().key_columns)
+        ctx.key_samples.push_back(column->cloneEmpty());
 
     ctx.generic_mode = false;
     ctx.fixed_widths.resize(ctx.num_key_columns);
@@ -748,8 +1018,6 @@ bool PartitionedHashJoin::postBuildPartitioned()
             ctx.generic_mode = true;
     }
 
-    ctx.worker_hist.resize_fill(ctx.workers * ctx.fanout, 0);
-    ctx.bucket_rows.assign(ctx.fanout, 0);
     ctx.starts.resize(ctx.fanout * ctx.workers);
     if (narrow_locators)
         ctx.locators32.resize(ctx.fanout);
@@ -771,8 +1039,6 @@ bool PartitionedHashJoin::postBuildPartitioned()
         ctx.fixed_base.assign(ctx.num_key_columns, std::vector<char *>(ctx.fanout, nullptr));
     }
     ctx.worker_state.resize(ctx.workers);
-    for (size_t w = 0; w < ctx.workers; ++w)
-        build_arenas.emplace_back();
 
     post_build_pool = std::make_unique<ThreadPool>(
         CurrentMetrics::PartitionedHashJoinPoolThreads,
@@ -782,31 +1048,172 @@ bool PartitionedHashJoin::postBuildPartitioned()
         /*max_free_threads_*/ 0,
         /*queue_size_*/ ctx.workers);
 
-    /// One wave of jobs per stage, with `post_build_pool->wait()` as the barrier. The build event
-    /// accumulates per-worker thread time inside the jobs, so its unit matches the summed thread time
-    /// `parallel_hash`'s build event reports.
-    auto run_wave = [&](auto && stage, std::atomic<UInt64> & stage_thread_us)
+    std::atomic<UInt64> hist_thread_us{0};
+    if (ctx.multi_pass)
     {
-        try
-        {
-            for (size_t w = 0; w < ctx.workers; ++w)
-                post_build_pool->scheduleOrThrow(
-                    [&stage, &stage_thread_us, w, thread_group = CurrentThread::getGroup()]
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
-                        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
-                        Stopwatch stage_watch;
-                        stage(w);
-                        stage_thread_us.fetch_add(stage_watch.elapsedMicroseconds(), std::memory_order_relaxed);
-                    });
-            post_build_pool->wait();
-        }
-        catch (...)
-        {
-            post_build_pool->wait();
-            throw;
-        }
-    };
+        /// Exact per-leaf counts need the full `bits` width, which is not the pass-1 histogram the
+        /// scatter uses.
+        const size_t saved_route_bits = ctx.route_bits;
+        const size_t saved_fanout = ctx.fanout;
+        ctx.route_bits = bits;
+        ctx.fanout = partitions + 1;
+        ctx.block_begin = 0;
+        ctx.block_end = build_blocks.size();
+        resetWorkerHistogram(ctx);
+        runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { histogramWorker(ctx, w); }, hist_thread_us);
+        reduceWorkerHistogram();
+        total_bucket_rows.assign(ctx.bucket_rows.begin(), ctx.bucket_rows.begin() + partitions);
+        ctx.route_bits = saved_route_bits;
+        ctx.fanout = saved_fanout;
+        resetWorkerHistogram(ctx);
+        ctx.bucket_rows.assign(ctx.fanout, 0);
+        histogram_covers_full_build = false;
+    }
+    else
+    {
+        ctx.block_begin = 0;
+        ctx.block_end = build_blocks.size();
+        resetWorkerHistogram(ctx);
+        runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { histogramWorker(ctx, w); }, hist_thread_us);
+        reduceWorkerHistogram();
+        total_bucket_rows.assign(ctx.bucket_rows.begin(), ctx.bucket_rows.begin() + partitions);
+        histogram_covers_full_build = true;
+    }
+    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds, hist_thread_us.load(std::memory_order_relaxed));
+
+    sizeLeafHashTables();
+
+    measureGenericKeyBytes();
+    UInt64 insertable = 0;
+    for (UInt64 rows : total_bucket_rows)
+        insertable += rows;
+    const size_t arena_pred = predictedArenaBytes(insertable);
+    const size_t per_worker = arena_pred / std::max(ctx.workers, 1uz);
+    chassert(build_arenas.empty());
+    for (size_t w = 0; w < ctx.workers; ++w)
+        emplaceSizedBuildArena(build_arenas, per_worker);
+}
+
+PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
+{
+    if (max_bytes_before_external_join == 0 || delegate_mode)
+    {
+        post_build_plan = PostBuildPlan::Fits;
+        return post_build_plan;
+    }
+
+    const size_t row_store = leaf_join->data->allocated_size + leaf_join->data->nullmaps_allocated_size;
+    size_t routes = 0;
+    for (const auto & fill : build_blocks)
+        routes += fill.routes.allocated_bytes();
+    measureGenericKeyBytes();
+
+    if (bits == 0)
+    {
+        const size_t insertable = accumulated_rows.load(std::memory_order_relaxed);
+        const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
+        /// The single-leaf path inserts straight from the stored blocks, so there is no transient to
+        /// bound and grouping has nothing to do. Tables and the duplicate-list arena go through the
+        /// shared helper so this verdict cannot drift from the fill-phase prediction.
+        const size_t resident
+            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct) + generic_key_bytes;
+        post_build_plan = resident <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
+        return post_build_plan;
+    }
+
+    preparePostBuildContext();
+
+    UInt64 insertable = 0;
+    for (UInt64 rows : total_bucket_rows)
+        insertable += rows;
+
+    /// What must be resident whatever the scatter schedule is.
+    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable);
+    const size_t tables = ht_total_bytes;
+    const size_t chunk_all = build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, build_blocks.size());
+
+    /// The ungrouped scatter does not hold the whole chunk alongside the whole table space:
+    /// `leafBuildWorker` creates a leaf's buffer and frees that leaf's chunk in the same claim,
+    /// so the two trade off leaf by leaf and the peak sits at one end of the wave.
+    const size_t leaves = std::max<size_t>(partitions, 1);
+    const size_t peak_ungrouped = floor_bytes + std::max(chunk_all + tables / leaves, tables + chunk_all / leaves);
+
+    /// Grouping holds the full table space from the first range that touches a leaf - which every
+    /// leaf does, on any realistic build - and one range's chunk at a time. So it lowers the peak
+    /// only while the chunk dominates the tables; where the tables dominate, grouping would ADD
+    /// `chunk / g` on top of them and be strictly worse than the ungrouped scatter. The floor as the ranges
+    /// get finer is one block's chunk.
+    const size_t grouped_floor = floor_bytes + tables + (build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, 1));
+
+    if (peak_ungrouped <= max_bytes_before_external_join)
+        post_build_plan = PostBuildPlan::Fits;
+    else if (grouped_floor <= max_bytes_before_external_join && grouped_floor < peak_ungrouped)
+        post_build_plan = PostBuildPlan::Grouped;
+    else
+        post_build_plan = PostBuildPlan::MustSpill;
+
+    LOG_TRACE(
+        log,
+        "Post-build gate: budget {}, row store + routes + arena {}, leaf tables {}, full chunk {}; predicted peak without grouping "
+        "{}, floor with grouping {} -> {}",
+        ReadableSize(max_bytes_before_external_join),
+        ReadableSize(floor_bytes),
+        ReadableSize(tables),
+        ReadableSize(chunk_all),
+        ReadableSize(peak_ungrouped),
+        ReadableSize(grouped_floor),
+        post_build_plan == PostBuildPlan::Fits ? "ungrouped scatter"
+            : post_build_plan == PostBuildPlan::Grouped ? "grouped scatter"
+                                                        : "switch to grace");
+    return post_build_plan;
+}
+
+void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
+{
+    auto & ctx = *post_build_ctx;
+    ctx.block_begin = block_begin;
+    ctx.block_end = block_end;
+    ctx.refined = false;
+    ctx.current_buckets = 0;
+    ctx.refined_pieces.clear();
+    ctx.leaf_claim.store(0, std::memory_order_relaxed);
+
+    /// A refine pass resizes the scatter containers to the final leaf count. The next range's
+    /// histogram / allocate / scatter stages expect the pass-1 layout again (`fanout` buckets,
+    /// including the drop bucket).
+    if (narrow_locators)
+    {
+        ctx.locators32.clear();
+        ctx.locators32.resize(ctx.fanout);
+    }
+    else
+    {
+        ctx.locators.clear();
+        ctx.locators.resize(ctx.fanout);
+    }
+    if (ctx.multi_pass)
+    {
+        ctx.routes.clear();
+        ctx.routes.resize(ctx.fanout);
+    }
+    if (ctx.generic_mode)
+    {
+        ctx.pieces.clear();
+        ctx.pieces.resize(ctx.num_key_columns);
+        for (auto & column_pieces : ctx.pieces)
+            column_pieces.resize(ctx.workers);
+    }
+    else
+    {
+        ctx.fixed_out.clear();
+        ctx.fixed_out.resize(ctx.num_key_columns);
+        for (auto & column_out : ctx.fixed_out)
+            column_out.resize(ctx.fanout);
+        ctx.fixed_base.assign(ctx.num_key_columns, std::vector<char *>(ctx.fanout, nullptr));
+    }
+
+    const bool reuse_histogram = histogram_covers_full_build && block_begin == 0 && block_end == build_blocks.size();
+    histogram_covers_full_build = false;
 
     std::atomic<UInt64> hist_thread_us{0};
     std::atomic<UInt64> alloc_thread_us{0};
@@ -814,15 +1221,20 @@ bool PartitionedHashJoin::postBuildPartitioned()
     std::atomic<UInt64> insert_thread_us{0};
 
     Stopwatch stage_watch;
-    run_wave([&](size_t w) { histogramWorker(ctx, w); }, hist_thread_us);
+    if (!reuse_histogram)
+    {
+        resetWorkerHistogram(ctx);
+        ctx.bucket_rows.assign(ctx.fanout, 0);
+        runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { histogramWorker(ctx, w); }, hist_thread_us);
+    }
     const UInt64 hist_wall_us = stage_watch.elapsedMicroseconds();
 
     stage_watch.restart();
-    run_wave([&](size_t w) { allocateWorker(ctx, w); }, alloc_thread_us);
+    runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { allocateWorker(ctx, w); }, alloc_thread_us);
     const UInt64 alloc_wall_us = stage_watch.elapsedMicroseconds();
 
     stage_watch.restart();
-    run_wave([&](size_t w) { scatterWorker(ctx, w); }, scatter_thread_us);
+    runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { scatterWorker(ctx, w); }, scatter_thread_us);
     const UInt64 scatter_wall_us = stage_watch.elapsedMicroseconds();
 
     std::atomic<UInt64> refine_thread_us{0};
@@ -854,21 +1266,34 @@ bool PartitionedHashJoin::postBuildPartitioned()
 
     stage_watch.restart();
     {
-        /// Caller-thread work, counted like any other build thread time.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
-        planHashTables(ctx);
+        /// Null-key rows are never inserted. A refined build has no drop bucket left - it was freed
+        /// before the refine passes. Reserves were sized once in `sizeLeafHashTables` from the
+        /// full-build histogram.
+        if (!ctx.refined)
+        {
+            if (narrow_locators)
+                ctx.locators32[partitions] = {};
+            else
+                ctx.locators[partitions] = {};
+            if (!ctx.generic_mode)
+                for (size_t c = 0; c < ctx.num_key_columns; ++c)
+                    ctx.fixed_out[c][partitions].reset();
+        }
     }
     const UInt64 plan_wall_us = stage_watch.elapsedMicroseconds();
 
     stage_watch.restart();
-    run_wave([&](size_t w) { leafBuildWorker(ctx, w); }, insert_thread_us);
+    runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { leafBuildWorker(ctx, w); }, insert_thread_us);
     const UInt64 insert_wall_us = stage_watch.elapsedMicroseconds();
 
     const auto to_ms = [](UInt64 us) { return static_cast<double>(us) / 1000.0; };
     LOG_TRACE(
         log,
-        "Post-build stages, wall/thread ms: histogram {:.1f}/{:.1f}, chunk allocation {:.1f}/{:.1f}, scatter {:.1f}/{:.1f}, "
-        "refine passes {:.1f}/{:.1f}, hash-table plan {:.1f}, leaf inserts {:.1f}/{:.1f} (AMAC {})",
+        "Post-build stages for blocks [{}, {}), wall/thread ms: histogram {:.1f}/{:.1f}, chunk allocation {:.1f}/{:.1f}, scatter "
+        "{:.1f}/{:.1f}, refine passes {:.1f}/{:.1f}, hash-table plan {:.1f}, leaf inserts {:.1f}/{:.1f} (AMAC {})",
+        block_begin,
+        block_end,
         to_ms(hist_wall_us),
         to_ms(hist_thread_us.load(std::memory_order_relaxed)),
         to_ms(alloc_wall_us),
@@ -882,8 +1307,6 @@ bool PartitionedHashJoin::postBuildPartitioned()
         to_ms(insert_thread_us.load(std::memory_order_relaxed)),
         amac_build_engaged ? "engaged" : "off");
 
-    /// Split the thread time collected above into the three sub-phase events. Each is a subset of the
-    /// overall build event the waves already charged per worker.
     ProfileEvents::increment(
         ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds,
         hist_thread_us.load(std::memory_order_relaxed) + alloc_thread_us.load(std::memory_order_relaxed));
@@ -892,6 +1315,79 @@ bool PartitionedHashJoin::postBuildPartitioned()
         scatter_thread_us.load(std::memory_order_relaxed) + refine_thread_us.load(std::memory_order_relaxed));
     ProfileEvents::increment(
         ProfileEvents::PartitionedHashJoinBuildLeafMicroseconds, plan_wall_us + insert_thread_us.load(std::memory_order_relaxed));
+}
+
+bool PartitionedHashJoin::postBuildPartitioned()
+{
+    if (!post_build_ctx)
+        preparePostBuildContext();
+
+    auto & ctx = *post_build_ctx;
+    size_t groups = 0;
+    size_t b = 0;
+    while (b < build_blocks.size())
+    {
+        size_t end = b + 1;
+        if (max_bytes_before_external_join == 0 || post_build_plan == PostBuildPlan::Fits)
+        {
+            end = build_blocks.size();
+        }
+        else
+        {
+            /// `getTotalByteCount` is actuals (row store, remaining routes, created maps, arenas).
+            /// Uncreated leaf buffers and the still-unallocated duplicate-list arena are charged
+            /// from the gate's predictions so the first range is not sized as if those bytes were
+            /// free. They are allocated during the range, not before it.
+            size_t used = getTotalByteCount();
+            for (size_t leaf = 0; leaf < partitions; ++leaf)
+                if (!ctx.leaf_map_created[leaf])
+                    used += ctx.leaf_bytes[leaf];
+            size_t arena_actual = 0;
+            for (const auto & arena : build_arenas)
+                arena_actual += arena.allocatedBytes();
+            UInt64 insertable = 0;
+            for (UInt64 rows : total_bucket_rows)
+                insertable += rows;
+            const size_t arena_pred = predictedArenaBytes(insertable);
+            if (arena_pred > arena_actual)
+                used += arena_pred - arena_actual;
+
+            const size_t headroom = used < max_bytes_before_external_join ? max_bytes_before_external_join - used : 0;
+            while (end < build_blocks.size() && chunkBytesForBlockRange(b, end + 1) <= headroom)
+                ++end;
+            /// A range is never empty: the loop has to make progress, and a single block's chunk is
+            /// bounded by its row count, so the overshoot is at most that block. The threshold
+            /// triggers spilling; `max_memory_usage` is the cap. This path is only for when the
+            /// actuals drifted past the gate's prediction.
+            const size_t chunk = chunkBytesForBlockRange(b, end);
+            if (chunk > headroom)
+                LOG_DEBUG(
+                    log,
+                    "Grouped scatter: one block's chunk ({}) exceeds the remaining headroom ({}); scattering it anyway, because a "
+                    "range cannot be empty",
+                    ReadableSize(chunk),
+                    ReadableSize(headroom));
+        }
+        runGroupStages(b, end);
+        b = end;
+        ++groups;
+    }
+
+    /// Leaves that no range touched still need a (tiny) map so the probe's per-leaf tables are
+    /// complete. Empty leaves were reserved from the full-build histogram.
+    const HashJoin::Type type = leaf_join->data->type;
+    for (size_t leaf = 0; leaf < partitions; ++leaf)
+    {
+        if (ctx.leaf_map_created[leaf])
+            continue;
+        leaf_maps[leaf].create(type, ctx.leaf_reserve[leaf]);
+        ctx.leaf_created_bytes[leaf] = leaf_maps[leaf].getBufferSizeInBytes(type);
+        ctx.leaf_map_created[leaf] = 1;
+        stats.predictions_exact = stats.predictions_exact && ctx.leaf_created_bytes[leaf] == ctx.leaf_bytes[leaf];
+    }
+
+    stats.scatter_groups = std::max<size_t>(groups, 1);
+    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinScatterGroups, stats.scatter_groups);
 
     post_build_pool.reset();
 
@@ -919,7 +1415,7 @@ void PartitionedHashJoin::histogramWorker(PostBuildContext & ctx, size_t worker)
     }
 
     PaddedPODArray<UInt16> bucket_ids;
-    const auto [begin, end] = ctx.blockStripe(worker, build_blocks.size());
+    const auto [begin, end] = ctx.blockStripe(worker);
     for (size_t b = begin; b < end; ++b)
     {
         const FillBlock & fill = build_blocks[b];
@@ -956,7 +1452,7 @@ void PartitionedHashJoin::allocateWorker(PostBuildContext & ctx, size_t worker) 
         {
             for (size_t c = 0; c < ctx.num_key_columns; ++c)
             {
-                auto [column, raw] = ColumnsScatter::allocateUninitializedFixed(*build_blocks.front().key_columns[c], running);
+                auto [column, raw] = ColumnsScatter::allocateUninitializedFixed(*ctx.key_samples[c], running);
                 ctx.fixed_out[c][p] = std::move(column);
                 ctx.fixed_base[c][p] = raw.data();
             }
@@ -967,7 +1463,7 @@ void PartitionedHashJoin::allocateWorker(PostBuildContext & ctx, size_t worker) 
 void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
 {
     auto & state = ctx.worker_state[worker];
-    const auto [begin, end] = ctx.blockStripe(worker, build_blocks.size());
+    const auto [begin, end] = ctx.blockStripe(worker);
 
     const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
     const bool locator_swwc = ctx.fanout >= ColumnsScatter::SWWC_MIN_FANOUT;
@@ -1030,8 +1526,9 @@ void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
         }
     };
 
-    auto release_block_inputs = [](FillBlock & fill)
+    auto release_block_inputs = [this](FillBlock & fill)
     {
+        const size_t freed_route_bytes = fill.routes.allocated_bytes();
         fill.keys_holder.clear();
         fill.key_columns.clear();
         fill.null_map_holder.reset();
@@ -1039,6 +1536,7 @@ void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
         fill.join_mask = JoinCommon::JoinMask();
         fill.skip_bytes = {};
         fill.routes = {};
+        accumulated_bytes.fetch_sub(freed_route_bytes, std::memory_order_relaxed);
     };
 
     if (!ctx.generic_mode)
@@ -1338,87 +1836,6 @@ void PartitionedHashJoin::refinePassWave(
     ctx.refined = true;
 }
 
-void PartitionedHashJoin::planHashTables(PostBuildContext & ctx)
-{
-    /// Null-key rows are never inserted. A refined build has no drop bucket left - it was freed
-    /// before the refine passes.
-    if (!ctx.refined)
-    {
-        if (narrow_locators)
-            ctx.locators32[partitions] = {};
-        else
-            ctx.locators[partitions] = {};
-        if (!ctx.generic_mode)
-            for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                ctx.fixed_out[c][partitions].reset();
-    }
-
-    stats.leaf_row_counts.assign(ctx.bucket_rows.begin(), ctx.bucket_rows.begin() + partitions);
-
-    const HashJoin::Type type = leaf_join->data->type;
-
-    /// A previous run's per-partition breakdown is folded or split to this build's partition count -
-    /// the two leaf ranges always nest, both being MSB-first partitions of the same route space, so a
-    /// coarser cache sums and a finer one splits uniformly. Without one, the single estimate is
-    /// rescaled uniformly. Either way the clamp just below bounds each leaf by its exact row count,
-    /// so a stale estimate can only mis-size a reserve.
-    std::vector<UInt64> per_leaf_distinct;
-    if (cached_stats && !cached_stats->per_partition.empty())
-    {
-        const size_t cached_bits = cached_stats->bits;
-        chassert(cached_stats->per_partition.size() == (1uz << cached_bits));
-        per_leaf_distinct.assign(partitions, 0);
-        if (cached_bits == bits)
-        {
-            for (size_t leaf = 0; leaf < partitions; ++leaf)
-                per_leaf_distinct[leaf] = cached_stats->per_partition[leaf];
-        }
-        else if (cached_bits > bits)
-        {
-            const size_t group = 1uz << (cached_bits - bits);
-            for (size_t i = 0; i < cached_stats->per_partition.size(); ++i)
-                per_leaf_distinct[i / group] += cached_stats->per_partition[i];
-        }
-        else
-        {
-            const size_t group = 1uz << (bits - cached_bits);
-            for (size_t j = 0; j < cached_stats->per_partition.size(); ++j)
-            {
-                const UInt64 split = cached_stats->per_partition[j] / group;
-                for (size_t k = 0; k < group; ++k)
-                    per_leaf_distinct[j * group + k] = split;
-            }
-        }
-    }
-
-    const auto per_leaf_estimate
-        = std::max<UInt64>(1, static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety / static_cast<double>(partitions))));
-
-    ctx.leaf_reserve.resize(partitions);
-    ctx.leaf_bytes.resize(partitions);
-    UInt64 running = 0;
-    for (size_t leaf = 0; leaf < partitions; ++leaf)
-    {
-        const UInt64 leaf_hint = per_leaf_distinct.empty()
-            ? per_leaf_estimate
-            : std::max<UInt64>(1, static_cast<UInt64>(std::ceil(static_cast<double>(per_leaf_distinct[leaf]) * reserve_safety)));
-        /// An estimate may shrink a leaf below its row count but never inflate it past it.
-        ctx.leaf_reserve[leaf] = std::clamp<UInt64>(leaf_hint, 1, std::max<UInt64>(ctx.bucket_rows[leaf], 1));
-        ctx.leaf_bytes[leaf] = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, type, ctx.leaf_reserve[leaf]);
-        running += ctx.leaf_bytes[leaf];
-    }
-
-    /// Nothing is allocated here; the worker that claims a leaf allocates its buffer.
-    ht_total_bytes = running;
-    decideAmacEngagement();
-
-    leaf_maps.assign(partitions, PartitionedJoinMaps(maps_variant_index));
-    ctx.leaf_order.resize(partitions);
-    for (size_t leaf = 0; leaf < partitions; ++leaf)
-        ctx.leaf_order[leaf] = static_cast<UInt32>(leaf);
-    std::sort(ctx.leaf_order.begin(), ctx.leaf_order.end(), [&](UInt32 a, UInt32 b) { return ctx.bucket_rows[a] > ctx.bucket_rows[b]; });
-}
-
 void PartitionedHashJoin::leafBuildWorker(PostBuildContext & ctx, size_t worker)
 {
     const HashJoin::Type type = leaf_join->data->type;
@@ -1436,13 +1853,44 @@ void PartitionedHashJoin::leafBuildWorker(PostBuildContext & ctx, size_t worker)
             break;
         const UInt32 leaf = ctx.leaf_order[claim];
 
-        /// Allocates the leaf's buffer on this worker; see `ZeroingHashTableAllocator` for why that
-        /// matters.
-        leaf_maps[leaf].create(type, ctx.leaf_reserve[leaf]);
-        const size_t created_bytes = leaf_maps[leaf].getBufferSizeInBytes(type);
-        state.predictions_exact = state.predictions_exact && created_bytes == ctx.leaf_bytes[leaf];
-
         const UInt64 leaf_rows = ctx.bucket_rows[leaf];
+
+        /// Allocates the leaf's buffer on the first range that has rows for it, with the full-build
+        /// reserve; later ranges insert into the live map. See `ZeroingHashTableAllocator` for why
+        /// the creating worker matters. Empty leaves are created after the range loop.
+        if (leaf_rows == 0)
+        {
+            if (narrow_locators)
+                ctx.locators32[leaf] = {};
+            else
+                ctx.locators[leaf] = {};
+            if (!ctx.generic_mode)
+            {
+                for (size_t c = 0; c < ctx.num_key_columns; ++c)
+                    ctx.fixed_out[c][leaf].reset();
+            }
+            else if (ctx.refined)
+            {
+                for (size_t c = 0; c < ctx.num_key_columns; ++c)
+                    ctx.refined_pieces[c][leaf].reset();
+            }
+            else
+            {
+                for (size_t c = 0; c < ctx.num_key_columns; ++c)
+                    for (size_t piece_worker = 0; piece_worker < ctx.workers; ++piece_worker)
+                        ctx.pieces[c][piece_worker][leaf].reset();
+            }
+            continue;
+        }
+
+        if (!ctx.leaf_map_created[leaf])
+        {
+            leaf_maps[leaf].create(type, ctx.leaf_reserve[leaf]);
+            ctx.leaf_created_bytes[leaf] = leaf_maps[leaf].getBufferSizeInBytes(type);
+            ctx.leaf_map_created[leaf] = 1;
+            state.predictions_exact = state.predictions_exact && ctx.leaf_created_bytes[leaf] == ctx.leaf_bytes[leaf];
+        }
+
         if (!ctx.generic_mode)
         {
             for (size_t c = 0; c < ctx.num_key_columns; ++c)
@@ -1501,8 +1949,11 @@ void PartitionedHashJoin::leafBuildWorker(PostBuildContext & ctx, size_t worker)
         state.leaf_rows += leaf_rows;
         ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, leaf_rows);
 
-        if (leaf_maps[leaf].getBufferSizeInBytes(type) != created_bytes)
+        if (!ctx.leaf_growth_counted[leaf] && leaf_maps[leaf].getBufferSizeInBytes(type) != ctx.leaf_created_bytes[leaf])
+        {
             ++state.leaf_growths;
+            ctx.leaf_growth_counted[leaf] = 1;
+        }
 
         /// Released as soon as they are consumed, so the tables replace the chunks rather than
         /// coexisting with them.
@@ -1527,6 +1978,67 @@ void PartitionedHashJoin::leafBuildWorker(PostBuildContext & ctx, size_t worker)
                     ctx.pieces[c][piece_worker][leaf].reset();
         }
     }
+}
+
+void PartitionedHashJoin::PostBuildContextDeleter::operator()(PostBuildContext * ctx) const
+{
+    delete ctx;
+}
+
+PartitionedHashJoin::~PartitionedHashJoin()
+{
+    /// Defined here because `post_build_ctx` holds a `PostBuildContext` that is complete only in
+    /// this translation unit.
+    /// Explicit, because members are otherwise destroyed after the body and outside the timer.
+    /// Order matters: leaf cells point into the arenas and the row store, so the maps go first.
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinTeardownMicroseconds);
+
+    post_build_ctx.reset();
+    post_build_pool.reset();
+
+    /// The leaf maps are the bulk of the teardown - one buffer each, and there can be tens of
+    /// thousands - so they are destroyed in parallel, for the same reason `ConcurrentHashJoin` does
+    /// it. `post_build_pool` is gone by now, torn down as soon as the post-build finished, hence a
+    /// fresh pool. A destructor must not throw, so a scheduling failure just leaves the rest to the
+    /// serial clear below.
+    if (!delegate_mode && leaf_maps.size() >= 64)
+    {
+        try
+        {
+            const size_t workers = std::min<size_t>(num_threads, leaf_maps.size());
+            ThreadPool teardown_pool(
+                CurrentMetrics::PartitionedHashJoinPoolThreads,
+                CurrentMetrics::PartitionedHashJoinPoolThreadsActive,
+                CurrentMetrics::PartitionedHashJoinPoolThreadsScheduled,
+                /*max_threads_*/ workers,
+                /*max_free_threads_*/ 0,
+                /*queue_size_*/ workers);
+            std::atomic<size_t> claim{0};
+            for (size_t w = 0; w < workers; ++w)
+                teardown_pool.scheduleOrThrow(
+                    [this, &claim, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                        while (true)
+                        {
+                            const size_t leaf = claim.fetch_add(1, std::memory_order_relaxed);
+                            if (leaf >= leaf_maps.size())
+                                break;
+                            leaf_maps[leaf] = PartitionedJoinMaps(maps_variant_index);
+                        }
+                    });
+            teardown_pool.wait();
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch): fall through to the serial teardown below
+        {
+        }
+    }
+    leaf_maps.clear();
+    build_arenas.clear();
+    leaf_join.reset();
+    probe_scratch_pool.clear();
+    for (auto & slot : probe_scratch_slots)
+        delete slot.load(std::memory_order_acquire);
 }
 
 }

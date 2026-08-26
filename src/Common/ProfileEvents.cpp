@@ -462,6 +462,7 @@
     M(PartitionedHashJoinAmacRingGrowths, "Number of times a partitioned_hash JOIN leaf hash table grew during an AMAC insert ring: the ring is drained, the map resized, and the in-flight rows re-seeded (a distinct-estimate shortfall; correct, never silent).", ValueType::Number) \
     M(PartitionedHashJoinTeardownMicroseconds, "Time spent destroying a partitioned_hash JOIN's heavy state (leaf hash tables, build arenas, the stored-blocks row store), measured in the destructor.", ValueType::Microseconds) \
     M(PartitionedHashJoinDistinctEstimateReused, "Number of partitioned_hash JOIN builds that reused a cached per-partition distinct-key count from the hash-table statistics cache (a warm run), skipping the per-row HyperLogLog sketch feed of the build fill.", ValueType::Number) \
+    M(PartitionedHashJoinScatterGroups, "Number of contiguous build-block ranges the partitioned_hash JOIN post-build scatter was split into to bound its transient (1 means the whole build was scattered at once).", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
