@@ -55,16 +55,12 @@ struct PartitionedCollectingTag
 /// the in-memory join, possibly with a grouped post-build scatter that bounds the transient
 /// without disk.
 ///
-/// hasDelayedBlocks returns true while a switch is still possible, so that the pipeline includes
-/// the delayed-block transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin /
+/// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
+/// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin /
 /// PartitionedHashJoin is used, getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
-///
-/// Spilling scatters rows into buckets by hash and destroys the left order, so a plan that wants
-/// to rely on that order first asks canKeepLeftPipelineInOrder (which we answer yes) and then
-/// commits by calling keepLeftPipelineInOrder. From that point we refuse to switch to
-/// GraceHashJoin - the join stays in memory and the memory tracker enforces the limit, exactly as
-/// it would with no auto-spill threshold configured - and hasDelayedBlocks turns false, which is
-/// what lets the read-in-order-through-join and top-k-through-join optimisations apply.
+/// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
+/// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
+/// GraceHashJoin), since spilling may reorder rows.
 class SpillingHashJoin final : public IJoin
 {
 public:
@@ -143,13 +139,7 @@ public:
         size_t num_streams) const override;
 
     IBlocksStreamPtr getDelayedBlocks() override;
-
-    /// True while a switch to GraceHashJoin is still possible, because then the pipeline needs the
-    /// delayed-block transforms. Once the plan has pinned us we can never switch, so there are no
-    /// delayed blocks and the optimisations gated on this become applicable.
-    bool hasDelayedBlocks() const override { return !keep_left_in_order.load(std::memory_order_acquire); }
-    bool canKeepLeftPipelineInOrder() const override { return true; }
-    void keepLeftPipelineInOrder() override;
+    bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
 
@@ -174,11 +164,6 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin / PartitionedHashJoin directly without switching.
     };
 
-    /// Whether the spill threshold is allowed to trigger a switch at all. Call only once the
-    /// threshold has actually been crossed - it logs the suppression. A `false` result must be
-    /// treated by callers as "threshold not reached", so the build still ends in the in-memory
-    /// promotion of `onBuildPhaseFinish` and `chosen_join` is always set.
-    bool maySwitchToGraceHashJoin();
     void switchToGraceHashJoin();
     /// Shared by the fill-path switch and the post-barrier `MustSpill` arm. The latter must not call
     /// `switchToGraceHashJoin`, which drains fill lanes the barrier has already consumed.
@@ -210,16 +195,6 @@ private:
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
-
-    /// Set from `keepLeftPipelineInOrder` at plan optimization time, before the build phase starts,
-    /// when the plan dropped a sort because this join preserves the left order. Spilling scatters
-    /// rows into buckets by hash, so switching to GraceHashJoin afterwards would silently return
-    /// wrongly ordered rows; we keep everything in memory instead.
-    std::atomic<bool> keep_left_in_order{false};
-
-    /// The suppressed-spill message is worth seeing once, not once per block. Atomic because the
-    /// threshold check runs on every build thread.
-    std::atomic<bool> logged_spill_suppressed{false};
 
     /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
     std::shared_ptr<HashJoin> hash_join;

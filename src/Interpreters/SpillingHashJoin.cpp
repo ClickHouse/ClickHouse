@@ -1,8 +1,5 @@
 #include <Interpreters/SpillingHashJoin.h>
 
-#include <utility>
-
-#include <Core/Block.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -216,7 +213,7 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
     const bool over_threshold = partitioned_join
         ? partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join
         : collectingJoin().getTotalByteCount() * 2 >= max_bytes_before_external_join;
-    if (over_threshold && maySwitchToGraceHashJoin())
+    if (over_threshold)
         switchToGraceHashJoin();
 
     /// Re-check: we may have just switched.
@@ -250,36 +247,6 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
 
     /// Single-thread HashJoin path.
     return hash_join->addBlockToJoin(block, check_limits);
-}
-
-void SpillingHashJoin::keepLeftPipelineInOrder()
-{
-    /// Runs at plan optimization time, long before the build phase, so no switch can have happened
-    /// yet and a plain store is enough to be visible to the build threads.
-    keep_left_in_order.store(true, std::memory_order_release);
-}
-
-bool SpillingHashJoin::maySwitchToGraceHashJoin()
-{
-    /// The plan dropped a sort because this join promised to preserve the left order, so we are no
-    /// longer allowed to spill: GraceHashJoin scatters rows into buckets by hash and the query
-    /// would return wrongly ordered rows. Keep collecting in memory and let the memory tracker
-    /// enforce the limit, exactly as it would with no auto-spill threshold configured.
-    ///
-    /// Callers must treat a `false` here as "the threshold was not reached", so that the build
-    /// still finishes through the in-memory promotion in `onBuildPhaseFinish` - returning early
-    /// from `switchToGraceHashJoin` instead would leave `chosen_join` unset. They must also call
-    /// this only after the byte threshold check, otherwise the log below would fire on the very
-    /// first build block of every pinned join, however small.
-    if (!keep_left_in_order.load(std::memory_order_acquire))
-        return true;
-
-    if (!logged_spill_suppressed.exchange(true))
-        LOG_DEBUG(
-            log,
-            "Memory spill threshold reached, but the query plan relies on this join preserving the "
-            "left pipeline order; staying in memory instead of switching to GraceHashJoin");
-    return false;
 }
 
 void SpillingHashJoin::createGraceJoin()
@@ -403,7 +370,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         const bool over_threshold = partitioned_join
             ? partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join
             : collectingJoin().getTotalByteCount() >= max_bytes_before_external_join;
-        if (over_threshold && maySwitchToGraceHashJoin())
+        if (over_threshold)
         {
             switchToGraceHashJoin();
         }
@@ -414,7 +381,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
             /// `MustSpill` releases them in `beginStoredBlockDrain`.
             partitioned_join->onBuildPhaseFinish();
             const auto plan = partitioned_join->planPostBuild();
-            if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill && maySwitchToGraceHashJoin())
+            if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill)
             {
                 ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
                 LOG_DEBUG(
