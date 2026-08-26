@@ -217,12 +217,16 @@ SELECT 'parallel replicas';
 -- Reading a plain MergeTree table over parallel replicas stops at the same mergeable-state boundary, so
 -- the same reconciliation runs with no Distributed table and no remote() in the query. Replicas split the
 -- work instead of duplicating rows, so each arm returns the same rows as its single-replica oracle.
+-- Every setting a task-based parallel read requires is pinned per statement, including the analyzer:
+-- a server whose profile disables it refuses the parallel plan outright, and the rows alone do not
+-- say which plan produced them, so each arm asserts below that replicas were really used.
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0;
+         automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
+         log_comment = '05043_pr_alias';
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
 -- The same over an expression-bodied ALIAS, whose body is computed on the initiator.
@@ -231,9 +235,23 @@ FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0;
+         automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
+         log_comment = '05043_pr_upper_alias';
 SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
+SYSTEM FLUSH LOGS query_log;
+-- One aggregate row per arm however many rows carry the comment: a re-execution of the same query
+-- inherits it.
+SELECT max(ProfileEvents['ParallelReplicasUsedCount']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05043_pr_alias'
+  AND type = 'QueryFinish' AND initial_query_id = query_id
+SETTINGS enable_parallel_replicas = 0;
+SELECT max(ProfileEvents['ParallelReplicasUsedCount']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05043_pr_upper_alias'
+  AND type = 'QueryFinish' AND initial_query_id = query_id
+SETTINGS enable_parallel_replicas = 0;
 
 SELECT 'negative controls';
 -- No ALIAS column: the two headers already agree, so nothing is reconstructed.
