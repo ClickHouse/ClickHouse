@@ -112,8 +112,15 @@ SELECT
 FROM nyc_taxi.trips_small_inferred
 WHERE pickup_datetime >= '2009-01-01'
   AND pickup_datetime < '2009-04-01'
-GROUP BY payment_type;
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
 ```
+
+<Note>
+On ClickHouse 25.9 and later, these settings ensure that `EXPLAIN` reports the indexes used and the parts and granules they eliminate.
+</Note>
 
 Use this output as the baseline. To complete the comparison, follow [Apply the ordering-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-primary-key-change) in the worked example to create a table with an ordering key that includes `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
 

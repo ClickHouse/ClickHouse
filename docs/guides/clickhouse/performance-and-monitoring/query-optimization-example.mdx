@@ -342,8 +342,15 @@ FROM nyc_taxi.trips_small_pk
 WHERE pickup_datetime >= '2009-01-01'
   AND pickup_datetime < '2009-04-01'
 GROUP BY payment_type
-ORDER BY trip_count DESC;
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
 ```
+
+<Note>
+On ClickHouse 25.9 and later, these settings ensure that `EXPLAIN` reports the indexes used and the parts and granules they eliminate.
+</Note>
 
 ```response
 ReadFromMergeTree (nyc_taxi.trips_small_pk)
