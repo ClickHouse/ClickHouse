@@ -54,6 +54,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/string.cpp"
 "${LIBCXX_SOURCE_DIR}/src/strstream.cpp"
 "${LIBCXX_SOURCE_DIR}/src/system_error.cpp"
+"${LIBCXX_SOURCE_DIR}/src/text_encoding.cpp"
 "${LIBCXX_SOURCE_DIR}/src/thread.cpp"
 "${LIBCXX_SOURCE_DIR}/src/typeinfo.cpp"
 "${LIBCXX_SOURCE_DIR}/src/valarray.cpp"

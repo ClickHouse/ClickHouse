@@ -26,6 +26,7 @@ set(LLVMSUPPORT_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Support/BuryPointer.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/CachePruning.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/Caching.cpp
+    ${LLVM_SOURCE_DIR}/lib/Support/CHERICapabilityFormat.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/Chrono.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/circular_raw_ostream.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/CodeGenCoverage.cpp
@@ -67,7 +68,6 @@ set(LLVMSUPPORT_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Support/FormatVariadic.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/GlobPattern.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/GraphWriter.cpp
-    ${LLVM_SOURCE_DIR}/lib/Support/Hash.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/HexagonAttributeParser.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/HexagonAttributes.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/InitLLVM.cpp
@@ -168,6 +168,7 @@ set(LLVMSUPPORT_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Support/VirtualOutputError.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/VirtualOutputFile.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/Watchdog.cpp
+    ${LLVM_SOURCE_DIR}/lib/Support/Win64EH.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/WithColor.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/xxhash.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/YAMLParser.cpp

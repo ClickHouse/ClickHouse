@@ -20,7 +20,7 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "22.1.1bundled")
+set (LLVM_VERSION "23.1.0bundled")
 
 # Directories
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
@@ -469,7 +469,9 @@ add_executable(llvm-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CodeExpander.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CombinerUtils.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CXXPredicates.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/MatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Matchers.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Types.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTableExecutorEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/PatternParser.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/Patterns.cpp

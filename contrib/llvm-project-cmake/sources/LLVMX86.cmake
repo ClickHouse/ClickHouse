@@ -2,6 +2,8 @@
 
 # X86 Info sources
 set(LLVMX86INFO_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86PostLegalizerCombiner.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCLFIRewriter.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/TargetInfo/X86TargetInfo.cpp
 )
 
@@ -38,6 +40,7 @@ set(LLVMX86CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86AvoidTrailingCall.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CallFrameOptimization.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CallingConv.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CleanupLocalDynamicTLS.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CmovConversion.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CodeGenPassBuilder.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CompressEVEX.cpp
@@ -55,9 +58,11 @@ set(LLVMX86CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FlagsCopyLowering.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FloatingPoint.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FrameLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86GlobalBaseReg.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86IndirectBranchTracking.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86IndirectThunks.cpp
-    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InsertWait.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InsertVZeroUpper.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InsertX87Wait.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstCombineIntrinsic.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstrFMA3Info.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstrFoldTables.cpp
@@ -90,7 +95,7 @@ set(LLVMX86CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TargetObjectFile.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TargetTransformInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TileConfig.cpp
-    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86VZeroUpper.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHState.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHUnwindV2.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHUnwindV3.cpp
 )

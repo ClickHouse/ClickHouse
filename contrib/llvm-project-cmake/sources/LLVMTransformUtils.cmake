@@ -3,6 +3,7 @@ set(LLVMTRANSFORMUTILS_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/AddDiscriminators.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/AMDGPUEmitPrintf.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/ASanStackFrameLayout.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/AssignGUID.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/AssumeBundleBuilder.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/BasicBlockUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/BreakCriticalEdges.cpp
@@ -41,6 +42,7 @@ set(LLVMTRANSFORMUTILS_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/Instrumentation.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/IntegerDivision.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/IRNormalizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/KCFIHash.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LCSSA.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LibCallsShrinkWrap.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/Local.cpp
@@ -54,6 +56,7 @@ set(LLVMTRANSFORMUTILS_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LoopUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LoopVersioning.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LowerAtomic.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LowerCommentStringPass.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LowerGlobalDtors.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LowerIFunc.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/LowerInvoke.cpp
@@ -86,10 +89,11 @@ set(LLVMTRANSFORMUTILS_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/SplitModuleByCategory.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/SSAUpdaterBulk.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/SSAUpdater.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/StripConvergenceIntrinsics.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/StripGCRelocates.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/StripNonLineTableDebugInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/SymbolRewriter.cpp
-    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/UnifyFunctionExitNodes.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/TriggerCrashPass.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/UnifyLoopExits.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/Utils.cpp
     ${LLVM_SOURCE_DIR}/lib/Transforms/Utils/ValueMapper.cpp
