@@ -2086,12 +2086,25 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
     # metadata; ATTACH / DETACH TABLE are refused cleanly), and a DROP DATABASE in that window must
     # still remove the PostgreSQL publication and logical replication slot instead of leaking them.
     schema_name = "startup_legacy_schema"
+    # Idempotent, so a retry of this test in the same PostgreSQL instance starts from a clean schema.
+    pg_query(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
     pg_query(f'CREATE SCHEMA "{schema_name}"')
     pg_query(
         f'CREATE TABLE "{schema_name}".test_table (key Integer PRIMARY KEY, value Integer)'
     )
     pg_query(
         f'INSERT INTO "{schema_name}".test_table SELECT g, g FROM generate_series(0, 49) AS g'
+    )
+
+    # The replicated table lives in a dedicated schema, so the oracle (and the inserts below) must go
+    # through a ClickHouse `PostgreSQL` database bound to that schema. The default `postgres_database`
+    # is bound to `public`, where an unrelated `test_table` left over from another test of this module
+    # would silently become the expected value.
+    schema_database = "postgres_schema_database"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=schema_database,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
     )
 
     pg_manager.create_materialized_db(
@@ -2102,7 +2115,9 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
             "materialized_postgresql_tables_list = 'test_table'",
         ],
     )
-    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(
+        instance, "test_table", postgres_database=schema_database
+    )
     assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 1
     assert publication_exists()
 
@@ -2171,11 +2186,15 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
         instance.query(
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
         )
-        check_tables_are_synchronized(instance, "test_table")
-        instance.query(
-            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 10)"
+        check_tables_are_synchronized(
+            instance, "test_table", postgres_database=schema_database
         )
-        check_tables_are_synchronized(instance, "test_table")
+        instance.query(
+            f"INSERT INTO {schema_database}.test_table SELECT number, number FROM numbers(100, 10)"
+        )
+        check_tables_are_synchronized(
+            instance, "test_table", postgres_database=schema_database
+        )
 
         # Re-enter the startup window to exercise the cleanup-only DROP path below. The runtime override
         # does not survive a restart, so the configured failpoint is active again.
@@ -2192,6 +2211,8 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
         instance.query(
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
         )
+        pg_manager.drop_clickhouse_postgres_db(schema_database)
+        pg_query(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
 
 
 def test_coordinated_detach_in_startup_window_is_a_no_op_rejection(started_cluster):
@@ -2455,6 +2476,99 @@ def test_plain_refused_drop_in_restart_window_recreates_removed_tables(started_c
     # the server again.
     check_tables_are_synchronized(instance, "first_table")
     check_tables_are_synchronized(instance, "second_table")
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
+def test_plain_refused_drop_does_not_resurrect_deleted_rows(started_cluster):
+    # A refused plain `DROP DATABASE` can remove one nested table before a later removal fails, and
+    # `recoverAfterRefusedDrop` then restarts the database as a create-style startup so the missing
+    # table is recreated. That startup reloads the whole snapshot, so the nested tables that survived
+    # the partial drop must be cleared first: rows deleted in PostgreSQL while replication was down
+    # produce no `_sign = -1` tombstone, and appending the new snapshot on top of the survivor's
+    # pre-drop contents would leave those deleted rows visible forever (a `ReplacingMergeTree`
+    # collapses duplicate keys by `_version`, but a key that is absent from the new snapshot has
+    # nothing to override it).
+    pg_manager.create_postgres_table("first_table")
+    pg_manager.create_postgres_table("second_table")
+    for table in ("first_table", "second_table"):
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+        )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'first_table,second_table'"
+        ],
+    )
+    check_tables_are_synchronized(instance, "first_table")
+    check_tables_are_synchronized(instance, "second_table")
+
+    failpoint_config_path = (
+        "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
+    )
+    pause_failpoint = "database_materialized_postgresql_pause_before_table_drop"
+    try:
+        # Keep the handler null after the restart, exactly as in the attach/restart recovery window,
+        # so replication stays down for the whole window below.
+        instance.replace_config(
+            failpoint_config_path,
+            "<clickhouse><fail_points_active>"
+            "<materialized_postgresql_fail_database_startup>1"
+            "</materialized_postgresql_fail_database_startup>"
+            "</fail_points_active></clickhouse>",
+        )
+        instance.stop_clickhouse()
+        instance.start_clickhouse()
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        drop_error = []
+
+        def run_drop():
+            drop_error.append(
+                instance.query_and_get_error("DROP DATABASE test_database SYNC")
+            )
+
+        drop_thread = threading.Thread(target=run_drop)
+        drop_thread.start()
+
+        # Let the first nested table be removed, then stop at the second removal and make it fail.
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        drop_thread.join()
+        assert drop_error
+        assert "Injected failure while dropping a nested table" in drop_error[0]
+
+        # Replication is down and the recovery snapshot has not run yet: delete the upper half of both
+        # tables in PostgreSQL, so whichever of them survived the partial drop must not keep its copy
+        # of the deleted rows. The deletions are never seen as WAL events, because the slot is dropped
+        # and recreated by the create-style startup.
+        for table in ("first_table", "second_table"):
+            pg_query(f"DELETE FROM {table} WHERE key >= 25")
+    finally:
+        instance.exec_in_container(["rm", "-f", failpoint_config_path])
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+
+    # Both tables - the recreated one and the survivor of the partial drop - must end up as the exact
+    # current PostgreSQL state, i.e. the 25 remaining rows and nothing else.
+    for table in ("first_table", "second_table"):
+        check_tables_are_synchronized(instance, table)
+        assert int(instance.query(f"SELECT count() FROM test_database.{table}")) == 25
+        assert int(instance.query(f"SELECT max(key) FROM test_database.{table}")) == 24
+
     instance.query("DROP DATABASE test_database SYNC")
     assert not replication_slot_exists()
     assert not publication_exists()

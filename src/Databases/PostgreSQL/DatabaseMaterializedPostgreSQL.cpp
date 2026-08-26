@@ -1129,7 +1129,10 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
     /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
     /// later removal throws. This is also possible in the attach/restart window, before a
     /// replication handler has been rebuilt. Rebuild as a CREATE-style startup in either case:
-    /// it recreates missing nested tables and reloads a snapshot from an empty slot.
+    /// it recreates the missing nested tables, clears the ones that survived the partial drop
+    /// (otherwise the reloaded snapshot would be appended to their pre-drop contents, resurrecting
+    /// the rows PostgreSQL deleted while replication was down) and reloads a snapshot from an
+    /// empty slot.
     if (force_resnapshot)
         is_attach = false;
 
@@ -1740,6 +1743,10 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the database is created; recreate the database to change them.
 
 ## Notes {#notes}
+
+### Refused `DROP DATABASE` {#refused-drop-database}
+
+A `DROP DATABASE` that fails (for example because a nested table cannot be removed) never leaves the database silently dead: replication is rebuilt in the background and the database keeps replicating as if the statement had never been issued, so the drop can simply be retried. Such a failure can happen after some of the replicated tables have already been removed. The recovery then reloads a fresh snapshot of every table, clearing the tables that survived the failed drop first, so the database converges to the exact current state of PostgreSQL instead of keeping rows that were deleted in PostgreSQL while replication was down.
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
 

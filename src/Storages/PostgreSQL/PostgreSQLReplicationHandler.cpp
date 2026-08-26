@@ -1273,6 +1273,20 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// snapshot-completion marker confirms the initial snapshot actually finished (see below).
     else if (!is_attach && !coordination_enabled)
     {
+        /// A create-style startup reloads the snapshot into the nested tables, and they are not
+        /// necessarily empty here: a refused plain `DROP DATABASE` can already have removed some of the
+        /// nested tables before a later removal threw, and `recoverAfterRefusedDrop` deliberately
+        /// switches such a database to a create-style startup so the missing tables are recreated.
+        /// Appending the fresh snapshot on top of a table that survived that partial drop would
+        /// resurrect the rows PostgreSQL deleted in the meantime: `ReplacingMergeTree` collapses
+        /// duplicate keys by `_version`, but a row that is absent from the new snapshot has nothing to
+        /// override the stale copy, and the deletion happened while replication was down, so no
+        /// `_sign = -1` tombstone is ever consumed for it. Clear the nested tables first, exactly like
+        /// the two coordinated recovery branches above and below do, so the reloaded snapshot is the
+        /// exact current PostgreSQL state. On a genuine first startup no nested table exists yet, which
+        /// makes this a no-op.
+        truncateNestedTables();
+
         if (!user_managed_slot)
             dropReplicationSlot(tx);
 
@@ -1728,10 +1742,14 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
 
 void PostgreSQLReplicationHandler::truncateNestedTables()
 {
-    /// Only reached in coordinated mode, from the mid-snapshot recovery branch of `startSynchronization`.
-    /// The nested tables were created by `ensureNestedTablesExist` and are Replicated/SharedReplacingMergeTree,
-    /// so truncating them here clears the shared tree on every replica. Only the single active worker may run
-    /// this, which the per-table fence below enforces.
+    /// Reached from the recovery branches of `startSynchronization` that reload the whole snapshot: the two
+    /// coordinated ones (a slot that disappeared after the initial snapshot completed, and a snapshot that a
+    /// previous active worker never finished) and the plain create-style one, which a refused partial
+    /// `DROP DATABASE` also routes here.
+    /// In coordinated mode the nested tables were created by `ensureNestedTablesExist` and are
+    /// Replicated/SharedReplacingMergeTree, so truncating them here clears the shared tree on every replica,
+    /// and only the single active worker may run this, which the per-table fence below enforces (the fence is
+    /// a no-op without coordination). A table whose nested table does not exist yet is skipped.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::truncateNestedTables");
 
     for (const auto & [table_name, materialized_storage] : materialized_storages)
