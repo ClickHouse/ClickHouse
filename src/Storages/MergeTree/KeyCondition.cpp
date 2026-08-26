@@ -594,15 +594,10 @@ bool typeMayHideNaN(const DataTypePtr & type)
     return false;
 }
 
-/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN.
-/// A NaN operand makes each of `<`, `>`, `<=`, `>=` evaluate to `false`, so an ordering op and its
-/// candidate inverse are both `false` instead of complementary: `not(NaN > c) = true` while
-/// `NaN <= c = false`. `=` / `!=` do stay complements under NaN; they are covered too, to keep one
-/// rule for every comparison.
-///
-/// Only a NaN-hiding column or a NaN constant blocks the rewrite; a finite float constant is safe, so
-/// plain literal comparisons like `c <= 5.5` (Int column vs Float literal) still get
-/// inverted.
+/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
+/// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
+/// covered only to keep one rule for every comparison. A finite float constant is safe, so plain
+/// literal comparisons like `c <= 5.5` (Int column vs Float literal) still get inverted.
 static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
 {
     if (name != "equals" && name != "notEquals"
