@@ -45,21 +45,25 @@ Returns a tuple consisting of `(hrp, data)` that was used to encode the string. 
 **Decode address**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **Testnet address**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 ## bech32Encode {#bech32Encode}
@@ -102,7 +106,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Bech32 algorithm**
@@ -113,7 +117,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **Custom HRP**
@@ -125,7 +129,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Cosmos SDK address (BIP173, no witness version)**
@@ -137,7 +141,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 ## bin {#bin}
@@ -265,9 +269,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 ## bitmaskToArray {#bitmaskToArray}
@@ -301,9 +305,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **Single power of two**
@@ -348,9 +352,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 ## char {#char}
@@ -539,7 +543,7 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **Single argument**
@@ -550,7 +554,7 @@ SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Expanded mode**
@@ -561,7 +565,7 @@ SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **Column usage**
@@ -581,7 +585,7 @@ SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 ## hilbertEncode {#hilbertEncode}
@@ -757,7 +761,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **Single argument**
@@ -767,7 +771,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Expanded mode, shrinking one argument**
@@ -777,7 +781,7 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **Column usage**
@@ -803,7 +807,7 @@ SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FR
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 ## mortonEncode {#mortonEncode}
@@ -955,9 +959,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 ## sqidEncode {#sqidEncode}
@@ -1036,7 +1040,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1096,7 +1100,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```

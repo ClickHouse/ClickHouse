@@ -40,9 +40,9 @@ SELECT
 SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
         )",
         R"(
-┌─plus(CAST('1⋯alHour(10))─┐
-│      1998-06-16 10:00:00 │
-└──────────────────────────┘
+┌─plus(CAST('1998-06-16', 'Date'), toIntervalHour(10))─┐
+│                                  1998-06-16 10:00:00 │
+└──────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
