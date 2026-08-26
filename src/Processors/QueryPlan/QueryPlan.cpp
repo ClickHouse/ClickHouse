@@ -234,7 +234,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
         num_input_streams,
         isInitialized() ? 1 : 0);
 }
-// what is this and where is it called from: from here QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
+
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,

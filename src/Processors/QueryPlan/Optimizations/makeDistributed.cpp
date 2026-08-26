@@ -182,7 +182,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & node)
     /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
     /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
     if (typeid_cast<const TotalsHavingStep *>(step)
-
         || typeid_cast<const ExtremesStep *>(step))
         return true;
     /// A PASTE join pairs rows by position. An exchange below it (e.g. a gather over a
@@ -232,6 +231,25 @@ std::optional<PreformattedMessage> isReadFromMergeTreeSupportedForDistributed(co
     return std::nullopt;
 }
 
+
+
+/// The local fallback executes the plan directly, so the logical joins kept for distributed
+/// planning must be converted here; the distributed path converts them when a worker rebuilds
+/// its fragment.
+void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    QueryPlanOptimizationSettings local_settings = optimization_settings;
+    local_settings.make_distributed_plan = false;
+    local_settings.keep_logical_steps = false;
+
+    Stack stack;
+    traverseQueryPlan(stack, root,
+        [](auto &) {},
+        [&](auto & frame_node)
+        {
+            convertLogicalJoinToPhysical(frame_node, nodes, local_settings);
+        });
+}
 
 std::optional<PreformattedMessage> hasAggregationUnsupportedStepForDistributed(QueryPlan::Node & node)
 {
@@ -382,24 +400,6 @@ std::optional<PreformattedMessage> traversePlanForUnsupportedDistributedStep(Que
     return unsupported_step;
 }
 
-
-/// The local fallback executes the plan directly, so the logical joins kept for distributed
-/// planning must be converted here; the distributed path converts them when a worker rebuilds
-/// its fragment.
-void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    QueryPlanOptimizationSettings local_settings = optimization_settings;
-    local_settings.make_distributed_plan = false;
-    local_settings.keep_logical_steps = false;
-
-    Stack stack;
-    traverseQueryPlan(stack, root,
-        [](auto &) {},
-        [&](auto & frame_node)
-        {
-            convertLogicalJoinToPhysical(frame_node, nodes, local_settings);
-        });
-}
 
 /// Throws if the Cascades optimizer cannot distribute this step correctly.
 static void checkStepSupportedByCascades(const IQueryPlanStep & step)
@@ -657,6 +657,8 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         return;
     QueryPlan::Node * source = node.children[0];
 
+    Names aggregation_keys = aggregating_step->getParams().keys;
+
     // verified in hasAggregationUnsupportedStepForDistributed
     /// A global GROUP BY limit can't be enforced once aggregation is split per bucket.
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
@@ -669,7 +671,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
     } strategy = PartialAggregation;
 
-    Names aggregation_keys = aggregating_step->getParams().keys;
+
     /// Choose Shuffle when the estimated number of groups is high.
     if (!aggregation_keys.empty())
     {
@@ -717,10 +719,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
                 "make_distributed_plan does not support GROUPING SETS aggregation in order");
         strategy = PartialAggregation;
     }
-    /// produced in several buckets and duplicated.
-    if (aggregating_step->isGroupingSets())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "ERROR OLD: make_distributed_plan does not support GROUPING SETS aggregation");
 
     if (strategy == PartialAggregation)
     {
