@@ -821,6 +821,9 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorDuplicateFilterKeyIsRe
 
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion2ThrowOnSerialize)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     DistributedQueryTaskDescription description;
     description.serialization_version = 2;
     description.task.runtime_filter_descriptors.push_back(
@@ -836,4 +839,5 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion2ThrowOnSeri
     {
         EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
     }
+#endif
 }
