@@ -1,0 +1,19 @@
+BACKUP_CREATED
+RESTORED
+1. restored view definitions:
+v_globalin	WHERE a GLOBAL IN (DST.u)
+v_in	WHERE a IN (DST.u)
+v_notin	WHERE a NOT IN (DST.u)
+v_nullin	WHERE nullIn(a, DST.u)
+v_out	WHERE a NOT IN (OUT.u)
+2. what the restored views return:
+v_in	[1]
+v_notin	[2,3]
+v_globalin	[1]
+v_nullin	[1]
+v_out	[1,2]
+3. a write to the restored buffer lands in the restored destination:
+SRC.t	[1,2,3]
+DST.t	[1,2,3,999]
+4. control, a buffer whose destination is outside the restored set keeps it:
+OUT.dest	[777]
