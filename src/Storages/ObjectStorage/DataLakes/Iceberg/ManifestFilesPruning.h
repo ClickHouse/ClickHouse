@@ -40,6 +40,7 @@ private:
     Int32 current_schema_id;
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key;
+    size_t partition_spec_fields_count = 0;
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;

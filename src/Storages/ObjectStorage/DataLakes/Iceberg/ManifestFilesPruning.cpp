@@ -25,6 +25,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
+
 namespace DB::Iceberg
 {
 
@@ -117,6 +122,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
+        partition_spec_fields_count = manifest_file.getPartitionSpecFieldsCount();
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
             inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
@@ -144,24 +150,41 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     if (partition_key_condition.has_value())
     {
         const auto & partition_value = entry->parsed_entry->partition_key_value;
-        std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-        for (size_t i = 0; i < index_value.size(); ++i)
-        {
-            auto & field = index_value[i];
-            const auto & type = partition_key->data_types.at(i);
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-            else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
-        }
 
-        bool can_be_true = partition_key_condition->mayBeTrueInRange(
-            partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+        /// Iceberg requires one partition value per field of the spec the manifest was written with.
+        if (partition_value.size() != partition_spec_fields_count)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg manifest partition tuple for data file '{}' has {} values but the manifest's "
+                "partition spec defines {} fields",
+                entry->parsed_entry->file_path_key,
+                partition_value.size(),
+                partition_spec_fields_count);
 
-        if (!can_be_true)
+        /// A spec field whose source column or transform cannot be modelled is left out of the
+        /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
+        /// Only the partition key is unusable then; the min/max conditions below still apply.
+        if (partition_key->data_types.size() == partition_value.size())
         {
-            return PruningReturnStatus::PARTITION_PRUNED;
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            for (size_t i = 0; i < index_value.size(); ++i)
+            {
+                auto & field = index_value[i];
+                const auto & type = partition_key->data_types.at(i);
+                // NULL_LAST
+                if (field.isNull())
+                    field = POSITIVE_INFINITY;
+                else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
+                    field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
+            }
+
+            bool can_be_true = partition_key_condition->mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+
+            if (!can_be_true)
+            {
+                return PruningReturnStatus::PARTITION_PRUNED;
+            }
         }
     }
 

@@ -1,0 +1,15 @@
+--- A0 spec arity matches the partition tuple ---
+5	902
+201
+--- A1 manifest tuple longer than the spec ---
+ICEBERG_SPECIFICATION_VIOLATION
+--- A2 manifest tuple shorter than the spec ---
+ICEBERG_SPECIFICATION_VIOLATION
+--- A3 partition key narrower than the tuple is not a violation ---
+201
+902
+--- A4 the server is still alive ---
+1
+--- A5 min/max pruning still applies when the partition key is narrower ---
+1
+1
