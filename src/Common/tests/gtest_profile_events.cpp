@@ -11,6 +11,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event SelectQuery;
 }
 
 /// Drive the real `Thread` -> `User` -> `global_counters` chain: every thread increments its own
@@ -132,6 +133,19 @@ TEST(ProfileEvents, SnapshotSetOverwritesSingleEvent)
     snapshot.set(ProfileEvents::Query, 99);
     EXPECT_EQ(snapshot[ProfileEvents::Query], 99u);
     EXPECT_EQ(counters[ProfileEvents::Query], 5u);
+}
+
+TEST(ProfileEvents, TraceProfileEventPublishedWhileIncrementing)
+{
+    ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
+
+    std::thread setter([&] { counters.setTraceProfileEvent(ProfileEvents::SelectQuery); });
+    std::thread incrementer([&] { counters.increment(ProfileEvents::Query); });
+
+    setter.join();
+    incrementer.join();
+
+    EXPECT_EQ(counters[ProfileEvents::Query], 1);
 }
 
 TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
