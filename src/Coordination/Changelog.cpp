@@ -4848,7 +4848,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             else
             {
                 auto log_disk = description->disk;
-                auto latest_log_disk = getLatestLogDisk();
+                /// In S3 mode startup only loads `s3_log_disk`, so the preserved segment must never be
+                /// migrated to the local latest log disk - recovery would not see it there.
+                auto latest_log_disk = keeper_context->isS3ExperimentalChangelog() ? getS3LogDisk() : getLatestLogDisk();
                 if (log_disk != latest_log_disk)
                     moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
