@@ -389,7 +389,7 @@ void DatabaseDataLake::initialize() const
         }
         case DB::DatabaseDataLakeCatalogType::UNITY_V2:
         {
-            /// Databricks OIDC requires `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
+            /// Databricks OIDC expects `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
             const std::string unity_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
                 ? settings[DatabaseDataLakeSetting::auth_scope].value
                 : "all-apis";

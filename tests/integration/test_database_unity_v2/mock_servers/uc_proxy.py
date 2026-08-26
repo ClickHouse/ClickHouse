@@ -8,7 +8,8 @@
 
 It also emulates Databricks authentication:
 
-- `POST /oidc/v1/token` mints OAuth tokens for `CLIENT_ID:CLIENT_SECRET`;
+- `POST /oidc/v1/token` mints OAuth tokens for `CLIENT_ID:CLIENT_SECRET`, and
+  requires `scope=all-apis` as Databricks service principals do;
 - every proxied route requires `Authorization: Bearer <token>`, where the token
   is either `PAT_TOKEN` or a minted OAuth token, and replies 401 otherwise;
 - `/control/*` endpoints let the test expire tokens.
@@ -147,6 +148,10 @@ class Handler(BaseHTTPRequestHandler):
             or params.get("client_secret") != [CLIENT_SECRET]
         ):
             self._reply(401, b'{"error": "invalid_client"}')
+            return
+
+        if params.get("scope") != ["all-apis"]:
+            self._reply(400, b'{"error": "invalid_scope"}')
             return
 
         token = uuid.uuid4().hex
