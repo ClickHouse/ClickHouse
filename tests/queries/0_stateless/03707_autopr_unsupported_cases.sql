@@ -31,20 +31,29 @@ SETTINGS log_comment='unsupported_aggregation_over_aggregation';
 SELECT * FROM t UNION ALL SELECT * FROM t FORMAT Null
 SETTINGS log_comment='unsupported_union_all';
 
--- Two tables to read from, while the optimization instruments a single source:
--- "Top node for parallel replicas plan is already found".
-SELECT * FROM t lhs INNER JOIN t rhs ON lhs.number = rhs.number LIMIT 1 FORMAT Null
-SETTINGS log_comment='unsupported_join';
+-- The preliminary `LIMIT` puts a `Limit` step on top of the read from the other replicas, and
+-- `findTopNodeOfReplicasPlan` only looks through `Expression`, `Filter` and `CreatingSets` steps, so
+-- it does not recognize that branch and reports "Top node for parallel replicas plan is already
+-- found". This holds for any query with a `LIMIT`, not only for a trivial read.
+SELECT * FROM t LIMIT 1 FORMAT Null
+SETTINGS log_comment='unsupported_limit';
 
 -- `min` over the primary key is answered from the index, so the plan reads no data at all:
 -- "Unsupported steps: ReadFromPreparedSource".
 SELECT min(a) FROM tt FORMAT Null
 SETTINGS optimize_aggregation_in_order=0, log_comment='unsupported_min_answered_from_index';
 
--- A supported shape, so that a change which stops the optimization from running everywhere fails
--- this test instead of making every case above trivially pass.
+-- Supported shapes, so that a change which stops the optimization from running everywhere fails
+-- this test instead of making every case above trivially pass. The join is here because the shape
+-- used to be listed as unsupported, while what the case actually hit was the `LIMIT` above.
 SELECT count() FROM t WHERE number > 5 FORMAT Null
 SETTINGS log_comment='supported_aggregation';
+
+-- `query_plan_optimize_join_order_randomize` is pinned off: the single-node plan and the plan with
+-- parallel replicas are built independently, so a randomized join order makes them diverge and the
+-- optimization finds no matching node to instrument.
+SELECT * FROM t lhs INNER JOIN t rhs ON lhs.number = rhs.number FORMAT Null
+SETTINGS query_plan_optimize_join_order_randomize=0, log_comment='supported_join';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
