@@ -230,7 +230,7 @@ function run()
     " 2>&1 >/dev/null) && error=""
 
     cancelled=0
-    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
     echo "$mode cancelled-in-wait $cancelled"
 
     release_holder
@@ -251,7 +251,7 @@ function run()
     " 2>&1 >/dev/null) && error=""
 
     cancelled=0
-    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
     echo "$mode single-chunk cancelled-in-wait $cancelled"
 
     release_holder
@@ -301,7 +301,7 @@ function run_plain()
     " 2>&1 >/dev/null) && error=""
 
     cancelled=0
-    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
     echo "plain $mode cancelled-in-wait $cancelled"
 
     release_holder
@@ -319,7 +319,7 @@ function run_plain()
     " 2>&1 >/dev/null) && error=""
 
     cancelled=0
-    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
     echo "plain $mode single-chunk cancelled-in-wait $cancelled"
 
     release_holder
@@ -465,7 +465,7 @@ function run_cancel()
     read -r duration_ms _ <<< "$(query_stats "$tag")"
 
     cancelled=0
-    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    if [[ "$error" == *"Timeout exceeded:"*"maximum:"* ]]; then cancelled=1; fi
     # Interrupted within about one chunk rather than waiting out the hold.
     echo "cancel interrupted $cancelled promptly $(( duration_ms < 8000 ))"
 
