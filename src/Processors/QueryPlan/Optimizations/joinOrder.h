@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
@@ -120,6 +121,10 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
 
 namespace QueryPlanOptimizations
 {
+
+/// Walk a right-hand query plan for a row estimate. Used by join-order stats and by the
+/// legacy analyzer so `preferParallelHashLayout` sees the same MergeTree `totalRows` both paths.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic

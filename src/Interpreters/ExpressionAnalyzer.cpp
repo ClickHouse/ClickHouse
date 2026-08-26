@@ -64,6 +64,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDictionary.h>
@@ -1005,7 +1006,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const ColumnsWithTypeAndName & left_sample_columns,
     SharedHeader right_sample_block,
     std::unique_ptr<QueryPlan> & joined_plan,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
@@ -1047,10 +1049,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const auto & settings = context->getSettingsRef();
-        /// No right-side estimate on this path, so only the join kind can rule the layout out.
         const bool use_parallel_layout = preferParallelHashLayout(
             analyzed_join->kind(),
-            /*rhs_size_estimation=*/std::nullopt,
+            rhs_size_estimation,
             settings[Setting::parallel_hash_join_threshold]);
 
         if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
@@ -1119,7 +1120,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         const auto & settings = context->getSettingsRef();
         const bool use_parallel_layout = preferParallelHashLayout(
             analyzed_join->kind(),
-            /*rhs_size_estimation=*/std::nullopt,
+            rhs_size_estimation,
             settings[Setting::parallel_hash_join_threshold]);
 
         if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
@@ -1161,10 +1162,14 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
+    const auto rhs_size_estimation = joined_plan->getRootNode()
+        ? QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode()).estimated_rows
+        : std::optional<UInt64>{};
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
-        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context);
+        auto join = tryCreateJoin(
+            alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, rhs_size_estimation);
         if (join)
             return join;
     }
