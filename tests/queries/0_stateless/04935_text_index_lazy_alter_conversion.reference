@@ -1,0 +1,8 @@
+-- exact equals via text-index direct read (computed on the no-granule part from data)
+714
+-- LIKE via the text-index fallback path
+714
+-- control: the same answer without the skip index
+714
+-- regular ALTER MODIFY with an interrupted mutation, read via text index
+714
