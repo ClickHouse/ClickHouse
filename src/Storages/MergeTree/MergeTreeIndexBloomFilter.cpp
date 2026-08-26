@@ -572,12 +572,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
 
+        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
+        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
+        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
+            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
+            && prepared_set->areTypesEqual(0, index_type)
+            && !typeid_cast<const DataTypeArray *>(index_type.get()))
+            out.function = RPNElement::FUNCTION_IN;
+
         return true;
     }
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -679,6 +688,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
+        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
@@ -953,6 +963,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
+            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
+            /// stored value. The index is sound only where that family collapses to a single indexed
+            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
+            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
+            /// because `convertFieldToType` pads but never truncates.
+            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
+            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
+            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
+            /// a `String` one and both must be treated as possibly padded.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            {
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                    return false;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
