@@ -39,10 +39,10 @@ void enumerateJSONValues(
         std::string_view path;
         DataTypePtr type;
         String type_name;
-        const IColumn * column;
+        const IColumn * column = nullptr;
         SerializationPtr serialization;
-        bool is_dynamic;
-        bool is_nullable;
+        bool is_dynamic = false;
+        bool is_nullable = false;
         ColumnVariant::Discriminator cached_discriminator = ColumnVariant::NULL_DISCRIMINATOR;
         const IDataType * cached_dynamic_type = nullptr;
         SerializationPtr cached_dynamic_serialization{};
@@ -132,7 +132,7 @@ void enumerateJSONValues(
         }
 
         /// Resolve the type name once per value: `IDataType::getName` builds a String.
-        const String * type_name;
+        const String * type_name = nullptr;
         String decoded_type_name;
         if (cache.hasElement(binary_type_index))
         {

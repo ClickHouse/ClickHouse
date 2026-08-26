@@ -360,8 +360,8 @@ private:
     struct RenderedValue
     {
         std::string_view value;
-        bool complete;
-        ValueHash hash;
+        bool complete = false;
+        ValueHash hash{};
     };
 
     static bool isSupportedDynamicScalar(const IDataType & type)

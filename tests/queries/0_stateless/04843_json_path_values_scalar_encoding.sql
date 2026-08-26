@@ -195,8 +195,8 @@ CREATE TABLE json_path_values_equality_safety
 (
     id UInt64,
     data JSON(
-        flag Bool,
-        flags Array(Bool),
+        flag Nullable(Bool),
+        flags Array(Nullable(Bool)),
         i8 Int8,
         u8 UInt8,
         d Decimal64(1),
@@ -259,6 +259,12 @@ WHERE has(data.flags, 2)
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM json_path_values_equality_safety
 WHERE has(data.flags, 2)
+SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM json_path_values_equality_safety
+WHERE data.flag = CAST(2, 'Nullable(UInt8)')
+SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM json_path_values_equality_safety
+WHERE has(data.flags, CAST(2, 'Nullable(UInt8)'))
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'integer overflow', arraySort(groupArray(id)) FROM json_path_values_equality_safety

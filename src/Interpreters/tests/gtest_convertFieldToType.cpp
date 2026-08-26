@@ -58,9 +58,13 @@ TEST(ConvertFieldToTypeTest, StrictBoolConversionChecksUInt8Alias)
     const auto & type_factory = DataTypeFactory::instance();
     const auto uint8_type = type_factory.get("UInt8");
     const auto bool_type = type_factory.get("Bool");
+    const auto nullable_uint8_type = type_factory.get("Nullable(UInt8)");
+    const auto nullable_bool_type = type_factory.get("Nullable(Bool)");
 
     EXPECT_EQ(Field(true), convertFieldToType(Field(UInt64(1)), *bool_type, uint8_type.get(), {}, true));
     EXPECT_TRUE(convertFieldToType(Field(UInt64(2)), *bool_type, uint8_type.get(), {}, true).isNull());
+    EXPECT_EQ(Field(true), convertFieldToType(Field(UInt64(1)), *nullable_bool_type, nullable_uint8_type.get(), {}, true));
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(2)), *nullable_bool_type, nullable_uint8_type.get(), {}, true).isNull());
 }
 
 // Basically, the number of seconds in a day works for UTC here

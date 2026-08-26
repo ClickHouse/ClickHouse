@@ -224,9 +224,9 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
-static bool typesEqualForFieldConversion(const IDataType & from, const IDataType & to, bool strict)
+bool typesEqualForFieldConversion(const IDataType & from, const IDataType & to, bool strict)
 {
-    return from.equals(to) && (!strict || (from.getName() == "Bool") == (to.getName() == "Bool"));
+    return from.equals(to) && (!strict || from.getName() == to.getName());
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)

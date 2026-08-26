@@ -24,8 +24,8 @@ static std::optional<String> extractPathFromSubcolumn(std::string_view subcolumn
     if (subcolumn_name.empty()
         || subcolumn_name.starts_with("^")
         || subcolumn_name.starts_with("@`")
-        || subcolumn_name.find(".^`") != std::string_view::npos
-        || subcolumn_name.find(".@`") != std::string_view::npos)
+        || subcolumn_name.contains(".^`")
+        || subcolumn_name.contains(".@`"))
         return std::nullopt;
 
     String path;
