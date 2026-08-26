@@ -193,9 +193,8 @@ void SerializationUUID2::serializeBinaryBulk(const IColumn & column, WriteBuffer
         writeBinaryBigEndian(x[i], ostr);
 }
 
-void SerializationUUID2::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationUUID2::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    istr.ignore(sizeof(UUID) * rows_offset);
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);

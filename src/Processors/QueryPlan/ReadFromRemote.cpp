@@ -241,7 +241,7 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 
 /// True if a value of this type may contain a `UUID2` leaf, whose raw `Field` does not round trip
 /// through literal formatting (it shares `Field::Types::UUID` with the historical `UUID`).
-bool typeMayContainUUID2(const IDataType & type)
+static bool typeMayContainUUID2(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isUUID2(); };

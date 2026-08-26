@@ -1422,7 +1422,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 low_cardinality_column.getDictionary().getNestedColumn(),
                 low_cardinality_column.getIndexAt(row),
                 low_cardinality_data_type.getDictionaryType(),
-                is_inside_object);
+                is_inside_object,
+                datetime64_as_numbers);
         }
         /// `UUID2` shares the `Field` representation with `UUID` (`Field::Types::UUID`) but keeps the two
         /// 64-bit halves in the opposite order, and a literal is always formatted with `UUID` semantics.
