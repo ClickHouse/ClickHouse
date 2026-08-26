@@ -59,6 +59,7 @@ dbt 可通过 [ClickHouse 支持的 适配器](https://github.com/ClickHouse/dbt
 * [x] Ephemeral 物化类型
 * [x] 分布式表物化类型 (属 Experimental)
 * [x] 分布式增量物化类型 (属 Experimental)
+* [x] 字典物化类型 (属 Experimental)
 * [x] Contracts
 * [x] ClickHouse 特有的列配置 (Codec、生存时间 (TTL)...)
 * [x] ClickHouse 特有的表设置 (索引、projections...)
@@ -83,15 +84,13 @@ dbt 提供 5 种物化类型，`dbt-clickhouse` 全部支持：
 
 附加的语法和子句定义了当这些模型的底层数据发生变化时应如何更新。dbt 通常建议先从 view 物化类型开始，直到性能成为关注重点。table 物化类型通过将模型查询结果保存为表来提升查询时性能，但代价是会增加存储开销。incremental 方法则在此基础上进一步扩展，使后续对底层数据的更新能够反映到目标表中。
 
-ClickHouse 的[当前 适配器](https://github.com/silentsokolov/dbt-clickhouse) 还支持 **dictionary**、**distributed table** 和 **distributed incremental** 物化类型。该 适配器 还支持 dbt 的 [snapshots](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy) 和 [seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds)。
-
 以下是 `dbt-clickhouse` 中的[实验性功能](/zh/reference/settings/beta-and-experimental-features)：
 
 | 类型                           | 是否支持                 | 详情                                                                                                                                                                   |
 | ---------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Materialized View 物化类型       | 是。使用显式目标创建处于 Beta 阶段 | 创建一个 [materialized view](/zh/reference/statements/create/view#materialized-view)。                                                                                       |
 | 分布式表物化类型                     | 是，Experimental       | 创建一个[分布式表](/zh/reference/engines/table-engines/special/distributed)。                                                                                                    |
-| Distributed incremental 物化类型 | 是，Experimental       | 这是一种基于与分布式表相同思路的增量模型。请注意，并非所有策略都受支持，更多信息请参阅[相关文档章节](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)。 |
+| 分布式增量物化类型 | 是，Experimental       | 这是一种基于与分布式表相同思路的增量模型。请注意，并非所有策略都受支持，更多信息请参阅[相关文档章节](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)。 |
 | 字典物化类型                       | 是，Experimental       | 创建一个[字典](/zh/reference/engines/table-engines/special/dictionary)。                                                                                                       |
 
 <div id="setup-of-dbt-and-the-clickhouse-adapter">
@@ -176,7 +175,7 @@ profile: 'clickhouse-service'
 
 一种常见策略是使用 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 作业，只重新部署被修改的模型 (以及它们的上下游依赖) 。这种方法利用生产运行生成的制品 (即 [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)) ，以缩短项目运行时间，并确保各环境之间不会出现 schema 漂移。
 
-为了让开发环境保持同步，并避免让模型针对过时的部署运行，你可以使用 [clone](https://docs.getdbt.com/reference/commands/clone)，甚至 [defer](https://docs.getdbt.com/reference/node-selection/defer)。
+为了让开发环境保持同步，并避免让模型针对过时的部署运行，你可以使用 [clone](https://docs.getdbt.com/reference/commands/clone)，甚至 [defer](https://docs.getdbt.com/reference/node-selection/defer)。在 ClickHouse 中，`dbt clone` 使用零拷贝 `CLONE` 语句复制 MergeTree 表——详情请参阅下方的 [使用 dbt clone 克隆模型](#dbt-clone)。
 
 我们建议为测试环境 (即暂存环境) 使用专用的 ClickHouse 集群或服务，以避免影响生产环境的运行。为了确保测试环境具有代表性，务必要使用生产数据的一个子集，并以能够防止环境之间出现 schema 漂移的方式运行 dbt。
 
@@ -186,6 +185,19 @@ profile: 'clickhouse-service'
 使用专用环境进行 CI 测试，也便于你在不影响生产环境的情况下执行手动测试。例如，你可能希望将某个 BI 工具指向该环境进行测试。
 
 对于部署 (即 CD 步骤) ，我们建议使用生产部署生成的制品，只更新发生变化的模型。这需要将对象存储 (例如 S3) 配置为 dbt 制品的中间存储。完成设置后，你可以运行类似 `dbt build --select state:modified+ --state path/to/last/deploy/state.json` 的命令，根据自上次生产运行以来的变更，有选择地仅重建所需的最少模型。
+
+<div id="dbt-clone">
+  #### 使用 `dbt clone` 克隆模型
+</div>
+
+自 dbt-clickhouse 1.10.1 起，[`dbt clone`](https://docs.getdbt.com/reference/commands/clone) 命令使用 ClickHouse 的零拷贝 `CREATE OR REPLACE TABLE ... CLONE AS ...` 语句，克隆物化为采用 MergeTree 家族引擎的表的模型。此操作会创建表副本，但不会复制底层数据分区片段，因此可快速、低成本地同步环境，例如基于生产环境状态搭建开发环境或 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 环境。
+
+无法通过此方式克隆的模型会回退到 dbt 的默认行为：创建一个指向源关系的视图：
+
+* 使用非 MergeTree 引擎的表
+* 分布式物化类型
+
+对于 materialized view 模型，仅克隆目标表；materialized view 本身会基于克隆后的表创建。
 
 <div id="troubleshooting-common-issues">
   ## 常见问题排查
@@ -207,6 +219,23 @@ profile: 'clickhouse-service'
 </div>
 
 由于某些特定的 ClickHouse 查询，部分操作的耗时可能会超出预期。为了更清楚地了解哪些查询耗时较长，请将[日志级别](https://docs.getdbt.com/reference/global-configs/logs#log-level)提升到 `debug`——这样会输出每个查询的耗时。例如，可以通过在 dbt 命令中附加 `--log-level debug` 来实现。
+
+<div id="query-id-tracking">
+  ### 将 dbt 运行与 ClickHouse 查询关联
+</div>
+
+如需查看服务端详细信息，自 dbt-clickhouse 1.10.1 起，适配器执行的每条语句都会分配一个独立的查询 ID (UUID4) ，并将其传递给 ClickHouse。模型主语句的 ID 会在其 dbt 结果的 `adapter_response` 中返回，因此可在 [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json) 等 dbt 制品中获取。您可以在 [`system.query_log`](/zh/reference/system-tables/query_log) 表中查找该 ID，以查看该语句的耗时和资源使用情况：
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+请注意，一个物化类型通常会针对每个模型执行多条语句 (DDL、插入等) ，每条语句都有各自的查询 ID；`run_results.json` 中的查询 ID 仅标识该模型的主语句。若要查找一次运行所涉及的全部语句，请改为根据嵌入在各查询文本中的 [dbt 查询注释](https://docs.getdbt.com/reference/project-configs/query-comment)过滤 `system.query_log`。
+
+查询 ID 还能让使用 dbt 制品的可观测性工具 (例如 Elementary) 自动将 dbt 模型运行与 `system.query_log` 中的条目关联起来。
 
 <div id="limitations">
   ## 限制

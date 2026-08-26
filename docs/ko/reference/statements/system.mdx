@@ -75,6 +75,35 @@ SELECT name, status FROM system.dictionaries;
 SYSTEM UNLOAD DICTIONARIES
 ```
 
+<div id="reload-models">
+  ## SYSTEM RELOAD MODELS
+</div>
+
+<Note>
+  이 statement와 `SYSTEM RELOAD MODEL`은 clickhouse-library-bridge에서 catboost 모델을 제거만 합니다. 함수 `catboostEvaluate()`
+  는 모델이 아직 로드되지 않은 경우 처음 접근할 때 해당 모델을 로드합니다.
+</Note>
+
+모든 CatBoost 모델을 제거합니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+```
+
+<div id="reload-model">
+  ## SYSTEM RELOAD MODEL
+</div>
+
+`model_path`에 있는 CatBoost 모델의 로드를 해제합니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+```
+
 <div id="reload-functions">
   ## SYSTEM RELOAD FUNCTIONS
 </div>

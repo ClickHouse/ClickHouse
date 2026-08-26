@@ -12,6 +12,10 @@ keywords: ['SQL 控制台', 'SET ROLE', 'RBAC', '访问控制']
 
 当您在 ClickHouse Cloud SQL 控制台中运行 `SET ROLE` 时，角色似乎会在单次查询中更改，但在下一次查询时又恢复原状。如果权限需要跨查询和会话持续生效，请设置用户专属 SQL 控制台角色。
 
+<Tip>
+  建议使用[云托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) 从控制台管理数据库访问。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
+</Tip>
+
 <div id="symptoms">
   ## 症状
 </div>

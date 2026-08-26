@@ -181,7 +181,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = `${assetBase}/ru/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
+    const href = `${assetBase}/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
             href={href}
@@ -458,7 +458,7 @@ export const PageWrapper = ({ children }) => {
 
         <IntegrationsBanner />
 
-        {/* Строка 2: 3 равные карточки */}
+        {/* Строка 2: 3 одинаковые карточки */}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <HeroCard filename="thumbnail-langfuse-light.webp" title="Langfuse" galaxyEvent="docs.home.langfuse" description="Платформа для LLM-разработки с открытым исходным кодом для обсервабилити, метрик, оценки и управления промптами." href="https://langfuse.com/docs" showArrow external />
@@ -468,7 +468,6 @@ export const PageWrapper = ({ children }) => {
           <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" galaxyEvent="docs.home.chdb" description="Быстрая, надёжная и масштабируемая встраиваемая база данных. Оцените возможности ClickHouse прямо в приложении." href={localizeHref("/chdb/index")} showArrow />
         </div>
       </div>
-
     </div>
   </div>
 </PageWrapper>

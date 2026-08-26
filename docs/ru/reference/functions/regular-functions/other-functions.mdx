@@ -531,6 +531,79 @@ SELECT byteSize(NULL, 1, 0.3, '')
 └────────────────────────────┘
 ```
 
+<div id="catboostEvaluate">
+  ## catboostEvaluate
+</div>
+
+Добавленный в: v22.9.0
+
+Оценивает внешнюю модель CatBoost. [CatBoost](https://catboost.ai) — библиотека градиентного бустинга с открытым исходным кодом, разработанная в Yandex для машинного обучения.
+Принимает путь к модели CatBoost и аргументы модели (признаки).
+
+**Предварительные требования**
+
+1. Соберите библиотеку для оценки CatBoost
+
+Перед оценкой моделей CatBoost необходимо, чтобы библиотека `libcatboostmodel.<so|dylib>` была доступна. См. [документацию CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html), чтобы узнать, как ее скомпилировать.
+
+Затем укажите путь к `libcatboostmodel.<so|dylib>` в конфигурации ClickHouse:
+
+```xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+По соображениям безопасности и изоляции оценка модели выполняется не в серверном процессе, а в процессе clickhouse-library-bridge.
+При первом вызове `catboostEvaluate()` сервер запускает процесс clickhouse-library-bridge, если он ещё не запущен. Оба процесса
+взаимодействуют через HTTP-интерфейс. По умолчанию используется порт `9012`. Другой порт можно указать следующим образом — это полезно, если порт
+`9012` уже занят другим сервисом.
+
+```xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
+2. Обучите модель CatBoost с использованием libcatboost
+
+См. раздел [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training), чтобы узнать, как обучать модели CatBoost на обучающем наборе данных.
+
+Файл модели должен находиться в каталоге [`user_files`](/ru/reference/settings/server-settings/settings/user#user_files_path), как и для функции [`file`](/ru/reference/functions/regular-functions/files#file).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
+**Синтаксис**
+
+```sql
+catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
+```
+
+**Аргументы**
+
+* `path_to_model` — Путь к модели CatBoost, расположенной в каталоге `user_files`. [`const String`](/ru/reference/data-types/string)
+* `feature` — Один или несколько признаков (аргументов) модели. [`Float*`](/ru/reference/data-types/float)
+
+**Возвращаемое значение**
+
+Возвращает результат оценки модели. [`Float64`](/ru/reference/data-types/float)
+
+**Примеры**
+
+**catboostEvaluate**
+
+```sql title=Query
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+```
+
+```response title=Response
+4.695691092573497
+```
+
 <div id="colorOKLABToSRGB">
   ## colorOKLABToSRGB
 </div>

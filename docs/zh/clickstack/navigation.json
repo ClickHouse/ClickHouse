@@ -89,7 +89,8 @@
             "zh/clickstack/features/dashboards/overview",
             "zh/clickstack/features/dashboards/dashboard-templates",
             "zh/clickstack/features/dashboards/sql-visualizations",
-            "zh/clickstack/features/dashboards/row-click-drilldowns"
+            "zh/clickstack/features/dashboards/row-click-drilldowns",
+            "zh/clickstack/features/dashboards/release-markers"
           ]
         },
         "zh/clickstack/notebooks",

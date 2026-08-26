@@ -181,7 +181,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = `${assetBase}/es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
+    const href = `${assetBase}/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
             href={href}
@@ -468,7 +468,6 @@ export const PageWrapper = ({ children }) => {
           <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" galaxyEvent="docs.home.chdb" description="Una base de datos rápida, fiable y escalable en el mismo proceso. Descubre la potencia de ClickHouse en el mismo proceso." href={localizeHref("/chdb/index")} showArrow />
         </div>
       </div>
-
     </div>
   </div>
 </PageWrapper>

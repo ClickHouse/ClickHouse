@@ -7,37 +7,37 @@
       "versionId": "0f23b810c23b3ee7309ff014f04287afdac364f185c5d2dcb663e2c1107f55cd",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T15:01:17.628Z",
+          "updatedAt": "2026-08-26T23:12:51.221Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-26T15:01:17.860Z",
+          "updatedAt": "2026-08-26T23:12:51.476Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-26T15:01:18.040Z",
+          "updatedAt": "2026-08-26T23:12:51.709Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T15:01:18.229Z",
+          "updatedAt": "2026-08-26T23:12:51.955Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-26T15:01:18.418Z",
+          "updatedAt": "2026-08-26T23:12:52.197Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-26T15:01:18.601Z",
+          "updatedAt": "2026-08-26T23:12:52.432Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-26T15:01:18.791Z",
+          "updatedAt": "2026-08-26T23:12:52.628Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-26T15:01:19.011Z",
+          "updatedAt": "2026-08-26T23:12:52.811Z",
           "fileName": "docs.json",
-          "postProcessHash": "d3c901fc94d0815215757d47c33db93208d275532b6fb993b729210a1a4e4757"
+          "postProcessHash": "6c01494b90cafc3878174ee7cbf0d28a6fc039c1088413681d40fba86ab3b8ee"
         }
       },
       "fileName": "docs.json"
@@ -140,47 +140,47 @@
     },
     {
       "fileId": "2308615ee2278ea6a11fc5396b3d5ee942f17db33b6f0e7139236eeeaca2e162",
-      "versionId": "0e83b02784db861b2b1f58ee3c974558fd8f60acec1989e320b49b35f7399127",
+      "versionId": "c416ea8738c12da3f829bfdd05bdb45b99ea03f3b5ef9886d792b9de41853ef6",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-08-26T10:07:48.837Z",
-          "fileName": "zh/index.mdx",
-          "postProcessHash": "eda3327e02afd1b4c4f05cef6e919494c69f973d95086393ff6404cd29fabf86"
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.656Z",
+          "fileName": "ar/index.mdx",
+          "postProcessHash": "776ea8ad3b305163c0650bf1bb67431cc09d6eeb01d64166ad6c021bd73b807c"
         },
         "fr": {
-          "updatedAt": "2026-08-26T10:07:48.839Z",
+          "updatedAt": "2026-08-26T23:12:58.660Z",
           "fileName": "fr/index.mdx",
-          "postProcessHash": "3c6a64b56d3f12e05a76570c1529928a0a4f0db321e15d99f0c8517365de3c7d"
+          "postProcessHash": "9f84c0cd31359918141012d45607820437c58d2978d5fac2d8608112220bfcc1"
         },
-        "ar": {
-          "updatedAt": "2026-08-26T10:07:48.841Z",
-          "fileName": "ar/index.mdx",
-          "postProcessHash": "09fa2d701ce05f72ef379c0257a34ceae06761cf1e9b7d4bd1059157c1b1331e"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T10:07:48.846Z",
-          "fileName": "ru/index.mdx",
-          "postProcessHash": "8571f9f3abac06de6b7d549d334b843768c8542793055179df8b1c84c272477c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T10:07:48.848Z",
-          "fileName": "ko/index.mdx",
-          "postProcessHash": "8c9ed8cc229781bc0eb22e04f9b49c96f675489dc38837b7cfc52e040e99c24c"
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.665Z",
+          "fileName": "zh/index.mdx",
+          "postProcessHash": "a3c4c1e7e6d38f2cba4aba7dfa0a69c9fe04cfcd9559ca44654dd39e9bc05de8"
         },
         "ja": {
-          "updatedAt": "2026-08-26T10:07:48.854Z",
+          "updatedAt": "2026-08-26T23:12:58.667Z",
           "fileName": "ja/index.mdx",
-          "postProcessHash": "8afc78725a61b448f55348adbd10e0a914609c654869d208ac92c1f67adaeae0"
-        },
-        "es": {
-          "updatedAt": "2026-08-26T10:07:48.855Z",
-          "fileName": "es/index.mdx",
-          "postProcessHash": "20884a3198c90935f09b4021d49371635939551e95e51107ed43abd009c1af6c"
+          "postProcessHash": "0aed43884e42317e728a64ca16ee46dce4ca1904f3893ddd56873f064c6181d1"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T10:07:48.855Z",
+          "updatedAt": "2026-08-26T23:12:58.668Z",
           "fileName": "pt-BR/index.mdx",
-          "postProcessHash": "2ca026718db6178c51eca11f92e3364be4097db1066c3572decafe284457424b"
+          "postProcessHash": "1074f135bfbad347c25e7b300cf7a9d676edb9a4c538c35b93e024f67ada2054"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.671Z",
+          "fileName": "ko/index.mdx",
+          "postProcessHash": "fef0940e12cfef697dc2259c6f923c7b0f6642df1c15ba61fff53b4d59f3122e"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.674Z",
+          "fileName": "es/index.mdx",
+          "postProcessHash": "b19e3b3075084588542dfea5c71e0d0d7c87b5008a1d3fc3d72660c7d877e832"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.676Z",
+          "fileName": "ru/index.mdx",
+          "postProcessHash": "ad84c50ad58593cf3537edb8421a883f89ff7c9973929132e65d7e4d1f95f70a"
         }
       },
       "fileName": "index.mdx"
@@ -8871,51 +8871,50 @@
     },
     {
       "fileId": "2e751127b03572a3f8e5a3b7929da6d22c4f82a93f65197bf53a5daf09d73a5c",
-      "versionId": "81143189cba63451d1b8d7c07e6ce53354d3c70df1a0f92d0523f6fd41a81651",
+      "versionId": "d098befe226c7c9852831dc87716b41a09e0b2255ef198feec2050f11b63ced2",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.823Z",
+          "updatedAt": "2026-08-26T23:12:58.708Z",
           "fileName": "es/clickstack/managing/config.mdx",
-          "postProcessHash": "e2a8689a2089560bcd71633d48c88b9e816279172474fc32690a061c0ab0ab70"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.823Z",
-          "fileName": "ja/clickstack/managing/config.mdx",
-          "postProcessHash": "3674c071342c7f368d8ae81a82374ca4ef5615df0861b27122cc4b6e32e2ce42"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.824Z",
-          "fileName": "ko/clickstack/managing/config.mdx",
-          "postProcessHash": "34971df7e6eee456f710e38c6419221a25924747034264042455933126834805"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.824Z",
-          "fileName": "pt-BR/clickstack/managing/config.mdx",
-          "postProcessHash": "1f217dd5d3f52143561f6b86a6e35ef24acfee4a92fba8271f4957a1ccf8aa1d"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.824Z",
-          "fileName": "ru/clickstack/managing/config.mdx",
-          "postProcessHash": "2fa77a98a4a9e1e0aa9a0722efd4683a3ca0cf7133e4316b01dc9a6a523170f1"
+          "postProcessHash": "5bacaff861eb33b0299728587285bd641f7ae4f83c40a4fc333104fe48fde512"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.824Z",
+          "updatedAt": "2026-08-26T23:12:58.710Z",
           "fileName": "zh/clickstack/managing/config.mdx",
-          "postProcessHash": "962b91c33b2bc9907e6db1a9c11328c795f21c2ef4ce08819eea9a7148ba06d0"
+          "postProcessHash": "d7512aa82c8cb6cce16f66e8122631db5bd59c29a2465e021735cfa5b5a97552"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.825Z",
-          "fileName": "ar/clickstack/managing/config.mdx",
-          "postProcessHash": "716ec0a072b7c28c706aeb0fdea39343e070f4cd752b36632261e03a528ef834"
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.718Z",
+          "fileName": "ru/clickstack/managing/config.mdx",
+          "postProcessHash": "eb7d7b744d98254a75a4e5915143bb5f08737aeecdf9edbfe633d619d4a1c29d"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.724Z",
+          "fileName": "ko/clickstack/managing/config.mdx",
+          "postProcessHash": "dd646284edb2f06f5b1c6d164cc7633a6262b468697e6b37219c2ef15689ae16"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.725Z",
+          "fileName": "ja/clickstack/managing/config.mdx",
+          "postProcessHash": "cc60cef4fbad2ea0e2b8b1ab68a5370ced1b2d28391aaeeb8569b6244390d552"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.747Z",
+          "fileName": "pt-BR/clickstack/managing/config.mdx",
+          "postProcessHash": "8e113beb383b9943d1124bd0364a49d602203f60663a29a2134c0cbc7dd66cbd"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.825Z",
+          "updatedAt": "2026-08-26T23:12:58.750Z",
           "fileName": "fr/clickstack/managing/config.mdx",
-          "postProcessHash": "de0f1121f01f347da52ce1052698bc6fe339c6e6278055731aff40df2752c736"
+          "postProcessHash": "6d818b5232469b21d2eb50ba75c194a0399f23638e65479d922a0a5466c858f8"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.761Z",
+          "fileName": "ar/clickstack/managing/config.mdx",
+          "postProcessHash": "7685a7abb7d79f6a0dce2e99003e8e635d912b519df6726e1595cec5d2285c1a"
         }
       },
-      "fileName": "clickstack/managing/config.mdx",
-      "staged": false
+      "fileName": "clickstack/managing/config.mdx"
     },
     {
       "fileId": "861649359f6dd7c7b4333b4f4f4ea2738de7a39a2eafff04b1937fd4913a03fb",
@@ -12696,51 +12695,50 @@
     },
     {
       "fileId": "7c4b397fcca8e6d8dfaeced307313688e33991243fcf3230f54ee2b603f7d0f8",
-      "versionId": "feda0bc721a8a5ece6757c9ceb27b91359b7d1d6d92def363954412bbba0988c",
+      "versionId": "724d5f2e9befde107febc73b99c60fe77a1d1cc333770eba7945c47062d2fe16",
       "translations": {
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.648Z",
+          "fileName": "fr/get-started/setup/cloud.mdx",
+          "postProcessHash": "888a02a1aa9e14ef9bc212c85bca7cb88c367f2acb1e76936fb12f10fe4e3b50"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.934Z",
+          "updatedAt": "2026-08-26T23:12:58.659Z",
           "fileName": "es/get-started/setup/cloud.mdx",
-          "postProcessHash": "d9951df395d25c6d8e5fe2f8b2050391e9ff01f1fbba437230ccc2dca5d366cd"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.934Z",
-          "fileName": "ja/get-started/setup/cloud.mdx",
-          "postProcessHash": "f1167005f48b2395314ebeaae36ba6a27a673ba25767e2334d5e0972ea79d479"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.934Z",
-          "fileName": "ko/get-started/setup/cloud.mdx",
-          "postProcessHash": "7f46533138820da848783a74d528674672a961ce22e9f652e33188e7cdcf9c74"
+          "postProcessHash": "688cba93dba7a40d265414e75c0c0972b5b004301b95c118b01015e41abbc576"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.935Z",
+          "updatedAt": "2026-08-26T23:12:58.660Z",
           "fileName": "pt-BR/get-started/setup/cloud.mdx",
-          "postProcessHash": "394e3916784fecb5fa1d553310d4c834a0adcfad6969a543f46ac17bc7095aa2"
+          "postProcessHash": "0babba9f09e86aec8248276f57414dbe1e5eb98e8855161c04760007e041dc99"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.935Z",
+          "updatedAt": "2026-08-26T23:12:58.669Z",
           "fileName": "ru/get-started/setup/cloud.mdx",
-          "postProcessHash": "8ae211145b19fdc0c6e91e360061e1a5a9fd4f899b702ee658243d52c74868d4"
+          "postProcessHash": "d38f97fb70179fc23b1be445db44f0f6b3cfa86fda6ca5fc1d57c4980960d37c"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.935Z",
+          "updatedAt": "2026-08-26T23:12:58.670Z",
           "fileName": "zh/get-started/setup/cloud.mdx",
-          "postProcessHash": "3def846053f2e52074e2248b20a9d4de331229d04572f4b4b92c75da0d0fd5fc"
+          "postProcessHash": "95f54141822f1192594619b2cbb76c3673353047d13a64bdb4fa52448b5b0244"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.673Z",
+          "fileName": "ja/get-started/setup/cloud.mdx",
+          "postProcessHash": "d8194a555dec05e06e34b8760a556e56f3334aa2dac99991ce88ba64d457602c"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.935Z",
+          "updatedAt": "2026-08-26T23:12:58.676Z",
           "fileName": "ar/get-started/setup/cloud.mdx",
-          "postProcessHash": "2df9246c5526ea07d148e0ec7cd00bbeb70f06250fa6748deeb550d8a9ad7de5"
+          "postProcessHash": "36d17553307f953ebacf5325b3a4af22743b6b449156e3ba95d7bb4c63c43ec6"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.935Z",
-          "fileName": "fr/get-started/setup/cloud.mdx",
-          "postProcessHash": "a18aa887b61413867636609a6fefea0de4d17ace90395af3ff6b28d8d7961ec2"
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.681Z",
+          "fileName": "ko/get-started/setup/cloud.mdx",
+          "postProcessHash": "b6c73c8108c74eeb39ef82a574400ef762cf82f4616378267c3c9b134329a235"
         }
       },
-      "fileName": "get-started/setup/cloud.mdx",
-      "staged": false
+      "fileName": "get-started/setup/cloud.mdx"
     },
     {
       "fileId": "7a8c54ccfb29da7ba6f4ca7a3dfb55a9cf7ccc61b462fbf7c644e5f2c3c132b6",
@@ -18770,47 +18768,47 @@
     },
     {
       "fileId": "03269930710b60391038a710069f9245ad02fbc26507d108ee656a57636dc58b",
-      "versionId": "e08057dd67170ded182aa1ea5dd3f89b378b754540c2566039891dc653cb83d8",
+      "versionId": "64de8555c7c657521effabb5373d1173606134526e49d40de53da4cec3633964",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-26T15:01:25.262Z",
-          "fileName": "ko/reference/statements/grant.mdx",
-          "postProcessHash": "315cae395015a8750a954faa65b2a16ab4e20323d010bc6dcbcd8a5a52bbc6a4"
+        "es": {
+          "updatedAt": "2026-08-26T23:12:53.500Z",
+          "fileName": "es/reference/statements/grant.mdx",
+          "postProcessHash": "6c590ca5118e1045fb128ce72f5d88b2eca9957157f31d044b345ff8230cdac2"
         },
         "ja": {
-          "updatedAt": "2026-08-26T15:01:25.263Z",
+          "updatedAt": "2026-08-26T23:12:53.501Z",
           "fileName": "ja/reference/statements/grant.mdx",
-          "postProcessHash": "13e3cc4512561e56e5353198737b107a55a95cf7ff5fd2c21eddb79d5c70b893"
+          "postProcessHash": "97ac14750d9db248fdec680c8bf1d826b9799dfd4b3383e1ca2917c7baeeece9"
         },
-        "es": {
-          "updatedAt": "2026-08-26T15:01:25.266Z",
-          "fileName": "es/reference/statements/grant.mdx",
-          "postProcessHash": "a5f248a93bc3d6bf2301481c73d8bfa108aa70423e6ab6ce6e0222c5134bfec6"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T15:01:25.267Z",
-          "fileName": "zh/reference/statements/grant.mdx",
-          "postProcessHash": "254cc130b91a34f796d6137bbdcf986309f4d2d82fa298eb8d717b90f2d12116"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T15:01:25.268Z",
-          "fileName": "fr/reference/statements/grant.mdx",
-          "postProcessHash": "d5df5157bc985dec0ea6a42b5af9d4dba3be175fbc9e1fb52b89d3e3cee8a374"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T15:01:25.268Z",
-          "fileName": "ar/reference/statements/grant.mdx",
-          "postProcessHash": "568e05fa7ccde2692b10ec4ed927aedcf3738eac0cd4720745fa43d146ba603f"
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:53.502Z",
+          "fileName": "ko/reference/statements/grant.mdx",
+          "postProcessHash": "374f6b9cf3088dd6e850fc34066199545ffd485ca203c2f4da5dc1e45e86506b"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T15:01:25.270Z",
+          "updatedAt": "2026-08-26T23:12:53.502Z",
           "fileName": "pt-BR/reference/statements/grant.mdx",
-          "postProcessHash": "5be1aeda593ebf42f123c7f8b6f0e73de2b33215f6879bb22db9484594d6a070"
+          "postProcessHash": "b1f93a7297432c7a9df8e3089f5f54ac589c4fa499a395917af4b0590de6ae9a"
         },
         "ru": {
-          "updatedAt": "2026-08-26T15:01:25.276Z",
+          "updatedAt": "2026-08-26T23:12:53.503Z",
           "fileName": "ru/reference/statements/grant.mdx",
-          "postProcessHash": "2a9020067837fa8ecf3ba878834f37e3d078db84e677833e28e2b5cc7443dd57"
+          "postProcessHash": "6f45964950deaf85ee94fc82b517e2fa2c8e2ea95c9bad575023ccc5f7d3566f"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:53.504Z",
+          "fileName": "zh/reference/statements/grant.mdx",
+          "postProcessHash": "d4faa2d1f0981683fdc0eb5008d8c9d53b7dda810d99ebce327a68d6af40bf7b"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:53.505Z",
+          "fileName": "ar/reference/statements/grant.mdx",
+          "postProcessHash": "6e7069c8fb7648a529c17ad3d32865968bcac1e72792a96898dc3f60c71c0ab9"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:53.506Z",
+          "fileName": "fr/reference/statements/grant.mdx",
+          "postProcessHash": "85ba8952de1b14455cde12bde39b80c424a02fef32f4d2a166d536b7ba1d6db3"
         }
       },
       "fileName": "reference/statements/grant.mdx"
@@ -19382,47 +19380,47 @@
     },
     {
       "fileId": "a4a2a7edb7a72a38b5c2444d433e4b486ecc28035c762a280ad70fabf8c1e3a7",
-      "versionId": "9879dba6ec4e2bd0ca6b05c6228df0eefce23c614f77ff1a1caf59b4232b79bb",
+      "versionId": "afd32d291b2018c78a5ddc5171cc74cb5f4bdcf6d5ed7089511d8cab35096af6",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T15:01:25.222Z",
+          "updatedAt": "2026-08-26T23:12:53.526Z",
           "fileName": "es/reference/statements/system.mdx",
-          "postProcessHash": "ff0af08b33fd731b57ab64d2634b1c9f7bb5af0e59467a5d6a2df8ca42dfd268"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T15:01:25.224Z",
-          "fileName": "ru/reference/statements/system.mdx",
-          "postProcessHash": "29d820e451de730c4925074b56b0a5be1b556d129a21ec50892e8172a82bd5de"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T15:01:25.227Z",
-          "fileName": "pt-BR/reference/statements/system.mdx",
-          "postProcessHash": "c3a190787c25f54c9707c068184f34356d954a8131181a11140703d7e07b0d7f"
+          "postProcessHash": "7438c18bfde849f39c5b95d2cfdcbcae35fafe4db55562df9d369de102acb07e"
         },
         "ja": {
-          "updatedAt": "2026-08-26T15:01:25.230Z",
+          "updatedAt": "2026-08-26T23:12:53.527Z",
           "fileName": "ja/reference/statements/system.mdx",
-          "postProcessHash": "7f7ef0eb890929c240da1820bf37e202fc0063691c915fa553866ee33eddf057"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T15:01:25.231Z",
-          "fileName": "ar/reference/statements/system.mdx",
-          "postProcessHash": "1ed05bf7bd23833a026edc4a13b5ebc225c509cb241d73b265722dc5b92658ff"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T15:01:25.233Z",
-          "fileName": "zh/reference/statements/system.mdx",
-          "postProcessHash": "2f86ce44568f56f9d0d59e8630aa528178c493c659aa9717819b0377934d2e88"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T15:01:25.234Z",
-          "fileName": "fr/reference/statements/system.mdx",
-          "postProcessHash": "6c99e3749a6f1abe50ef352c07b49724c19e292f67aa09834cd600a733112120"
+          "postProcessHash": "ec994e4f64f3adeed14ab7d10d6024ad40b62df1f82ab80997c588d547eb7d29"
         },
         "ko": {
-          "updatedAt": "2026-08-26T15:01:25.235Z",
+          "updatedAt": "2026-08-26T23:12:53.528Z",
           "fileName": "ko/reference/statements/system.mdx",
-          "postProcessHash": "c342efe58c4f5c34a59a2a2ea74a7b3f55b6a5640ce12ef2de18614c1b9308ba"
+          "postProcessHash": "2472971194b46d421f1a209d66ebd39142f5f7c93a1a96b6016d531914a8ae3d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:53.528Z",
+          "fileName": "pt-BR/reference/statements/system.mdx",
+          "postProcessHash": "dd39621e9a99b0707b869c36365af7988789d05e137233b9579523ddaff2f8fb"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:53.529Z",
+          "fileName": "ru/reference/statements/system.mdx",
+          "postProcessHash": "166614afaf370394d6f7f1c26e0ca5c5c6ed7eb1cb97637a4dc3acf8eeb17358"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:53.530Z",
+          "fileName": "zh/reference/statements/system.mdx",
+          "postProcessHash": "13811639c0a1b7ffefaa9e786e58d4d33bcf92c3b049399ceafe953e2f37c505"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:53.531Z",
+          "fileName": "ar/reference/statements/system.mdx",
+          "postProcessHash": "13f538c68fd70c8872c0c0c287e692acb7041c3404855426ccafffb9fdea8d0c"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:53.531Z",
+          "fileName": "fr/reference/statements/system.mdx",
+          "postProcessHash": "ab77bf94ae2216a6a5ef186bfb061b4497be298bf83f4981e1c9e5b63b7fb554"
         }
       },
       "fileName": "reference/statements/system.mdx"
@@ -62010,47 +62008,47 @@
     },
     {
       "fileId": "9e591a7e130040b5ce9084c7f1d4cb648968ad056bbf8d62ddd5e476ac2b7fa0",
-      "versionId": "ad12bf19879a0cd5dae931797098862d92323cf1dc2f766936bb4922fb4e9929",
+      "versionId": "7001a5b9160d79c480a16489a63d0c28283f72e7f8571dd8f0d57473d67089bc",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-26T15:01:25.220Z",
-          "fileName": "ko/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "84fda0774292bf75612a2b0222d46116ad12b8eea99b09bcc7580045a5096ed9"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T15:01:25.228Z",
-          "fileName": "ru/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "8228953e748343dbdc3e8f9305ef843f5a04f794e892b52441dc16f60ed34975"
-        },
         "es": {
-          "updatedAt": "2026-08-26T15:01:25.236Z",
+          "updatedAt": "2026-08-26T23:12:55.282Z",
           "fileName": "es/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "2f1970d4677d51b557c39797b56ead371ff0d9798637f726e93672c566a82f75"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T15:01:25.239Z",
-          "fileName": "fr/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "fa05046b1920fa9656029148ed4c600e95db5eeb0f1f9de9ab7ef0466f54e0ca"
+          "postProcessHash": "1abe24a0307bf880a7ffc2b8b5ababb0266760983c060daf9369fc3b18f63c17"
         },
         "ja": {
-          "updatedAt": "2026-08-26T15:01:25.240Z",
+          "updatedAt": "2026-08-26T23:12:55.284Z",
           "fileName": "ja/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "9f7c02105c03cb5fa2d060a49e545e77181e4a3688c4dfcc4e3b49cba814fab5"
+          "postProcessHash": "15b045504a5258983bee68d9d6cb078c1a28a14f8b0f91faac0b702d73138a7c"
         },
-        "zh": {
-          "updatedAt": "2026-08-26T15:01:25.242Z",
-          "fileName": "zh/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "81f10415baeb977dc9bb255480c439c4032159e4c7849cd35cbc89bad1aaa25d"
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:55.286Z",
+          "fileName": "ko/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "0619f77c4584e360cab5380edd1a37132838e764c4396b9b313843e00e5b52b6"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T15:01:25.243Z",
+          "updatedAt": "2026-08-26T23:12:55.287Z",
           "fileName": "pt-BR/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "899c02ec2fb084a5748a006ea0e0303cf6e04ea97055b45b7c335cd9f00bd960"
+          "postProcessHash": "e2b1f9854e69ec8b635e7afb24fd15cd04799c0fc76b2830c708444144117727"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:55.289Z",
+          "fileName": "ru/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "0c91cb37289c61219a2ee769449daee6e9c2008a6872809822f52fa0c40b49d4"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:55.291Z",
+          "fileName": "zh/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "4472542a32fbb6f55a51169f2b1732aad3ee4a209af9e87d6a84c741003bf63e"
         },
         "ar": {
-          "updatedAt": "2026-08-26T15:01:25.245Z",
+          "updatedAt": "2026-08-26T23:12:55.293Z",
           "fileName": "ar/reference/functions/regular-functions/other-functions.mdx",
-          "postProcessHash": "6218bf3ffafc3e3a0b16ee5c95314e8ed8927b4553ac448f5e7d1c4b1812eaed"
+          "postProcessHash": "ab0c62ef4c0fb2b41068ef24d4c72710ccea8d362b283c14d72858026ea235c4"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:55.295Z",
+          "fileName": "fr/reference/functions/regular-functions/other-functions.mdx",
+          "postProcessHash": "21317828ed7a60e23f9f089daad2445b998683d5309cec7c046378be1cdf2791"
         }
       },
       "fileName": "reference/functions/regular-functions/other-functions.mdx"
@@ -97722,51 +97720,50 @@
     },
     {
       "fileId": "59d48b4051fa23d249d4873548f297f8b36120c972565163d8b297ca0ea65f75",
-      "versionId": "73481fe9e001f3023673724b708e72397b750817c2b3dcd8c04faccefacb69e1",
+      "versionId": "a53e2ce7110f895b81429fdb2e20d2e8b750dd3680deefe82a4c2a670fa77eed",
       "translations": {
-        "ru": {
-          "updatedAt": "2026-08-18T23:25:00.191Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "48f5c857d442c215da9050ceae761356ada2cc60d049592df88454305d9b9bae"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T23:25:00.269Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "1b6097464cc24c292ea36c5393d55abf0f95f1506c5e4f7a938cb9eded88eac7"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.312Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "c3a88df73d990f50721a7dffa1eeed80de454c7f8bf711d68008b55cd08100c5"
-        },
-        "fr": {
-          "updatedAt": "2026-08-18T23:25:00.353Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "67faa6b95e3154d60316d7deab50b61c46018b9706e22fad4dea0685ea014c3c"
-        },
         "zh": {
-          "updatedAt": "2026-08-18T23:25:00.375Z",
+          "updatedAt": "2026-08-26T23:12:58.661Z",
           "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "55f20e7d0d1a672b491e97386b6bf85ff2bdbc402fd1aadabfd833debf4b1ff9"
-        },
-        "es": {
-          "updatedAt": "2026-08-18T23:25:00.392Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "5b35a1e6876c6b6cb13928057d116758eac30b115012af3d6bf4b899afe43a3a"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.399Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "d251060ec72479c8ba2d596f16e7ffdf969c6a90878636cc0dd19d7f78d0793c"
+          "postProcessHash": "f5dc1e4cf385082fa1510e7264d1eb90190288d776868fafc7657745257c3449"
         },
         "ja": {
-          "updatedAt": "2026-08-18T23:25:00.401Z",
+          "updatedAt": "2026-08-26T23:12:58.663Z",
           "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-          "postProcessHash": "9d19e93f7d999135c79b07bc01aff1dd9f2c13b03d431cdc0d60b38510493726"
+          "postProcessHash": "30b54849132e0f79c2a8b78b22f5247e03d6c6c34b0fc13cc601920aa3256519"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.673Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "27948eeccc1da3e9980f51171f705a744f724f34a07b02cb95845f840bbf66bd"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.678Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "b8ed4a21b3d6185521f868f8b64babf8275bddef0e4ee9185ec530729d9f7bc2"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.682Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "2c67f26ce0602be8f2bd070e8a662e99cfefc370214c06d51ac9f2e10acaf5ed"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.686Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "80475bbb929a346db8dad8f588c6fe394db3ae50eea4da2d44c0507f495bb166"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.688Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "681cb9a2d15705fe6113673b911c2885a7b058dda06d4df9f18ac8a65ff452ba"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.719Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
+          "postProcessHash": "42cdbcbdf689bff7efd39aa55319208e309b2bcb4cf0f45056fa44b41e8e1daa"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations.mdx"
     },
     {
       "fileId": "b4ff40701c5d393a58188b5def18a03081b38f677d8f75f21688b6c98a083ae6",
@@ -97817,147 +97814,144 @@
     },
     {
       "fileId": "402d6134a2ab36413d167b749aea0541976b02ced3a479564a595cbb998c8e13",
-      "versionId": "3a4229a8975a7ca14dcff7b4974906692c61d427cc725c040c5197cd70bb5c47",
+      "versionId": "3a0c52411b3ec32fe249e29d66678f3181de42b80e3fff39e948581aa454d34e",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.199Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "e7049142b35dfee2af93191cf035b873ee6770cece0b56d33b230ba30dd4c0f9"
-        },
         "ru": {
-          "updatedAt": "2026-08-18T23:25:00.202Z",
+          "updatedAt": "2026-08-26T23:12:58.700Z",
           "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "6ac03292222ec0ee2f73ab7a24a21d2ebe31c6d792a81ff8d60e2a4eb08cc63e"
-        },
-        "fr": {
-          "updatedAt": "2026-08-18T23:25:00.217Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "f246d1055924a895295e3c144f5287e923cb8f3107e191b8dcfc09f11bf89a46"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:25:00.225Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "8712b2b072ccfc0245b45dfce5090e522f178f991804390a0bc751c07739b855"
-        },
-        "zh": {
-          "updatedAt": "2026-08-18T23:25:00.255Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "698127985c9f086291ea7ff81ce61586de8cda9b1640d6ff6dfcf04ca8d63ed9"
+          "postProcessHash": "b6213e5761b458279ad2c7f65526df1c6be5fbe01544da80bbd0f892fbe99d26"
         },
         "es": {
-          "updatedAt": "2026-08-18T23:25:00.332Z",
+          "updatedAt": "2026-08-26T23:12:58.707Z",
           "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "e1bb6cadd1ffc8a4408a648aab6e1e86f4f5af30fe970d7653df871d948dd1e7"
+          "postProcessHash": "5ff1e0b54bca8f7f7131075fe25e86fb5996f2296783d5b3695fa02ddb0f1812"
         },
-        "ar": {
-          "updatedAt": "2026-08-18T23:25:00.374Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "021c26931ae034b58930b0341a1a938910264945b20558996751dc80060f5d5d"
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.715Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "6bff4286f4a9c361e934d0404aa0da4cb680beb28101b2028225dddadb840f66"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.716Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "dda0547dd06e1c512939b590c2cbe802060114c178612c17d49555f0093c08c1"
         },
         "ko": {
-          "updatedAt": "2026-08-18T23:25:00.404Z",
+          "updatedAt": "2026-08-26T23:12:58.720Z",
           "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-          "postProcessHash": "0354d0bad99bb33c0c27fe3adf8e48304387a612a4346e41cc5236689c8804e0"
+          "postProcessHash": "bf55a0c8602f94d595bc10ef667cf3d61c6b6e0a826ed4f9ef91737ecb47b8dc"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.722Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "6ceb94d2f9df459ba09470988e35466ddd9c72504a14a748a204ee11cb78e731"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.751Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "92bf4a27a40444449f8329284688493483ac3586016301ebf66547778c46d7f5"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.763Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
+          "postProcessHash": "2c2db92c67bc0ab228d5dfab911fac574a562e15eefd6cd31b54ad05e66c0b45"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/index.mdx"
     },
     {
       "fileId": "a3004df79b430edcb77d254005f3397255e73abde366e7d812086c4a0b8d91c2",
-      "versionId": "0da5b31cdcd7d24e745da723ce4e3693e107868d0a5e5a59ed7b0db6990b47f1",
+      "versionId": "b018c0f9acdde1bdfeabb18b3b52c82c43370f4515fdcf47f450634cca8d1794",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.593Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "49ae2c7babb414dbfe777fc8af234da1caa020eabdf46053a8ebc800c8e77724"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.593Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "3ef7e504187b23bb9e46166f52fa4ca282d68d14f2eb77b077d2de8ad96bb169"
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.666Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "1e6b93715fa7344c036fea45b1ff18cd7b99b7af4c8c5e21bcb8c5f92b5dbfaf"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.593Z",
+          "updatedAt": "2026-08-26T23:12:58.679Z",
           "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "47cb1066997648a0594b735ed96abb3eb1133e9389261648ea5e4f63e17761f8"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.593Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "8e4045afa5020bc3efa85f7e4ee18f75dcf990da00af4f24a21c94424a465881"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.594Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "ef8c577cd7503d0b78911b743e7d45bc0c10f6b7e307ce9e07fd7c9b49b3e2ba"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.594Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "1a8cd4d74547f1f1262e20c049a81a5a64349adc8abe5c405d3e60b2905c2b17"
+          "postProcessHash": "6953d705fef640aa0adfc0962fb2657d336a291b1cc33378e269c60cb23e6b5f"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.594Z",
+          "updatedAt": "2026-08-26T23:12:58.704Z",
           "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "1334bf52932bcef5aa008cfbf25ccca53d8452a77264b84ca5dbadfad9370def"
+          "postProcessHash": "28b52a608ddb72565c8d943391151fce76611da11994b208cd6c112c7b60e031"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.705Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "181c94cb76a8eca5ed30ee6dc64f3cd831a068bc00570f57d91d457e00eec115"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.711Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "4e4ca1c94d91ebeebaebe6a0ee586b8194a213cb6c7b6316f0757c27e25b0d8d"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.594Z",
+          "updatedAt": "2026-08-26T23:12:58.714Z",
           "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "58213bc8b5aa58c9e8173fa81212a396f1338f5e0d80c58eb6f7b5f102f90f55"
+          "postProcessHash": "06fe04927e89b2f8ab9d4de5ab30ef084c0daf292ef7f253d2e44ede8f2d6a6e"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.717Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "baf9571364e3d9f57ab022d3918f5def4710dfab5d35c4136d2d4944be824071"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.721Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "66f43ef34dc9f4f071f82e615836da57d01dec12a35ee3c30ce6fa359d315080"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx"
     },
     {
       "fileId": "5ba7f14eef0794d5bbb77aeae25ba62fbc2f05a1d574278aabfb8614343b56b8",
-      "versionId": "54bb26f43ac4e3600568fbe6b4c3cd1621861f290debaaaf0c18ae84d0ec56bf",
+      "versionId": "c30acfa4837743f3379a11369cd4306d4e074883d285df3eb8454b9ee5c0a2f0",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-18T23:24:59.898Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "87a106eba41f788d4883e5e9e8369d5699e7b202a1e43f5ae4aeba779694572a"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:24:59.899Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "a5487c6bbc678df2209bde8d7121c2a8fe6ced0e6c229c059f125a51e5f016fa"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:24:59.900Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "812970fa590709803fd88bc2fdaa8807c1293304a75903c741f8b5aa81af2c26"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-18T23:24:59.900Z",
+          "updatedAt": "2026-08-26T23:12:58.677Z",
           "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "680f518c51e4045b44e49a58aba37e42b1933c0d8f72ab08dd10616372aadfae"
-        },
-        "ru": {
-          "updatedAt": "2026-08-18T23:24:59.901Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "3cf997eba76c3a13712c67c144a6425510baeccf558fac601f12997518a524e1"
-        },
-        "zh": {
-          "updatedAt": "2026-08-18T23:24:59.902Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "d65aae3ea91ba99fba7b97e6ad0784b22e3f4c51c6ec3d5181504405a352d1dc"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T23:24:59.902Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "2caee93def041f3e9e63e43dcf2e4c96b3ac2561e9b9b0b64a53f91f808f15ff"
+          "postProcessHash": "793343d0bbb1ab4e1f60c610ace4431a7fe47ebdc9e84380f57db0e72aa4f6a5"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:24:59.903Z",
+          "updatedAt": "2026-08-26T23:12:58.691Z",
           "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "2fbc8a44893f9f23265b713735d9d9c6e9f83a374b2cc3afd4d070b2fa9f2f3c"
+          "postProcessHash": "000242fa0eaa02f974092582cd75198ef7c74f34c4754a725b50245f4283c4cf"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.692Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "859d34dea0f1726a347529690c3641fea00f332a964b3c8961a57134541b0742"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.693Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "4f341c9ff367ff85146b55b1eb513d3a8bf40a5f13dfac13b049c03198dbc74f"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.697Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "cfa1ef9d580e0f20ca670117e611df36e45e7a68d94976a6120ba9bd35266eca"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.714Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "1ba101decb80ff9fe35088e952a0e95cc753fd561607be4a976abcc73ca72a23"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.753Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "900f0806572c6ad33c9d87ec7a1aca3349eea4c3c07687b1b468d07302e7d69a"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.756Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "e3412656aac279c8739261e3ff04c6c0c24b9ccaaf38e9e158e6ca9d97c0458b"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx"
     },
     {
       "fileId": "d132746dc5374ff852d2b6ebf2dbe18a0f084018bf049354f7bfc063c5c609a0",
@@ -99494,51 +99488,50 @@
     },
     {
       "fileId": "c5e0cdf93b369c31bd2022c2f630a1bcdb3ea9c6893eec4e17dcecef1dbc651c",
-      "versionId": "e3932206f259254a04f131fe66164ee825cc5c60e7c39d395e2faa6d0365772e",
+      "versionId": "4b919b9080aec8a96b362ec8bc4f7d2425155793ce7833fa714a88db14247c6f",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.625Z",
+          "updatedAt": "2026-08-26T23:12:58.643Z",
           "fileName": "es/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "656b2eecfb30258a7e60671ded5250b0b172e7f6c7e960a9f4f36f00983ab94c"
+          "postProcessHash": "c28d77f0fd17a2665edd8c60e2f718c6b1fdfaaa5a53d4cec259156ae9ad7afa"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.625Z",
+          "updatedAt": "2026-08-26T23:12:58.647Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "894df7494b4d3130013fcdbd4236c0f92f89ff0f388b9457fce79cf1ca519a87"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "991d7285c45b21fbbae37a8ad2722207176eafbafb0d888bbd9607d09a30b8f3"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "f673372ef589e36c1d6d80c0d881c03267c8217eecb5c4e9427a4a1817b06b3e"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
-          "fileName": "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "4460c4887ea02482fb6f56d96f765b40533bbdb6545134f802c90c9a0ba6854e"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "3b37549ae360a3265f71feb43a915c2cc8dca52749c0a3461e21ce8575143635"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
-          "fileName": "ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "bb46a09db7b75fea3c10b1d67b6e102651b3b5562d416ee79814b35554e9d3e0"
+          "postProcessHash": "29b69648493042861f0e4e56f7bfc594c16dc45817b8cce2dc0d66d27fd9d4ae"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.626Z",
+          "updatedAt": "2026-08-26T23:12:58.649Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "b60b5eedb7f23628ddb0fab09103223ec6eef17926f687483252ac549d46e83d"
+          "postProcessHash": "a954e4101adcb5ecd8cfa1c695d14af743f7a674f850e67eb019a935579d67d4"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.653Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "24e2f75660638775bb41865228c0866596128c327f8540baf745d5551f9edf84"
+        },
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.654Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "ab45f7749a0c90da97b661b6bd08d1c28a216d9e243d13fb762f99bc60ffbfac"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.655Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "889bd96748e45f3ab6813ab46e80debe012a0db72db9a0050ac450f3f59803e4"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.657Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "a9579e8c8e49c499afe897ab0e829a41b2e35a531547cb86034d1341c077b430"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.683Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "40925e3d5db1bd704c7ce5cfe533fdcc8948d4e5984d0eedc522bc9a1a5ec205"
         }
       },
-      "fileName": "products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx"
     },
     {
       "fileId": "b6c7a0850b568e9fa84ad2efdb1bb9a96894ff92179e9e765eda322ee73838c9",
@@ -99637,47 +99630,47 @@
     },
     {
       "fileId": "3fc1e975ebc4cb9c2746adc2fb844e9954e1db503a356c1e5a8bd691577e8f90",
-      "versionId": "a85f03eb77714907323ae9388f03ddd203c77828a22efcc7f887f4bde5a4f7a1",
+      "versionId": "20dce1b622fe2e7e852d39afbec248e0f2224c9c2e5a9ae6ef7e3b2de451f18b",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:32.409Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "1533ec735b672695e9f688fec2f9a7c8fef0146601b46068bd3af5308a9f142c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:32.410Z",
-          "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "921fcdfd137f1206c05309990ee4d78184b218f6330cc58ce5cc6009460a9921"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:32.411Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "be406511431e0ec47cf5ec04ea14ffdf4e0fec9c0c66348245ee6b754c36e6f9"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:32.412Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "1ae274c99bd67a0ec6c8c5250e35e42f91830adccb6aab932fddf3093a143dd5"
-        },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:32.413Z",
+          "updatedAt": "2026-08-26T23:12:58.643Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "2bb9c670a75d4a69e2fd20e2095cdaa2259923b50ed7eb3d0ea2fa5d21e5862c"
+          "postProcessHash": "a89ec51d1c1e9d70cbbc1d82db2555337b19d898d1fe5d152d2009a68cd48fcc"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:32.414Z",
+          "updatedAt": "2026-08-26T23:12:58.670Z",
           "fileName": "zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "b1cad897d234c19508d3c19fca1600875ba617b2766ce7693ed2a9cccf7116df"
+          "postProcessHash": "adad4ba91d45d3e914dfbcb4554f77e5e89aefbbdbeff5e13ec46e0f2b318f2b"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.680Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "eae7e0c9cf0c2c86faa123fdfcbda3f75130f6ee990a8ed52a7656d4ed09ddeb"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.699Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "ab50d68c677705949b4af1c13f2d11b5d208dc5c51c3906b6d4b31389480224a"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:32.414Z",
+          "updatedAt": "2026-08-26T23:12:58.701Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "8aacd7839332a00fd594eb25e98bda4e5734f2b4edd19738ac27cfd598056693"
+          "postProcessHash": "26da8fd0efc9a0806bc05f846eb2bfce3ee32727d1fd5f387b203c7b3dd65c0d"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.702Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "a259d402e6c08a6383bae69043c8d0e08fe509cba306c036d94e1306d998a955"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.706Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "e7ff8f1ba3ec1d92f4229c55b0353ef5887ef940d5b8c5d350b3c61eed2477cc"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:32.415Z",
+          "updatedAt": "2026-08-26T23:12:58.709Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "c654cf5ae752f1a29102d61dfcbf37af68262515eb9051333bd445057cf9e488"
+          "postProcessHash": "8555210afc5503a0358b99460407ae5c45e02a3568b53ac299d20c739bb9ae14"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx"
@@ -99732,51 +99725,50 @@
     },
     {
       "fileId": "5671c2726fa333b338a8b94a8ee6897e69d589383cfbf5fd8e6c96413ca857f0",
-      "versionId": "d6b704171edd703243537b84be2ef1718c9294a7208dad54f76ffe2d66017686",
+      "versionId": "fc361211f485af16f852035e8b267d52f3856cdb9962bdebd56306acef1e050e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.631Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "9c55096bceabd51e86ded99fb4e498763d78e409fc6d922f27b1972458115d42"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.631Z",
-          "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "e626dde64153a311ee5389e16c11b63b36f55bd9ff26b15e21da61a1bb3d1d8e"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.631Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "21ba5c5830d7e3414bf322d9c566b049a55b205a538845500d89a83d4514f63c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.632Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "6d9f9faaf8bc9cbe5c12d24ec050ecf823ed1946311750d00f27ebb02f6e495a"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.632Z",
-          "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "cdf576e631e3bbd830addf43040d5614c2b23beea4089f03ffeba78cc472fb85"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.632Z",
+          "updatedAt": "2026-08-26T23:12:58.647Z",
           "fileName": "zh/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "ae2a84e3f00e1e52b063c628dc46d0dcd85d13a248b2cb851bfee1efeca5b5ac"
+          "postProcessHash": "67fe28f71fd22fcfeb82ca6c0e93d1337f9fc12854cff6f631cf56d82913a742"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.632Z",
+          "updatedAt": "2026-08-26T23:12:58.652Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "2d40d91d613b35f63aabf95ed57b305925eec68525cdf68b7c29d908b0875b43"
+          "postProcessHash": "d2e5f7ce4d5c658375933f4c648bd6b4b647596f73258932e4981cf8f507d7bb"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.664Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "234e2cb3c746fa0ba361b41c8b2806cc9fd26ad94a36264f110057f09a215d8a"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.665Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "5d057077655c1d58744c486474e2bd6e1f67d1d61331f2f5d234fb8599664678"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.695Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "40e8390fbadeed0a5ed268fd7fcfafd85843374778c6a035d6588a9ca4d9b814"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.632Z",
+          "updatedAt": "2026-08-26T23:12:58.698Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "76473a44755bfcff7ff7173352557975c2438c76e8574b3251b86685e9cd860d"
+          "postProcessHash": "69d7af53b261d9cc536e4dfae5c1f4d9e343731682767b71f7f873a76bd614c7"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.698Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "adee1dda27a231c1b9d3f8e9f9313afcc898b6340806c99a68e426048a98f18b"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.712Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "8371000ab9ad7a9b5f4f51790c75f737ba197f1a417cd2ed00524b9e6f3cb7b2"
         }
       },
-      "fileName": "products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/security/cloud-access-management/manage-database-users.mdx"
     },
     {
       "fileId": "8b9e38b63b613d3e60536efc2e4cc9b7922a4b6f628f787938ae13e3a6c8b20b",
@@ -104214,51 +104206,50 @@
     },
     {
       "fileId": "b749ae4e6faf6838df2b0bba323bc2b926a113c16aa280174a4d057aba9d3a62",
-      "versionId": "34b5024f35925b15c85904908aed38e020fff4dd337a39dceb98b61fbaabfb47",
+      "versionId": "eaeb51f555678b3c9094dd4780dabaacefc8beb3a426ef3d9967d59b7ff057c5",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.136Z",
-          "fileName": "snippets/ko/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "54b075b63aa1d2ccbf3ec08ae83126404af956e3b1c609a18c3ece28429c731d"
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.723Z",
+          "fileName": "snippets/fr/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "aa6f6d150113757b4a3555508743385369f6adab502f9b1c0c2da1457d72fd72"
         },
         "ru": {
-          "updatedAt": "2026-08-18T23:25:00.192Z",
+          "updatedAt": "2026-08-26T23:12:58.749Z",
           "fileName": "snippets/ru/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "202910cc92cec0208f021406d7874c6b765581ebd5d368859263de16d8d4b2f0"
-        },
-        "fr": {
-          "updatedAt": "2026-08-18T23:25:00.209Z",
-          "fileName": "snippets/fr/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "33fd1e192b79900f1134e10d22bea8f784738416f32e376698c095b5bfcf02a5"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.220Z",
-          "fileName": "snippets/pt-BR/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "7cf985c0427475bd87e157ebe51a3af0b12bcaf7b1f9af6f8d5b63e70c8bf8d4"
-        },
-        "es": {
-          "updatedAt": "2026-08-18T23:25:00.238Z",
-          "fileName": "snippets/es/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "bb9e36c45a8099f461ffada2d5a9ef79312c1156a163cd95c2c1b92725740fda"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T23:25:00.264Z",
-          "fileName": "snippets/ar/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "5f75f0ef6debf6d9f654b89ea922d16d3a6a9766bbe89ea9559a1d08e8c473c3"
+          "postProcessHash": "e9949fdb486a9fa75764541ef656a66b717e6a77c17703719bf942a0da4f62c5"
         },
         "ja": {
-          "updatedAt": "2026-08-18T23:25:00.272Z",
+          "updatedAt": "2026-08-26T23:12:58.752Z",
           "fileName": "snippets/ja/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "55246e5a06c22ae4b368492d8c13ec0b25dd6a707443c03be8e08263afd6a899"
+          "postProcessHash": "813a4c64edd029ec3096752f060aae4d28a6321a92ca989d692ea6d429a914f8"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.754Z",
+          "fileName": "snippets/es/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "aa65e0082c33ba085e6ab1d1cbc64c51a15b847f58de7a44f56c743bed556e0c"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.755Z",
+          "fileName": "snippets/ko/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "5cfa503759e21fbff47959fb2624b92eda90eb480e3664af9bfa5be145ab3c26"
         },
         "zh": {
-          "updatedAt": "2026-08-18T23:25:00.305Z",
+          "updatedAt": "2026-08-26T23:12:58.758Z",
           "fileName": "snippets/zh/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "b861d5e888b39be08baa877f954ddbcd3ddac3e7988f3739556c1aad7bdf121b"
+          "postProcessHash": "a4596e79ba5fe2617845fdcb389640d48de711f4868ca5332f1c5b852c14be3d"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.759Z",
+          "fileName": "snippets/ar/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "8f9915b639f6db051c6da674f9b14a841a99611a26f602a1e2722a3ec57399ac"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.762Z",
+          "fileName": "snippets/pt-BR/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "fc72d5857865df7832a97eb676a759925460643e78d25cfc3cb37770d54d2149"
         }
       },
-      "fileName": "snippets/components/KBExplorer/kb-data.jsx",
-      "staged": false
+      "fileName": "snippets/components/KBExplorer/kb-data.jsx"
     },
     {
       "fileId": "dc89f3904c594b011c3be04ae6142586f3a9d115bd3c06a95f736c2f399f5100",
@@ -135213,51 +135204,50 @@
     },
     {
       "fileId": "525232c2f0aececd1cb5ed1ac736c0abf52b0840b083f7b6ee9128c00a1b9769",
-      "versionId": "e6aceab6e09fe88603eb16fbf5c801352efa626f438e80ca34ed0ecb67a334b2",
+      "versionId": "2614b81d15f7cd3b94a15f5c09c0f5fb3969f63918a1b763fc5662e9e6053b08",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.539Z",
-          "fileName": "es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "6fb5f966b1fa49d3d5e03a70cd048f5bdd9ad55f584c8fdc5a6799d6720582a0"
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.640Z",
+          "fileName": "zh/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "8848820fe2b2c3701b37ca96020c72df7748ccdbac3040069a127ea6110ee6f7"
         },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
-          "fileName": "ja/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "039c2e6ec1ef395ef3e3f682072311ab2264658c0ccea115e0cad84a92ad7723"
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.646Z",
+          "fileName": "es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "a1edd4b832c86f17a3a84150d8f1e88babc1c0ff2e1fe8818e3aa71bb7e7e199"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
+          "updatedAt": "2026-08-26T23:12:58.650Z",
           "fileName": "ko/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "c076889f616e940c74f5566c02135639c1d8238346e4b6184d93d1548c139eed"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
-          "fileName": "pt-BR/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "fc71f9530633992c07bc517600e77ceb06d5f917b113257d6cbdb244d8fac09c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
-          "fileName": "ru/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "83ed98e4e1ceafa4cd45f283b553c10b1d2c8abfc6c0ebfc20c49b59b2c209e0"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
-          "fileName": "zh/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "ba13898608532e4d9bd334a50be02a5887f1f4b9db3f4f70e6755e85dbaf0dd8"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
-          "fileName": "ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "88ce4d8bc096c3a967b9a74d364b9ab7abac8590eaddba43aa264183ad9c6e2c"
+          "postProcessHash": "b18e6041bdbcaa5714198b4a719a6053f10ac032ff28396c8c04797720064f00"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.540Z",
+          "updatedAt": "2026-08-26T23:12:58.651Z",
           "fileName": "fr/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "2578ef659c15b5e5b63b9185d503699d72f68cc26508012b30d4c81f44d07c46"
+          "postProcessHash": "8d998f2006a24d94a5e03729caf20eb51ec140940bf40b5e7797188dc438090d"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.658Z",
+          "fileName": "ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "56dfca02306217115b2ad251adf7ffe58f3f0241b14d6cc27246942d007e3114"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.662Z",
+          "fileName": "ja/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "b9d549c599fdbc38885283ed8146050b258a1c84635de14b573b2b30c63a47ca"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.674Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "fdf8980cc5a466350649ace30cc2a45f42dbab5fcbdd4e251470940af8eebee9"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.684Z",
+          "fileName": "ru/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "16cc4b1d8f2954402fbc37adff852a7a55ff344f0928a7d8ace0ca5c0d505c77"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx"
     },
     {
       "fileId": "daead1e4dbe415b1c05b935397b7b2c6c70f04977ea5e78b7981122df5b0c5c7",
@@ -136866,6 +136856,100 @@
         }
       },
       "fileName": "integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx"
+    },
+    {
+      "fileId": "b69258b43dcc5929c1bfae52a03c5ebea7809d6f5498d220751b28fd7dcffbb5",
+      "versionId": "29c75b47cd0c34bb03019d42bde7ee1dd05edcf56980ead7551342feb4ee8c98",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.639Z",
+          "fileName": "zh/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "0a1701060d11ac3d57af07cd4868cf5a399b731864ac1f1487080b972ac7a874"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.641Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "57e4dfcb6b99749cba4e69be5e01fad4ef6b57614d66710c098513cbba8c4607"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.642Z",
+          "fileName": "es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "838d662d9e6b5751135456e614d415bf6c57c93c00c354a8c9fb6fc5af280d79"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.644Z",
+          "fileName": "ko/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "6bda272deac5f2ca607723135701a7ee43df0a13a484c933847006bbd985d780"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.645Z",
+          "fileName": "fr/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "e95207c95c8b165d4f745f1c2e46b680bd4ae6b26b101b55e7bcdce378e72939"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.648Z",
+          "fileName": "ja/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "5236f6317bad5060e24754f15cef1d300cbe0563239ef0f6d7b76401926f861d"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.652Z",
+          "fileName": "ar/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "5679bc6c6b9baca88c77e272a7afd491edcaec4a36b8edee3a79f9697d6ab5d6"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.656Z",
+          "fileName": "ru/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx",
+          "postProcessHash": "4b064606acb52b84bd46edb22699ae66ac1d9c09244fefa6e64985ff90765e67"
+        }
+      },
+      "fileName": "resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server.mdx"
+    },
+    {
+      "fileId": "6ba42dc6860fbab371006ed72c0c0c6488246498b7f0cdc0ed91913d920dc894",
+      "versionId": "64b5b6f2b64603eabaca234ece15a91380d8dfb8de807e3c03dfde9f9e01f992",
+      "translations": {
+        "zh": {
+          "updatedAt": "2026-08-26T23:12:58.694Z",
+          "fileName": "zh/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "5dc4cecf44a1fc1160a486b50329a85123abf99ec18da4b359b23803a12f7307"
+        },
+        "ko": {
+          "updatedAt": "2026-08-26T23:12:58.695Z",
+          "fileName": "ko/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "c3e02bd2fd28a5d6226d2c24ff819b2f1a998198530113819817d8cb2cc0792e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-26T23:12:58.696Z",
+          "fileName": "pt-BR/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "98cc871de8fccc2d0059eeb22ad9179abdeaef3e216ef69fab69adf62f67f76d"
+        },
+        "es": {
+          "updatedAt": "2026-08-26T23:12:58.701Z",
+          "fileName": "es/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "6448c4af0b1522807d98da8d838c90a22f53a4ff6be94ffe23cdd3270d5ec423"
+        },
+        "ru": {
+          "updatedAt": "2026-08-26T23:12:58.703Z",
+          "fileName": "ru/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "f20bc1697498a672d1ffabab4e402d37908cba224b271fbf34fa0f0691d37df3"
+        },
+        "ja": {
+          "updatedAt": "2026-08-26T23:12:58.705Z",
+          "fileName": "ja/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "6fabf5e476ca877983f39c742f9029e35d9bf7547156918967e1f65e6e410a6e"
+        },
+        "fr": {
+          "updatedAt": "2026-08-26T23:12:58.708Z",
+          "fileName": "fr/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "bade06b989d47d5fad7cda1071de8edbd21036442d846294723308868f7d6ded"
+        },
+        "ar": {
+          "updatedAt": "2026-08-26T23:12:58.757Z",
+          "fileName": "ar/clickstack/features/dashboards/release-markers.mdx",
+          "postProcessHash": "cb1777d780215c3a0338901efa00a8d5eba9ccced81dd2febd1df39ccae9e4b2"
+        }
+      },
+      "fileName": "clickstack/features/dashboards/release-markers.mdx"
     }
   ]
 }

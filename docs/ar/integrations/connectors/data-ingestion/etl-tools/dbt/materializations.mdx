@@ -332,28 +332,20 @@ models:
   #### استراتيجية Delete+Insert
 </div>
 
-أضاف ClickHouse ميزة &quot;lightweight deletes&quot; كميزة تجريبية في الإصدار 22.8. وتُعد عمليات الحذف الخفيفة
-أسرع بكثير من عمليات
-ALTER TABLE ... DELETE
-لأنها لا تتطلب إعادة كتابة أجزاء البيانات في ClickHouse. وتستخدم الاستراتيجية التزايدية `delete+insert`
-عمليات الحذف الخفيفة لتنفيذ
-عمليات materialization تزايدية بأداء أفضل بكثير من الاستراتيجية &quot;القديمة&quot;. ومع ذلك، هناك محاذير مهمة
-عند استخدام هذه الاستراتيجية:
+تستخدم استراتيجية `delete+insert` [عمليات الحذف خفيفة الوزن](/ar/concepts/features/operations/delete/lightweight-delete) لإزالة الصفوف المتأثرة، ثم تُدرج الصفوف الجديدة. ولأنها لا تنسخ الجدول بأكمله، فإن أداءها أفضل بكثير من استراتيجية &quot;legacy&quot;. يؤدي تعيين `use_lw_deletes: true` في ملف التعريف إلى جعل `delete+insert` استراتيجية التزايدية الافتراضية.
 
-* يجب تمكين &quot;lightweight deletes&quot; على ClickHouse server لديك باستخدام الإعداد
-  `allow_experimental_lightweight_delete=1` أو
-  تعيين `use_lw_deletes=true` في profile لديك (مما سيؤدي إلى تمكين هذا الإعداد لجلسات dbt الخاصة بك)
-* أصبحت &quot;lightweight deletes&quot; الآن جاهزة لبيئات production، ولكن قد تظهر مشكلات في الأداء ومشكلات أخرى في إصدارات ClickHouse
-  الأقدم من 23.3.
-* تعمل هذه الاستراتيجية مباشرةً على table/relation المتأثر (من دون إنشاء أي جداول وسيطة أو temporary tables)،
-  لذلك إذا حدثت مشكلة أثناء العملية، فمن
-  المرجح أن تصبح البيانات في النموذج التزايدي في حالة غير صالحة
-* عند استخدام &quot;lightweight deletes&quot;، يفعّل dbt-clickhouse الإعداد `allow_nondeterministic_mutations`. وفي بعض
-  الحالات النادرة جدًا عند استخدام incremental&#95;predicates غير الحتمية،
-  قد يؤدي ذلك إلى حدوث race condition للعناصر التي تم تحديثها/حذفها (ورسائل السجل ذات الصلة في logs الخاصة بـ ClickHouse).
-  ولضمان نتائج متسقة، يجب أن
-  تتضمن predicates التزايدية استعلامات فرعية فقط على بيانات لن يجري تعديلها أثناء
-  materialization التزايدية.
+هناك بعض التحذيرات المهمة عند استخدام هذه الاستراتيجية:
+
+* تعمل مباشرةً على الجدول المتأثر من دون إنشاء أي جداول وسيطة أو مؤقتة، لذا إذا حدثت
+  مشكلة أثناء العملية، فمن المرجح أن تصبح بيانات النموذج التزايدي في حالة غير صالحة.
+* تتطلب إعداد ClickHouse ‏`allow_nondeterministic_mutations`. يفعّله المهايئ تلقائيًا لجلساته
+  الخاصة متى أمكن ذلك. وعندما يتعذر تفعيله (على سبيل المثال، إذا كان للقراءة فقط بالنسبة إلى مستخدم dbt الخاص بك)، فإن السلوك
+  يعتمد على كيفية اختيار الاستراتيجية: فالنماذج التي تعتمد على الاستراتيجية الافتراضية تعود بصمت إلى استراتيجية
+  legacy، بينما تفشل النماذج التي تعيّن `delete+insert` أو `microbatch` صراحةً في وقت التشغيل، ويفشل `use_lw_deletes: true` في
+  ملف التعريف عند الاتصال.
+* في بعض الحالات النادرة جدًا، قد يؤدي استخدام `incremental_predicates` غير الحتمية إلى حدوث حالة سباق للعناصر
+  المحدَّثة أو المحذوفة. ولضمان نتائج متسقة، ينبغي أن تقتصر المسندات التزايدية على الاستعلامات الفرعية التي تتعامل مع
+  بيانات لن تُعدَّل أثناء التجسيد التزايدي.
 
 <div id="microbatch-strategy">
   #### استراتيجية Microbatch (تتطلب dbt-core &gt;= 1.9)
@@ -426,13 +418,76 @@ ALTER TABLE ... DELETE
 نظرًا لتفاصيله، لهذا التجسيد صفحة مخصّصة مستقلة. **[انتقل إلى دليل العروض المادية](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)** للاطلاع على الوثائق الكاملة
 
 <div id="materialization-dictionary">
-  ## التجسيد: dictionary (تجريبي)
+  ## التجسيد: قاموس (تجريبي)
 </div>
 
-راجع الاختبارات
-في https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py للاطلاع على
-أمثلة على كيفية
-تنفيذ التجسيدات لقواميس ClickHouse
+يمكن إنشاء نموذج dbt بصفته [قاموس](/ar/concepts/features/dictionaries/index) في ClickHouse. عند كل `dbt run`، يُستبدل الـ قاموس بتعريف النموذج الحالي باستخدام `CREATE OR REPLACE DICTIONARY`.
+
+<div id="dictionary-configurations">
+  ### التهيئات
+</div>
+
+| الخيار                 | الوصف                                                                                                                                                                                                                      | مطلوب         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `fields`               | بنية القاموس، في صورة قائمة من أزواج `(name, type)`.                                                                                                                                                                       | نعم           |
+| `primary_key`          | المفتاح الأساسي للقاموس. يجب أن يطابق نوع المفتاح المتوقع في التخطيط المحدد (على سبيل المثال، مفتاح مركب لتخطيطات `COMPLEX_KEY_*`).                                                                                        | نعم           |
+| `layout`               | [التخطيط](/ar/reference/statements/create/dictionary/layouts/overview) المستخدم لتخزين القاموس في الذاكرة، مثل `HASHED()` أو `COMPLEX_KEY_HASHED()` أو `DIRECT()`.                                                            | نعم           |
+| `source_type`          | مصدر بيانات القاموس: `clickhouse` (الافتراضي، يستخدم SQL الخاص بالنموذج أو خيار `table`) أو `http`.                                                                                                                        |               |
+| `lifetime`             | عبارة [`LIFETIME`](/ar/reference/statements/create/dictionary/lifetime) التي تتحكم في وتيرة تحديث القاموس، مثل `MIN 0 MAX 300`. اختيارية بدءًا من dbt-clickhouse 1.10.0 — احذفها للتخطيطات التي لا تستخدمها، مثل `DIRECT()`.  |               |
+| `table`                | لمصدر `clickhouse` فقط. القراءة من جدول موجود بدلًا من SQL الخاص بالنموذج.                                                                                                                                                 |               |
+| `update_field`         | لمصدر `clickhouse` فقط. حدّث القاموس تدريجيًا بجلب الصفوف التي تغيّرت قيمة هذا العمود فيها منذ التحديث السابق فقط. راجع [LIFETIME](/ar/reference/statements/create/dictionary/lifetime). متاح بدءًا من dbt-clickhouse 1.10.0. |               |
+| `update_lag`           | لمصدر `clickhouse` فقط. عدد الثواني التي تُطرح من وقت التحديث السابق عند استخدام `update_field`، لمراعاة التحديثات المتأخرة. متاح بدءًا من dbt-clickhouse 1.10.0.                                                          |               |
+| `connection_overrides` | لمصدر `clickhouse` فقط. تجاوزات بيانات الاعتماد المستخدمة في عبارة `SOURCE` الخاصة بالقاموس، مثل `{'user': 'dictionary_reader'}`.                                                                                          |               |
+| `url`, `format`        | لمصدر `http` فقط. عنوان URL لملف المصدر وتنسيق الإدخال الخاص به.                                                                                                                                                           | نعم لـ `http` |
+| `range`                | عبارة `RANGE` لتخطيطات `RANGE_HASHED()`، مثل `'min start max stop'`.                                                                                                                                                       |               |
+
+<div id="dictionary-clickhouse-source-example">
+  ### مثال باستخدام مصدر ClickHouse
+</div>
+
+يصبح استعلام SQL الخاص بالنموذج هو استعلام مصدر القاموس:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+<div id="dictionary-http-source-example">
+  ### مثال باستخدام مصدر HTTP
+</div>
+
+عند استخدام `source_type='http'` (أو خيار `table`)، لا يُستخدم SQL الخاص بالنموذج كمصدر، لكن dbt لا يزال يتطلب body — لذا استخدم العنصر النائب `select 1`:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+راجع [اختبارات قاموس](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py) للاطلاع على مزيد من الأمثلة، بما في ذلك قواميس من النوعين range وdirect.
 
 <div id="materialization-distributed-table">
   ## التجسيد: distributed_table (تجريبي)

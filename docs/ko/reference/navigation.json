@@ -1087,6 +1087,7 @@
         "ko/reference/system-tables/merges",
         "ko/reference/system-tables/metric_log",
         "ko/reference/system-tables/metrics",
+        "ko/reference/system-tables/models",
         "ko/reference/system-tables/moves",
         "ko/reference/system-tables/mutations",
         "ko/reference/system-tables/named_collections",

@@ -23,11 +23,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 具有 Service Read Only 和 Service Admin 权限的用户可以被分配基础 SQL 控制台角色。更多信息，请参阅 [管理 SQL 控制台角色分配](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)。本指南演示如何为 SQL 控制台用户创建自定义角色。
 
-<Note>
-  **从控制台管理数据库角色 (Beta)**
-
-  您还可以通过向自定义角色添加数据权限，直接从 ClickHouse Cloud 控制台管理数据库角色。此功能目前处于 Beta 阶段，适用于运行 ClickHouse 版本 26.4 及更高版本的服务。使用 `sql-console-role:<email>` 命名约定手动分配的角色优先于通过控制台分配的角色。更多信息，请参阅 [管理数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)。
-</Note>
+<Tip>
+  优先使用[云托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) 从控制台管理数据库访问权限。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
+</Tip>
 
 要为 SQL 控制台用户创建自定义角色并为其授予一个通用角色，请运行以下命令。电子邮件地址必须与用户在控制台中的电子邮件地址一致。
 

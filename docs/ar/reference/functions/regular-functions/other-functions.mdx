@@ -531,6 +531,79 @@ SELECT byteSize(NULL, 1, 0.3, '')
 └────────────────────────────┘
 ```
 
+<div id="catboostEvaluate">
+  ## catboostEvaluate
+</div>
+
+أُضيف في: v22.9.0
+
+قيِّم نموذج CatBoost خارجيًا. [CatBoost](https://catboost.ai) مكتبة تعزيز تدرّجي مفتوحة المصدر طوّرتها Yandex للتعلّم الآلي.
+تقبل مسارًا إلى نموذج CatBoost ووسيطات النموذج (السمات).
+
+**المتطلبات المسبقة**
+
+1. ابنِ مكتبة تقييم CatBoost
+
+قبل تقييم نماذج CatBoost، يجب إتاحة المكتبة `libcatboostmodel.<so|dylib>`. راجع [توثيق CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) لمعرفة كيفية تجميعها.
+
+بعد ذلك، حدِّد المسار إلى `libcatboostmodel.<so|dylib>` في تهيئة ClickHouse:
+
+```xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+لأسباب تتعلق بالأمان والعزل، لا يُجرى تقييم النموذج داخل عملية الخادم، بل داخل عملية clickhouse-library-bridge.
+عند أول تنفيذ للدالة `catboostEvaluate()`، يبدأ الخادم عملية جسر المكتبة إذا لم تكن قيد التشغيل بالفعل. وتتواصل العمليتان
+باستخدام واجهة HTTP. يُستخدم المنفذ `9012` افتراضيًا. ويمكن تحديد منفذ مختلف كما يلي - ويكون ذلك مفيدًا إذا كان المنفذ
+`9012` مخصّصًا بالفعل لخدمة مختلفة.
+
+```xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
+2. درّب نموذج CatBoost باستخدام libcatboost
+
+راجع [تدريب النماذج وتطبيقها](https://catboost.ai/docs/features/training.html#training) لمعرفة كيفية تدريب نماذج CatBoost انطلاقًا من مجموعة بيانات تدريب.
+
+يجب أن يكون ملف النموذج موجودًا داخل دليل [`user_files`](/ar/reference/settings/server-settings/settings/user#user_files_path)، كما هو الحال مع الدالة [`file`](/ar/reference/functions/regular-functions/files#file).
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
+
+```sql
+catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
+```
+
+**الوسائط**
+
+* `path_to_model` — مسار إلى نموذج catboost، الموجود داخل الدليل `user_files`. [`const String`](/ar/reference/data-types/string)
+* `feature` — سمة واحدة أو أكثر من سمات/وسائط النموذج. [`Float*`](/ar/reference/data-types/float)
+
+**القيمة المعادة**
+
+يعيد نتيجة تقييم النموذج. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**catboostEvaluate**
+
+```sql title=Query
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+```
+
+```response title=Response
+4.695691092573497
+```
+
 <div id="colorOKLABToSRGB">
   ## colorOKLABToSRGB
 </div>

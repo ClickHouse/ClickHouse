@@ -181,7 +181,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = `${assetBase}/ja/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
+    const href = `${assetBase}/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
             href={href}
@@ -319,7 +319,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="はじめに"
           galaxyEvent="docs.home.get-started"
-          description="初めての方はこちらから。始め方を学び、さらに詳しく知る"
+          description="初めての方へ。まずは基本を学び、さらに詳しく知る"
           href={localizeHref("/get-started/quickstarts/create-your-first-service-on-cloud")}
           icon={
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -468,7 +468,6 @@ export const PageWrapper = ({ children }) => {
           <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" galaxyEvent="docs.home.chdb" description="高速で信頼性が高く、スケーラブルなインプロセスデータベース。インプロセスで ClickHouse のパワーを体験できます。" href={localizeHref("/chdb/index")} showArrow />
         </div>
       </div>
-
     </div>
   </div>
 </PageWrapper>

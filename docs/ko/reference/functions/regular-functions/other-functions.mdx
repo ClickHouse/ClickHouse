@@ -531,6 +531,79 @@ SELECT byteSize(NULL, 1, 0.3, '')
 └────────────────────────────┘
 ```
 
+<div id="catboostEvaluate">
+  ## catboostEvaluate
+</div>
+
+도입 버전: v22.9.0
+
+외부 catboost 모델을 평가합니다. [CatBoost](https://catboost.ai)는 Yandex가 기계 학습용으로 개발한 오픈소스 그래디언트 부스팅 라이브러리입니다.
+catboost 모델의 경로와 모델 인수(피처)를 받습니다.
+
+**사전 요구 사항**
+
+1. catboost 평가 라이브러리 빌드
+
+catboost 모델을 평가하기 전에 `libcatboostmodel.<so|dylib>` 라이브러리를 사용할 수 있도록 준비해야 합니다. 컴파일 방법은 [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html)을 참조하십시오.
+
+다음으로, ClickHouse 구성에서 `libcatboostmodel.<so|dylib>`의 경로를 지정합니다:
+
+```xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+보안 및 격리를 위해 모델 평가는 서버 프로세스가 아니라 clickhouse-library-bridge process에서 실행됩니다.
+`catboostEvaluate()`를 처음 실행할 때 서버 프로세스가 아직 실행 중이 아니라면 library bridge process를 시작합니다. 두 프로세스는
+HTTP 인터페이스를 사용해 통신합니다. 기본적으로 포트 `9012`를 사용합니다. 다음과 같이 다른 포트를 지정할 수 있으며, 포트
+`9012`가 이미 다른 서비스에 할당되어 있는 경우 유용합니다.
+
+```xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
+2. libcatboost를 사용하여 catboost 모델을 학습합니다
+
+학습 데이터 집합으로 catboost 모델을 학습하는 방법은 [모델 학습 및 적용](https://catboost.ai/docs/features/training.html#training)을 참조하십시오.
+
+모델 파일은 [`file`](/ko/reference/functions/regular-functions/files#file) 함수와 마찬가지로 [`user_files`](/ko/reference/settings/server-settings/settings/user#user_files_path) 디렉터리 안에 있어야 합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
+```
+
+**인수**
+
+* `path_to_model` — `user_files` 디렉터리 안에 있는 catboost 모델 경로입니다. [`const String`](/ko/reference/data-types/string)
+* `feature` — 하나 이상의 모델 피처 또는 인수입니다. [`Float*`](/ko/reference/data-types/float)
+
+**반환 값**
+
+모델 평가 결과를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**catboostEvaluate**
+
+```sql title=Query
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+```
+
+```response title=Response
+4.695691092573497
+```
+
 <div id="colorOKLABToSRGB">
   ## colorOKLABToSRGB
 </div>

@@ -181,7 +181,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = `${assetBase}/ko/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
+    const href = `${assetBase}/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
             href={href}
@@ -301,7 +301,7 @@ export const PageWrapper = ({ children }) => {
       </h1>
 
       <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
-        가장 빠른 데이터 플랫폼 문서
+        가장 빠른 데이터 플랫폼을 위한 문서
       </div>
 
       <div className="flex items-center justify-center mx-auto mt-8 px-4">
@@ -319,7 +319,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="시작하기"
           galaxyEvent="docs.home.get-started"
-          description="처음이라 시작하는 방법과 자세한 내용을 알고 싶습니다"
+          description="처음이라 시작 방법과 더 자세한 내용을 알아보고 싶습니다"
           href={localizeHref("/get-started/quickstarts/create-your-first-service-on-cloud")}
           icon={
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -468,7 +468,6 @@ export const PageWrapper = ({ children }) => {
           <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" galaxyEvent="docs.home.chdb" description="빠르고 안정적이며 확장 가능한 in-process 데이터베이스입니다. 프로세스 내에서 ClickHouse의 강력함을 경험할 수 있습니다." href={localizeHref("/chdb/index")} showArrow />
         </div>
       </div>
-
     </div>
   </div>
 </PageWrapper>

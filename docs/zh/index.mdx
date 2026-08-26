@@ -181,7 +181,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = `${assetBase}/zh/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
+    const href = `${assetBase}/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server`;
     return (
         <a
             href={href}
@@ -297,7 +297,7 @@ export const PageWrapper = ({ children }) => {
       </div>
 
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
-        开始使用 <HighlightedClickHouse /> 进行构建
+        使用 <HighlightedClickHouse /> 开始构建
       </h1>
 
       <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
@@ -403,9 +403,9 @@ export const PageWrapper = ({ children }) => {
       <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">了解 ClickHouse 如何在任意规模下支撑实时分析、可观测性、数据仓库与智能体 AI。</p>
 
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
-        <HeroCard title="实时分析" galaxyEvent="docs.home.real-time-analytics" description="大规模交付即时洞察和仪表盘。实时分析数十亿行数据，结果可在毫秒内返回。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
+        <HeroCard title="实时分析" galaxyEvent="docs.home.real-time-analytics" description="大规模提供即时洞察和仪表盘。实时分析数十亿行数据，毫秒级返回结果。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="借助 ClickStack（由 ClickHouse 提供支持的开源可观测性技术栈），大规模存储和查询日志、指标和链路追踪。" href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="借助由 ClickHouse 驱动的开源可观测性技术栈 ClickStack，大规模存储和查询日志、指标和链路追踪。" href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="数据仓储" galaxyEvent="docs.home.data-warehousing" description="即时分析和探索数据，获取洞察并构建应用。通过卸载繁重工作负载，实现更快扩展。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -454,7 +454,7 @@ export const PageWrapper = ({ children }) => {
           </div>
         </div>
 
-        {/* 通栏 Integrations 横幅 */}
+        {/* 通栏集成横幅 */}
 
         <IntegrationsBanner />
 
@@ -468,7 +468,6 @@ export const PageWrapper = ({ children }) => {
           <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" galaxyEvent="docs.home.chdb" description="快速、可靠且可扩展的进程内数据库。体验以进程内方式运行的 ClickHouse 的强大能力。" href={localizeHref("/chdb/index")} showArrow />
         </div>
       </div>
-
     </div>
   </div>
 </PageWrapper>
