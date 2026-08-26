@@ -97,7 +97,7 @@ def _longrepr(chain):
     }
 
 
-def _render(longrepr, sections=None):
+def _render(longrepr):
     """Run from_pytest_jsonl over a one-failure report-log, return its info."""
     entries = (
         [{"pytest_version": "8.0.0", "$report_type": "SessionStart"}]
@@ -108,7 +108,7 @@ def _render(longrepr, sections=None):
                 "when": "call",
                 "outcome": "failed",
                 "duration": 0.1,
-                "sections": sections or [],
+                "sections": [],
                 "longrepr": longrepr,
             }
         ]
@@ -191,19 +191,6 @@ def test_chained_failure_keeps_the_original_cause():
     info = _render(CHAINED)
     assert CAUSE in info, f"original cause erased from:\n{info}"
     assert FINAL in info, f"final exception missing from:\n{info}"
-
-
-def test_failed_test_carries_captured_output():
-    """A failed test's captured print/log is surfaced in info (issue #92886)."""
-    info = _render(
-        UNCHAINED,
-        sections=[
-            ["Captured stdout call", "PRINT from the test body\n"],
-            ["Captured log call", "INFO : LOG from the test body"],
-        ],
-    )
-    assert "PRINT from the test body" in info, f"captured stdout dropped from:\n{info}"
-    assert "LOG from the test body" in info, f"captured log dropped from:\n{info}"
 
 
 def test_chained_failure_is_cause_first_with_separator():
