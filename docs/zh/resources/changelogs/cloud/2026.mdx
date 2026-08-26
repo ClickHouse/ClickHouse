@@ -2,15 +2,39 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 更新日志 - 2026'
-description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本中的新增内容'
+description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本的新增内容'
 doc_type: 'changelog'
-keywords: ['更新日志', '发行说明', '更新', '新功能', 'Cloud 变更']
+keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更']
 rss: true
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-除了这份 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
+除本 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
+
+<Update label="2026 年 8 月 17 日">
+  本周更新扩大了平台覆盖范围，并提升了运维可观测性。Managed Postgres 现已在 GCP 上向部分设计合作伙伴开放，ClickStack 资源可通过官方 Terraform provider 进行管理，新的账单通知可在 credits 到期或服务中断前向客户发出预警。我们还改进了 ClickHouse 智能体的链路追踪功能，并优化了 SAML 登录体验。
+
+  ### Managed Postgres 现已在 GCP 上推出
+
+  [ClickHouse Cloud Managed Postgres](/zh/products/managed-postgres/overview) 现已在所有公网 GCP 区域向部分设计合作伙伴开放，`us-west1` 则为首个私有区域。这使在 GCP 上构建应用的客户也能使用 Managed Postgres，预计将于 2026-08 进入私有预览阶段。
+
+  ### 使用 Terraform 管理 ClickStack 资源
+
+  官方 [`ClickHouse/clickhouse` Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha) 3.25.0 版本现已以 Beta 形式提供 ClickStack 支持。团队可使用标准的 `terraform plan` 和 `terraform apply` 工作流创建、更新、导入和删除仪表盘、告警、数据源、已保存的搜索、连接和 webhooks。该集成同时支持托管 ClickStack 和自托管部署。
+
+  ### 新增 credits 和付款通知
+
+  账单通知现可通过 ClickHouse Cloud Notification Center 管理，并可通过控制台、电子邮件和 Slack 发送。客户会在预付费额度或试用 credits 即将到期或耗尽时提前收到通知；在添加 credits、付款方式变更或账户进入欠费宽限期时，也会收到通知。这样一来，客户可在服务中断前有更多时间续订、添加 credits 或解决付款问题。
+
+  ### 从 ClickHouse 智能体打开 Langfuse 会话链路追踪
+
+  组织管理员现在可直接从 [ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents/index) 聊天中打开相应的 Langfuse 会话，并查看整个对话的链路追踪。这使调查智能体行为和调试多步骤运行更加便捷。此改进现以 Public Beta 形式面向新创建的聊天提供。
+
+  ### SAML 重定向有助于防止重复创建账户
+
+  当用户尝试使用 Google 或 Microsoft 登录，而其组织已配置 SAML 时，ClickHouse Cloud 现在会将其重定向到正确的 SAML 登录流程。这有助于防止用户原本打算访问现有账户时意外创建另一个组织。
+</Update>
 
 <Update label="2026 年 7 月 13 日">
   本周更新包括通过标准 HTTPS 实现的 sticky 副本路由、自定义计费周期起始日期，以及对象存储 ClickPipes 的新初始加载控制功能。

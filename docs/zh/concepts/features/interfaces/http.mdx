@@ -201,7 +201,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-您可以使用 `default_format` URL 参数或 `X-ClickHouse-Format` 请求头，将默认格式指定为 `TabSeparated` 以外的格式。
+您可以使用 `default_format` URL 参数，将默认格式指定为 `TabSeparated` 以外的格式。`X-ClickHouse-Format` 请求头可显式指定响应格式：它是 `output_format` 设置的别名，因此也会覆盖查询中的 `FORMAT` 子句。它绝不会改变 `INSERT` 请求正文的解析方式——请使用 `input_format` 或 `format` 指定输入格式。
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,6 +219,150 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+<div id="tables-as-files">
+  ## 通过 URL 路径访问表并构造查询
+</div>
+
+适用于 ClickHouse 26.8 及更高版本。
+
+HTTP 接口可将 URL 路径解析为数据库、表、输出格式和压缩方法。随后可通过 URL 参数控制结果，因此简单的读取请求无需使用 SQL。这些功能默认处于禁用状态，必须显式启用。
+
+<div id="enabling-path-routing">
+  ### 启用路径路由
+</div>
+
+路径解析由两个层级的设置控制：
+
+1. 启用服务器级配置项 `http_allow_path_requests`，允许 HTTP 接口将路径形式的请求路由至查询处理程序：
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. 启用所需的用户级设置：
+
+| 设置                                                  | 效果                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
+| `http_allow_table_as_file`                          | 将最后一个路径组件解析为 `table`、`table.format` 或 `table.format.compression`。 |
+| `http_allow_database_as_path`                       | 将开头的 `/database/` 路径组件解析为当前数据库。                                   |
+| `http_allow_filters_as_path`                        | 将 Hive 风格的 `/name=value/` 路径组件解析为 `WHERE` 过滤器。                    |
+| `http_allow_filters_as_unrecognized_url_parameters` | 将无法识别的 URL 参数解析为 `WHERE` 过滤器。                                     |
+
+<Note>
+  路由发生在身份验证之前，因此不能依赖用户级设置。当 `http_allow_path_requests` 被禁用时，未知路径会在身份验证前返回 `404`。完成路由和身份验证后，用户级设置将决定如何解析路径，从而可选择性地为某个用户、角色或 profile 启用此功能。
+</Note>
+
+<div id="table-as-file-examples">
+  ### 将表作为文件访问
+</div>
+
+启用 `http_allow_table_as_file` 后，对 `/table.format.compression` 的请求会被处理为 `SELECT * FROM table`。启用 `http_allow_database_as_path` 后，可使用 `/database/table.format.compression`。
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+格式和压缩扩展名不区分大小写，因此 `hits.csv` 和 `hits.CSV` 等效。
+
+显式指定的 `format` 或 `output_format` URL 参数会覆盖路径中的格式。`default_format` 则不会：它仅在没有其他方式指定格式时提供所用格式，而路径扩展名的优先级更高。显式指定的 `compression` 参数必须与路径中的压缩方式一致；值冲突会导致异常。
+
+<div id="query-construction">
+  ### 构造查询
+</div>
+
+以下设置会将基础查询包装为派生表。它们既可相互组合，也可与现有查询结合使用。您可以通过 HTTP URL 参数、查询中的 `SETTINGS` 子句或用户 profile 提供这些设置。
+
+| 设置                                                                                                                          | 作用                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                    | `SELECT <expression_list> FROM (…)`                                                            |
+| `filter`                                                                                                                    | 添加 `WHERE <expression>`。多个 `filter` URL 参数会通过 `AND` 组合。                                        |
+| `order`                                                                                                                     | 添加 `ORDER BY <expression_list>`。                                                               |
+| `sort`                                                                                                                      | 根据以逗号分隔的标识符或列位置列表添加 `ORDER BY`；每一项可选带有 `+` (升序) 或 `-` (降序) 前缀，例如 `sort=a,-b`。不能与 `order` 组合使用。 |
+| [`limit`](/zh/reference/settings/session-settings/other#limit) 和 [`offset`](/zh/reference/settings/session-settings/other#offset) | 添加 `LIMIT <n> OFFSET <m>`。两者都接受用于选择末尾数据的负值，以及表示行数占比的小数值。                                       |
+| `page`                                                                                                                      | 设置 `offset = limit * (page - 1)`。需要指定 `limit`，且不能与 `offset` 组合使用。                              |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### 修改现有查询
+</div>
+
+构造设置不仅适用于路径请求，也会影响您自行编写的查询。该查询会成为派生表，因此这些设置会应用于其结果，而不会合并到查询中。例如，`?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` 会按如下方式执行：
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+这对于对在其他地方预先固定的查询结果进行分页、排序或缩小范围非常有用，例如已保存的 dashboard 查询、`predefined_query_handler`，或者只允许追加 URL 参数的客户端：
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+这些设置会包裹查询，而非改写查询，因此可与 `FORMAT` 子句及查询中的 `ORDER BY` 配合使用，并且绝不会改变 `INSERT` 写入的行：在 `INSERT ... SELECT` 语句上指定的构造设置会影响该语句自身的 (空) 结果，而非其源 `SELECT`。如需影响源数据，请将设置放在 `SELECT` 自身的 `SETTINGS` 子句中：
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  `filter` 并不是访问控制机制。它会在外层子查询中添加 `WHERE` 子句，因此应用过滤器前仍可能读取和处理底层数据。要限制用户可访问的行，请使用[行策略](/zh/concepts/features/security/access-rights#row-policy-management)或 [`additional_table_filters`](/zh/reference/settings/session-settings/additional#additional_table_filters)。
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### 覆盖格式和压缩
+</div>
+
+| 设置               | 效果                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `output_format`  | 覆盖输出格式。其优先级高于查询中的 `FORMAT` 子句、路径扩展名、`format` 和 `default_format`。也可通过 `X-ClickHouse-Format` 请求头设置。 |
+| `input_format`   | 覆盖 `INSERT` 的输入格式。其优先级高于查询中的 `FORMAT` 子句和 `format`。                                               |
+| `format`         | 除非指定了特定方向的设置，否则同时覆盖输入和输出格式。                                                                       |
+| `default_format` | 当查询不含 `FORMAT` 子句、路径中没有扩展名且未指定其他格式覆盖设置时，设置输出格式。                                                   |
+| `compression`    | 压缩响应体，例如 `compression=gz`。这与 HTTP `Content-Encoding` 和 ClickHouse 原生 `compress` 参数相互独立。          |
+
+格式设置也适用于其他协议，包括原生客户端和 `clickhouse-local`。`input_format` 和 `output_format` 分别对应 `--input-format` 和 `--output-format` 选项。`--format` 选项在 `clickhouse-local` 中映射到双向 `format` 设置；而在 `clickhouse-client` 中，它仍保留历史上的仅输出含义，并映射到 `output_format`。
+
+`compression` 专用于塑造 HTTP 响应，并在查询执行前生效。可通过 HTTP URL 参数、路径扩展名或用户 profile 提供该设置。不能在查询内的 `SETTINGS` 子句中使用。
+
+二进制和压缩的 HTTP 响应会包含 `Content-Disposition: attachment; filename=…` 请求头。文件名取自 URL 路径；如果路径未提供文件名，则使用 `result.<format>.<compression>`。
+
+<div id="implicit-table">
+  ### 在查询中使用路径表
+</div>
+
+当路径指定一个表且同时提供了 `query` 参数时，该路径表将通过 [`implicit_table_at_top_level`](/zh/reference/settings/session-settings/implicit#implicit_table_at_top_level) 隐式暴露。未包含 `FROM` 子句的 `SELECT` 会从该路径表读取数据：
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+如果查询中已包含 `FROM` 子句，路径组件仅用于指定下载文件名。
 
 <div id="insert-queries">
   ## 通过 HTTP/HTTPS 执行插入查询
