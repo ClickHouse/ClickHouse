@@ -23,7 +23,6 @@
             <shard>
                 <replica>
                     <host>localhost</host>
-                    <port>9000</port>
                 </replica>
             </shard>
         </default>
