@@ -1266,10 +1266,13 @@ void StorageObjectStorageQueue::commit(
 
     /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
     /// failed for a subset of the objects: those files must be finalized as failed, not processed.
-    if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
-        ProfileEvents::increment(
-            ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
+        if (!post_processing_failed_paths.empty())
+        {
+            ProfileEvents::increment(
+                ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
+	}
     }
     else
     {
