@@ -34,6 +34,12 @@
 20
 [0,1,2,3,4]
 14
+-- max_threads = 1: no preliminary step is added, and the result is unchanged
+0
+1
+300	13284647348874942505
+0
+300	13284647348874942505
 -- size limits are enforced the same way as in the rewrite
 100
 100

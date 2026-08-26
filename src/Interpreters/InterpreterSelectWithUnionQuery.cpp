@@ -327,14 +327,17 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
             /// UNION concatenates its branches' streams instead of merging them, so a preliminary
             /// DISTINCT runs in parallel and shrinks what the final single-stream DISTINCT must merge.
-            auto pre_distinct_step = std::make_unique<DistinctStep>(
-                query_plan.getCurrentHeader(),
-                limits,
-                0,
-                result_header->getNames(),
-                true);
-            pre_distinct_step->setStepDescription("Preliminary DISTINCT");
-            query_plan.addStep(std::move(pre_distinct_step));
+            if (preliminaryDistinctIsUseful(max_threads))
+            {
+                auto pre_distinct_step = std::make_unique<DistinctStep>(
+                    query_plan.getCurrentHeader(),
+                    limits,
+                    0,
+                    result_header->getNames(),
+                    true);
+                pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+                query_plan.addStep(std::move(pre_distinct_step));
+            }
 
             auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),

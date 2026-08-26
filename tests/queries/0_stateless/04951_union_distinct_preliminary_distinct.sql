@@ -7,6 +7,12 @@
 -- labelled preliminary but merges the streams, which is the whole regression.
 SET query_plan_lift_up_union = 1;
 
+-- max_threads is set at session level: a trailing SETTINGS clause on a UNION query binds to its last
+-- branch and never reaches the union itself. The counts depend on it, because a single stream gets no
+-- preliminary step, and the memory-pressure limiter below can otherwise lower it to one.
+SET max_threads = 2;
+SET max_threads_min_free_memory_per_thread = 0;
+
 SET enable_analyzer = 1;
 
 SELECT '-- analyzer: UNION DISTINCT has one preliminary DISTINCT per branch';
@@ -14,7 +20,7 @@ SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
 SELECT count() FROM (
-    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x SETTINGS max_threads = 4
+    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: the rewrite plans the same way';
@@ -22,7 +28,7 @@ SELECT count() FROM (
     EXPLAIN PLAN SELECT DISTINCT * FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x)
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
 SELECT count() FROM (
-    EXPLAIN PIPELINE SELECT DISTINCT * FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) SETTINGS max_threads = 4
+    EXPLAIN PIPELINE SELECT DISTINCT * FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x)
 ) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT';
@@ -40,7 +46,7 @@ SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
 SELECT count() FROM (
-    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x SETTINGS max_threads = 4
+    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%DistinctTransform%';
 
 SET enable_analyzer = 1;
@@ -121,6 +127,27 @@ SELECT count() FROM (
     SELECT x, x % 7 AS g FROM ((SELECT i % 200 AS x FROM src) UNION DISTINCT (SELECT i % 300 AS x FROM src))
     LIMIT 2 BY g
 );
+
+SELECT '-- max_threads = 1: no preliminary step is added, and the result is unchanged';
+SET max_threads = 1;
+SELECT count() FROM (
+    EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
+) WHERE explain ILIKE '%Preliminary DISTINCT%';
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
+) WHERE explain ILIKE '%DistinctTransform%';
+SELECT count(), sum(cityHash64(x)) FROM (
+    (SELECT i % 200 AS x FROM src) UNION DISTINCT (SELECT i % 300 AS x FROM src)
+);
+SET enable_analyzer = 0;
+SELECT count() FROM (
+    EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
+) WHERE explain ILIKE '%Preliminary DISTINCT%';
+SELECT count(), sum(cityHash64(x)) FROM (
+    (SELECT i % 200 AS x FROM src) UNION DISTINCT (SELECT i % 300 AS x FROM src)
+);
+SET enable_analyzer = 1;
+SET max_threads = 2;
 
 SELECT '-- size limits are enforced the same way as in the rewrite';
 -- The source is numbers(), not src: a Memory table ignores max_block_size, so the whole 600 rows
