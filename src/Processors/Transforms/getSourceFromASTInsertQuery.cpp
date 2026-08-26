@@ -197,17 +197,19 @@ bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledVal
 }
 
 /// Whether every `String` value reached by following `path` (starting at `depth`) inside the sampled
-/// value `value` holds numeric text (the content a cast into a numeric destination accepts). A value
-/// whose shape does not match its step, a `NULL`, and a non-`String` value carry no evidence and are
-/// not counted against the column.
-bool sampledStringValueIsNumericText(const Field & value, const std::vector<SampledValueStep> & path, size_t depth)
+/// value `value` satisfies `predicate`. A value whose shape does not match its step, a `NULL`, and a
+/// non-`String` value carry no evidence and are not counted against the column.
+bool sampledStringValuesSatisfy(
+    const Field & value,
+    const std::vector<SampledValueStep> & path,
+    size_t depth,
+    const std::function<bool(const String &)> & predicate)
 {
     if (depth == path.size())
     {
         if (value.getType() != Field::Types::String)
             return true;
-        Float64 number = 0;
-        return tryParse<Float64>(number, value.safeGet<String>());
+        return predicate(value.safeGet<String>());
     }
 
     const auto & step = path[depth];
@@ -219,7 +221,7 @@ bool sampledStringValueIsNumericText(const Field & value, const std::vector<Samp
                 return true;
             return std::ranges::all_of(
                 value.safeGet<Array>(),
-                [&](const Field & element) { return sampledStringValueIsNumericText(element, path, depth + 1); });
+                [&](const Field & element) { return sampledStringValuesSatisfy(element, path, depth + 1, predicate); });
         }
         case SampledValueStep::Kind::TupleElement:
         {
@@ -228,7 +230,7 @@ bool sampledStringValueIsNumericText(const Field & value, const std::vector<Samp
             const auto & tuple = value.safeGet<Tuple>();
             if (step.index >= tuple.size())
                 return true;
-            return sampledStringValueIsNumericText(tuple[step.index], path, depth + 1);
+            return sampledStringValuesSatisfy(tuple[step.index], path, depth + 1, predicate);
         }
         case SampledValueStep::Kind::MapValues:
         {
@@ -241,7 +243,7 @@ bool sampledStringValueIsNumericText(const Field & value, const std::vector<Samp
                     if (entry.getType() != Field::Types::Tuple)
                         return true;
                     const auto & pair = entry.safeGet<Tuple>();
-                    return pair.size() != 2 || sampledStringValueIsNumericText(pair[1], path, depth + 1);
+                    return pair.size() != 2 || sampledStringValuesSatisfy(pair[1], path, depth + 1, predicate);
                 });
         }
     }
@@ -552,6 +554,14 @@ String getInsertDataSchemaMismatchDescription(
                 auto parse_context = Context::createCopy(context);
                 parse_context->setInsertionTable(StorageID::createEmpty());
 
+                /// Parse the sample with a single thread. `ParallelParsingInputFormat` parses whole
+                /// segments ahead of the reader, so a malformed later row can make the pipeline throw
+                /// before the rows this scan is interested in are handed out — which rows survive then
+                /// depends on the thread scheduling, making the diagnostic nondeterministic. The sample
+                /// is bounded by the schema-inference row limit, so there is nothing to parallelize.
+                parse_context->setSetting("input_format_parallel_parsing", false);
+                parse_context->setSetting("max_parsing_threads", 1);
+
                 auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
                 /// Make the input format return no more than the schema-inference sample in its
                 /// first block. Limiting only the copy-out loop below is too late: a row input
@@ -605,13 +615,15 @@ String getInsertDataSchemaMismatchDescription(
         return true;
     };
 
-    /// Whether every sampled `String` value reached by `path` holds numeric text. Used for the formats
+    /// Whether every sampled `String` value reached by `path` satisfies `predicate`. Used for the formats
     /// that cast a decoded source `String` column to the destination type, where the numbers-from-strings
     /// inference pass carries no evidence: it re-reads the same typed `String` column no matter how the
     /// setting is set. `std::nullopt` when the sample is unavailable, in which case the caller stays on
     /// the low-false-positive side and treats the column as compatible.
-    auto sampled_string_values_are_numeric_text
-        = [&](size_t column_index, const std::vector<SampledValueStep> & path) -> std::optional<bool>
+    auto sampled_string_values_satisfy
+        = [&](size_t column_index,
+              const std::vector<SampledValueStep> & path,
+              const std::function<bool(const String &)> & predicate) -> std::optional<bool>
     {
         /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
         static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
@@ -621,9 +633,46 @@ String getInsertDataSchemaMismatchDescription(
 
         const auto & column = *sample_columns[column_index];
         for (size_t row = 0; row < sample_rows; ++row)
-            if (!sampledStringValueIsNumericText(column[row], path, 0))
+            if (!sampledStringValuesSatisfy(column[row], path, 0, predicate))
                 return false;
         return true;
+    };
+
+    /// Whether every sampled `String` value reached by `path` holds numeric text (the content a cast
+    /// into a numeric destination accepts).
+    auto sampled_string_values_are_numeric_text
+        = [&](size_t column_index, const std::vector<SampledValueStep> & path) -> std::optional<bool>
+    {
+        return sampled_string_values_satisfy(
+            column_index,
+            path,
+            [](const String & text)
+            {
+                Float64 number = 0;
+                return tryParse<Float64>(number, text);
+            });
+    };
+
+    /// Whether every sampled `String` value reached by `path` is a valid text representation of
+    /// `destination`. `castColumn` of a `String` source column reads the value with the whole-text
+    /// deserializer of the destination type, so this mirrors what the cast-on-read formats really do
+    /// for the destinations that no plain "is it a number" check can decide: `Bool` and the nested
+    /// types (`Array`, `Tuple`, `Map`), all of which accept their usual text form (`true`, `[1,2]`,
+    /// ...) from a source `String` column.
+    auto sampled_string_values_are_valid_text_for
+        = [&](size_t column_index, const std::vector<SampledValueStep> & path, const DataTypePtr & destination)
+        -> std::optional<bool>
+    {
+        auto serialization = destination->getDefaultSerialization();
+        return sampled_string_values_satisfy(
+            column_index,
+            path,
+            [&](const String & text)
+            {
+                auto column = destination->createColumn();
+                ReadBufferFromString buffer(text);
+                return serialization->tryDeserializeWholeText(*column, buffer, format_settings);
+            });
     };
 
     /// Schema inference represents a homogeneous JSON array as `Array(T)`, losing its arity, while
@@ -1143,7 +1192,18 @@ String getInsertDataSchemaMismatchDescription(
             /// would wrongly flag a valid `"true"`. The content of the string is unknown at the type
             /// level, so for the whole-text formats a `String` into `Bool` is treated as compatible.
             if (isBool(expected_unwrapped))
-                return format_reads_string_values_as_whole_text;
+            {
+                if (format_reads_string_values_as_whole_text)
+                    return true;
+                /// The formats that cast a decoded source `String` column to the destination type read
+                /// the value with the whole-text deserializer of `Bool`, which accepts both the word
+                /// forms and the quoted numerics, so only a sampled value that is not a valid `Bool`
+                /// text is a genuine mismatch there.
+                if (format_casts_string_source_columns && evidence.column_index)
+                    return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                        .value_or(true);
+                return format_casts_string_source_columns;
+            }
 
             /// The same exemption applies to the nested destinations: the whole-text formats re-parse the
             /// content of a string value with the whole-text deserializer of the destination type, and
@@ -1152,7 +1212,16 @@ String getInsertDataSchemaMismatchDescription(
             /// string is unknown at the type level. For the other formats a nested destination genuinely
             /// cannot be built from a single scalar string, so it stays a mismatch.
             if (expected_is_nested)
-                return format_reads_string_values_as_whole_text;
+            {
+                if (format_reads_string_values_as_whole_text)
+                    return true;
+                /// The same reasoning as for `Bool` above: the cast-on-read formats build the nested
+                /// value from the text of the source string, so a value like `[1,2]` is valid there.
+                if (format_casts_string_source_columns && evidence.column_index)
+                    return sampled_string_values_are_valid_text_for(*evidence.column_index, evidence.path, expected_unwrapped)
+                        .value_or(true);
+                return format_casts_string_source_columns;
+            }
 
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
             if (!expected_is_numeric)
@@ -1544,10 +1613,17 @@ PrefixCapturingReadBuffer::PrefixCapturingReadBuffer(ReadBuffer & in_, size_t ma
 void PrefixCapturingReadBuffer::captureFromCurrentBuffer()
 {
     size_t available = static_cast<size_t>(working_buffer.end() - pos);
+    std::lock_guard lock(capture_mutex);
     size_t to_copy = std::min(max_bytes_to_capture - captured.size(), available);
     captured.append(pos, to_copy);
     if (to_copy < available)
         prefix_truncated = true;
+}
+
+PrefixCapturingReadBuffer::CapturedPrefix PrefixCapturingReadBuffer::getCapturedPrefix() const
+{
+    std::lock_guard lock(capture_mutex);
+    return {captured, prefix_truncated};
 }
 
 bool PrefixCapturingReadBuffer::nextImpl()
@@ -1674,13 +1750,14 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                 [captured_prefix_buffer, expected_header = header, format_name = resolved_format, context](
                     std::optional<size_t> rows_reached_by_parser) -> String
                 {
+                    const auto prefix = captured_prefix_buffer->getCapturedPrefix();
                     return getInsertDataSchemaMismatchDescription(
-                        captured_prefix_buffer->getCapturedPrefix(),
+                        prefix.data,
                         format_name,
                         expected_header,
                         context,
                         rows_reached_by_parser,
-                        captured_prefix_buffer->isPrefixTruncated());
+                        prefix.truncated);
                 });
         else
             format->setParseErrorDiagnosticProvider(

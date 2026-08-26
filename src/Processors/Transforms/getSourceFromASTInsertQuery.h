@@ -6,9 +6,12 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
 #include <IO/SnappyMode.h>
+#include <base/defines.h>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 
 
@@ -120,12 +123,20 @@ class PrefixCapturingReadBuffer : public ReadBuffer, public ReadBufferWrapperBas
 public:
     PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_);
 
-    std::string_view getCapturedPrefix() const { return captured; }
+    /// The captured prefix together with whether more bytes streamed through than the cap allowed to
+    /// capture, i.e. the prefix is a truncated view of the data (see the `data_is_truncated` parameter
+    /// of getInsertDataSchemaMismatchDescription).
+    struct CapturedPrefix
+    {
+        String data;
+        bool truncated = false;
+    };
 
-    /// Whether more bytes streamed through than the cap allowed to capture, i.e. the captured prefix
-    /// is a truncated view of the data (see the `data_is_truncated` parameter of
-    /// getInsertDataSchemaMismatchDescription).
-    bool isPrefixTruncated() const { return prefix_truncated; }
+    /// Returns a snapshot of the capture. `ParallelParsingInputFormat` reads through this buffer in its
+    /// segmentation thread while the parse-error diagnostic reads the capture from the thread that
+    /// handles the exception, so the capture is taken under a lock and copied out: a `string_view` into
+    /// the growing string would be read while another thread appends to it.
+    CapturedPrefix getCapturedPrefix() const;
 
     /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
     /// working as if the wrapper were not there.
@@ -144,8 +155,12 @@ private:
 
     ReadBuffer & in;
     size_t max_bytes_to_capture;
-    String captured;
-    bool prefix_truncated = false;
+
+    /// Guards the capture below: it is appended to by whichever thread reads through this buffer (the
+    /// segmentation thread with `ParallelParsingInputFormat`) and read on the error path.
+    mutable std::mutex capture_mutex;
+    String captured TSA_GUARDED_BY(capture_mutex);
+    bool prefix_truncated TSA_GUARDED_BY(capture_mutex) = false;
 };
 
 }

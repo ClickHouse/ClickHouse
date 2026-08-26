@@ -2695,13 +2695,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             [&capturing_buf, current_format, expected_header = sample, context = client_context](
                 std::optional<size_t> rows_reached_by_parser) -> String
             {
+                const auto prefix = capturing_buf->getCapturedPrefix();
                 return getInsertDataSchemaMismatchDescription(
-                    capturing_buf->getCapturedPrefix(),
+                    prefix.data,
                     current_format,
                     expected_header,
                     context,
                     rows_reached_by_parser,
-                    capturing_buf->isPrefixTruncated());
+                    prefix.truncated);
             });
 
     Pipe pipe(source);
