@@ -44,7 +44,6 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/misc.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -134,7 +133,24 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
 
 bool isNameOfInFunction(const std::string & function_name)
 {
-    return functionIsInOrGlobalInOperator(function_name) || functionIsInIgnoreSetOperator(function_name);
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "globalIn" ||
+        function_name == "notIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "nullIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
+
+    return is_special_function_in;
 }
 
 bool isNameOfLocalInFunction(const std::string & function_name)

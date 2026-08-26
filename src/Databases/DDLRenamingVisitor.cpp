@@ -235,34 +235,6 @@ namespace
         }
     }
 
-    /// Replaces a qualified table name in a specified function's argument, when the argument is an
-    /// identifier with a dot in the middle. A string argument is left alone, which matters where the
-    /// same position can hold either a table name or ordinary data - see the `IN` family below.
-    void replaceTableIdentifierInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
-    {
-        /// Just ignore incorrect arguments, proper exception will be thrown later
-        if (!function.arguments || function.arguments->children.size() <= arg_idx)
-            return;
-
-        auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
-        const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get());
-        if (!identifier)
-            return;
-
-        /// ASTIdentifier or ASTTableIdentifier
-        auto table_identifier = identifier->createTable();
-        /// Just return if table identified is invalid
-        if (!table_identifier)
-            return;
-
-        QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
-        if (qualified_name.database.empty() || qualified_name.table.empty())
-            return;
-
-        auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-        arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
-    }
-
     /// Replaces a qualified table name in a specified function's argument.
     /// It can be either a string or an identifier with a dot in the middle.
     void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
@@ -287,7 +259,22 @@ namespace
             return;
         }
 
-        replaceTableIdentifierInArgument(function, data, arg_idx);
+        if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
+        {
+            /// ASTIdentifier or ASTTableIdentifier
+            auto table_identifier = identifier->createTable();
+            /// Just return if table identified is invalid
+            if (!table_identifier)
+                return;
+
+            QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
+            if (qualified_name.database.empty() || qualified_name.table.empty())
+                return;
+
+            auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
+            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+            return;
+        }
     }
 
     /// Replaces a qualified database name in a specified function's argument.
@@ -370,71 +357,15 @@ namespace
         }
     }
 
-    /// Collects the names a qualified identifier's first component can refer to besides a database:
-    /// the aliases and table names the query's FROM / JOIN clauses bring into scope.
-    void collectTableScopeNames(const IAST & ast, std::unordered_set<String> & names)
-    {
-        if (const auto * table_expression = ast.as<ASTTableExpression>())
-        {
-            for (const auto & element : {table_expression->database_and_table_name, table_expression->table_function, table_expression->subquery})
-            {
-                if (!element)
-                    continue;
-                if (auto alias = element->tryGetAlias(); !alias.empty())
-                    names.emplace(std::move(alias));
-            }
-
-            if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get()))
-                names.emplace(identifier->shortName());
-        }
-
-        for (const auto & child : ast.children)
-        {
-            if (child)
-                collectTableScopeNames(*child, names);
-        }
-    }
-
-    /// The analyzer resolves a qualified identifier as an expression before it tries to resolve it as a
-    /// table, so `a IN t.u` means the column `u` of the table in scope as `t` whenever such a table is
-    /// in scope, and only means the table `t.u` otherwise. The scope is approximated by every name any
-    /// FROM / JOIN in the query introduces, which over-approximates across subquery scopes on purpose:
-    /// declining to rename leaves a reference stale, while renaming a column silently changes results.
-    bool qualifierNamesATableInScope(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
-    {
-        if (data.table_scope_names.empty() || !function.arguments || function.arguments->children.size() <= arg_idx)
-            return false;
-
-        const auto * identifier = dynamic_cast<const ASTIdentifier *>(function.arguments->children[arg_idx].get());
-        if (!identifier)
-            return false;
-
-        auto table_identifier = identifier->createTable();
-        if (!table_identifier)
-            return false;
-
-        return data.table_scope_names.contains(table_identifier->getDatabaseName());
-    }
-
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
         if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
         {
             replaceTableNameInArgument(function, data, 0);
         }
-        else if (functionIsInOrGlobalInOperator(function.name) || functionIsInIgnoreSetOperator(function.name))
+        else if (Poco::toLower(function.name) == "in")
         {
-            /// Syntax: <expr> IN <table>, and the same for the rest of the family: `NOT IN`, `GLOBAL IN`,
-            /// `nullIn`, the `IgnoreSet` counterparts and so on all resolve their right-hand side as a
-            /// table name the same way, so all of them have to follow the rename. This is the same set
-            /// of names the analyzer treats as an IN function, see `isNameOfInFunction`.
-            ///
-            /// Only an identifier is a table here. A string on the right-hand side is always data -
-            /// `1 IN 'db.tbl'` is a type error, while `'db.tbl' NOT IN ('db.tbl')` is an ordinary
-            /// comparison - so renaming one would silently change the result of a valid expression.
-            /// An identifier qualified by a table in scope is a column, not a table, for the same reason.
-            if (!qualifierNamesATableInScope(function, data, 1))
-                replaceTableIdentifierInArgument(function, data, 1);
+            replaceTableNameInArgument(function, data, 1);
         }
         else if (function.name == "merge")
         {
@@ -523,11 +454,7 @@ QualifiedTableName DDLRenamingMap::getNewTableName(const QualifiedTableName & ol
 
 void renameDatabaseAndTableNameInCreateQuery(ASTPtr ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context)
 {
-    std::unordered_set<String> table_scope_names;
-    if (ast)
-        collectTableScopeNames(*ast, table_scope_names);
-
-    DDLRenamingVisitor::Data data{ast, renaming_map, global_context, std::move(table_scope_names)};
+    DDLRenamingVisitor::Data data{ast, renaming_map, global_context};
     DDLRenamingVisitor::Visitor{data}.visit(ast);
 }
 

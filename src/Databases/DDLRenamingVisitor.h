@@ -6,7 +6,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -43,11 +42,6 @@ public:
         ASTPtr create_query;
         const DDLRenamingMap & renaming_map;
         ContextPtr global_context;
-
-        /// Table aliases and table names the query's FROM / JOIN clauses introduce. The first component
-        /// of a qualified identifier can name one of these instead of a database, in which case the
-        /// identifier is a column reference and must not be renamed - see `visitFunction`.
-        std::unordered_set<String> table_scope_names;
     };
 
     using Visitor = InDepthNodeVisitor<DDLRenamingVisitor, false>;

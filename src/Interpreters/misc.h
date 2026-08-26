@@ -26,16 +26,6 @@ inline bool functionIsInOrGlobalInOperator(const std::string & name)
     return functionIsInOperator(name) || functionIsGlobalInOperator(name);
 }
 
-/// The `IgnoreSet` counterparts of the operators above. Type analysis calls them with the left
-/// operand alone, but the explicit two-argument spelling stays valid and its right-hand side is
-/// resolved the same way, so anything that inspects that side has to know these names too.
-inline bool functionIsInIgnoreSetOperator(const std::string & name)
-{
-    return name == "inIgnoreSet" || name == "notInIgnoreSet" || name == "nullInIgnoreSet" || name == "notNullInIgnoreSet"
-        || name == "globalInIgnoreSet" || name == "globalNotInIgnoreSet" || name == "globalNullInIgnoreSet"
-        || name == "globalNotNullInIgnoreSet";
-}
-
 inline bool functionIsLikeOperator(const std::string & name)
 {
     return name == "like" || name == "ilike" || name == "notLike" || name == "notILike";
