@@ -27,6 +27,14 @@ refused
 refused
 --- under gcp_oauth the stored AWS keys are inert, so a complete ADC replacement releases
 allowed
+--- a stored external_id with no role to assume is read by nothing, so it binds nothing
+payload
+--- control: alongside a surviving role_arn the same stored external_id is the STS secret and binds
+refused
+--- a complete query ADC triple mints the token, so the stored metadata fields bind nothing
+allowed
+--- control: an incomplete ADC triple leaves the metadata fields minting, so they still bind
+refused
 --- no_sign_request with static keys: nothing signs, so the destination is not bound
 no-key-on-the-wire
 --- control: the same listener does see the key once SigV4 is on, so the arm above can fail

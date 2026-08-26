@@ -197,9 +197,9 @@ namespace
             boost::algorithm::to_lower_copy(parsed.getScheme()), boost::algorithm::to_lower_copy(parsed.getHost()), parsed.getPort()};
     }
 
-    /// Whether a secret still in the normalized auth came from the collection definition rather than from the
-    /// query. Only complete replacement releases the destination: a query that overrides `access_key_id` alone
-    /// leaves the stored `secret_access_key` signing.
+    /// Whether a secret that the authenticating mechanism still reads came from the collection definition
+    /// rather than from the query. Only complete replacement releases the destination: a query that overrides
+    /// `access_key_id` alone leaves the stored `secret_access_key` signing.
     ///
     /// `headers`, `access_headers` and the SSE keys are absent by design - S3's `optional_configuration_keys`
     /// accepts none of them, so a value there came from the server `<s3>`/endpoint config. So is
@@ -213,21 +213,33 @@ namespace
         /// credential at all, since `S3::getCredentialsProvider` installs an anonymous provider and skips the
         /// STS wrapper on that value.
         if (boost::iequals(auth[S3AuthSetting::http_client].value, "gcp_oauth"))
+        {
+            /// A complete ADC triple is the mechanism `PocoHTTPClientGCPOAuth::requestBearerToken` picks, and it
+            /// mints the token without reading the metadata-service fields, so those name no credential then.
+            const bool adc_mints_the_token = !auth[S3AuthSetting::google_adc_client_id].value.empty()
+                && !auth[S3AuthSetting::google_adc_client_secret].value.empty()
+                && !auth[S3AuthSetting::google_adc_refresh_token].value.empty();
+
             return stored("google_adc_client_id", auth[S3AuthSetting::google_adc_client_id].value)
                 || stored("google_adc_client_secret", auth[S3AuthSetting::google_adc_client_secret].value)
                 || stored("google_adc_refresh_token", auth[S3AuthSetting::google_adc_refresh_token].value)
-                || stored("service_account", auth[S3AuthSetting::service_account].value)
-                || stored("request_token_path", auth[S3AuthSetting::request_token_path].value)
-                || stored("metadata_service", auth[S3AuthSetting::metadata_service].value);
+                || (!adc_mints_the_token
+                    && (stored("service_account", auth[S3AuthSetting::service_account].value)
+                        || stored("request_token_path", auth[S3AuthSetting::request_token_path].value)
+                        || stored("metadata_service", auth[S3AuthSetting::metadata_service].value)));
+        }
 
         if (auth[S3AuthSetting::no_sign_request].value)
             return false;
 
+        /// `external_id` is read only by the STS assume-role wrapper, which `S3::getCredentialsProvider` builds
+        /// only for a non-empty `role_arn`; with no role to assume, nothing sends it.
         return stored("access_key_id", auth[S3AuthSetting::access_key_id].value)
             || stored("secret_access_key", auth[S3AuthSetting::secret_access_key].value)
             || stored("session_token", auth[S3AuthSetting::session_token].value)
             || stored("role_arn", auth[S3AuthSetting::role_arn].value)
-            || stored("external_id", auth[S3AuthSetting::external_id].value);
+            || (!auth[S3AuthSetting::role_arn].value.empty()
+                && stored("external_id", auth[S3AuthSetting::external_id].value));
     }
 }
 

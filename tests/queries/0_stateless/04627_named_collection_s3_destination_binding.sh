@@ -48,6 +48,13 @@ ${CLICKHOUSE_CLIENT} -q "
         access_key_id = 'test', secret_access_key = 'testtest',
         google_adc_client_id = 'cid', google_adc_client_secret = 'csecret',
         google_adc_refresh_token = 'rtoken';
+    DROP NAMED COLLECTION IF EXISTS $(c xid);
+    CREATE NAMED COLLECTION $(c xid) AS url = '$OTHER/',
+        access_key_id = 'stored', secret_access_key = 'storedsecret', external_id = 'xid';
+    DROP NAMED COLLECTION IF EXISTS $(c gcpmeta);
+    CREATE NAMED COLLECTION $(c gcpmeta) AS
+        url = '$OTHER/', http_client = 'gcp_oauth', service_account = 'sa',
+        metadata_service = '127.0.0.1:11114', request_token_path = '/computeMetadata/v1';
     DROP NAMED COLLECTION IF EXISTS $(c nosign);
     CREATE NAMED COLLECTION $(c nosign) AS url = '$OTHER/',
         access_key_id = 'AKIAIOSFODNN7EXAMPLE', secret_access_key = 'testtest', no_sign_request = 1;
@@ -293,6 +300,31 @@ run "SELECT * FROM s3($(c gcpkeys), url = '$OTHER/x.csv',
     google_adc_client_id = 'own', google_adc_client_secret = 'ownsecret',
     google_adc_refresh_token = 'owntoken', format = 'CSV', structure = 'a String')"
 
+h '--- a stored external_id with no role to assume is read by nothing, so it binds nothing'
+allowed_reads "SELECT * FROM s3($(c xid), url = '$OWN/$DATA', access_key_id = 'test',
+    secret_access_key = 'testtest', format = 'CSV', structure = 'a String')"
+
+h '--- control: alongside a surviving role_arn the same stored external_id is the STS secret and binds'
+# The restricted path drops a stored `external_id` under a query-supplied role, so this is the arm that
+# needs the restriction off to reach the case where the STS wrapper reads one.
+run "SELECT * FROM s3($(c xid), url = '$OWN/$DATA', access_key_id = 'test',
+    secret_access_key = 'testtest', role_arn = 'arn:aws:iam::111111111111:role/r',
+    format = 'CSV', structure = 'a String')
+    SETTINGS s3_allow_server_credentials_in_user_queries = 1"
+
+h '--- a complete query ADC triple mints the token, so the stored metadata fields bind nothing'
+# Nothing answers the ADC token endpoint, so what this asserts is that the check let the request
+# through, not a round trip; the execution cap bounds an exchange that cannot succeed.
+run "SELECT * FROM s3($(c gcpmeta), url = '$OWN/$DATA',
+    google_adc_client_id = 'own', google_adc_client_secret = 'ownsecret',
+    google_adc_refresh_token = 'owntoken', format = 'CSV', structure = 'a String')
+    SETTINGS max_execution_time = 25"
+
+h '--- control: an incomplete ADC triple leaves the metadata fields minting, so they still bind'
+run "SELECT * FROM s3($(c gcpmeta), url = '$OWN/$DATA',
+    google_adc_client_id = 'own', google_adc_client_secret = 'ownsecret',
+    format = 'CSV', structure = 'a String')"
+
 h '--- no_sign_request with static keys: nothing signs, so the destination is not bound'
 # Two path segments: `S3::URI` reads the first as the bucket, so a single-segment path leaves no key
 # and no request is ever issued.
@@ -493,6 +525,8 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP NAMED COLLECTION IF EXISTS $(c gcp);
     DROP NAMED COLLECTION IF EXISTS $(c gcpnosign);
     DROP NAMED COLLECTION IF EXISTS $(c gcpkeys);
+    DROP NAMED COLLECTION IF EXISTS $(c xid);
+    DROP NAMED COLLECTION IF EXISTS $(c gcpmeta);
     DROP NAMED COLLECTION IF EXISTS $(c nosign);
     DROP NAMED COLLECTION IF EXISTS $(c signing);
     DROP NAMED COLLECTION IF EXISTS $(c keysonly);
