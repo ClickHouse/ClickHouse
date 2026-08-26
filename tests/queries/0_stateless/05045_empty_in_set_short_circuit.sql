@@ -1,0 +1,30 @@
+-- The read must be skipped entirely when the set behind `IN (subquery)` turns out to be empty,
+-- including when the filtered column is `Nullable` and outside the sorting key.
+DROP TABLE IF EXISTS t_short_circuit;
+DROP TABLE IF EXISTS t_short_circuit_final;
+DROP TABLE IF EXISTS t_short_circuit_set;
+
+CREATE TABLE t_short_circuit (a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_short_circuit_final (a UInt64, b Nullable(UInt64)) ENGINE = ReplacingMergeTree ORDER BY a;
+CREATE TABLE t_short_circuit_set (b UInt64) ENGINE = MergeTree ORDER BY b;
+
+INSERT INTO t_short_circuit SELECT number, number FROM numbers(100000);
+INSERT INTO t_short_circuit_final SELECT number, number FROM numbers(100000);
+
+SELECT count() FROM t_short_circuit WHERE b IN (SELECT b FROM t_short_circuit_set);
+SELECT count() FROM t_short_circuit WHERE b IN (SELECT b FROM t_short_circuit_set) AND a > 10 SETTINGS optimize_move_to_prewhere = 0;
+SELECT count() FROM t_short_circuit_final FINAL WHERE b IN (SELECT b FROM t_short_circuit_set);
+-- `NOT IN` over an empty set matches everything, so this one must read the whole table.
+SELECT count() FROM t_short_circuit WHERE b NOT IN (SELECT b FROM t_short_circuit_set);
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The `NOT IN` query is deliberately left out: it is the last one before the flush, and its log entry
+-- is queued asynchronously, so asserting on it would race with `SYSTEM FLUSH LOGS`.
+SELECT read_rows FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%b IN (SELECT b FROM t_short_circuit_set)%' AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds;
+
+DROP TABLE t_short_circuit;
+DROP TABLE t_short_circuit_final;
+DROP TABLE t_short_circuit_set;
