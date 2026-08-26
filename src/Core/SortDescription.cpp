@@ -32,6 +32,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -292,6 +293,19 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 namespace
 {
 
+/// The plan may be client-supplied (`TCPHandler::receiveQueryPlan`), so an out-of-range enum value has
+/// to be rejected instead of cast into the enum: `FillingTransform::getStepFunction` switches on it
+/// without a default case. Same check as `decodeDataType` does for an `Interval` type.
+IntervalKind readIntervalKind(ReadBuffer & in)
+{
+    UInt8 kind = 0;
+    readIntBinary(kind, in);
+    if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unknown IntervalKind in a serialized WITH FILL description: {0:#04x}", UInt64(kind));
+    return IntervalKind(static_cast<IntervalKind::Kind>(kind));
+}
+
 /// The `WITH FILL` bounds of one column. `step_func`/`staleness_step_func` are not written: they are
 /// rebuilt from the bounds and the column type by `FillingTransform`, which is where they are set.
 void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuffer & out)
@@ -340,19 +354,11 @@ void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer &
 
     fill.fill_step = readFieldBinary(in);
     if (flags & 4)
-    {
-        UInt8 kind = 0;
-        readIntBinary(kind, in);
-        fill.step_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind));
-    }
+        fill.step_kind = readIntervalKind(in);
 
     fill.fill_staleness = readFieldBinary(in);
     if (flags & 8)
-    {
-        UInt8 kind = 0;
-        readIntBinary(kind, in);
-        fill.staleness_kind = IntervalKind(static_cast<IntervalKind::Kind>(kind));
-    }
+        fill.staleness_kind = readIntervalKind(in);
 }
 
 }
