@@ -103,6 +103,12 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const ConvertToASTOptions & convert_to_ast_options);
 
+/** Return the column alias list `alias(col1, col2, ...)` that a conversion back to AST has to
+  * re-emit for a subquery or a CTE, or an empty list when there is nothing to restore.
+  * Only an unresolved node has a list to restore.
+  */
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
+
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
