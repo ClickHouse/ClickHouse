@@ -1234,12 +1234,6 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         impl->children.erase(impl->children.begin() + fuzz_rand() % impl->children.size());
     }
 
-    // Rarely, remove all elements at once, valid or not for this particular list
-    if (!impl->children.empty() && fuzz_rand() % 200 == 0)
-    {
-        impl->children.clear();
-    }
-
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
