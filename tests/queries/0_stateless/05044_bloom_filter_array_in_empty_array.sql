@@ -59,6 +59,29 @@ SELECT count() FROM t_bf_array_in_low_cardinality WHERE x IN ([], ['b']) SETTING
 
 DROP TABLE t_bf_array_in_low_cardinality;
 
+-- A tuple `IN`, with the array component in either position.
+DROP TABLE IF EXISTS t_bf_array_in_tuple;
+
+CREATE TABLE t_bf_array_in_tuple (a UInt32, x Array(UInt32), y UInt32,
+  INDEX idx_a a TYPE bloom_filter GRANULARITY 1,
+  INDEX idx_x x TYPE bloom_filter GRANULARITY 1,
+  INDEX idx_y y TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_bf_array_in_tuple VALUES (9, [], 1), (9, [1], 2), (9, [2], 3), (9, [3], 4);
+
+SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([], 1), ([2], 3)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_array_in_tuple WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple WHERE (y, x) IN ((1, []), (3, [2])) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_array_in_tuple WHERE (a, x, y) IN ((9, [], 1), (9, [2], 3)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple WHERE (a, x, y) IN ((9, [], 1), (9, [2], 3)) SETTINGS use_skip_indexes = 0;
+
+-- No empty array in the tuple set, so every component keeps pruning.
+SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_bf_array_in_tuple WHERE (x, y) IN (([1], 2), ([2], 3)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_array_in_tuple;
+
 -- An absent value is still pruned away, so the index keeps working.
 DROP TABLE IF EXISTS t_bf_array_in_pruning;
 
