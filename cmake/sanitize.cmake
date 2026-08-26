@@ -4,29 +4,8 @@
 # - `thread` (TSan)
 # - `undefined` (UBSan)
 # - "" (no sanitizing)
-#
-# The legal values are strings, so this must be a STRING cache variable, not `option`:
-# `option` creates a BOOL, and when the user does not pass -DSANITIZE=... its empty default
-# is normalized to `OFF` in the cache. Code testing `SANITIZE STREQUAL ""` then takes the
-# "sanitizer enabled" branch in every default-configured build. Existing build directories
-# keep the stale `SANITIZE:BOOL=OFF` cache entry, so consumers must test truthiness
-# (`if (SANITIZE)`), which is false for both `OFF` and the empty string, instead of
-# comparing against the empty string.
-set (SANITIZE "" CACHE STRING "Enable one of the code sanitizers")
+option (SANITIZE "Enable one of the code sanitizers" "")
 
-# `set(... CACHE ...)` does not retag an entry that already exists, so a build directory
-# configured while SANITIZE was still an `option` keeps a BOOL-typed entry, and `ccmake` /
-# `cmake-gui` keep presenting it as a checkbox whose only writable values are ON/OFF.
-# Retag it in place: a stale `OFF` stays falsy and keeps meaning "no sanitizer", while the
-# STRING type lets the user type a real sanitizer name.
-get_property (sanitize_cache_type CACHE SANITIZE PROPERTY TYPE)
-if (sanitize_cache_type STREQUAL "BOOL")
-    set_property (CACHE SANITIZE PROPERTY TYPE STRING)
-endif()
-unset (sanitize_cache_type)
-
-## -fno-omit-frame-pointer is required: the query profiler relies on frame-pointer-based
-## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
 if (SANITIZE)
@@ -39,71 +18,9 @@ if (SANITIZE)
         # MemorySanitizer flags are set according to the official documentation:
         # https://clang.llvm.org/docs/MemorySanitizer.html#usage
 
-        # Origin-tracking level: 2 records the full propagation chain (calls
-        # __msan_chain_origin at every value-propagation step), 1 records only
-        # the source allocation, 0 disables origin tracking.
-        #
-        # On x86-64-v3+ we drop to 1. Reason: with AVX2 the compiler keeps
-        # YMM live in hot vectorized loops; LLVM's vzeroupper-inserter then
-        # emits a vzeroupper before every external call from such a block.
-        # With track-origins=2, __msan_chain_origin is called on the hot
-        # path of every uninit-propagation step, so every such call pays a
-        # vzeroupper. Across millions of shadow propagations per query this
-        # produces a 30-60% slowdown that pushes stateless tests over the
-        # 10-minute CI timeout (regression observed from 2026-05-13 after
-        # x86-64-v3 became the default in PR #90043).
-        #
-        # Level 1 still surfaces the originating allocation of an uninit
-        # value, which is the punchline of most MSan reports. What is lost
-        # is the chain through intermediate copies, useful for deep
-        # value-shuffling bugs (e.g. parser -> planner -> exec) but a small
-        # minority of cases.
-        #
-        # Alternatives for future iteration if the chain is missed or
-        # level 1 still isn't fast enough:
-        #   * Downgrade the MSan build to -DX86_ARCH_LEVEL=2 (no chain
-        #     loss, but gives up any v3 wins for the whole build).
-        #   * Patch LLVM so X86VZeroUpperInserter or the MemorySanitizer
-        #     pass marks __msan_chain_origin (and other RTL calls) as
-        #     YMM-preserving so vzeroupper is elided at those call sites.
-        #   * Enable LTO on the MSan build so the inserter can see the
-        #     RTL is AVX-clean (heavy build change).
-        #
-        # cpu_features.cmake runs after this file, so X86_ARCH_LEVEL isn't
-        # in the cache yet on a first configure. If the user passed
-        # -DX86_ARCH_LEVEL=N on the command line, cmake populates the cache
-        # before any include runs and that override is honored; otherwise
-        # mirror the default from cpu_features.cmake.
-        if (ARCH_AMD64)
-            if (DEFINED CACHE{X86_ARCH_LEVEL})
-                set (_msan_x86_arch_level $CACHE{X86_ARCH_LEVEL})
-            else ()
-                set (_msan_x86_arch_level "3")
-            endif ()
-            if (_msan_x86_arch_level VERSION_GREATER_EQUAL 3)
-                set (MSAN_TRACK_ORIGINS_LEVEL 1)
-                # On v3+ MSan, AVX2 codegen keeps YMM live across the per-allocation MSan RTL calls
-                # (operator new, free, __msan_set_alloca_origin*, __msan_memcpy, etc.), and LLVM's
-                # `X86VZeroUpperInserter` emits a `vzeroupper` before every such call. For ClickHouse
-                # workloads that's ~1.78M vzeroupper instructions in the binary, almost all on hot
-                # paths.
-                #
-                # On Zen3+ and Ice Lake (current AMD CI runners) the AVX-to-SSE transition penalty
-                # that vzeroupper exists to mitigate is essentially zero. Disable the inserter under
-                # MSan v3+ so we skip executing those instructions.
-                set (MSAN_X86_VZEROUPPER_FLAGS "-mno-vzeroupper")
-            else ()
-                set (MSAN_TRACK_ORIGINS_LEVEL 2)
-                set (MSAN_X86_VZEROUPPER_FLAGS "")
-            endif ()
-        else ()
-            set (MSAN_TRACK_ORIGINS_LEVEL 2)
-            set (MSAN_X86_VZEROUPPER_FLAGS "")
-        endif ()
-
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
         # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie ${MSAN_X86_VZEROUPPER_FLAGS}")
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fPIC -fpie")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
@@ -143,12 +60,6 @@ if (SANITIZE)
 
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
-    endif ()
-
-    # The query profiler relies on frame-pointer-based stack unwinding under sanitizer builds
-    # (via abseil's GetStackTrace in StackTrace.cpp). Verify the flag is present.
-    if (NOT CMAKE_CXX_FLAGS MATCHES "-fno-omit-frame-pointer")
-        message (FATAL_ERROR "Sanitizer builds require -fno-omit-frame-pointer for query profiler support")
     endif ()
 endif()
 
@@ -211,15 +122,3 @@ endif()
 # bundled path here ensures it takes precedence without disrupting #include_next chains (which
 # libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
 include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
-
-# Control-Flow Integrity (CFI) requires ThinLTO (-flto=thin) and -fwhole-program-vtables.
-# These are already enabled for release builds (ENABLE_THINLTO=ON). Do NOT combine with SANITIZE=
-# because SANITIZE disables ThinLTO. Use this option standalone with a release build type.
-option (ENABLE_CFI "Enable Clang Control-Flow Integrity sanitizer (requires ENABLE_THINLTO)" OFF)
-
-if (ENABLE_CFI)
-    if (SANITIZE)
-        message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
-    endif()
-    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer: cfi-vcall, cfi-derived-cast")
-endif()

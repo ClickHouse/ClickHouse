@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveTag(group, 'tag_name') removes a specified tag from a tags group,
 /// and returns the new tags group.
-class FunctionTimeSeriesRemoveTag final : public IFunction
+class FunctionTimeSeriesRemoveTag : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTag";
@@ -80,8 +80,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveTag)
     FunctionDocumentation::Description description = R"(
 Removes a specified tag from a group of tags.
 If there is no such tag in the group then the group is returned unchanged.
-See also function [timeSeriesRemoveTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
-[timeSeriesRemoveAllTagsExcept()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+See also function [timeSeriesRemoveTags()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTags),
+[timeSeriesRemoveAllTagsExcept()](/sql-reference/functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTag(group, tag_to_remove)";
     FunctionDocumentation::Arguments arguments = {

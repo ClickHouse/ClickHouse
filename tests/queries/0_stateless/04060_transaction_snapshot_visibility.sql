@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel-replicas
+-- Tags: no-ordinary-database, no-encrypted-storage, no-parallel-replicas
 -- Test: MVCC snapshot isolation for INSERT and DROP operations.
 -- Verifies that:
 --   1. Uncommitted inserts are not visible at snapshot 1 (NonTransactionalCSN).

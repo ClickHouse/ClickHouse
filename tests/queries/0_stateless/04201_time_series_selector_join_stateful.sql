@@ -34,8 +34,8 @@ CREATE TABLE samples_table
     value Float64
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
+CREATE TABLE prometheus (id UInt64) ENGINE = TimeSeries
+DATA samples_table TAGS tags_table;
 
 -- Three metrics: `foo`, `bar`, `baz`.
 INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES

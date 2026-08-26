@@ -71,21 +71,40 @@ def test_async_logger_profile_events(start_cluster):
 
 
 def test_async_logger_asynchronous_metrics(start_cluster):
-    # The per-channel queue sizes are published as a single key-value metric,
-    # keyed by the logging channel name.
-    channels = json.loads(
+    metrics = json.loads(
         node.query(
             """
-       SELECT mapKeys(key_values) AS channels
+       SELECT metric, value
        FROM system.asynchronous_metrics
-       WHERE metric = 'AsyncLoggingQueueSize'
+       WHERE name ILIKE '%asynclog%'
        FORMAT JSON
        """
         )
-    )["data"][0]["channels"]
+    )["data"]
 
-    # Check that all the channels are reported
-    assert "ErrorFileLog" in channels, channels
-    assert "FileLog" in channels, channels
-    assert "Console" in channels, channels
-    assert "TextLog" in channels, channels
+    # Check that the metric exists
+    assert (
+        next(
+            (x for x in metrics if x["metric"] == "AsyncLoggingErrorFileLogQueueSize"),
+            None,
+        )
+        is not None
+    ), metrics
+    assert (
+        next(
+            (x for x in metrics if x["metric"] == "AsyncLoggingFileLogQueueSize"), None
+        )
+        is not None
+    ), metrics
+    assert (
+        next(
+            (x for x in metrics if x["metric"] == "AsyncLoggingConsoleQueueSize"), None
+        )
+        is not None
+    ), metrics
+    assert (
+        next(
+            (x for x in metrics if x["metric"] == "AsyncLoggingTextLogQueueSize"), None
+        )
+        is not None
+    ), metrics
