@@ -3167,13 +3167,13 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDeltaAtQuantizableException)
         constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception", 24);
 }
 
-TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaThroughTheLeadingExceptionPrefix)
+TEST_F(WallabyTest, DecompressMalformedInputDeltaBeforeTheDecimalChainStart)
 {
-    /// The delta chain starts at the first value that is not exiled and `base` holds that
-    /// value's quantized integer, so every lane up to and including that position is zero.
-    /// Here position zero is an exception and the lane at position one carries a delta of one,
-    /// which no encoder can emit: the chain would have started at position one with that
-    /// value as the base instead.
+    /// `base` is the quantized value of the position the delta chain started from, so a
+    /// leading exception may only be followed by a non-zero delta when it is that chain start
+    /// itself, exiled by the adjustment cap — and then its own value reconstructs the base.
+    /// Here position zero is patched with `1000.0` while the base is one, so the delta of one
+    /// at position one advances the accumulator before any chain exists.
     std::vector<UInt8> vectors = {
         0x02,                                           // mode = DECIMAL_DELTA
         0x20,                                           // biased scale 32: alpha = 0
@@ -3188,7 +3188,7 @@ TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaThroughTheLeadingExcepti
     vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
 
     verifyDecompressExpectedException(
-        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane", 24);
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, delta before the decimal chain start", 24);
 }
 
 TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)

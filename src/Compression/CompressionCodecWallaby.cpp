@@ -2080,18 +2080,29 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 else
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
-                    /// The chain starts at the first value that was not exiled, and `base` is
-                    /// exactly that value's quantized integer, so the encoder writes a zero
-                    /// delta on every lane of the leading exception prefix and on the first
-                    /// in-lane position itself. A stream that advances the accumulator before
-                    /// the first in-lane value is forged: it would replay values the encoder
-                    /// could never have produced.
+                    if (unpacked[0] != 0)
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane");
+                    /** `base` is the quantized value of the position the chain started from, so
+                      * the accumulator may not move before that position is reached. The chain
+                      * start is the first position the walk kept in the lanes; it leaves the
+                      * exception list only afterwards, when the adjustment cap exiles it, and
+                      * then its own quantized value is the base. So either the first
+                      * non-exception position still carries the chain start's zero delta, or an
+                      * earlier exception is a quantizable one whose value reconstructs the base.
+                      * Anything else advances the accumulator before the chain exists.
+                      */
                     UInt32 first_in_lane = 0;
                     while (first_in_lane < count && is_exception[first_in_lane])
                         ++first_in_lane;
-                    for (UInt32 i = 0; i < count && i <= first_in_lane; ++i)
-                        if (unpacked[i] != 0)
-                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane");
+                    if (first_in_lane < count && unpacked[first_in_lane] != 0)
+                    {
+                        bool base_is_an_exiled_chain_start = false;
+                        for (UInt32 i = 0; i < first_in_lane; ++i)
+                            base_is_an_exiled_chain_start
+                                |= quantizable_exception[i] && exception_quantized[i] == base;
+                        if (!base_is_an_exiled_chain_start)
+                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, delta before the decimal chain start");
+                    }
                     SignedType accumulator = base;
                     for (UInt32 i = 0; i < count; ++i)
                     {
