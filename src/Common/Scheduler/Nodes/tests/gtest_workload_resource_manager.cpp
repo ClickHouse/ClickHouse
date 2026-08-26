@@ -3848,3 +3848,138 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
 
     t.wait();
 }
+
+// Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
+struct UnsubscribeProbe
+{
+    std::mutex mutex;
+    std::condition_variable blocker_entered_cv;
+    bool blocker_entered = false;
+    std::atomic<bool> armed{false};
+    std::atomic<int> blocker_in_flight{0};
+    std::atomic<int> unsubscribed_handler_calls{0};
+    std::atomic<int> live_handler_calls{0};
+};
+
+// Captures `this` in its handler, like every real subscriber of getAllEntitiesAndSubscribe.
+// `subscription` is declared last, so it is destroyed before any state the handler reads.
+struct UnsubscribeTestSubscriber
+{
+    enum class Role
+    {
+        Blocker, // holds the notification inside the handler for a while
+        CountUnsubscribed, // increments unsubscribed_handler_calls
+        CountLive, // increments live_handler_calls
+    };
+
+    UnsubscribeTestSubscriber(WorkloadEntityTestStorage & storage, std::shared_ptr<UnsubscribeProbe> probe_, Role role_)
+        : probe(std::move(probe_)), role(role_)
+    {
+        subscription = storage.getAllEntitiesAndSubscribe(
+            [this, shared_probe = probe] (const std::vector<IWorkloadEntityStorage::Event> &)
+            {
+                // Reading a member is what makes the `this` capture load-bearing.
+                if (state.empty())
+                    return;
+
+                if (!shared_probe->armed.load())
+                    return;
+
+                switch (role)
+                {
+                    case Role::Blocker:
+                    {
+                        shared_probe->blocker_in_flight.fetch_add(1);
+                        {
+                            std::lock_guard lock{shared_probe->mutex};
+                            shared_probe->blocker_entered = true;
+                        }
+                        shared_probe->blocker_entered_cv.notify_all();
+                        // Widens the window; no test asserts on this duration.
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        shared_probe->blocker_in_flight.fetch_sub(1);
+                        break;
+                    }
+                    case Role::CountUnsubscribed:
+                        shared_probe->unsubscribed_handler_calls.fetch_add(1);
+                        break;
+                    case Role::CountLive:
+                        shared_probe->live_handler_calls.fetch_add(1);
+                        break;
+                }
+            });
+    }
+
+    std::shared_ptr<UnsubscribeProbe> probe;
+    Role role;
+    String state = "subscribed";
+    scope_guard subscription;
+};
+
+// Blocks until the blocker handler is provably inside its window.
+static bool waitForBlocker(UnsubscribeProbe & probe)
+{
+    std::unique_lock lock{probe.mutex};
+    return probe.blocker_entered_cv.wait_for(lock, std::chrono::seconds(60), [&] { return probe.blocker_entered; });
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+
+    // The initial handler(current_state) call already happened above, with `armed == false`.
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Handler never started, so the barrier was never exercised";
+    EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
+
+    // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
+    blocker.reset();
+
+    EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
+
+    notifier.join();
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+
+    // Subscription order is notification order, so the blocker holds the notification before it
+    // reaches the two handlers below.
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+    auto unsubscribed = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountUnsubscribed);
+    auto live = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
+
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Blocker handler never started, so nothing was exercised";
+
+    // The notifier already copied all three handlers out of the list and is parked in the first
+    // one, so this unsubscribe cannot wait for anything and must return immediately.
+    unsubscribed.reset();
+
+    notifier.join();
+
+    EXPECT_EQ(probe->live_handler_calls.load(), 1)
+        << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
+    EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
+        << "A handler was called after its subscription guard had already been destroyed";
+}
