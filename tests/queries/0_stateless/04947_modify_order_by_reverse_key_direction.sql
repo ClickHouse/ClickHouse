@@ -51,10 +51,10 @@ ALTER TABLE t_asc_key ADD COLUMN b UInt64, MODIFY ORDER BY (a, b);
 SELECT sum(a) FROM t_asc_key WHERE a >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
 -- Validations that run after this check are still reached on a MODIFY ORDER BY that the check
--- lets through: the sorting key extension is accepted, and the readonly setting is rejected
+-- lets through: the sorting key extension is accepted, and the sampling expression is rejected
 -- later in the same statement.
 ALTER TABLE t_asc_key ADD COLUMN c UInt64, MODIFY ORDER BY (a, b, c),
-    MODIFY SETTING index_granularity = 256; -- { serverError READONLY_SETTING }
+    MODIFY SAMPLE BY c; -- { serverError BAD_ARGUMENTS }
 
 -- An ALTER that never enters the check is unaffected.
 ALTER TABLE t_desc_key MODIFY COLUMN a String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }

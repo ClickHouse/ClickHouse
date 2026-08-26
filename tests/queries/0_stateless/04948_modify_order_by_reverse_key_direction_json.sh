@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: replicated DDL stores the entry as SQL text, which cannot carry a
+# sorting key direction, so the JSON AST does not survive the round trip.
 
 # `ALTER TABLE ... MODIFY ORDER BY` must not change the sort direction of a retained sorting
 # key column in EITHER direction. The `ALTER` parser cannot express `ASC`/`DESC`, but the
