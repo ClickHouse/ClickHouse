@@ -169,14 +169,15 @@ SELECT countIf(explain LIKE '%Exchange%') >= 1, countIf(trimLeft(explain) LIKE '
 -- capability): the outer `Aggregating` sits above the inner query's variant-B pushdown group
 -- through one identity `Expression` step (the subquery-boundary "Change column names to column
 -- identifiers" translation, folded into that step). Structurally the outer rule COULD match the
--- inner's pushed `JoinLogical` alternative there, but `checkPattern`/`applyImpl` for the outer
--- `Aggregating` run via `scheduleApplicableRules` synchronously when the OUTER expression itself
--- is explored - before its child's `ExploreGroupTask` (and hence the inner aggregation's own
--- `AggregationPushdown` application, several groups further down) ever runs. Since a rule's
--- outcome for a given source expression is decided once (`setApplied`) and never revisited, the
--- outer rule's `checkPattern` here sees no join candidate at all and permanently skips. This is
--- the "once per source expression" engine bound from the rule's own doc comment, orthogonal to
--- the enumerate-all change: the classic reused-alternative shape below is what wins instead.
+-- inner's pushed `JoinLogical` alternative there, but `checkPattern` for the outer `Aggregating`
+-- runs via `scheduleApplicableRules` synchronously from its own `ExploreExpressionTask` (which
+-- runs once per group expression) - before its child's `ExploreGroupTask` (and hence the inner
+-- aggregation's own `AggregationPushdown` application, several groups further down) ever runs.
+-- `checkPattern` sees no join candidate yet and returns false, so `applyImpl` (which does run
+-- after full child exploration, once scheduled) never gets scheduled for this expression, and
+-- `ExploreExpressionTask` is never re-run later to give `checkPattern` another look. This is the
+-- "once per source expression" engine bound from the rule's own doc comment, orthogonal to the
+-- enumerate-all change: the classic reused-alternative shape below is what wins instead.
 SELECT '-- 27. nested aggregation over a variant-B pushdown: outer aggregation reuses the pushed join as-is (no further cascade, see comment above)';
 EXPLAIN SELECT k, max(c) AS total FROM (SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key) GROUP BY k;
 

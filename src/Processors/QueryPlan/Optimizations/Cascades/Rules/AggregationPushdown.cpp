@@ -82,12 +82,16 @@ struct JoinOutputBindings
 /// The join under the aggregation is matched against every logical alternative of its group (see
 /// `collectJoinsUnderAggregation`), not just the ingested plan, so e.g. `JoinCommutativity`'s
 /// swapped twin and a join alternative left by a nested aggregation's own pushdown are both
-/// considered - this lets an outer aggregation cascade through an inner one's pushdown. The
-/// swapped twin's pushdown is a mirror image of the original's and is currently accepted as a
-/// duplicate memo group; memo-level dedup of mirror alternatives is left to a separate change.
-/// Like every transformation rule, this one applies once per source group expression
-/// (`setApplied`), so alternatives added to a child group after this rule has already run on the
-/// parent are not revisited.
+/// visible to `applyImpl`, once it runs. The swapped twin's pushdown is a mirror image of the
+/// original's and is currently accepted as a duplicate memo group; memo-level dedup of mirror
+/// alternatives is left to a separate change. Whether an outer aggregation ever actually sees a
+/// nested one's pushdown alternative depends on `checkPattern` for the outer expression running
+/// late enough to observe it - `checkPattern` is evaluated synchronously when the outer
+/// expression is first explored, before its child's own exploration (and hence the nested
+/// aggregation's pushdown) has run, so this does not fire for a plain `GROUP BY` subquery (see
+/// `04926_cascades_aggregation_pushdown`, case 27). Like every transformation rule, this one
+/// applies once per source group expression (`setApplied`), so alternatives added to a child
+/// group after this rule has already run on the parent are not revisited.
 class AggregationPushdown : public IOptimizationRule
 {
 public:
@@ -234,6 +238,10 @@ std::vector<MatchedJoin> collectJoinsUnderAggregation(const GroupExpression & ex
                 if (is_pushable(result[i]))
                     return {result[i]};
     }
+    /// No pushable candidate found: in coarse mode, `result` may still hold non-pushable
+    /// candidates collected along the way - those must not make `checkPattern` match.
+    if (stop_at_first_pushable)
+        return {};
     return result;
 }
 
