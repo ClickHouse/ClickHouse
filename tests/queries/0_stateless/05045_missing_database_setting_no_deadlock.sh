@@ -15,3 +15,11 @@ timeout 60 $CLICKHOUSE_CLIENT --query "SELECT 1 SETTINGS database = 'no_such_db_
 # the setting is only applied when it names a different database, and resolving `tables` unqualified
 # shows that the switch took effect.
 $CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM tables SETTINGS database = 'system'"
+
+# A user's `DEFAULT DATABASE` is checked the same way: a name that does not exist is refused at
+# login instead of becoming the current database of the session.
+user="u_$CLICKHOUSE_TEST_UNIQUE_NAME"
+$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS $user"
+$CLICKHOUSE_CLIENT --query "CREATE USER $user IDENTIFIED WITH no_password DEFAULT DATABASE no_such_db_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --user "$user" --query "SELECT 1" 2>&1 | grep -c -m1 UNKNOWN_DATABASE
+$CLICKHOUSE_CLIENT --query "DROP USER $user"
