@@ -392,12 +392,12 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
         column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
         return range;
     }
-    catch (...)
+    catch (Exception & e)
     {
-        /// This pruning is dynamic and best-effort, and the same malformed statistics must have
-        /// already survived the static min/max pruning (which fails loudly with a hint to disable
-        /// `input_format_parquet_filter_push_down`) - here just don't skip.
-        return std::nullopt;
+        e.addMessage(
+            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 to ignore",
+            column_info.name);
+        throw;
     }
 }
 

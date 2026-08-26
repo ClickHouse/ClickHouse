@@ -614,8 +614,9 @@ struct Reader
     bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
 
     /// TopN dynamic filtering: min/max of the sort column decoded from row-group statistics, or
-    /// nullopt when the statistics are missing, malformed, or don't prove the absence of nulls
-    /// (statistics describe only the non-null values, and null rows may belong to the top-K).
+    /// nullopt when the statistics are missing or don't prove the absence of nulls (statistics
+    /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
+    /// are present but cannot be decoded throw, as in the static min/max pruning path.
     std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
     /// True if the running top-K threshold proves that no row of this row group can enter the
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
