@@ -121,28 +121,6 @@ namespace
         return result;
     }
 
-    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
-    /// object cannot be safely cached and caching must be skipped (fail-close).
-    ///
-    /// The object identifier already uses the full path, so files that share a base name in
-    /// different directories do not collide. For general (non-data-lake) remote objects the path
-    /// alone is not a stable identity - an object can be overwritten in place under the same path -
-    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
-    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
-    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
-    /// lakes whose object metadata does not carry an ETag).
-    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-    {
-        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-        if (is_data_lake)
-            return identifier;
-        const auto & metadata = object_info.getObjectMetadata();
-        if (!metadata || metadata->etag.empty())
-            return std::nullopt;
-        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
-    }
-
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
     {
         const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
@@ -313,6 +291,28 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
+}
+
+/// The object identifier already uses the full path, so files that share a base name in
+/// different directories do not collide. For general (non-data-lake) remote objects the path
+/// alone is not a stable identity - an object can be overwritten in place under the same path -
+/// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+/// rather than reusing stale row-group information. This only holds when the ETag is a strong
+/// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
+/// same across a same-second, same-size overwrite and would let the cache serve stale row-group
+/// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
+/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
+/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
+/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+{
+    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    if (is_data_lake)
+        return identifier;
+    const auto & metadata = object_info.getObjectMetadata();
+    if (!metadata || !metadata->isEtagUsableAsCacheKey())
+        return std::nullopt;
+    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -606,7 +606,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_snapshot->storage.getStorageID(),
+                    .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
                     /// Report an unknown modification time (e.g. a web object whose HTTP response has no
