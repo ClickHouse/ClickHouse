@@ -275,6 +275,17 @@ configure_file(
     @ONLY
 )
 
+# The Instrumentor pass embeds its runtime helper header as a string
+# (mirrors contrib/llvm-project/llvm/include/llvm/CMakeLists.txt)
+file(READ
+    "${LLVM_SOURCE_DIR}/include/llvm/Transforms/IPO/InstrumentorRuntimeHelper.h"
+    LLVM_INSTRUMENTOR_RUNTIME_HELPER)
+configure_file(
+    "${LLVM_SOURCE_DIR}/include/llvm/Transforms/IPO/InstrumentorVariables.inc.in"
+    "${LLVM_BINARY_DIR}/include/llvm/Transforms/IPO/InstrumentorVariables.inc"
+    @ONLY
+)
+
 # Target definition files
 file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/Targets.def"
     "LLVM_TARGET(${LLVM_TARGET_ARCH})\n")
@@ -679,6 +690,7 @@ set(INTRINSICS_TD "${LLVM_SOURCE_DIR}/include/llvm/IR/Intrinsics.td")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=aarch64" "include/llvm/IR/IntrinsicsAArch64.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=amdgcn" "include/llvm/IR/IntrinsicsAMDGPU.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=arm" "include/llvm/IR/IntrinsicsARM.h")
+tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=avr" "include/llvm/IR/IntrinsicsAVR.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=bpf" "include/llvm/IR/IntrinsicsBPF.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=dx" "include/llvm/IR/IntrinsicsDirectX.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=hexagon" "include/llvm/IR/IntrinsicsHexagon.h")
@@ -780,6 +792,8 @@ if (ARCH_AMD64)
     tablegen_generate(X86 "${X86_TD}" "-gen-x86-mnemonic-tables;-asmwriternum=1" "lib/Target/X86/X86GenMnemonicTables.inc")
     tablegen_generate(X86 "${X86_TD}" "-gen-x86-instr-mapping" "lib/Target/X86/X86GenInstrMapping.inc")
     tablegen_generate(X86 "${X86_TD}" "-gen-global-isel-combiner;-combiners=X86PreLegalizerCombiner" "lib/Target/X86/X86GenPreLegalizeGICombiner.inc")
+    tablegen_generate(X86 "${X86_TD}" "-gen-global-isel-combiner;-combiners=X86PostLegalizerCombiner" "lib/Target/X86/X86GenPostLegalizeGICombiner.inc")
+    tablegen_generate(X86 "${X86_TD}" "-gen-sd-node-info" "lib/Target/X86/X86GenSDNodeInfo.inc")
 endif()
 
 #
@@ -797,7 +811,7 @@ if (ARCH_AARCH64)
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-writer;-asmwriternum=1" "lib/Target/AArch64/AArch64GenAsmWriter1.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-matcher" "lib/Target/AArch64/AArch64GenAsmMatcher.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-fast-isel" "lib/Target/AArch64/AArch64GenFastISel.inc")
-    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel" "lib/Target/AArch64/AArch64GenGlobalISel.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel;-gisel-extended-llt" "lib/Target/AArch64/AArch64GenGlobalISel.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64O0PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PostLegalizerCombiner" "lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc")

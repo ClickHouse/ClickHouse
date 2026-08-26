@@ -63,6 +63,10 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
 
+# std::text_encoding is a C++26 feature; upstream builds libcxx sources with a newer standard
+# than the project-wide one, so this file needs the standard raised explicitly.
+set_source_files_properties("${LIBCXX_SOURCE_DIR}/src/text_encoding.cpp" PROPERTIES COMPILE_OPTIONS "-std=c++26")
+
 configure_file("${LIBCXX_SOURCE_DIR}/include/__assertion_handler" "${LIBCXX_GENERATED_INCLUDE_DIR}/__assertion_handler" COPYONLY)
 configure_file("${LIBCXX_SOURCE_DIR}/include/__config_site" "${LIBCXX_GENERATED_INCLUDE_DIR}/__config_site" COPYONLY)
 
