@@ -5203,8 +5203,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
+        /// The filter column can be a source column, which the stream must keep for the rest of the query.
+        if (input_names.contains(column_name))
+            remove_column = false;
+
         auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&, actions](const SharedHeader & header)
+        pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
         });

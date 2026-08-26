@@ -8084,7 +8084,7 @@ Enables delta-kernel writes feature.
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
     DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines. Applied only when the path does not contain a `{_partition_id}` placeholder: such a path is compatible only with the `wildcard` strategy, so it always implies `wildcard`.
+Default partition strategy for file like engines. Applied only to `CREATE` queries with a path that has no glob or `{_partition_id}` placeholder. A path with `{_partition_id}` always uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. If this setting is `wildcard` but the path has no `{_partition_id}`, no partition strategy is used; table engines that can not persist this decision in their engine arguments (e.g. `HDFS`) reject such a `CREATE` instead.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -8705,6 +8705,12 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 )", 0) \
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
+)", 0) \
+    DECLARE(Bool, enable_hash_join_row_store, true, R"(
+Enable transforming the payload of a hash join into a row-major layout.
+)", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
+Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
     \
     /* ####################################################### */ \
