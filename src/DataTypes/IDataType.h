@@ -123,11 +123,7 @@ public:
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
-    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const;
-    /// Convenience overload that enables all supported serializations. Callers that do not care about
-    /// the serialization versions (most of them) use this one; only the Native writer/reader pass
-    /// explicit settings to pick the protocol-version-dependent variants.
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }

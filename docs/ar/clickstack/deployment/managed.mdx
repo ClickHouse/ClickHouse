@@ -55,23 +55,31 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step title="أنشئ خدمة جديدة" id="create-a-service">
+      <Step>
+        ### أنشئ خدمة جديدة
+
         من الصفحة الرئيسية لـ ClickHouse Cloud، اختر `New service` لإنشاء خدمة جديدة.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="الخدمة" border />
       </Step>
 
-      <Step title="حدّد المزوّد والمنطقة والموارد" id="specify-your-region-and-resources">
+      <Step>
+        ### حدّد المزوّد والمنطقة والموارد
+
         <ProviderSelection />
       </Step>
 
-      <Step title="إعداد الاستيعاب" id="setup-ingestion-create-new">
+      <Step>
+        ### إعداد الاستيعاب
+
         بعد تجهيز خدمتك، تأكد من تحديدها ثم انقر على &quot;ClickStack&quot; من القائمة اليمنى.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
+      <Step>
+        ### انتقل إلى واجهة مستخدم ClickStack
+
         <NavigateClickStackUI />
 
         <br />
@@ -83,7 +91,9 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step title="حدد خدمة" id="select-service">
+      <Step>
+        ### حدد خدمة
+
         من الصفحة الرئيسية لـ ClickHouse Cloud، حدد الخدمة التي تريد تمكين ClickStack المُدار لها.
 
         <Warning>
@@ -97,7 +107,9 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="حدد خدمة" size="lg" />
       </Step>
 
-      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-the-clickstack-ui-existing">
+      <Step>
+        ### انتقل إلى واجهة ClickStack
+
         حدّد &#39;ClickStack&#39; من قائمة التنقل اليسرى. ستتم إعادة توجيهك إلى واجهة ClickStack وستتم مصادقتك تلقائيًا استنادًا إلى أذونات ClickHouse Cloud الخاصة بك.
 
         إذا كانت هناك أي جداول OpenTelemetry موجودة بالفعل في خدمتك، فسيتم اكتشافها تلقائيًا وإنشاء مصادر البيانات المقابلة لها.
@@ -115,12 +127,14 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         إذا نجحت هذه الخطوة، فهذا كل ما في الأمر — أنت جاهز تمامًا 🎉، وإلا فانتقل إلى إعداد إدخال البيانات.
       </Step>
 
-      <Step title="إعداد الاستيعاب" id="setup-ingestion-existing-service">
+      <Step>
+        ### إعداد الاستيعاب
+
         إذا فشل الاكتشاف التلقائي، أو لم تكن لديك جداول موجودة، سيُطلب منك إعداد الاستيعاب.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="إعداد الاستيعاب في واجهة ClickStack" size="lg" />
 
-        حدد &quot;Start Ingestion&quot; وستُطلب منك اختيار مصدر الاستيعاب. يدعم Managed ClickStack كلًّا من OpenTelemetry و[Vector](https://vector.dev/) كمصدري الاستيعاب الرئيسيين. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse وفق مخططهم الخاص باستخدام أيٍّ من [التكاملات المدعومة في ClickHouse Cloud](/ar/integrations/home).
+        حدد &quot;Start Ingestion&quot; وستظهر لك مطالبة باختيار مصدر استيعاب. يدعم Managed ClickStack كلًّا من OpenTelemetry و[Vector](https://vector.dev/) بوصفهما مصدرَي الاستيعاب الرئيسيين. غير أن المستخدمين أحرار أيضًا في إرسال البيانات مباشرةً إلى ClickHouse وفق مخططهم الخاص، باستخدام أيٍّ من [تكاملات ClickHouse Cloud المدعومة](/ar/integrations/home).
 
         <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="اختر المصدر - واجهة ClickStack" border />
 
@@ -139,7 +153,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             ### بدء تشغيل collector
 
-            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors-existing)
+            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
 
             للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
 
@@ -246,7 +260,9 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-existing-service">
+      <Step>
+        ### الانتقال إلى واجهة مستخدم ClickStack
+
         بعد إكمال إعداد إدخال البيانات والبدء في إرسالها، حدِّد &quot;التالي&quot;.
 
         <Tabs>
@@ -297,7 +313,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 2. انتقل إلى **Settings** → **SQL Console Access**
 3. عيّن مستوى الأذونات المناسب لكل مستخدم:
    * **Service Admin → Full Access** - مطلوب لتمكين التنبيهات
-   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء لوحات المعلومات
+   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء dashboards
    * **No access** - لا يمكنه الوصول إلى HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud للقراءة فقط" size="md" />

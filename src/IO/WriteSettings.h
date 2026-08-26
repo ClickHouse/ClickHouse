@@ -38,14 +38,8 @@ struct WriteSettings
 
     bool is_initial_access_check = false;
 
-    /// A requested compare-and-swap. Honoured only by S3-like object storages; a storage that cannot
-    /// express the condition must refuse the write, never perform it unconditionally.
-    std::string object_storage_write_if_none_match;
-    std::string object_storage_write_if_match;
-
-    /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
-    /// 0 disables. Honored only by metadata storages that support inline data.
-    size_t inline_file_max_bytes = 0;
+    std::string object_storage_write_if_none_match; /// Supported only for S3-like object storages.
+    std::string object_storage_write_if_match;     /// Supported only for S3-like object storages.
 
     bool operator==(const WriteSettings & other) const = default;
 };

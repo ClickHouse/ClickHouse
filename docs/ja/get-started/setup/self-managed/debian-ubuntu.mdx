@@ -13,11 +13,15 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
 > **Debian** または **Ubuntu** では、公式の事前コンパイル済み `deb` パッケージを使用することを推奨します。
 
 <Steps>
-  <Step title="推奨事項を確認する" id="review-recommendations">
+  <Step>
+    ## 推奨事項を確認する
+
     <Recommendations />
   </Step>
 
-  <Step title="Debian リポジトリを設定する" id="setup-the-debian-repository">
+  <Step>
+    ## Debian リポジトリを設定する
+
     ClickHouse をインストールするには、次のコマンドを実行します。
 
     ```bash
@@ -69,13 +73,17 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step title="ClickHouse サーバー と ClickHouse クライアント をインストールする" id="install-clickhouse-server-and-client">
+  <Step>
+    ## ClickHouse サーバー と ClickHouse クライアント をインストールする
+
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step title="ClickHouse を起動する" id="start-clickhouse-server">
+  <Step>
+    ## ClickHouse を起動する
+
     ClickHouse サーバー を起動するには、次を実行します。
 
     ```bash
@@ -95,7 +103,9 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="スタンドアロンの ClickHouse Keeper をインストールする" id="install-standalone-clickhouse-keeper">
+  <Step>
+    ## スタンドアロンの ClickHouse Keeper をインストールする
+
     <Tip>
       production 環境では、ClickHouse Keeper は専用ノードで実行することを強く推奨します。
       テスト環境で ClickHouse Server と ClickHouse Keeper を同じ server 上で実行する場合は、
@@ -109,7 +119,9 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="ClickHouse Keeper を有効化して起動する" id="enable-and-start-clickhouse-keeper">
+  <Step>
+    ## ClickHouse Keeper を有効化して起動する
+
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

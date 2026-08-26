@@ -63,13 +63,13 @@ Pour déboguer un exécutable s390x, exécutez ClickHouse à l’aide de QEMU en
 qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
-Dans un autre shell, lancez LLDB et attachez-le, puis remplacez `<ClickHouse Parent Directory>` et `<build directory>` par les valeurs correspondant à votre environnement.
+Dans un autre shell, lancez LLDB et attachez-le, puis remplacez `<Clickhouse Parent Directory>` et `<build directory>` par les valeurs correspondant à votre environnement.
 
 ```bash
 lldb-15
 (lldb) target create ./clickhouse
-Current executable set to '/<ClickHouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
-(lldb) settings set target.source-map <build directory> /<ClickHouse Parent Directory>/ClickHouse
+Current executable set to '/<Clickhouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
+(lldb) settings set target.source-map <build directory> /<Clickhouse Parent Directory>/ClickHouse
 (lldb) gdb-remote 31338
 Process 1 stopped
 * thread #1, stop reason = signal SIGTRAP

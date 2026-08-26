@@ -989,7 +989,7 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
     // break backward compatibility
     FunctionDocumentation::Description sumMapWithOverflow_description = R"(
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
-It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+It differs from the [`sumMap`](/sql-reference/aggregate-functions/reference/summap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 :::note
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.

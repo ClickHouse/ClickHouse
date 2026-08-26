@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "تثبيت ClickHouse Private API"
+sidebarTitle: "تثبيت واجهة برمجة تطبيقات الإدارة"
+description: "يوضح هذا الدليل كيفية تثبيت ClickHouse Private API، وهو مكوّن مستقل اختياري يوفّر دعماً لعمليات الإدارة الشائعة"
+---
+
+يوضح هذا الدليل كيفية تثبيت ClickHouse Private API، وهو مكوّن مستقل اختياري يوفّر دعماً لعمليات الإدارة الشائعة مثل النسخ الاحتياطية والتوسعة الرأسية.
+
+***
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+قبل البدء، تأكد من توفر ما يلي:
+
+* أن يكون ClickHouse Operator مثبّتًا (راجع [tutorials/deploy-aws.md](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)، المرحلة 8)
+* أن يكون قد تم نشر عنقود ClickHouse واحد على الأقل (راجع [tutorials/deploy-aws.md](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)، المرحلة 9)
+* إمكانية الوصول إلى مستودع ECR الخاص بـ ClickHouse Private
+* أن تكون مستودعات ECR الهدف قد أُنشئت في حساب AWS الخاص بك:
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## الخطوة 1: نسخ صور الحاويات
+
+    استخدم skopeo لنسخ صورة Private API ومخطط Helm إلى ECR الخاص بك.
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # سجّل الدخول إلى ECR الخاص بنا
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # سجّل الدخول إلى مستودع AWS الهدف
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # انسخ كل صورة إلى ECR الهدف، وتأكد من تضمين الوسيط --all
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    استبدل `1.165.1` و`1.165.1` بوسوم الإصدار التي يوفرها ClickHouse.
+
+    ***
+  </Step>
+
+  <Step>
+    ## الخطوة 2: التثبيت عبر Helm
+
+    يُثبَّت Private API في مساحة أسماء مخصصة.
+
+    ```text
+    # حدّث ECR_HOST حسب الحاجة
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # يجب استخدام إصدار مخطط Helm الخاص بـ API
+    API_HELM_VERSION=1.165.1
+
+    # عيّن وسم صورة API
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## الخطوة 3: تهيئة المصادقة
+
+    تكون المصادقة الأساسية معطّلة افتراضيًا. في بيئات الإنتاج، فعّلها من خلال ضبط قيم Helm التالية:
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- اسم المستخدم الذي تختاره
+    * `api.basicAuth.password` -- كلمة مرور آمنة
+
+    يجب تخزين اسم المستخدم وكلمة المرور بشكل آمن وتغييرهما دوريًا وفقًا لسياسات الأمان المعتمدة في مؤسستك.
+
+    ***
+  </Step>
+
+  <Step>
+    ## الخطوة 4: التحقق من التثبيت
+
+    ### تحقق من الجراب
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    المخرجات المتوقعة:
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### إعادة توجيه المنفذ والاختبار
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    اختبر نقطة نهاية الجاهزية:
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    إذا كانت المصادقة مفعّلة:
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## خيارات التهيئة
+</div>
+
+خيارات التهيئة الرئيسية التالية متاحة عبر قيم Helm:
+
+| Helm Value                   | Description                                                        | Default    |
+| ---------------------------- | ------------------------------------------------------------------ | ---------- |
+| `image.repository`           | مستودع ECR لصورة Private API                                       | --         |
+| `image.tag`                  | وسم الصورة المراد نشرها                                            | --         |
+| `api.port`                   | المنفذ الذي تستمع عليه واجهة برمجة التطبيقات                       | `8080`     |
+| `api.basicAuth.enabled`      | تمكين مصادقة HTTP الأساسية                                         | `false`    |
+| `api.basicAuth.username`     | اسم المستخدم للمصادقة الأساسية                                     | `admin`    |
+| `api.basicAuth.password`     | كلمة المرور للمصادقة الأساسية                                      | `changeme` |
+| `serviceAccount.enabled`     | إنشاء حساب خدمة لواجهة برمجة التطبيقات                             | `true`     |
+| `serviceAccount.annotations` | التعليقات التوضيحية الخاصة بحساب الخدمة (على سبيل المثال، لـ IRSA) | `{}`       |
+
+للحصول على قائمة كاملة بخيارات التهيئة، راجع ملف القيم الخاص بمخطط Helm.
+
+***
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* **[إدارة النسخ الاحتياطية عبر واجهة برمجة التطبيقات](/ar/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — أنشئ النسخ الاحتياطية واعرضها وجدولها واستعدها
+* **[توسيع نطاق عنقود](/ar/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — وسّع موارد CPU والذاكرة رأسيًا
+* **[إعادة تعيين كلمات المرور](/ar/products/clickhouse-private/guides/reset-user-passwords)** — أعد تعيين كلمة مرور المستخدم الافتراضي `default` في ClickHouse

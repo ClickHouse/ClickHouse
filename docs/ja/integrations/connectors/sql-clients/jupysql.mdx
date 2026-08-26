@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,7 +24,7 @@ JupySQL を使用して、ClickHouse 上でクエリを実行します。
 JupySQL と ClickHouse のインテグレーションは、clickhouse&#95;sqlalchemy ライブラリによって実現されています。このライブラリを使用すると、両システム間で簡単に通信でき、ClickHouse に接続して SQL dialect を指定できます。接続後は、ClickHouse の native UI から直接 SQL クエリを実行することも、Jupyter ノートブックから直接実行することもできます。
 
 ```python
-# Install required packages
+# 必要なパッケージをインストールする
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
@@ -34,7 +34,7 @@ JupySQL と ClickHouse のインテグレーションは、clickhouse&#95;sqlalc
 import pandas as pd
 from sklearn_evaluation import plot
 
-# Import jupysql Jupyter extension to create SQL cells
+# jupysql Jupyter拡張機能をインポートしてSQLセルを作成する
 %load_ext sql
 %config SqlMagic.autocommit=False
 ```

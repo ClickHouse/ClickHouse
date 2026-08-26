@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -42,6 +43,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
 
 namespace ErrorCodes
@@ -64,7 +66,10 @@ namespace
         IColumn & out_tags_names,
         IColumn & out_tags_values,
         IColumn & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name)
+        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
+        IColumn * all_tags_names,
+        IColumn * all_tags_values,
+        IColumn * all_tags_offsets)
     {
         std::vector<std::pair<std::string_view, std::string_view>> sorted_tags;
 
@@ -88,7 +93,8 @@ namespace
             TimeSeriesSink::insertSortedTagsToColumns(
                 sorted_tags,
                 out_tags_names, out_tags_values, out_tags_offsets,
-                columns_by_tag_name);
+                columns_by_tag_name,
+                all_tags_names, all_tags_values, all_tags_offsets);
         }
     }
 
@@ -307,21 +313,34 @@ void TimeSeriesSink::insertSortedTagsToColumns(
     IColumn & out_tags_names,
     IColumn & out_tags_values,
     IColumn & out_tags_offsets,
-    std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name)
+    std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
+    IColumn * all_tags_names,
+    IColumn * all_tags_values,
+    IColumn * all_tags_offsets)
 {
     for (const auto & [tag_name, tag_value] : sorted_tags)
     {
         auto it = columns_by_tag_name.find(tag_name);
         if (it != columns_by_tag_name.end())
+        {
             it->second->insertData(tag_value.data(), tag_value.size());
+        }
+        else
+        {
+            out_tags_names.insertData(tag_name.data(), tag_name.size());
+            out_tags_values.insertData(tag_value.data(), tag_value.size());
+        }
 
-        /// The "tags" column gets all the tags, including the metric name and the tags
-        /// which are also stored in dedicated columns.
-        out_tags_names.insertData(tag_name.data(), tag_name.size());
-        out_tags_values.insertData(tag_value.data(), tag_value.size());
+        if (all_tags_names && (tag_name != TimeSeriesTagNames::MetricName))
+        {
+            all_tags_names->insertData(tag_name.data(), tag_name.size());
+            all_tags_values->insertData(tag_value.data(), tag_value.size());
+        }
     }
 
     out_tags_offsets.insert(out_tags_names.size());
+    if (all_tags_names)
+        all_tags_offsets->insert(all_tags_names->size());
 
     /// For named-tag columns that had no matching tag in this row, insert the default value.
     size_t expected_num_rows = out_tags_offsets.size();
@@ -482,7 +501,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     if (!id_generator)
         id_generator = tags_id_col.default_desc.expression;
     if (!id_generator)
-        id_generator = TimeSeriesIDGenerator::getDefault(id_type, time_series_storage.getStorageID());
+        id_generator = TimeSeriesIDGenerator::getDefault(id_type, settings, time_series_storage.getStorageID());
     id_generator_uses_all_tags = TimeSeriesIDGenerator::usesAllTags(id_generator);
 
     /// Build the tags header WITHOUT the "id" column (matches what consume() produces before ID calculation).
@@ -505,8 +524,15 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     if (id_generator_uses_all_tags)
     {
-        /// The `all_tags` column always contains the same data as the `tags` column.
-        tags_header_before_id.insert(ColumnWithTypeAndName{tags_map_type, TimeSeriesColumnNames::AllTags});
+        /// The `all_tags` column may not exist in external target tables; default to `Map(String, String)`.
+        std::shared_ptr<const DataTypeMap> all_tags_map_type;
+        if (tags_target_metadata->columns.has(TimeSeriesColumnNames::AllTags))
+            all_tags_map_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(tags_target_metadata->columns.get(TimeSeriesColumnNames::AllTags).type);
+        else
+            all_tags_map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        if (!all_tags_map_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::AllTags);
+        tags_header_before_id.insert(ColumnWithTypeAndName{all_tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
     /// Get timestamp/value types from the time_series array's inner tuple.
@@ -541,7 +567,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     Block id_header;
     id_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
 
-    /// Evaluates the id_generator expression (e.g. reinterpretAsUUID(sipHash128(tags)))
+    /// Evaluates the id_generator expression (e.g. reinterpretAsUUID(sipHash128(metric_name, all_tags)))
     /// to compute the "id" column from tags columns.
     auto calculate_id_dag = addMissingDefaults(
         tags_header_before_id,
@@ -566,8 +592,9 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     tags_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     for (const auto & column : tags_header_before_id)
     {
-        /// The "all_tags" column is not a stored column, we may have used it only to calculate "id",
-        /// so we don't insert it to the "tags" table.
+        /// The "all_tags" column in the "tags" table is either ephemeral or doesn't exist.
+        /// We've used the "all_tags" column to calculate the "id" column already,
+        /// and now we don't need it to insert to the "tags" table.
         if (column.name != TimeSeriesColumnNames::AllTags)
             tags_header.insert(column);
     }
@@ -580,10 +607,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
-
-    /// The recent samples table (if any) receives a copy of every samples block.
-    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
 }
 
 
@@ -663,12 +686,29 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     auto new_tags_offsets = ColumnArray::ColumnOffsets::create();
     new_tags_offsets->reserve(num_time_series);
 
+    std::shared_ptr<const DataTypeMap> all_tags_map_type;
+    MutableColumnPtr all_tags_names;
+    MutableColumnPtr all_tags_values;
+    ColumnArray::ColumnOffsets::MutablePtr all_tags_offsets;
+
+    if (id_generator_uses_all_tags)
+    {
+        all_tags_map_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(tags_header_before_id.getByName(TimeSeriesColumnNames::AllTags).type);
+        all_tags_names = all_tags_map_type->getKeyType()->createColumn();
+        all_tags_names->reserve(num_time_series);
+        all_tags_values = all_tags_map_type->getValueType()->createColumn();
+        all_tags_values->reserve(num_time_series);
+        all_tags_offsets = ColumnArray::ColumnOffsets::create();
+        all_tags_offsets->reserve(num_time_series);
+    }
+
     fillTagsColumns(
         filter,
         *metric_name_col.column,
         tags_offsets, tags_keys, tags_values,
         *new_tags_names, *new_tags_values, *new_tags_offsets,
-        columns_by_tag_name);
+        columns_by_tag_name,
+        all_tags_names.get(), all_tags_values.get(), all_tags_offsets.get());
 
     auto [timestamp_type, scalar_type] = splitTimeSeriesType(time_series_col.type);
 
@@ -694,14 +734,18 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     Columns new_tags_tuples_columns;
     new_tags_tuples_columns.push_back(std::move(new_tags_names));
     new_tags_tuples_columns.push_back(std::move(new_tags_values));
-    ColumnPtr new_tags_column = ColumnMap::create(
+    auto new_tags_column = ColumnMap::create(
         ColumnArray::create(ColumnTuple::create(std::move(new_tags_tuples_columns)), std::move(new_tags_offsets)));
-    tags_block.insert(ColumnWithTypeAndName{new_tags_column, tags_map_type, TimeSeriesColumnNames::Tags});
+    tags_block.insert(ColumnWithTypeAndName{std::move(new_tags_column), tags_map_type, TimeSeriesColumnNames::Tags});
 
-    if (id_generator_uses_all_tags)
+    if (all_tags_names)
     {
-        /// The `all_tags` column contains the same data as the `tags` column.
-        tags_block.insert(ColumnWithTypeAndName{new_tags_column, tags_map_type, TimeSeriesColumnNames::AllTags});
+        Columns all_tags_tuple_columns;
+        all_tags_tuple_columns.push_back(std::move(all_tags_names));
+        all_tags_tuple_columns.push_back(std::move(all_tags_values));
+        auto all_tags_column = ColumnMap::create(
+            ColumnArray::create(ColumnTuple::create(std::move(all_tags_tuple_columns)), std::move(all_tags_offsets)));
+        tags_block.insert(ColumnWithTypeAndName{std::move(all_tags_column), all_tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
     if (min_time_column)
@@ -746,10 +790,6 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
-
-        /// The copy is cheap: a Block copy only copies column pointers.
-        if (recent_samples_pipeline)
-            recent_samples_pipeline->push(samples_block);
 
         samples_pipeline->push(std::move(samples_block));
     }
@@ -838,8 +878,6 @@ void TimeSeriesSink::onFinish()
         tags_pipeline->executor->finish();
     if (samples_pipeline)
         samples_pipeline->executor->finish();
-    if (recent_samples_pipeline)
-        recent_samples_pipeline->executor->finish();
     if (metrics_pipeline)
         metrics_pipeline->executor->finish();
 }

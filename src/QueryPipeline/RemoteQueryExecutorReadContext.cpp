@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext")
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)

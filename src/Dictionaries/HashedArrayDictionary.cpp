@@ -1068,7 +1068,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
                     break;
 
                 ++total_blocks;
-                total_rows += block.rows(); // NOLINT(clang-analyzer-cplusplus.Move)
+                total_rows += block.rows();
 
                 Stopwatch watch_process;
                 resize(total_rows);
@@ -1295,66 +1295,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
         }, false, true, Documentation{
-        .description = R"DOCS_MD(
-# hashed_array dictionary layout types
-
-## hashed_array {#hashed_array}
-
-The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
-
-The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
-
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(HASHED_ARRAY([SHARDS 1]))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <hashed_array>
-  </hashed_array>
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-## complex_key_hashed_array {#complex_key_hashed_array}
-
-This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to [hashed_array](#hashed_array).
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <complex_key_hashed_array />
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-)DOCS_MD",
+        .description = "Stores the dictionary in memory using hashed arrays. This is more memory-efficient than `hashed` for dictionaries that have many attributes.",
         .syntax = "LAYOUT(HASHED_ARRAY())",
         .related = {"hashed"}});
     factory.registerLayout("complex_key_hashed_array",

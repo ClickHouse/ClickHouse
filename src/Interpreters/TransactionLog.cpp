@@ -23,8 +23,6 @@
 namespace DB
 {
 
-std::atomic<Int64> TransactionLog::async_tables_loading_job_number{0};
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -44,13 +42,12 @@ try
     if (!system_log)
         return;
 
-    system_log->add([&](TransactionsInfoLogElement & element)
-    {
-        element.type = type;
-        element.tid = tid;
-        element.csn = csn;
-        element.fillCommonFields(nullptr);
-    });
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.csn = csn;
+    elem.fillCommonFields(nullptr);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {

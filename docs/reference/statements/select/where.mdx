@@ -12,7 +12,7 @@ The `WHERE` clause allows you to filter the data that comes from the[`FROM`](/re
 If there is a `WHERE` clause, it must be followed by an expression of type `UInt8`.
 Rows where this expression evaluates to `0` are excluded from further transformations or the result.
 
-The expression following the `WHERE` clause is often used with [comparison](/reference/operators/index#comparison-operators) and [logical operators](/reference/operators/index#operators-for-working-with-data-sets), or one of the many [regular functions](/reference/functions/regular-functions/overview).
+The expression following the `WHERE` clause is often used with [comparison](/reference/operators/index#comparison-operators) and [logical operators](/reference/operators/index#operators-for-working-with-data-sets), or one of the many [regular functions](/reference/functions/regular-functions/regular-functions-index).
 
 The `WHERE` expression is evaluated on the ability to use indexes and partition pruning, if the underlying table engine supports that.
 

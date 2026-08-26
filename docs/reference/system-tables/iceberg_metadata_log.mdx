@@ -23,7 +23,7 @@ This table is primarily intended for debugging purposes.
 
 ### Controlling log verbosity {#controlling-log-verbosity}
 
-You can control which metadata events are logged using the [`iceberg_metadata_log_level`](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) setting.
+You can control which metadata events are logged using the [`iceberg_metadata_log_level`](/reference/settings/session-settings#iceberg_metadata_log_level) setting.
 
 To log all metadata used in the current query:
 
@@ -49,7 +49,7 @@ FROM system.iceberg_metadata_log
 WHERE query_id = '{previous_query_id}';
 ```
 
-See more information in the description of the [`iceberg_metadata_log_level`](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) setting.
+See more information in the description of the [`iceberg_metadata_log_level`](/reference/settings/session-settings#iceberg_metadata_log_level) setting.
 
 ### Good To Know {#good-to-know}
 

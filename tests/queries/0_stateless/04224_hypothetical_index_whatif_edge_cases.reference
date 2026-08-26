@@ -1,5 +1,5 @@
---- projection-served query reports a not_applicable candidate ---
-served from projection
+--- projection-served query is rejected ---
+served from a projection
 --- empty table reports a clean baseline ---
   parts:       0
 With idx_b (minmax, hypothetical):

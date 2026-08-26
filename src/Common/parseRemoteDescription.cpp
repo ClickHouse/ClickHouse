@@ -1,6 +1,5 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
@@ -23,17 +22,6 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
     if (to.empty())
     {
         to = what;
-        return;
-    }
-
-    /// The caller feeds every ordinary character as a single-element set; rebuilding
-    /// the whole product would make the parsing quadratic in the description length.
-    if (what.size() == 1)
-    {
-        if (to.size() > max_addresses)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
-        for (auto & elem_to : to)
-            elem_to += what.front();
         return;
     }
 
@@ -67,10 +55,6 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
 std::vector<String> parseRemoteDescription(
     const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
 {
-    /// Nested braces are parsed recursively, and `max_addresses` bounds the number of generated
-    /// addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
-    checkStackSize();
-
     std::vector<String> res;
     std::vector<String> cur;
 

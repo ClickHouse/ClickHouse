@@ -4,7 +4,6 @@
 #include <cstddef>
 
 #include <base/defines.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -110,41 +109,6 @@ size_t findEqualRangeEndAssumeSorted(size_t begin, size_t end, size_t linear_pro
     const size_t run_end = detail::findEqualRangeEndAssumeSortedImpl(begin, end, linear_probe, equals);
     checkEqualRangeEndAssumeSorted(begin, end, run_end, equals);
     return run_end;
-}
-
-/** Shared tail of compareTrackAt (see IColumn::compareTrackAt): given `compare_result` for lhs[n] vs
-  * rhs[m], find the end of the run of lesser rows on the lesser side by galloping. The predicate
-  * is_less(row) must report lhs[row] < rhs[m], and is_greater(row) must report lhs[n] > rhs[row];
-  * the sorted-tail precondition of compareTrackAt applies to the probed side.
-  *
-  * ALWAYS_INLINE: the merge joins call compareTrackAt once per loop iteration; leaving this as a
-  * separate call behind the virtual one costs ~10% on interleaved short-run keys.
-  */
-template <typename IsLess, typename IsGreater>
-ALWAYS_INLINE Int64 compareTrackAtImpl(
-    int compare_result,
-    size_t n,
-    size_t m,
-    size_t lhs_size,
-    size_t rhs_size,
-    size_t linear_probe,
-    IsLess && is_less,
-    IsGreater && is_greater)
-{
-    if (compare_result < 0)
-    {
-        /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
-        if (n + 1 >= lhs_size || !is_less(n + 1))
-            return -1;
-        return -static_cast<Int64>(findEqualRangeEndAssumeSorted(n + 1, lhs_size, linear_probe, is_less) - n);
-    }
-    if (compare_result > 0)
-    {
-        if (m + 1 >= rhs_size || !is_greater(m + 1))
-            return 1;
-        return static_cast<Int64>(findEqualRangeEndAssumeSorted(m + 1, rhs_size, linear_probe, is_greater) - m);
-    }
-    return 0;
 }
 
 }

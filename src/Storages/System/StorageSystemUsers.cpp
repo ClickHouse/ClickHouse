@@ -6,7 +6,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -17,8 +16,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
@@ -35,7 +32,6 @@
 #include <base/types.h>
 #include <base/range.h>
 
-#include <algorithm>
 #include <sstream>
 
 
@@ -250,11 +246,8 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
         {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Authentication parameters in the JSON format depending on the auth_type."
         },
-        {"valid_until", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(0)),
-            "The expiration date and time for user credentials, one per authentication method. "
-            "The stored value is an absolute instant rendered in the server or session time zone; "
-            "the stored value `0` (the Unix epoch, rendered as `1970-01-01 00:00:00` on a server in `UTC`) "
-            "is the sentinel meaning the credentials never expire."
+        {"valid_until", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()),
+            "The expiration date and time for user credentials."
         },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
@@ -300,7 +293,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_auth_type_offsets =  assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_valid_until = assert_cast<ColumnDateTime64 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_valid_until = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_valid_until_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
@@ -383,17 +376,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
             column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
             column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
-            /// The column is a `DateTime64` so it can represent the whole range of enforced deadlines,
-            /// `[1, MAX_VALID_UNTIL_TIME]` (a `VALID FOR` with a huge interval saturates at year 9999).
-            /// Every stored deadline is already within that range (pre-epoch deadlines are normalized to
-            /// the smallest expired instant, `1`, when the entity is created or loaded), so the clamp here
-            /// is only a defensive guard for an `AuthenticationData` filled directly via `setValidUntil`.
-            /// Zero means "no expiration" and is kept as is; the lower clamp bound is 1 rather than 0
-            /// so that an expired deadline stays distinct from "no expiration".
-            time_t valid_until = auth_data.getValidUntil();
-            if (valid_until)
-                valid_until = std::clamp<time_t>(valid_until, 1, MAX_VALID_UNTIL_TIME);
-            column_valid_until.insertValue(static_cast<Int64>(valid_until));
+            column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());

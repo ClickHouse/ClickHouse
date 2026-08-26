@@ -70,7 +70,6 @@ private:
     Int32 secret_key = 0;
 
     bool is_query_in_progress = false;
-    bool ignore_until_sync = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;

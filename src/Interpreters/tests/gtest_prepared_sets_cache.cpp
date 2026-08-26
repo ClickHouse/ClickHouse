@@ -49,9 +49,11 @@ TEST(PreparedSetsCache, RebuildsNullResult)
     EXPECT_EQ(second.index(), 0u) << "A null cached result must be rebuilt, not reused";
 }
 
-/// A build that threw stores an exception into the shared entry (see `CreatingSetsTransform::work`).
-/// `findOrPromiseToBuild` must not rethrow it to a later, unrelated caller; it must drop the poisoned
-/// entry and let that caller rebuild the set.
+/// Regression for a cancelled mutation set build poisoning the shared cache (issue #51586 follow-up):
+/// a builder cancelled mid-flight stores an exception into the shared entry (see the
+/// `CreatingSetsTransform` destructor). `findOrPromiseToBuild` must not rethrow that exception to a
+/// later, unrelated caller (e.g. a sibling mutation part whose partition was not cancelled); it must
+/// drop the poisoned entry and let the caller rebuild the set.
 TEST(PreparedSetsCache, RebuildsAfterBuilderException)
 {
     PreparedSetsCache cache;
@@ -59,7 +61,7 @@ TEST(PreparedSetsCache, RebuildsAfterBuilderException)
     auto builder = cache.findOrPromiseToBuild("key");
     ASSERT_EQ(builder.index(), 0u);
     std::get<0>(builder).set_exception(
-        std::make_exception_ptr(std::runtime_error("Limit for IN-set exceeded")));
+        std::make_exception_ptr(std::runtime_error("Failed to build set, most likely pipeline executor was stopped")));
 
     /// The next caller must neither throw nor inherit the failure - it must be asked to rebuild.
     std::variant<std::promise<SetPtr>, SharedSet> retry;
@@ -73,34 +75,6 @@ TEST(PreparedSetsCache, RebuildsAfterBuilderException)
     auto reuse = cache.findOrPromiseToBuild("key");
     ASSERT_EQ(reuse.index(), 1u);
     EXPECT_EQ(std::get<1>(reuse).get(), set);
-}
-
-/// An abandoned build (the pipeline was stopped before the set was created) publishes a null set
-/// rather than an exception, so a waiter rebuilds it instead of inheriting the failure. A build that
-/// really failed still stores an exception, which every waiter must observe rather than retry: the
-/// subquery would otherwise be rerun once per waiting part task.
-TEST(PreparedSetsCache, AbandonedBuildIsRetryableButRealFailureIsNot)
-{
-    PreparedSetsCache cache;
-
-    auto abandoned = cache.findOrPromiseToBuild("abandoned");
-    ASSERT_EQ(abandoned.index(), 0u);
-    auto abandoned_waiter = cache.findOrPromiseToBuild("abandoned");
-    ASSERT_EQ(abandoned_waiter.index(), 1u);
-
-    /// What `CreatingSetsTransform`'s destructor publishes for a build that never produced a set.
-    std::get<0>(abandoned).set_value(nullptr);
-    EXPECT_EQ(std::get<1>(abandoned_waiter).get(), nullptr) << "An abandoned build must be retryable, not a failure";
-
-    auto failed = cache.findOrPromiseToBuild("failed");
-    ASSERT_EQ(failed.index(), 0u);
-    auto failed_waiter = cache.findOrPromiseToBuild("failed");
-    ASSERT_EQ(failed_waiter.index(), 1u);
-
-    /// What `CreatingSetsTransform::work` publishes for a real build error, e.g. SET_SIZE_LIMIT_EXCEEDED.
-    std::get<0>(failed).set_exception(std::make_exception_ptr(std::runtime_error("Limit for IN-set exceeded")));
-    EXPECT_THROW((void)std::get<1>(failed_waiter).get(), std::runtime_error)
-        << "A real build failure must reach the waiter instead of being retried";
 }
 
 /// A concurrent waiter observes a poisoned build (its `SharedSet::get` throws) and its mutation part
@@ -117,7 +91,7 @@ TEST(PreparedSetsCache, WaiterFailureIsRebuildableOnRetry)
     ASSERT_EQ(waiter.index(), 1u) << "A second concurrent caller must wait for the builder";
 
     std::get<0>(builder).set_exception(
-        std::make_exception_ptr(std::runtime_error("Limit for IN-set exceeded")));
+        std::make_exception_ptr(std::runtime_error("Failed to build set, most likely pipeline executor was stopped")));
 
     /// The waiter sees the builder's failure (the mutation part task fails this attempt).
     EXPECT_THROW((void)std::get<1>(waiter).get(), std::runtime_error);

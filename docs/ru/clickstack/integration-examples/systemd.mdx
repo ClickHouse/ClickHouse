@@ -34,7 +34,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Docker или Docker Compose, установленные на системе, за которой ведётся мониторинг
 
 <Steps>
-  <Step title="Получите ключ API ClickStack" id="get-api-key">
+  <Step>
+    #### Получите ключ API ClickStack
+
     OpenTelemetry Collector отправляет данные в конечную точку OTLP ClickStack, для которой требуется аутентификация.
 
     1. Откройте HyperDX по URL-адресу ClickStack (например, http://localhost:8080)
@@ -51,7 +53,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте, что systemd journal работает" id="verify-systemd">
+  <Step>
+    #### Проверьте, что systemd journal работает
+
     Убедитесь, что в системе используется systemd и доступны логи journal:
 
     ```bash
@@ -74,7 +78,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Создайте конфигурацию OpenTelemetry Collector" id="create-otel-config">
+  <Step>
+    #### Создайте конфигурацию OpenTelemetry Collector
+
     Создайте файл конфигурации для OpenTelemetry Collector:
 
     ```yaml
@@ -129,7 +135,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Разверните с помощью Docker Compose" id="deploy-docker-compose">
+  <Step>
+    #### Разверните с помощью Docker Compose
+
     <Note>
       Приёмнику `journald` требуется бинарный файл `journalctl` для чтения файлов journal. Официальный образ `otel/opentelemetry-collector-contrib` по умолчанию не включает `journalctl`.
 
@@ -177,7 +185,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте логи в HyperDX" id="verifying-logs">
+  <Step>
+    #### Проверьте логи в HyperDX
+
     После настройки войдите в HyperDX и убедитесь, что логи поступают:
 
     1. Перейдите в представление Search
@@ -198,7 +208,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию журналов systemd перед настройкой своих систем в продакшн, мы предоставляем пример набора заранее сгенерированных журналов systemd с реалистичными паттернами.
 
 <Steps>
-  <Step title="Скачайте пример набора данных" id="download-sample">
+  <Step>
+    #### Скачайте пример набора данных
+
     Скачайте пример файла журнала:
 
     ```bash
@@ -206,7 +218,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Создайте конфигурацию демо-collector" id="demo-config">
+  <Step>
+    #### Создайте конфигурацию демо-коллектора
+
     Создайте файл конфигурации для демо:
 
     ```bash
@@ -242,7 +256,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Запустите ClickStack с демо-данными" id="run-demo">
+  <Step>
+    #### Запустите ClickStack с демо-данными
+
     Запустите ClickStack с демо-журналами:
 
     ```bash
@@ -259,7 +275,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверьте журналы в HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Проверьте журналы в HyperDX
+
     После запуска ClickStack:
 
     1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись
@@ -285,11 +303,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг журналов systemd с помощью ClickStack, мы предоставляем базовые визуализации для данных журнала systemd.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
+  <Step>
+    #### Импортируйте преднастроенный дашборд
+
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -300,7 +320,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
+  <Step>
+    #### Просмотрите панель мониторинга
+
     Панель мониторинга включает визуализации для:
 
     * Объёма журналов во времени
@@ -369,15 +391,15 @@ otelcol-contrib --config=otel-config.yaml
 * Фильтруйте по конкретным юнитам systemd, чтобы уменьшить шум и сосредоточиться на важных сервисах
 
 <div id="going-to-production">
-  ## Переход в продакшн
+  ## Выход в продакшн
 </div>
 
-В этом руководстве используется отдельный OpenTelemetry Collector для чтения журналов systemd и отправки их в конечную точку OTLP ClickStack — это рекомендуемый вариант для продакшн-среды.
+В этом руководстве используется отдельный OpenTelemetry Collector для чтения журналов systemd и отправки их в конечную точку OTLP ClickStack — это рекомендуемый вариант для продакшна.
 
 Для продакшн-сред с несколькими хостами рассмотрите следующие варианты:
 
-* Развертывание collector как ДемонСет в Kubernetes
-* Запуск collector как сервиса systemd на каждом хосте
-* Использование OpenTelemetry Operator для автоматизированного развертывания
+* Развертывание коллектора в виде ДемонСет в Kubernetes
+* Запуск коллектора как сервиса systemd на каждом хосте
+* Использование OpenTelemetry Operator для автоматического развертывания
 
-См. [Приём данных с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы ознакомиться с шаблонами развертывания для продакшн-среды.
+Сведения о шаблонах развертывания для продакшна см. в разделе [Приём данных через OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

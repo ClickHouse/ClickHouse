@@ -27,16 +27,16 @@ ClickHouse 支持同时使用多个可选的 geobase (区域层级) ，以便支
 除该文件外，它还会在相邻位置查找文件名中带有 `_` 符号并追加任意后缀的文件 (位于文件扩展名之前) 。
 例如，如果存在，它也会找到文件 `/opt/geo/regions_hierarchy_ua.txt`。其中，`ua` 称为字典键。对于没有后缀的字典，键为空字符串。
 
-所有字典都会在运行时重新加载 (按 [`builtin_dictionaries_reload_interval`](/zh/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval) 配置参数定义的间隔，每隔若干秒加载一次；默认情况下为每小时一次) 。不过，可用字典的列表只会在服务器启动时确定一次。
+所有字典都会在运行时重新加载 (按 [`builtin_dictionaries_reload_interval`](/zh/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval) 配置参数定义的间隔，每隔若干秒加载一次；默认情况下为每小时一次) 。不过，可用字典的列表只会在服务器启动时确定一次。
 
 所有用于处理区域的函数在末尾都有一个可选参数——字典键。它称为 geobase。
 
 示例：
 
 ```sql
-regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+regionToCountry(RegionID) – 使用默认字典：/opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, '') – 使用默认字典：/opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, 'ua') – 使用 'ua' 键对应的字典：/opt/geo/regions_hierarchy_ua.txt
 ```
 
 ### regionToName

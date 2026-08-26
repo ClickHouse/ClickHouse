@@ -923,8 +923,7 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
                               {10 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
-                               /// If ADD COLUMN fails, DROP column may issue NOT_FOUND_COLUMN_IN_BLOCK for some engines such as File
-                              {15 * static_cast<uint32_t>(test_content && !fuzz_config->disallowed_error_codes.contains(10)), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
                               {3
                                    * static_cast<uint32_t>(
                                        test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
@@ -1186,15 +1185,12 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const auto & engine = tbl.isAnyIcebergEngine()
                              ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine()
-                                    ? "deltalake"
-                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
-                         const auto & ndname
-                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
+                         const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
@@ -1240,7 +1236,7 @@ bool Client::buzzHouse()
 #else
 bool Client::buzzHouse()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
 }
 #endif
 

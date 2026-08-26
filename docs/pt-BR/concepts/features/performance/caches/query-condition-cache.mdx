@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Note>
-  O cache de condições de consulta só funciona quando [enable&#95;analyzer](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) está definido como true, que é o valor padrão.
+  O cache de condições de consulta só funciona quando [enable&#95;analyzer](/pt-BR/reference/settings/session-settings#enable_analyzer) está definido como true, que é o valor padrão.
 </Note>
 
 Muitas cargas de trabalho do mundo real envolvem consultas repetidas sobre os mesmos dados ou praticamente os mesmos dados (por exemplo, dados já existentes mais dados novos).
@@ -34,7 +34,7 @@ O cache de condições de consulta é eficaz se três pré-requisitos forem aten
 </div>
 
 Como o cache de condições de consulta armazena apenas um único bit por condição de filtro e por grânulo, ele consome pouca memória.
-O tamanho máximo do cache de condições de consulta pode ser configurado usando a configuração do servidor [`query_condition_cache_size`](/pt-BR/reference/settings/server-settings/settings/query-condition#query_condition_cache_size) (padrão: 100 MB).
+O tamanho máximo do cache de condições de consulta pode ser configurado usando a configuração do servidor [`query_condition_cache_size`](/pt-BR/reference/settings/server-settings/settings#query_condition_cache_size) (padrão: 100 MB).
 Um tamanho de cache de 100 MB corresponde a 100 * 1024 * 1024 * 8 = 838.860.800 entradas.
 Como cada entrada representa uma mark (8192 linhas por padrão), o cache pode abranger até 6.871.947.673.600 (6,8 trilhões) linhas de uma única coluna.
 Na prática, os filtros são avaliados em mais de uma coluna, portanto esse número precisa ser dividido pelo número de colunas filtradas.
@@ -43,7 +43,7 @@ Na prática, os filtros são avaliados em mais de uma coluna, portanto esse núm
   ## Configurações e uso
 </div>
 
-A configuração [use&#95;query&#95;condition&#95;cache](/pt-BR/reference/settings/session-settings/use-query#use_query_condition_cache) controla se uma consulta específica ou todas as consultas da sessão atual devem usar o cache de condições de consulta.
+A configuração [use&#95;query&#95;condition&#95;cache](/pt-BR/reference/settings/session-settings#use_query_condition_cache) controla se uma consulta específica ou todas as consultas da sessão atual devem usar o cache de condições de consulta.
 
 Por exemplo, a primeira execução da consulta
 
@@ -56,14 +56,6 @@ SETTINGS use_query_condition_cache = true;
 
 armazenará intervalos da tabela que não satisfazem o predicado.
 Execuções subsequentes da mesma consulta, também com o parâmetro `use_query_condition_cache = true`, usarão o cache de condições de consulta para ler menos dados.
-
-<div id="top-k-queries">
-  ### Consultas `ORDER BY ... LIMIT n` (TopK)
-</div>
-
-As consultas que usam a otimização TopK (`ORDER BY <column> LIMIT n`, aceleradas por filtragem dinâmica ou por um índice de salto minmax na coluna de ordenação) também usam o cache de condições de consulta.
-As leituras TopK podem ignorar grânulos com base em um limite que muda durante a execução da consulta, portanto, suas entradas no cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas: apenas uma consulta com o mesmo plano aplicado às mesmas partes as reutiliza.
-Essas leituras podem ser totalmente excluídas do cache com a configuração [`use_query_condition_cache_for_top_k`](/pt-BR/reference/settings/session-settings/use-query) (habilitada por padrão), que só tem efeito se `use_query_condition_cache` também estiver habilitada.
 
 <div id="administration">
   ## Administração

@@ -10,16 +10,14 @@
 # user-facing exception describing the underlying load failure.
 #
 # We reproduce the "could not load metadata" state by:
-#   1. creating an Iceberg table,
-#   2. overwriting its metadata file on disk with a non-JSON payload,
+#   1. creating an Iceberg table with `iceberg_metadata_compression_method='deflate'`,
+#   2. issuing an `INSERT` with an out-of-range `output_format_compression_level=13`
+#      (above the max supported deflate level - 9 for zlib, 12 for libdeflate)
+#      so the second metadata file lands on disk corrupted,
 #   3. `DETACH ... SYNC` + `ATTACH` (equivalent to a server restart from the
 #      perspective of `DataLakeConfiguration::current_metadata`),
 #   4. then issuing `OPTIMIZE TABLE` / `ALTER TABLE` / `SELECT` which previously
 #      crashed.
-#
-# The metadata is corrupted directly rather than by provoking a failed write:
-# writes to `IcebergLocal` go through a temporary file and `rename`, so a failed
-# write leaves no partial file at the target path.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,20 +28,19 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
-# Step 1: create the table. This writes the initial metadata file.
+# Step 1: create the table with the deflate metadata format.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (c0 Int32)
     ENGINE = IcebergLocal('${TABLE_PATH}')
+    SETTINGS iceberg_metadata_compression_method = 'deflate'
 "
 
-# Step 2: corrupt every metadata file on disk.
-corrupted=0
-for metadata_file in "${TABLE_PATH}"metadata/*.metadata.json; do
-    [ -f "${metadata_file}" ] || continue
-    echo 'not a json' > "${metadata_file}"
-    corrupted=1
-done
-[ "${corrupted}" = 1 ] && echo "metadata corrupted"
+# Step 2: provoke the corrupt-metadata-on-disk state via an INSERT with an
+# out-of-range compression level (13 exceeds the deflate max of 9 for zlib and
+# 12 for libdeflate). The INSERT itself must fail.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --output_format_compression_level=13 \
+    --query "INSERT INTO ${TABLE} VALUES (2)" 2>&1 \
+    | grep -F 'INCORRECT_DATA' > /dev/null && echo "INSERT failed as expected"
 
 # Step 3: detach + attach to clear the in-memory `current_metadata` cache,
 # the way a server restart would. The corrupted metadata produces a server-side

@@ -6,7 +6,7 @@ title: 'Coleções nomeadas'
 doc_type: 'referência'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -19,10 +19,10 @@ quando o ClickHouse é iniciado. Elas simplificam a criação de objetos e o ocu
 de usuários sem acesso administrativo.
 
 As chaves em uma coleção nomeada devem corresponder aos nomes dos parâmetros da
-função, motor de tabela, banco de dados etc. correspondentes. Nos exemplos abaixo, há um link para
+função, mecanismo de tabela, banco de dados etc. correspondentes. Nos exemplos abaixo, há um link para
 a lista de parâmetros de cada tipo.
 
-Os parâmetros definidos em uma coleção nomeada podem ser sobrescritos em SQL, como mostrado nos exemplos
+Os parâmetros definidos em uma coleção nomeada podem ser substituídos em SQL, como mostrado nos exemplos
 abaixo. Essa capacidade pode ser limitada usando as palavras-chave `[NOT] OVERRIDABLE`, atributos XML
 e/ou a opção de configuração `allow_named_collection_override_by_default`.
 
@@ -103,16 +103,6 @@ seção `named_collections_storage` do arquivo de configuração. O exemplo a se
 ```
 
 O parâmetro de configuração opcional `update_timeout_ms` é, por padrão, `5000`.
-
-Você pode verificar o tipo de armazenamento ativo por meio de `system.server_settings` e `getServerSetting`:
-
-```sql
-SELECT value, getServerSetting('named_collections_storage_type')
-FROM system.server_settings
-WHERE name = 'named_collections_storage.type';
-```
-
-Alterar o tipo de armazenamento exige reiniciar o servidor; `SYSTEM RELOAD CONFIG` não altera o backend ativo.
 
 <div id="storing-named-collections-in-configuration-files">
   ## Armazenar coleções nomeadas em arquivos de configuração
@@ -384,8 +374,6 @@ Para ver a descrição dos parâmetros, consulte [postgresql](/pt-BR/reference/f
 
 * `username` para `user`
 * `db` para `database`.
-
-As configurações do pool de conexões do [motor de tabela PostgreSQL](/pt-BR/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` e as outras configurações `postgresql_*`) também podem ser armazenadas na coleção ou passadas como sobrescritas `key = value`. Elas se aplicam ao motor de tabela `PostgreSQL`, à função de tabela `postgresql` e ao motor de banco de dados `PostgreSQL`; uma cláusula `SETTINGS` explícita em uma tabela tem precedência sobre os valores da coleção.
 
 O parâmetro `addresses_expr` é usado em uma coleção no lugar de `host:port`. Esse parâmetro é opcional, porque há outros parâmetros opcionais: `host`, `hostname`, `port`. O pseudocódigo a seguir explica a prioridade:
 
