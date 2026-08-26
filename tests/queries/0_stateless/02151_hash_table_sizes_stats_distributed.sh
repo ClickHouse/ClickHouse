@@ -49,6 +49,9 @@ run_query() {
     -- the trivial GROUP BY LIMIT optimization would cap aggregation at LIMIT
     -- distinct keys and break the preallocation size we want to observe.
     SET optimize_trivial_group_by_limit_query = 0;
+    -- The adaptive aggregator ignores the size hint when it engages, and this test measures
+    -- exactly the hint-driven preallocation, so it has to stay on the baseline path.
+    SET enable_adaptive_aggregator = 0;
     $query"
 }
 
