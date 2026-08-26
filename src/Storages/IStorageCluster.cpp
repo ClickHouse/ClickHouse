@@ -253,6 +253,9 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
     /// break it (e.g. `format = 'Null'`). This mirrors the `Distributed` fan-out.
     ClusterProxy::stripInitiatorOnlySettings(new_settings);
 
+    /// An explicit `use_uncompressed_cache = 0` is lost on the remote server, so bake the opt-out in here too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOut(new_settings);
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;

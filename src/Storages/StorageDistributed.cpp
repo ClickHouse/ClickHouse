@@ -1304,6 +1304,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 
@@ -1450,6 +1452,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 

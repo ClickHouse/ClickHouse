@@ -292,6 +292,16 @@ void stripInitiatorOnlySettings(Settings & settings)
     stripDatabaseSetting(settings);
 }
 
+void resolveAutomaticUncompressedCacheOptOut(Settings & settings)
+{
+    if (!automaticUncompressedCacheIsOverriddenByOptOut(settings))
+        return;
+
+    settings[Setting::enable_automatic_use_uncompressed_cache] = false;
+    settings[Setting::enable_automatic_use_uncompressed_cache].changed = true;
+}
+
+
 /// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
 /// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
 /// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
@@ -358,13 +368,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::max_memory_usage_for_user].changed = false;
     }
 
-    /// An explicit `use_uncompressed_cache = 0` does not survive the settings round-trip to a secondary
-    /// query (see `automaticUncompressedCacheIsOverriddenByOptOut`), so resolve the opt-out here.
-    if (automaticUncompressedCacheIsOverriddenByOptOut(settings))
-    {
-        new_settings[Setting::enable_automatic_use_uncompressed_cache] = false;
-        new_settings[Setting::enable_automatic_use_uncompressed_cache].changed = true;
-    }
+    resolveAutomaticUncompressedCacheOptOut(new_settings);
 
     if (settings[Setting::force_optimize_skip_unused_shards_nesting] && settings[Setting::force_optimize_skip_unused_shards])
     {

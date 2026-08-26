@@ -83,6 +83,15 @@ void stripDatabaseSetting(Settings & settings);
 /// `parallel_distributed_insert_select` paths in `StorageDistributed`.
 void stripInitiatorOnlySettings(Settings & settings);
 
+/// Bake an explicit `use_uncompressed_cache = 0` into the settings forwarded to a secondary query.
+///
+/// The opt-out is carried only by the `changed` flag of a setting whose value equals the default, and that
+/// flag does not survive the hop to another server (see `automaticUncompressedCacheIsOverriddenByOptOut`),
+/// so the initiator has to resolve it and switch `enable_automatic_use_uncompressed_cache` off itself.
+/// Every carrier that builds the settings of a secondary query must apply this, otherwise the automatic
+/// mode silently overrides the user's opt-out on that carrier.
+void resolveAutomaticUncompressedCacheOptOut(Settings & settings);
+
 /// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
 /// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
 /// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query
