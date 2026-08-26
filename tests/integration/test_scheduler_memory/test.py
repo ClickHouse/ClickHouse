@@ -421,3 +421,76 @@ def test_cancel_query_with_memory_reservation():
 
     # If we got here without sanitizer alerts or crashes, the teardown order is correct.
 
+
+def test_memory_eviction_score_evicts_higher_score():
+    """The `memory_eviction_score` query setting decides which running query is evicted first
+    within a workload. Both queries here run in the SAME workload (same precedence), so neither
+    precedence nor size selects the victim — the score does. This exercises the full
+    `Settings` -> `ProcessList` -> `MemoryReservation` plumbing, not just the scheduler internals."""
+    node.query(
+        """
+        create resource memory (memory reservation);
+        create workload all settings max_memory='100Mi';
+        create workload production in all;
+    """
+    )
+
+    results = {"victim": None, "grower": None}
+    errors = {"victim": None, "grower": None}
+
+    def run_victim_query():
+        try:
+            # Holds a large reservation and sleeps. It has the higher memory_eviction_score, so
+            # it must be the one evicted once the workload runs out of memory, even though it is
+            # not the query that triggers the eviction. `max_block_size=1` makes the kill
+            # observable between processor steps.
+            node.query(
+                "select sleepEachRow(1) from numbers(60) "
+                "settings max_block_size=1, workload='production', reserve_memory='95Mi', memory_eviction_score=100",
+                query_id="test_mes_victim",
+            )
+            results["victim"] = "success"
+        except QueryRuntimeException as e:
+            errors["victim"] = str(e)
+            results["victim"] = "killed"
+
+    def run_grower_query():
+        try:
+            # Wait until the victim's reservation is admitted: ProcessList::insert constructs the
+            # MemoryReservation (blocking until admitted) before publishing the query, so presence
+            # in system.processes means its 95Mi is already reserved.
+            while (
+                node.query(
+                    "select count() from system.processes where query_id = 'test_mes_victim'"
+                ).strip()
+                == "0"
+            ):
+                if results["victim"] is not None:
+                    return
+                time.sleep(0.1)
+            # Same workload, default score (0). Admitted with a tiny reservation, then it grows
+            # past it while building the GROUP BY hash table; once the workload total exceeds
+            # max_memory the eviction fires and picks the higher-scored victim, not this query.
+            # Its own peak stays well under max_memory, so it succeeds after the victim is freed.
+            node.query(
+                "select count() from (select number from numbers(1000000) group by number) "
+                "settings workload='production', reserve_memory='1Mi', memory_eviction_score=0",
+                query_id="test_mes_grower",
+            )
+            results["grower"] = "success"
+        except QueryRuntimeException as e:
+            errors["grower"] = str(e)
+            results["grower"] = "killed"
+
+    t1 = threading.Thread(target=run_victim_query)
+    t2 = threading.Thread(target=run_grower_query)
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert results["victim"] == "killed" and results["grower"] == "success", \
+        f"Expected the higher memory_eviction_score query to be evicted and the grower to succeed. " \
+        f"Results: {results}, Errors: {errors}"
+
