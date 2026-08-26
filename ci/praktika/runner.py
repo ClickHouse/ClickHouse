@@ -13,6 +13,12 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
+    _IMAGE_PULL_RETRIES,
+    _IMAGE_PULL_RETRY_ERRORS,
+    _IMAGE_PULL_TIMEOUT_S,
+    Docker,
+)
 from .event import EventFeed
 from .gh import GH
 from .gh_auth import GHAuth
@@ -25,26 +31,8 @@ from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, StorageUsage
+from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Shell, TeePopen, Utils
-
-# Matched against the pull's stderr. Transport-class phrases only: must never match a
-# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
-_IMAGE_PULL_RETRY_ERRORS = [
-    "connection reset by peer",
-    "connection refused",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "unexpected EOF",
-    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
-    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
-    "server misbehaving",
-    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
-    # writes nothing, so without this entry a stall is not retried.
-    "sending signal TERM to command",
-]
-_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
-_IMAGE_PULL_RETRIES = 3
 
 
 class Runner:
@@ -500,13 +488,7 @@ class Runner:
                         f"({attempt}/{attempts}): {docker}"
                     )
 
-                Shell.run(
-                    f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {docker}",
-                    retries=_IMAGE_PULL_RETRIES,
-                    retry_errors=_IMAGE_PULL_RETRY_ERRORS,
-                    verbose=True,
-                    on_retry=_warn_pull_retried,
-                )
+                Docker.pull_image(docker, on_retry=_warn_pull_retried)
 
         # Sample whole-VM CPU/RAM usage in the background for the duration of the
         # job (see HostMetricsCollector). Runs on the host, so metrics cover the
@@ -637,6 +619,23 @@ class Runner:
         if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
             return "failure"
         return "success"
+
+    @staticmethod
+    def _pipeline_job_counts(job_results) -> dict:
+        """Break the pipeline's jobs down by status for CIDB attributes.
+
+        ``run`` counts jobs that actually ran (neither skipped nor dropped).
+        """
+        return {
+            "total": len(job_results),
+            "run": sum(
+                1 for j in job_results if not (j.is_skipped() or j.is_dropped())
+            ),
+            "success": sum(1 for j in job_results if j.is_success()),
+            "failed": sum(1 for j in job_results if j.is_failure() or j.is_error()),
+            "skipped": sum(1 for j in job_results if j.is_skipped()),
+            "dropped": sum(1 for j in job_results if j.is_dropped()),
+        }
 
     @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
@@ -899,23 +898,25 @@ class Runner:
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-                workflow_storage_usage = StorageUsage.from_dict(
-                    workflow_result.ext.get("storage_usage", {})
+                # run after HtmlRunnerHooks.post_run(), when the workflow Result
+                # has up-to-date storage/compute/pipeline-utilization data. All
+                # three are written as a single workflow-level summary row into
+                # the `attributes` JSON column.
+                ci_db.insert_workflow_usage(
+                    pipeline_utilization=PipelineUtilization.from_dict(
+                        workflow_result.ext.get("pipeline_utilization", {})
+                    ),
+                    storage_usage=StorageUsage.from_dict(
+                        workflow_result.ext.get("storage_usage", {})
+                    ),
+                    compute_usage=ComputeUsage.from_dict(
+                        workflow_result.ext.get("compute_usage", {})
+                    ),
+                    job_counts=self._pipeline_job_counts(workflow_result.results),
+                    start_time=workflow_result.start_time,
+                    duration_s=workflow_result.update_duration().duration,
+                    workflow_status=workflow_result.status,
                 )
-                workflow_compute_usage = ComputeUsage.from_dict(
-                    workflow_result.ext.get("compute_usage", {})
-                )
-                if workflow_storage_usage:
-                    print(
-                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_storage_usage(workflow_storage_usage)
-                if workflow_compute_usage:
-                    print(
-                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()

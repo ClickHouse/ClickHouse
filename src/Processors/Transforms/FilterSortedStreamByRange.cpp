@@ -13,6 +13,25 @@ namespace FailPoints
     extern const char filter_sorted_stream_by_range_fallback_pause[];
 }
 
+namespace
+{
+
+void markRangesInfoDroppedRows(Chunk & chunk)
+{
+    auto mark_ranges_info = chunk.getChunkInfos().extract<MarkRangesInfo>();
+    if (!mark_ranges_info)
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased: `get` returns the pointer
+    /// itself and a collection copy shares it. Follow the copy-on-write convention instead of
+    /// mutating in place.
+    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    updated_info->has_dropped_rows = true;
+    chunk.getChunkInfos().add(std::move(updated_info));
+}
+
+}
+
 FilterSortedStreamByRange::FilterSortedStreamByRange(
     SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_, bool on_totals_)
     : ISimpleTransform(
@@ -69,7 +88,10 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
         filter_transform.transform(chunk);
         /// The query was killed during the evaluation: the inner transform returned an empty chunk,
         /// and this outer transform must stop pulling further input.
-        stopIfCancelled(chunk);
+        if (stopIfCancelled(chunk))
+            return;
+        if (chunk.getNumRows() != rows_before_filtration)
+            markRangesInfoDroppedRows(chunk);
         return;
     }
 
@@ -109,7 +131,10 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
         filter_transform.transform(chunk);
         /// Same as above: a kill during the full evaluation must not leave a partially processed
         /// chunk in the output, and must stop this outer transform from pulling further input.
-        stopIfCancelled(chunk);
+        if (stopIfCancelled(chunk))
+            return;
+        if (chunk.getNumRows() != rows_before_filtration)
+            markRangesInfoDroppedRows(chunk);
     }
 }
 
