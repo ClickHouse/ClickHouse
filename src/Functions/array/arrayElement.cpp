@@ -3034,7 +3034,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
         || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
         return executeReplicated(arguments, result_type, input_rows_count);
-        
+
     const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
 
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
