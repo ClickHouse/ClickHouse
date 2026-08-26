@@ -132,9 +132,10 @@ Chunk KafkaSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        /// A memory limit is a state of the server, not a property of the message. Reporting it as a
-        /// bad message would drop a well-formed one and commit its offset.
-        if (StorageKafkaUtils::isMemoryLimitError(e.code()))
+        /// A memory limit is a state of the server, not a property of the message, so reporting it
+        /// as a bad message would drop a well-formed one. Rethrowing is only safe while nothing is
+        /// committed: `kafka_commit_every_batch` commits the earlier polls of this block already.
+        if (StorageKafkaUtils::isMemoryLimitError(e.code()) && !consumer->commitsBetweenPolls())
             throw std::move(e);
 
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);

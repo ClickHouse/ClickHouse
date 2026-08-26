@@ -80,6 +80,10 @@ public:
 
     bool isStalled() const { return stalled_status != NOT_STALLED; }
 
+    /// `kafka_commit_every_batch`: `consume` commits the previous poll before fetching the next,
+    /// so the earlier polls of a block are already committed while it is still being filled.
+    bool commitsBetweenPolls() const { return intermediate_commit; }
+
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
 

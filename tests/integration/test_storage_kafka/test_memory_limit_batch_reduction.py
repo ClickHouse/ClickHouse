@@ -383,6 +383,54 @@ def test_commit_every_batch_is_excluded(kafka_cluster):
         assert reductions_event() == events_before
 
 
+def test_commit_every_batch_keeps_previous_error_handling(kafka_cluster):
+    """With `kafka_commit_every_batch` a block spans polls whose offsets are already committed and
+    nothing rewinds them, so a memory error is handled by the callback as before instead of being
+    rethrown: a throw would commit those rows without ever delivering them.
+    """
+    instance.rotate_logs()
+    topic_name = f"kafka_mem_commit_stream_{k.random_string(6)}"
+    events_before = reductions_event()
+    failed_before = messages_failed_event()
+
+    with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        produce_wide_messages(kafka_cluster, topic_name)
+        pin_memory_to_headroom()
+        create_kafka_pipeline(
+            topic_name,
+            extra_settings=(
+                ",\n                     kafka_commit_every_batch = 1"
+                ",\n                     kafka_handle_error_mode = 'stream'"
+            ),
+            dst_columns="key UInt64, value String, error String",
+            mv_select="key, value, _error AS error",
+        )
+
+        # Same trigger as the arm above, and the only one available while the memory is pinned:
+        # reaching a memory error is what the arm needs, not a block that got through.
+        assert wait_for_memory_errors(1) >= 1
+
+        instance.query("SYSTEM FREE MEMORY")
+
+        # The load-bearing assertion. The rethrow sits immediately ahead of this increment, so a
+        # rethrown memory error leaves `KafkaMessagesFailed` untouched, and `on_error` is its only
+        # increment site. No message here is malformed, so every increment is a memory error that
+        # was handled as a bad message, which is the previous behaviour this mode keeps.
+        assert messages_failed_event() > failed_before
+
+        # The reduction is excluded in this mode through the other path as well.
+        assert reduced_block_sizes() == []
+        assert reductions_event() == events_before
+
+        # Deliberately not asserted, so that a later reader does not "strengthen" this arm into
+        # flakiness. That a cycle delivered rows, or that a substituted error row reached the
+        # table: both need a block to complete while the memory is pinned, and the limit is
+        # enforced on resident memory, which the arms before this one leave near the ceiling. That
+        # no cycle ended with a memory error: one still can, raised by the materialized-view push
+        # outside `on_error`. An exact delivered row count: this mode loses a committed prefix
+        # whenever that push throws. All three predate this change.
+
+
 @pytest.mark.parametrize("mode", ["stream", "dead_letter_queue"])
 def test_memory_error_is_not_a_bad_message(kafka_cluster, mode):
     """The handle-error modes other than the default report a bad message and keep consuming, so they
