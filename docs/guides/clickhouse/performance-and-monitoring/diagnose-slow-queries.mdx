@@ -19,7 +19,13 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
   <NYCTaxiExampleDataset />
 </Accordion>
 
-To reproduce the query-log results in this guide, run one or more of the [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. When diagnosing your own workload, ensure that `system.query_log` contains completed runs from the time range you intend to inspect.
+To reproduce the query-log results in this guide, run one or more of the [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. Then flush the query log so that the completed runs are available to the examples below:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+If you cannot run `SYSTEM FLUSH LOGS`, wait for the query log to flush automatically, then retry the first lookup. When diagnosing your own workload, ensure that `system.query_log` contains completed runs from the time range you intend to inspect.
 
 ## How it works {#how-it-works}
 
