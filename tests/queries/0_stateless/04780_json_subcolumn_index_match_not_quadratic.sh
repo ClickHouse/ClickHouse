@@ -5,8 +5,9 @@
 # columns by enumerating every dot split of the name and formatting a lookup key per split. The
 # name embeds the text of a folded constant, so a large dotted constant made index analysis
 # quadratic in the constant's length.
-# Each arm compares a dotted constant against a no-dots constant of the same length, measured in
-# allocated bytes rather than wall clock.
+# Each arm compares a dotted constant against a no-dots constant of the same length. The oracle is
+# the allocated-bytes counter rather than wall clock: it is exactly reproducible, whereas the
+# ~2.6s planning delta is smaller than debug-build client startup jitter.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,11 +16,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 REPEATS=100000
+# Measured on a debug build: pre-fix the dotted arm allocates 2.8x-3.0x the control in every arm,
+# post-fix 1.0003x. 1.5 sits an order of magnitude away from the fixed behavior and ~1.9x below
+# the regression, so it discriminates with margin on both sides.
 MAX_RATIO_PERCENT=150
-# The reading is quantised by `min(max_untracked_memory, memory_profiler_step)`, so both are pinned
-# below: the stateless profile sets `1Mi` while the source default is `4Mi`, and a ratio calibrated
-# without pinning them is calibrated for whichever server happens to run it.
-UNTRACKED_MEMORY_QUANTUM=1048576
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
 
@@ -68,8 +68,7 @@ alloc_bytes_for() {
     local query_id_prefix="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
     local run
     for run in $(seq 1 $ALLOC_RUNS); do
-        $CLICKHOUSE_CLIENT --query_id "${query_id_prefix}-${run}" --max_query_size 1048576 --max_execution_time 300 \
-            --max_untracked_memory "$UNTRACKED_MEMORY_QUANTUM" --memory_profiler_step "$UNTRACKED_MEMORY_QUANTUM" -q "
+        $CLICKHOUSE_CLIENT --query_id "${query_id_prefix}-${run}" --max_query_size 1048576 --max_execution_time 300 -q "
             SELECT count() FROM (
                 EXPLAIN indexes = 1
                 SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
