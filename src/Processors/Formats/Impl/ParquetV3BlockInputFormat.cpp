@@ -302,9 +302,6 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    /// Read the footer with the same reader the format itself uses, so this metadata read honors the
-    /// same settings (`input_format_parquet_footer_read_size` in particular) and there is one parquet
-    /// metadata code path instead of two.
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
