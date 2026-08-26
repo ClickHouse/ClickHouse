@@ -30,7 +30,10 @@ SELECT normalizedQueryHashUnordered('SELECT true FROM t') = normalizedQueryHashU
 SELECT normalizedQueryHashUnordered('SELECT db1.t34 FROM t') = normalizedQueryHashUnordered('SELECT db1.t56 FROM t');
 SELECT normalizedQueryHashUnordered('SELECT 1 AS x FROM t') = normalizedQueryHashUnordered('SELECT 1 AS y FROM t');
 
--- the set operator is part of the query, even though it does not live in the AST children
+-- state that lives outside the AST children is still part of the query
+SELECT normalizedQueryHashUnordered('SELECT sum(x) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t') = normalizedQueryHashUnordered('SELECT sum(x) OVER (ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM t');
+SELECT normalizedQueryHashUnordered('SELECT sum(x) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t') = normalizedQueryHashUnordered('SELECT sum(x) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t');
+SELECT normalizedQueryHashUnordered('WITH c AS MATERIALIZED (SELECT 1) SELECT * FROM c') = normalizedQueryHashUnordered('WITH c AS (SELECT 1) SELECT * FROM c');
 SELECT normalizedQueryHashUnordered('SELECT 1 UNION ALL SELECT 2') = normalizedQueryHashUnordered('SELECT 1 UNION DISTINCT SELECT 2');
 SELECT normalizedQueryHashUnordered('SELECT 1 INTERSECT SELECT 2') = normalizedQueryHashUnordered('SELECT 1 EXCEPT SELECT 2');
 

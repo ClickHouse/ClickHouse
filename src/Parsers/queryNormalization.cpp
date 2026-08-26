@@ -1,7 +1,4 @@
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Core/Field.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
@@ -222,124 +219,44 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 namespace
 {
 
-/// normalizedQueryHash erases Number and StringLiteral tokens only, so NULL and true stay distinct
-bool isErasedByLexer(Field::Types::Which which)
+String normalizedText(const IAST & ast)
 {
-    switch (which)
-    {
-        case Field::Types::UInt64:
-        case Field::Types::Int64:
-        case Field::Types::Float64:
-        case Field::Types::UInt128:
-        case Field::Types::Int128:
-        case Field::Types::UInt256:
-        case Field::Types::Int256:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-        case Field::Types::String:
-            return true;
-        default:
-            return false;
-    }
+    String text = ast.formatWithSecretsOneLine();
+
+    PaddedPODArray<UInt8> normalized;
+    normalizeQueryToPODArray(text.data(), text.data() + text.size(), normalized, /*keep_names=*/ false);
+    return String(normalized.begin(), normalized.end());
 }
 
-/// a generated-looking name becomes a placeholder, like normalizedQueryHash does, one SQL token at a time
-void updateWithName(SipHash & hash, const String & name)
-{
-    if (isComplexIdentifier(name.data(), name.data() + name.size()))
-    {
-        hash.update("\x01", 1);
-        return;
-    }
-
-    hash.update(name.size());
-    hash.update(name);
-}
-
-/// such as the right hand side of IN
-bool isListOfErasedLiterals(const IAST & ast)
-{
-    if (!ast.as<ASTExpressionList>() || ast.children.empty())
-        return false;
-
-    for (const auto & child : ast.children)
-    {
-        const auto * literal = child->as<ASTLiteral>();
-        if (!literal || !isErasedByLexer(literal->value.getType()) || !literal->tryGetAlias().empty())
-            return false;
-    }
-
-    return true;
-}
-
-IASTHash hashUnordered(const IAST & ast)
+void sortExpressionLists(IAST & ast)
 {
     checkStackSize();
 
-    SipHash hash;
-    updateWithName(hash, ast.tryGetAlias());
-
-    if (const auto * literal = ast.as<ASTLiteral>())
-    {
-        const auto which = literal->value.getType();
-
-        /// erase the value, same as normalizedQueryHash
-        if (isErasedByLexer(which))
-        {
-            hash.update("\x00", 1);
-            return getSipHash128AsPair(hash);
-        }
-
-        /// the lexer turns a collection of literals into ?.. as well, so keep only its kind
-        if (!Field::isScalar(which))
-        {
-            hash.update("\x00", 1);
-            hash.update(which);
-            return getSipHash128AsPair(hash);
-        }
-    }
-
-    /// collapse it, so that IN (1, 2) and IN (1, 2, 3) match
-    if (isListOfErasedLiterals(ast))
-    {
-        hash.update("\x00", 1);
-        if (ast.children.size() > 1)
-            hash.update("\x00", 1);
-        return getSipHash128AsPair(hash);
-    }
-
-    /// as<> only matches the exact type, and the lexer sees every part as its own token, so db1.t34 is two simple names
-    if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
-    {
-        hash.update("Identifier");
-        hash.update(identifier->name_parts.size());
-        for (const auto & part : identifier->name_parts)
-            updateWithName(hash, part);
-    }
-    else
-        ast.updateTreeHashImpl(hash, /*ignore_aliases=*/ true);
-
-    std::vector<IASTHash> child_hashes;
-    child_hashes.reserve(ast.children.size());
     for (const auto & child : ast.children)
-        child_hashes.push_back(hashUnordered(*child));
+        sortExpressionLists(*child);
 
-    if (ast.as<ASTExpressionList>())
-        std::sort(child_hashes.begin(), child_hashes.end());
+    if (!ast.as<ASTExpressionList>())
+        return;
 
-    for (const auto & child_hash : child_hashes)
-        hash.update(child_hash);
+    /// sort on the normalized text, so that elements erased to the same placeholder are interchangeable
+    std::vector<std::pair<String, ASTPtr>> sorted;
+    sorted.reserve(ast.children.size());
+    for (const auto & element : ast.children)
+        sorted.emplace_back(normalizedText(*element), element);
 
-    return getSipHash128AsPair(hash);
+    std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    for (size_t i = 0; i < sorted.size(); ++i)
+        ast.children[i] = sorted[i].second;
 }
 
 }
 
 UInt64 unorderedQueryHash(const IAST & ast)
 {
-    return CityHash_v1_0_2::Hash128to64(hashUnordered(ast));
+    ASTPtr sorted = ast.clone();
+    sortExpressionLists(*sorted);
+    return normalizedQueryHash(normalizedText(*sorted), /*keep_names=*/ false);
 }
 
 }

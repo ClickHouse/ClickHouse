@@ -5,7 +5,6 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
-#include <Common/SipHash.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -45,18 +44,6 @@ NameToNameMap childQueryParameters(const ASTPtr & child)
 }
 
 }
-
-void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// the modes live outside `children`, so UNION ALL and UNION DISTINCT would hash the same without this
-    hash_state.update(union_mode);
-    hash_state.update(list_of_modes.size());
-    for (auto mode : list_of_modes)
-        hash_state.update(mode);
-
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
-}
-
 
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {

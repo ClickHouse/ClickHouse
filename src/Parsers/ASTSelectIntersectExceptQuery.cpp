@@ -1,5 +1,4 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Common/SipHash.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -13,15 +12,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    /// the operator lives outside `children`, so INTERSECT and EXCEPT would hash the same without this
-    hash_state.update(final_operator);
-
-    ASTSelectQuery::updateTreeHashImpl(hash_state, ignore_aliases);
-}
-
 
 ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
