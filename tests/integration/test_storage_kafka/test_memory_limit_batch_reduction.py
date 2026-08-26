@@ -559,3 +559,48 @@ def test_concurrent_failures_reduce_one_step_at_a_time(kafka_cluster):
         # fixture drives four consumers from one pinned tracker rather than one.
         reductions = reductions_event() - events_before
         assert reductions == len(distinct), (reductions, distinct)
+
+
+def test_memory_error_on_select_names_the_message(kafka_cluster):
+    """A direct `SELECT` runs the same callback but has no background cycle around it to record the
+    failure, so the exception it raises is the only report: it has to name the message being read
+    and reach the per-consumer buffer that `system.kafka_consumers` exposes.
+    """
+    instance.rotate_logs()
+    topic_name = f"kafka_mem_select_{k.random_string(6)}"
+
+    with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        produce_wide_messages(kafka_cluster, topic_name)
+        # No materialized view: reading from a Kafka table that has one is rejected outright.
+        instance.query(f"""
+            CREATE TABLE test.kafka (key UInt64, value String)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_max_block_size = {BLOCK_SIZE},
+                         kafka_poll_max_batch_size = {POLL_SIZE},
+                         kafka_flush_interval_ms = 60000;
+            """)
+
+        # A block is never cut short of a polled batch, so a limit below the size of one batch is
+        # reached while the batch is being parsed, which is where the callback runs.
+        error = instance.query_and_get_error(
+            "SELECT sum(length(value)) FROM test.kafka"
+            f" SETTINGS max_memory_usage = {POLL_SIZE * ROW_BYTES // 2}"
+        )
+        logging.debug("Direct select error: %s", error)
+        assert "MEMORY_LIMIT_EXCEEDED" in error, error
+        # The per-query tracker, not the server-wide one, which is raised before any message is read
+        # and would leave the assertions below measuring a query that never reached the callback.
+        assert "Query memory limit exceeded" in error, error
+        assert "while parsing Kafka message (topic:" in error, error
+
+        recorded = instance.query(
+            "SELECT countIf(arrayExists(x -> position(x, 'while parsing Kafka message') > 0,"
+            " `exceptions.text`)) FROM system.kafka_consumers WHERE table = 'kafka'"
+        ).strip()
+        assert int(recorded) >= 1, instance.query(
+            "SELECT * FROM system.kafka_consumers FORMAT Vertical"
+        )

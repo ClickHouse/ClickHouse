@@ -135,12 +135,13 @@ Chunk KafkaSource::generateImpl()
         /// A memory limit is a state of the server, not a property of the message, so reporting it
         /// as a bad message would drop a well-formed one. Rethrowing is only safe while nothing is
         /// committed: `kafka_commit_every_batch` commits the earlier polls of this block already.
-        if (StorageKafkaUtils::isMemoryLimitError(e.code()) && !consumer->commitsBetweenPolls())
-            throw std::move(e);
+        const bool memory_limit_of_the_server
+            = StorageKafkaUtils::isMemoryLimitError(e.code()) && !consumer->commitsBetweenPolls();
 
-        ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
+        if (!memory_limit_of_the_server)
+            ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
-        switch (handle_error_mode)
+        switch (memory_limit_of_the_server ? StreamingHandleErrorMode::DEFAULT : handle_error_mode)
         {
             case StreamingHandleErrorMode::STREAM:
             {
