@@ -8,8 +8,10 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -50,8 +52,11 @@ public:
 
     PostingList read(const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates) const
     {
-        if (token_info.embedded_postings)
-            return *token_info.embedded_postings;
+        if (!token_info.embedded_postings.empty())
+        {
+            const auto & embedded = token_info.embedded_postings;
+            return PostingList(embedded.size(), embedded.data());
+        }
 
         PostingList postings;
         for (size_t block_idx : token_info.getBlocksToRead(range))
@@ -106,11 +111,13 @@ UInt64 computeCountForPart(
     /// A single-token count is answered directly from the dictionary cardinality, so posting list is never read.
     const bool single_token = resolved.query->getTokens().size() == 1;
 
+    LoadedMergeTreeDataPartInfoForReader part_info(data_part, std::make_shared<AlterConversions>());
+
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
         .condition = resolved.condition.get(),
-        .part = *data_part,
+        .part_info = part_info,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = single_token,
