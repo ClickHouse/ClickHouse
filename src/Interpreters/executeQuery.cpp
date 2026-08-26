@@ -3139,7 +3139,10 @@ static BlockIO executeQueryImpl(
                     }
 
                     if (interpreter->supportsPlanProfiling() && QueryPlanProfiler::canEnableProfiler(context, internal))
+                    {
                         context->enablePlanProfiler();
+                        interpreter->setPlanProfiler(context->getPlanProfiler());
+                    }
 
                     res = interpreter->execute();
 

@@ -40,6 +40,17 @@ SELECT throwIf(number = 5, '05023_throw') FROM numbers(10); -- { serverError FUN
 -- A query failing before any plan exists leaves no row.
 SELECT * FROM qpl_missing_05023_table; -- { serverError UNKNOWN_TABLE }
 
+-- A recursive CTE evaluates its inner query through a second InterpreterSelectQueryAnalyzer on the
+-- same query context, from inside RecursiveCTESource — that is, after the outer plan was captured.
+-- The captured row must still describe the outer query and keep its statistics.
+WITH RECURSIVE qpl_cte AS
+(
+  SELECT 1 AS n
+  UNION ALL
+  SELECT n + 1 FROM qpl_cte WHERE n < 5
+)
+SELECT sum(n) FROM qpl_cte WHERE '05023_recursive' != '' FORMAT Null;
+
 SET log_query_plans = 0;
 SYSTEM FLUSH LOGS query_log;
 SYSTEM FLUSH LOGS query_plan_log;
@@ -100,5 +111,14 @@ SELECT
 FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_throw') > 0;
+
+SELECT
+    'recursive_cte',
+    count(),
+    anyLast(position(ascii_plan, 'I/O: rows')) > 0,
+    anyLast(position(ascii_plan, 'parallelism Unknown')) = 0
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_recursive') > 0;
 
 DROP TABLE qpl_insert_target;

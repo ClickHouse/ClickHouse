@@ -395,7 +395,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
     result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
-    if (auto plan_profiler = context->getPlanProfiler())
+    if (plan_profiler)
         plan_profiler->instrumentPipeline(result.pipeline);
 
     return result;
@@ -429,7 +429,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// IQueryPlanStep::setStepDescription(description, limit), which truncates to `limit` — and the
     /// default 0 discards them entirely. The strings are formatted regardless, so raising the limit
     /// only stops the result being thrown away.
-    if (auto plan_profiler = context->getPlanProfiler())
+    if (plan_profiler)
     {
         const size_t limit = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
         optimization_settings.max_step_description_length = limit;
@@ -449,7 +449,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     ///    `find(this)`, so it must be built on the very object that will later be rendered.
     /// Hence: move the plan into the profiler, build the names there, then build the pipeline from it.
     QueryPlan * plan_to_build = &query_plan;
-    if (auto plan_profiler = context->getPlanProfiler())
+    if (plan_profiler)
     {
         plan_profiler->setQueryPlan(std::move(planner).extractQueryPlan());
         plan_profiler->buildPrettyNames();
