@@ -7,16 +7,19 @@ SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS lift_orders;
 DROP TABLE IF EXISTS lift_lineitem;
 DROP TABLE IF EXISTS lift_mem;
+DROP TABLE IF EXISTS lift_two_key;
 
 CREATE TABLE lift_orders   (orderkey UInt64, custkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey;
 CREATE TABLE lift_lineitem (orderkey UInt64, custkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey;
 CREATE TABLE lift_mem      (orderkey UInt64) ENGINE = Memory;
+CREATE TABLE lift_two_key  (orderkey UInt64, custkey UInt64) ENGINE = MergeTree ORDER BY (orderkey, custkey);
 
 INSERT INTO lift_orders   SELECT number, number % 1000, toString(number) FROM numbers(1000000);
 INSERT INTO lift_lineitem SELECT number, number % 1000, toString(number) FROM numbers(1000000);
 -- Keys present only on the left side, for the unmatched-rows case below
 INSERT INTO lift_orders   SELECT number, number % 1000, toString(number) FROM numbers(1000000, 10);
 INSERT INTO lift_mem      SELECT number FROM numbers(1000);
+INSERT INTO lift_two_key  SELECT number, number % 100 FROM numbers(10000);
 
 -- 1 occurrence = source side only, 2 = lifted to the target too
 
@@ -167,6 +170,25 @@ SELECT 'computed target key correctness',
         INNER JOIN (SELECT orderkey + 1000000 AS orderkey FROM lift_lineitem) AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
+-- Both keys are in the target primary key, but `KeyCondition` cannot use `key = key`, so a
+-- key-vs-key predicate must stay on the source side
+SELECT 'key vs key',
+       countIf(explain LIKE '%ilter column:%orderkey = %custkey%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_two_key WHERE orderkey = custkey) AS a
+    INNER JOIN lift_two_key AS b ON a.orderkey = b.orderkey AND a.custkey = b.custkey
+);
+
+SELECT 'key vs key correctness',
+       (SELECT count() FROM (SELECT * FROM lift_two_key WHERE orderkey = custkey) AS a
+        INNER JOIN lift_two_key AS b ON a.orderkey = b.orderkey AND a.custkey = b.custkey)
+     - (SELECT count() FROM (SELECT * FROM lift_two_key WHERE orderkey = custkey) AS a
+        INNER JOIN lift_two_key AS b ON a.orderkey = b.orderkey AND a.custkey = b.custkey
+        SETTINGS query_plan_lift_predicate_across_join = 0);
+
 DROP TABLE lift_orders;
 DROP TABLE lift_lineitem;
 DROP TABLE lift_mem;
+DROP TABLE lift_two_key;

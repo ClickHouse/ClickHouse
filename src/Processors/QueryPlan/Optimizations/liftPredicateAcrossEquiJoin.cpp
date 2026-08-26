@@ -38,7 +38,7 @@ const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && pred
     return nullptr;
 }
 
-std::optional<std::string> resolveToFilterInput(const QueryPlan::Node * node, std::string name);
+std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, bool stop_at_filter);
 
 const FilterStep * findFilterBelow(const QueryPlan::Node * node)
 {
@@ -77,7 +77,7 @@ bool atomCanUseTargetPrimaryKey(
         const auto it = substitution.find(child->result_name);
         if (it == substitution.end())
             return false;
-        const auto target_column = resolveToFilterInput(target_root, it->second.name);
+        const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
         if (!target_column || !primary_key_columns.contains(*target_column))
             return false;
     }
@@ -116,6 +116,7 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
     if ((!is_null_check && !is_comparison && !is_set_check) || node->children.size() != (is_null_check ? 1 : 2))
         return false;
 
+    size_t substituted_keys = 0;
     for (const auto * child : node->children)
     {
         if (child->type == ActionsDAG::ActionType::INPUT)
@@ -126,11 +127,14 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
             /// `FunctionIn` rejects a left argument whose type differs from the one the set was built with
             if (is_set_check && !it->second.type->equals(*child->result_type))
                 return false;
+            ++substituted_keys;
         }
         else if (child->type != ActionsDAG::ActionType::COLUMN)
             return false;
     }
-    return true;
+    /// `KeyCondition` builds an atom out of `key <op> const` only, so a key-vs-key comparison like
+    /// `k1 = k2` would be lifted as a plain full scan filter
+    return substituted_keys == 1;
 }
 
 /// Follow the ALIAS chain from a DAG output to its first INPUT. A name the step computes instead
@@ -148,17 +152,19 @@ std::optional<std::string> resolveInsideDAG(const ActionsDAG & dag, const std::s
     return node->result_name;
 }
 
-/// Undo ExpressionStep renames, JOIN-level `__tableX.orderkey` -> filter-level `orderkey`
-std::optional<std::string> resolveToFilterInput(const QueryPlan::Node * node, std::string name)
+/// Undo renames, JOIN-level `__tableX.orderkey` -> `orderkey`. The source side stops at the filter
+/// whose atoms are lifted, the target side keeps going down to the read to compare with its key
+std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, bool stop_at_filter)
 {
     while (node)
     {
-        if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+        const auto * filter = typeid_cast<const FilterStep *>(node->step.get());
+        if (filter && stop_at_filter)
             return resolveInsideDAG(filter->getExpression(), name);
         const auto * expr = typeid_cast<const ExpressionStep *>(node->step.get());
-        if (!expr || node->children.size() != 1)
+        if ((!filter && !expr) || node->children.size() != 1)
             return name;
-        auto resolved = resolveInsideDAG(expr->getExpression(), name);
+        auto resolved = resolveInsideDAG(filter ? filter->getExpression() : expr->getExpression(), name);
         if (!resolved)
             return {};
         name = std::move(*resolved);
@@ -186,7 +192,7 @@ size_t tryLiftSide(
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
     {
-        if (auto filter_name = resolveToFilterInput(source_root, join_name))
+        if (auto filter_name = resolveDown(source_root, join_name, /*stop_at_filter=*/true))
             filter_level_sub[*filter_name] = target_col;
     }
 
