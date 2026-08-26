@@ -638,11 +638,14 @@ void DistinctTransform::transform(Chunk & chunk)
     /// table itself is still small, and the parallel build already pays off. A threshold of 0 disables
     /// that trigger; both 0 disables promotion entirely.
     ///
-    /// A pool only exists for the final deduplication (see the constructor), so its presence already
-    /// restricts promotion to that case. A live `lc_mask` is excluded: only the serial build consumes the
-    /// `LowCardinality` first-occurrence mask, so a promoted set would never reach the parallel build and
-    /// the conversion would be pure cost (see the dispatch below).
-    if (pool && !lc_mask && SetVariants::isConvertibleToTwoLevel(data->type))
+    /// Promotion exists only to unlock the parallel build, so it is gated on exactly the condition the
+    /// dispatch below uses to choose that build: a chunk too small to keep two workers busy, or a live
+    /// `LowCardinality` first-occurrence mask (which only the serial build consumes), would leave a
+    /// promoted set paying the conversion and never using what it bought. This matters for an input a
+    /// preliminary DISTINCT has already reduced to small chunks - there the two-level table would
+    /// otherwise be built and then only ever probed serially. A pool only exists for the final
+    /// deduplication (see the constructor), and `shouldBuildParallel` is false without one.
+    if (shouldBuildParallel(num_rows) && !lc_mask && SetVariants::isConvertibleToTwoLevel(data->type))
     {
         const size_t rows_in_set = data->getTotalRowCount();
 
