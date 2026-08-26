@@ -168,6 +168,15 @@ TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
         constexpr Int64 pre_attach_bytes = 1024 * 1024;
         ts.untracked_memory.add(pre_attach_bytes);
 
+        /// `~ThreadStatus` flushes whatever balance is left into `total_memory_tracker`, so the seed must
+        /// be netted out on the early return of a failed assertion below too. One unconditional subtraction
+        /// covers both paths (the balance is a running total), and it belongs after the tracker is reparented.
+        SCOPE_EXIT({
+            CurrentThread::detachFromGroupIfNotDetached();
+            ts.untracked_memory.add(-pre_attach_bytes);
+            ts.flushUntrackedMemory();
+        });
+
         /// The balance is still pending: any commit would have zeroed it.
         ASSERT_GE(ts.untracked_memory.load(), pre_attach_bytes);
         ASSERT_LT(ts.untracked_memory.load(), ts.untracked_memory_limit);
@@ -182,13 +191,6 @@ TEST(ThreadGroupAttach, PreAttachUntrackedMemoryIsNotChargedToTheGroup)
         EXPECT_GE(
             ProfileEvents::global_counters[ProfileEvents::MemoryAllocatedWithoutCheckBytes] - global_bytes_before,
             static_cast<UInt64>(pre_attach_bytes));
-
-        CurrentThread::detachFromGroupIfNotDetached();
-
-        /// Nothing was really allocated, so give the seeded bytes back now that the tracker is parented
-        /// to `total_memory_tracker` again, or the rest of this binary sees them as global usage.
-        ts.untracked_memory.add(-pre_attach_bytes);
-        ts.flushUntrackedMemory();
     });
     t.join();
 }
