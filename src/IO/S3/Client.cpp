@@ -88,8 +88,6 @@ namespace ErrorCodes
 namespace S3
 {
 
-static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
-
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
     , log(getLogger("S3ClientRetryStrategy"))
@@ -388,7 +386,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -416,16 +414,6 @@ template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & reque
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
-{
-    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
-    /// as a cancellation instead of the stale S3/network outcome.
-    auto outcome = headObjectInternal(request);
-    if (!outcome.IsSuccess())
-        CurrentThread::checkIfNotCancelled();
-    return outcome;
-}
-
-Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
@@ -710,8 +698,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (result.IsSuccess())
             return result;
 
-        CurrentThread::checkIfNotCancelled();
-
         const auto & error = result.GetError();
 
         if (checkIfCredentialsChanged(error))
@@ -828,8 +814,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
-                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
+                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -1059,15 +1045,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    S3::URI result(uri.GetURIString());
-
-    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
-    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
-
-    return result;
+    return S3::URI(uri.GetURIString());
 }
 
 // Do a list request because head requests don't have body in response
@@ -1133,12 +1111,6 @@ void ClientCache::clearCache()
     }
 }
 
-ClientCacheRegistry & ClientCacheRegistry::instance()
-{
-    static ClientCacheRegistry registry;
-    return registry;
-}
-
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
@@ -1170,10 +1142,9 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
     return it->second.second;
 }
 
-void ClientCacheRegistry::pruneUnusedCachesLocked()
+void ClientCacheRegistry::pruneExpiredCachesLocked()
 {
-    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
 }
 
 std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
@@ -1185,15 +1156,16 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     UInt128 key = hash.get128();
 
     std::lock_guard lock(cache_by_key_mutex);
-
-    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
-        pruneUnusedCachesLocked();
-
     if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-        return it->second;
-
+    {
+        if (auto cached = it->second.lock(); cached)
+            return cached;
+        cache_by_endpoint_bucket.erase(it);
+    }
     auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket.emplace(key, cache);
+    cache_by_endpoint_bucket[key] = cache;
+
+    pruneExpiredCachesLocked();
 
     return cache;
 }
@@ -1220,9 +1192,7 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
-        pruneUnusedCachesLocked();
-        for (const auto & [_, cache] : cache_by_endpoint_bucket)
-            cache->clearCache();
+        pruneExpiredCachesLocked();
     }
 }
 
@@ -1298,12 +1268,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud.
-    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
-    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
-    if (!credentials_configuration.forbid_implicit_credentials)
-        credentials_configuration.use_environment_credentials =
-            credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+    // this is a crutch because we know that we have environment credentials on our Cloud
+    credentials_configuration.use_environment_credentials =
+        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 

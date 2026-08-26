@@ -61,7 +61,6 @@ def generate_keeper_configs(configs_dir, clusters):
             + f"    <keeper_server>{snapshot_disk_line}\n"
             f"        <tcp_port>9181</tcp_port>\n"
             f"        <server_id>{server_id}</server_id>\n"
-            f"        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>\n"
             f"\n"
             f"        <coordination_settings>\n"
             f"            <operation_timeout_ms>5000</operation_timeout_ms>\n"

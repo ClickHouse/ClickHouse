@@ -3,8 +3,6 @@
 #if USE_SSL
 #include <Disks/DiskFactory.h>
 #include <IO/ReadPipeline.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -328,6 +326,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
     delegate->createDirectories(disk_path);
 }
@@ -339,6 +338,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(true)
 {
     delegate->createDirectories(disk_path);
 }
@@ -445,18 +445,6 @@ void DiskEncrypted::prepareRead(
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
         });
-
-    /// Only cache encryption headers when the backend assigns a fresh blob path to every write
-    /// (`areBlobPathsRandom`): then a rewrite / replace / rename never rebinds an existing path to
-    /// different ciphertext, so the cache can never serve a stale header and needs no invalidation.
-    /// Deterministic-path backends (plain / plain-rewritable, local, web) reuse the path on rewrite
-    /// and are excluded.
-    if (delegate->areBlobPathsRandom())
-    {
-        if (auto global_context = Context::getGlobalContextInstance())
-            if (auto cache = global_context->getEncryptionHeaderCache())
-                pipeline.needEncryptionHeaderCache(std::move(cache));
-    }
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const

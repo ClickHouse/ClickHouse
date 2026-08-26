@@ -289,38 +289,31 @@ void QuotaCache::ensureAllQuotasRead()
     /// `mutex` is already locked.
     if (all_quotas_read)
         return;
+    all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [this](const std::vector<AccessChangesNotifier::Change> & changes)
+        [&](const UUID & id, const AccessEntityPtr & entity)
         {
-            std::lock_guard lock{mutex};
-            for (const auto & change : changes)
-            {
-                if (change.entity)
-                    quotaAddedOrChanged(change.id, typeid_cast<QuotaPtr>(change.entity));
-                else
-                    quotaRemoved(change.id);
-            }
-            chooseQuotaToConsumeIfNeeded();
+            if (entity)
+                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
+            else
+                quotaRemoved(id);
         });
 
-    /// Start clean: a previous attempt may have thrown mid-scan.
-    all_quotas.clear();
+    batch_subscription = access_control.subscribeForBatchFinished([this] { chooseQuotaToConsumeIfNeeded(); });
+
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
-
-    /// Set only after the subscription and the initial read succeed.
-    all_quotas_read = true;
 }
 
 
 void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
-    /// `mutex` is already locked.
+    std::lock_guard lock{mutex};
     auto it = all_quotas.find(quota_id);
     if (it == all_quotas.end())
     {
@@ -340,7 +333,7 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
 void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
-    /// `mutex` is already locked.
+    std::lock_guard lock{mutex};
     all_quotas.erase(quota_id);
     need_choose_quota = true;
 }
@@ -348,7 +341,7 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 
 void QuotaCache::chooseQuotaToConsumeIfNeeded()
 {
-    /// `mutex` is already locked.
+    std::lock_guard lock{mutex};
     if (!need_choose_quota)
         return;
     /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
@@ -379,9 +372,9 @@ void QuotaCache::chooseQuotaToConsume()
     ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
+        LOG_WARNING(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
     else
-        LOG_TRACE(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
+        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
