@@ -14,7 +14,7 @@ namespace DB
 {
 
 /// Evaluates the watermark expression on a data chunk, appends the time-attribute and watermark columns.
-class CalculateWatermarksTransform : public IInflatingTransform
+class CalculateWatermarksTransform final : public IInflatingTransform
 {
 public:
     CalculateWatermarksTransform(
@@ -30,10 +30,6 @@ public:
     void consume(Chunk chunk) override;
     bool canGenerate() override;
     Chunk generate() override;
-    Chunk getRemaining() override;
-
-protected:
-    virtual void transformChunk(Chunk & chunk, const Field & watermark);
 
 private:
     const std::string event_time_column;
