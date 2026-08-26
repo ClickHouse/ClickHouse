@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的 topic。
+ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的记录值以及[结构化 Kafka key](/zh/integrations/clickpipes/kafka/reference#structured-message-keys)。
 
 <div id="supported-schema-registries">
   ## Kafka ClickPipes 支持的 Schema Registry
@@ -59,11 +59,13 @@ ClickPipes 会通过您提供的 URL 使用 HTTPS 连接到 Schema Registry。Sc
 
 ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
-* 如果消息中嵌入了 schema ID，则会使用该 ID 获取 schema。
-* 如果消息中未嵌入 schema ID，则会使用 ClickPipe 配置中指定的 schema ID 或 subject 名称来获取 schema。
-* 如果消息写入时未嵌入 schema ID，且 ClickPipe 配置中也未指定 schema ID 或 subject 名称，则不会获取 schema，该消息将被跳过，并在 ClickPipes 错误表中记录 `SOURCE_SCHEMA_ERROR`。
-* 如果消息不符合 schema，则该消息将被跳过，并在 ClickPipes 错误表中记录 `DATA_PARSING_ERROR`。
+* 如果记录值中嵌入了 schema ID，则会使用该 ID 获取 schema。
+* 如果记录值中未嵌入 schema ID，则会使用 ClickPipe 配置中指定的 schema ID 或 subject 名称来获取 schema。
+* 如果记录值写入时未嵌入 schema ID，且 ClickPipe 配置中也未指定 schema ID 或 subject 名称，则不会获取 schema，该消息将被跳过，并在 ClickPipes 错误表中记录 `SOURCE_SCHEMA_ERROR`。
+* 如果记录值不符合 schema，则该消息将被跳过，并在 ClickPipes 错误表中记录 `DATA_PARSING_ERROR`。
 * 仅适用于 Protobuf schema：ClickPipes 会加载定义为依赖项的所有导入 schema。暂不支持带外部引用的 Avro schema。
+
+配置了 `_key.id` 等字段的映射时，ClickPipes 会独立于记录值解析嵌入在 Kafka 键中的 schema ID。键可以使用不同的 schema ID，但必须与值使用相同的 registry 家族和序列化格式。已解析的键 schema 会被缓存，并会自动检测 schema 变更。
 
 <div id="aws-glue-schema-registry">
   ## AWS Glue Schema Registry
@@ -213,7 +215,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
   ## Schema 映射
 </div>
 
-以下规则同时适用于与 Confluent 兼容的 registry 和 AWS Glue Schema Registry。它们规定了已获取的 schema 与 ClickHouse 目标端表之间的映射：
+以下规则同时适用于与 Confluent 兼容的 registry 和 AWS Glue Schema Registry。它们规定了已获取的值 schema 与 ClickHouse 目标端表之间的映射，也适用于从带有 `_key.` 前缀的结构化键映射而来的记录或消息字段：
 
 * 如果 schema 包含某个字段，但该字段未包含在 ClickHouse 目标端映射中，则该字段会被忽略。
 * 如果 schema 缺少 ClickHouse 目标端映射中定义的某个字段，则 ClickHouse 列将填充为“零”值，例如 0 或空字符串。请注意，不支持 `DEFAULT` 表达式。
