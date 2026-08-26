@@ -7,7 +7,10 @@ DROP TABLE IF EXISTS t_small;
 DROP TABLE IF EXISTS t_large;
 
 CREATE TABLE t_small(key UInt64, value String) ENGINE = MergeTree ORDER BY key;
-CREATE TABLE t_large(key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+-- `key` is the only column the queries below read, and the gate sizes a read by its compressed
+-- bytes. Storing it uncompressed keeps that size a property of the test rather than of how well
+-- sequential integers happen to compress, which varies with the server's compression settings.
+CREATE TABLE t_large(key UInt64 CODEC(NONE), value String) ENGINE = MergeTree ORDER BY key;
 
 INSERT INTO t_small SELECT number, toString(number) FROM numbers(1000);
 INSERT INTO t_large SELECT number, toString(number) FROM numbers(3e6);
@@ -24,7 +27,8 @@ SET automatic_parallel_replicas_min_bytes_per_replica=1048576;
 -- parallel-replicas plan and no statistics are collected.
 SELECT count() FROM t_small GROUP BY key % 10 FORMAT Null SETTINGS log_comment='05045_gate_small';
 
--- Enough data to be worth considering, so statistics are collected as usual.
+-- Enough data to be worth considering (24 MB of `key`, ~8 MB per replica against the 1 MiB
+-- threshold), so the plan is built and statistics are collected as usual.
 SELECT count() FROM t_large GROUP BY key % 10 FORMAT Null SETTINGS log_comment='05045_gate_large';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
