@@ -71,10 +71,7 @@ static Block checkAndRemoveFilterColumn(Block result, const String & filter_colu
     return result;
 }
 
-/// `x IN (empty set)` is falsy for every row, NULL ones included, so a conjunct like this makes the
-/// whole filter always false. The constant folding in `prepare` misses it whenever the left argument is
-/// `Nullable`: it reads the filter column off a 0-row header, and `defaultImplementationForNulls`
-/// deliberately drops the constness of a 0-row result unless every argument is constant.
+/// Constant folding in `prepare` misses an empty set behind a `Nullable` argument: no constness at 0 rows.
 static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -85,11 +82,11 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
 
     const auto & function_name = node->function_base->getName();
 
-    /// A conjunction is already false once any one of its conjuncts is.
+    /// A conjunction is false once any conjunct is.
     if (function_name == "and")
         return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
 
-    /// Only `in`: `notIn` over an empty set is always true, and the `-IgnoreSet` variants must not fold.
+    /// `notIn` over an empty set is always true, and the `-IgnoreSet` variants must not fold.
     if (function_name != "in" && function_name != "globalIn")
         return false;
 

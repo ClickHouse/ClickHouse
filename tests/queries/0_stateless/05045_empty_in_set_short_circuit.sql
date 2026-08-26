@@ -1,5 +1,4 @@
--- The read must be skipped entirely when the set behind `IN (subquery)` turns out to be empty,
--- including when the filtered column is `Nullable` and outside the sorting key.
+-- An empty set behind `IN (subquery)` must skip the read, `Nullable` column included.
 DROP TABLE IF EXISTS t_short_circuit;
 DROP TABLE IF EXISTS t_short_circuit_final;
 DROP TABLE IF EXISTS t_short_circuit_set;
@@ -19,10 +18,10 @@ SELECT count() FROM t_short_circuit WHERE b NOT IN (SELECT b FROM t_short_circui
 
 SYSTEM FLUSH LOGS query_log;
 
--- The `NOT IN` query is deliberately left out: it is the last one before the flush, and its log entry
--- is queued asynchronously, so asserting on it would race with `SYSTEM FLUSH LOGS`.
+-- `NOT IN` is left out: being the last query, its log entry races with the flush.
 SELECT read_rows FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%b IN (SELECT b FROM t_short_circuit_set)%' AND query NOT LIKE '%query_log%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND query LIKE '%b IN (SELECT b FROM t_short_circuit_set)%' AND query NOT LIKE '%query_log%'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_short_circuit;
