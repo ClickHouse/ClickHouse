@@ -89,8 +89,9 @@ SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucke
 SELECT k FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY ALL FORMAT Null
     SETTINGS distributed_plan_force_shuffle_aggregation = 1;
 -- A shipped shard plan is rewritten by the shard that receives it rather than by the initiator. No
--- explain reaches a rewrite made there, so this row pins the outcome rather than the strategy: the
--- aggregation must complete on the shipped-plan side as well.
+-- explain reaches a rewrite made there, so this row pins the outcome rather than the strategy: it does
+-- not separate the demotion from an aggregation left unrewritten above the gather, which the rows above
+-- separate whenever the plan is not shipped.
 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k FORMAT Null
     SETTINGS distributed_plan_force_shuffle_aggregation = 1, serialize_query_plan = 1;
 
