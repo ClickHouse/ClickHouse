@@ -16,11 +16,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
 }
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 namespace
 {
 
@@ -33,7 +28,6 @@ String describeSet(const FutureSetFromSubquery & future_set)
 }
 
 }
-
 
 
 std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Node & root)

@@ -18,7 +18,7 @@
 #include <vector>
 
 #include <IO/WriteBufferFromString.h>
-#include "Optimizations/QueryPlanOptimizationSettings.h"
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -147,10 +147,6 @@ public:
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
 
-    bool supportsDistributed(const QueryPlanOptimizationSettings & optimization_settings)
-    {
-        return optimization_settings.make_distributed_plan && !fallback_distributed_to_local;
-    }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
