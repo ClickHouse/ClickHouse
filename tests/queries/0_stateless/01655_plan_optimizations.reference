@@ -80,10 +80,12 @@ Filter column: notEquals(__table1.y, 0_UInt8)
 9	10
 > one condition of filter should be pushed down after aggregating, other two conditions are ANDed
 Filter column
+FUNCTION and(minus(s, 8) :: 3, minus(s, 4) :: 5) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 > (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed
 Filter column
+FUNCTION and(minus(__table1.s, 8_UInt8) :: 3, minus(__table1.s, 4_UInt8) :: 5) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))
 Aggregating
 Filter column: notEquals(__table1.y, 0_UInt8)
 0	1
@@ -172,11 +174,11 @@ Filter column: notEquals(__table1.number, 1_UInt8)
 > one condition of filter is pushed down before INNER JOIN
   Join
 Filter column: and(notEquals(number, 1), notEquals(number, 2))
-Filter column: and(notEquals(b, 1), notEquals(b, 2))
+Filter column: and(notEquals(b, 2), notEquals(b, 1))
 > (analyzer) one condition of filter is pushed down before INNER JOIN
   Join
 Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))
-Filter column: and(notEquals(__table2.b, 1_UInt8), notEquals(__table2.b, 2_UInt8))
+Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))
 3	3
 > filter is pushed down before UNION
 Union

@@ -110,16 +110,16 @@ void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
     file_infos.addFileInfos(std::move(file_infos_), "");
 }
 
-const BackupFileInfos & BackupCoordinationLocal::getFileInfos() const
+BackupFileInfos BackupCoordinationLocal::getFileInfos() const
 {
     std::lock_guard lock{file_infos_mutex};
     return file_infos.getFileInfos("");
 }
 
-void BackupCoordinationLocal::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
+BackupFileInfos BackupCoordinationLocal::getFileInfosForAllHosts() const
 {
     std::lock_guard lock{file_infos_mutex};
-    file_infos.forEachFileInfoForAllHosts(callback);
+    return file_infos.getFileInfosForAllHosts();
 }
 
 bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)

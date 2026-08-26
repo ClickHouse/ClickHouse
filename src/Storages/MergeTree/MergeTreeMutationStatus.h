@@ -31,10 +31,6 @@ struct MergeTreeMutationStatus
     String id = "";
     String command = "";
     time_t create_time = 0;
-    /// Time when the mutation was completed. Zero if the mutation is not done yet or if its
-    /// completion time is unknown (see the `finish_time` column description in
-    /// `StorageSystemMutations`). For replicated tables the value is per-replica.
-    time_t finish_time = 0;
     std::map<String, Int64> block_numbers{};
 
     /// Parts that are currently being mutated.
