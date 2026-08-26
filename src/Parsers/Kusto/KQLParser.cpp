@@ -448,21 +448,39 @@ void KQLParser::parseFunctionDefinition(const String & name)
             if (at(KQLTokenType::OpeningRoundBracket))
             {
                 /// A tabular parameter: `T: (*)` accepts any schema, `T: (a: long, ...)`
-                /// names the columns the body may use. Neither shape constrains anything
-                /// here, so the declaration is consumed and only its arity remembered.
+                /// names the columns the body may use. The declared names are remembered,
+                /// because the body may only read those columns of the argument.
                 parameter.is_tabular = true;
-                int nesting = 1;
                 ++index;
-                while (nesting > 0)
+                if (at(KQLTokenType::Asterisk))
                 {
-                    if (at(KQLTokenType::EndOfStream) || at(KQLTokenType::Error))
-                        fail("unterminated tabular parameter declaration");
-                    if (at(KQLTokenType::OpeningRoundBracket))
-                        ++nesting;
-                    else if (at(KQLTokenType::ClosingRoundBracket))
-                        --nesting;
                     ++index;
                 }
+                else
+                {
+                    while (!at(KQLTokenType::ClosingRoundBracket))
+                    {
+                        const KQLToken & column_token = current();
+                        String column = expectIdentifierName();
+                        expect(KQLTokenType::Colon);
+                        const KQLToken & column_type_token = current();
+                        const String column_type = Poco::toLower(String(expectIdentifierName()));
+                        resolveScalarType(column_type_token, column_type);
+
+                        for (const String & declared : parameter.tabular_columns)
+                            if (declared == column)
+                                failAt(
+                                    column_token,
+                                    fmt::format("column '{}' of parameter '{}' is declared twice", column, parameter.name));
+                        parameter.tabular_columns.push_back(std::move(column));
+
+                        if (!consume(KQLTokenType::Comma))
+                            break;
+                    }
+                    if (parameter.tabular_columns.empty())
+                        failAt(parameter_token, fmt::format("tabular parameter '{}' declares no columns; write '(*)' for any schema", parameter.name));
+                }
+                expect(KQLTokenType::ClosingRoundBracket);
             }
             else
             {
@@ -869,12 +887,33 @@ KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDef
         inner.functions.erase(parameter.name);
 
         if (parameter.is_tabular)
-            inner.tabulars[parameter.name] = tabular_arguments[i];
+            inner.tabulars[parameter.name] = restrictToDeclaredColumns(tabular_arguments[i], parameter);
         else
             inner.scalars[parameter.name] = scalar_arguments[i];
     }
 
     return inner;
+}
+
+/// A tabular parameter declared `T: (a: long, ...)` names the columns its body may read, so
+/// the argument is projected onto them: an undeclared column of the concrete argument stays
+/// invisible inside the body, and a declared column the argument lacks is an error there.
+/// `T: (*)` declares no columns and passes the argument through.
+KQLTabularExpressionPtr
+KQLParser::restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter)
+{
+    if (parameter.tabular_columns.empty())
+        return argument;
+
+    auto op = std::make_shared<KQLOperator>();
+    op->kind = KQLOperatorKind::Project;
+    op->name = "project";
+    for (const String & column : parameter.tabular_columns)
+        op->expressions.push_back(KQLNamedExpression{{}, makeIdentifier(column)});
+
+    auto restricted = std::make_shared<KQLTabularExpression>(*argument);
+    restricted->operators.push_back(std::move(op));
+    return restricted;
 }
 
 ASTPtr KQLParser::callScalarFunction(const String & name, const KQLToken & call_token)
@@ -1879,6 +1918,11 @@ ASTPtr KQLParser::parsePrimary()
     if (scope.functions.contains(word))
     {
         const KQLToken & call_token = current();
+        /// A function whose body is a pipeline is a table, not a value. Re-parsing such a
+        /// body as a scalar expression would silently read its leading name as a column of
+        /// the current row, so a scalar site rejects it outright.
+        if (scope.functions.at(word).body_looks_tabular)
+            failAt(call_token, fmt::format("'{}' is a tabular function, and cannot be used in a scalar expression", word));
         ++index;
         return callScalarFunction(word, call_token);
     }

@@ -1,0 +1,21 @@
+-- an exact factor scales a timespan without going through Float64 --
+49248000000000
+49248000000000
+49248000000000
+9007199254740993
+3000
+864
+-- a wide integer range is counted exactly --
+3
+3
+4
+3
+-- the same exactness through the KQL surface --
+49248000000000
+49248000000000
+-- a tabular parameter shows its body only the columns it declares --
+5
+9
+2
+-- a tabular function is not a value --
+1

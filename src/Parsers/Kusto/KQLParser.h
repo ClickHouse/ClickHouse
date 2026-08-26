@@ -51,6 +51,9 @@ private:
         /// A tabular parameter, declared `T: (col: type, ...)` or `T: (*)`, takes a table
         /// rather than a value. Kusto requires these to come first.
         bool is_tabular = false;
+        /// The columns a tabular parameter declares. Empty for `T: (*)`, which accepts any
+        /// schema; otherwise the body sees exactly these columns of the argument.
+        std::vector<String> tabular_columns;
         /// Null when the parameter is required.
         ASTPtr default_value;
     };
@@ -136,6 +139,8 @@ private:
     KQLTabularExpressionPtr callTabularFunction(const String & name, const KQLToken & call_token);
     /// Reads the argument list and returns the scope the body should be parsed under.
     Scope bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token);
+    /// Projects a tabular argument onto the columns its parameter declares.
+    static KQLTabularExpressionPtr restrictToDeclaredColumns(const KQLTabularExpressionPtr & argument, const FunctionParameter & parameter);
 
     /// Tabular level.
     KQLTabularExpressionPtr parseTabularExpression();
