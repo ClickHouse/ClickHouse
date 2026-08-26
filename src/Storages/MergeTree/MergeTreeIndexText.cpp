@@ -1739,6 +1739,8 @@ bool MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
         {
             /// The NOT IN map is seeded from the filter set. For long keys, reuse its stable string for the
             /// position map, otherwise a surviving token would be copied into the arena a second time.
+            /// The writable granule must be consumed before the owning aggregator and its postprocessor are
+            /// destroyed, since the position map borrows this key.
             auto filter_it = postprocessor_drop_filter->tokens.find(token);
             chassert(filter_it != postprocessor_drop_filter->tokens.end());
             position_map->emplace(std::string_view{*filter_it}, pos_it, inserted);

@@ -259,7 +259,8 @@ INSERT INTO tab VALUES
     (3, 'fox red cat'),
     (4, 'fox dog bird'),
     (5, 'cat fox'),
-    (6, 'keepthisisalongtokenforpositions noise cat')
+    (6, 'keepthisisalongtokenforpositions noise cat'),
+    (7, 'keepthisisalongtokenforpositions noise keepthisisalongtokenforpositions')
 SETTINGS log_comment = 'text_index_positions_fast_path_not_in';
 
 SYSTEM FLUSH LOGS query_log;
@@ -276,6 +277,9 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SE
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'fox cat') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions cat') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions cat') SETTINGS query_plan_direct_read_from_text_index = 0;
+-- Repeated long surviving tokens must remain adjacent after the dropped token is removed.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions keepthisisalongtokenforpositions') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'keepthisisalongtokenforpositions keepthisisalongtokenforpositions') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 

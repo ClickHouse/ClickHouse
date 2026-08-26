@@ -495,7 +495,7 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
     /// Adds a token directly to the granule.
-    /// Returns true if the token survives postprocessor filtering and advances the dense token position.
+    /// Returns true if the token survives postprocessor filtering and should consume a dense token position.
     bool addToken(std::string_view token, UInt32 token_position);
 
     void incrementCurrentRow();
