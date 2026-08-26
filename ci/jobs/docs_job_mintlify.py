@@ -113,6 +113,8 @@ def _changelogs_check_scopes():
 
     if any(
         f.startswith(SHARED_CHANGELOGS_CHECK_TRIGGERS) for f in changed_files
+    ) or any(
+        f.startswith(CHANGELOGS_CHECK_TOOLING_TRIGGERS) for f in changed_files
     ):
         return ("cloud", "oss")
 
@@ -127,11 +129,6 @@ def _changelogs_check_scopes():
         scopes.append("oss")
     if scopes:
         return tuple(scopes)
-
-    if any(
-        f.startswith(CHANGELOGS_CHECK_TOOLING_TRIGGERS) for f in changed_files
-    ):
-        return ("cloud", "oss")
 
     return ()
 
