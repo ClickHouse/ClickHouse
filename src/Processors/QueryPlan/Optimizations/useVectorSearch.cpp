@@ -201,8 +201,6 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
         {
             search_column = child->result_name;
-            if (search_column.contains('.'))
-                search_column = search_column.substr(search_column.find('.') + 1); /// admittedly fragile but hey, it's the old path ...
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -239,18 +237,34 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Check if a vector similarity index exists on top of the search column.
     /// Multi-column indexes cannot be used
     const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
-    bool has_vector_similarity_index = false;
-    for (const auto & index : indexes)
+    auto has_vector_similarity_index_on = [&indexes](const String & column_name)
     {
-        if (index.type != "vector_similarity")
-            continue;
-
-        chassert(index.expression);
-        auto required_columns = index.expression->getRequiredColumns();
-        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        for (const auto & index : indexes)
         {
+            if (index.type != "vector_similarity")
+                continue;
+
+            chassert(index.expression);
+            auto required_columns = index.expression->getRequiredColumns();
+            if (required_columns.size() == 1 && required_columns[0] == column_name)
+                return true;
+        }
+        return false;
+    };
+
+    /// Resolve the name extracted from `ORDER BY` to the exact storage column: try the full input name first, so that a
+    /// genuinely dotted storage column (e.g. a `Nested` component `n.vec`) is matched as-is rather than conflated with a
+    /// different top-level column. Only if that fails, strip a single leading qualifier (the analyzer qualifies table
+    /// columns as `__table1.vec`) and retry. Truncating unconditionally would turn `n.vec` into `vec` and bind the query
+    /// to the index of the wrong column.
+    bool has_vector_similarity_index = has_vector_similarity_index_on(search_column);
+    if (!has_vector_similarity_index && search_column.contains('.'))
+    {
+        const String unqualified = search_column.substr(search_column.find('.') + 1);
+        if (has_vector_similarity_index_on(unqualified))
+        {
+            search_column = unqualified;
             has_vector_similarity_index = true;
-            break;
         }
     }
 
