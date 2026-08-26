@@ -5276,10 +5276,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     commands.apply(new_metadata, local_context, share_nested_offsets);
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
-    /// stay physically sorted in the directions the key had when they were written, and nothing on disk records those
-    /// directions: every reader takes them from the current metadata. A direction change in place would therefore make
-    /// the metadata describe an order the data does not have, and primary key index analysis compares boundary tuples
-    /// in the claimed order, so it would prune the wrong mark ranges and silently return wrong results.
+    /// stay physically sorted in the directions the key had when they were written, and no data part records those
+    /// directions: every reader of a data part's order takes them from the current metadata. A direction change in
+    /// place would therefore make the metadata describe an order the data does not have, and primary key index
+    /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
+    /// return wrong results.
     {
         /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
         /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check

@@ -32,12 +32,19 @@ ALTER TABLE t_desc_minimal MODIFY ORDER BY a; -- { serverError BAD_ARGUMENTS }
 
 SELECT sum(a) FROM t_desc_minimal WHERE a >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
--- A descending column that is not first is equally unsafe.
+-- A descending column outside the primary key is equally unsafe: merges and read-in-order use the
+-- directions of the whole sorting key, not only of its primary key prefix.
 CREATE TABLE t_desc_trailing (a UInt64, b UInt64, v String) ENGINE = MergeTree
-PRIMARY KEY (a, b) ORDER BY (a, b DESC) SETTINGS index_granularity = 128;
+PRIMARY KEY a ORDER BY (a, b DESC) SETTINGS index_granularity = 128;
 INSERT INTO t_desc_trailing SELECT 1, number, 'foo' FROM numbers(1000);
 
 ALTER TABLE t_desc_trailing ADD COLUMN c UInt64, MODIFY ORDER BY (a, b, c); -- { serverError BAD_ARGUMENTS }
+
+SELECT sum(b) FROM t_desc_trailing WHERE b >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+-- Dropping the reversed column from the sorting key stays allowed: parts sorted by (a, b DESC) are
+-- also sorted by (a), so the shorter key still describes an order the data has.
+ALTER TABLE t_desc_trailing MODIFY ORDER BY a;
 
 SELECT sum(b) FROM t_desc_trailing WHERE b >= 500 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
