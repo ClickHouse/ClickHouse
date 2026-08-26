@@ -1496,8 +1496,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",
@@ -1612,8 +1616,16 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -2016,8 +2028,16 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -3732,7 +3752,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3748,7 +3768,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -4898,6 +4918,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/metabase-and-clickhouse",
     "source": "/integrations/metabase"
+  },
+  {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
   },
   {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
@@ -27812,8 +27836,12 @@
     "source": "/operations/system-tables/metrics"
   },
   {
-    "destination": "/reference/system-tables/models",
+    "destination": "/reference/system-tables/overview",
     "source": "/operations/system-tables/models"
+  },
+  {
+    "destination": "/reference/system-tables/overview",
+    "source": "/reference/system-tables/models"
   },
   {
     "destination": "/reference/system-tables/moves",
