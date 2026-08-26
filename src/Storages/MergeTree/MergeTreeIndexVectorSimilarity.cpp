@@ -667,9 +667,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
-    const String & method = args[0].safeGet<String>();
 
 #if USE_SCANN
+    const String & method = args[0].safeGet<String>();
     if (method == "scann")
     {
         checkScannCPUSupport();
