@@ -88,22 +88,24 @@ SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 │                                                         -26.8609 │
 └──────────────────────────────────────────────────────────────────┘
         )"},
-        {"Decimal overflow", R"(
+        {"No overflow with multiplyDecimal", R"(
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+        )", R"(
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+        )"},
+        {"Decimal overflow with regular multiplication", R"(
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     a * b;
         )", R"(
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
