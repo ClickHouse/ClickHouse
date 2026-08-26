@@ -11,7 +11,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # delete the row, and a part reporting the source parts' "nothing to expire" is never selected.
 
 # Far enough ahead that the combining merge below cannot race the expiry even on a loaded machine.
-EXPIRY=$(date -u -d '+20 seconds' '+%Y-%m-%d %H:%M:%S')
+# A Unix timestamp, not a datetime string: stateless tests randomize `session_timezone`, and a bare
+# string would be parsed - and the metadata compared - in whatever zone each client session got.
+EXPIRY=$(( $(date '+%s') + 20 ))
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS ttl_where_expires_later;
@@ -30,8 +32,8 @@ $CLICKHOUSE_CLIENT -m -q "
     -- Keep the parts apart so the combining merge is the OPTIMIZE below and not a background merge.
     SYSTEM STOP MERGES ttl_where_expires_later;
 
-    INSERT INTO ttl_where_expires_later VALUES (1, -1, '$EXPIRY');
-    INSERT INTO ttl_where_expires_later VALUES (1, +1, '$EXPIRY');
+    INSERT INTO ttl_where_expires_later VALUES (1, -1, toDateTime($EXPIRY));
+    INSERT INTO ttl_where_expires_later VALUES (1, +1, toDateTime($EXPIRY));
 
     SYSTEM START MERGES ttl_where_expires_later;
     OPTIMIZE TABLE ttl_where_expires_later FINAL;
@@ -44,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "SELECT 'not expired yet', count() FROM ttl_where_expires_
 # re-evaluated the rows-WHERE TTL on its output.
 $CLICKHOUSE_CLIENT -q "
     SELECT 'ttl info from merge output',
-        rows_where_ttl_info.min = [toDateTime('$EXPIRY', 'UTC')] AND rows_where_ttl_info.max = [toDateTime('$EXPIRY', 'UTC')]
+        rows_where_ttl_info.min = [toDateTime($EXPIRY)] AND rows_where_ttl_info.max = [toDateTime($EXPIRY)]
     FROM system.parts
     WHERE database = currentDatabase() AND table = 'ttl_where_expires_later' AND active
 "
