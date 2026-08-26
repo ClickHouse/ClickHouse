@@ -781,8 +781,11 @@ struct HashMethodSerialized
                 key_columns[j]->batchSerializeValueIntoMemory(chunk_memories, chunk_begin, chunk_end, &serialization_settings);
         }
 
-        /// The chunk's hashes are computed on the next `emplaceKey`, which is where `Data` is known.
-        if (has_pre_computed_hashes)
+        /// The chunk's hashes are computed on the next `emplaceKey`, which is where `Data` is known -
+        /// but only while they are still read. Once the mode is off - the caller asked for no
+        /// prefetch, or a chunk found the table small enough to skip it - nothing looks at them, and
+        /// computing them is a second hash of every row.
+        if (can_precompute_hashes)
             precomputed_hashes_initialized = false;
     }
 
