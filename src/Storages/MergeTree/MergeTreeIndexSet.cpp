@@ -384,6 +384,10 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
+    /// `set_hyperrectangle` comes from `getExtremes`/`getExtremesNullLast`, which skip NaN, and
+    /// `mayBeTrueOnGranule` uses it as a pre-check before the exact per-value evaluation.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+
     for (const auto & column : index_description.sample_block)
         key_columns.emplace(column.name, column.type);
 

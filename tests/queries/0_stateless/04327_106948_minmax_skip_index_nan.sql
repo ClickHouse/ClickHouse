@@ -5,11 +5,10 @@
 -- even the use_skip_indexes=0 reference count wrong for the NaN rows, so pin it off.
 SET materialize_statistics_on_insert = 0;
 
--- minmax skip index must not prune a granule that may contain NaN under a negated comparison range.
--- `NOT ((val >= a) AND (val <= b))` is satisfied by NaN rows (NaN >= a is false, so the negation is true),
--- but range analysis over the stored [min, max] hyperrectangle dropped such granules (issue #106948).
--- Two cases: an all-NaN granule and a granule mixing finite floats with NaN. The skip-index result must
--- match the result without the skip index in every case.
+-- getExtremes skips NaN, so a granule (1.0, nan, 3.0) stores the finite bound [1, 3] that hides the NaN.
+-- `NOT ((val >= a) AND (val <= b))` is satisfied by a NaN row, because `NaN >= a` is false, so a float
+-- bound must never be reported as fully satisfying a condition. Every arm asserts the skip-index result
+-- against the same query without the skip index.
 
 DROP TABLE IF EXISTS t_minmax_nan;
 
@@ -43,24 +42,121 @@ INSERT INTO t_minmax_nan_mixed VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- The NaN granule's stored max is NaN, so an upper-bounded range conservatively reads it (it is not
--- pruned). NaN-widening must not disable pruning entirely though: the sibling all-finite granule
--- [100, 200] is still pruned for val > 500. The result matches the no-index result, and EXPLAIN shows
--- exactly one of the two granules pruned (1/2).
+-- A positive range is decided by intersection alone, and a hidden NaN satisfies no comparison, so it
+-- can never make one true: both granules are pruned for val > 500.
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500;
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500 SETTINGS use_skip_indexes = 0;
-SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500);
+SELECT countIf(explain LIKE '%Granules: 0/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500);
 
--- 1.0 sits in the NaN granule, so positive equality on it must still find the row: only the stored
--- max is widened to NaN, the min stays finite.
+-- 1.0 sits in the NaN granule, so positive equality on it must still find the row.
 SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0;
 SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0 SETTINGS use_skip_indexes = 0;
 
+-- The stored bound is a semantic extremum, so a consumer that reads it as one gets the true maximum.
+-- `ORDER BY val DESC LIMIT 1` reaches two independently gated TopK mechanisms: plan-time granule
+-- ordering and the read-time threshold tracker. Both are admitted if either gate is on, so the oracle
+-- has to turn off both.
+SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1;
+SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0;
+
+-- A monotonic function chain is applied to the bound's endpoints, never to the hidden NaN, and a
+-- monotonicity-declared function need not preserve NaN: sign(nan) = 1, so the NaN row matches
+-- `sign(val) > 0` while the transformed bound [-1, -1] does not.
+SELECT count() FROM t_minmax_nan_mixed WHERE NOT (val * 2 > 6);
+SELECT count() FROM t_minmax_nan_mixed WHERE NOT (val * 2 > 6) SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_minmax_nan_mixed;
 
--- LowCardinality(Float*): the minmax aggregator must materialize LowCardinality before checking for
--- NaN, otherwise the nested float column is invisible and a mixed LC granule (e.g. [1, nan, 3]) keeps a
--- clean stored range and is wrongly pruned for the negated comparison.
+-- A float->integer chain throws on a NaN input, so the index must not turn that into an empty result.
+DROP TABLE IF EXISTS t_minmax_nan_chain;
+
+CREATE TABLE t_minmax_nan_chain
+(id UInt64, val Float64, INDEX idx_val val TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_minmax_nan_chain VALUES (1, -3.0), (2, nan), (3, -1.0);
+INSERT INTO t_minmax_nan_chain VALUES (4, 100.0), (5, 150.0), (6, 200.0);
+
+SELECT count() FROM t_minmax_nan_chain WHERE toFloat64(sign(val)) > 0;
+SELECT count() FROM t_minmax_nan_chain WHERE toFloat64(sign(val)) > 0 SETTINGS use_skip_indexes = 0;
+
+-- A set atom carries its own chain per key mapping, so the chain rule has to be applied there too.
+SELECT count() FROM t_minmax_nan_chain WHERE sign(val) IN (1);
+SELECT count() FROM t_minmax_nan_chain WHERE sign(val) IN (1) SETTINGS use_skip_indexes = 0;
+
+SELECT count() FROM t_minmax_nan_chain WHERE toInt64(val) > 100; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM t_minmax_nan_chain WHERE toInt64(val) > 100 SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+DROP TABLE t_minmax_nan_chain;
+
+-- Set atoms reach "the whole range satisfies this" through a different branch than range atoms, and a
+-- single-point bound is what takes it: a granule whose only finite value is 1.0 stores [1, 1].
+DROP TABLE IF EXISTS t_minmax_nan_set;
+
+CREATE TABLE t_minmax_nan_set
+(id UInt64, val Float64, INDEX idx_val val TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_minmax_nan_set VALUES (1, 1.0), (2, nan), (3, nan);
+INSERT INTO t_minmax_nan_set VALUES (4, 2.0), (5, 2.0), (6, 2.0);
+
+SELECT count() FROM t_minmax_nan_set WHERE val NOT IN (1.);
+SELECT count() FROM t_minmax_nan_set WHERE val NOT IN (1.) SETTINGS use_skip_indexes = 0;
+
+-- A set matches its elements under the total order, in which nan = nan, so a NaN element can be
+-- matched without any negation: `val IN (nan)` must return the NaN rows.
+SELECT count() FROM t_minmax_nan_set WHERE val IN (nan);
+SELECT count() FROM t_minmax_nan_set WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
+
+-- An ordinary IN list holds no NaN, so it keeps pruning: only the [2, 2] granule is read.
+SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_set WHERE val IN (2., 5.));
+
+DROP TABLE t_minmax_nan_set;
+
+-- A set skip index stores its own hyperrectangle, also built with getExtremes, and uses it as a
+-- pre-check before the exact per-value evaluation. The bulk and per-granule entry points differ.
+DROP TABLE IF EXISTS t_set_idx_nan;
+
+CREATE TABLE t_set_idx_nan
+(id UInt64, val Float64, INDEX idx_val val TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_set_idx_nan VALUES (1, 1.0), (2, nan), (3, 3.0);
+INSERT INTO t_set_idx_nan VALUES (4, 100.0), (5, 150.0), (6, 200.0);
+
+SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.));
+SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS secondary_indices_enable_bulk_filtering = 0;
+SELECT count() FROM t_set_idx_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS secondary_indices_enable_bulk_filtering = 1;
+
+DROP TABLE t_set_idx_nan;
+
+-- Tuple comparison is built from its elements' scalar comparisons, so a NaN element makes an ordering
+-- operator and its inverse both false exactly as a bare float does, and ColumnTuple::getExtremes
+-- delegates per child. Array and Map instead compare through the total order, where a NaN has a
+-- defined position, so they are not affected.
+DROP TABLE IF EXISTS t_minmax_nan_tuple;
+
+CREATE TABLE t_minmax_nan_tuple
+(id UInt64, t Tuple(Float64, Float64), INDEX idx_t t TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_minmax_nan_tuple VALUES (1, (1., 1.)), (2, (nan, 1.)), (3, (3., 3.));
+INSERT INTO t_minmax_nan_tuple VALUES (4, (100., 100.)), (5, (150., 150.)), (6, (200., 200.));
+
+SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.));
+SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t <= (100., 100.)) SETTINGS use_skip_indexes = 0;
+
+-- A NaN inside a tuple constant is not a top-level NaN, so recognising it needs a recursive walk of
+-- the constant as well as of the type.
+SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.));
+SELECT count() FROM t_minmax_nan_tuple WHERE NOT (t < (nan, 1.)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_minmax_nan_tuple;
+
+-- LowCardinality(Float*) and LowCardinality(Nullable(Float*)) hide a NaN the same way, so the rule has
+-- to see through both wrappers.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
@@ -93,9 +189,8 @@ SELECT count() FROM t_minmax_nan_lcn WHERE NOT ((val >= 0.) AND (val <= 3.)) SET
 DROP TABLE t_minmax_nan_lcn;
 
 -- NULL and NaN in the same granule: getExtremesNullLast records the NULLS_LAST +inf sentinel to mark
--- that the granule contains NULL. The NaN-widening must not overwrite that sentinel, otherwise the
--- granule stops looking like it contains NULL and `val IS NULL` is wrongly pruned. Both `IS NULL` and
--- the negated comparison (which the NaN row satisfies) must keep the granule.
+-- that the granule contains NULL, so that bound is already non-extremal for a different reason. Both
+-- `IS NULL` and the negated comparison must keep the granule.
 
 DROP TABLE IF EXISTS t_minmax_null_nan;
 
@@ -114,10 +209,8 @@ SELECT count() FROM t_minmax_null_nan WHERE val IS NULL SETTINGS use_skip_indexe
 SELECT count() FROM t_minmax_null_nan WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_minmax_null_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- The NULL+NaN granule's stored range is [1, +Inf] (the NULLS_LAST +Inf sentinel is preserved), so
--- for val > 500 checkInHyperrectangle treats it as intersecting and reads it conservatively, not pruned.
--- NaN/NULL-widening must not disable pruning entirely though: the sibling all-finite granule [100, 200]
--- is still pruned. The result matches the no-index result, and EXPLAIN shows one of the two granules pruned (1/2).
+-- The NULL+NaN granule's stored range is [1, +Inf] because of the NULLS_LAST sentinel, so val > 500
+-- intersects it and it is read; the sibling all-finite granule [100, 200] is still pruned (1/2).
 SELECT count() FROM t_minmax_null_nan WHERE val > 500;
 SELECT count() FROM t_minmax_null_nan WHERE val > 500 SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_null_nan WHERE val > 500);

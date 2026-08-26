@@ -2772,10 +2772,13 @@ void ReadFromMergeTree::buildIndexes(
             {
                 auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
                 ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-                return KeyCondition{
+                KeyCondition condition{
                     wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                     /* single_point_ = */ false,
                     /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
+                /// The part minmax bound comes from `getExtremes`, which skips NaN.
+                condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
+                return condition;
             };
             indexes->minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         }

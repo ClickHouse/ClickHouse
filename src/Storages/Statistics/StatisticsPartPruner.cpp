@@ -103,6 +103,10 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
         filter_dag, context, column_names, expression,
         /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
 
+    /// A statistic's min/max is aggregated the same way `getExtremes` is, so it skips NaN.
+    /// Must run before `alwaysUnknownOrTrue()`, whose verdict this can change.
+    new_key_condition->relaxAtomsOverNaNHidingColumns(columns.getTypes());
+
     if (new_key_condition->alwaysUnknownOrTrue())
     {
         key_condition_cache[column_names] = nullptr;

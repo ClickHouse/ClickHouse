@@ -55,6 +55,19 @@ struct DeterministicKeyTransformDag
     String input_name;
 };
 
+/// Whether a value of this type can be a NaN that an aggregated bound does not show.
+/// `getExtremes` skips NaN, so a slice `(1.0, nan, 3.0)` yields the finite bound `[1.0, 3.0]`.
+/// Every ordering comparison against a NaN is false, so an ordering operator and its candidate
+/// inverse are both false for such a value instead of being complements.
+/// `Tuple` is included: tuple comparison is built from its elements' scalar comparisons, and
+/// `ColumnTuple::getExtremes` delegates to each child. `Array` and `Map` are excluded: they compare
+/// through `compareAt`'s total order, in which a NaN has a defined position and is not anomalous.
+bool typeMayHideNaN(const DataTypePtr & type);
+
+/// The same question for a constant. `Field::isNaN` only inspects a top-level `Float64`, so a
+/// `Tuple` holding a NaN element answers false there.
+bool fieldMayContainNaN(const Field & field);
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -458,6 +471,20 @@ public:
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
+
+    /// Weaken the atoms whose key column can hold a NaN that `key_types[i]` allows but an aggregated
+    /// bound does not show (see `typeMayHideNaN`). Call this only on a condition that is evaluated
+    /// against a hyperrectangle built by `getExtremes`, and call it before `alwaysUnknownOrTrue()`.
+    ///
+    /// A hidden NaN satisfies no ordering comparison, so it can only make an atom true through an
+    /// enclosing negation: the atom keeps `can_be_true` and loses `can_be_false`, which is exactly
+    /// `relaxed`. Three shapes break that and leave the atom unanalyzable instead, so they become
+    /// `FUNCTION_UNKNOWN`: a monotonic function chain (it is applied to the bound's endpoints, never
+    /// to the hidden NaN, and a monotonicity-declared function may map NaN anywhere), a set holding
+    /// a NaN element (`MergeTreeSetIndex` matches it under `compareAt`'s total order, where
+    /// `nan = nan`, so the NaN row can match without any negation), and a set mapping that carries
+    /// its own chain.
+    void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 

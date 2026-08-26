@@ -1,11 +1,8 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
--- The auto minmax/basic statistics built at insert time (materialize_statistics_on_insert = 1)
--- compute their bounds with getExtremes, which skips NaN. A part mixing finite floats with a NaN
--- therefore stored a finite [min, max] that hid the NaN, and statistics-based part pruning wrongly
--- dropped that part under a negated float range (issue #106533 / #106948). This is a third layer of
--- the same NaN hazard, independent of the minmax skip index and KeyCondition inversion: it is reached
--- even with use_skip_indexes = 0. The fix records a has_nan flag in the statistics and widens the
--- pruning range over NaN, mirroring the skip index.
+-- The auto minmax/basic statistics built at insert time (materialize_statistics_on_insert = 1) aggregate
+-- their bounds the same way getExtremes does, so a part mixing finite floats with a NaN stores a finite
+-- [min, max] that hides it. This is a third pruning layer with the same hazard, and it is reached even
+-- with use_skip_indexes = 0.
 
 SET materialize_statistics_on_insert = 1;
 SET allow_experimental_statistics = 1;
@@ -27,9 +24,8 @@ SYSTEM STOP MERGES t_106533_stats;
 INSERT INTO t_106533_stats VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
--- NOT (val BETWEEN 0 AND 3) keeps the NaN row (IEEE-754: NOT(NaN >= 0 AND NaN <= 3) = NOT(false) = true)
--- plus the three finite rows above 3. Expected 4. Before the fix, statistics pruning dropped part 1
--- (finite stored bounds [1, 3] fully inside [0, 3]), losing the NaN row -> 3.
+-- NOT (val BETWEEN 0 AND 3) keeps the NaN row, because NaN >= 0 is false, plus the three finite rows
+-- above 3. Expected 4.
 SELECT count() FROM t_106533_stats WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_106533_stats WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
@@ -39,7 +35,7 @@ SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT cou
 
 DROP TABLE t_106533_stats;
 
--- Basic statistics carry the same has_nan flag over their numeric min/max.
+-- Basic statistics aggregate a numeric min/max the same way, so they hide a NaN the same way.
 DROP TABLE IF EXISTS t_106533_stats_basic;
 
 CREATE TABLE t_106533_stats_basic (id UInt64, val Float32 STATISTICS(basic))

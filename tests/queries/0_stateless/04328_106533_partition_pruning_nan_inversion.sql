@@ -55,10 +55,9 @@ SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_project
 DROP TABLE t_106533_dec;
 
 -- Part-level minmax index (built from the partition-key columns, no explicit secondary index).
--- A part mixing finite floats with NaN stored a finite [min, max] in the part-level minmax, so the
--- whole part was pruned for `NOT ((val >= 0) AND (val <= 3))` even though the NaN row satisfies it.
--- The part-level minmax must record the NaN like the skip index does. use_skip_indexes = 0 also
--- disables part-level minmax pruning, so it is the unindexed oracle.
+-- It is aggregated with getExtremes too, so a part mixing finite floats with NaN stores a finite
+-- [min, max] that hides the NaN. use_skip_indexes = 0 also disables part-level minmax pruning, so it is
+-- the unindexed oracle.
 
 DROP TABLE IF EXISTS t_106533_partlevel;
 
@@ -70,17 +69,21 @@ INSERT INTO t_106533_partlevel VALUES (1, 1.0), (2, nan), (3, 3.0);
 SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- The mixed part's stored max is now NaN, so for val > 500 checkInHyperrectangle keeps intersects = true
--- and reads the part conservatively. EXPLAIN confirms the part-level Min-Max does not prune it (no Parts: 0/1).
+-- A positive range is decided by intersection alone, which a hidden NaN cannot make true, so the mixed
+-- part is pruned for val > 500 as an all-finite one would be.
 SELECT count() FROM t_106533_partlevel WHERE val > 500;
 SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel WHERE val > 500);
 
+-- The part-level bound is also read as a semantic extremum: _minmax_count_projection answers
+-- min()/max() straight out of it without reading any data.
+SELECT max(val), min(val) FROM t_106533_partlevel;
+SELECT max(val), min(val) FROM t_106533_partlevel SETTINGS optimize_use_implicit_projections = 0;
+
 DROP TABLE t_106533_partlevel;
 
--- NaN-widening must not disable part-level pruning entirely: an all-finite part is still pruned for
--- a range no value satisfies. A separate single-part table keeps this merge-stable (the Min-Max prunes
--- the only part, so EXPLAIN shows Parts: 0/1).
+-- An all-finite part is still pruned for a range no value satisfies. A separate single-part table keeps
+-- this merge-stable (the Min-Max prunes the only part, so EXPLAIN shows Parts: 0/1).
 
 DROP TABLE IF EXISTS t_106533_partlevel_finite;
 
@@ -95,10 +98,9 @@ SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT cou
 
 DROP TABLE t_106533_partlevel_finite;
 
--- Sparse float column: the part-level minmax runs before sparse removal, and ColumnSparse::getExtremes
--- delegates to the values column which skips NaN, so a sparse part mixing finite floats with NaN stored a
--- finite [min, max] and was wrongly pruned for the negated range. use_statistics_for_part_pruning = 0
--- isolates the part-level minmax from the auto-statistics pruner (which use_skip_indexes = 0 does not disable).
+-- Sparse float column: the rule keys off the column's type, so a sparse representation is covered like
+-- any other. use_statistics_for_part_pruning = 0 isolates the part-level minmax from the auto-statistics
+-- pruner, which use_skip_indexes = 0 does not disable.
 
 DROP TABLE IF EXISTS t_106533_sparse;
 
@@ -115,3 +117,22 @@ SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETT
 SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0);
 
 DROP TABLE t_106533_sparse;
+
+-- A column that is both a primary-key column and a partition-minmax column: mark-range analysis can be
+-- given the part's minmax bound as that column's universe. A bound that hides a NaN is not a universe,
+-- so such a column has to fall back to the whole one. Only
+-- use_partition_minmax_for_primary_key_pruning reaches this path; use_skip_indexes does not.
+
+DROP TABLE IF EXISTS t_106533_pk_minmax;
+
+CREATE TABLE t_106533_pk_minmax (val Float64)
+ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY val
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_pk_minmax VALUES (1.0), (nan), (2.0), (3.0);
+
+SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
+SETTINGS use_skip_indexes = 0, use_partition_minmax_for_primary_key_pruning = 0;
+
+DROP TABLE t_106533_pk_minmax;
