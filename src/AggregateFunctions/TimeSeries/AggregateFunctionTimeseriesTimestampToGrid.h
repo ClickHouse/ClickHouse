@@ -127,6 +127,8 @@ struct AggregateFunctionTimeseriesTimestampToGridTraits
 
     /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 
@@ -149,7 +151,6 @@ public:
         return typename Traits::Aggregator{Base::timestamp_scale_multiplier};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 3;
     static constexpr bool DateTime64Supported = true;
 };
 
