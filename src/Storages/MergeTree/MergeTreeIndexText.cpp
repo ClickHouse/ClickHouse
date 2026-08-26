@@ -391,7 +391,7 @@ ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
     tokens_column->reserve(num_tokens);
 
     auto serialization_string = SerializationString::create();
-    serialization_string->deserializeBinaryBulk(*tokens_column, istr, 0, num_tokens, 0.0);
+    serialization_string->deserializeBinaryBulk(*tokens_column, istr, num_tokens, 0.0);
 
     return tokens_column;
 }
@@ -1257,7 +1257,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
-    serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
+    serialization_number->deserializeBinaryBulk(*offsets, istr, num_sparse_index_tokens, 0.0);
     header.sparse_index = DictionarySparseIndex(std::move(tokens), std::move(offsets));
     return header;
 }
