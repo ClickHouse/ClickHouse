@@ -7,6 +7,9 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TableZnodeInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
@@ -41,6 +44,10 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -216,12 +223,25 @@ static bool isReplicated(const String & engine_name)
     return engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 }
 
-/// Returns the part of the name of a table engine between "Replicated" (if any) and "MergeTree".
+/// Returns whether this is a Shared table engine?
+static bool isShared(const String & engine_name)
+{
+    return engine_name.starts_with("Shared") && engine_name.ends_with("MergeTree");
+}
+
+static bool isReplicatedOrShared(const String & engine_name)
+{
+    return (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared")) && engine_name.ends_with("MergeTree");
+}
+
+/// Returns the part of the name of a table engine between "Replicated" or "Shared" (if any) and "MergeTree".
 static std::string_view getNamePart(const String & engine_name)
 {
     std::string_view name_part = engine_name;
     if (name_part.starts_with("Replicated"))
         name_part.remove_prefix(strlen("Replicated"));
+    else if (name_part.starts_with("Shared"))
+        name_part.remove_prefix(strlen("Shared"));
 
     if (name_part.ends_with("MergeTree"))
         name_part.remove_suffix(strlen("MergeTree"));
@@ -231,7 +251,7 @@ static std::string_view getNamePart(const String & engine_name)
 
 /// Extracts zookeeper path and replica name from the table engine's arguments.
 /// The function can modify those arguments (that's why they're passed separately in `engine_args`) and also determines RenamingRestrictions.
-/// The function assumes the table engine is Replicated.
+/// The function assumes the table engine is Replicated or Shared.
 static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ASTCreateQuery & query,
     const StorageID & table_id,
@@ -241,7 +261,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ContextPtr & local_context,
     bool validate_substitutions)
 {
-    chassert(isReplicated(engine_name));
+    chassert(isReplicatedOrShared(engine_name));
 
     bool is_extended_storage_def = engine_args.empty() || isExtendedStorageDef(query);
 
@@ -252,9 +272,16 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
+    auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+    const String database_engine = database ? database->getEngineName() : "";
+
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
     {
+#if CLICKHOUSE_CLOUD
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, database, local_context, validate_substitutions);
+#else
         TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
+#endif
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -270,7 +297,9 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     if (has_valid_arguments)
     {
         bool is_replicated_database = local_context->isDDLOrOnClusterInternal() &&
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+            database_engine == "Replicated";
+        bool is_shared_database = local_context->isDDLOrOnClusterInternal() &&
+            database_engine == "Shared";
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
@@ -281,7 +310,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
-        if (!query.attach && is_replicated_database
+        if (!query.attach && (is_replicated_database || is_shared_database)
             && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
         {
             /// Allow specifying engine arguments even with database_replicated_allow_replicated_engine_arguments=0 (not allowed) but only
@@ -298,18 +327,23 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
                     "specify them explicitly, enable setting "
                     "database_replicated_allow_replicated_engine_arguments.");
         }
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
+        if (!query.attach && (is_replicated_database || is_shared_database)
+            && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
             LOG_WARNING(
                 &Poco::Logger::get("registerStorageMergeTree"),
                 "It's not recommended to explicitly specify "
                 "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
         }
-
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
+        if (!query.attach && (is_replicated_database || is_shared_database)
+            && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
-            LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
-                                                                     "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
+            LOG_WARNING(
+                &Poco::Logger::get("registerStorageMergeTree"),
+                "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
+                "with default arguments",
+                ast_zk_path->value.safeGet<String>(),
+                ast_replica_name->value.safeGet<String>());
             ast_zk_path->value = server_settings[ServerSetting::default_replica_path];
             ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
@@ -353,7 +387,7 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
         return {};
 
     const String & engine_name = query.storage->engine->name;
-    if (!isReplicated(engine_name))
+    if (!isReplicatedOrShared(engine_name))
         return {};
 
     StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
@@ -437,6 +471,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
 
     bool replicated = isReplicated(args.engine_name);
+    bool shared = isShared(args.engine_name);
     std::string_view name_part = getNamePart(args.engine_name);
 
     MergeTreeData::MergingParams merging_params;
@@ -493,6 +528,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_mandatory_param("path in ZooKeeper");
             add_mandatory_param("replica name");
         }
+    }
+
+    if (shared)
+    {
+        add_optional_param("path in [Zoo]Keeper");
+        add_optional_param("replica name");
     }
 
     if (!is_extended_storage_def)
@@ -574,7 +615,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
 
-    if (replicated)
+    if (replicated || shared)
     {
         /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
         /// Every other route re-derives a table that already exists and must keep loading. Such a
@@ -675,7 +716,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
 
     ColumnsDescription columns;
-    if (args.columns.empty() && replicated)
+    if (args.columns.empty() && (replicated || shared))
         columns = getColumnsDescriptionFromZookeeper(zookeeper_info, context);
     else
         columns = args.columns;
@@ -683,8 +724,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
-    const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
-    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
+
+    const MergeTreeSettings * initial_storage_settings = nullptr;
+    if (replicated)
+        initial_storage_settings = &context->getReplicatedMergeTreeSettings();
+#if CLICKHOUSE_CLOUD
+    else if (shared)
+        initial_storage_settings = &context->getSharedMergeTreeSettings();
+#endif
+    else
+        initial_storage_settings = &context->getMergeTreeSettings();
+
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(*initial_storage_settings);
 
     if (is_extended_storage_def)
     {
@@ -896,11 +947,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
-        /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
+        // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
             if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(*initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
@@ -1109,7 +1160,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(*initial_storage_settings, changes);
             }
         }
         else
@@ -1184,6 +1235,70 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             need_check_table_structure,
             create_query_zk_retries_info);
     }
+
+#if CLICKHOUSE_CLOUD
+    if (shared)
+    {
+        bool need_check_structure = true;
+        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+            need_check_structure = txn->isInitialQuery();
+
+        const auto & local_context = args.getLocalContext();
+        const auto & client_info = local_context->getClientInfo();
+
+        bool shared_catalog = client_info.is_shared_catalog_internal;
+        bool is_initial = SharedDatabaseCatalog::isInitialQuery(local_context);
+
+        SharedCatalogTableSettings sc_table_settings;
+        sc_table_settings.is_enabled = shared_catalog;
+        sc_table_settings.override_metadata = shared_catalog && !is_initial;
+        sc_table_settings.drop_mode = local_context->getDropModeSharedCatalog();
+        sc_table_settings.check_table_not_exists = shared_catalog && is_initial
+            && !SharedDatabaseCatalog::instance().isStatelessTestsMode();
+
+        /// The active replicas optimization reuses SC's cached active replica info
+        /// instead of per-table ZK /replicas version bumps. It only works when
+        /// the table's replica name matches SC's replica name.
+        if (shared_catalog && SharedDatabaseCatalog::instance().optimizeActiveReplicas())
+        {
+            const auto & sc_replica_name = SharedDatabaseCatalog::instance().getReplicaName();
+            sc_table_settings.use_active_replicas_from_catalog = (zookeeper_info.replica_name == sc_replica_name);
+        }
+
+        /// Pass intentions to the constructor so createTable() can commit the intention atomically
+        /// with the table's ZooKeeper path, avoiding the orphaned-intention window.
+        std::shared_ptr<SharedCatalogIntentions> sc_intentions;
+        if (!args.query.attach && is_initial)
+        {
+            sc_intentions = local_context->getIntentionsSharedCatalog();
+            sc_intentions->get(args.query.uuid).engine_args = args.engine_args;
+        }
+
+        /// A lightweight-mount RESTORE hands the provenance to persist via the create-query context, and
+        /// gets it written in the table-creation multi-op below. Gate on is_restore_from_backup, NOT the
+        /// mode: a restore-issued CREATE is marked "secondary", so its mode is SECONDARY_CREATE, not CREATE
+        /// (getLoadingStrictnessLevel). The provenance is set on the context only for a mount restore (null
+        /// for any ordinary restore or user CREATE), so reading it whenever is_restore_from_backup is safe.
+        std::shared_ptr<const SnapshotMountProvenance> snapshot_mount_provenance_to_persist;
+        if (args.is_restore_from_backup)
+            snapshot_mount_provenance_to_persist = args.getLocalContext()->getSnapshotMountProvenanceToPersist();
+
+        return std::make_shared<StorageSharedMergeTree>(
+            zookeeper_info,
+            args.mode,
+            args.table_id,
+            "",
+            metadata,
+            args.getContext(),
+            date_column_name,
+            merging_params,
+            std::move(storage_settings),
+            need_check_structure,
+            sc_table_settings,
+            std::move(sc_intentions),
+            std::move(snapshot_mount_provenance_to_persist));
+    }
+#endif
 
     return std::make_shared<StorageMergeTree>(
         args.table_id,
@@ -4702,6 +4817,15 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .description = "Replicated version of the VersionedCollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});
+
+    factory.registerStorage("SharedMergeTree", create, features);
+    factory.registerStorage("SharedCollapsingMergeTree", create, features);
+    factory.registerStorage("SharedReplacingMergeTree", create, features);
+    factory.registerStorage("SharedAggregatingMergeTree", create, features);
+    factory.registerStorage("SharedSummingMergeTree", create, features);
+    factory.registerStorage("SharedCoalescingMergeTree", create, features);
+    factory.registerStorage("SharedGraphiteMergeTree", create, features);
+    factory.registerStorage("SharedVersionedCollapsingMergeTree", create, features);
 }
 
 }
