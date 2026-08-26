@@ -18,8 +18,6 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
-    # The Keeper-backed engine keeps its committed offsets in ZooKeeper.
-    with_zookeeper=True,
     stay_alive=True,
     macros={
         "kafka_broker": "kafka1",
@@ -98,18 +96,8 @@ def create_kafka_pipeline(
     extra_settings="",
     dst_columns="key UInt64, value String",
     mv_select="key, value",
-    keeper=False,
 ):
-    # `keeper=True` stores the committed offsets in Keeper, which selects the separate
-    # `StorageKafka2` implementation instead of `StorageKafka`. The experimental setting is read
-    # from the session context while the table is created, so it rides on this query.
-    if keeper:
-        extra_settings += (
-            f",\n                     kafka_keeper_path = '/clickhouse/kafka2/{topic_name}'"
-            ",\n                     kafka_replica_name = 'r1'"
-        )
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE TABLE test.dst ({dst_columns}) ENGINE = MergeTree ORDER BY key;
 
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -124,11 +112,7 @@ def create_kafka_pipeline(
                      kafka_consumer_reschedule_ms = 200{extra_settings};
 
         CREATE MATERIALIZED VIEW test.mv TO test.dst AS SELECT {mv_select} FROM test.kafka;
-        """,
-        settings=(
-            {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
-        ),
-    )
+        """)
 
 
 def log_numbers(pattern, after=None, anchored=True):
@@ -161,17 +145,11 @@ def pushed_row_counts(after=None):
     return log_numbers(r"Pushing [0-9]+\.", after=after, anchored=False)
 
 
-def memory_errors_count(keeper=False):
-    """Only memory errors that ended a streaming cycle of the engine under test, so an unrelated
-    allocation failing under the pinned tracker cannot stand in for the one the arm is waiting for.
-    The two engines report a failed cycle from different places: `StorageKafka` through the
-    storage's own logger, `StorageKafka2` through `tryLogCurrentException` with the function
-    signature as the logger name."""
-    pattern = (
-        "StorageKafka2::threadFunc.*MEMORY_LIMIT_EXCEEDED"
-        if keeper
-        else "StorageKafka \\(test\\..*MEMORY_LIMIT_EXCEEDED"
-    )
+def memory_errors_count():
+    """Only memory errors that ended a streaming cycle, so an unrelated allocation failing under the
+    pinned tracker cannot stand in for the one the arm is waiting for. A failed cycle is reported
+    through the storage's own logger, which names the table."""
+    pattern = "StorageKafka \\(test\\..*MEMORY_LIMIT_EXCEEDED"
     out = instance.exec_in_container(
         ["bash", "-c", f"grep -cE '{pattern}' {SERVER_LOG} || true"]
     )
@@ -189,12 +167,12 @@ def wait_for_reductions(expected, timeout=180):
     return observed
 
 
-def wait_for_memory_errors(expected, timeout=180, keeper=False):
+def wait_for_memory_errors(expected, timeout=180):
     deadline = time.monotonic() + timeout
-    observed = memory_errors_count(keeper=keeper)
+    observed = memory_errors_count()
     while observed < expected and time.monotonic() < deadline:
         time.sleep(1)
-        observed = memory_errors_count(keeper=keeper)
+        observed = memory_errors_count()
     return observed
 
 
@@ -405,19 +383,16 @@ def test_commit_every_batch_is_excluded(kafka_cluster):
         assert reductions_event() == events_before
 
 
-@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
 @pytest.mark.parametrize("mode", ["stream", "dead_letter_queue"])
-def test_memory_error_is_not_a_bad_message(kafka_cluster, mode, keeper):
+def test_memory_error_is_not_a_bad_message(kafka_cluster, mode):
     """The handle-error modes other than the default report a bad message and keep consuming, so they
     do not rethrow. A memory limit reaches the same callback but is a state of the server, not a
     property of the message: reported that way it would replace a well-formed message with an error
     record, commit its offset and never let the size adapt. Both non-default modes are covered
-    because the guard sits ahead of all of them, and both engines because each has its own copy of
-    the callback. Only `StorageKafka` adapts the batch size; in the Keeper-backed engine the
-    misclassification is all that is fixed, so the arms differ in what they wait for.
+    because the guard sits ahead of all of them.
     """
     instance.rotate_logs()
-    topic_name = f"kafka_mem_{mode}_{'v2' if keeper else 'v1'}_{k.random_string(6)}"
+    topic_name = f"kafka_mem_{mode}_{k.random_string(6)}"
     reductions_before = reductions_event()
     failed_before = messages_failed_event()
     streams_error = mode == "stream"
@@ -434,18 +409,11 @@ def test_memory_error_is_not_a_bad_message(kafka_cluster, mode, keeper):
             if streams_error
             else "key UInt64, value String",
             mv_select="key, value, _error AS error" if streams_error else "key, value",
-            keeper=keeper,
         )
 
-        if keeper:
-            # A cycle that ends in a memory error is the trigger here, and it is also the first
-            # thing a swallowed error removes: reported as a bad message it never leaves the
-            # callback, so the cycle succeeds and nothing is logged.
-            assert wait_for_memory_errors(1, keeper=True) >= 1
-        else:
-            assert wait_for_reductions(1) >= 1
-            sizes = reduced_block_sizes()
-            assert sizes[0] == BLOCK_SIZE // 2, sizes
+        assert wait_for_reductions(1) >= 1
+        sizes = reduced_block_sizes()
+        assert sizes[0] == BLOCK_SIZE // 2, sizes
 
         # Read once the ballast is gone but before the drain: in `dead_letter_queue` mode a
         # swallowed message produces no row at all, so the drain would time out first and hide
@@ -453,29 +421,7 @@ def test_memory_error_is_not_a_bad_message(kafka_cluster, mode, keeper):
         instance.query("SYSTEM FREE MEMORY")
         assert messages_failed_event() == failed_before, messages_failed_event() - failed_before
 
-        if keeper:
-            # The rows the aborted cycles skipped are gone, so do not rely on the original batch to
-            # keep the checks below off an empty table: these arrive with the memory already released.
-            produce_wide_messages(kafka_cluster, topic_name, count=4)
-            # Not the full count, and no upper bound either. Nothing rewinds an aborted cycle in this
-            # engine: `KeeperHandlingConsumer::poll` builds its `OffsetGuard` only after the sink
-            # returns, so a throw from the sink leaves no rollback at all, while a guard that is built
-            # and then dropped rolls back to `committed_offset.value_or(INVALID_OFFSET)`, which does
-            # not rewind a partition that never committed. Either way the messages the cycle had
-            # consumed are skipped and a later cycle commits past them, while a cycle that pushed and
-            # then failed to commit is redelivered. Both predate this change. Rows still have to
-            # arrive, otherwise the error-record checks below would hold over an empty table.
-            arrived = int(
-                instance.query_with_retry(
-                    "SELECT count() FROM test.dst",
-                    retry_count=180,
-                    sleep_time=1,
-                    check_callback=lambda res: int(res.strip() or 0) > 0,
-                ).strip()
-            )
-            assert arrived > 0, arrived
-        else:
-            drain_topic(MESSAGES)
+        drain_topic(MESSAGES)
 
         # Not a row count: a message accounted for here has been consumed as malformed, whether or
         # not its error record survived. `on_error` is the only increment site, and no message in
@@ -496,11 +442,7 @@ def test_memory_error_is_not_a_bad_message(kafka_cluster, mode, keeper):
                 )
                 == 0
             )
-        if keeper:
-            # The adaptation is `StorageKafka` only, so this engine reduces nothing.
-            assert reductions_event() == reductions_before
-        else:
-            assert reductions_event() - reductions_before >= 1
+        assert reductions_event() - reductions_before >= 1
 
 
 def test_concurrent_failures_reduce_one_step_at_a_time(kafka_cluster):

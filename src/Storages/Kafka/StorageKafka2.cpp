@@ -1042,11 +1042,6 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        /// A memory limit is a state of the server, not a property of the message. Reporting it as a
-        /// bad message would drop a well-formed one and commit its offset.
-        if (StorageKafkaUtils::isMemoryLimitError(e.code()))
-            throw std::move(e);
-
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
         switch (getHandleKafkaErrorMode())
