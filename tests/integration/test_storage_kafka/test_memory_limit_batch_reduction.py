@@ -454,11 +454,17 @@ def test_memory_error_is_not_a_bad_message(kafka_cluster, mode, keeper):
         assert messages_failed_event() == failed_before, messages_failed_event() - failed_before
 
         if keeper:
-            # Not the full count, and no upper bound either: a cycle that throws restores its read
-            # position to the committed offset, which is `RD_KAFKA_OFFSET_INVALID` on a partition
-            # that never committed, so the messages it had consumed are dropped, while a cycle that
-            # pushed and then failed to commit is redelivered. Both predate this change. Rows still
-            # have to arrive, otherwise the error-record checks below would hold over an empty table.
+            # The rows the aborted cycles skipped are gone, so do not rely on the original batch to
+            # keep the checks below off an empty table: these arrive with the memory already released.
+            produce_wide_messages(kafka_cluster, topic_name, count=4)
+            # Not the full count, and no upper bound either. Nothing rewinds an aborted cycle in this
+            # engine: `KeeperHandlingConsumer::poll` builds its `OffsetGuard` only after the sink
+            # returns, so a throw from the sink leaves no rollback at all, while a guard that is built
+            # and then dropped rolls back to `committed_offset.value_or(INVALID_OFFSET)`, which does
+            # not rewind a partition that never committed. Either way the messages the cycle had
+            # consumed are skipped and a later cycle commits past them, while a cycle that pushed and
+            # then failed to commit is redelivered. Both predate this change. Rows still have to
+            # arrive, otherwise the error-record checks below would hold over an empty table.
             arrived = int(
                 instance.query_with_retry(
                     "SELECT count() FROM test.dst",
