@@ -188,6 +188,17 @@ def wait_for_more_reductions(seen, timeout=180):
     return sizes
 
 
+def wait_for_polls(after, timeout=180):
+    """Sizes of the polls made after the first reduction. A reduced cycle logs the marker before it
+    builds its sources, so its first poll reaches the log later than the marker does."""
+    deadline = time.monotonic() + timeout
+    polled = polled_batch_sizes(after=after)
+    while not polled and time.monotonic() < deadline:
+        time.sleep(1)
+        polled = polled_batch_sizes(after=after)
+    return polled
+
+
 def wait_for_delivery_at_reduced_size(after, timeout=180):
     """Row counts of the cycles that delivered rows after the first reduction. Read from the log
     because the memory is still pinned while this waits."""
@@ -254,7 +265,7 @@ def test_batch_size_is_reduced_after_memory_limit(kafka_cluster):
         # The poll shrinks together with the block. Without this the block size is only a floor:
         # a block is never cut short of a polled batch, so a poll of the original size still
         # allocates the original amount.
-        polled = polled_batch_sizes(after=REDUCTION_LINE)
+        polled = wait_for_polls(after=REDUCTION_LINE)
         assert polled, "no poll was observed after the reduction"
         assert max(polled) <= POLL_SIZE // 2, polled
 
