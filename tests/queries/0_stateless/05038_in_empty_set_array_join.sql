@@ -55,8 +55,10 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE
 SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%filter column:%' AND explain ILIKE '%t_in_empty_set_storage%';
 
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
+SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN t_in_empty_set_storage;
 INSERT INTO t_in_empty_set_storage VALUES (1);
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
+SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN t_in_empty_set_storage;
 
 -- An empty subquery set is not folded either: each shard still runs index analysis against it, which
 -- needs the function in the plan. Folding it away leaves one `0-element set` report instead of two.

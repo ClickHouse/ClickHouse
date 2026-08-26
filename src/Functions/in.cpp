@@ -110,15 +110,7 @@ public:
         if (!future_set)
             return nullptr;
 
-        /// Only a tuple set is finished on construction and never mutated afterwards. A storage-backed
-        /// set is the live set of an `ENGINE = Set` table and grows on INSERT, and a subquery set is
-        /// still consulted for index analysis, which needs the function in the plan.
-        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
-        if (!tuple_set)
-            return nullptr;
-
-        auto set = tuple_set->get();
-        if (!set || set->getTotalRowCount() != 0)
+        if (!isImmutableEmptySet(*future_set))
             return nullptr;
 
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
@@ -163,9 +155,10 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
-        /// Empty set: return a constant result. Must be checked before input_rows_count == 0
-        /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
-        if (set->getTotalRowCount() == 0)
+        /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
+        /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`. Only a set the
+        /// DAG node also folds qualifies: a constant header over a non-constant node cannot be converted.
+        if (isImmutableEmptySet(*future_set))
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
         /// Unwrap ColumnConst for the first argument if needed.
@@ -212,6 +205,19 @@ private:
         if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(column.get()))
             return column_set;
         return checkAndGetColumn<const ColumnSet>(column.get());
+    }
+
+    /// Emptiness is a property of the plan only for a tuple set, which is finished in its constructor
+    /// and never mutated afterwards. A storage-backed set is the live set of an `ENGINE = Set` table
+    /// and grows on INSERT, and a subquery set is still consulted for index analysis.
+    static bool isImmutableEmptySet(const FutureSet & future_set)
+    {
+        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
+        if (!tuple_set)
+            return false;
+
+        auto set = tuple_set->get();
+        return set && set->getTotalRowCount() == 0;
     }
 
     String function_name;
