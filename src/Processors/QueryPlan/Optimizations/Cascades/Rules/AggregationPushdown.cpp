@@ -11,6 +11,7 @@
 #include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -77,7 +78,10 @@ struct JoinOutputBindings
 ///
 /// The rule also bails out when the join condition reads a function non-deterministic in scope
 /// of the query (e.g. `rand`): the multiplicity argument requires the condition to be a pure
-/// function of the pushed side's group keys (see `collectConditionInputs`).
+/// function of the pushed side's group keys (see `collectConditionInputs`). It also bails when
+/// the pushed keys' cardinality is not reliably known to guarantee a shrinkage (see
+/// `buildPushdownAlternative`'s cardinality gate) - with statistics hint-only today, a hint-less
+/// query never takes this rewrite.
 ///
 /// The join under the aggregation is matched against every logical alternative of its group (see
 /// `collectJoinsUnderAggregation`), not just the ingested plan, so e.g. `JoinCommutativity`'s
@@ -494,6 +498,49 @@ GroupExpressionPtr registerPushdownAlternative(
     return top_expression;
 }
 
+/// `deriveAggregatingStatistics` falls back to `0.1 * input_rows` for a key without stats -
+/// a reasonable guess for pricing the ORIGINAL aggregation, but the pushdown widens the key set
+/// to `(G ∩ S) ∪ J_S`, and the fallback would then price the widened set the same as `G` alone,
+/// hiding the extra aggregation stage as if it cost nothing. Require a real NDV for every pushed
+/// key instead.
+bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statistics, const Names & pushed_keys)
+{
+    for (const auto & key : pushed_keys)
+    {
+        auto it = input_statistics.column_statistics.find(key);
+        if (it == input_statistics.column_statistics.end() || it->second.num_distinct_values == 0)
+            return false;
+    }
+    return true;
+}
+
+/// The memo prices the alternative optimistically, by the max of the pushed keys' NDVs; this
+/// factor requires the proven composite bound (below) to guarantee at least this much shrinkage
+/// below the input to compensate.
+constexpr Float64 MIN_GUARANTEED_REDUCTION = 2.0;
+
+/// The product of the pushed keys' NDVs (each clamped to the input row count first, mirroring
+/// `deriveAggregatingStatistics`'s own clamping) is a proven upper bound on the partial's output
+/// row count. The memo will later price the alternative optimistically, by the max of the keys'
+/// NDVs rather than this composite, so requiring the composite to guarantee at least
+/// `MIN_GUARANTEED_REDUCTION` below the input compensates: a key set that provably does not
+/// shrink the input is rejected even though the max-of-NDVs estimate alone would look profitable.
+bool pushedKeysGuaranteeReduction(const ExpressionStatistics & input_statistics, const Names & pushed_keys)
+{
+    Float64 composite = 1;
+    for (const auto & key : pushed_keys)
+    {
+        const Float64 ndv = std::min(Float64(input_statistics.column_statistics.at(key).num_distinct_values), input_statistics.estimated_row_count);
+        composite *= ndv;
+        if (composite >= input_statistics.estimated_row_count)
+        {
+            composite = input_statistics.estimated_row_count;
+            break;
+        }
+    }
+    return composite * MIN_GUARANTEED_REDUCTION <= input_statistics.estimated_row_count;
+}
+
 GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     const GroupExpressionPtr & source_expression,
     const MatchedJoin & match,
@@ -554,6 +601,17 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
             pushed_keys.push_back(name);
             condition_extends_keys = true;
         }
+
+    /// Cardinality gate, shared by variants A and B (for B `pushed_keys` is exactly `G`, see
+    /// above): the pushed input group's statistics are already derived by the time this rule
+    /// runs (`ApplyRuleTask` derives them recursively through inputs before applying a rule).
+    /// Bail without them, or without every pushed key's NDV, or without a proven guarantee that
+    /// the widened key set shrinks the input - never let this rewrite be priced by a guess.
+    const auto & pushed_input_group = *memo.getGroup(match.join_expression->inputs[pushed_input_index].group_id);
+    if (!pushed_input_group.statistics
+        || !pushedKeysHaveReliableCardinality(*pushed_input_group.statistics, pushed_keys)
+        || !pushedKeysGuaranteeReduction(*pushed_input_group.statistics, pushed_keys))
+        return nullptr;
 
     /// Variant B: every `GROUP BY` key is on the pushed side and the join condition reads only
     /// `GROUP BY` keys of it, so the aggregation stays final below the join and no merge is

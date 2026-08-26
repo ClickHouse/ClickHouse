@@ -63,6 +63,21 @@ SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 10
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
+-- cardinality gate negatives (see `AggregationPushdown::buildPushdownAlternative`): the rule
+-- itself refuses to build the alternative, unlike case 3's cost-based rejection above.
+SELECT '-- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape';
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+
+-- two pushed keys (`key`, `value`, the latter from the residual condition) whose NDV product
+-- equals the pushed side's cardinality although each is individually small - the exact shape the
+-- pre-gate max-of-NDVs estimate mispriced as profitable (confirmed pushed on the pre-fix binary).
+SELECT '-- 3b. negative: no guaranteed reduction from the composite key NDV (cardinality gate), classic shape';
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 10000, "value": 10000}}, "t_push_dims_multi": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 100}}}';
+EXPLAIN SELECT t1.key AS k, count() FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k;
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+
 SELECT '-- 4. disabled by the setting: classic shape';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key
 SETTINGS cascades_aggregation_pushdown = 0;
@@ -107,9 +122,11 @@ SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 -- restores the preamble's stat hints after case 9-11 overrode them with `t_push_dims_multi`-only
--- hints (no `t_push_dims` entry); NOT a no-op despite being byte-identical to the preamble value -
--- dropping it changes the active hints for cases 12+ and flips their pinned plan shapes
-SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+-- hints (no `t_push_dims` entry); dropping it changes the active hints for cases 12+ and flips
+-- their pinned plan shapes. Adds a `value` NDV on top of the preamble value: case 19 groups by
+-- `t1.value` and extends the pushed keys with the join's `key` condition column, and the
+-- cardinality gate in `AggregationPushdown::buildPushdownAlternative` needs a real NDV for both.
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100, "value": 1000}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
 SELECT '-- 12. push-right: RIGHT JOIN with a huge right side';
 EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key;

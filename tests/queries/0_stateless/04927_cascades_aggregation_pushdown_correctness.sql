@@ -56,7 +56,11 @@ SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET param__internal_cascades_cluster_node_count = 4;
-SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"k": 100, "v": 1000}}, "t_corr_empty": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 100}}, "t_corr_right_multi": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_uniq": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_2k": {"cardinality": 1000, "avg_row_bytes": 16, "distinct_keys": {"k": 1000}}, "t_corr_right_expr": {"cardinality": 1000, "avg_row_bytes": 8, "distinct_keys": {"b": 1000}}, "t_corr_empty_right": {"cardinality": 1000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';
+-- `p` and `big` are extra pushed keys for cases 3, 8, 9 (a join-condition column and a
+-- `GROUP BY` key not equal to the join key, respectively) - the cardinality gate in
+-- `AggregationPushdown::buildPushdownAlternative` needs a real NDV for every pushed key, and
+-- both happen to be genuinely low-cardinality (`p = k % 2`, `big` is boolean-like).
+SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"k": 100, "v": 1000, "p": 2, "big": 2}}, "t_corr_empty": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 100}}, "t_corr_right_multi": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_uniq": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_2k": {"cardinality": 1000, "avg_row_bytes": 16, "distinct_keys": {"k": 1000}}, "t_corr_right_expr": {"cardinality": 1000, "avg_row_bytes": 8, "distinct_keys": {"b": 1000}}, "t_corr_empty_right": {"cardinality": 1000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';
 
 -- Canaries: prove the stat hints above actually steer the cascades optimizer to the pushed
 -- shapes for this file's tables, not to a classic plan that would make every on/off pair below

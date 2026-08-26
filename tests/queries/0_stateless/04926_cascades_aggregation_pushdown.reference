@@ -41,6 +41,31 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ParallelRead default.t_push_facts)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 3b. negative: no guaranteed reduction from the composite key NDV (cardinality gate), classic shape
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression (Before GROUP BY)
+              JoinLogical (Broadcast HashJoin )
+                Expression
+                  ReadFromMergeTree (ParallelRead default.t_push_facts)
+                BuildRuntimeFilter (Build runtime join filter on __table2.key)
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
 -- 4. disabled by the setting: classic shape
 Expression ((Project names + Projection))
   MergingAggregated
@@ -266,14 +291,14 @@ Expression ((Project names + Projection))
 -- 19. variant A for LEFT SEMI: the join key is not a GROUP BY key
 Expression ((Project names + Projection))
   MergingAggregated
-    JoinLogical (Local HashJoin  swapped)
-      BuildRuntimeFilter (Build runtime join filter on __table2.key)
-        Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.t_push_dims)
-      GatherExchange
+    GatherExchange
+      JoinLogical (Broadcast HashJoin  swapped swapped)
         Aggregating
           Expression
             ReadFromMergeTree (ParallelRead default.t_push_facts)
+        BuildRuntimeFilter (Build runtime join filter on __table2.key)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 20. variant A for LEFT ANTI: a GROUP BY key from the other side falls back to variant A
 Expression ((Project names + Projection))
   MergingAggregated

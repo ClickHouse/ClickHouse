@@ -1,17 +1,22 @@
 -- Tags: no-flaky-check
 -- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
 -- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
--- Verifies the join order and distributed execution strategy of the one TPC-H query whose plan
--- changes under `cascades_aggregation_pushdown`, using SF100 cardinalities injected via
+-- Verifies the join order and distributed execution strategy of `Q18` (`rewrite_in_to_join`) with
+-- `cascades_aggregation_pushdown` on, using SF100 cardinalities injected via
 -- `_internal_join_table_stat_hints`.
 
 -- Pushdown-enabled twin of `03836_tpch_join_order_plans`, trimmed to `Q18`
--- (`rewrite_in_to_join`): it is the only TPC-H query whose plan legitimately differs
--- with `cascades_aggregation_pushdown` on. Every other query is already asserted
--- pushdown-off by `03836`; their pushdown-on shapes turned out to sit on near-ties in
--- the Cascades cost model that resolve differently per build flavor/machine, so
--- asserting them here produced environment-flaky failures rather than catching real
--- regressions.
+-- (`rewrite_in_to_join`): it used to be the only TPC-H query whose plan legitimately differed
+-- with `cascades_aggregation_pushdown` on. The rule's reliable-cardinality gate (see
+-- `AggregationPushdown::buildPushdownAlternative`) now rejects that pushdown too: the outer
+-- aggregation's widened `GROUP BY` key set (`c_name`, `c_custkey`, `o_orderkey`, `o_orderdate`,
+-- `o_totalprice`) is, at SF100, close to cardinality-unique - the proven composite bound on its
+-- output offers no guaranteed shrinkage, so the plan below is now identical whether the setting
+-- is on or off; kept as a plan-shape regression pin, not as a pushdown-vs-off demonstration.
+-- Every other TPC-H query is already asserted pushdown-off by `03836`; their pushdown-on shapes
+-- turned out to sit on near-ties in the Cascades cost model that resolve differently per build
+-- flavor/machine, so asserting them here produced environment-flaky failures rather than
+-- catching real regressions.
 SET cascades_aggregation_pushdown = 1;
 
 DROP TABLE IF EXISTS region;
@@ -160,9 +165,13 @@ SET param__internal_join_table_stat_hints = '{
 
 -- Q18: Large volume customer (customer, orders, lineitem + IN subquery)
 -- No selective scan-level filters (HAVING sum > 300 is post-aggregation).
+-- `c_name` and `o_orderdate` are additional `GROUP BY` keys of the outer aggregation pushed below
+-- the join (see the cardinality gate in `AggregationPushdown::buildPushdownAlternative`); every
+-- pushed key needs a real NDV, so both get one here (matching the SF100 magnitudes: `c_name` is
+-- generated 1:1 with `c_custkey`, `o_orderdate` matches the general block above).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 15000000,  "avg_row_bytes": 25, "distinct_keys": { "c_custkey": 15000000 } },
-    "orders":   { "cardinality": 150000000, "avg_row_bytes": 17, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_totalprice": 147999998 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 25, "distinct_keys": { "c_custkey": 15000000, "c_name": 15000000 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 17, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_totalprice": 147999998, "o_orderdate": 2406 } },
     "lineitem": { "cardinality": 600037902, "avg_row_bytes": 12, "distinct_keys": { "l_orderkey": 150000000, "l_quantity": 50 } }
 }';
 SELECT '-- Q18';
