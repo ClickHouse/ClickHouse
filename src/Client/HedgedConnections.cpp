@@ -139,9 +139,10 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
 bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
 {
     /// The first replica is established before the query is sent, but a later hedge may
-    /// select any remaining replica. Its query-plan serialization version is unknown here,
-    /// so use the SQL fallback rather than making that hedge unavailable after a timeout.
-    if (hedged_connections_factory.maySelectUnverifiedReplica())
+    /// select any remaining replica: one whose version is not known yet, or an already
+    /// established usable but stale one that `setBestUsableReplica` keeps for later.
+    /// Use the SQL fallback rather than making that hedge unavailable after a timeout.
+    if (hedged_connections_factory.maySelectReplicaBelowQueryPlanSerializationVersion(version))
         return false;
 
     for (const OffsetState & offset_state : offset_states)
